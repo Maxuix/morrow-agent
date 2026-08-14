@@ -1,7 +1,7 @@
 # Subplan 09 — Session and State Commands
 
 > Stage: 1B  
-> Status: pending  
+> Status: completed
 > Parent: [Stage 1 implementation plan](../PLAN.md)
 
 ## Objective

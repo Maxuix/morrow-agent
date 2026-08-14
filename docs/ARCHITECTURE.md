@@ -45,7 +45,7 @@ Core 只表达领域对象、协议和状态转换，例如 `Message`、`ModelRe
 
 `AgentRuntime` 只负责把已经组装好的上下文变成一次可观察的模型回合：调用 Provider、归一化结果并发布事件。命令识别、确认、是否加载交接、会话切换和退出码归 `SessionOrchestrator`；上下文组装归 `ContextBuilder`；配置补丁、工作空间状态和交接生成归对应服务。服务层承载用例，但不直接实现终端交互或外部协议。
 
-阶段 1 的 `AgentRuntime.run_turn()` 只代表一轮模型调用。阶段 2 的多步工具循环应作为任务级编排加入，不能把单轮协议悄悄改成不可控的循环。
+阶段 1 的 `AgentRuntime.run_turn()` 只代表一轮模型调用。阶段 2 的多步工具循环应作为任务级编排加入，不能把单轮协议悄悄改成不可控的循环。工作空间启动检查和首次 Profile/Handoff 发布由 `WorkspaceStateService` 持有，CLI 只负责收集输入和展示结果；结构化完成协议位于 runtime 边界，供 Handoff 与配置提取复用。
 
 ### Interfaces
 

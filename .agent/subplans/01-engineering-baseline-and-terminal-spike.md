@@ -1,7 +1,7 @@
 # Subplan 01 — Engineering Baseline and Terminal Spike
 
 > Stage: 1A  
-> Status: selected, not started  
+> Status: completed
 > Parent: [Stage 1 implementation plan](../PLAN.md)
 
 ## Objective

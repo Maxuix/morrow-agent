@@ -1,6 +1,6 @@
 # Stage 1 Implementation Plan
 
-> Status: accepted for execution after independent review; implementation has not started.
+> Status: complete; offline, Live, and manual terminal acceptance passed.
 
 ## Overall goal
 
@@ -28,17 +28,17 @@ The plan is ordered by dependency and validation value. It intentionally contain
 
 | Order | Subplan | Stage | Status | Depends on |
 |---|---|---|---|---|
-| 01 | [Engineering baseline and terminal spike](subplans/01-engineering-baseline-and-terminal-spike.md) | 1A | selected, not started | — |
-| 02 | [Core contracts and test doubles](subplans/02-core-contracts-and-test-doubles.md) | 1A | pending | 01 |
-| 03 | [Workspace identity and state storage](subplans/03-workspace-identity-and-state-storage.md) | 1A | pending | 02 |
-| 04 | [Provider and onboarding](subplans/04-provider-and-onboarding.md) | 1A | pending | 02, 03 |
-| 05 | [Context and turn runtime](subplans/05-context-and-turn-runtime.md) | 1A | pending | 02, 03, 04 |
-| 06 | [REPL and orchestration](subplans/06-repl-and-orchestration.md) | 1A | pending | 03, 04, 05 |
-| 07 | [Handoff and Stage 1A gate](subplans/07-handoff-and-stage-1a-gate.md) | 1A | pending | 03–06 |
-| 08 | [Preferences and ConfigPatch](subplans/08-preferences-and-config-patch.md) | 1B | pending | 07 |
-| 09 | [Session and state commands](subplans/09-session-and-state-commands.md) | 1B | pending | 08 |
-| 10 | [Provider, concurrency, and recovery](subplans/10-provider-concurrency-and-recovery.md) | 1B | pending | 09 |
-| 11 | [Stage 1B acceptance and delivery](subplans/11-stage-1b-acceptance-and-delivery.md) | 1B | pending | 10 |
+| 01 | [Engineering baseline and terminal spike](subplans/01-engineering-baseline-and-terminal-spike.md) | 1A | completed | — |
+| 02 | [Core contracts and test doubles](subplans/02-core-contracts-and-test-doubles.md) | 1A | completed | 01 |
+| 03 | [Workspace identity and state storage](subplans/03-workspace-identity-and-state-storage.md) | 1A | completed | 02 |
+| 04 | [Provider and onboarding](subplans/04-provider-and-onboarding.md) | 1A | completed | 02, 03 |
+| 05 | [Context and turn runtime](subplans/05-context-and-turn-runtime.md) | 1A | completed | 02, 03, 04 |
+| 06 | [REPL and orchestration](subplans/06-repl-and-orchestration.md) | 1A | completed | 03, 04, 05 |
+| 07 | [Handoff and Stage 1A gate](subplans/07-handoff-and-stage-1a-gate.md) | 1A | completed | 03–06 |
+| 08 | [Preferences and ConfigPatch](subplans/08-preferences-and-config-patch.md) | 1B | completed | 07 |
+| 09 | [Session and state commands](subplans/09-session-and-state-commands.md) | 1B | completed | 08 |
+| 10 | [Provider, concurrency, and recovery](subplans/10-provider-concurrency-and-recovery.md) | 1B | completed | 09 |
+| 11 | [Stage 1B acceptance and delivery](subplans/11-stage-1b-acceptance-and-delivery.md) | 1B | completed | 10 |
 
 ## Cross-cutting contracts
 
@@ -88,4 +88,4 @@ Subplan 11 must demonstrate all `S1B-01` through `S1B-06` requirements, all offl
 
 ## Currently selected subplan
 
-Subplan 01 is selected but implementation has not started. Its tasks remain pending until explicitly activated for execution.
+Review remediation is complete. Offline gates, the Live Provider check, and the corrected real-terminal checklist all passed; Stage 2 implementation is unblocked.

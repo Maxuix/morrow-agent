@@ -1,7 +1,7 @@
 # Subplan 05 — Context and Turn Runtime
 
 > Stage: 1A  
-> Status: pending  
+> Status: completed
 > Parent: [Stage 1 implementation plan](../PLAN.md)
 
 ## Objective

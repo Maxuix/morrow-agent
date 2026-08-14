@@ -9,7 +9,7 @@ htmlcov/
 build/
 dist/
 *.egg-info/
+.mypy_cache/
 .env
 .env.*
 !.env.example
-

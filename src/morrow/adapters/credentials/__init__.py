@@ -1,0 +1,1 @@
+"""Credential storage adapters."""

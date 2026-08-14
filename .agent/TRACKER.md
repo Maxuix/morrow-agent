@@ -2,16 +2,16 @@
 
 ## Current status
 
-The complete Stage 1 implementation plan is accepted after three read-only independent review passes. Subplan 01 is selected but no product implementation task has started.
+Stage 1 is complete. The P0/P1 findings confirmed by Grok and Sol Max are fixed; Live Provider and the corrected real-terminal checklist passed, including explicit continuity, cancellation, recovery, exit, and relink.
 
 ## Last completed task
 
-Completed the final acceptance review with no P0/P1 findings and clarified the remaining non-blocking `/handoff update` cancellation behavior.
+Final acceptance passed: 49 local tests, Live Provider (`1 passed, 48 deselected`), Ruff format/check, compile, strict-marker collection, CLI help, secret-sentinel coverage, Stage 2 boundary checks, and direct real-terminal validation of `/continue`, Ctrl+C, `/handoff update`, Ctrl+D, and relink.
 
 ## Next action
 
-Mark the first Subplan 01 task in progress, then establish the Python project and terminal-spike engineering baseline.
+Discuss and define the Stage 2 scope, goals, boundaries, and implementation plan before creating Stage 2 tasks or code.
 
 ## Blockers
 
-None.
+No Stage 1 acceptance blockers remain.

@@ -1,7 +1,7 @@
 # Subplan 06 — REPL and Orchestration
 
 > Stage: 1A  
-> Status: pending  
+> Status: completed
 > Parent: [Stage 1 implementation plan](../PLAN.md)
 
 ## Objective

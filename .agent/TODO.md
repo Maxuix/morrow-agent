@@ -2,16 +2,13 @@
 
 ## Selected subplan
 
-Subplan 01 — Engineering baseline and terminal spike.
+Subplan 11 — Stage 1B acceptance and delivery (review remediation).
 
 ## Executable tasks
 
-- [ ] Create the Python 3.12 `uv` project, `src/morrow` package, test layout, and `morrow` console entry point.
-- [ ] Add only the Stage 1 runtime, test, and quality dependencies with a locked environment.
-- [ ] Establish configuration for Ruff, pytest, asyncio tests, and the explicit `live` marker.
-- [ ] Add an injectable application bootstrap seam for state directory, provider, credential store, clock, and ID generation.
-- [ ] Build the minimal terminal spike for asynchronous streaming, first-press cancellation, and EOF-driven exit.
-- [ ] Record the accepted terminal integration pattern and remove any disposable spike-only code.
-- [ ] Run the Subplan 01 verification commands and update execution state only after they pass.
-
-The Stage 1 plan is accepted and no task is in progress. Mark the first task `[>]` immediately before implementation begins.
+- [x] Fix P0 workspace resolution and dirty-session save-failure loss.
+- [x] Fix Stage 1 gate P1 issues: provider probes, lock wiring, result/value boundary, reset/config safety, streaming/cancellation, and state ownership.
+- [x] Add regression coverage for Git workspaces, transitions, configuration, and terminal/orchestrator boundaries.
+- [x] Re-run offline quality and acceptance checks; update evidence and record the external Live/manual limitation.
+- [x] Mark the Stage 1 implementation plan complete for the available environment; keep unexecuted external checks explicit.
+- [x] Finish the remaining real-terminal acceptance checklist: `/continue`, Ctrl+C, `/handoff update`, Ctrl+D, and relink.

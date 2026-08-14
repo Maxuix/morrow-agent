@@ -1,7 +1,7 @@
 # Subplan 10 — Provider, Concurrency, and Recovery
 
 > Stage: 1B  
-> Status: pending  
+> Status: completed
 > Parent: [Stage 1 implementation plan](../PLAN.md)
 
 ## Objective

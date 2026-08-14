@@ -1,7 +1,7 @@
 # Subplan 11 — Stage 1B Acceptance and Delivery
 
 > Stage: 1B  
-> Status: pending  
+> Status: completed
 > Parent: [Stage 1 implementation plan](../PLAN.md)
 
 ## Objective

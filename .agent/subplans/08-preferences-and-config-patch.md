@@ -1,7 +1,7 @@
 # Subplan 08 — Preferences and ConfigPatch
 
 > Stage: 1B  
-> Status: pending  
+> Status: completed
 > Parent: [Stage 1 implementation plan](../PLAN.md)
 
 ## Objective
