@@ -2,16 +2,16 @@
 
 ## Current status
 
-Stage 1 is complete. The P0/P1 findings confirmed by Grok and Sol Max are fixed; Live Provider and the corrected real-terminal checklist passed, including explicit continuity, cancellation, recovery, exit, and relink.
+Subplan 16 and Stage 1 remediation are complete. Final-tree offline acceptance, the explicit OpenCode Go Live test, real-stream boundary inspection, isolated ten-turn terminal run, cancellation recovery, Handoff update, Ctrl+D, project/worktree isolation, move/relink, offline fallback recovery, and secret/boundary scans all passed. Stage 2 is unblocked but has not started.
 
 ## Last completed task
 
-Final acceptance passed: 49 local tests, Live Provider (`1 passed, 48 deselected`), Ruff format/check, compile, strict-marker collection, CLI help, secret-sentinel coverage, Stage 2 boundary checks, and direct real-terminal validation of `/continue`, Ctrl+C, `/handoff update`, Ctrl+D, and relink.
+The completed remediation tree and reconciled Stage 1 status were synchronized from the isolated execution worktree into the primary workspace. Primary-workspace validation passed with 149 non-Live tests, Ruff format/check, compileall, and diff checks.
 
 ## Next action
 
-Discuss and define the Stage 2 scope, goals, boundaries, and implementation plan before creating Stage 2 tasks or code.
+Discuss and define the separate Stage 2 scope and implementation plan before beginning any Stage 2 code.
 
 ## Blockers
 
-No Stage 1 acceptance blockers remain.
+None for Stage 1. Stage 2 implementation is authorized by the completed gate but remains unstarted pending its own scope and plan.

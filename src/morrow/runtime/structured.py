@@ -41,22 +41,30 @@ async def complete_structured[T: BaseModel](
     timeout: float = 30.0,
 ) -> tuple[T, bool]:
     """Return a validated object and whether one repair call was needed."""
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+
+    async def complete_with_remaining_budget(messages):
+        remaining = deadline - loop.time()
+        if remaining <= 0:
+            raise TimeoutError
+        return await asyncio.wait_for(provider.complete(model, messages), timeout=remaining)
+
     context = context_builder.build(session, purpose=schema.__name__)
     message_type = type(context.messages[0])
     prompt = [*context.messages, message_type(role="user", content=instruction)]
-    raw = await asyncio.wait_for(provider.complete(model, prompt), timeout=timeout)
+    raw = await complete_with_remaining_budget(prompt)
     try:
         return schema.model_validate(extract_json(raw)), False
     except (ValueError, TypeError, json.JSONDecodeError, ValidationError) as first_error:
         repair = (
-            "上一个结果未通过 Schema 校验。只返回一个符合要求的 JSON 对象；"
-            f"不要解释。校验错误类型：{type(first_error).__name__}。"
+            "修复上一个结构化结果。只返回一个符合要求的 JSON 对象，不要解释。\n"
+            f"原始任务：{instruction}\n"
+            f"目标 JSON Schema：{json.dumps(schema.model_json_schema(), ensure_ascii=False)}\n"
+            f"校验摘要：{type(first_error).__name__}。"
         )
-        repaired = await asyncio.wait_for(
-            provider.complete(
-                model, [*context.messages, message_type(role="user", content=repair)]
-            ),
-            timeout=timeout,
+        repaired = await complete_with_remaining_budget(
+            [*context.messages, message_type(role="user", content=repair)]
         )
         try:
             return schema.model_validate(extract_json(repaired)), True

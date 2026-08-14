@@ -5,7 +5,14 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator
 
-from morrow.core.models import FinishReason, Message, ModelErrorCode, ModelEvent, ModelRef
+from morrow.core.models import (
+    FinishReason,
+    Message,
+    ModelErrorCode,
+    ModelEvent,
+    ModelProviderError,
+    ModelRef,
+)
 
 
 def classify_error(error: BaseException) -> ModelErrorCode:
@@ -19,6 +26,8 @@ def classify_error(error: BaseException) -> ModelErrorCode:
         return ModelErrorCode.TIMEOUT
     if isinstance(error, (ConnectionError, OSError)) or "connect" in name or "network" in name:
         return ModelErrorCode.NETWORK
+    if isinstance(error, (TypeError, ValueError)):
+        return ModelErrorCode.INVALID_RESPONSE
     return ModelErrorCode.INTERNAL
 
 
@@ -57,21 +66,33 @@ class OpenAICompatibleProvider:
                 messages=self._messages(messages),
                 stream=True,
             )
-            completed = False
             async for chunk in response:
                 choices = getattr(chunk, "choices", None) or []
                 if not choices:
                     continue
-                delta = getattr(choices[0], "delta", None)
+                choice = choices[0]
+                delta = getattr(choice, "delta", None)
                 text = getattr(delta, "content", None) if delta else None
+                if text is not None and not isinstance(text, str):
+                    raise ValueError("model text delta must be a string")
                 if text:
                     yield ModelEvent(kind="text_delta", text=text)
-                finish = getattr(choices[0], "finish_reason", None)
-                if finish:
-                    completed = True
+                finish = getattr(choice, "finish_reason", None)
+                if finish == "stop":
                     yield ModelEvent(kind="completed", finish_reason=FinishReason.STOP)
-            if not completed:
-                yield ModelEvent(kind="completed", finish_reason=FinishReason.STOP)
+                    return
+                if finish is not None:
+                    yield ModelEvent(
+                        kind="error",
+                        error_code=ModelErrorCode.INVALID_RESPONSE,
+                        error_message="模型响应未正常结束",
+                    )
+                    return
+            yield ModelEvent(
+                kind="error",
+                error_code=ModelErrorCode.INVALID_RESPONSE,
+                error_message="模型响应缺少正常结束信号",
+            )
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -100,7 +121,7 @@ class OpenAICompatibleProvider:
             raise
         except Exception as exc:
             code = classify_error(exc)
-            raise RuntimeError(f"{code.value}: 模型服务暂时不可用") from None
+            raise ModelProviderError(code, "模型服务暂时不可用") from None
 
 
 def make_openai_compatible(config, credential: str) -> OpenAICompatibleProvider:

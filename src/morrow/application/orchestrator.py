@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from morrow.core.models import AgentEvent
-from morrow.services.preferences import ConfigIntentGate
+from morrow.services.preferences import ConfigIntentGate, render_patch_preview
 
 
 @dataclass
@@ -38,6 +38,11 @@ class SessionOrchestrator:
         self.gate = ConfigIntentGate()
         self.id_source = id_source
 
+    def reset_session(self) -> None:
+        if self.id_source is None:
+            raise RuntimeError("session ID source is unavailable")
+        self.command_service.reset_session(self.id_source.new_id("ses"))
+
     async def stream(self, text: str):
         """Yield model events as they arrive, then a terminal dispatch result."""
         if text.startswith("/"):
@@ -60,9 +65,9 @@ class SessionOrchestrator:
                 return
             if decision.matched:
                 extracted = await self.config_extractor(text, self.session)
-                if extracted.result == "config_patch" and extracted.patch:
+                if extracted.result == "config_patch":
                     yield DispatchResult(
-                        lines=["配置预览：即将写入一项经过字段白名单校验的配置。"],
+                        lines=render_patch_preview(extracted.patch),
                         action="config_preview",
                         value=extracted.patch,
                     )

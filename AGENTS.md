@@ -84,6 +84,8 @@ Do not preserve obsolete plan versions in the active file. Git history can be us
 
 If the current plan is too large to execute directly, split it into ordered subplans under `.agent/subplans/`.
 
+Before writing a new plan with subplans, delete any old completed subplans from `.agent/subplans/`.
+
 `PLAN.md` should remain a high-level index of:
 
 - the overall goal

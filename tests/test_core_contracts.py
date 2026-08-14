@@ -27,6 +27,16 @@ def test_handoff_rejects_normalized_duplicate_decisions():
         )
 
 
+@pytest.mark.parametrize("goal", ["", "   ", "\n\t"])
+def test_handoff_requires_non_empty_trimmed_current_goal(goal):
+    with pytest.raises(ValueError):
+        Handoff(current_goal=goal)
+
+
+def test_handoff_trims_current_goal():
+    assert Handoff(current_goal="  keep moving  ").current_goal == "keep moving"
+
+
 def test_public_event_lifecycle_and_unknown_fields_are_tolerated():
     events = [
         make_event(

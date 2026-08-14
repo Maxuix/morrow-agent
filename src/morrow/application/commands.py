@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from morrow.core.models import ConfigPatch, ConfigPatchOperation, Preferences
 from morrow.core.preferences import merge_preferences
+from morrow.services.preferences import render_patch_preview
 
 
 @dataclass
@@ -35,12 +36,18 @@ class CommandService:
         self.provider_service = provider_service
         self.workspace_service = workspace_service
 
+    def _ensure_workspace_writable(self, *, preferences: bool = False) -> None:
+        if self.session.read_only:
+            raise RuntimeError("当前工作空间状态不可安全加载，已禁止持久化操作")
+        if preferences and self.session.workspace_preferences_read_only:
+            raise RuntimeError("工作空间 Preferences 不可安全加载，已禁止覆盖")
+
     def reset_session(self, session_id: str) -> None:
         self.session.reset(session_id)
 
     def load_handoff(self):
         loaded = self.project_store.load_handoff(self.identity.workspace_id)
-        if loaded.value:
+        if loaded.value and not self.session.read_only:
             self.session.loaded_handoff = loaded.value.handoff
             self.session.handoff_source_revision = loaded.revision
         return loaded
@@ -49,6 +56,7 @@ class CommandService:
         return self.project_store.load_handoff(self.identity.workspace_id).revision
 
     def clear_handoff(self):
+        self._ensure_workspace_writable()
         result = self.project_store.clear_handoff(self.identity.workspace_id)
         if result.status.value == "ok":
             self.session.loaded_handoff = None
@@ -56,6 +64,7 @@ class CommandService:
         return result
 
     def reset_profile(self):
+        self._ensure_workspace_writable()
         result = self.project_store.clear_profile(self.identity.workspace_id)
         if result.status.value == "ok":
             self.session.profile = None
@@ -66,6 +75,7 @@ class CommandService:
             self.session.preferences = Preferences()
             return True
         if scope == "workspace":
+            self._ensure_workspace_writable(preferences=True)
             result = self.project_store.clear_preferences(self.identity.workspace_id)
             if result.status.value == "ok":
                 self.session.workspace_preferences = Preferences()
@@ -95,6 +105,11 @@ class CommandService:
                 )
             return CommandResult(["已准备新的独立会话。"], action="new")
         if command == "/continue":
+            if self.session.read_only:
+                return CommandResult(["当前工作空间状态不可安全加载，无法继续 Handoff。"])
+            available = self.project_store.load_handoff(self.identity.workspace_id)
+            if not available.value:
+                return CommandResult(["当前没有可继续的交接。"])
             if self.session.dirty:
                 return CommandResult(
                     ["当前会话有未交接内容，需要先保存或明确丢弃。"], action="switch_continue"
@@ -112,21 +127,25 @@ class CommandService:
                 ]
             )
         if command == "/workspace" and len(parts) > 1 and parts[1] == "reset":
+            if self.session.read_only:
+                return CommandResult(["当前工作空间状态不可安全加载，无法重置 Profile。"])
             return CommandResult(["Profile 重置需要预览和确认。"], action="reset_profile")
         if command == "/workspace" and len(parts) > 3 and parts[1] == "edit":
+            if self.session.read_only:
+                return CommandResult(["当前工作空间状态不可安全加载，无法编辑 Profile。"])
             if not self.config_service:
                 return CommandResult(["配置服务尚未就绪。"])
             try:
-                self.config_service.apply(
-                    ConfigPatch(
-                        scope="workspace",
-                        target="profile",
-                        operations=[
-                            ConfigPatchOperation(op="set", path=parts[2], value=" ".join(parts[3:]))
-                        ],
-                    )
+                patch = ConfigPatch(
+                    scope="workspace",
+                    target="profile",
+                    operations=[
+                        ConfigPatchOperation(op="set", path=parts[2], value=" ".join(parts[3:]))
+                    ],
                 )
-                return CommandResult(["Profile 已更新。"])
+                return CommandResult(
+                    render_patch_preview(patch), action="config_preview", value=patch
+                )
             except (ValueError, RuntimeError) as exc:
                 return CommandResult([f"Profile 更新失败：{exc}"])
         if command == "/workspace":
@@ -141,25 +160,29 @@ class CommandService:
             return CommandResult(lines)
         if command == "/handoff":
             if len(parts) > 1 and parts[1] == "update":
+                if self.session.read_only:
+                    return CommandResult(["当前工作空间状态不可安全加载，无法更新 Handoff。"])
                 return CommandResult(["将生成并替换完整 Handoff。"], action="update_handoff")
             if len(parts) > 1 and parts[1] == "clear":
+                if self.session.read_only:
+                    return CommandResult(["当前工作空间状态不可安全加载，无法清除 Handoff。"])
                 return CommandResult(["清除 Handoff 需要预览和确认。"], action="clear_handoff")
             if len(parts) > 3 and parts[1] == "edit":
+                if self.session.read_only:
+                    return CommandResult(["当前工作空间状态不可安全加载，无法编辑 Handoff。"])
                 if not self.config_service:
                     return CommandResult(["配置服务尚未就绪。"])
                 try:
-                    self.config_service.apply(
-                        ConfigPatch(
-                            scope="workspace",
-                            target="handoff",
-                            operations=[
-                                ConfigPatchOperation(
-                                    op="set", path=parts[2], value=" ".join(parts[3:])
-                                )
-                            ],
-                        )
+                    patch = ConfigPatch(
+                        scope="workspace",
+                        target="handoff",
+                        operations=[
+                            ConfigPatchOperation(op="set", path=parts[2], value=" ".join(parts[3:]))
+                        ],
                     )
-                    return CommandResult(["Handoff 字段已更新。"])
+                    return CommandResult(
+                        render_patch_preview(patch), action="config_preview", value=patch
+                    )
                 except (ValueError, RuntimeError) as exc:
                     return CommandResult([f"Handoff 更新失败：{exc}"])
             handoff = self.project_store.load_handoff(self.identity.workspace_id)
@@ -173,25 +196,31 @@ class CommandService:
             if not self.config_service:
                 return CommandResult(["配置服务尚未就绪。"])
             if len(parts) > 2 and parts[1] == "reset":
+                if parts[2] == "workspace" and (
+                    self.session.read_only or self.session.workspace_preferences_read_only
+                ):
+                    return CommandResult(["工作空间 Preferences 不可安全加载，无法重置。"])
                 return CommandResult(
                     [f"将清除 {parts[2]} 层 Preferences 覆盖。"],
                     action="reset_config",
                     value=parts[2],
                 )
             if len(parts) > 4 and parts[1] == "edit":
+                if parts[2] == "workspace" and (
+                    self.session.read_only or self.session.workspace_preferences_read_only
+                ):
+                    return CommandResult(["工作空间 Preferences 不可安全加载，无法编辑。"])
                 try:
-                    self.config_service.apply(
-                        ConfigPatch(
-                            scope=parts[2],
-                            target="preferences",
-                            operations=[
-                                ConfigPatchOperation(
-                                    op="set", path=parts[3], value=" ".join(parts[4:])
-                                )
-                            ],
-                        )
+                    patch = ConfigPatch(
+                        scope=parts[2],
+                        target="preferences",
+                        operations=[
+                            ConfigPatchOperation(op="set", path=parts[3], value=" ".join(parts[4:]))
+                        ],
                     )
-                    return CommandResult(["配置已保存。"])
+                    return CommandResult(
+                        render_patch_preview(patch), action="config_preview", value=patch
+                    )
                 except (ValueError, RuntimeError) as exc:
                     return CommandResult([f"配置保存失败：{exc}"])
             effective = merge_preferences(

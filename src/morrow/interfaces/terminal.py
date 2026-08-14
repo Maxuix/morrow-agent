@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import uuid
 
 from prompt_toolkit import PromptSession
 from prompt_toolkit.patch_stdout import patch_stdout
@@ -70,15 +69,17 @@ async def run_repl(
                     return exit_code
                 continue
             if result.action == "new" and session:
-                _reset_session(orchestrator, session, f"ses_{uuid.uuid4().hex[:10]}")
+                _reset_session(orchestrator)
                 terminal.console.print("已切换到新的独立会话。")
             if result.action in {"switch_new", "switch_continue"} and session:
                 should_switch = await _save_or_discard_before_switch(
                     terminal, prompt_session, handoff_service, project_store, workspace_id, session
                 )
+                if should_switch == "closed":
+                    return _closed_input(terminal)
                 if should_switch not in {"saved", "discarded"}:
                     continue
-                _reset_session(orchestrator, session, f"ses_{uuid.uuid4().hex[:10]}")
+                _reset_session(orchestrator)
                 if result.action == "switch_continue" and project_store and workspace_id:
                     loaded = _load_handoff(orchestrator, project_store, workspace_id, session)
                     if loaded.value:
@@ -108,19 +109,30 @@ async def run_repl(
                 except asyncio.CancelledError:
                     terminal.console.print("已取消交接更新，未写入状态。")
             if result.action == "clear_handoff" and project_store:
-                if await _confirm(terminal, prompt_session, "确认清除当前 Handoff？"):
+                confirmation = await _confirm(terminal, prompt_session, "确认清除当前 Handoff？")
+                if confirmation == "closed":
+                    return _closed_input(terminal)
+                if confirmation == "yes":
                     cleared = _command_service(orchestrator).clear_handoff()
                     if cleared.status.value == "ok":
                         terminal.console.print("Handoff 已清除。")
             if result.action == "reset_profile" and project_store:
-                if await _confirm(terminal, prompt_session, "确认重置 Profile？"):
+                confirmation = await _confirm(terminal, prompt_session, "确认重置 Profile？")
+                if confirmation == "closed":
+                    return _closed_input(terminal)
+                if confirmation == "yes":
                     reset = _command_service(orchestrator).reset_profile()
                     terminal.console.print(
                         "Profile 已重置。" if reset.status.value == "ok" else "Profile 重置失败。"
                     )
             if result.action == "reset_config" and project_store:
                 scope = str(result.value)
-                if await _confirm(terminal, prompt_session, f"确认清除 {scope} 层 Preferences？"):
+                confirmation = await _confirm(
+                    terminal, prompt_session, f"确认清除 {scope} 层 Preferences？"
+                )
+                if confirmation == "closed":
+                    return _closed_input(terminal)
+                if confirmation == "yes":
                     try:
                         reset = _command_service(orchestrator).reset_preferences(scope)
                     except (ValueError, RuntimeError) as exc:
@@ -133,7 +145,10 @@ async def run_repl(
                             else f"{scope} 层 Preferences 重置失败。"
                         )
             if result.action == "config_preview":
-                if await _confirm(terminal, prompt_session, "确认保存这项配置？"):
+                confirmation = await _confirm(terminal, prompt_session, "确认保存这项配置？")
+                if confirmation == "closed":
+                    return _closed_input(terminal)
+                if confirmation == "yes":
                     try:
                         _command_service(orchestrator).config_service.apply(result.value)
                     except (ValueError, RuntimeError) as exc:
@@ -158,12 +173,8 @@ def _command_service(orchestrator):
     return orchestrator.command_service
 
 
-def _reset_session(orchestrator, session, session_id: str) -> None:
-    service = getattr(orchestrator, "command_service", None)
-    if service and hasattr(service, "reset_session"):
-        service.reset_session(session_id)
-    else:
-        session.reset(session_id)
+def _reset_session(orchestrator) -> None:
+    orchestrator.reset_session()
 
 
 def _load_handoff(orchestrator, project_store, workspace_id, session):
@@ -194,12 +205,19 @@ async def _await_cancellable(awaitable):
         raise asyncio.CancelledError from None
 
 
-async def _confirm(terminal, prompt_session, question: str) -> bool:
+def _closed_input(terminal) -> int:
+    terminal.console.print("[yellow]输入已关闭，未执行待确认操作。[/yellow]")
+    return 2
+
+
+async def _confirm(terminal, prompt_session, question: str) -> str:
     try:
         answer = await terminal.prompt(prompt_session, question + " [y/N] ")
-    except (EOFError, KeyboardInterrupt):
-        return False
-    return answer.strip().casefold() in {"y", "yes", "是"}
+    except EOFError:
+        return "closed"
+    except KeyboardInterrupt:
+        return "no"
+    return "yes" if answer.strip().casefold() in {"y", "yes", "是"} else "no"
 
 
 async def _save_or_discard_before_switch(
@@ -207,6 +225,16 @@ async def _save_or_discard_before_switch(
 ) -> str:
     if not session.dirty:
         return "saved"
+    if session.read_only:
+        try:
+            answer = await terminal.prompt(
+                prompt_session, "工作空间状态只读：丢弃当前内存 / 取消？[d/c] "
+            )
+        except EOFError:
+            return "closed"
+        except KeyboardInterrupt:
+            return "cancelled"
+        return "discarded" if answer.strip().casefold() in {"d", "discard", "丢弃"} else "cancelled"
     if session.is_continuation and handoff_service and project_store:
         try:
             saved, _ = await _await_cancellable(
@@ -225,7 +253,12 @@ async def _save_or_discard_before_switch(
             terminal.console.print("保存失败，保持当前会话。")
             return "cancelled"
         return "saved"
-    answer = await terminal.prompt(prompt_session, "独立会话：保存 / 丢弃 / 取消？[s/d/c] ")
+    try:
+        answer = await terminal.prompt(prompt_session, "独立会话：保存 / 丢弃 / 取消？[s/d/c] ")
+    except EOFError:
+        return "closed"
+    except KeyboardInterrupt:
+        return "cancelled"
     choice = answer.strip().casefold()
     if choice in {"c", "cancel", "取消", ""}:
         return "cancelled"
@@ -263,9 +296,15 @@ async def _exit(
 ) -> int | None:
     if session and session.dirty and not session.is_continuation:
         terminal.console.print("独立会话的内容不会自动覆盖旧 Handoff。")
-        if not await _confirm(terminal, prompt_session, "确认退出并丢弃当前内存内容？"):
+        confirmation = await _confirm(terminal, prompt_session, "确认退出并丢弃当前内存内容？")
+        if confirmation == "closed":
+            return _closed_input(terminal)
+        if confirmation != "yes":
             return None
     if handoff_service and session and session.is_continuation and session.dirty:
+        if session.read_only:
+            terminal.console.print("[yellow]工作空间状态只读，未尝试保存交接。[/yellow]")
+            return 2
         try:
             result, degraded = await _await_cancellable(
                 handoff_service.generate_and_publish(

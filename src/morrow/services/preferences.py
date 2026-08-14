@@ -53,10 +53,13 @@ class ConfigIntentGate:
         stripped = text.strip()
         has_persist = any(word in stripped for word in self.persistence_words)
         has_scope = any(word in stripped for word in self.scope_words)
-        mixed = has_persist and has_scope and any(word in stripped for word in self.task_words)
-        forbidden = any(word.casefold() in stripped.casefold() for word in self.forbidden_words)
+        persistence_attempt = has_persist and has_scope
+        mixed = persistence_attempt and any(word in stripped for word in self.task_words)
+        forbidden = persistence_attempt and any(
+            word.casefold() in stripped.casefold() for word in self.forbidden_words
+        )
         return GateDecision(
-            matched=has_persist and has_scope and not mixed and not forbidden,
+            matched=persistence_attempt and not mixed and not forbidden,
             mixed_task=mixed,
             forbidden=forbidden,
         )
@@ -123,6 +126,17 @@ def validate_patch(patch: ConfigPatch) -> None:
             raise ValueError("此操作需要 value")
 
 
+def render_patch_preview(patch: ConfigPatch) -> list[str]:
+    validate_patch(patch)
+    lines = ["配置预览：", f"作用域：{patch.scope}", f"目标：{patch.target}"]
+    for operation in patch.operations:
+        line = f"- {operation.op} {operation.path}"
+        if operation.op != "unset":
+            line += f" = {operation.value}"
+        lines.append(line)
+    return lines
+
+
 class ConfigPatchService:
     def __init__(self, project_store, global_store, workspace_id: str, session=None) -> None:
         self.project_store = project_store
@@ -161,8 +175,15 @@ class ConfigPatchService:
         return data
 
     def apply(self, patch: ConfigPatch):
-        if self.session is not None and self.session.read_only:
+        if self.session is not None and self.session.read_only and patch.scope == "workspace":
             raise RuntimeError("当前工作空间状态版本较新，只允许独立只读对话")
+        if (
+            self.session is not None
+            and self.session.workspace_preferences_read_only
+            and patch.scope == "workspace"
+            and patch.target == "preferences"
+        ):
+            raise RuntimeError("工作空间 Preferences 不可安全加载，已禁止覆盖")
         validate_patch(patch)
         if patch.scope == "session":
             if self.session is None:

@@ -2,13 +2,13 @@
 
 ## Selected subplan
 
-Subplan 11 — Stage 1B acceptance and delivery (review remediation).
+Subplan 16 — Stage 1 remediation acceptance and truth reconciliation.
 
 ## Executable tasks
 
-- [x] Fix P0 workspace resolution and dirty-session save-failure loss.
-- [x] Fix Stage 1 gate P1 issues: provider probes, lock wiring, result/value boundary, reset/config safety, streaming/cancellation, and state ownership.
-- [x] Add regression coverage for Git workspaces, transitions, configuration, and terminal/orchestrator boundaries.
-- [x] Re-run offline quality and acceptance checks; update evidence and record the external Live/manual limitation.
-- [x] Mark the Stage 1 implementation plan complete for the available environment; keep unexecuted external checks explicit.
-- [x] Finish the remaining real-terminal acceptance checklist: `/continue`, Ctrl+C, `/handoff update`, Ctrl+D, and relink.
+- [x] Add and execute the missing ten-turn ordered-history/stream integration test on the final tree.
+- [x] Build the P1/P2 finding-to-regression matrix and rerun S1A-01–08 plus S1B-01–06 offline evidence.
+- [x] Execute final-tree multiprocess, complete CLI/NetworkGuard, terminal/EOF, sentinel, Stage 2 boundary, strict-marker, package/import, Ruff, and compile gates.
+- [x] Execute the credentialed Live and real-terminal/manual checklist with the supplied credential and isolated temporary projects.
+- [x] Reconcile README, roadmap, architecture, acceptance evidence, PLAN, TODO, TRACKER, and LOG with observed final-tree results; unblock Stage 2 only after final-tree Live/manual evidence passes.
+- [x] Synchronize the completed remediation tree into the primary workspace and rerun its offline validation gates.

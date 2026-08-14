@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import os
 import shutil
 import tempfile
@@ -15,6 +16,7 @@ from pydantic import BaseModel, ValidationError
 
 from morrow.core.models import (
     CURRENT_SCHEMA_VERSION,
+    WORKSPACE_DOCUMENT_SCHEMA_VERSION,
     GlobalConfig,
     Handoff,
     HandoffDocument,
@@ -24,6 +26,7 @@ from morrow.core.models import (
     ProjectPreferencesDocument,
     StateLoadResult,
     StateLoadStatus,
+    StatePresence,
     StateWriteResult,
     StateWriteStatus,
     WorkspaceIndex,
@@ -31,10 +34,24 @@ from morrow.core.models import (
 )
 
 T = TypeVar("T", bound=BaseModel)
+R = TypeVar("R")
 
 
 class StateUnavailableError(RuntimeError):
     """The Morrow data root cannot be created or written."""
+
+
+def _fsync_directory(path: Path) -> None:
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+    descriptor = os.open(path, flags)
+    try:
+        try:
+            os.fsync(descriptor)
+        except OSError as exc:
+            if exc.errno not in {errno.EINVAL, errno.ENOTSUP, errno.EBADF}:
+                raise
+    finally:
+        os.close(descriptor)
 
 
 class YamlDocument:
@@ -48,12 +65,18 @@ class YamlDocument:
         default_factory: Callable[[], T] | None = None,
         lock_path: Path | None = None,
         failure_injector: Callable[[str], None] | None = None,
+        supported_schema_version: int = CURRENT_SCHEMA_VERSION,
+        load_transform: Callable[[dict], dict] | None = None,
+        workspace_envelope: bool = False,
     ) -> None:
         self.path = path
         self.model_type = model_type
         self.default_factory = default_factory
         self.lock_path = lock_path or path.with_suffix(path.suffix + ".lock")
         self.failure_injector = failure_injector
+        self.supported_schema_version = supported_schema_version
+        self.load_transform = load_transform
+        self.workspace_envelope = workspace_envelope
 
     def _fail(self, point: str) -> None:
         if self.failure_injector:
@@ -84,8 +107,11 @@ class YamlDocument:
                     os.fsync(backup_handle.fileno())
                 os.replace(backup_temp, backup)
                 backup_temp = None
+                _fsync_directory(self.path.parent)
             self._fail("replace")
             os.replace(temp_path, self.path)
+            self._fail("directory_fsync")
+            _fsync_directory(self.path.parent)
         finally:
             temp_path.unlink(missing_ok=True)
             if backup_temp:
@@ -97,19 +123,30 @@ class YamlDocument:
                 status=StateLoadStatus.OK,
                 value=self.default_factory() if self.default_factory else None,
                 revision=0,
+                presence=StatePresence.MISSING if self.workspace_envelope else None,
             )
         try:
             raw = yaml.safe_load(self.path.read_text(encoding="utf-8"))
             if not isinstance(raw, dict):
                 raise ValueError("state document must be a mapping")
             schema_version = int(raw.get("schema_version", 0))
-            if schema_version > CURRENT_SCHEMA_VERSION:
+            if schema_version > self.supported_schema_version:
                 return StateLoadResult(
                     status=StateLoadStatus.UNSUPPORTED_SCHEMA,
                     revision=raw.get("revision"),
                     error=f"schema_version {schema_version} is newer than supported version",
                 )
+            if self.load_transform:
+                raw = self.load_transform(raw)
             value = self.model_type.model_validate(raw)
+            if self.workspace_envelope:
+                presence = StatePresence(value.state)
+                return StateLoadResult(
+                    status=StateLoadStatus.OK,
+                    presence=presence,
+                    value=value if presence == StatePresence.PRESENT else None,
+                    revision=getattr(value, "revision", 0),
+                )
             return StateLoadResult(
                 status=StateLoadStatus.OK,
                 value=value,
@@ -153,7 +190,7 @@ class YamlDocument:
                 )
                 value = self.model_type.model_validate(value)
                 data = yaml.safe_dump(
-                    value.model_dump(mode="json"),
+                    value.model_dump(mode="json", exclude_none=self.workspace_envelope),
                     allow_unicode=True,
                     sort_keys=False,
                 ).encode("utf-8")
@@ -161,6 +198,31 @@ class YamlDocument:
                 return StateWriteResult(
                     status=StateWriteStatus.OK, value=value, revision=next_revision
                 )
+        except Timeout:
+            return StateWriteResult(status=StateWriteStatus.FAILED, error="state is busy")
+        except (OSError, ValidationError, ValueError) as exc:
+            return StateWriteResult(status=StateWriteStatus.FAILED, error=type(exc).__name__)
+
+    def clear(self, value: T, *, expected_revision: int | None = None) -> StateWriteResult:
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            self.lock_path.parent.mkdir(parents=True, exist_ok=True)
+            with FileLock(str(self.lock_path), timeout=5):
+                current = self.load()
+                if current.status != StateLoadStatus.OK:
+                    return StateWriteResult(
+                        status=StateWriteStatus.FAILED, error=current.status.value
+                    )
+                revision = current.revision or 0
+                if expected_revision is not None and revision != expected_revision:
+                    return StateWriteResult(
+                        status=StateWriteStatus.REVISION_CONFLICT,
+                        revision=revision,
+                        error="revision changed while the document was being cleared",
+                    )
+                if current.presence in {StatePresence.MISSING, StatePresence.CLEARED}:
+                    return StateWriteResult(status=StateWriteStatus.OK, revision=revision)
+                return self._write_locked(value, revision)
         except Timeout:
             return StateWriteResult(status=StateWriteStatus.FAILED, error="state is busy")
         except (OSError, ValidationError, ValueError) as exc:
@@ -246,6 +308,36 @@ class WorkspaceIndexYamlStore:
         except Timeout:
             return StateWriteResult(status=StateWriteStatus.FAILED, error="state is busy")
 
+    def transact(
+        self,
+        mutator: Callable[[WorkspaceIndex], tuple[WorkspaceIndex | None, R]],
+    ) -> tuple[StateWriteResult, R | None]:
+        """Decide an index mutation and its domain result under one lock."""
+        try:
+            with FileLock(str(self.document.lock_path), timeout=5):
+                current = self.document.load()
+                if current.status != StateLoadStatus.OK:
+                    return (
+                        StateWriteResult(
+                            status=StateWriteStatus.FAILED, error=current.status.value
+                        ),
+                        None,
+                    )
+                updated, outcome = mutator(current.value)
+                revision = current.revision or 0
+                if updated is None:
+                    return (
+                        StateWriteResult(
+                            status=StateWriteStatus.OK,
+                            value=current.value,
+                            revision=revision,
+                        ),
+                        outcome,
+                    )
+                return self.document._write_locked(updated, revision), outcome
+        except Timeout:
+            return StateWriteResult(status=StateWriteStatus.FAILED, error="state is busy"), None
+
 
 def _write_locked(self: YamlDocument, value: BaseModel, current_revision: int) -> StateWriteResult:
     """Shared implementation called while the caller holds the document lock."""
@@ -255,7 +347,9 @@ def _write_locked(self: YamlDocument, value: BaseModel, current_revision: int) -
             value.model_copy(update={"revision": current_revision + 1, "updated_at": utc_now()})
         )
         data = yaml.safe_dump(
-            value.model_dump(mode="json"), allow_unicode=True, sort_keys=False
+            value.model_dump(mode="json", exclude_none=self.workspace_envelope),
+            allow_unicode=True,
+            sort_keys=False,
         ).encode("utf-8")
         self._publish(data)
         return StateWriteResult(
@@ -266,6 +360,12 @@ def _write_locked(self: YamlDocument, value: BaseModel, current_revision: int) -
 
 
 YamlDocument._write_locked = _write_locked  # type: ignore[attr-defined]
+
+
+def _load_workspace_envelope(raw: dict) -> dict:
+    if int(raw.get("schema_version", 0)) == 1 and "state" not in raw:
+        return {**raw, "schema_version": WORKSPACE_DOCUMENT_SCHEMA_VERSION, "state": "present"}
+    return raw
 
 
 class ProjectStateYamlStore:
@@ -285,7 +385,6 @@ class ProjectStateYamlStore:
         workspace_id: str,
         name: str,
         model_type: type[T],
-        default_factory: Callable[[], T] | None = None,
     ) -> YamlDocument:
         if not workspace_id or "/" in workspace_id or "\\" in workspace_id:
             raise ValueError("invalid workspace_id")
@@ -293,15 +392,15 @@ class ProjectStateYamlStore:
         return YamlDocument(
             directory / name,
             model_type,
-            default_factory=default_factory,
             lock_path=self.locks / f"{workspace_id}-{name}.lock",
             failure_injector=self.failure_injector,
+            supported_schema_version=WORKSPACE_DOCUMENT_SCHEMA_VERSION,
+            load_transform=_load_workspace_envelope,
+            workspace_envelope=True,
         )
 
     def load_preferences(self, workspace_id: str) -> StateLoadResult:
-        return self._document(
-            workspace_id, "preferences.yaml", ProjectPreferencesDocument, ProjectPreferencesDocument
-        ).load()
+        return self._document(workspace_id, "preferences.yaml", ProjectPreferencesDocument).load()
 
     def load_profile(self, workspace_id: str) -> StateLoadResult:
         return self._document(workspace_id, "profile.yaml", ProfileDocument).load()
@@ -309,13 +408,22 @@ class ProjectStateYamlStore:
     def load_handoff(self, workspace_id: str) -> StateLoadResult:
         return self._document(workspace_id, "handoff.yaml", HandoffDocument).load()
 
+    def load_preferences_backup(self, workspace_id: str) -> StateLoadResult:
+        return self._document(
+            workspace_id, "preferences.yaml", ProjectPreferencesDocument
+        ).load_backup()
+
+    def load_profile_backup(self, workspace_id: str) -> StateLoadResult:
+        return self._document(workspace_id, "profile.yaml", ProfileDocument).load_backup()
+
+    def load_handoff_backup(self, workspace_id: str) -> StateLoadResult:
+        return self._document(workspace_id, "handoff.yaml", HandoffDocument).load_backup()
+
     def write_preferences(
         self, workspace_id: str, value: Preferences, expected_revision: int | None = None
     ) -> StateWriteResult:
         existing = self.load_preferences(workspace_id)
-        document = self._document(
-            workspace_id, "preferences.yaml", ProjectPreferencesDocument, ProjectPreferencesDocument
-        )
+        document = self._document(workspace_id, "preferences.yaml", ProjectPreferencesDocument)
         return document.write(
             ProjectPreferencesDocument(preferences=value),
             expected_revision=expected_revision
@@ -370,21 +478,10 @@ class ProjectStateYamlStore:
         expected_revision: int | None,
     ) -> StateWriteResult:
         document = self._document(workspace_id, name, model_type)
-        try:
-            with FileLock(str(document.lock_path), timeout=5):
-                if not document.path.exists():
-                    return StateWriteResult(status=StateWriteStatus.OK, revision=0)
-                existing = document.load()
-                if existing.status != StateLoadStatus.OK:
-                    return StateWriteResult(
-                        status=StateWriteStatus.FAILED, error=existing.status.value
-                    )
-                if expected_revision is not None and expected_revision != existing.revision:
-                    return StateWriteResult(
-                        status=StateWriteStatus.REVISION_CONFLICT, revision=existing.revision
-                    )
-                backup = document.path.with_suffix(document.path.suffix + ".bak")
-                os.replace(document.path, backup)
-                return StateWriteResult(status=StateWriteStatus.OK, revision=existing.revision + 1)
-        except (OSError, Timeout) as exc:
-            return StateWriteResult(status=StateWriteStatus.FAILED, error=type(exc).__name__)
+        cleared = model_type.model_validate(
+            {
+                "schema_version": WORKSPACE_DOCUMENT_SCHEMA_VERSION,
+                "state": "cleared",
+            }
+        )
+        return document.clear(cleared, expected_revision=expected_revision)

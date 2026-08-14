@@ -19,6 +19,7 @@ class Session:
     messages: list[Message] = field(default_factory=list)
     dirty: bool = False
     read_only: bool = False
+    workspace_preferences_read_only: bool = False
 
     @property
     def is_continuation(self) -> bool:

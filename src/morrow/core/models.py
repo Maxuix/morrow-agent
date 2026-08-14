@@ -15,6 +15,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 CURRENT_SCHEMA_VERSION = 1
+WORKSPACE_DOCUMENT_SCHEMA_VERSION = 2
 
 
 def utc_now() -> datetime:
@@ -56,6 +57,12 @@ class ModelErrorCode(StrEnum):
     TIMEOUT = "timeout"
     INVALID_RESPONSE = "invalid_response"
     INTERNAL = "internal"
+
+
+class ModelProviderError(RuntimeError):
+    def __init__(self, code: ModelErrorCode, message: str) -> None:
+        super().__init__(message)
+        self.code = code
 
 
 class FinishReason(StrEnum):
@@ -117,6 +124,14 @@ class Handoff(MorrowModel):
     open_questions: list[str] = Field(default_factory=list)
     next_actions: list[str] = Field(default_factory=list)
     recovery_note: str | None = None
+
+    @field_validator("current_goal")
+    @classmethod
+    def current_goal_required(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("handoff current_goal must not be empty")
+        return value
 
     @model_validator(mode="after")
     def unique_decisions(self) -> Handoff:
@@ -183,22 +198,54 @@ class WorkspaceIndex(MorrowModel):
     workspaces: dict[str, WorkspaceIndexEntry] = Field(default_factory=dict)
 
 
+class StatePresence(StrEnum):
+    MISSING = "missing"
+    CLEARED = "cleared"
+    PRESENT = "present"
+
+
 class WorkspaceDocument(MorrowModel):
-    schema_version: int = CURRENT_SCHEMA_VERSION
-    revision: int = 0
+    schema_version: Literal[WORKSPACE_DOCUMENT_SCHEMA_VERSION] = WORKSPACE_DOCUMENT_SCHEMA_VERSION
+    revision: int = Field(default=0, ge=0)
     updated_at: datetime = Field(default_factory=utc_now)
+    state: Literal["present", "cleared"] = "present"
+
+    @field_validator("updated_at")
+    @classmethod
+    def updated_at_must_be_aware(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("workspace document updated_at must be timezone-aware")
+        return value
 
 
 class ProjectPreferencesDocument(WorkspaceDocument):
-    preferences: Preferences = Field(default_factory=Preferences)
+    preferences: Preferences | None = None
+
+    @model_validator(mode="after")
+    def payload_matches_state(self) -> ProjectPreferencesDocument:
+        if (self.state == "present") != (self.preferences is not None):
+            raise ValueError("workspace Preferences payload must match envelope state")
+        return self
 
 
 class ProfileDocument(WorkspaceDocument):
-    profile: Profile
+    profile: Profile | None = None
+
+    @model_validator(mode="after")
+    def payload_matches_state(self) -> ProfileDocument:
+        if (self.state == "present") != (self.profile is not None):
+            raise ValueError("Profile payload must match envelope state")
+        return self
 
 
 class HandoffDocument(WorkspaceDocument):
-    handoff: Handoff
+    handoff: Handoff | None = None
+
+    @model_validator(mode="after")
+    def payload_matches_state(self) -> HandoffDocument:
+        if (self.state == "present") != (self.handoff is not None):
+            raise ValueError("Handoff payload must match envelope state")
+        return self
 
 
 class WorkspaceIdentity(MorrowModel):
@@ -237,8 +284,20 @@ class ConfigPatch(MorrowModel):
 
 class ConfigExtractionResult(MorrowModel):
     result: Literal["no_change", "clarification_required", "config_patch"]
-    question: str | None = None
+    question: str | None = Field(default=None, max_length=300)
     patch: ConfigPatch | None = None
+
+    @model_validator(mode="after")
+    def fields_match_result(self) -> ConfigExtractionResult:
+        if self.result == "config_patch":
+            if self.patch is None or self.question is not None:
+                raise ValueError("config_patch requires only a valid patch")
+        elif self.result == "clarification_required":
+            if self.patch is not None or self.question is None or not self.question.strip():
+                raise ValueError("clarification_required requires only one bounded question")
+        elif self.patch is not None or self.question is not None:
+            raise ValueError("no_change carries neither question nor patch")
+        return self
 
 
 class AgentEvent(MorrowModel):
@@ -268,6 +327,7 @@ class StateWriteStatus(StrEnum):
 
 class StateLoadResult(MorrowModel):
     status: StateLoadStatus
+    presence: StatePresence | None = None
     value: Any | None = None
     revision: int | None = None
     error: str | None = None

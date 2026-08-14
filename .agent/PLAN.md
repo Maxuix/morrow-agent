@@ -1,6 +1,6 @@
-# Stage 1 Implementation Plan
+# Stage 1 Implementation and Review Remediation Plan
 
-> Status: complete; offline, Live, and manual terminal acceptance passed.
+> Status: completed after remediation and final-tree offline, Live, and manual acceptance; Stage 2 is unblocked but has not started.
 
 ## Overall goal
 
@@ -39,6 +39,37 @@ The plan is ordered by dependency and validation value. It intentionally contain
 | 09 | [Session and state commands](subplans/09-session-and-state-commands.md) | 1B | completed | 08 |
 | 10 | [Provider, concurrency, and recovery](subplans/10-provider-concurrency-and-recovery.md) | 1B | completed | 09 |
 | 11 | [Stage 1B acceptance and delivery](subplans/11-stage-1b-acceptance-and-delivery.md) | 1B | completed | 10 |
+| 12 | [Workspace identity and durable state remediation](subplans/12-workspace-identity-and-durable-state-remediation.md) | 1B remediation | completed | 11, independent review |
+| 13 | [Runtime, event, terminal, and read-only remediation](subplans/13-runtime-terminal-and-read-only-remediation.md) | 1B remediation | completed | 12 |
+| 14 | [Configuration, Provider, and structured-completion remediation](subplans/14-configuration-provider-and-structured-remediation.md) | 1B remediation | completed | 13 |
+| 15 | [Context and domain-invariant remediation](subplans/15-context-and-domain-invariant-remediation.md) | 1B remediation | completed | 14 |
+| 16 | [Stage 1 remediation acceptance and truth reconciliation](subplans/16-stage-1-remediation-acceptance.md) | 1B remediation | completed | 12–15 |
+
+## Review remediation traceability
+
+| Confirmed finding | Owning subplan |
+|---|---|
+| Repeated/stale candidate confirmation publishes duplicate workspace IDs | 12 |
+| Relink permits two IDs at one effective Git root | 12 |
+| Clear resets the persisted revision and admits stale revision 0 writes | 12 |
+| Clear bypasses the validated temporary-file/`fsync` publication path | 12 |
+| Duplicate event IDs, repeated `ses_1`, and broken injected workspace IDs | 13 |
+| Provider exceptions can omit terminal lifecycle events | 13 |
+| Non-normal/missing Provider finish is accepted as `stop` and enters history | 13 |
+| Dirty independent EOF can busy-loop; closed switch prompts can escape | 13 |
+| Degraded workspace sessions can still `/continue` | 13 |
+| Ordinary Provider/security discussion is rejected by the config gate | 14 |
+| Inconsistent `ConfigExtractionResult` shapes silently fall through to chat | 14 |
+| Config previews omit the mutation and deterministic edits write before confirmation | 14 |
+| Environment credentials are ignored by active Provider construction | 14 |
+| Base-URL-only Provider configure forces secret re-entry | 14 |
+| Structured repair loses its task/schema and can consume twice the total timeout | 14 |
+| Provider tests lose typed error codes and failed CLI tests exit zero | 14 |
+| Provider show reports references rather than resolvable credentials | 14 |
+| Context pruning can admit an assistant without its user | 15 |
+| Handoff accepts an empty/whitespace `current_goal` and persistence invariants are weak | 15 |
+| Ten-turn, multiprocess, Live, terminal, CLI, and secret-surface evidence is overstated | 16 |
+| README, ROADMAP, acceptance, PLAN, and TRACKER status/behavior drift | 16 |
 
 ## Cross-cutting contracts
 
@@ -62,13 +93,13 @@ These contracts apply to every subplan and cannot be postponed to final hardenin
 
 ### Stage 1A gate
 
-Subplan 07 must demonstrate all `S1A-01` through `S1A-08` requirements from the Stage 1 roadmap, including a real-provider smoke test and real-terminal cancellation/exit checks. Failures reopen the owning subplan rather than being deferred to Stage 1B.
+Subplan 07 historically demonstrated the initial `S1A-01` through `S1A-08` gate. After remediation, Subplan 16 must rerun every Stage 1A requirement against the final post-remediation tree, including the real-provider and real-terminal checks. A failure reopens the owning remediation subplan rather than relying on the earlier evidence.
 
 After the gate, record real-project feedback about handoff usefulness, latency, fallback frequency, and terminology. Feedback may adjust presentation and defaults, but changing a locked contract requires updating the roadmap and execution plan first.
 
 ### Stage 1B gate
 
-Subplan 11 must demonstrate all `S1B-01` through `S1B-06` requirements, all offline quality gates, the manual/Live checklist, documentation completeness, and absence of Stage 2 capabilities.
+Subplan 11 is historical evidence and is not authoritative after the confirmed review defects. Subplan 16 must demonstrate all `S1B-01` through `S1B-06` requirements, all offline quality gates, the complete manual/Live checklist, documentation completeness, and absence of Stage 2 capabilities on the final post-remediation tree.
 
 ## Explicit non-goals
 
@@ -88,4 +119,4 @@ Subplan 11 must demonstrate all `S1B-01` through `S1B-06` requirements, all offl
 
 ## Currently selected subplan
 
-Review remediation is complete. Offline gates, the Live Provider check, and the corrected real-terminal checklist all passed; Stage 2 implementation is unblocked.
+Subplan 16 rebuilt and passed the final-tree offline evidence, the explicit OpenCode Go Live test, the real-stream boundary inspection, and the complete isolated real-terminal/manual checklist. Stage 1 remediation is complete and Stage 2 is unblocked, but Stage 2 work has not started; its scope and plan remain a separate next step.

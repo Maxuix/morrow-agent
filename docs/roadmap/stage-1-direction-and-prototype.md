@@ -1,6 +1,6 @@
 # 阶段 1：方向确定与可运行原型
 
-> 状态：路线已复核，边界已确认，待实现验证  
+> 状态：2026-08-14 修复与最终树离线、Live、人工验收全部通过；阶段 1 完成
 > 阶段结果：一个可在终端连续对话、识别工作空间并可靠留下项目交接的原型  
 > 上级文档：[开发路线总览](../ROADMAP.md)  
 > 下一阶段：[阶段 2：Agent 核心能力](stage-2-agent-core.md)
@@ -419,9 +419,10 @@ morrow [--dir PATH]
 - 完整 Pydantic 校验通过后，才用同目录临时文件、`fsync` 和原子替换发布。
 - 每个可变 YAML 保留一份最近有效 `.bak`，用于损坏恢复，不作为用户级 `/undo`。
 - 现有文件不可读、校验失败或 revision 冲突时拒绝覆盖。
-- 未知且高于当前实现的 `schema_version` 永不自动降级或覆盖：全局配置/index 不兼容时阻止正常启动；单个 Profile/Handoff 不兼容时允许明确的独立只读降级对话，但禁写该对象并显示升级提示。
+- 未知且高于当前实现的 `schema_version` 永不自动降级或覆盖：全局配置/index 不兼容时阻止正常启动；任一 Profile/Handoff 不兼容时进入明确的工作空间状态只读降级——不加载 Handoff、不允许 `/continue` 或任何工作空间持久化写入，但仍允许普通独立对话、session Preferences、全局 Preferences 与 Provider 管理。有效的对应文档只可本地查看；缺失或合法 cleared 文档不触发降级。仅 workspace Preferences 损坏/不兼容时，将该层隔离为空且禁止覆盖或修改它，但不阻止有效 Profile/Handoff 的加载与 `/continue`。
+- Workspace Preferences、Profile 与 Handoff 使用独立的版本 2 文档信封：顶层包含 `schema_version: 2`、递增 `revision`、带时区 `updated_at` 与 `state: present|cleared`。`present` 携带原有类型化 payload；`cleared` 不携带领域值。读取结果保持两轴：`StateLoadStatus` 仅有 ok/corrupt/unsupported schema，ok 状态再以 presence 区分 missing/cleared/present，合法 missing/cleared 不触发只读降级。版本 1 文档按 `present` 兼容读取且只在下一次成功写入时升级。缺失文件表示从未创建、revision 0；cleared 文件加载为合法空值并保留落盘 revision，后续重建必须基于该 revision，因此旧 revision 0 不能覆盖清除结果。
 - `~/.morrow` 无法创建或无写权限时直接给出可执行错误，不回退写入项目目录或其他隐式位置。
-- 环境变量凭据只用于显式无交互运行与测试；错误和日志中统一脱敏。
+- 环境变量凭据是启动、add/configure/test/show 与 active Provider 构建共享解析器的第一优先级来源，随后才查询 CredentialStore；它永不写入 YAML 或可见输出，错误和日志中统一脱敏。环境凭据存在时拒绝 `provider configure <id> --replace-credential`，并要求先取消该环境变量，避免新存储值被优先级规则静默遮蔽。
 
 ## 七、Preferences、Profile 与 Handoff
 
@@ -498,6 +499,8 @@ reason: 用户明确要求
 
 所有成功修改在下一轮 ContextBuilder 中立即生效。阶段 1 不做通用 `/undo`；重置与清除必须预览并确认，崩溃恢复使用 `.bak`。
 
+清除 Profile、Handoff 或 workspace Preferences 时不删除主文档，而是通过相同的校验、同目录临时文件、文件与目录 `fsync`、原子替换和备份流程发布 `state: cleared`。`/handoff` 与 `/status` 将其显示为“无可用 Handoff”但保留 revision；`/continue` 拒绝加载；清除后的 Profile 可通过显式 onboarding/edit 以该 revision 重建；清除后的 workspace Preferences 等价于空层但下一次补丁仍使用该 revision。
+
 ## 八、轻量会话与可靠交接
 
 阶段 1 不建设持久化会话库。会话内只保留：
@@ -542,8 +545,8 @@ dirty: bool
 
 确定性兜底规则：
 
-- 接力会话：复制最后有效 Handoff，保留已有决定与开放事项，增加 `recovery_note`，记录“摘要生成失败”以及经过长度限制的最近一次完整用户/助手回合。
-- 尚无 Handoff、但用户明确要求保存独立会话：以最近用户请求作为 `current_goal`，并写入同样受限的 `recovery_note`。
+- 接力会话：复制最后有效 present Handoff，保留原 `current_goal`、已有决定与开放事项，只增加 `recovery_note`，记录“摘要生成失败”以及经过长度限制的最近一次完整用户/助手回合；仅当复制结果的 `current_goal` 为空白、无法作为 present payload 发布时，才按下一条规则补齐。
+- 用户明确要求保存独立会话（本会话未加载任何 Handoff）时：以脱敏后的最近用户请求作为 `current_goal`；若其为空则使用固定安全目标 `继续推进当前工作`，并写入同样受限的 `recovery_note`。即使磁盘存在一份仅被发现/展示而未显式加载的 present Handoff，也不得复制它；磁盘缺失或合法 cleared 时使用同一规则。cleared 写入本身仅发布无领域 payload 的 tombstone，绝不为清除动作构造占位 Handoff。
 - `recovery_note` 不是完整历史，单条消息分别限制长度并经过与日志相同的敏感信息过滤；下一次成功的模型交接应吸收并清除它。
 - 只有磁盘、权限、锁、revision 或确定性 Schema 本身失败时，才保留旧 Handoff 并把保存视为失败。
 - `/new`、`/continue` 保存最终失败时保留原 `session_id`、消息、偏好和 Handoff 来源；不得半切换。

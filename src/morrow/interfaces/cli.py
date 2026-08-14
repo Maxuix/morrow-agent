@@ -76,7 +76,9 @@ def _run_workspace(application, identity) -> int:
     profile_result = inspection.profile
     read_only_workspace = inspection.read_only
     if read_only_workspace:
-        typer.echo("工作空间状态来自更新版本；本次仅进入独立只读对话。")
+        typer.echo("Profile 或 Handoff 无法安全加载；本次仅进入独立只读对话。")
+    elif inspection.preferences_read_only:
+        typer.echo("工作空间 Preferences 无法安全加载；本次将该层隔离为空且禁止覆盖。")
     if not read_only_workspace and not profile_result.value:
         summary = typer.prompt("项目要达成什么？（可跳过）", default="", show_default=False)
         current_goal = typer.prompt(
@@ -99,7 +101,10 @@ def _run_workspace(application, identity) -> int:
         typer.echo(
             f"发现可用交接 revision {available.revision}：{available.value.handoff.current_goal}"
         )
-        typer.echo("输入 /continue 才会加载它；直接输入消息将开始独立会话。")
+        if read_only_workspace:
+            typer.echo("该交接仅供查看；当前只读会话无法 /continue。")
+        else:
+            typer.echo("输入 /continue 才会加载它；直接输入消息将开始独立会话。")
     return asyncio.run(
         run_repl(
             orchestrator,
@@ -125,10 +130,11 @@ def provider_list(
 def provider_show(
     provider_id: str, state_root: Path | None = typer.Option(None, "--state-root", hidden=True)
 ) -> None:
-    provider = build_application(state_root=state_root).provider_service.provider(provider_id)
+    service = build_application(state_root=state_root).provider_service
+    provider = service.provider(provider_id)
     typer.echo(f"adapter: {provider.adapter}")
     typer.echo(f"base_url: {provider.base_url}")
-    typer.echo(f"credential: {'已配置' if provider.credential_ref else '未配置'}")
+    typer.echo(f"credential: {'可用' if service.credential_available(provider_id) else '不可用'}")
     typer.echo("models: " + ", ".join(provider.models))
     if provider.last_test:
         typer.echo(
@@ -160,19 +166,30 @@ def provider_test(
     except Exception as exc:
         typer.echo(f"连接失败：{type(exc).__name__}", err=True)
         raise typer.Exit(code=2) from exc
-    typer.echo("连接成功" if result.ok else f"连接失败：{result.message or '未知错误'}")
+    if not result.ok:
+        code = result.error_code.value if result.error_code else "internal"
+        typer.echo(f"连接失败（{code}）：{result.message or '未知错误'}", err=True)
+        raise typer.Exit(code=2)
+    typer.echo("连接成功")
 
 
 @provider_app.command("configure")
 def provider_configure(
     provider_id: str,
     base_url: str | None = typer.Option(None, "--base-url"),
+    replace_credential: bool = typer.Option(False, "--replace-credential"),
     state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
 ) -> None:
     application = build_application(state_root=state_root)
     try:
+        secret = None
+        if replace_credential or not application.provider_service.credential_available(provider_id):
+            secret = _secret(provider_id)
         application.provider_service.configure(
-            provider_id, secret=_secret(provider_id), base_url=base_url
+            provider_id,
+            secret=secret,
+            base_url=base_url,
+            replace_credential=replace_credential,
         )
     except Exception as exc:
         typer.echo(f"Provider 更新失败：{type(exc).__name__}", err=True)

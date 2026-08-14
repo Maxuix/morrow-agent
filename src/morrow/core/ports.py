@@ -64,6 +64,11 @@ class WorkspaceIndexStore(Protocol):
         expected_revision: int | None = None,
     ) -> StateWriteResult: ...
 
+    def transact(
+        self,
+        mutator: Callable[[WorkspaceIndex], tuple[WorkspaceIndex | None, Any]],
+    ) -> tuple[StateWriteResult, Any | None]: ...
+
 
 class ProjectStateStore(Protocol):
     def load_preferences(self, workspace_id: str) -> StateLoadResult: ...
@@ -71,6 +76,12 @@ class ProjectStateStore(Protocol):
     def load_profile(self, workspace_id: str) -> StateLoadResult: ...
 
     def load_handoff(self, workspace_id: str) -> StateLoadResult: ...
+
+    def load_preferences_backup(self, workspace_id: str) -> StateLoadResult: ...
+
+    def load_profile_backup(self, workspace_id: str) -> StateLoadResult: ...
+
+    def load_handoff_backup(self, workspace_id: str) -> StateLoadResult: ...
 
     def write_preferences(
         self, workspace_id: str, value: Any, expected_revision: int | None = None
@@ -85,6 +96,14 @@ class ProjectStateStore(Protocol):
     ) -> StateWriteResult: ...
 
     def clear_handoff(
+        self, workspace_id: str, expected_revision: int | None = None
+    ) -> StateWriteResult: ...
+
+    def clear_profile(
+        self, workspace_id: str, expected_revision: int | None = None
+    ) -> StateWriteResult: ...
+
+    def clear_preferences(
         self, workspace_id: str, expected_revision: int | None = None
     ) -> StateWriteResult: ...
 

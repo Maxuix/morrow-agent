@@ -84,6 +84,10 @@ Provider Adapter、状态存储、凭据存储和终端执行等差异都位于�
 
 状态写入必须带 schema 版本和 revision；写入顺序为“读取并校验 → 生成新内容 → 临时文件落盘 → 原子替换 → 保留一份可恢复备份”。任何一步失败都不能把旧的有效状态变成半份文件。
 
+工作空间 Preferences、Profile 与 Handoff 使用版本 2 文档信封：`state: present` 承载类型化领域值，`state: cleared` 是不承载领域值但保留递增 revision 的合法 tombstone。读取结果保持两轴：`StateLoadStatus` 仅有 ok/corrupt/unsupported schema，ok 状态再以独立 presence 区分 missing/cleared/present；因此合法 missing/cleared 不会被误判为只读降级。版本 1 工作空间文档兼容读取为 present，并只在成功变更时升级。清除和普通写入共用同一锁、校验、临时文件、文件/目录 `fsync`、原子替换与备份路径。
+
+Profile 或 Handoff 任一损坏/未来版本会触发保守的工作空间状态只读降级：本次会话不加载 Handoff，也不写 workspace Preferences、Profile 或 Handoff；普通独立对话、session Preferences、全局 Preferences 与 Provider 管理仍可使用。仅 workspace Preferences 损坏/未来版本时，该层视为空且禁止覆盖或修改，但有效 Profile/Handoff 仍可加载并用于 `/continue`。合法缺失或 cleared 状态不属于损坏，不触发降级。
+
 `config.yaml` 是一个聚合文档，而不是 Provider 与 Preferences 各自拥有的两份逻辑文件。它使用一个 Schema、一个 revision 和一把事务锁；Provider 管理服务与配置服务都只能通过 `GlobalConfigStore` 在锁内执行“读取整单 → 修改所属字段 → 校验整单 → 原子发布”，并必须原样保留对方拥有的字段。`workspace-index.yaml` 由独立的 `WorkspaceIndexStore` 管理；两者都不能并入要求显式 `workspace_id` 的 `ProjectStateStore`。
 
 ## 事件边界

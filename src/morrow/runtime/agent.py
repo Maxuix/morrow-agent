@@ -14,6 +14,7 @@ from morrow.core.models import (
     sanitize_text,
 )
 from morrow.core.ports import Clock, IdSource, ModelProvider
+from morrow.runtime.ids import RandomIdSource
 from morrow.runtime.session import Session
 
 
@@ -31,19 +32,18 @@ class AgentRuntime:
         self.provider = provider
         self.model = model
         self.context_builder = context_builder
-        self.id_source = id_source
+        self.id_source = id_source or RandomIdSource()
         self.clock = clock
         self.max_retries = max_retries
 
     def _id(self, prefix: str) -> str:
-        return self.id_source.new_id(prefix) if self.id_source else f"{prefix}_{id(object())}"
+        return self.id_source.new_id(prefix)
 
     async def run_turn(self, session: Session, user_input: str) -> AsyncIterator[AgentEvent]:
         session.accept_user(user_input)
         turn_id = self._id("turn")
         sequence = 0
         visible = ""
-        started = False
 
         def event(event_type: str, payload: dict) -> AgentEvent:
             nonlocal sequence
@@ -58,7 +58,6 @@ class AgentRuntime:
                 timestamp=self.clock.now() if self.clock else None,
             )
 
-        started = True
         yield event("turn.started", {})
         attempt = 0
         try:
@@ -76,6 +75,7 @@ class AgentRuntime:
                     yield event("turn.completed", completion_payload(FinishReason.ERROR, visible))
                     return
                 try:
+                    retry = False
                     async for model_event in self.provider.stream(self.model, context.messages):
                         if model_event.kind == "text_delta" and model_event.text:
                             visible += model_event.text
@@ -93,6 +93,7 @@ class AgentRuntime:
                             ):
                                 attempt += 1
                                 yield event("status.changed", {"status": "retrying"})
+                                retry = True
                                 break
                             message = sanitize_text(model_event.error_message or "模型调用失败")
                             yield event(
@@ -109,6 +110,19 @@ class AgentRuntime:
                             )
                             return
                         elif model_event.kind == "completed":
+                            if model_event.finish_reason != FinishReason.STOP:
+                                yield event(
+                                    "error",
+                                    {
+                                        "code": ModelErrorCode.INVALID_RESPONSE.value,
+                                        "message": "模型响应未正常结束",
+                                    },
+                                )
+                                yield event(
+                                    "turn.completed",
+                                    completion_payload(FinishReason.ERROR, visible),
+                                )
+                                return
                             if not visible.strip():
                                 yield event(
                                     "error",
@@ -128,32 +142,32 @@ class AgentRuntime:
                                 "turn.completed", completion_payload(FinishReason.STOP, visible)
                             )
                             return
-                    else:
-                        if not visible:
-                            yield event(
-                                "error",
-                                {
-                                    "code": ModelErrorCode.INVALID_RESPONSE.value,
-                                    "message": "模型没有返回可见文本",
-                                },
-                            )
-                            yield event(
-                                "turn.completed", completion_payload(FinishReason.ERROR, visible)
-                            )
-                        else:
-                            session.accept_assistant(visible)
-                            yield event(
-                                "turn.completed", completion_payload(FinishReason.STOP, visible)
-                            )
-                        return
-                    if attempt <= self.max_retries:
+                    if retry:
                         continue
+                    yield event(
+                        "error",
+                        {
+                            "code": ModelErrorCode.INVALID_RESPONSE.value,
+                            "message": "模型响应缺少正常结束信号",
+                        },
+                    )
+                    yield event("turn.completed", completion_payload(FinishReason.ERROR, visible))
+                    return
                 except asyncio.CancelledError:
                     yield event(
                         "turn.completed", completion_payload(FinishReason.CANCELLED, visible)
                     )
                     return
+                except Exception:
+                    yield event(
+                        "error",
+                        {
+                            "code": ModelErrorCode.INTERNAL.value,
+                            "message": "模型服务发生未预期错误",
+                        },
+                    )
+                    yield event("turn.completed", completion_payload(FinishReason.ERROR, visible))
+                    return
         except asyncio.CancelledError:
-            if started:
-                yield event("turn.completed", completion_payload(FinishReason.CANCELLED, visible))
+            yield event("turn.completed", completion_payload(FinishReason.CANCELLED, visible))
             return

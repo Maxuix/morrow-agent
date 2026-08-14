@@ -56,6 +56,22 @@ class ContextBuilder:
     def _chars(messages: list[Message]) -> int:
         return sum(len(message.content) for message in messages)
 
+    @staticmethod
+    def _history_units(messages: list[Message]) -> list[list[Message]]:
+        units: list[list[Message]] = []
+        pending_user: Message | None = None
+        for message in messages:
+            if message.role == "user":
+                if pending_user is not None:
+                    units.append([pending_user])
+                pending_user = message
+            elif message.role == "assistant" and pending_user is not None:
+                units.append([pending_user, message])
+                pending_user = None
+        if pending_user is not None:
+            units.append([pending_user])
+        return units
+
     def build(
         self, session: Session, *, current_user: str | None = None, purpose: str = "chat"
     ) -> ContextPack:
@@ -64,16 +80,19 @@ class ContextBuilder:
         history = list(session.messages)
         if current and (not history or history[-1] != current):
             history.append(current)
-        if current and len(current.content) + self._chars(fixed) > self.max_chars:
-            raise ValueError("当前输入超过上下文预算，请缩短后重试")
-        selected: list[Message] = []
-        remaining = self.max_chars - self._chars(fixed) - (len(current.content) if current else 0)
-        for message in reversed(history[:-1] if current else history):
-            if len(message.content) > remaining:
+        mandatory_size = self._chars(fixed) + (len(current.content) if current else 0)
+        if mandatory_size > self.max_chars:
+            raise ValueError("必要上下文超过预算，请缩短当前输入或状态")
+        selected_units: list[list[Message]] = []
+        remaining = self.max_chars - mandatory_size
+        history_without_current = history[:-1] if current else history
+        for unit in reversed(self._history_units(history_without_current)):
+            unit_size = self._chars(unit)
+            if unit_size > remaining:
                 break
-            selected.append(message)
-            remaining -= len(message.content)
-        selected.reverse()
+            selected_units.append(unit)
+            remaining -= unit_size
+        selected = [message for unit in reversed(selected_units) for message in unit]
         result = [*fixed, *selected]
         if current:
             result.append(current)

@@ -5,12 +5,15 @@ from __future__ import annotations
 import asyncio
 import secrets
 
+from morrow.adapters.credentials.keyring import environment_credential
 from morrow.adapters.registry import PRESETS, AdapterRegistry
 from morrow.core.models import (
     CredentialRef,
     GlobalConfig,
     LastTestResult,
     Message,
+    ModelErrorCode,
+    ModelProviderError,
     ModelRef,
     ProviderConfig,
     ProviderModelConfig,
@@ -18,10 +21,23 @@ from morrow.core.models import (
 
 
 class ProviderService:
-    def __init__(self, global_store, credentials, registry: AdapterRegistry) -> None:
+    def __init__(
+        self, global_store, credentials, registry: AdapterRegistry, credential_resolver=None
+    ) -> None:
         self.global_store = global_store
         self.credentials = credentials
         self.registry = registry
+        self.credential_resolver = credential_resolver or self._resolve_credential
+
+    def _resolve_credential(self, provider_id: str, credential_ref) -> str | None:
+        configured = environment_credential(provider_id)
+        if configured:
+            return configured
+        return self.credentials.get(credential_ref.ref) if credential_ref else None
+
+    def credential_available(self, provider_id: str) -> bool:
+        config = self.provider(provider_id)
+        return bool(self.credential_resolver(provider_id, config.credential_ref))
 
     def _ref(self, provider_id: str) -> CredentialRef:
         return CredentialRef(ref=f"provider:{provider_id}:{secrets.token_hex(4)}")
@@ -88,7 +104,12 @@ class ProviderService:
         raise RuntimeError("在异步上下文中请使用 add_async")
 
     async def configure_async(
-        self, provider_id: str, *, secret: str | None = None, base_url: str | None = None
+        self,
+        provider_id: str,
+        *,
+        secret: str | None = None,
+        base_url: str | None = None,
+        replace_credential: bool = False,
     ) -> None:
         current = self.list()
         old = current.providers.get(provider_id)
@@ -97,13 +118,17 @@ class ProviderService:
         next_config = old.model_copy(update={"base_url": base_url or old.base_url})
         new_ref = None
         credential = None
+        if replace_credential and environment_credential(provider_id):
+            raise ValueError("环境变量凭据正在生效；请先取消该环境变量再替换凭据")
+        if replace_credential and secret is None:
+            raise ValueError("替换凭据需要新的隐藏凭据值")
         if secret is not None:
             new_ref = self._ref(provider_id)
             self.credentials.set(new_ref.ref, secret)
             next_config = next_config.model_copy(update={"credential_ref": new_ref})
             credential = secret
-        elif old.credential_ref:
-            credential = self.credentials.get(old.credential_ref.ref)
+        else:
+            credential = self.credential_resolver(provider_id, old.credential_ref)
         if not credential:
             raise ValueError("Provider 凭据不可用")
         model_id = next(iter(next_config.models))
@@ -127,21 +152,33 @@ class ProviderService:
             raise
 
     def configure(
-        self, provider_id: str, *, secret: str | None = None, base_url: str | None = None
+        self,
+        provider_id: str,
+        *,
+        secret: str | None = None,
+        base_url: str | None = None,
+        replace_credential: bool = False,
     ) -> None:
         try:
             asyncio.get_running_loop()
         except RuntimeError:
-            asyncio.run(self.configure_async(provider_id, secret=secret, base_url=base_url))
+            asyncio.run(
+                self.configure_async(
+                    provider_id,
+                    secret=secret,
+                    base_url=base_url,
+                    replace_credential=replace_credential,
+                )
+            )
             return
         raise RuntimeError("在异步上下文中请使用 configure_async")
 
     async def test_async(self, provider_id: str) -> LastTestResult:
         current = self.list()
         config = current.providers.get(provider_id)
-        if not config or not config.credential_ref:
+        if not config:
             raise ValueError("Provider 凭据不可用")
-        credential = self.credentials.get(config.credential_ref.ref)
+        credential = self.credential_resolver(provider_id, config.credential_ref)
         if not credential:
             raise ValueError("Provider 凭据不可用")
         model_id = next(iter(config.models))
@@ -150,7 +187,12 @@ class ProviderService:
                 ModelRef(provider_id=provider_id, model_id=model_id), self._probe_messages()
             )
         except Exception as exc:
-            result = LastTestResult(ok=False, message=type(exc).__name__)
+            code = exc.code if isinstance(exc, ModelProviderError) else ModelErrorCode.INTERNAL
+            result = LastTestResult(
+                ok=False,
+                error_code=code,
+                message="模型连接测试失败",
+            )
         else:
             result = LastTestResult(ok=True)
         updated = self.global_store.update(
@@ -197,8 +239,9 @@ class ProviderService:
         if not config.active_model:
             raise ValueError("尚未配置 active_model")
         provider_config = config.providers[config.active_model.provider_id]
-        credential_ref = provider_config.credential_ref
-        credential = self.credentials.get(credential_ref.ref) if credential_ref else None
+        credential = self.credential_resolver(
+            config.active_model.provider_id, provider_config.credential_ref
+        )
         if not credential:
             raise ValueError("Provider 凭据不可用")
         return self.registry.create(provider_config, credential), config.active_model

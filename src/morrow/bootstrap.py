@@ -19,12 +19,12 @@ from morrow.application.orchestrator import SessionOrchestrator
 from morrow.application.structured import StructuredCompletionError, complete_structured
 from morrow.core.models import ConfigExtractionResult, Preferences
 from morrow.runtime.agent import AgentRuntime
+from morrow.runtime.ids import RandomIdSource
 from morrow.runtime.session import Session
 from morrow.services.handoff import HandoffService
 from morrow.services.preferences import ConfigPatchService
 from morrow.services.provider import ProviderService
 from morrow.services.workspace import DataRoot, WorkspaceService, WorkspaceStateService
-from morrow.testing import FixedIdSource
 
 
 @dataclass
@@ -38,6 +38,7 @@ class Application:
     workspace_state_service: WorkspaceStateService
     registry: AdapterRegistry
     credentials: object
+    id_source: object
 
 
 def build_application(
@@ -51,11 +52,12 @@ def build_application(
     registry = AdapterRegistry()
     registry.register("openai-compatible", make_openai_compatible)
     credential_store = credentials or KeyringCredentialStore()
+    application_id_source = id_source or RandomIdSource()
     provider_service = ProviderService(global_store, credential_store, registry)
     workspace_service = WorkspaceService(
         data_root,
         index_store,
-        id_factory=(id_source or FixedIdSource()).new_id if id_source else None,
+        id_source=application_id_source,
     )
     return Application(
         data_root,
@@ -67,25 +69,33 @@ def build_application(
         WorkspaceStateService(project_store),
         registry,
         credential_store,
+        application_id_source,
     )
 
 
 def build_session_application(app: Application, identity, *, provider=None, model=None):
-    profile_result = app.project_store.load_profile(identity.workspace_id)
-    preferences_result = app.project_store.load_preferences(identity.workspace_id)
+    inspection = app.workspace_state_service.inspect(identity.workspace_id)
+    profile_result = inspection.profile
+    preferences_result = inspection.preferences
     config = app.global_store.load().value
     session = Session(
-        session_id=(FixedIdSource().new_id("ses")),
-        profile=profile_result.value.profile if profile_result.value else None,
+        session_id=app.id_source.new_id("ses"),
+        profile=(
+            profile_result.value.profile
+            if profile_result.value and not inspection.read_only
+            else None
+        ),
         global_preferences=config.preferences if config else Preferences(),
         workspace_preferences=preferences_result.value.preferences
         if preferences_result.value
         else Preferences(),
+        read_only=inspection.read_only,
+        workspace_preferences_read_only=inspection.preferences_read_only,
     )
     context_builder = ContextBuilder()
     if provider is None or model is None:
         provider, model = app.provider_service.build_active()
-    runtime = AgentRuntime(provider, model, context_builder)
+    runtime = AgentRuntime(provider, model, context_builder, id_source=app.id_source)
     handoff_service = HandoffService(
         app.project_store, provider, model, context_builder, identity.workspace_id
     )
@@ -127,5 +137,6 @@ def build_session_application(app: Application, identity, *, provider=None, mode
         context_builder=context_builder,
         config_extractor=extract_config,
         config_patch_service=config_service,
+        id_source=app.id_source,
     )
     return session, context_builder, handoff_service, commands, orchestrator

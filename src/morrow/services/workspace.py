@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-import secrets
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from pathlib import Path
 
 from filelock import FileLock, Timeout
 
-from morrow.adapters.state.yaml import WorkspaceIndexYamlStore
 from morrow.core.models import (
     Handoff,
     Profile,
@@ -19,6 +17,8 @@ from morrow.core.models import (
     WorkspaceIndexEntry,
     WorkspaceResolution,
 )
+from morrow.core.ports import IdSource, WorkspaceIndexStore
+from morrow.runtime.ids import RandomIdSource
 
 
 class WorkspaceError(RuntimeError):
@@ -85,6 +85,7 @@ class DataRoot:
 
 @dataclass(frozen=True)
 class WorkspaceInspection:
+    preferences: object
     profile: object
     handoff: object
 
@@ -93,6 +94,10 @@ class WorkspaceInspection:
         return (
             self.profile.status != StateLoadStatus.OK or self.handoff.status != StateLoadStatus.OK
         )
+
+    @property
+    def preferences_read_only(self) -> bool:
+        return self.preferences.status != StateLoadStatus.OK
 
 
 class WorkspaceStateService:
@@ -103,6 +108,7 @@ class WorkspaceStateService:
 
     def inspect(self, workspace_id: str) -> WorkspaceInspection:
         return WorkspaceInspection(
+            preferences=self.project_store.load_preferences(workspace_id),
             profile=self.project_store.load_profile(workspace_id),
             handoff=self.project_store.load_handoff(workspace_id),
         )
@@ -145,11 +151,14 @@ def _same_existing_path(left: Path, right: Path) -> bool:
 
 class WorkspaceService:
     def __init__(
-        self, data_root: DataRoot, index_store: WorkspaceIndexYamlStore, id_factory=None
+        self,
+        data_root: DataRoot,
+        index_store: WorkspaceIndexStore,
+        id_source: IdSource | None = None,
     ) -> None:
         self.data_root = data_root
         self.index_store = index_store
-        self.id_factory = id_factory or (lambda: f"ws_{secrets.token_urlsafe(9)}")
+        self.id_source = id_source or RandomIdSource()
 
     @staticmethod
     def normalize_path(path: Path) -> Path:
@@ -179,8 +188,17 @@ class WorkspaceService:
             raise WorkspaceError(f"工作空间索引不可用: {result.status.value}")
         return result.value
 
-    def _find_entry(self, path: Path, git_root: Path | None, entries) -> WorkspaceIndexEntry | None:
+    def _find_entry(
+        self,
+        path: Path,
+        git_root: Path | None,
+        entries,
+        *,
+        exclude_workspace_id: str | None = None,
+    ) -> WorkspaceIndexEntry | None:
         for entry in entries.workspaces.values():
+            if entry.workspace_id == exclude_workspace_id:
+                continue
             registered = Path(entry.path)
             if registered.exists() and _same_existing_path(path, registered):
                 return entry
@@ -193,6 +211,8 @@ class WorkspaceService:
                 return entry
         if git_root:
             for entry in entries.workspaces.values():
+                if entry.workspace_id == exclude_workspace_id:
+                    continue
                 registered = Path(entry.path)
                 if registered.exists() and _same_existing_path(git_root, registered):
                     return entry
@@ -202,6 +222,8 @@ class WorkspaceService:
         current = path
         while current != current.parent:
             for entry in entries.workspaces.values():
+                if entry.workspace_id == exclude_workspace_id:
+                    continue
                 registered = Path(entry.path)
                 if registered.exists() and _same_existing_path(current, registered):
                     return entry
@@ -247,54 +269,70 @@ class WorkspaceService:
         if not resolution.candidate:
             raise WorkspaceError("无可确认的工作空间候选")
         candidate = resolution.candidate
-        workspace_id = self.id_factory()
-        entry = WorkspaceIndexEntry(
-            workspace_id=workspace_id,
-            path=candidate.path,
-            display_name=display_name or candidate.display_name,
-            git_root=candidate.git_root,
-        )
-        current = self._entries()
-        result = self.index_store.update(
-            lambda value: value.model_copy(
-                update={"workspaces": {**value.workspaces, workspace_id: entry}}
-            ),
-            expected_revision=current.revision,
-        )
+
+        def claim(current):
+            normalized = self.normalize_path(Path(candidate.path))
+            git_root = self.git_root(normalized)
+            existing = self._find_entry(normalized, git_root, current)
+            if existing:
+                return None, existing
+            canonical_path = git_root or normalized
+            workspace_id = self.id_source.new_id("ws")
+            entry = WorkspaceIndexEntry(
+                workspace_id=workspace_id,
+                path=str(canonical_path),
+                display_name=display_name or _safe_display_name(canonical_path),
+                git_root=str(git_root) if git_root else None,
+            )
+            updated = current.model_copy(
+                update={"workspaces": {**current.workspaces, workspace_id: entry}}
+            )
+            return updated, entry
+
+        result, entry = self.index_store.transact(claim)
         if result.status.value != "ok":
             raise WorkspaceError(f"无法登记工作空间: {result.error or result.status.value}")
+        if entry is None:
+            raise WorkspaceError("无法登记工作空间: 未返回权威身份")
         return WorkspaceIdentity(
-            workspace_id=workspace_id,
+            workspace_id=entry.workspace_id,
             path=entry.path,
             display_name=entry.display_name,
             git_root=entry.git_root,
         )
 
     def relink(self, workspace_id: str, path: Path) -> WorkspaceIdentity:
-        normalized = self.normalize_path(path)
-        git_root = self.git_root(normalized)
-        current = self._entries()
-        target = current.workspaces.get(workspace_id)
-        if not target:
-            raise WorkspaceError(f"未知工作空间: {workspace_id}")
-        for other in current.workspaces.values():
-            if (
-                other.workspace_id != workspace_id
-                and Path(other.path).exists()
-                and _same_existing_path(normalized, Path(other.path))
-            ):
+        def move(current):
+            normalized = self.normalize_path(path)
+            git_root = self.git_root(normalized)
+            target = current.workspaces.get(workspace_id)
+            if not target:
+                raise WorkspaceError(f"未知工作空间: {workspace_id}")
+            owner = self._find_entry(
+                normalized,
+                git_root,
+                current,
+                exclude_workspace_id=workspace_id,
+            )
+            if owner:
                 raise WorkspaceError("目标路径已经属于另一个工作空间")
-        updated = target.model_copy(
-            update={"path": str(normalized), "git_root": str(git_root) if git_root else None}
-        )
-        result = self.index_store.update(
-            lambda value: value.model_copy(
-                update={"workspaces": {**value.workspaces, workspace_id: updated}}
-            ),
-            expected_revision=current.revision,
-        )
+            canonical_path = git_root or normalized
+            updated = target.model_copy(
+                update={
+                    "path": str(canonical_path),
+                    "git_root": str(git_root) if git_root else None,
+                }
+            )
+            index = current.model_copy(
+                update={"workspaces": {**current.workspaces, workspace_id: updated}}
+            )
+            return index, updated
+
+        result, updated = self.index_store.transact(move)
         if result.status.value != "ok":
             raise WorkspaceError(f"重连失败: {result.error or result.status.value}")
+        if updated is None:
+            raise WorkspaceError("重连失败: 未返回工作空间身份")
         return WorkspaceIdentity(
             workspace_id=workspace_id,
             path=updated.path,
