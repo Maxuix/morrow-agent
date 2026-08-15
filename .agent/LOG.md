@@ -246,3 +246,49 @@
 - Synchronized the completed Subplans 12–16 implementation, tests, acceptance evidence, and execution state from the isolated execution worktree into the primary workspace while preserving the primary `AGENTS.md` workflow update.
 - Primary-workspace validation passed: 149 non-Live tests with one expected Live deselection, Ruff format/check, compileall over `src` and `tests`, and `git diff --check`.
 - `PLAN.md` and `ROADMAP.md` now record Stage 1 as complete and Stage 2 as unblocked but not started.
+
+## 2026-08-14 — Stage 2 design baseline published
+
+- Published the locked Stage 2 scope and contracts in `docs/roadmap/stage-2-agent-core.md`: OpenAI-compatible request/response wire, adapter-only provider conversion, discriminated messages, process-local ConversationLog, atomic ToolCycle validation, minimal terminal records, ModelCallRunner/AgentLoop ownership, deterministic Tool Executor results, cancellation and budgets, and ContextBuilder result clearing plus legal hard trimming.
+- Explicitly deferred persistent history, ContextSummary/LLM compaction, real local tools, real parallel execution, MCP, Skills, and plugins beyond Stage 2.
+- Added the Stage 2 implementation order and acceptance matrix while leaving only numeric defaults, demo-tool selection, the JSON Schema validation library, and final public tool-event names for implementation planning.
+- Replaced the completed Stage 1 active plan with the completed Stage 2 design-publication plan and reconciled ROADMAP, TODO, and TRACKER status. No production or test code changed.
+- Documentation verification passed: balanced fenced blocks, expected section coverage, and `git diff --check`.
+
+## 2026-08-14 — Stage 2 final approval proposal published
+
+- Published `docs/reviews/stage-2-agent-core-final-proposal.md` as a standalone approval draft without replacing the current authoritative roadmap or changing production/test code.
+- Reconciled the post-baseline decisions: Adapter-owned fragment assembly, module boundaries, immutable cross-module DTOs, public `tool.status`, AgentStopCode, developer TOML policy, ProviderCapabilities, ToolCycle output budgeting, loop detection, Draft 2020-12 validation, demo tools, system boundary, terminal behavior, and module-based subplans.
+- The proposal contains no implementation-time Stage 2 design placeholder; ContextSummary, persistent history, real local tools, MCP, Skills, and plugins remain deferred.
+- Documentation validation passed: 1,412 lines, 102 balanced fenced-block markers, required section coverage, valid local link targets, and `git diff --check`.
+
+## 2026-08-14 — Stage 2 proposal review adjudicated
+
+- Verified the independent review against the actual Stage 1 runtime, Session, ContextBuilder, OpenAI-compatible Adapter, Handoff fallback, StructuredCompletion, terminal renderer, boundary test, and Stage 3/4 scope documents.
+- Accepted the late-integration, Stage 1 seam, Handoff/StructuredCompletion projection, per-call deadline, mixed-content terminal, Pydantic validation, unused Anthropic fixture, standalone RequestSizer, third demo tool, and implementation-sequencing findings.
+- Retained with narrower contracts the explicitly requested module boundaries, developer-owned configuration, minimal terminal records, deterministic old-result clearing, whole-Cycle output bound, repeat-loop early stop, and precise AgentStopCode classification.
+- Replaced nine module-gated subplans with four vertical slices whose first slice must run the complete model → tool → model E2E. Clarified one chat history-writing path and added product-facing regression gates.
+- Revised the proposal from 1,412 to 1,274 lines. Documentation validation passed with 80 balanced fenced-block markers, required section coverage, valid proposal/review/roadmap links, and `git diff --check`; no production or test code changed.
+
+## 2026-08-15 — Stage 2 executability-review conditions applied
+
+- Applied R1 by moving the capability-based stage-boundary guard rewrite to the first Slice 1 change and correcting the old directory-name/file-name wording.
+- Applied R2 by making Session-owned ConversationLog, `run_task()` sole history writes, read-only `Session.messages`, and the thin `run_turn()` delegate Slice 1 deliverables; Slice 2 now only migrates remaining readers and fixtures.
+- Resolved C1–C3 with exact skipped-call envelope/event mappings, internal `provider_length` versus `tool_cycle_too_large` stop details, and exact-ModelRef `safe_request_chars` declarations in the developer TOML.
+- Made C4 explicit as an offline `Terminal.show_event` event-sequence test in Slice 3 and the acceptance matrix.
+- The amended approval draft has 1,304 lines and 82 balanced fenced-block markers. Link targets and `git diff --check` pass. No production code, tests, authoritative roadmap, active implementation plan, or subplans were changed.
+
+## 2026-08-14 — Independent review of the Stage 2 approval draft
+
+- Reviewed the approval draft against the authoritative Stage 2 roadmap, architecture baseline, Stage 1 runtime/context/handoff code, later-stage boundaries, and current agent-framework options.
+- Published `docs/reviews/stage-2-agent-core-final-proposal-review.md`.
+- Verdict: Stage 2 should proceed, but the draft should not become the implementation contract. Keep the tool-loop invariants; drop or defer the policy stack, loop detector, cycle-volume accounting, Anthropic fixtures, and nine-module plan.
+- No production or test code was changed. Implementation remains blocked on a converged Stage 2 spec.
+
+## 2026-08-15 — Executability review of the revised Stage 2 proposal
+
+- Reviewed the revised approval draft (`docs/reviews/stage-2-agent-core-final-proposal.md`, 2026-08-14) against the actual Stage 1 tree: Session write API, `AgentRuntime.run_turn`, ContextBuilder, OpenAI-compatible Adapter, Handoff fallback, StructuredCompletion, terminal renderer, event helpers, boundary test, and pyproject dependencies.
+- Every factual claim the revised proposal makes about Stage 1 code was verified accurate, including its correction of the earlier review (the terminal does not re-render `turn.completed.text`; `completion_payload` carries no `text` field today). Migration surface is small (14 `accept_*` references across 5 files) and the plan needs zero new dependencies.
+- Published `docs/reviews/stage-2-agent-core-revised-proposal-review.md`. Verdict: executable, recommend conditional approval.
+- Two required amendments, both confined to the slice plan: move the stage-boundary test rewrite into Slice 1 (or forbid new `tools/`/`loop/` directories in Slices 1–3), and pull "Session holds ConversationLog with a single write path" forward into Slice 1 instead of Slice 2. Also listed four one-sentence clarifications (skipped→envelope mapping, `model_output_limit` dual cause, `safe_request_chars` data source, offline-testable terminal segmentation) and a six-item reconciliation list for merging the proposal into the authoritative roadmap.
+- No production or test code was changed.

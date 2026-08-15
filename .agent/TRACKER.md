@@ -2,16 +2,16 @@
 
 ## Current status
 
-Subplan 16 and Stage 1 remediation are complete. Final-tree offline acceptance, the explicit OpenCode Go Live test, real-stream boundary inspection, isolated ten-turn terminal run, cancellation recovery, Handoff update, Ctrl+D, project/worktree isolation, move/relink, offline fallback recovery, and secret/boundary scans all passed. Stage 2 is unblocked but has not started.
+The executability-review amendments have been applied to the standalone Stage 2 approval proposal. Stage 2 production implementation remains unstarted and the existing roadmap remains authoritative.
 
 ## Last completed task
 
-The completed remediation tree and reconciled Stage 1 status were synchronized from the isolated execution worktree into the primary workspace. Primary-workspace validation passed with 149 non-Live tests, Ruff format/check, compileall, and diff checks.
+Applied R1, R2 and C1–C4 to the approval draft: boundary guards and the single history authority now start in Slice 1, skipped-call envelopes and stop details are explicit, model-safe request sizes have a declared source, and mixed-content terminal behavior has an offline test contract.
 
 ## Next action
 
-Discuss and define the separate Stage 2 scope and implementation plan before beginning any Stage 2 code.
+Await user approval of the amended proposal. Do not create Stage 2 implementation plans or change the authoritative roadmap until requested.
 
 ## Blockers
 
-None for Stage 1. Stage 2 implementation is authorized by the completed gate but remains unstarted pending its own scope and plan.
+None.
