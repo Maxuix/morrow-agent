@@ -1,7 +1,7 @@
 # Natural-Language Configuration Tooling Plan
 
-> Status: in progress; review remediated
-> Active subplan: 25 — Generic Tool Policy and Approval Foundation
+> Status: complete; review remediated
+> Active subplan: none
 > Scope: first Stage 3 stateful-tool vertical slice; no file, Shell, Git, network, Session persistence, or memory work
 
 ## Objective
@@ -333,10 +333,10 @@ a real need.
 
 | Order | Subplan | Status | Depends on | Integrated result |
 |---|---|---|---|---|
-| 25 | [Generic Tool Policy and Approval Foundation](subplans/25-generic-tool-policy-approval.md) | in progress | `cbc3d6d` | Generic risk/approval and complete schema work; no state or demo outcome change |
-| 26 | [Configuration Service and Standard Tool](subplans/26-configuration-service-tool.md) | pending | 25 | Directly tested tool factory delegates all behavior to the shared service; not yet production-registered |
-| 27 | [Single-Chain Product Integration](subplans/27-configuration-single-chain-integration.md) | pending | 26 | Production atomically removes the old route and enables the standard tool |
-| 28 | [Intent Evaluation, Acceptance, and Delivery](subplans/28-configuration-tooling-acceptance.md) | pending | 25–27 | Final product, package, safety, model-contract, and documentation evidence is green |
+| 25 | [Generic Tool Policy and Approval Foundation](subplans/25-generic-tool-policy-approval.md) | completed | `cbc3d6d` | Generic risk/approval and complete schema work; no state or demo outcome change |
+| 26 | [Configuration Service and Standard Tool](subplans/26-configuration-service-tool.md) | completed | 25 | Directly tested tool factory delegates all behavior to the shared service; not yet production-registered |
+| 27 | [Single-Chain Product Integration](subplans/27-configuration-single-chain-integration.md) | completed | 26 | Production atomically removes the old route and enables the standard tool |
+| 28 | [Configuration Tooling Acceptance and Delivery](subplans/28-configuration-tooling-acceptance.md) | completed | 25–27 | Final product, package, safety, model-contract, and documentation evidence is green |
 
 Only one subplan may be active at a time. A failed gate reopens the subplan that owns the
 broken contract.

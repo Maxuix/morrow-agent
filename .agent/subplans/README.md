@@ -1,14 +1,14 @@
 # Subplans
 
-当前主计划是 Natural-Language Configuration Tooling，状态为 in progress、review-remediated；
-当前激活 Subplan 25：
+当前主计划是 Natural-Language Configuration Tooling，状态为 completed、review-remediated；
+当前没有激活子计划：
 
 | 顺序 | 子计划 | 状态 |
 |---|---|---|
-| 25 | `25-generic-tool-policy-approval.md` | in progress |
-| 26 | `26-configuration-service-tool.md` | pending |
-| 27 | `27-configuration-single-chain-integration.md` | pending |
-| 28 | `28-configuration-tooling-acceptance.md` | pending |
+| 25 | `25-generic-tool-policy-approval.md` | completed |
+| 26 | `26-configuration-service-tool.md` | completed |
+| 27 | `27-configuration-single-chain-integration.md` | completed |
+| 28 | `28-configuration-tooling-acceptance.md` | completed |
 
 最近完成的 Handoff Removal Refactor Subplans 21–24 已由 commit `cbc3d6d` 保存，不再保留在活动目录。
 已完成的 Stage 2 Subplans 17–20 保留在 commit `831c4ea` 的历史中。

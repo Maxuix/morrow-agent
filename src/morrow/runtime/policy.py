@@ -3,16 +3,33 @@
 from __future__ import annotations
 
 import tomllib
+from enum import StrEnum
 from importlib import resources
 from typing import Literal
 
 from pydantic import ConfigDict, Field, model_validator
 
-from morrow.core.models import ModelRef, ProtocolModel
+from morrow.core.models import ModelRef, ProtocolModel, ToolEffect
 
 
 class PolicyLoadError(RuntimeError):
     """The packaged developer policy is missing or invalid."""
+
+
+class ToolApproval(StrEnum):
+    """Local approval requirement; it is not part of the Provider protocol."""
+
+    NEVER = "never"
+    REQUIRED = "required"
+
+
+class ToolExecutionPolicy(ProtocolModel):
+    """Immutable local effect and approval metadata for one registered tool."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    effect: ToolEffect = ToolEffect.NONE
+    approval: ToolApproval = ToolApproval.NEVER
 
 
 class ProviderToolSupport(ProtocolModel):

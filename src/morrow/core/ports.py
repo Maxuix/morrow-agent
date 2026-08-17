@@ -15,6 +15,8 @@ from morrow.core.models import (
     Profile,
     StateLoadResult,
     StateWriteResult,
+    ToolApprovalDecision,
+    ToolApprovalRequest,
     ToolDefinition,
     WorkspaceIndex,
     WorkspaceResolution,
@@ -30,6 +32,12 @@ class ModelProvider(Protocol):
     ) -> AsyncIterator[ModelEvent]: ...
 
     async def complete(self, model: ModelRef, messages: list[Message]) -> str: ...
+
+
+class ApprovalPort(Protocol):
+    """Asynchronous local approval boundary for generic tool execution."""
+
+    async def request(self, request: ToolApprovalRequest) -> ToolApprovalDecision: ...
 
 
 class ProviderFactory(Protocol):

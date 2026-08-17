@@ -148,7 +148,7 @@ def test_no_forbidden_tool_capability_is_registered_or_exposed(tmp_path):
         products.orchestrator,
     ]
     names = _collect_tool_names(_iter_graph(graph))
-    assert names == {"lookup_record", "calculate"}
+    assert names == {"lookup_record", "calculate", "update_configuration"}
     for name in names:
         casefolded = name.casefold()
         assert not any(keyword in casefolded for keyword in FORBIDDEN_TOOL_KEYWORDS), name

@@ -62,7 +62,7 @@ Session-owned ConversationLog 只存在于当前进程，没有 restart resume�
 |---|---|---|---|
 | 1. 方向确定与可运行原型 | 已完成；Subplans 12–16 与最终树离线、Live、人工验收通过 | 历史上验证了终端对话、工作空间识别和轻量 Handoff；该过渡特性已在阶段 2 后移除 | [查看阶段 1 路线](roadmap/stage-1-direction-and-prototype.md) |
 | 2. Agent 核心能力 | 已完成；Subplans 17–20 与最终树离线、包、终端和边界验收通过 | 一个可以通过受限无副作用工具完成多步骤简单任务的 Agent | [查看阶段 2 路线](roadmap/stage-2-agent-core.md) |
-| 3. 本地工具与安全 | 未开始 | 一个可以在指定工作空间内安全执行真实任务的 Agent | [查看阶段 3 路线](roadmap/stage-3-local-tools-and-safety.md) |
+| 3. 本地工具与安全 | 进行中；通用审批与首个配置状态工具先行切片已完成，文件/Shell MVP 未开始 | 一个可以在指定工作空间内安全执行真实任务的 Agent | [查看阶段 3 路线](roadmap/stage-3-local-tools-and-safety.md) |
 | 4. 会话、上下文与记忆 | 未开始 | 一个能够跨会话延续必要信息的个人 Agent | [查看阶段 4 路线](roadmap/stage-4-sessions-context-and-memory.md) |
 | 5. Skills 与扩展生态 | 未开始 | 一个可按需接入 Skills、MCP 和更多模型服务的 Agent | [查看阶段 5 路线](roadmap/stage-5-skills-and-extensions.md) |
 | 6. 自动化与复杂任务 | 未开始 | 一个可以处理后台、周期性和可分解长任务的 Agent | [查看阶段 6 路线](roadmap/stage-6-automation-and-complex-tasks.md) |

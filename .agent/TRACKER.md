@@ -2,24 +2,26 @@
 
 ## Current status
 
-Subplan 25 is active after explicit user authorization. The Natural-Language Configuration
-Tooling plan remains limited to the generic approval foundation and the later configuration
-slice; Stage 3 local file/search/edit/Shell work is still out of scope.
+The Natural-Language Configuration Tooling plan is complete after explicit user authorization.
+Subplans 25–28 delivered and accepted the generic approval boundary, typed shared configuration
+service, production `update_configuration` registration, terminal approval composition, atomic
+single-AgentLoop routing cutover, final evidence, package smoke, and documentation. Stage 3
+local file/search/edit/Shell work remains out of scope.
 
 ## Last completed task
 
-Verified the external configuration-tooling plan review against current code and revised the
-master plan plus Subplans 25–28 to lock composition, approval/cancellation, reset/tombstone,
-no-op/revision, compatibility, partial-write, history, test-inventory, and Stage 3 contracts.
+Completed Subplan 28 final acceptance: strict collection, full offline regression, quality
+gates, source/capability scans, Markdown reference audit, fresh wheel inventory, fresh-env
+import/policy discovery, and installed CLI help are green. Live intent evaluation was not run.
 
 ## Next action
 
-Implement the Core approval contract and Runtime execution metadata, then add generic
-ToolExecutor enforcement and focused boundary tests.
+No planned implementation action remains. A future change should start a new explicitly
+authorized plan or reopen this one with fresh scope.
 
 ## Active task
 
-CT.25.1 — Lock generic contracts and add red boundary tests.
+None; the active plan is complete.
 
 ## Blockers
 

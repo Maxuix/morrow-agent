@@ -9,7 +9,7 @@ from prompt_toolkit.patch_stdout import patch_stdout
 from rich.console import Console
 
 from morrow.application.orchestrator import DispatchResult
-from morrow.core.models import AgentEvent
+from morrow.core.models import AgentEvent, ToolApprovalDecision, ToolApprovalRequest
 
 
 class Terminal:
@@ -49,9 +49,33 @@ class Terminal:
         return await session.prompt_async(message)
 
 
-async def run_repl(orchestrator, *, session=None) -> int:
-    terminal = Terminal()
-    prompt_session = PromptSession()
+class TerminalApprovalPort:
+    """Terminal-only adapter for the generic Core approval boundary."""
+
+    def __init__(self, terminal: Terminal, prompt_session: PromptSession) -> None:
+        self.terminal = terminal
+        self.prompt_session = prompt_session
+
+    async def request(self, request: ToolApprovalRequest) -> ToolApprovalDecision:
+        lines = request.preview or ("未提供额外预览。",)
+        self.terminal.console.print("\n".join(lines))
+        self.terminal.console.print(f"副作用级别：{request.effect.value}")
+        try:
+            answer = await self.terminal.prompt(self.prompt_session, "确认执行？ [y/N] ")
+        except (EOFError, KeyboardInterrupt):
+            raise asyncio.CancelledError from None
+        return ToolApprovalDecision(approved=answer.strip().casefold() in {"y", "yes", "是"})
+
+
+async def run_repl(
+    orchestrator,
+    *,
+    session=None,
+    terminal: Terminal | None = None,
+    prompt_session: PromptSession | None = None,
+) -> int:
+    terminal = terminal or Terminal()
+    prompt_session = prompt_session or PromptSession()
     terminal.console.print("Morrow 承序 · Workspace terminal agent.")
     with patch_stdout():
         while True:
@@ -97,10 +121,16 @@ async def run_repl(orchestrator, *, session=None) -> int:
                 if confirmation == "closed":
                     return _closed_input(terminal)
                 if confirmation == "yes":
-                    reset = _command_service(orchestrator).reset_profile()
-                    terminal.console.print(
-                        "Profile 已重置。" if reset.status.value == "ok" else "Profile 重置失败。"
-                    )
+                    try:
+                        reset = _command_service(orchestrator).reset_profile()
+                    except (ValueError, RuntimeError) as exc:
+                        terminal.console.print(f"Profile 重置失败：{exc}")
+                    else:
+                        terminal.console.print(
+                            "Profile 已重置。"
+                            if reset.status.value in {"applied", "unchanged"}
+                            else "Profile 重置失败。"
+                        )
             if result.action == "reset_config":
                 scope = str(result.value)
                 confirmation = await _confirm(
@@ -114,7 +144,7 @@ async def run_repl(orchestrator, *, session=None) -> int:
                     except (ValueError, RuntimeError) as exc:
                         terminal.console.print(f"Preferences 重置失败：{exc}")
                     else:
-                        ok = reset is True or reset.status.value == "ok"
+                        ok = reset is True or reset.status.value in {"applied", "unchanged"}
                         terminal.console.print(
                             f"{scope} 层 Preferences 已重置。"
                             if ok

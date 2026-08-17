@@ -4,11 +4,18 @@ from __future__ import annotations
 
 import asyncio
 import json
+from typing import Literal
 
 import pytest
 from pydantic import BaseModel, ConfigDict
 
-from morrow.core.models import FunctionToolCall
+from morrow.core.models import (
+    FunctionToolCall,
+    ToolApprovalDecision,
+    ToolApprovalRequest,
+    ToolEffect,
+)
+from morrow.runtime.policy import ToolApproval, ToolExecutionPolicy
 from morrow.runtime.tools import (
     ToolErrorCode,
     ToolExecutionError,
@@ -25,6 +32,27 @@ DEMO_RECORDS = {
     ("plans", "starter"): {"monthly_price": 29.0},
     ("regions", "de"): {"tax_rate": 0.19},
 }
+
+
+class _ScriptedApproval:
+    def __init__(self, approved: bool) -> None:
+        self.approved = approved
+        self.requests: list[ToolApprovalRequest] = []
+
+    async def request(self, request: ToolApprovalRequest) -> ToolApprovalDecision:
+        self.requests.append(request)
+        return ToolApprovalDecision(approved=self.approved)
+
+
+class _BlockingApproval:
+    def __init__(self) -> None:
+        self.started = asyncio.Event()
+
+    async def request(self, request: ToolApprovalRequest) -> ToolApprovalDecision:
+        del request
+        self.started.set()
+        await asyncio.Event().wait()
+        return ToolApprovalDecision(approved=True)
 
 
 def _demo_executor() -> ToolExecutor:
@@ -59,6 +87,78 @@ def test_registry_snapshot_is_isolated_from_later_registration():
     assert frozen.tools["calculate"] is registry.get("calculate")
 
 
+def test_local_policy_metadata_is_immutable_and_provider_invisible():
+    policy = ToolExecutionPolicy(
+        effect=ToolEffect.PERSISTENT_WRITE,
+        approval=ToolApproval.REQUIRED,
+    )
+
+    class Arguments(BaseModel):
+        model_config = ConfigDict(extra="forbid")
+
+        item: Literal["alpha", "beta"]
+
+    async def handler(_: Arguments) -> object:
+        return None
+
+    tool = make_tool(
+        name="policy_probe",
+        description="policy probe",
+        arguments_model=Arguments,
+        handler=handler,
+        execution_policy=policy,
+        approval_preview=lambda _: ("写入 workspace\n仅显示安全摘要",),
+    )
+
+    assert tool.execution_policy == policy
+    assert tool.definition.model_dump() == {
+        "type": "function",
+        "function": {
+            "name": "policy_probe",
+            "description": "policy probe",
+            "parameters": tool.definition.function.parameters,
+        },
+    }
+    assert "execution_policy" not in tool.definition.model_dump()
+    assert "approval_preview" not in tool.definition.model_dump()
+    assert tool.definition.function.parameters["additionalProperties"] is False
+    assert tool.definition.function.parameters["properties"]["item"]["enum"] == [
+        "alpha",
+        "beta",
+    ]
+
+    with pytest.raises((TypeError, ValueError)):
+        policy.approval = ToolApproval.NEVER
+
+
+def test_tool_schema_preserves_nested_pydantic_constraints():
+    class Nested(BaseModel):
+        model_config = ConfigDict(extra="forbid")
+
+        value: Literal["one", "two"]
+
+    class Arguments(BaseModel):
+        model_config = ConfigDict(extra="forbid")
+
+        nested: Nested
+
+    async def handler(_: Arguments) -> object:
+        return None
+
+    tool = make_tool(
+        name="schema_probe",
+        description="schema probe",
+        arguments_model=Arguments,
+        handler=handler,
+    )
+    schema = tool.definition.function.parameters
+
+    assert schema["additionalProperties"] is False
+    assert "$defs" in schema
+    assert schema["$defs"]["Nested"]["properties"]["value"]["enum"] == ["one", "two"]
+    assert schema["required"] == ["nested"]
+
+
 @pytest.mark.asyncio
 async def test_lookup_record_returns_injected_value_in_compact_envelope():
     outcome = await _demo_executor().execute(
@@ -67,6 +167,190 @@ async def test_lookup_record_returns_injected_value_in_compact_envelope():
     assert outcome.ok is True
     assert outcome.error_code is None
     assert json.loads(outcome.envelope) == {"ok": True, "result": {"monthly_price": 29.0}}
+
+
+@pytest.mark.asyncio
+async def test_required_approval_receives_only_sanitized_local_preview():
+    calls = []
+
+    class Arguments(BaseModel):
+        model_config = ConfigDict(extra="forbid")
+
+        value: str
+
+    async def handler(arguments: Arguments) -> object:
+        calls.append(arguments.value)
+        return {"saved": True}
+
+    approval = _ScriptedApproval(approved=True)
+    registry = ToolRegistry()
+    registry.register(
+        make_tool(
+            name="stateful_probe",
+            description="stateful probe",
+            arguments_model=Arguments,
+            handler=handler,
+            execution_policy=ToolExecutionPolicy(
+                effect=ToolEffect.SESSION_WRITE,
+                approval=ToolApproval.REQUIRED,
+            ),
+            approval_preview=lambda _: (
+                "  scope: session\noperation: set  ",
+                "不要显示模型参数",
+            ),
+        )
+    )
+
+    outcome = await ToolExecutor(
+        registry.snapshot(), make_run_policy(), approval_port=approval
+    ).execute(_call("stateful_probe", '{"value": "secret"}'))
+
+    assert outcome.ok is True
+    assert calls == ["secret"]
+    assert len(approval.requests) == 1
+    request = approval.requests[0]
+    assert set(ToolApprovalRequest.model_fields) == {"call_id", "effect", "preview"}
+    assert request.call_id == "call_1"
+    assert request.effect == ToolEffect.SESSION_WRITE
+    assert request.preview == ("scope: session operation: set", "不要显示模型参数")
+    assert "secret" not in str(request.model_dump())
+
+
+@pytest.mark.asyncio
+async def test_rejected_approval_is_bounded_and_never_runs_handler():
+    calls = 0
+
+    class Arguments(BaseModel):
+        model_config = ConfigDict(extra="forbid")
+
+    async def handler(_: Arguments) -> object:
+        nonlocal calls
+        calls += 1
+        return "must not run"
+
+    approval = _ScriptedApproval(approved=False)
+    registry = ToolRegistry()
+    registry.register(
+        make_tool(
+            name="rejected_probe",
+            description="rejected probe",
+            arguments_model=Arguments,
+            handler=handler,
+            execution_policy=ToolExecutionPolicy(approval=ToolApproval.REQUIRED),
+        )
+    )
+
+    outcome = await ToolExecutor(
+        registry.snapshot(), make_run_policy(), approval_port=approval
+    ).execute(_call("rejected_probe", "{}"))
+
+    assert outcome.ok is False
+    assert outcome.error_code == ToolErrorCode.APPROVAL_REJECTED
+    assert len(outcome.envelope) <= make_run_policy().effective_result_limit
+    assert calls == 0
+
+
+@pytest.mark.asyncio
+async def test_required_approval_fails_closed_without_a_port():
+    calls = 0
+
+    class Arguments(BaseModel):
+        model_config = ConfigDict(extra="forbid")
+
+    async def handler(_: Arguments) -> object:
+        nonlocal calls
+        calls += 1
+        return "must not run"
+
+    registry = ToolRegistry()
+    registry.register(
+        make_tool(
+            name="unavailable_probe",
+            description="unavailable probe",
+            arguments_model=Arguments,
+            handler=handler,
+            execution_policy=ToolExecutionPolicy(approval=ToolApproval.REQUIRED),
+        )
+    )
+
+    outcome = await ToolExecutor(registry.snapshot(), make_run_policy()).execute(
+        _call("unavailable_probe", "{}")
+    )
+
+    assert outcome.ok is False
+    assert outcome.error_code == ToolErrorCode.APPROVAL_UNAVAILABLE
+    assert calls == 0
+
+
+@pytest.mark.asyncio
+async def test_approval_preview_failure_is_bounded_and_never_runs_handler():
+    calls = 0
+
+    class Arguments(BaseModel):
+        model_config = ConfigDict(extra="forbid")
+
+    async def handler(_: Arguments) -> object:
+        nonlocal calls
+        calls += 1
+        return "must not run"
+
+    def broken_preview(_: BaseModel) -> tuple[str, ...]:
+        raise RuntimeError("preview secret")
+
+    approval = _ScriptedApproval(approved=True)
+    registry = ToolRegistry()
+    registry.register(
+        make_tool(
+            name="preview_failure_probe",
+            description="preview failure probe",
+            arguments_model=Arguments,
+            handler=handler,
+            execution_policy=ToolExecutionPolicy(approval=ToolApproval.REQUIRED),
+            approval_preview=broken_preview,
+        )
+    )
+
+    outcome = await ToolExecutor(
+        registry.snapshot(), make_run_policy(), approval_port=approval
+    ).execute(_call("preview_failure_probe", "{}"))
+
+    assert outcome.ok is False
+    assert outcome.error_code == ToolErrorCode.APPROVAL_PREVIEW_FAILED
+    assert calls == 0
+    assert approval.requests == []
+
+
+@pytest.mark.asyncio
+async def test_approval_wait_propagates_cancellation_without_running_handler():
+    calls = 0
+
+    class Arguments(BaseModel):
+        model_config = ConfigDict(extra="forbid")
+
+    async def handler(_: Arguments) -> object:
+        nonlocal calls
+        calls += 1
+        return "must not run"
+
+    approval = _BlockingApproval()
+    registry = ToolRegistry()
+    registry.register(
+        make_tool(
+            name="cancelled_approval_probe",
+            description="cancelled approval probe",
+            arguments_model=Arguments,
+            handler=handler,
+            execution_policy=ToolExecutionPolicy(approval=ToolApproval.REQUIRED),
+        )
+    )
+    executor = ToolExecutor(registry.snapshot(), make_run_policy(), approval_port=approval)
+    task = asyncio.create_task(executor.execute(_call("cancelled_approval_probe", "{}")))
+    await approval.started.wait()
+    task.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert calls == 0
 
 
 @pytest.mark.asyncio

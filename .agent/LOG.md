@@ -620,3 +620,74 @@
   Slash list syntax.
 - Planning documents only were changed. Stage 3 remains unstarted and will remain incomplete
   after this slice; file/search/edit/Shell capabilities require separate authorization.
+
+## 2026-08-17 — Subplan 25 generic tool policy and approval foundation completed
+
+- Activated Subplan 25 after explicit user authorization. Added Core `ToolEffect`, immutable
+  `ToolApprovalRequest`/`ToolApprovalDecision`, and async `ApprovalPort`; Runtime now owns
+  immutable `ToolExecutionPolicy` and Registry metadata with construction-time injection.
+- `ToolExecutor` validates arguments before sanitized local preview and approval, fails closed
+  with bounded `approval_unavailable`/`approval_rejected` outcomes, propagates cancellation,
+  and never branches on concrete tool names or configuration domains. Existing demo tools keep
+  `none/never` defaults and no Provider-visible local metadata.
+- Tool argument generation now preserves the complete Pydantic JSON Schema, including strict
+  extras, nested definitions, enums, and required fields. Added direct approval, cancellation,
+  bounded-result, schema, and ToolCycle closure tests.
+- Focused regression passed (104 selected with one Live deselected); full offline suite passed
+  (295 passed, one Live test deselected). Ruff format/check, compileall, CLI help, and
+  `git diff --check` all passed. Subplan 26 is activated; production configuration routing is
+  intentionally unchanged until the later atomic cutover.
+
+## 2026-08-17 — Subplan 26 configuration service and standard tool completed
+
+- Added application-owned strict `UpdateConfigurationArguments`, `ConfigurationCommand`,
+  and minimal `ConfigurationChangeResult`. The flat tool contract covers only session,
+  workspace, and global Preferences plus workspace Profile; reset is absent from legacy
+  `ConfigPatch` and sensitive/provider targets are not model fields.
+- Consolidated validation, reset tombstones, no-op classification, degraded-state preflight,
+  revision handling, Session projection refresh, and one-publication legacy patch behavior in
+  `ConfigPatchService`. Slash edit/reset paths now delegate to the same typed service while
+  retaining their existing preview/confirmation grammar.
+- Added the unregistered `update_configuration` factory with Chinese intent/scope rules,
+  required persistent-write approval metadata, sanitized preflight preview, thin service
+  delegation, bounded safe results, and stable domain-error mapping.
+- Focused configuration/service/state/command/tool regression passed (128); full offline suite
+  passed (313, one Live test deselected). Ruff format/check, compileall, CLI help, and
+  `git diff --check` passed. Subplan 27 is activated for the atomic production cutover.
+
+## 2026-08-17 — Subplan 27 single-chain product integration completed
+
+- Added the terminal `ApprovalPort` adapter and CLI composition now creates one shared
+  `Terminal`/`PromptSession`, injects the adapter into the generic `ToolExecutor`, and passes
+  the same UI objects to `run_repl`. Denial, EOF/Ctrl+C cancellation, prompt timeout, and
+  bounded terminal-only previews remain outside events and ConversationLog.
+- Registered `update_configuration` beside `lookup_record` and `calculate` only for
+  function-tool-capable Adapters. Removed the production Gate/extractor/structured
+  configuration route; generic structured-completion infrastructure remains with zero
+  production callers. Unsupported Adapters remain tool-free and `/config` remains explicit.
+- Added ordinary-loop coverage for persistence, ordinary/one-turn/negative/quoted/hypothetical/
+  ambiguous inputs, mixed work/configuration, serial per-call approval, partial persistence,
+  cancellation closure, state projection refresh, and real offline REPL approval/dirty-history
+  behavior. Updated current README, architecture, and Stage 3 roadmap wording.
+- Focused cutover regression passed (52); configuration/terminal/product acceptance passed
+  (41 after timeout coverage); full offline suite passed (298, one Live test deselected).
+  Ruff format/check, compileall, CLI help, and `git diff --check` passed. Subplan 28 is active
+  for final acceptance and package evidence.
+
+## 2026-08-17 — Subplan 28 final acceptance completed
+
+- Added `docs/acceptance/configuration-tooling-evidence.md`, mapping the master definition of
+  done to direct tests, source scans, product scenarios, package checks, and observed results.
+  Scripted Provider intent cases are explicitly recorded as plumbing evidence only; optional
+  Live intent evaluation was not run without a compatible credential and explicit request.
+- Reconciled README, `docs/ARCHITECTURE.md`, `docs/ROADMAP.md`, and the Stage 3 roadmap to
+  describe the delivered first stateful configuration-tool slice while keeping file/search/
+  edit/Shell, persistent Session, memory, Skills, MCP, and background work incomplete.
+- Strict collection passed with 300 tests. Final offline suite passed with 299 tests and one
+  Live test deselected. Ruff format/check, compileall, CLI help, `git diff --check`, 60-link
+  Markdown audit, precise source/capability scans, and the fresh wheel/package scans passed.
+- Built fresh wheel `dist/morrow_agent-0.1.0-py3-none-any.whl` (45 entries,
+  SHA-256 `9a664e67b62173073da654aa131c5bb1c5822d3c0c532506ae2d190109a420a`). Installed it
+  into a fresh Python 3.13 virtual environment with offline dependency reuse; import,
+  bundled-policy discovery, configuration-module discovery, and installed `morrow --help`
+  passed. The master plan is complete; no implementation subplan remains active.

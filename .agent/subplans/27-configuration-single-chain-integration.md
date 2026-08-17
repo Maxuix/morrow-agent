@@ -1,6 +1,6 @@
 # Subplan 27 — Single-Chain Product Integration
 
-> Status: pending
+> Status: completed
 > Depends on: Subplan 26
 
 ## Goal

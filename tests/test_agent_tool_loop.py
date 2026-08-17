@@ -14,11 +14,16 @@ from morrow.core.models import (
     FinishReason,
     FunctionToolCall,
     ModelRef,
+    ToolApprovalDecision,
+    ToolApprovalRequest,
+    ToolEffect,
     ToolMessage,
 )
 from morrow.runtime.agent import AgentLoop
+from morrow.runtime.policy import ToolApproval, ToolExecutionPolicy
 from morrow.runtime.session import Session
 from morrow.runtime.tools import (
+    ToolErrorCode,
     ToolExecutor,
     ToolRegistry,
     ToolSet,
@@ -33,6 +38,15 @@ class EchoArguments(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     value: str
+
+
+class _DenyApproval:
+    def __init__(self) -> None:
+        self.requests: list[ToolApprovalRequest] = []
+
+    async def request(self, request: ToolApprovalRequest) -> ToolApprovalDecision:
+        self.requests.append(request)
+        return ToolApprovalDecision(approved=False)
 
 
 def _echo_executor(cancel_on: str | None = None, explode_on_id: str | None = None):
@@ -153,6 +167,53 @@ async def test_multi_call_batch_results_arrive_in_original_order():
         "one",
         "two",
     ]
+
+
+@pytest.mark.asyncio
+async def test_approval_rejection_closes_one_tool_cycle_for_history_continuation():
+    handler_calls = 0
+
+    async def handler(arguments: EchoArguments) -> object:
+        nonlocal handler_calls
+        handler_calls += 1
+        return {"echo": arguments.value}
+
+    registry = ToolRegistry()
+    registry.register(
+        make_tool(
+            name="echo",
+            description="echo",
+            arguments_model=EchoArguments,
+            handler=handler,
+            execution_policy=ToolExecutionPolicy(
+                effect=ToolEffect.SESSION_WRITE,
+                approval=ToolApproval.REQUIRED,
+            ),
+            approval_preview=lambda _: ("preview",),
+        )
+    )
+    approval = _DenyApproval()
+    executor = ToolExecutor(registry.snapshot(), make_run_policy(), approval_port=approval)
+    provider = _provider(
+        AssistantMessage(tool_calls=(_call("c1", "blocked"),)),
+        AssistantMessage(content="已处理拒绝结果"),
+    )
+    session = Session(session_id="s")
+
+    events = await _collect(
+        AgentLoop(provider, MODEL, make_context_builder(), tool_executor=executor).run_task(
+            session, "请执行可能需要确认的操作"
+        )
+    )
+
+    assert lifecycle_is_valid(events)
+    assert events[-1].payload["finish_reason"] == FinishReason.STOP.value
+    messages = _tool_messages(session)
+    assert len(messages) == 1
+    assert json.loads(messages[0].content)["error"]["code"] == ToolErrorCode.APPROVAL_REJECTED
+    assert handler_calls == 0
+    assert len(approval.requests) == 1
+    assert session.log.unresolved_call_ids == ()
 
 
 @pytest.mark.asyncio

@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from morrow.core.models import ConfigPatch, ConfigPatchOperation, Preferences
+from morrow.application.configuration import ConfigurationCommand, render_configuration_preview
 from morrow.core.preferences import merge_preferences
-from morrow.services.preferences import render_patch_preview
 
 
 @dataclass
@@ -41,31 +40,22 @@ class CommandService:
 
     def reset_profile(self):
         self._ensure_workspace_writable()
-        result = self.project_store.clear_profile(self.identity.workspace_id)
-        if result.status.value == "ok":
-            self.session.profile = None
-        return result
+        if self.config_service is None:
+            raise RuntimeError("配置服务尚未就绪")
+        return self.config_service.apply_command(
+            ConfigurationCommand(scope="workspace", target="profile", operation="reset")
+        )
 
     def reset_preferences(self, scope: str):
-        if scope == "session":
-            self.session.preferences = Preferences()
-            return True
+        if self.config_service is None:
+            raise RuntimeError("配置服务尚未就绪")
         if scope == "workspace":
             self._ensure_workspace_writable(preferences=True)
-            result = self.project_store.clear_preferences(self.identity.workspace_id)
-            if result.status.value == "ok":
-                self.session.workspace_preferences = Preferences()
-            return result
-        if scope == "global" and self.config_service:
-            current = self.config_service.global_store.load()
-            result = self.config_service.global_store.update(
-                lambda value: value.model_copy(update={"preferences": Preferences()}),
-                expected_revision=current.revision,
-            )
-            if result.status.value == "ok":
-                self.session.global_preferences = result.value.preferences
-            return result
-        raise ValueError(f"未知 Preferences 作用域：{scope}")
+        elif scope not in {"session", "global"}:
+            raise ValueError(f"未知 Preferences 作用域：{scope}")
+        return self.config_service.apply_command(
+            ConfigurationCommand(scope=scope, target="preferences", operation="reset")
+        )
 
     def execute(self, raw: str) -> CommandResult:
         parts = raw.strip().split()
@@ -97,15 +87,15 @@ class CommandService:
             if not self.config_service:
                 return CommandResult(["配置服务尚未就绪。"])
             try:
-                patch = ConfigPatch(
+                command = ConfigurationCommand(
                     scope="workspace",
                     target="profile",
-                    operations=[
-                        ConfigPatchOperation(op="set", path=parts[2], value=" ".join(parts[3:]))
-                    ],
+                    operation="set",
+                    path=parts[2],
+                    value=" ".join(parts[3:]),
                 )
                 return CommandResult(
-                    render_patch_preview(patch), action="config_preview", value=patch
+                    render_configuration_preview(command), action="config_preview", value=command
                 )
             except (ValueError, RuntimeError) as exc:
                 return CommandResult([f"Profile 更新失败：{exc}"])
@@ -138,15 +128,17 @@ class CommandService:
                 ):
                     return CommandResult(["工作空间 Preferences 不可安全加载，无法编辑。"])
                 try:
-                    patch = ConfigPatch(
+                    command = ConfigurationCommand(
                         scope=parts[2],
                         target="preferences",
-                        operations=[
-                            ConfigPatchOperation(op="set", path=parts[3], value=" ".join(parts[4:]))
-                        ],
+                        operation="set",
+                        path=parts[3],
+                        value=" ".join(parts[4:]),
                     )
                     return CommandResult(
-                        render_patch_preview(patch), action="config_preview", value=patch
+                        render_configuration_preview(command),
+                        action="config_preview",
+                        value=command,
                     )
                 except (ValueError, RuntimeError) as exc:
                     return CommandResult([f"配置保存失败：{exc}"])

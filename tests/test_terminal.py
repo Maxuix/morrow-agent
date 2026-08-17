@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import asyncio
 from contextlib import nullcontext
 
 import pytest
 
 from morrow.application.orchestrator import DispatchResult
-from morrow.core.models import AgentEvent
+from morrow.core.models import AgentEvent, ToolApprovalRequest, ToolEffect
 from morrow.interfaces import terminal as terminal_module
 from morrow.runtime.session import Session
 from morrow.testing import seed_user_turn
@@ -38,9 +39,10 @@ class ScriptedTerminal:
 
 
 class OrchestratorStub:
-    def __init__(self, actions, session=None) -> None:
+    def __init__(self, actions, session=None, command_service=None) -> None:
         self.actions = actions
         self.session = session
+        self.command_service = command_service
         self.reset_count = 0
 
     async def stream(self, text):
@@ -50,6 +52,37 @@ class OrchestratorStub:
         self.reset_count += 1
         if self.session is not None:
             self.session.reset("reset")
+
+
+@pytest.mark.asyncio
+async def test_terminal_approval_renders_only_sanitized_preview_and_accepts_yes():
+    terminal = ScriptedTerminal(["y"])
+    port = terminal_module.TerminalApprovalPort(terminal, object())
+
+    decision = await port.request(
+        ToolApprovalRequest(
+            call_id="c1",
+            effect=ToolEffect.PERSISTENT_WRITE,
+            preview=("配置预览：", "作用域：workspace"),
+        )
+    )
+
+    assert decision.approved is True
+    assert terminal.prompt_count == 1
+    assert any("作用域：workspace" in line for line in terminal.console.lines)
+    assert all("c1" not in line for line in terminal.console.lines)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("input_value", [EOFError(), KeyboardInterrupt()])
+async def test_terminal_approval_eof_or_ctrl_c_cancels_active_turn(input_value):
+    terminal = ScriptedTerminal([input_value])
+    port = terminal_module.TerminalApprovalPort(terminal, object())
+
+    with pytest.raises(asyncio.CancelledError):
+        await port.request(
+            ToolApprovalRequest(call_id="c1", effect=ToolEffect.SESSION_WRITE, preview=("preview",))
+        )
 
 
 def install_terminal(monkeypatch, terminal):
@@ -159,3 +192,22 @@ async def test_dirty_exit_cancelled_stays_in_repl_then_confirmed_exits(monkeypat
     assert code == 0
     assert terminal.prompt_count == 4
     assert session.messages[0].content == "unsaved"
+
+
+@pytest.mark.asyncio
+async def test_profile_reset_failure_is_reported_without_leaving_repl(monkeypatch):
+    class FailingCommandService:
+        def reset_profile(self):
+            raise RuntimeError("磁盘写入失败")
+
+    terminal = ScriptedTerminal(["/workspace reset", "y", "/exit"])
+    install_terminal(monkeypatch, terminal)
+    orchestrator = OrchestratorStub(
+        {"/workspace reset": "reset_profile", "/exit": "exit"},
+        command_service=FailingCommandService(),
+    )
+
+    code = await terminal_module.run_repl(orchestrator, session=Session(session_id="s"))
+
+    assert code == 0
+    assert any("Profile 重置失败：磁盘写入失败" in line for line in terminal.console.lines)

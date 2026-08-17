@@ -1,6 +1,6 @@
 # Subplan 28 — Configuration Tooling Acceptance and Delivery
 
-> Status: pending
+> Status: completed
 > Depends on: Subplans 25–27
 
 ## Goal

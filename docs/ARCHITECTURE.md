@@ -1,9 +1,9 @@
 # Morrow 架构基线
 
-> 状态：阶段 2 完成、Handoff 移除后的当前架构基线
+> 状态：阶段 2 完成、阶段 3 通用工具策略/审批与配置工具先行切片完成
 
-本文锁定当前依赖方向、数据所有权和安全边界。阶段 3 及之后的本地工具、持久化 Session、
-Skills、MCP、记忆和后台任务尚未开始。
+本文锁定当前依赖方向、数据所有权和安全边界。阶段 3 的配置工具先行切片已经交付；之后的本地
+文件工具、持久化 Session、Skills、MCP、记忆和后台任务尚未开始。
 
 ## 分层与依赖方向
 
@@ -46,9 +46,16 @@ Session 持有的进程内 `ConversationLog` 是唯一聊天历史权威，`Sess
 带 calls 的 Assistant 与其有序 ToolMessage 构成不可拆分的 ToolCycle。ContextBuilder 从不可变
 Snapshot 生成 Chat 或 Structured 投影，按完整 Cycle/turn 控制预算；它不写事实源、不调用摘要模型。
 
-生产组合只在 Adapter 声明 OpenAI function-tool 支持时启用 `lookup_record` 和 `calculate` 两个
-无本地副作用工具。随包 `agent-policy.toml` 解析为任务固定的 RunPolicy。模型请求白名单、流片段
-组装与 reasoning/SDK 元数据隔离归 Provider Adapter。
+生产组合只在 Adapter 声明 OpenAI function-tool 支持时启用 `lookup_record`、`calculate` 和
+`update_configuration`。后者是配置服务的薄工具适配器，仍遵循同一标准 ToolCycle。随包
+`agent-policy.toml` 解析为任务固定的 RunPolicy。模型请求白名单、流片段组装与 reasoning/SDK 元数据
+隔离归 Provider Adapter。
+
+Runtime 已提供与具体领域无关的 `ToolExecutionPolicy`、本地 `ToolEffect` 和注入式 `ApprovalPort`；
+生产配置工具使用 `effect=persistent_write/approval=required`，通过 Interface 层的
+`TerminalApprovalPort` 接收经过预检和脱敏的预览；副作用元数据不会进入 Provider wire。配置工具、
+Slash 命令与 Profile/Preferences 的校验和写入统一委托给 `ConfigPatchService`。文件/Shell/Git 工具
+以及对应的 Interface 组合仍未进入当前架构基线。
 
 命令识别归 CommandService；调度归 SessionOrchestrator；输入、确认、渲染和退出码归终端接口。
 配置补丁显式分派到 Preferences 或 Profile，不存在兜底目标。`build_session_application()` 返回命名的
@@ -73,9 +80,10 @@ Service 或 Port：
 - 工具的副作用等级、审批、超时、取消和审计属于通用 Tool Policy/Executor；单个 handler 不得自行读取
   用户输入、发起终端确认或发布公开事件。
 
-`lookup_record` 与 `calculate` 分别属于注入不可变数据和纯计算工具。未来配置、文件、Shell、Git、网络等
-有状态或有副作用工具必须沿用同一注册与 ToolCycle 协议，并把实际能力委托给相应 Service/Port。模型请求
-中的 ToolDefinition 保持标准化；本地风险与审批元数据不得泄露为 Provider 私有协议。
+`lookup_record` 与 `calculate` 分别属于注入不可变数据和纯计算工具；`update_configuration` 通过注入的
+`ConfigPatchService` 访问既有配置状态。未来文件、Shell、Git、网络等有状态或有副作用工具必须沿用同一
+注册与 ToolCycle 协议，并把实际能力委托给相应 Service/Port。模型请求中的 ToolDefinition 保持标准化；
+本地风险与审批元数据不得泄露为 Provider 私有协议。
 
 ## 当前运行流
 
@@ -87,7 +95,7 @@ Service 或 Port：
   → 构造进程内 SessionApplication
   → AgentLoop 接纳 User，ContextBuilder 组装合法历史和工具
   → Adapter 流式返回文本或 tool calls
-  → ToolExecutor 串行执行受限内存工具并闭合 ToolCycle
+  → ToolExecutor 校验、预检、审批并串行执行受限工具，闭合 ToolCycle
   → 最终回答、取消或确定性 stop_code
   → /new 或 /exit 对脏 Session 要求显式丢弃确认
 ```
@@ -122,7 +130,7 @@ workspace Preferences 损坏只隔离该层。旧 `handoff.yaml(.bak)` 不属于
 一种 finish_reason。公开事件不包含密钥、原始 SDK 对象、完整异常堆栈、完整工具参数/结果或 Provider
 私有 reasoning。
 
-- 当前工具只读取注入的内存数据；不读写项目、不调用 Shell/Git、不联网。
+- 当前工具只读取注入的内存数据，或通过配置服务更新既有状态；不读写项目、不调用 Shell/Git、不联网。
 - 默认测试不联网、不使用真实钥匙串、不依赖用户主目录。
 - Provider 和结构化响应失败必须分类；不静默切换 Provider 或模型。
 - Session 持久化、恢复、Fork、摘要和长期记忆留到阶段 4重新设计，不存在过渡兼容写入器。

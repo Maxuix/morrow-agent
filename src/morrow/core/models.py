@@ -146,6 +146,37 @@ class ToolFunction(ProtocolModel):
         return _require_non_empty(value)
 
 
+class ToolEffect(StrEnum):
+    """Local side-effect classification; never serialized to a Provider."""
+
+    NONE = "none"
+    SESSION_WRITE = "session_write"
+    PERSISTENT_WRITE = "persistent_write"
+
+
+class ToolApprovalRequest(ProtocolModel):
+    """Minimal, sanitized local context shown to an approval adapter."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    call_id: str
+    effect: ToolEffect
+    preview: tuple[str, ...] = ()
+
+    @field_validator("call_id")
+    @classmethod
+    def non_empty_call_id(cls, value: str) -> str:
+        return _require_non_empty(value)
+
+
+class ToolApprovalDecision(ProtocolModel):
+    """Immutable approval result returned by an injected local adapter."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    approved: bool
+
+
 class ToolDefinition(ProtocolModel):
     type: Literal["function"] = "function"
     function: ToolFunction
@@ -369,24 +400,6 @@ class ConfigPatch(MorrowModel):
     target: Literal["preferences", "profile"]
     operations: list[ConfigPatchOperation] = Field(min_length=1)
     reason: str | None = None
-
-
-class ConfigExtractionResult(MorrowModel):
-    result: Literal["no_change", "clarification_required", "config_patch"]
-    question: str | None = Field(default=None, max_length=300)
-    patch: ConfigPatch | None = None
-
-    @model_validator(mode="after")
-    def fields_match_result(self) -> ConfigExtractionResult:
-        if self.result == "config_patch":
-            if self.patch is None or self.question is not None:
-                raise ValueError("config_patch requires only a valid patch")
-        elif self.result == "clarification_required":
-            if self.patch is not None or self.question is None or not self.question.strip():
-                raise ValueError("clarification_required requires only one bounded question")
-        elif self.patch is not None or self.question is not None:
-            raise ValueError("no_change carries neither question nor patch")
-        return self
 
 
 class AgentEvent(MorrowModel):

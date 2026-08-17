@@ -7,10 +7,11 @@ import getpass
 from pathlib import Path
 
 import typer
+from prompt_toolkit import PromptSession
 
 from morrow.adapters.credentials.keyring import environment_credential
 from morrow.bootstrap import build_application, build_session_application
-from morrow.interfaces.terminal import run_repl
+from morrow.interfaces.terminal import Terminal, TerminalApprovalPort, run_repl
 from morrow.services.workspace import WorkspaceError, WorkspaceWriterLock
 
 app = typer.Typer(help="Morrow（承序）工作空间终端 Agent。")
@@ -90,9 +91,19 @@ def _run_workspace(application, identity) -> int:
         except WorkspaceError as exc:
             typer.echo(str(exc), err=True)
             raise typer.Exit(code=2) from exc
-    session_app = build_session_application(application, identity)
+    terminal = Terminal()
+    prompt_session = PromptSession()
+    approval_port = TerminalApprovalPort(terminal, prompt_session)
+    session_app = build_session_application(application, identity, approval_port=approval_port)
     session_app.session.read_only = read_only_workspace
-    return asyncio.run(run_repl(session_app.orchestrator, session=session_app.session))
+    return asyncio.run(
+        run_repl(
+            session_app.orchestrator,
+            session=session_app.session,
+            terminal=terminal,
+            prompt_session=prompt_session,
+        )
+    )
 
 
 @provider_app.command("list")

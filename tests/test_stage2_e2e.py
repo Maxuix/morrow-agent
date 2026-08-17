@@ -149,7 +149,10 @@ async def test_two_tool_step_story_completes_with_legal_history():
 
     # Tools are announced on every request.
     for sent in provider.stream_tools:
-        assert {tool.function.name for tool in sent} == {"lookup_record", "calculate"}
+        assert {tool.function.name for tool in sent} == {
+            "lookup_record",
+            "calculate",
+        }
 
     # One history source: the derived view equals the log projection.
     assert session.messages == session.log.messages_view()
@@ -179,6 +182,7 @@ async def test_ordinary_chat_can_finish_without_calling_advertised_guarded_tools
     assert {tool.function.name for tool in provider.stream_tools[0]} == {
         "lookup_record",
         "calculate",
+        "update_configuration",
     }
 
 

@@ -2,13 +2,13 @@
 
 ## Active subplan
 
-Subplan 25 — Generic Tool Policy and Approval Foundation.
+None; the current plan is complete.
 
 ## Tasks
 
-- [>] CT.25.1 — Lock generic contracts and add red boundary tests
-- [ ] CT.25.2 — Add immutable local tool execution metadata
-- [ ] CT.25.3 — Define ApprovalPort and deterministic adapters
-- [ ] CT.25.4 — Enforce policy generically in ToolExecutor
-- [ ] CT.25.5 — Preserve full standard argument Schema
-- [ ] CT.25.6 — Run integrated regression and close the foundation
+- [x] CT.28.1 — Build the requirement-to-evidence matrix
+- [x] CT.28.2 — Accept intent-policy behavior honestly
+- [x] CT.28.3 — Accept the real offline terminal product flow
+- [x] CT.28.4 — Accept architecture, state, and capability boundaries
+- [x] CT.28.5 — Reconcile product and architecture documentation
+- [x] CT.28.6 — Run final package and quality gates

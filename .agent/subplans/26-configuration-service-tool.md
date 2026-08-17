@@ -1,6 +1,6 @@
 # Subplan 26 — Configuration Service and Standard Tool
 
-> Status: pending
+> Status: completed
 > Depends on: Subplan 25
 
 ## Goal

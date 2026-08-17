@@ -1,6 +1,6 @@
 # Subplan 25 — Generic Tool Policy and Approval Foundation
 
-> Status: in progress
+> Status: completed
 > Depends on: commit `cbc3d6d`
 > Activation: requires explicit user authorization to start the Stage 3 stateful-tool slice
 

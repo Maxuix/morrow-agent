@@ -19,9 +19,12 @@ class _PromptingTerminal(terminal_module.Terminal):
     def __init__(self, inputs, console):
         super().__init__(console=console)
         self.inputs = iter(inputs)
+        self.prompt_messages = []
+        self.prompt_sessions = []
 
     async def prompt(self, session, message="你 > "):
-        del session, message
+        self.prompt_sessions.append(session)
+        self.prompt_messages.append(message)
         return next(self.inputs)
 
 
@@ -112,3 +115,58 @@ async def test_real_terminal_product_flow_is_ordered_recoverable_and_secret_safe
         if sentinel != "secret-call-id":
             assert sentinel not in public_surface
         assert sentinel not in persisted_surface
+
+
+@pytest.mark.asyncio
+async def test_real_repl_configuration_uses_shared_terminal_approval_and_dirty_history(tmp_path):
+    app = build_application(state_root=tmp_path / "state", credentials=MemoryCredentialStore())
+    project = tmp_path / "project"
+    project.mkdir()
+    identity = app.workspace_service.confirm(app.workspace_service.resolve(project))
+    provider = ScriptedModelProvider(
+        [
+            AssistantMessage(
+                tool_calls=(
+                    FunctionToolCall(
+                        id="config-call",
+                        name="update_configuration",
+                        arguments=(
+                            '{"scope":"session","target":"preferences",'
+                            '"operation":"set","path":"language","value":"中文"}'
+                        ),
+                    ),
+                )
+            ),
+            AssistantMessage(content="本次会话将使用中文。"),
+        ]
+    )
+    prompt_session = object()
+    output = StringIO()
+    terminal = _PromptingTerminal(
+        ["请把这次回复改成中文", "y", "/exit", "y"],
+        Console(file=output, force_terminal=False, color_system=None, width=120),
+    )
+    approval = terminal_module.TerminalApprovalPort(terminal, prompt_session)
+    session_app = build_session_application(
+        app,
+        identity,
+        provider=provider,
+        model=ModelRef(provider_id="p", model_id="m"),
+        approval_port=approval,
+    )
+
+    exit_code = await terminal_module.run_repl(
+        session_app.orchestrator,
+        session=session_app.session,
+        terminal=terminal,
+        prompt_session=prompt_session,
+    )
+
+    assert exit_code == 0
+    assert session_app.session.preferences.language == "中文"
+    assert session_app.session.dirty is True
+    assert session_app.session.log.snapshot().records
+    assert "配置预览：" in output.getvalue()
+    assert "确认执行？ [y/N] " in terminal.prompt_messages
+    assert "确认退出并丢弃当前内存内容？ [y/N] " in terminal.prompt_messages
+    assert all(item is prompt_session for item in terminal.prompt_sessions)

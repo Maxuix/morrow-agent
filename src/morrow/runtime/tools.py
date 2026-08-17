@@ -6,17 +6,26 @@ import asyncio
 import json
 import math
 from collections.abc import Awaitable, Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 from types import MappingProxyType
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
 
-from morrow.core.models import FunctionToolCall, ToolDefinition, ToolFunction
-from morrow.runtime.policy import RunPolicy
+from morrow.core.models import (
+    FunctionToolCall,
+    ToolApprovalDecision,
+    ToolApprovalRequest,
+    ToolDefinition,
+    ToolFunction,
+)
+from morrow.core.ports import ApprovalPort
+from morrow.runtime.policy import RunPolicy, ToolApproval, ToolExecutionPolicy
 
 ENVELOPE_MESSAGE_LIMIT = 200
+APPROVAL_PREVIEW_LINE_LIMIT = 200
+APPROVAL_PREVIEW_LINES_LIMIT = 8
 
 
 class ToolErrorCode(StrEnum):
@@ -31,6 +40,9 @@ class ToolErrorCode(StrEnum):
     OUTPUT_FAILED = "output_failed"
     CANCELLED = "cancelled"
     BUDGET_EXHAUSTED = "budget_exhausted"
+    APPROVAL_REJECTED = "approval_rejected"
+    APPROVAL_UNAVAILABLE = "approval_unavailable"
+    APPROVAL_PREVIEW_FAILED = "approval_preview_failed"
     INTERNAL = "internal"
 
 
@@ -62,16 +74,45 @@ def tool_error_envelope(
     return _dump({"ok": False, "error": error})
 
 
-MIN_ERROR_ENVELOPE_CHARS = max(len(tool_error_envelope(code, "")) for code in ToolErrorCode)
+# This lower bound applies only to AgentLoop-generated synthetic error envelopes.
+_SYNTHETIC_ERROR_CODES = (
+    ToolErrorCode.INVALID_ARGUMENTS,
+    ToolErrorCode.UNKNOWN_TOOL,
+    ToolErrorCode.NOT_FOUND,
+    ToolErrorCode.DIVISION_BY_ZERO,
+    ToolErrorCode.EXECUTION_FAILED,
+    ToolErrorCode.TIMEOUT,
+    ToolErrorCode.OUTPUT_FAILED,
+    ToolErrorCode.CANCELLED,
+    ToolErrorCode.BUDGET_EXHAUSTED,
+    ToolErrorCode.INTERNAL,
+)
+MIN_ERROR_ENVELOPE_CHARS = max(
+    len(tool_error_envelope(code, "")) for code in _SYNTHETIC_ERROR_CODES
+)
 
 
 def tool_parameters_from_model(model: type[BaseModel]) -> dict:
-    schema = model.model_json_schema()
-    return {
-        "type": "object",
-        "properties": schema.get("properties", {}),
-        "required": schema.get("required", []),
-    }
+    """Return the complete Pydantic schema used by the standard tool wire."""
+    return model.model_json_schema()
+
+
+ApprovalPreview = Callable[[BaseModel], tuple[str, ...] | list[str]]
+
+
+def _sanitize_approval_preview(value: object) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if isinstance(value, str) or not isinstance(value, (list, tuple)):
+        raise ValueError("approval preview must be a list or tuple of strings")
+    lines: list[str] = []
+    for raw_line in value[:APPROVAL_PREVIEW_LINES_LIMIT]:
+        if not isinstance(raw_line, str):
+            raise ValueError("approval preview lines must be strings")
+        line = " ".join(raw_line.split())
+        if line:
+            lines.append(line[:APPROVAL_PREVIEW_LINE_LIMIT])
+    return tuple(lines)
 
 
 @dataclass(frozen=True)
@@ -79,6 +120,8 @@ class RegisteredTool:
     definition: ToolDefinition
     arguments_model: type[BaseModel]
     handler: Callable[[BaseModel], Awaitable[object]]
+    execution_policy: ToolExecutionPolicy = field(default_factory=ToolExecutionPolicy)
+    approval_preview: ApprovalPreview | None = None
 
 
 @dataclass(frozen=True)
@@ -132,9 +175,15 @@ class ToolExecutionOutcome:
 class ToolExecutor:
     """One bounded outcome per call; never retries; no raw exception leaks."""
 
-    def __init__(self, tool_set: ToolSet, run_policy: RunPolicy) -> None:
+    def __init__(
+        self,
+        tool_set: ToolSet,
+        run_policy: RunPolicy,
+        approval_port: ApprovalPort | None = None,
+    ) -> None:
         self.tool_set = tool_set
         self.run_policy = run_policy
+        self.approval_port = approval_port
 
     @property
     def definitions(self) -> tuple[ToolDefinition, ...]:
@@ -181,6 +230,44 @@ class ToolExecutor:
                 limit=limit,
                 details=details,
             )
+        if registered.execution_policy.approval == ToolApproval.REQUIRED:
+            try:
+                preview = _sanitize_approval_preview(
+                    registered.approval_preview(arguments)
+                    if registered.approval_preview is not None
+                    else ()
+                )
+                request = ToolApprovalRequest(
+                    call_id=call.id,
+                    effect=registered.execution_policy.effect,
+                    preview=preview,
+                )
+            except asyncio.CancelledError:
+                raise
+            except ToolExecutionError as exc:
+                return self._error(call, exc.code, str(exc), limit=limit)
+            except Exception:
+                return self._error(
+                    call,
+                    ToolErrorCode.APPROVAL_PREVIEW_FAILED,
+                    "工具审批预览生成失败",
+                    limit=limit,
+                )
+            decision = await self._request_approval(request)
+            if decision is None:
+                return self._error(
+                    call,
+                    ToolErrorCode.APPROVAL_UNAVAILABLE,
+                    "工具需要审批，但当前没有可用的审批通道",
+                    limit=limit,
+                )
+            if not decision.approved:
+                return self._error(
+                    call,
+                    ToolErrorCode.APPROVAL_REJECTED,
+                    "工具操作未获批准",
+                    limit=limit,
+                )
         try:
             result = await registered.handler(arguments)
             envelope = _dump({"ok": True, "result": result})
@@ -224,6 +311,22 @@ class ToolExecutor:
             original_chars=original_chars,
         )
 
+    async def _request_approval(self, request: ToolApprovalRequest) -> ToolApprovalDecision | None:
+        port = self.approval_port
+        if port is None:
+            return None
+        try:
+            decision = await port.request(request)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            return None
+        if isinstance(decision, bool):
+            return ToolApprovalDecision(approved=decision)
+        if not isinstance(decision, ToolApprovalDecision):
+            return None
+        return decision
+
     @staticmethod
     def _error(
         call: FunctionToolCall,
@@ -238,6 +341,10 @@ class ToolExecutor:
             envelope = tool_error_envelope(code, message)
         if len(envelope) > limit:
             envelope = tool_error_envelope(code, "")
+        if len(envelope) > limit:
+            envelope = tool_error_envelope(ToolErrorCode.INTERNAL, "")
+        if len(envelope) > limit:
+            envelope = _dump({"ok": False})
         return ToolExecutionOutcome(
             call_id=call.id,
             name=call.name,
@@ -253,6 +360,8 @@ def make_tool(
     description: str,
     arguments_model: type[BaseModel],
     handler: Callable[[BaseModel], Awaitable[object]],
+    execution_policy: ToolExecutionPolicy | None = None,
+    approval_preview: ApprovalPreview | None = None,
 ) -> RegisteredTool:
     return RegisteredTool(
         definition=ToolDefinition(
@@ -264,6 +373,8 @@ def make_tool(
         ),
         arguments_model=arguments_model,
         handler=handler,
+        execution_policy=execution_policy or ToolExecutionPolicy(),
+        approval_preview=approval_preview,
     )
 
 
