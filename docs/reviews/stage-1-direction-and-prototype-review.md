@@ -1,5 +1,7 @@
 # 阶段 1 路线 Review
 
+> 历史评审：Handoff 讨论保留为当时的设计决策记录，不描述当前产品能力。
+
 > 对象：[阶段 1：方向确定与可运行原型](../roadmap/stage-1-direction-and-prototype.md)  
 > 对照：[开发路线总览](../ROADMAP.md)，以及阶段 2–7 草案  
 > 日期：2026-08-13  

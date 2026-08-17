@@ -1,139 +1,291 @@
-# Stage 2 Agent Core Implementation Plan
+# Handoff Removal Refactor Plan
 
-> Status: complete; Stage 2 accepted after final code-review remediation.
+> Status: complete
 > Active subplan: none
+> Scope: post-Stage-2 cleanup; this plan does not start Stage 3 or Stage 4
 
-## Overall goal
+## Objective
 
-Implement the approved Stage 2 Agent Core as one production path that can take a real user goal through multiple model/tool steps and return a final answer while preserving legal history, deterministic cancellation, Stage 1 product behavior, and strict Stage 3/4/5 boundaries.
+Remove the transitional workspace Handoff feature completely from the current product,
+runtime, domain model, state API, configuration surface, tests, package, and active
+documentation before persistent Session architecture begins.
 
-The implementation must finish with a working terminal product, not only isolated protocol modules:
+The completed tree must have one honest continuity boundary:
 
 ```text
-User input
-→ SessionOrchestrator
-→ AgentLoop.run_task()
-→ ContextBuilder
-→ OpenAI-compatible Provider
-→ ToolExecutor
-→ ConversationLog
-→ final Assistant answer / deterministic stop
+Persisted now
+├── Workspace identity
+├── Profile
+├── Global/workspace Preferences
+└── Provider configuration and credential references
+
+Process-local now
+└── Session-owned ConversationLog
+
+Deferred to Stage 4
+├── Persistent Sessions
+├── Session resume/list/archive/delete
+├── Fork
+├── Context summaries/checkpoints
+└── Long-term memory
 ```
+
+No renamed Handoff, temporary checkpoint, current-goal file, summary-on-exit path, or
+compatibility writer may replace the removed feature in this refactor.
+
+## Product decision
+
+Handoff is no longer a user-facing product concept or a supported persistence mechanism.
+It was a Stage 1 continuity experiment and became a Stage 2 compatibility surface, but it
+would duplicate the planned persistent Session authority and increase future migration,
+approval, context, and multi-client costs.
+
+After this refactor:
+
+- startup does not discover, display, load, or validate a Handoff;
+- ordinary chat never receives Handoff state in model context;
+- `/handoff` and the current Handoff-backed `/continue` behavior do not exist;
+- `/new` still starts a fresh process-local Session, with explicit discard confirmation
+  when the current Session is dirty;
+- `/exit` still protects dirty process-local content with explicit discard confirmation;
+- no exit, switch, cancellation, or error path calls a summary model or publishes
+  workspace continuation state;
+- legacy `handoff.yaml` and `.bak` files are ignored and never deleted automatically;
+- cross-process conversation continuation is explicitly unavailable until Stage 4.
 
 ## Authority and precedence
 
-1. [Stage 2 roadmap](../docs/roadmap/stage-2-agent-core.md) owns the approved scope, protocol and safety invariants.
-2. This plan owns implementation order, dependencies and stage gates.
-3. The active subplan owns concrete work and validation for one vertical slice.
-4. Tests and observed behavior take precedence over stale plan wording; any material conflict must update the roadmap/plan before implementation continues.
-5. The proposal and its reviews remain decision history, not competing implementation authorities:
-   - [approved proposal record](../docs/reviews/stage-2-agent-core-final-proposal.md)
-   - [first review](../docs/reviews/stage-2-agent-core-final-proposal-review.md)
-   - [executability review](../docs/reviews/stage-2-agent-core-revised-proposal-review.md)
+1. The user decision to remove Handoff now owns the product direction.
+2. This plan owns removal scope, ordering, temporary compatibility, and acceptance.
+3. The active subplan owns the executable tasks for one bounded slice.
+4. Current code and validation results override stale plan wording and must be reconciled
+   before proceeding.
+5. Completed Stage 1/2 roadmaps, reviews, acceptance evidence, and Git history remain
+   historical records; they must not be rewritten to claim Handoff never existed.
 
-## Entry baseline
+## Baseline and impact inventory
 
-- Stage 1 final-tree offline, Live and manual acceptance is complete.
-- The current product has one OpenAI-compatible Adapter, a text-only `AgentRuntime.run_turn()`, mutable `Session.messages`, a deterministic ContextBuilder, structured completion/Handoff services and a terminal event renderer.
-- Pydantic v2 and Python 3.12 `tomllib` are already available; Stage 2 requires no new third-party dependency.
-- Production code has no Stage 2 tool execution, persistent conversation history, local project tools, MCP, Skills or summary pipeline.
+The accepted Stage 2 product/source/test baseline is commit `831c4ea`
+(`feat: complete stage 2 agent core`). Before implementation starts, worktree differences
+from that baseline are limited to this `.agent/` planning set. Handoff currently reaches
+12 production files with direct Handoff coupling, one additional user-facing package
+tagline, and 11 test files.
+
+### Production surface
+
+| Area | Current Handoff coupling | Final action |
+|---|---|---|
+| `services/handoff.py` | generation, repair fallback, publish, dirty clear | delete file |
+| `core/models.py` | `Decision`, `Handoff`, `HandoffDocument`, patch target | remove symbols |
+| `core/ports.py` | Handoff load/backup/write/clear store API | remove methods |
+| `adapters/state/yaml.py` | `handoff.yaml` typed document methods | remove methods/imports |
+| `runtime/session.py` | loaded value, source revision, continuation state | remove fields/property |
+| `application/context.py` | system injection and fallback projection | remove purpose/branches |
+| `application/commands.py` | `/handoff`, `/continue`, revisions and actions | remove/replace paths |
+| `interfaces/terminal.py` | update/clear/load/save/switch/exit handling | remove and simplify |
+| `interfaces/cli.py` | onboarding goal, startup discovery and display | remove behavior |
+| `services/workspace.py` | inspection, read-only coupling, initial write | remove coupling |
+| `services/preferences.py` | Handoff patch whitelist and apply path | remove target/logic |
+| `bootstrap.py` | service construction, injection and return tuple | remove wiring |
+| `__init__.py` | `Pick up where you left off` package tagline | replace with neutral truthful text |
+
+### Test surface
+
+The affected files are:
+
+- `tests/test_context_projections.py`
+- `tests/test_context_runtime.py`
+- `tests/test_conversation_and_loop.py`
+- `tests/test_core_contracts.py`
+- `tests/test_preferences_and_orchestration.py`
+- `tests/test_stage2_e2e.py`
+- `tests/test_stage2_product_acceptance.py`
+- `tests/test_stage_boundary.py`
+- `tests/test_state_and_workspace.py`
+- `tests/test_structured_and_handoff.py`
+- `tests/test_terminal.py`
+
+Tests that cover generic structured completion, ConversationLog, context projections,
+atomic YAML publication, workspace isolation, or terminal cancellation remain. Only the
+Handoff-specific behavior is removed or replaced with the post-removal product contract.
 
 ## Execution strategy
 
-Stage 2 is split into four ordered vertical slices. Each slice must leave the tree integrated and green. Module boundaries guide ownership, but no slice may postpone its first end-to-end integration until a later module is “complete.”
+The refactor is split into four ordered subplans. Each subplan must finish with an
+integrated green tree. After Subplan 21, temporary compatibility is allowed only for
+uncalled model/port/YAML definitions that Subplan 22 deletes immediately. No production
+caller, configuration route, startup path, or runtime branch may read or write Handoff at
+that boundary.
 
-| Order | Subplan | Status | Depends on | Release value |
+| Order | Subplan | Status | Depends on | Result |
 |---|---|---|---|---|
-| 17 | [Walking Skeleton](subplans/17-stage-2-walking-skeleton.md) | complete | Stage 1 complete | One model → tool → model loop, one history writer, minimal safe Cycle closure |
-| 18 | [History, Context, and Product Projections](subplans/18-stage-2-history-context-product-projections.md) | complete | 17 | Full ToolCycle legality, safe context reduction, Handoff/structured compatibility |
-| 19 | [Guardrails, Policy, and Observability](subplans/19-stage-2-guardrails-policy-observability.md) | complete | 18 | Configured budgets, cancellation closure, retry/loop controls, terminal tool UX |
-| 20 | [Acceptance and Delivery](subplans/20-stage-2-acceptance-and-delivery.md) | complete | 17–19 | Complete evidence, documentation reconciliation and Stage 2 completion decision |
+| 21 | [Product and Runtime Removal](subplans/21-handoff-product-runtime-removal.md) | completed | Stage 2 accepted | No user/runtime flow can load, generate, inject, edit, clear, or save Handoff |
+| 22 | [Domain, State, and Configuration Excision](subplans/22-handoff-domain-state-excision.md) | completed | 21 | No production symbol, store method, patch target, or packaged module remains |
+| 23 | [Documentation and Historical Reconciliation](subplans/23-handoff-documentation-reconciliation.md) | completed | 22 | Current docs describe the reduced product honestly; historical evidence is classified |
+| 24 | [Acceptance and Delivery](subplans/24-handoff-removal-acceptance.md) | completed | 21–23 | Full offline/package/product gates prove complete removal without Stage 3/4 leakage |
 
-Only one subplan is active at a time. A failed gate reopens the owning subplan; later slices must not paper over an earlier invariant failure.
+Only one subplan may be active at a time. A failed gate reopens the subplan that owns the
+broken contract.
 
-## Cross-cutting implementation contracts
+## Cross-cutting contracts
 
-These contracts apply from the first slice that touches the relevant behavior:
+1. **No replacement bridge:** do not introduce `Checkpoint`, `ResumeState`, `TaskState`,
+   `current_goal.yaml`, automatic summary, or persistent ConversationLog in this plan.
+2. **Single chat history authority:** Session-owned `ConversationLog` remains the sole
+   chat-history writer and remains process-local.
+3. **Dirty-content safety:** until Session persistence exists, `/new` and `/exit` must
+   require an explicit discard confirmation for a dirty Session; they must not invoke a
+   model or write continuation state.
+4. **No legacy reads or writes:** production callers must not discover, validate, load,
+   migrate, clear, overwrite, back up, or delete legacy Handoff files after Subplan 21;
+   Subplan 22 deletes the then-uncalled port/YAML definitions.
+5. **Non-destructive user data policy:** the refactor leaves existing `handoff.yaml` and
+   `.bak` bytes untouched. Cleanup, import, or deletion requires a future explicit user
+   decision.
+6. **Narrow corruption isolation:** an ignored legacy Handoff file cannot place the
+   workspace, Profile, or Preferences into read-only mode.
+7. **Generic infrastructure survives:** structured completion, chat/structured context
+   projection, atomic YAML publication, revisions, backups, Profile, Preferences,
+   workspace identity, AgentLoop, tools, policy, and event lifecycle remain unless a
+   focused test proves Handoff-only ownership.
+8. **No compatibility aliases:** do not retain deprecated Handoff commands, model aliases,
+   store stubs, no-op loaders, hidden flags, or warning-only runtime branches.
+9. **No Stage 3/4 expansion:** no local file/Shell/Git/network/browser tools, approvals,
+   persistent Session store, summary model, memory, background work, or Fork enters this
+   plan.
+10. **Honest documentation:** active docs must state that chat history is process-local and
+    cross-process resume is unavailable. Historical documents must be labeled rather than
+    silently rewritten.
+11. **Secret and project safety:** no state content, credentials, tool arguments/results,
+    tracebacks, or project files are exposed or modified by the removal.
+12. **No dependency changes:** the refactor adds no third-party dependency.
 
-1. **Single chat state machine:** all ordinary chat reaches `AgentLoop.run_task()`; retained `run_turn()` is only a thin no-tools delegate.
-2. **Single history authority:** Session owns one ConversationLog. There is no second mutable message list and no transitional double write.
-3. **Adapter ownership:** Core expresses one OpenAI-compatible function-calling subset. Vendor request serialization, stream fragment assembly and future native conversion stay in Provider Adapters.
-4. **Atomic ToolCycle:** after an Assistant tool-call batch is accepted, every call receives exactly one ordered real or synthetic ToolMessage before another Assistant, User or terminal record can be appended; this minimum closure exists in Slice 1, not only in final hardening.
-5. **Commit points:** a partial Provider stream is never history; accepted tool calls are history only after minimum closure space is guaranteed; a final Assistant is completed only after it is appended.
-6. **No tool auto-retry:** ToolExecutor produces one bounded outcome. `retryable` is model guidance, not Runtime permission to replay a tool.
-7. **Pure context projection:** ContextBuilder is synchronous and deterministic; it reads a snapshot, never writes Session/Log/Handoff, never calls a model and never summarizes.
-8. **State-data boundary:** ToolMessage, Profile, Preferences and Handoff are model data, not commands or authorization. Tool data never enters command/config/permission routing.
-9. **Developer-owned policy:** operational limits come from a bundled validated TOML plus exact-model safe-size declarations. They are injectable in tests and absent from user Preferences, Profile, Handoff and CLI.
-10. **Public lifecycle:** one task emits exactly one `turn.started` and one `turn.completed`; fatal errors emit one `error` with the same AgentStopCode before completion; cancellation is not an error.
-11. **No secret/raw payload leakage:** public events, logs and terminal output exclude credentials, reasoning, full arguments, full results, SDK objects and tracebacks.
-12. **Stage boundary:** only the two approved in-memory tools are enabled. No file, Shell, Git, network, browser, MCP, Skill, persistence, LLM-summary or background-task capability enters Stage 2.
+### Locked command and exit contract
 
-## Development method
+| Input/state | Required result |
+|---|---|
+| `/handoff` or `/continue` | exactly `CommandResult([f"未知命令：{command}"])` with no action/value; no deprecated/removed alias |
+| dirty `/new`, confirmed | `discard_new`; reset only the process-local Session; exit status unchanged |
+| dirty `/new`, cancelled | remain in the current Session |
+| clean `/exit` or clean input EOF | process exit code `0` |
+| dirty `/exit`, confirmed | discard process-local Session and exit code `0` |
+| dirty `/exit`, cancelled | remain in the REPL |
+| EOF while answering a dirty-discard confirmation | exit code `2`, with no reset or state write |
 
-For every logical task:
+Read-only mode has no separate Handoff-save/continue branch. `/status` describes dirty
+state as an unsaved in-process conversation, not as content waiting to be handed off.
 
-1. Mark the task in `.agent/TODO.md` as in progress and update `.agent/TRACKER.md`.
-2. Add or tighten a failing focused test for the contract being implemented.
-3. Implement the smallest integrated change that satisfies the contract.
-4. Run the focused test and the affected Stage 1 regression set.
-5. Run the subplan gate before marking the task/subplan complete.
-6. Record only material decisions, failures and validation results in `.agent/LOG.md`.
+### Locked degraded-state contract
 
-Temporary compatibility is allowed only when it is read-only and has an explicit removal task in the same or next slice. The sole numeric bridges allowed before policy loading are the two existing Stage 1 values (retry limit 1 and context limit 24000): retry is explicit in Slice 1, Slice 2 must turn the ContextBuilder default into one explicit composition injection, and S2.19.1 removes both. Temporary duplicate writers, duplicate runtimes, new magic-number fallbacks and unbounded production tool enablement are prohibited.
+- corrupt or future Profile data makes the workspace read-only and prevents Profile and
+  workspace-Preferences writes;
+- corrupt or future legacy `handoff.yaml(.bak)` is ignored, does not make the workspace
+  read-only, does not block Profile/Preferences writes, and remains byte-identical;
+- corrupt Preferences isolates only the affected Preferences layer and has no
+  `/continue` or Handoff-loading consequence.
 
-## Quality gates
+### Locked composition contract
 
-Every subplan must pass:
+`build_session_application()` must return a small named composition object (for example,
+`SessionApplication`) containing `session`, `context_builder`, `commands`, and
+`orchestrator`. Do not replace the current five-element positional tuple with a shorter
+positional tuple. Every caller must use named fields.
 
-- focused unit/integration tests for its changed contracts;
-- the complete offline suite under the repository NetworkGuard;
-- `uv run ruff format --check .`;
-- `uv run ruff check .`;
-- `uv run python -m compileall -q src tests`;
-- the capability-based Stage 2 boundary tests;
-- `git diff --check`.
+## Legacy data policy
 
-Additional rules:
+The refactor intentionally performs no filesystem deletion and no automatic migration.
 
-- no unexpected skip/xfail may hide a Stage 2 contract;
-- wall-clock timing assertions use injected monotonic time, events or bounded synchronization rather than sleeps;
-- Provider tests use fake SDK chunks and scripted Providers by default;
-- any attempted Live test is opt-in, secret-safe and recorded as observed evidence rather than inferred success;
-- package-resource tests must verify the policy TOML is present in an installed/built artifact before Stage 2 completes.
+```text
+Existing ~/.morrow/workspaces/<workspace_id>/handoff.yaml(.bak)
+→ remains byte-for-byte untouched
+→ is no longer read by production code
+→ cannot affect startup or read-only state
+→ is documented as unsupported legacy data
+```
+
+If Stage 4 later chooses to import this data, that work must be explicitly planned against
+the new Session schema. This plan makes no compatibility promise beyond non-destruction.
+
+## Documentation policy
+
+Documentation cleanup has two classes:
+
+- **Current authority:** README, ARCHITECTURE, ROADMAP overview, current stage entry
+  conditions, command documentation, state ownership, and package behavior must remove
+  Handoff as a supported capability.
+- **Historical evidence:** completed Stage 1/2 roadmaps, proposals, reviews, acceptance
+  evidence, LOG entries, and completed subplans remain truthful records. They receive a
+  concise historical/deprecation marker where needed; their old acceptance claims are not
+  rewritten as current behavior.
+
+Every repository Handoff reference must be classified as current-to-remove,
+historical-to-retain, legacy-data/negative-test documentation, or an unrelated
+external-system use. No unclassified occurrence may remain.
+
+## Validation gates
+
+Every subplan runs its focused tests and the complete offline/quality gate below so that
+no ordered slice hands a red tree to the next slice. Documentation-only Subplan 23 still
+runs the full offline suite because active documentation and package help are part of the
+product contract.
+
+```bash
+uv run pytest -m 'not live'
+uv run ruff format --check .
+uv run ruff check .
+uv run python -m compileall -q src tests
+uv run morrow --help
+git diff --check
+```
+
+Subplan-specific mandatory checks:
+
+- **Subplan 21:** no production caller can load/write Handoff; configuration and natural-
+  language paths cannot select it; startup and ordinary chat ignore sentinel legacy files;
+  degraded-state, command, exit-code, no-model-call, and no-workspace-write contracts pass.
+- **Subplan 22:** precise source scans prove removed classes, file names, commands, fields,
+  actions, and persistence APIs are absent; test-scan results are limited to explicit
+  unknown-command, negative-boundary, and legacy non-destruction assertions; the built
+  wheel has no Handoff module. Do not scan the bare word `Decision`, which would falsely
+  match `GateDecision`.
+- **Subplan 23:** every repository reference is recorded in the reference-classification
+  artifact as current-to-remove, historical-to-retain, legacy-data documentation, or an
+  unrelated external-system use.
+- **Subplan 24:** repeat all runtime, source, package, documentation, legacy-data, and
+  capability gates on the final tree.
+- **Every subplan:** Profile/Preferences isolation and state safety, ConversationLog and
+  AgentLoop history/tool-cycle behavior, and the Stage 3/4/5 capability boundary remain
+  green. Optional Live tests remain opt-in and are not required for removal.
 
 ## Principal risks and containment
 
-| Risk | Containment and owning slice |
+| Risk | Containment |
 |---|---|
-| OpenAI-compatible vendors emit irregular/interleaved fragments | Table-driven fake-SDK accumulator tests and request round trip in 17 |
-| Session migration creates dual history or orphan messages | Atomic migration to Session-owned Log in 17; remaining readers only in 18 |
-| Context reduction produces illegal tool history | Snapshot-derived semantic units, final validator and exhaustive boundary cases in 18 |
-| Cancellation/exception lands between calls/results | Minimal unresolved-call closure in 17; exhaustive commit points, budget/status mappings in 19 |
-| Large batches/results make the next request impossible | Pre-admission Cycle capacity check and equal per-call bounds in 19 |
-| Retry replays observable model output | Adapter/runner `made_progress` contract and retry matrix in 19 |
-| Policy values become scattered constants or user settings | One validated bundled TOML and frozen RunPolicy in 19 |
-| Terminal repeats mixed-content output | Event-sequence renderer tests in 19 and manual acceptance in 20 |
-| Tool execution crosses into Stage 3 | Default-registry and side-effect boundary tests from 17 through 20 |
+| Deleting Handoff removes the only cross-process continuity path | State the temporary product limitation explicitly; do not create another bridge |
+| Dirty `/new` or `/exit` silently loses process-local work | Keep deterministic discard confirmation without model/state writes |
+| Generic structured/context/state infrastructure is removed accidentally | Split Handoff-specific tests from generic tests before deleting symbols |
+| Legacy corrupt files continue to lock a workspace | Add startup tests with corrupt/future legacy Handoff sentinels that must be ignored |
+| Stage 2 acceptance claims become misleading | Publish new post-removal acceptance and mark old evidence historical |
+| Large cross-layer diff hides stale symbols | Use ordered subplans and source/package negative scans |
+| Old user files are deleted unintentionally | No cleanup command or unlink path; byte-for-byte sentinel test |
+| `/continue` semantics linger under a compatibility alias | Remove the old route completely; Session resume is redesigned in Stage 4 |
 
-## Stage 2 definition of done
+## Definition of done
 
-Stage 2 is complete only when all four subplans are complete and executable evidence proves:
+The refactor is complete only when:
 
-- a single user goal reaches a final answer after at least two dependent tool steps;
-- plain no-tools chat uses the same AgentLoop and retains all Stage 1 behavior;
-- accepted calls/results are one-to-one and no exit path leaves an open Cycle;
-- malformed/partial Provider output never enters history;
-- all Provider requests use an explicit field whitelist and legal tool history;
-- tool validation, unknown tool, not-found, timeout, failure, cancellation and truncation produce bounded deterministic results;
-- model/tool/time/context/output/loop limits stop safely with the approved public reason;
-- ContextBuilder clears and trims only derived Views, never the facts or Handoff;
-- Handoff and StructuredCompletion never consume ToolMessage envelopes or intermediate tool-call Assistant content;
-- cancellation during model or tool work is followed by a healthy next user turn;
-- terminal text/tool/final segments are ordered, non-duplicated and secret-safe;
-- ConversationLog remains process-local and resettable;
-- all mandatory offline, packaging and manual acceptance gates pass;
-- Stage 1 remains green and no Stage 3/4/5 capability is present.
-
-## Completion
-
-Stage 2 completed 2026-08-17. Subplan 20 mapped every acceptance branch to direct evidence, closed the remaining fake-chunk/output-allocation/deadline/loop and real-terminal coverage gaps, then remediated review findings through S2.20.12: Provider deadlines, context rebuild, Cycle sizing, bounded synthetics, finish/message consistency, finite calculator output, NL config budget degradation, per-Cycle call-ID uniqueness, deadline-scoped Provider `anext`, and `GeneratorExit` turn cleanup. The final tree passed 308 offline tests with one Live test deselected, plus ruff, compileall, and capability/product sentinel gates. Final evidence is in `docs/acceptance/stage-2-evidence.md`. The optional Live smoke was not run because no explicit compatible credential was present; no Live success is claimed. Stage 3 has not been planned or started by this plan.
+- no current user flow exposes Handoff or Handoff-backed continuation;
+- no runtime state, model context, command, terminal action, bootstrap dependency, or
+  workspace inspection references Handoff;
+- no Handoff domain type, service, store port, YAML method, config target, source file, or
+  packaged module remains;
+- existing legacy Handoff files are ignored and left untouched;
+- dirty process-local `/new` and `/exit` remain explicit and deterministic;
+- Profile, Preferences, Provider, ConversationLog, AgentLoop, tool loop, context budgets,
+  cancellation, and state safety have no regression;
+- active product and architecture docs describe process-local Session behavior honestly;
+- every remaining Handoff mention is explicitly historical, a legacy-data/negative test or
+  document, or an unrelated external-system use;
+- all focused, offline, Ruff, compile, CLI, boundary, package, and diff gates pass;
+- `.agent/TODO.md`, `.agent/TRACKER.md`, `.agent/LOG.md`, the active plan, and the removal
+  acceptance evidence are reconciled.

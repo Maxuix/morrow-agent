@@ -1,3 +1,3 @@
-"""Morrow: Pick up where you left off."""
+"""Morrow: a workspace-scoped terminal agent."""
 
 __version__ = "0.1.0"

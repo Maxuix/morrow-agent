@@ -1,11 +1,13 @@
 # 阶段 2：Agent 核心能力
 
+> 历史说明：本文记录阶段 2 当时的实现与边界；其中 Handoff 相关能力已在阶段完成后移除。
+
 > 状态：已完成；Subplans 17–20 与最终树验收通过（2026-08-17）
 > 阶段结果：一个可以通过无本地副作用工具自主执行若干步骤、完成简单任务的 Agent
 > 上级文档：[开发路线总览](../ROADMAP.md)
 > 上一阶段：[阶段 1：方向确定与可运行原型](stage-1-direction-and-prototype.md)
 > 下一阶段：[阶段 3：本地工具与安全](stage-3-local-tools-and-safety.md)
-> 执行计划：[Stage 2 Agent Core Implementation Plan](../../.agent/PLAN.md)
+> 历史执行计划：保留在 Git commit `831c4ea` 的 `.agent/PLAN.md`
 
 ## 一、阶段目标
 

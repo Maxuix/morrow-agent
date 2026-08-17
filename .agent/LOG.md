@@ -501,3 +501,76 @@
 - The run deadline wraps only Provider `anext`, not public yields, so a slow consumer cannot be cancelled by `asyncio.timeout`.
 - `run_task` now closes an active turn in `finally` when the consumer `aclose`s at a yield (`GeneratorExit`), so the next `begin_turn` can proceed.
 - Focused regressions passed (113). Offline suite: 308 passed, 1 Live deselected. Ruff format/check, compileall, and Stage 2 boundary/product sentinel tests (10 passed) are green.
+
+## 2026-08-17 — Handoff removal refactor planned
+
+- Accepted the product decision to remove the transitional Handoff feature before persistent
+  Session architecture, rather than deepen its coupling to configuration tools, future
+  storage, Fork, or additional interfaces.
+- Audited all current references: Handoff reaches 12 production files and 11 test files,
+  plus current and historical documentation surfaces.
+- Activated a four-part removal plan: product/runtime removal; domain/state/config excision;
+  documentation and historical reconciliation; final acceptance and delivery.
+- Locked the post-removal boundary: ConversationLog remains process-local, dirty `/new` and
+  `/exit` require explicit discard confirmation, no replacement checkpoint or persistent
+  Session enters, and legacy `handoff.yaml(.bak)` files are ignored but never deleted.
+- Retired completed Stage 2 Subplans 17–20 from the active directory; commit `831c4ea`
+  remains their reproducible historical baseline. No production or test code was changed.
+
+## 2026-08-17 — Handoff removal plan review remediated
+
+- Verified the external review against current code and tests. Its central findings were
+  correct: the original 21/22 boundary left direct and natural-language Handoff writes
+  reachable after the runtime slice, the focused test list omitted affected composition and
+  core tests, and several lifecycle/read-only contracts were under-specified.
+- Moved every production caller into Subplan 21, including `ALLOWED_PATHS`, intent-gate,
+  patch dispatch/session update, workspace inspection/onboarding, CLI/bootstrap and
+  terminal paths. Subplan 22 now deletes only uncalled domain/port/YAML/schema definitions.
+- Locked ordinary unknown-command behavior for `/handoff` and `/continue`, exact dirty
+  `/new`/`/exit` and EOF exit codes, no Provider/state writes, narrow Profile/Preferences
+  degradation, legacy-file byte preservation, and a named `SessionApplication` composition
+  result.
+- Added the package/CLI/terminal tagline surface, generic-state-test retargeting, precise
+  negative-scan rules, full offline gates after every subplan, auditable documentation
+  classification, and an explicit offline Scripted Provider final acceptance scenario.
+- Planning files only were changed; implementation remains unstarted.
+
+## 2026-08-17 — Handoff runtime and domain removal completed
+
+- Removed every startup, context, command, terminal lifecycle, configuration, onboarding,
+  bootstrap, and product-tagline Handoff path. Dirty `/new` and `/exit` now use explicit
+  process-local discard confirmation; `/handoff` and `/continue` are ordinary unknown
+  commands.
+- Replaced the positional bootstrap tuple with named `SessionApplication`, deleted the
+  Handoff service, and preserved generic structured completion in `tests/test_structured.py`.
+- Removed the Handoff/Decision domain types, config target, ProjectStateStore methods, and
+  YAML adapter methods. Legacy files remain ignored and byte-identical.
+- Subplan 22 gate passed: 287 offline tests, one Live test deselected; Ruff format/check,
+  compileall, CLI help, and `git diff --check` passed. The rebuilt wheel has no Handoff
+  package entry.
+
+## 2026-08-17 — Handoff Removal Refactor completed
+
+- Reconciled README, ARCHITECTURE, ROADMAP, Stage 4 entry conditions, and historical Stage
+  1/2 documents. Added an exhaustive reference classification and final removal evidence.
+- Final product/boundary/legacy suite passed (18); Agent-core/capability suite passed (100).
+  Final offline suite passed (287, one explicit Live test deselected); strict collection
+  found 288 tests.
+- Precise production-source scan returned zero matches. The reviewed test allowlist contains
+  only unknown-command, removed-symbol, fail-on-legacy-access, and byte-sentinel assertions.
+- Built the 44-entry wheel and installed 33 packages offline into fresh CPython 3.12.13.
+  Import, bundled policy discovery/load, removed-symbol check, and installed CLI help passed.
+- Ruff format/check, compileall, Markdown link audit, CLI help, and `git diff --check` passed.
+  Optional Live was not run because no compatible credential was present. Stage 3 remains
+  unstarted and Stage 4 remains unimplemented.
+
+## 2026-08-17 — Handoff removal post-review suggestions resolved
+
+- Removed unused `provider_service` and `workspace_service` wiring from CommandService and
+  bootstrap; removed duplicate SessionApplication assignments in the degraded-state test.
+- Added both context-projection negative sentinel tests to the reference classification and
+  final evidence allowlist.
+- Corrected the subplan index to say no plan is active and replaced the stale live Stage 2
+  plan link with its historical `831c4ea` location.
+- Focused review regression passed (81). Full offline suite passed (287, one Live test
+  deselected); Ruff format/check, compileall, CLI help, and `git diff --check` passed.

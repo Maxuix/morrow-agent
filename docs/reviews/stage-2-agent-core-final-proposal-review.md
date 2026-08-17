@@ -1,5 +1,7 @@
 # Stage 2 Agent Core 审批稿 Review
 
+> 历史评审：Morrow Handoff 讨论保留为当时的设计记录；该产品特性已在阶段 2 后移除。
+
 > 对象：[Stage 2 Agent Core 完整方案（审批稿）](stage-2-agent-core-final-proposal.md)
 > 对照：现行权威路线 [`docs/roadmap/stage-2-agent-core.md`](../roadmap/stage-2-agent-core.md)、[`docs/ROADMAP.md`](../ROADMAP.md)、[`docs/ARCHITECTURE.md`](../ARCHITECTURE.md)、Stage 1 已落地代码，以及阶段 3–5 边界草案
 > 日期：2026-08-14

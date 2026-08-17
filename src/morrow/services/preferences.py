@@ -8,7 +8,6 @@ from morrow.core.models import (
     ConfigExtractionResult,
     ConfigPatch,
     ConfigPatchOperation,
-    Decision,
     Preferences,
 )
 
@@ -28,7 +27,6 @@ class ConfigIntentGate:
         "项目",
         "工作空间",
         "档案",
-        "交接",
         "这次",
         "会话",
         "回复语言",
@@ -76,15 +74,6 @@ ALLOWED_PATHS = {
         "constraints",
         "conventions",
     },
-    ("workspace", "handoff"): {
-        "current_goal",
-        "progress",
-        "decisions",
-        "blockers",
-        "open_questions",
-        "next_actions",
-        "recovery_note",
-    },
     ("session", "preferences"): {"language", "response_detail", "instructions"},
 }
 
@@ -102,11 +91,6 @@ def validate_patch(patch: ConfigPatch) -> None:
             "tech_stack",
             "constraints",
             "conventions",
-            "progress",
-            "decisions",
-            "blockers",
-            "open_questions",
-            "next_actions",
         }:
             raise ValueError("列表字段只能使用 append 或 remove")
         if operation.op in {"append", "remove"} and operation.path not in {
@@ -115,11 +99,6 @@ def validate_patch(patch: ConfigPatch) -> None:
             "tech_stack",
             "constraints",
             "conventions",
-            "progress",
-            "decisions",
-            "blockers",
-            "open_questions",
-            "next_actions",
         }:
             raise ValueError("标量字段只能使用 set 或 unset")
         if operation.op != "unset" and operation.value is None:
@@ -161,12 +140,7 @@ class ConfigPatchService:
             values = list(getattr(data, path))
             normalized = " ".join(str(operation.value).split()).casefold()
             matches = [
-                item
-                for item in values
-                if " ".join(
-                    str(item.decision if isinstance(item, Decision) else item).split()
-                ).casefold()
-                == normalized
+                item for item in values if " ".join(str(item).split()).casefold() == normalized
             ]
             if len(matches) != 1:
                 raise ValueError("删除目标必须精确匹配一个值")
@@ -224,14 +198,7 @@ class ConfigPatchService:
                 expected_revision=current.revision,
             )
         else:
-            current = self.project_store.load_handoff(self.workspace_id)
-            if not current.value:
-                raise ValueError("Handoff 尚未创建")
-            result = self.project_store.write_handoff(
-                self.workspace_id,
-                self._apply_many(current.value.handoff, patch.operations),
-                expected_revision=current.revision,
-            )
+            raise ValueError("不允许修改此作用域或目标")
         if result.status.value != "ok":
             raise RuntimeError(result.error or result.status.value)
         if self.session is not None:
@@ -239,8 +206,6 @@ class ConfigPatchService:
                 self.session.workspace_preferences = result.value.preferences
             elif patch.target == "profile":
                 self.session.profile = result.value.profile
-            elif patch.target == "handoff" and self.session.is_continuation:
-                self.session.loaded_handoff = result.value.handoff
         return result.value
 
     def _apply_many(self, value, operations):

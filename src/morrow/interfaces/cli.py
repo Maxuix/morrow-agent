@@ -13,7 +13,7 @@ from morrow.bootstrap import build_application, build_session_application
 from morrow.interfaces.terminal import run_repl
 from morrow.services.workspace import WorkspaceError, WorkspaceWriterLock
 
-app = typer.Typer(help="Morrow（承序）工作空间连续性 Agent。")
+app = typer.Typer(help="Morrow（承序）工作空间终端 Agent。")
 provider_app = typer.Typer(help="Provider 管理。")
 model_app = typer.Typer(help="模型查看。")
 workspace_app = typer.Typer(help="工作空间管理。")
@@ -76,44 +76,23 @@ def _run_workspace(application, identity) -> int:
     profile_result = inspection.profile
     read_only_workspace = inspection.read_only
     if read_only_workspace:
-        typer.echo("Profile 或 Handoff 无法安全加载；本次仅进入独立只读对话。")
+        typer.echo("Profile 无法安全加载；本次仅进入只读对话。")
     elif inspection.preferences_read_only:
         typer.echo("工作空间 Preferences 无法安全加载；本次将该层隔离为空且禁止覆盖。")
     if not read_only_workspace and not profile_result.value:
         summary = typer.prompt("项目要达成什么？（可跳过）", default="", show_default=False)
-        current_goal = typer.prompt(
-            "现在准备推进哪一步？（可跳过）", default="", show_default=False
-        )
         try:
             application.workspace_state_service.onboard(
                 identity.workspace_id,
                 display_name=identity.display_name,
                 summary=summary,
-                current_goal=current_goal,
             )
         except WorkspaceError as exc:
             typer.echo(str(exc), err=True)
             raise typer.Exit(code=2) from exc
-    session, _, handoff_service, _, orchestrator = build_session_application(application, identity)
-    session.read_only = read_only_workspace
-    available = application.workspace_state_service.inspect(identity.workspace_id).handoff
-    if available.value:
-        typer.echo(
-            f"发现可用交接 revision {available.revision}：{available.value.handoff.current_goal}"
-        )
-        if read_only_workspace:
-            typer.echo("该交接仅供查看；当前只读会话无法 /continue。")
-        else:
-            typer.echo("输入 /continue 才会加载它；直接输入消息将开始独立会话。")
-    return asyncio.run(
-        run_repl(
-            orchestrator,
-            handoff_service=handoff_service,
-            project_store=application.project_store,
-            workspace_id=identity.workspace_id,
-            session=session,
-        )
-    )
+    session_app = build_session_application(application, identity)
+    session_app.session.read_only = read_only_workspace
+    return asyncio.run(run_repl(session_app.orchestrator, session=session_app.session))
 
 
 @provider_app.command("list")

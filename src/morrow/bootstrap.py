@@ -28,7 +28,6 @@ from morrow.runtime.tools import (
     make_calculate_tool,
     make_lookup_record_tool,
 )
-from morrow.services.handoff import HandoffService
 from morrow.services.preferences import ConfigPatchService
 from morrow.services.provider import ProviderService
 from morrow.services.workspace import DataRoot, WorkspaceService, WorkspaceStateService
@@ -47,6 +46,14 @@ class Application:
     credentials: object
     id_source: object
     agent_policy: AgentPolicy
+
+
+@dataclass
+class SessionApplication:
+    session: Session
+    context_builder: ContextBuilder
+    commands: CommandService
+    orchestrator: SessionOrchestrator
 
 
 DEMO_RECORDS = {
@@ -147,9 +154,6 @@ def build_session_application(app: Application, identity, *, provider=None, mode
         id_source=app.id_source,
         tool_executor=tool_executor,
     )
-    handoff_service = HandoffService(
-        app.project_store, provider, model, context_builder, identity.workspace_id
-    )
     config_service = ConfigPatchService(
         app.project_store, app.global_store, identity.workspace_id, session
     )
@@ -176,10 +180,7 @@ def build_session_application(app: Application, identity, *, provider=None, mode
         session=session,
         identity=identity,
         project_store=app.project_store,
-        handoff_service=handoff_service,
         config_service=config_service,
-        provider_service=app.provider_service,
-        workspace_service=app.workspace_service,
     )
     orchestrator = SessionOrchestrator(
         session=session,
@@ -190,4 +191,9 @@ def build_session_application(app: Application, identity, *, provider=None, mode
         config_patch_service=config_service,
         id_source=app.id_source,
     )
-    return session, context_builder, handoff_service, commands, orchestrator
+    return SessionApplication(
+        session=session,
+        context_builder=context_builder,
+        commands=commands,
+        orchestrator=orchestrator,
+    )

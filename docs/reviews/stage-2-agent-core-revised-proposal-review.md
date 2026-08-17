@@ -1,5 +1,7 @@
 # Stage 2 Agent Core 修订审批稿 Review（可执行性审阅）
 
+> 历史评审：Handoff 讨论保留为当时的设计记录，不描述当前产品能力。
+
 > 对象：[Stage 2 Agent Core 完整方案（修订审批稿）](stage-2-agent-core-final-proposal.md)（2026-08-14，回应 [审批稿 Review](stage-2-agent-core-final-proposal-review.md) 的修订版）
 > 对照：现行权威路线 [`docs/roadmap/stage-2-agent-core.md`](../roadmap/stage-2-agent-core.md)、Stage 1 实际代码（`src/morrow` 当前树）、[`docs/ROADMAP.md`](../ROADMAP.md)
 > 日期：2026-08-15

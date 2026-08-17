@@ -10,7 +10,6 @@ from morrow.bootstrap import build_application, build_session_application
 from morrow.core.events import lifecycle_is_valid
 from morrow.core.models import (
     FinishReason,
-    Handoff,
     ModelEvent,
     ModelFinishReason,
     ModelRef,
@@ -57,15 +56,14 @@ class EventStreamProvider:
         raise AssertionError("complete should not be called")
 
 
-def test_context_excludes_handoff_until_explicit_load():
+def test_context_contains_only_supported_profile_and_preferences_state():
     session = Session(session_id="s", profile=Profile(name="demo"))
     builder = make_context_builder()
-    independent = builder.build(session, purpose="structured")
-    assert "current_goal" not in "\n".join(message.content for message in independent.messages)
-    session.loaded_handoff = Handoff(current_goal="continue this")
-    session.handoff_source_revision = 1
-    attached = builder.build(session, purpose="structured")
-    assert "continue this" in "\n".join(message.content for message in attached.messages)
+    context = builder.build(session, purpose="structured")
+    state = "\n".join(message.content for message in context.messages)
+    assert "demo" in state
+    assert '"handoff"' not in state
+    assert "current_goal" not in state
 
 
 def test_preferences_have_global_workspace_session_precedence():
@@ -185,13 +183,13 @@ def test_one_application_id_source_drives_workspace_and_distinct_sessions(tmp_pa
     )
 
     identity = app.workspace_service.confirm(app.workspace_service.resolve(project))
-    first, *_ = build_session_application(
+    first_app = build_session_application(
         app,
         identity,
         provider=ScriptedModelProvider(["first"]),
         model=ModelRef(provider_id="p", model_id="m"),
     )
-    second, *_ = build_session_application(
+    second_app = build_session_application(
         app,
         identity,
         provider=ScriptedModelProvider(["second"]),
@@ -199,8 +197,8 @@ def test_one_application_id_source_drives_workspace_and_distinct_sessions(tmp_pa
     )
 
     assert identity.workspace_id == "ws_1"
-    assert first.session_id == "ses_1"
-    assert second.session_id == "ses_2"
+    assert first_app.session.session_id == "ses_1"
+    assert second_app.session.session_id == "ses_2"
 
 
 @pytest.mark.asyncio

@@ -9,7 +9,6 @@ from typing import Any, Protocol
 
 from morrow.core.models import (
     GlobalConfig,
-    Handoff,
     Message,
     ModelEvent,
     ModelRef,
@@ -79,13 +78,9 @@ class ProjectStateStore(Protocol):
 
     def load_profile(self, workspace_id: str) -> StateLoadResult: ...
 
-    def load_handoff(self, workspace_id: str) -> StateLoadResult: ...
-
     def load_preferences_backup(self, workspace_id: str) -> StateLoadResult: ...
 
     def load_profile_backup(self, workspace_id: str) -> StateLoadResult: ...
-
-    def load_handoff_backup(self, workspace_id: str) -> StateLoadResult: ...
 
     def write_preferences(
         self, workspace_id: str, value: Any, expected_revision: int | None = None
@@ -93,14 +88,6 @@ class ProjectStateStore(Protocol):
 
     def write_profile(
         self, workspace_id: str, value: Profile, expected_revision: int | None = None
-    ) -> StateWriteResult: ...
-
-    def write_handoff(
-        self, workspace_id: str, value: Handoff, expected_revision: int | None = None
-    ) -> StateWriteResult: ...
-
-    def clear_handoff(
-        self, workspace_id: str, expected_revision: int | None = None
     ) -> StateWriteResult: ...
 
     def clear_profile(

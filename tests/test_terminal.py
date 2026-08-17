@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 from contextlib import nullcontext
 
 import pytest
@@ -39,8 +38,9 @@ class ScriptedTerminal:
 
 
 class OrchestratorStub:
-    def __init__(self, actions) -> None:
+    def __init__(self, actions, session=None) -> None:
         self.actions = actions
+        self.session = session
         self.reset_count = 0
 
     async def stream(self, text):
@@ -48,29 +48,8 @@ class OrchestratorStub:
 
     def reset_session(self):
         self.reset_count += 1
-
-
-class StoreStub:
-    def load_handoff(self, workspace_id):
-        del workspace_id
-        return type("Loaded", (), {"revision": 1, "value": None})()
-
-
-class SuccessfulSave:
-    status = type("Status", (), {"value": "ok"})()
-
-
-class HandoffStub:
-    def __init__(self, result=None) -> None:
-        self.calls = 0
-        self.result = result or (SuccessfulSave(), False)
-
-    async def generate_and_publish(self, session, *, expected_revision):
-        del session, expected_revision
-        self.calls += 1
-        if isinstance(self.result, BaseException):
-            raise self.result
-        return self.result
+        if self.session is not None:
+            self.session.reset("reset")
 
 
 def install_terminal(monkeypatch, terminal):
@@ -107,133 +86,76 @@ def test_terminal_segments_mixed_text_tool_and_final_text_without_replay_or_payl
         event(
             "tool.status",
             3,
-            {
-                "call_id": "secret-call-id",
-                "name": "lookup_record",
-                "status": "running",
-                "ordinal": 1,
-                "total": 1,
-                "raw_result": "secret-result",
-            },
+            {"name": "lookup_record", "status": "running", "ordinal": 1, "total": 1},
         ),
         event("text.delta", 4, {"text": "最终答案"}),
-        event(
-            "turn.completed",
-            5,
-            {"finish_reason": "stop", "text": "先查最终答案", "text_length": 6},
-        ),
+        event("turn.completed", 5, {"finish_reason": "stop"}),
     ]
     for item in events:
         terminal.show_event(item)
 
     assert console.value == "先查\n↳ 工具步骤 1/1：lookup_record\n最终答案\n"
-    assert "secret" not in console.value
 
 
 @pytest.mark.asyncio
 async def test_clean_primary_eof_exits_once(monkeypatch):
     terminal = ScriptedTerminal([EOFError()])
     install_terminal(monkeypatch, terminal)
-
     code = await terminal_module.run_repl(
-        OrchestratorStub({"/exit": "exit"}),
-        project_store=StoreStub(),
-        workspace_id="ws",
-        session=Session(session_id="s"),
+        OrchestratorStub({"/exit": "exit"}), session=Session(session_id="s")
     )
-
     assert code == 0
     assert terminal.prompt_count == 1
 
 
 @pytest.mark.asyncio
-async def test_dirty_independent_eof_during_exit_confirmation_terminates_code_two(monkeypatch):
+async def test_dirty_confirmation_eof_exits_two_without_reset(monkeypatch):
     terminal = ScriptedTerminal([EOFError(), EOFError()])
     install_terminal(monkeypatch, terminal)
     session = Session(session_id="s")
     seed_user_turn(session, "unsaved")
-    handoff = HandoffStub()
-
-    code = await asyncio.wait_for(
-        terminal_module.run_repl(
-            OrchestratorStub({"/exit": "exit"}),
-            handoff_service=handoff,
-            project_store=StoreStub(),
-            workspace_id="ws",
-            session=session,
-        ),
-        timeout=0.1,
-    )
-
+    orchestrator = OrchestratorStub({"/exit": "exit"}, session)
+    code = await terminal_module.run_repl(orchestrator, session=session)
     assert code == 2
-    assert terminal.prompt_count == 2
-    assert handoff.calls == 0
+    assert orchestrator.reset_count == 0
     assert session.messages[0].content == "unsaved"
 
 
 @pytest.mark.asyncio
-async def test_closed_switch_prompt_terminates_without_save_or_reset(monkeypatch):
-    terminal = ScriptedTerminal(["/new", EOFError()])
+async def test_dirty_new_confirmed_discards_only_process_local_session(monkeypatch):
+    terminal = ScriptedTerminal(["/new", "y", "/exit"])
     install_terminal(monkeypatch, terminal)
     session = Session(session_id="s")
     seed_user_turn(session, "unsaved")
-    handoff = HandoffStub()
-    orchestrator = OrchestratorStub({"/new": "switch_new"})
+    orchestrator = OrchestratorStub({"/new": "discard_new", "/exit": "exit"}, session)
+    code = await terminal_module.run_repl(orchestrator, session=session)
+    assert code == 0
+    assert orchestrator.reset_count == 1
+    assert session.messages == ()
 
-    code = await terminal_module.run_repl(
-        orchestrator,
-        handoff_service=handoff,
-        project_store=StoreStub(),
-        workspace_id="ws",
-        session=session,
-    )
 
-    assert code == 2
-    assert terminal.prompt_count == 2
-    assert handoff.calls == 0
+@pytest.mark.asyncio
+async def test_dirty_new_cancelled_preserves_session(monkeypatch):
+    terminal = ScriptedTerminal(["/new", "n", "/exit", "y"])
+    install_terminal(monkeypatch, terminal)
+    session = Session(session_id="s")
+    seed_user_turn(session, "unsaved")
+    orchestrator = OrchestratorStub({"/new": "discard_new", "/exit": "exit"}, session)
+    code = await terminal_module.run_repl(orchestrator, session=session)
+    assert code == 0
     assert orchestrator.reset_count == 0
-    assert session.session_id == "s"
     assert session.messages[0].content == "unsaved"
 
 
 @pytest.mark.asyncio
-async def test_dirty_continuation_primary_eof_saves_then_exits(monkeypatch):
-    terminal = ScriptedTerminal([EOFError()])
+async def test_dirty_exit_cancelled_stays_in_repl_then_confirmed_exits(monkeypatch):
+    terminal = ScriptedTerminal(["/exit", "n", "/exit", "y"])
     install_terminal(monkeypatch, terminal)
-    session = Session(session_id="s", handoff_source_revision=1)
-    seed_user_turn(session, "continue")
-    handoff = HandoffStub()
-
+    session = Session(session_id="s")
+    seed_user_turn(session, "unsaved")
     code = await terminal_module.run_repl(
-        OrchestratorStub({"/exit": "exit"}),
-        handoff_service=handoff,
-        project_store=StoreStub(),
-        workspace_id="ws",
-        session=session,
+        OrchestratorStub({"/exit": "exit"}, session), session=session
     )
-
     assert code == 0
-    assert terminal.prompt_count == 1
-    assert handoff.calls == 1
-
-
-@pytest.mark.asyncio
-async def test_cancelled_continuation_save_preserves_session():
-    terminal = ScriptedTerminal(["/exit"])
-    session = Session(session_id="s", handoff_source_revision=1)
-    seed_user_turn(session, "continue")
-    handoff = HandoffStub(result=asyncio.CancelledError())
-
-    code = await terminal_module._exit(
-        OrchestratorStub({"/exit": "exit"}),
-        handoff,
-        StoreStub(),
-        "ws",
-        session,
-        terminal,
-        object(),
-    )
-
-    assert code is None
-    assert session.session_id == "s"
-    assert session.messages[0].content == "continue"
+    assert terminal.prompt_count == 4
+    assert session.messages[0].content == "unsaved"

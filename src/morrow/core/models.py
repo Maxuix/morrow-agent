@@ -24,10 +24,6 @@ def utc_now() -> datetime:
     return datetime.now(UTC)
 
 
-def normalize_text(value: str) -> str:
-    return " ".join(value.split()).casefold()
-
-
 class MorrowModel(BaseModel):
     model_config = ConfigDict(extra="ignore", validate_assignment=True)
 
@@ -244,43 +240,6 @@ class Profile(MorrowModel):
     conventions: list[str] = Field(default_factory=list)
 
 
-class Decision(MorrowModel):
-    decision: str
-    reason: str | None = None
-
-    @field_validator("decision")
-    @classmethod
-    def decision_required(cls, value: str) -> str:
-        if not value.strip():
-            raise ValueError("decision must not be empty")
-        return value.strip()
-
-
-class Handoff(MorrowModel):
-    current_goal: str
-    progress: list[str] = Field(default_factory=list)
-    decisions: list[Decision] = Field(default_factory=list)
-    blockers: list[str] = Field(default_factory=list)
-    open_questions: list[str] = Field(default_factory=list)
-    next_actions: list[str] = Field(default_factory=list)
-    recovery_note: str | None = None
-
-    @field_validator("current_goal")
-    @classmethod
-    def current_goal_required(cls, value: str) -> str:
-        value = value.strip()
-        if not value:
-            raise ValueError("handoff current_goal must not be empty")
-        return value
-
-    @model_validator(mode="after")
-    def unique_decisions(self) -> Handoff:
-        normalized = [normalize_text(item.decision) for item in self.decisions]
-        if len(normalized) != len(set(normalized)):
-            raise ValueError("handoff decisions must be unique after normalization")
-        return self
-
-
 class CredentialRef(MorrowModel):
     """A versioned reference; the secret itself never enters this model."""
 
@@ -378,16 +337,6 @@ class ProfileDocument(WorkspaceDocument):
         return self
 
 
-class HandoffDocument(WorkspaceDocument):
-    handoff: Handoff | None = None
-
-    @model_validator(mode="after")
-    def payload_matches_state(self) -> HandoffDocument:
-        if (self.state == "present") != (self.handoff is not None):
-            raise ValueError("Handoff payload must match envelope state")
-        return self
-
-
 class WorkspaceIdentity(MorrowModel):
     workspace_id: str
     path: str
@@ -417,7 +366,7 @@ class ConfigPatchOperation(MorrowModel):
 class ConfigPatch(MorrowModel):
     result: Literal["config_patch"] = "config_patch"
     scope: Literal["global", "workspace", "session"]
-    target: Literal["preferences", "profile", "handoff"]
+    target: Literal["preferences", "profile"]
     operations: list[ConfigPatchOperation] = Field(min_length=1)
     reason: str | None = None
 

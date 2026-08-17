@@ -219,9 +219,8 @@ def test_session_messages_is_read_only_projection_with_no_public_writer():
         session.messages[0].content = "tampered"
 
 
-def test_session_reset_clears_log_and_session_state_without_touching_handoff():
+def test_session_reset_clears_log_and_process_local_session_state():
     session = Session(session_id="s")
-    session.loaded_handoff = None
     seed_user_turn(session, "old", assistant="old answer")
     session.reset("s2")
     assert session.session_id == "s2"

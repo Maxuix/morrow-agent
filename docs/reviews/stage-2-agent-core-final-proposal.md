@@ -1,5 +1,7 @@
 # Stage 2 Agent Core 完整方案（修订审批稿）
 
+> 历史方案：Handoff 相关设计保留为决策记录，不描述当前产品能力。
+
 > 状态：已批准并合入正式 Stage 2 路线；本文作为审批裁决与详细设计记录，不是独立实施权威
 > 修订日期：2026-08-15
 > 修订依据：[Stage 2 Agent Core 审批稿 Review](stage-2-agent-core-final-proposal-review.md)、[修订审批稿可执行性 Review](stage-2-agent-core-revised-proposal-review.md)

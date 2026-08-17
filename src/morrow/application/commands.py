@@ -23,18 +23,12 @@ class CommandService:
         session,
         identity,
         project_store,
-        handoff_service,
         config_service=None,
-        provider_service=None,
-        workspace_service=None,
     ) -> None:
         self.session = session
         self.identity = identity
         self.project_store = project_store
-        self.handoff_service = handoff_service
         self.config_service = config_service
-        self.provider_service = provider_service
-        self.workspace_service = workspace_service
 
     def _ensure_workspace_writable(self, *, preferences: bool = False) -> None:
         if self.session.read_only:
@@ -44,24 +38,6 @@ class CommandService:
 
     def reset_session(self, session_id: str) -> None:
         self.session.reset(session_id)
-
-    def load_handoff(self):
-        loaded = self.project_store.load_handoff(self.identity.workspace_id)
-        if loaded.value and not self.session.read_only:
-            self.session.loaded_handoff = loaded.value.handoff
-            self.session.handoff_source_revision = loaded.revision
-        return loaded
-
-    def handoff_revision(self) -> int:
-        return self.project_store.load_handoff(self.identity.workspace_id).revision
-
-    def clear_handoff(self):
-        self._ensure_workspace_writable()
-        result = self.project_store.clear_handoff(self.identity.workspace_id)
-        if result.status.value == "ok":
-            self.session.loaded_handoff = None
-            self.session.handoff_source_revision = None
-        return result
 
     def reset_profile(self):
         self._ensure_workspace_writable()
@@ -101,29 +77,14 @@ class CommandService:
         if command == "/new":
             if self.session.dirty:
                 return CommandResult(
-                    ["当前会话有未交接内容，需要先保存或明确丢弃。"], action="switch_new"
+                    ["当前会话有未保存的进程内对话，需要明确确认丢弃。"], action="discard_new"
                 )
             return CommandResult(["已准备新的独立会话。"], action="new")
-        if command == "/continue":
-            if self.session.read_only:
-                return CommandResult(["当前工作空间状态不可安全加载，无法继续 Handoff。"])
-            available = self.project_store.load_handoff(self.identity.workspace_id)
-            if not available.value:
-                return CommandResult(["当前没有可继续的交接。"])
-            if self.session.dirty:
-                return CommandResult(
-                    ["当前会话有未交接内容，需要先保存或明确丢弃。"], action="switch_continue"
-                )
-            return CommandResult(["已请求继续最近一次交接。"], action="continue")
         if command == "/status":
-            handoff = self.project_store.load_handoff(self.identity.workspace_id)
-            revision = handoff.revision if handoff.value else None
             return CommandResult(
                 [
                     f"工作空间：{self.identity.display_name}",
-                    f"交接：{'已加载' if self.session.loaded_handoff else '未加载'}",
-                    f"可用 revision：{revision if revision is not None else '无'}",
-                    f"当前会话：{'有未交接内容' if self.session.dirty else '干净'}",
+                    f"当前会话：{'有未保存的进程内对话' if self.session.dirty else '干净'}",
                 ]
             )
         if command == "/workspace" and len(parts) > 1 and parts[1] == "reset":
@@ -158,40 +119,6 @@ class CommandService:
             if profile.value:
                 lines.append(f"简介：{profile.value.profile.summary or '未填写'}")
             return CommandResult(lines)
-        if command == "/handoff":
-            if len(parts) > 1 and parts[1] == "update":
-                if self.session.read_only:
-                    return CommandResult(["当前工作空间状态不可安全加载，无法更新 Handoff。"])
-                return CommandResult(["将生成并替换完整 Handoff。"], action="update_handoff")
-            if len(parts) > 1 and parts[1] == "clear":
-                if self.session.read_only:
-                    return CommandResult(["当前工作空间状态不可安全加载，无法清除 Handoff。"])
-                return CommandResult(["清除 Handoff 需要预览和确认。"], action="clear_handoff")
-            if len(parts) > 3 and parts[1] == "edit":
-                if self.session.read_only:
-                    return CommandResult(["当前工作空间状态不可安全加载，无法编辑 Handoff。"])
-                if not self.config_service:
-                    return CommandResult(["配置服务尚未就绪。"])
-                try:
-                    patch = ConfigPatch(
-                        scope="workspace",
-                        target="handoff",
-                        operations=[
-                            ConfigPatchOperation(op="set", path=parts[2], value=" ".join(parts[3:]))
-                        ],
-                    )
-                    return CommandResult(
-                        render_patch_preview(patch), action="config_preview", value=patch
-                    )
-                except (ValueError, RuntimeError) as exc:
-                    return CommandResult([f"Handoff 更新失败：{exc}"])
-            handoff = self.project_store.load_handoff(self.identity.workspace_id)
-            if not handoff.value:
-                return CommandResult(["当前没有已保存的交接。"])
-            value = handoff.value.handoff
-            return CommandResult(
-                [f"当前目标：{value.current_goal}", f"revision：{handoff.revision}"]
-            )
         if command == "/config":
             if not self.config_service:
                 return CommandResult(["配置服务尚未就绪。"])

@@ -129,21 +129,24 @@ def _build_session_products(tmp_path: Path):
     )
 
 
-def test_construction_stays_stage_1_compatible(tmp_path):
-    app, (session, context_builder, handoff_service, commands, orchestrator) = (
-        _build_session_products(tmp_path)
-    )
+def test_construction_returns_named_session_application(tmp_path):
+    app, products = _build_session_products(tmp_path)
     assert app.provider_service is not None
-    assert session.session_id.startswith("ses_")
-    assert context_builder is not None
-    assert handoff_service is not None
-    assert commands is not None
-    assert orchestrator is not None
+    assert products.session.session_id.startswith("ses_")
+    assert products.context_builder is not None
+    assert products.commands is not None
+    assert products.orchestrator is not None
 
 
 def test_no_forbidden_tool_capability_is_registered_or_exposed(tmp_path):
     app, products = _build_session_products(tmp_path)
-    graph = [app, *products]
+    graph = [
+        app,
+        products.session,
+        products.context_builder,
+        products.commands,
+        products.orchestrator,
+    ]
     names = _collect_tool_names(_iter_graph(graph))
     assert names == {"lookup_record", "calculate"}
     for name in names:
@@ -151,7 +154,7 @@ def test_no_forbidden_tool_capability_is_registered_or_exposed(tmp_path):
         assert not any(keyword in casefolded for keyword in FORBIDDEN_TOOL_KEYWORDS), name
 
 
-def test_workspace_state_documents_stay_preferences_profile_handoff():
+def test_workspace_state_documents_are_exactly_preferences_and_profile():
     document_types = {
         name
         for name, value in vars(core_models).items()
@@ -159,11 +162,15 @@ def test_workspace_state_documents_stay_preferences_profile_handoff():
         and issubclass(value, core_models.WorkspaceDocument)
         and value is not core_models.WorkspaceDocument
     }
-    assert document_types == {
-        "ProjectPreferencesDocument",
-        "ProfileDocument",
-        "HandoffDocument",
-    }
+    assert document_types == {"ProjectPreferencesDocument", "ProfileDocument"}
+
+
+def test_handoff_implementation_symbols_are_absent_from_product_surface():
+    assert not hasattr(core_models, "Handoff")
+    assert not hasattr(core_models, "HandoffDocument")
+    assert not hasattr(core_models, "Decision")
+    public_store_api = {name for name in dir(ProjectStateYamlStore) if not name.startswith("_")}
+    assert not any("handoff" in name.casefold() for name in public_store_api)
 
 
 def test_state_store_api_has_no_conversation_or_summary_surface():
@@ -178,9 +185,7 @@ def test_state_store_api_has_no_conversation_or_summary_surface():
 
 @pytest.mark.asyncio
 async def test_plain_chat_turn_persists_no_state_document(tmp_path):
-    app, (session, context_builder, handoff_service, commands, orchestrator) = (
-        _build_session_products(tmp_path)
-    )
+    app, products = _build_session_products(tmp_path)
 
     def state_files() -> set[str]:
         return {
@@ -193,13 +198,14 @@ async def test_plain_chat_turn_persists_no_state_document(tmp_path):
     # lock; the chat turn itself must add, remove or rewrite no state file.
     before = state_files()
     assert before
-    consumed = [item async for item in orchestrator.stream("普通对话输入")]
+    consumed = [item async for item in products.orchestrator.stream("普通对话输入")]
     assert consumed
     assert state_files() == before
 
 
 def test_session_construction_and_restart_do_not_restore_conversation_log(tmp_path):
-    app, (session, *_rest) = _build_session_products(tmp_path)
+    app, products = _build_session_products(tmp_path)
+    session = products.session
     assert session.log.snapshot().records == ()
     from morrow.core.models import UserMessage
 
@@ -234,16 +240,16 @@ def test_unsupported_adapter_capability_preserves_plain_chat_without_tools(tmp_p
         multiple_tool_calls=False,
     )
     identity = app.workspace_service.confirm(app.workspace_service.resolve(project))
-    _, context_builder, _, _, orchestrator = build_session_application(
+    session_app = build_session_application(
         app,
         identity,
         provider=ScriptedModelProvider(["plain"]),
         model=ModelRef(provider_id="p", model_id="m"),
     )
 
-    assert orchestrator.runtime.loop.tool_executor is None
-    assert context_builder.run_policy.provider_tool_support.tool_protocol == "none"
-    assert context_builder.run_policy.effective_request_chars == 160000
+    assert session_app.orchestrator.runtime.loop.tool_executor is None
+    assert session_app.context_builder.run_policy.provider_tool_support.tool_protocol == "none"
+    assert session_app.context_builder.run_policy.effective_request_chars == 160000
 
 
 def _snapshot_tree(root: Path) -> dict[str, bytes]:

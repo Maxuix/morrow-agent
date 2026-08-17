@@ -18,8 +18,6 @@ from morrow.core.models import (
     CURRENT_SCHEMA_VERSION,
     WORKSPACE_DOCUMENT_SCHEMA_VERSION,
     GlobalConfig,
-    Handoff,
-    HandoffDocument,
     Preferences,
     Profile,
     ProfileDocument,
@@ -405,9 +403,6 @@ class ProjectStateYamlStore:
     def load_profile(self, workspace_id: str) -> StateLoadResult:
         return self._document(workspace_id, "profile.yaml", ProfileDocument).load()
 
-    def load_handoff(self, workspace_id: str) -> StateLoadResult:
-        return self._document(workspace_id, "handoff.yaml", HandoffDocument).load()
-
     def load_preferences_backup(self, workspace_id: str) -> StateLoadResult:
         return self._document(
             workspace_id, "preferences.yaml", ProjectPreferencesDocument
@@ -415,9 +410,6 @@ class ProjectStateYamlStore:
 
     def load_profile_backup(self, workspace_id: str) -> StateLoadResult:
         return self._document(workspace_id, "profile.yaml", ProfileDocument).load_backup()
-
-    def load_handoff_backup(self, workspace_id: str) -> StateLoadResult:
-        return self._document(workspace_id, "handoff.yaml", HandoffDocument).load_backup()
 
     def write_preferences(
         self, workspace_id: str, value: Preferences, expected_revision: int | None = None
@@ -439,22 +431,6 @@ class ProjectStateYamlStore:
         if expected_revision is None and existing.status == StateLoadStatus.OK:
             expected_revision = existing.revision
         return document.write(ProfileDocument(profile=value), expected_revision=expected_revision)
-
-    def write_handoff(
-        self, workspace_id: str, value: Handoff, expected_revision: int | None = None
-    ) -> StateWriteResult:
-        existing = self.load_handoff(workspace_id)
-        document = self._document(workspace_id, "handoff.yaml", HandoffDocument)
-        if expected_revision is None and existing.status == StateLoadStatus.OK:
-            expected_revision = existing.revision
-        return document.write(HandoffDocument(handoff=value), expected_revision=expected_revision)
-
-    def clear_handoff(
-        self, workspace_id: str, expected_revision: int | None = None
-    ) -> StateWriteResult:
-        return self._clear_document(
-            workspace_id, "handoff.yaml", HandoffDocument, expected_revision
-        )
 
     def clear_profile(
         self, workspace_id: str, expected_revision: int | None = None

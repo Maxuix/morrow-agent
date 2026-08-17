@@ -1,5 +1,8 @@
 # Stage 2 Agent Core Acceptance Evidence
 
+> Historical evidence: Handoff results describe the accepted Stage 2 tree at that time;
+> the transitional feature was removed afterward and is not a current capability.
+
 > Evidence date: 2026-08-17  
 > Scope authority: `docs/roadmap/stage-2-agent-core.md` sections 15–17 and the approved proposal sections 21–22  
 > Current status: all mandatory offline, package, product, boundary, and quality gates passed; optional Live was not run because no explicit credential was available.

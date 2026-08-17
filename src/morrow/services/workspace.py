@@ -9,7 +9,6 @@ from pathlib import Path
 from filelock import FileLock, Timeout
 
 from morrow.core.models import (
-    Handoff,
     Profile,
     StateLoadStatus,
     WorkspaceCandidate,
@@ -87,13 +86,10 @@ class DataRoot:
 class WorkspaceInspection:
     preferences: object
     profile: object
-    handoff: object
 
     @property
     def read_only(self) -> bool:
-        return (
-            self.profile.status != StateLoadStatus.OK or self.handoff.status != StateLoadStatus.OK
-        )
+        return self.profile.status != StateLoadStatus.OK
 
     @property
     def preferences_read_only(self) -> bool:
@@ -110,12 +106,9 @@ class WorkspaceStateService:
         return WorkspaceInspection(
             preferences=self.project_store.load_preferences(workspace_id),
             profile=self.project_store.load_profile(workspace_id),
-            handoff=self.project_store.load_handoff(workspace_id),
         )
 
-    def onboard(
-        self, workspace_id: str, *, display_name: str, summary: str, current_goal: str
-    ) -> int | None:
+    def onboard(self, workspace_id: str, *, display_name: str, summary: str) -> int | None:
         inspection = self.inspect(workspace_id)
         if inspection.read_only or inspection.profile.value:
             return None
@@ -126,16 +119,7 @@ class WorkspaceStateService:
         )
         if profile.status.value != "ok":
             raise WorkspaceError("Profile 保存失败，无法安全启动。")
-        if not current_goal:
-            return None
-        handoff = self.project_store.write_handoff(
-            workspace_id,
-            Handoff(current_goal=current_goal),
-            expected_revision=inspection.handoff.revision,
-        )
-        if handoff.status.value != "ok":
-            raise WorkspaceError("初始 Handoff 保存失败，无法安全启动。")
-        return handoff.revision
+        return profile.revision
 
 
 def _safe_display_name(path: Path) -> str:

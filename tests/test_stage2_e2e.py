@@ -165,16 +165,17 @@ async def test_ordinary_chat_can_finish_without_calling_advertised_guarded_tools
     )
     identity = app.workspace_service.confirm(app.workspace_service.resolve(project))
     provider = ScriptedModelProvider(["你好，我是 Morrow。"])
-    session, _context, _handoff, _commands, orchestrator = build_session_application(
-        app, identity, provider=provider, model=MODEL
-    )
+    session_app = build_session_application(app, identity, provider=provider, model=MODEL)
 
-    items = [item async for item in orchestrator.stream("你好")]
+    items = [item async for item in session_app.orchestrator.stream("你好")]
     events = [item for item in items if hasattr(item, "sequence")]
     assert lifecycle_is_valid(events)
     assert events[-1].payload["finish_reason"] == FinishReason.STOP.value
-    assert [type(m).__name__ for m in session.messages] == ["UserMessage", "AssistantMessage"]
-    assert records_finish(session) == [FinishReason.STOP]
+    assert [type(m).__name__ for m in session_app.session.messages] == [
+        "UserMessage",
+        "AssistantMessage",
+    ]
+    assert records_finish(session_app.session) == [FinishReason.STOP]
     assert {tool.function.name for tool in provider.stream_tools[0]} == {
         "lookup_record",
         "calculate",

@@ -13,7 +13,7 @@ from morrow.adapters.state.yaml import (
     WorkspaceIndexYamlStore,
 )
 from morrow.bootstrap import build_application
-from morrow.core.models import Handoff, Preferences, Profile, StateLoadStatus, StateWriteStatus
+from morrow.core.models import Preferences, Profile, StateLoadStatus, StateWriteStatus
 from morrow.services.workspace import (
     DataRoot,
     WorkspaceError,
@@ -48,7 +48,7 @@ def _hold_workspace_writer_lock(state_root, workspace_id, acquired, release):
         release.wait(timeout=10)
 
 
-def _mutate_handoff_in_process(
+def _mutate_profile_in_process(
     state_root,
     workspace_id,
     action,
@@ -61,13 +61,13 @@ def _mutate_handoff_in_process(
     ready.put(True)
     start.wait(timeout=10)
     if action == "write":
-        result = store.write_handoff(
+        result = store.write_profile(
             workspace_id,
-            Handoff(current_goal=f"goal-{os.getpid()}"),
+            Profile(name=f"profile-{os.getpid()}"),
             expected_revision=expected_revision,
         )
     else:
-        result = store.clear_handoff(workspace_id, expected_revision=expected_revision)
+        result = store.clear_profile(workspace_id, expected_revision=expected_revision)
     results.put((result.status.value, result.revision))
 
 
@@ -202,7 +202,7 @@ def test_distinct_git_worktree_roots_receive_distinct_identities(tmp_path):
     assert first_identity.workspace_id != second_identity.workspace_id
 
 
-def test_two_workspaces_have_isolated_profile_and_handoff(tmp_path):
+def test_two_workspaces_have_isolated_profile_and_preferences(tmp_path):
     project_a = tmp_path / "a"
     project_b = tmp_path / "b"
     project_a.mkdir()
@@ -211,9 +211,9 @@ def test_two_workspaces_have_isolated_profile_and_handoff(tmp_path):
     a = app.workspace_service.confirm(app.workspace_service.resolve(project_a))
     b = app.workspace_service.confirm(app.workspace_service.resolve(project_b))
     app.project_store.write_profile(a.workspace_id, Profile(name="A"))
-    app.project_store.write_handoff(a.workspace_id, Handoff(current_goal="A goal"))
+    app.project_store.write_preferences(a.workspace_id, Preferences(language="中文"))
     assert app.project_store.load_profile(b.workspace_id).value is None
-    assert app.project_store.load_handoff(b.workspace_id).value is None
+    assert app.project_store.load_preferences(b.workspace_id).value is None
 
 
 @pytest.mark.parametrize(
@@ -232,13 +232,6 @@ def test_two_workspaces_have_isolated_profile_and_handoff(tmp_path):
             "clear_profile",
             Profile(name="first"),
             Profile(name="second"),
-        ),
-        (
-            "handoff.yaml",
-            "write_handoff",
-            "clear_handoff",
-            Handoff(current_goal="first"),
-            Handoff(current_goal="second"),
         ),
     ],
 )
@@ -304,7 +297,7 @@ def test_clear_persists_revision_and_rejects_stale_recreation(
 
 @pytest.mark.parametrize(
     "load_method",
-    ["load_preferences", "load_profile", "load_handoff"],
+    ["load_preferences", "load_profile"],
 )
 def test_missing_workspace_document_has_explicit_successful_presence(tmp_path, load_method):
     app = build_application(state_root=tmp_path / "state", credentials=MemoryCredentialStore())
@@ -320,8 +313,8 @@ def test_missing_workspace_document_has_explicit_successful_presence(tmp_path, l
 def test_missing_workspace_backup_is_distinct_from_missing_primary(tmp_path):
     app = build_application(state_root=tmp_path / "state", credentials=MemoryCredentialStore())
 
-    primary = app.project_store.load_handoff("ws_missing")
-    backup = app.project_store.load_handoff_backup("ws_missing")
+    primary = app.project_store.load_profile("ws_missing")
+    backup = app.project_store.load_profile_backup("ws_missing")
 
     assert primary.status == StateLoadStatus.OK
     assert primary.presence.value == "missing"
@@ -345,13 +338,6 @@ def test_missing_workspace_backup_is_distinct_from_missing_primary(tmp_path):
             "write_profile",
             {"profile": {"name": "legacy"}},
             Profile(name="updated"),
-        ),
-        (
-            "handoff.yaml",
-            "load_handoff",
-            "write_handoff",
-            {"handoff": {"current_goal": "legacy"}},
-            Handoff(current_goal="updated"),
         ),
     ],
 )
@@ -406,12 +392,6 @@ def test_version_one_workspace_document_is_read_without_rewrite_and_upgraded_on_
             Preferences(language="中文"),
         ),
         ("profile.yaml", "write_profile", "clear_profile", Profile(name="valid")),
-        (
-            "handoff.yaml",
-            "write_handoff",
-            "clear_handoff",
-            Handoff(current_goal="valid"),
-        ),
     ],
 )
 @pytest.mark.parametrize(
@@ -437,45 +417,6 @@ def test_invalid_workspace_documents_are_never_overwritten_by_write_or_clear(
     assert written.status == StateWriteStatus.FAILED
     assert cleared.status == StateWriteStatus.FAILED
     assert path.read_bytes() == invalid_bytes
-
-
-@pytest.mark.parametrize(
-    "invalid_envelope",
-    [
-        {
-            "schema_version": 2,
-            "revision": -1,
-            "updated_at": "2026-08-14T00:00:00+00:00",
-            "state": "present",
-            "handoff": {"current_goal": "valid"},
-        },
-        {
-            "schema_version": 2,
-            "revision": 1,
-            "updated_at": "2026-08-14T00:00:00",
-            "state": "present",
-            "handoff": {"current_goal": "valid"},
-        },
-        {
-            "schema_version": 2,
-            "revision": 1,
-            "updated_at": "2026-08-14T00:00:00+00:00",
-            "state": "present",
-            "handoff": {"current_goal": "   "},
-        },
-    ],
-)
-def test_invalid_persisted_handoff_invariants_load_as_corrupt(tmp_path, invalid_envelope):
-    app = build_application(state_root=tmp_path / "state", credentials=MemoryCredentialStore())
-    path = app.data_root.workspaces_path / "ws_invalid" / "handoff.yaml"
-    path.parent.mkdir(parents=True)
-    path.write_text(yaml.safe_dump(invalid_envelope, sort_keys=False), encoding="utf-8")
-    before = path.read_bytes()
-
-    loaded = app.project_store.load_handoff("ws_invalid")
-
-    assert loaded.status == StateLoadStatus.CORRUPT
-    assert path.read_bytes() == before
 
 
 def test_revision_conflict_does_not_overwrite_document(tmp_path):
@@ -523,12 +464,10 @@ def test_workspace_publication_failures_leave_deterministic_valid_state(
     workspace_id = "ws_failure"
     baseline = ProjectStateYamlStore(state_root)
     assert (
-        baseline.write_handoff(
-            workspace_id, Handoff(current_goal="before"), expected_revision=0
-        ).status
+        baseline.write_profile(workspace_id, Profile(name="before"), expected_revision=0).status
         == StateWriteStatus.OK
     )
-    path = state_root / "workspaces" / workspace_id / "handoff.yaml"
+    path = state_root / "workspaces" / workspace_id / "profile.yaml"
     before = path.read_bytes()
 
     def inject(point):
@@ -537,14 +476,12 @@ def test_workspace_publication_failures_leave_deterministic_valid_state(
 
     failing = ProjectStateYamlStore(state_root, failure_injector=inject)
     if action == "write":
-        result = failing.write_handoff(
-            workspace_id, Handoff(current_goal="after"), expected_revision=1
-        )
+        result = failing.write_profile(workspace_id, Profile(name="after"), expected_revision=1)
     else:
-        result = failing.clear_handoff(workspace_id, expected_revision=1)
+        result = failing.clear_profile(workspace_id, expected_revision=1)
 
     assert result.status == StateWriteStatus.FAILED
-    loaded = baseline.load_handoff(workspace_id)
+    loaded = baseline.load_profile(workspace_id)
     assert loaded.status == StateLoadStatus.OK
     if failure_point == "directory_fsync":
         assert loaded.revision == 2
@@ -673,15 +610,15 @@ def test_competing_workspace_publications_are_serialized_across_processes(
     workspace_id = "ws_competing"
     store = ProjectStateYamlStore(state_root)
     assert (
-        store.write_handoff(
-            workspace_id, Handoff(current_goal="revision one"), expected_revision=0
+        store.write_profile(
+            workspace_id, Profile(name="revision one"), expected_revision=0
         ).revision
         == 1
     )
     if starting_revision == 2:
         assert (
-            store.write_handoff(
-                workspace_id, Handoff(current_goal="revision two"), expected_revision=1
+            store.write_profile(
+                workspace_id, Profile(name="revision two"), expected_revision=1
             ).revision
             == 2
         )
@@ -691,7 +628,7 @@ def test_competing_workspace_publications_are_serialized_across_processes(
     results = context.Queue()
     processes = [
         context.Process(
-            target=_mutate_handoff_in_process,
+            target=_mutate_profile_in_process,
             args=(
                 state_root,
                 workspace_id,
@@ -716,6 +653,6 @@ def test_competing_workspace_publications_are_serialized_across_processes(
 
     assert sorted(status for status, _ in outcomes) == ["ok", "revision_conflict"]
     assert {revision for _, revision in outcomes} == {expected_success_revision}
-    loaded = store.load_handoff(workspace_id)
+    loaded = store.load_profile(workspace_id)
     assert loaded.revision == expected_success_revision
     assert loaded.presence.value == expected_presence

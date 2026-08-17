@@ -12,19 +12,17 @@ from morrow.core.models import (
     ConfigExtractionResult,
     ConfigPatch,
     ConfigPatchOperation,
-    Decision,
     FinishReason,
     FunctionToolCall,
-    Handoff,
     ModelRef,
     Preferences,
     Profile,
     UserMessage,
 )
-from morrow.interfaces.terminal import _exit, _save_or_discard_before_switch
 from morrow.runtime.agent import AgentRuntime
 from morrow.runtime.session import Session
 from morrow.services.preferences import ConfigIntentGate, ConfigPatchService
+from morrow.services.workspace import WorkspaceStateService
 from morrow.testing import ScriptedModelProvider, make_context_builder, seed_user_turn
 
 
@@ -189,39 +187,12 @@ def test_successful_config_patch_refreshes_next_turn_snapshot_and_unset_reveals_
     )
 
 
-def test_handoff_decision_remove_matches_decision_text_and_does_not_load_independent_session(
-    tmp_path,
-):
-    app = build_application(state_root=tmp_path / "state", credentials=MemoryCredentialStore())
-    project = tmp_path / "project"
-    project.mkdir()
-    identity = app.workspace_service.confirm(app.workspace_service.resolve(project))
-    app.project_store.write_handoff(
-        identity.workspace_id,
-        Handoff(current_goal="goal", decisions=[Decision(decision="Use YAML")]),
-    )
-    session = Session(session_id="s")
-    service = ConfigPatchService(
-        app.project_store, app.global_store, identity.workspace_id, session
-    )
-    service.apply(
-        ConfigPatch(
-            scope="workspace",
-            target="handoff",
-            operations=[ConfigPatchOperation(op="remove", path="decisions", value=" use yaml ")],
-        )
-    )
-    assert app.project_store.load_handoff(identity.workspace_id).value.handoff.decisions == []
-    assert session.loaded_handoff is None
-
-
 def test_command_service_routes_deterministic_edits_to_one_patch_path(tmp_path):
     app = build_application(state_root=tmp_path / "state", credentials=MemoryCredentialStore())
     project = tmp_path / "project"
     project.mkdir()
     identity = app.workspace_service.confirm(app.workspace_service.resolve(project))
     app.project_store.write_profile(identity.workspace_id, Profile(name="demo"))
-    app.project_store.write_handoff(identity.workspace_id, Handoff(current_goal="old"))
     session = Session(session_id="s")
     patch_service = ConfigPatchService(
         app.project_store, app.global_store, identity.workspace_id, session
@@ -230,19 +201,17 @@ def test_command_service_routes_deterministic_edits_to_one_patch_path(tmp_path):
         session=session,
         identity=identity,
         project_store=app.project_store,
-        handoff_service=None,
         config_service=patch_service,
     )
     paths = [
         app.data_root.workspaces_path / identity.workspace_id / name
-        for name in ("preferences.yaml", "profile.yaml", "handoff.yaml")
+        for name in ("preferences.yaml", "profile.yaml")
     ]
     before = {path.name: path.read_bytes() if path.exists() else None for path in paths}
 
     results = [
         commands.execute("/config edit workspace language 中文"),
         commands.execute("/workspace edit summary a demo"),
-        commands.execute("/handoff edit current_goal new goal"),
     ]
 
     assert all(result.action == "config_preview" for result in results)
@@ -254,38 +223,30 @@ def test_command_service_routes_deterministic_edits_to_one_patch_path(tmp_path):
         "- set language = 中文",
     ]
     assert results[1].lines[-1] == "- set summary = a demo"
-    assert results[2].lines[-1] == "- set current_goal = new goal"
     for result in results:
         patch_service.apply(result.value)
-    assert (
-        app.project_store.load_handoff(identity.workspace_id).value.handoff.current_goal
-        == "new goal"
-    )
 
 
-def test_dirty_session_transitions_are_explicit_and_state_clear_is_scoped(tmp_path):
+def test_dirty_session_transition_requires_discard_and_removed_commands_are_unknown(tmp_path):
     app = build_application(state_root=tmp_path / "state", credentials=MemoryCredentialStore())
     project = tmp_path / "project"
     project.mkdir()
     identity = app.workspace_service.confirm(app.workspace_service.resolve(project))
     app.project_store.write_profile(identity.workspace_id, Profile(name="keep"))
-    app.project_store.write_handoff(identity.workspace_id, Handoff(current_goal="keep"))
     session = Session(session_id="s")
     seed_user_turn(session, "dirty")
     commands = CommandService(
         session=session,
         identity=identity,
         project_store=app.project_store,
-        handoff_service=None,
     )
-    assert commands.execute("/new").action == "switch_new"
-    assert commands.execute("/continue").action == "switch_continue"
-    cleared = app.project_store.clear_handoff(identity.workspace_id, expected_revision=1)
-    assert cleared.status.value == "ok"
+    assert commands.execute("/new").action == "discard_new"
     assert app.project_store.load_profile(identity.workspace_id).value.profile.name == "keep"
-    refused = commands.execute("/continue")
-    assert refused.action is None
-    assert refused.lines == ["当前没有可继续的交接。"]
+    for raw in ("/continue", "/handoff", "/handoff update"):
+        refused = commands.execute(raw)
+        assert refused.action is None
+        assert refused.value is None
+        assert refused.lines == [f"未知命令：{raw.split()[0]}"]
 
 
 @pytest.mark.asyncio
@@ -350,12 +311,13 @@ async def test_stage_1b_explicit_config_gate_previews_before_apply(tmp_path):
             '{"result":"config_patch","patch":{"scope":"workspace","target":"preferences","operations":[{"op":"set","path":"language","value":"中文"}]}}'
         ]
     )
-    session, _, _, _, orchestrator = build_session_application(
+    session_app = build_session_application(
         app,
         identity,
         provider=provider,
         model=ModelRef(provider_id="p", model_id="m"),
     )
+    orchestrator = session_app.orchestrator
     result = await orchestrator.dispatch("请记住这个项目以后用中文回复")
     assert result.action == "config_preview"
     assert result.lines == [
@@ -384,12 +346,14 @@ async def test_multi_operation_preview_shows_every_exact_mutation_before_write(t
             '{"result":"config_patch","patch":{"scope":"session","target":"preferences","operations":[{"op":"set","path":"language","value":"中文"},{"op":"append","path":"instructions","value":"先给结论"}]}}'
         ]
     )
-    session, _, _, _, orchestrator = build_session_application(
+    session_app = build_session_application(
         app,
         identity,
         provider=provider,
         model=ModelRef(provider_id="p", model_id="m"),
     )
+    session = session_app.session
+    orchestrator = session_app.orchestrator
 
     result = await orchestrator.dispatch("请设置这次回复语言并加入这条指令")
 
@@ -411,12 +375,13 @@ async def test_sensitive_vocabulary_discussion_streams_without_extraction(tmp_pa
     project.mkdir()
     identity = app.workspace_service.confirm(app.workspace_service.resolve(project))
     provider = ScriptedModelProvider(["ordinary answer"])
-    _, _, _, _, orchestrator = build_session_application(
+    session_app = build_session_application(
         app,
         identity,
         provider=provider,
         model=ModelRef(provider_id="p", model_id="m"),
     )
+    orchestrator = session_app.orchestrator
 
     result = await orchestrator.dispatch("请解释 Provider 凭据为什么需要安全保存")
 
@@ -437,12 +402,13 @@ async def test_invalid_config_extraction_shape_repairs_once_before_preview(tmp_p
             '{"result":"config_patch","patch":{"scope":"workspace","target":"preferences","operations":[{"op":"set","path":"language","value":"中文"}]}}',
         ]
     )
-    _, _, _, _, orchestrator = build_session_application(
+    session_app = build_session_application(
         app,
         identity,
         provider=provider,
         model=ModelRef(provider_id="p", model_id="m"),
     )
+    orchestrator = session_app.orchestrator
 
     result = await orchestrator.dispatch("请记住这个项目以后用中文回复")
 
@@ -464,12 +430,13 @@ async def test_two_invalid_config_extraction_shapes_fail_closed_without_chat_or_
             '{"result":"clarification_required","question":null}',
         ]
     )
-    _, _, _, _, orchestrator = build_session_application(
+    session_app = build_session_application(
         app,
         identity,
         provider=provider,
         model=ModelRef(provider_id="p", model_id="m"),
     )
+    orchestrator = session_app.orchestrator
 
     result = await orchestrator.dispatch("请记住这个项目以后用中文回复")
 
@@ -490,12 +457,13 @@ async def test_nl_config_extraction_degrades_when_context_budget_is_exceeded(tmp
     project.mkdir()
     identity = app.workspace_service.confirm(app.workspace_service.resolve(project))
     provider = ScriptedModelProvider(["should not chat"])
-    _, _, _, _, orchestrator = build_session_application(
+    session_app = build_session_application(
         app,
         identity,
         provider=provider,
         model=ModelRef(provider_id="p", model_id="m"),
     )
+    orchestrator = session_app.orchestrator
 
     result = await orchestrator.dispatch("请记住这个项目以后用中文回复")
 
@@ -505,36 +473,14 @@ async def test_nl_config_extraction_degrades_when_context_budget_is_exceeded(tmp
     assert provider.complete_calls == []
 
 
-def test_new_then_continue_clears_tool_history_and_loads_only_persisted_handoff(tmp_path):
-    app = build_application(state_root=tmp_path / "state", credentials=MemoryCredentialStore())
-    project = tmp_path / "project"
-    project.mkdir()
-    identity = app.workspace_service.confirm(app.workspace_service.resolve(project))
-    saved = app.project_store.write_handoff(
-        identity.workspace_id, Handoff(current_goal="persisted goal"), expected_revision=0
-    )
-    session, _, _, commands, orchestrator = build_session_application(
-        app,
-        identity,
-        provider=ScriptedModelProvider(["unused"]),
-        model=ModelRef(provider_id="p", model_id="m"),
-    )
-    session.log.begin_turn(UserMessage(content="tool turn"))
-    session.log.append_assistant(
-        AssistantMessage(tool_calls=(FunctionToolCall(id="c1", name="lookup", arguments="{}"),))
-    )
-    session.log.append_tool_result("c1", "tool result")
-    session.log.finish_turn(FinishReason.ERROR)
+def test_reset_clears_only_process_local_history():
+    session = Session(session_id="s")
+    seed_user_turn(session, "old", assistant="answer")
 
-    orchestrator.reset_session()
-    loaded = commands.load_handoff()
+    session.reset("s2")
 
-    assert loaded.revision == saved.revision
-    assert session.loaded_handoff.current_goal == "persisted goal"
+    assert session.session_id == "s2"
     assert session.log.snapshot().records == ()
-    assert app.project_store.load_handoff(identity.workspace_id).value.handoff.current_goal == (
-        "persisted goal"
-    )
 
 
 @pytest.mark.asyncio
@@ -544,12 +490,14 @@ async def test_config_extraction_with_tool_history_receives_only_structured_proj
     project.mkdir()
     identity = app.workspace_service.confirm(app.workspace_service.resolve(project))
     provider = ScriptedModelProvider(['{"result":"no_change"}'])
-    session, _, _, _, orchestrator = build_session_application(
+    session_app = build_session_application(
         app,
         identity,
         provider=provider,
         model=ModelRef(provider_id="p", model_id="m"),
     )
+    session = session_app.session
+    orchestrator = session_app.orchestrator
     session.log.begin_turn(UserMessage(content="prior user"))
     session.log.append_assistant(
         AssistantMessage(
@@ -568,161 +516,61 @@ async def test_config_extraction_with_tool_history_receives_only_structured_proj
     assert "secret" not in str(wire)
 
 
-@pytest.mark.asyncio
-async def test_dirty_independent_save_failure_preserves_session(tmp_path):
-    class Console:
-        def print(self, *args, **kwargs):
-            pass
-
-    class TerminalStub:
-        console = Console()
-
-        async def prompt(self, session, message):
-            return "s"
-
-    class FailedSave:
-        status = type("Status", (), {"value": "failed"})()
-
-    class HandoffStub:
-        async def generate_and_publish(self, session, *, expected_revision):
-            return FailedSave(), False
-
-    class StoreStub:
-        def load_handoff(self, workspace_id):
-            return type("Loaded", (), {"revision": 0})()
-
-    session = Session(session_id="s")
-    seed_user_turn(session, "keep me")
-    choice = await _save_or_discard_before_switch(
-        TerminalStub(), object(), HandoffStub(), StoreStub(), "ws", session
-    )
-    assert choice == "cancelled"
-    assert session.messages[0].content == "keep me"
-    assert session.dirty is True
-
-
-@pytest.mark.parametrize(
-    ("invalid_document", "invalid_bytes"),
-    [
-        ("profile.yaml", b"not: [valid"),
-        ("handoff.yaml", b"schema_version: 99\nrevision: 5\n"),
-    ],
-)
-@pytest.mark.asyncio
-async def test_profile_or_handoff_failure_enforces_workspace_wide_degraded_mode(
-    tmp_path, invalid_document, invalid_bytes
-):
+def test_legacy_handoff_files_are_ignored_and_remain_byte_identical(tmp_path):
     app = build_application(state_root=tmp_path / "state", credentials=MemoryCredentialStore())
     project = tmp_path / "project"
     project.mkdir()
     identity = app.workspace_service.confirm(app.workspace_service.resolve(project))
-    workspace_id = identity.workspace_id
-    app.project_store.write_preferences(workspace_id, Preferences(language="中文"))
-    app.project_store.write_profile(workspace_id, Profile(name="valid profile"))
-    app.project_store.write_handoff(workspace_id, Handoff(current_goal="valid handoff"))
-    invalid_path = app.data_root.workspaces_path / workspace_id / invalid_document
-    invalid_path.write_bytes(invalid_bytes)
-    before = {
-        path.name: path.read_bytes()
-        for path in (app.data_root.workspaces_path / workspace_id).glob("*.yaml")
-    }
-    provider = ScriptedModelProvider(["chat remains available"])
+    workspace_dir = app.data_root.workspaces_path / identity.workspace_id
+    workspace_dir.mkdir(parents=True, exist_ok=True)
+    primary = workspace_dir / "handoff.yaml"
+    backup = workspace_dir / "handoff.yaml.bak"
+    primary.write_bytes(b"schema_version: 99\nrevision: 5\n")
+    backup.write_bytes(b"not: [valid")
+    before = (primary.read_bytes(), backup.read_bytes())
 
-    inspection = app.workspace_state_service.inspect(workspace_id)
-    session, _, _, commands, orchestrator = build_session_application(
-        app,
-        identity,
-        provider=provider,
-        model=ModelRef(provider_id="p", model_id="m"),
-    )
+    class FailOnLegacyAccess:
+        def __init__(self, wrapped):
+            self.wrapped = wrapped
 
-    assert inspection.read_only is True
-    assert session.read_only is True
-    assert session.profile is None
-    assert session.loaded_handoff is None
-    assert commands.execute("/continue").action is None
-    assert commands.execute("/handoff update").action is None
-    assert commands.execute("/handoff clear").action is None
-    assert commands.execute("/handoff edit current_goal changed").action is None
-    assert commands.execute("/workspace reset").action is None
-    assert commands.execute("/workspace edit summary changed").action is None
-    assert commands.execute("/config reset workspace").action is None
-    assert commands.execute("/config edit workspace language English").action is None
-    assert (
-        app.workspace_state_service.onboard(
-            workspace_id,
-            display_name="blocked",
-            summary="blocked",
-            current_goal="blocked",
-        )
-        is None
+        def __getattr__(self, name):
+            return getattr(self.wrapped, name)
+
+        def load_handoff(self, workspace_id):
+            raise AssertionError(f"legacy primary read attempted: {workspace_id}")
+
+        def load_handoff_backup(self, workspace_id):
+            raise AssertionError(f"legacy backup read attempted: {workspace_id}")
+
+        def write_handoff(self, *args, **kwargs):
+            raise AssertionError("legacy write attempted")
+
+        def clear_handoff(self, *args, **kwargs):
+            raise AssertionError("legacy clear attempted")
+
+    guarded_store = FailOnLegacyAccess(app.project_store)
+    workspace_state = WorkspaceStateService(guarded_store)
+    inspection = workspace_state.inspect(identity.workspace_id)
+    result = workspace_state.onboard(identity.workspace_id, display_name="demo", summary="summary")
+    config = ConfigPatchService(
+        guarded_store, app.global_store, identity.workspace_id, Session(session_id="s")
     )
-    with pytest.raises(RuntimeError):
-        commands.clear_handoff()
-    with pytest.raises(RuntimeError):
-        commands.reset_profile()
-    with pytest.raises(RuntimeError):
-        commands.reset_preferences("workspace")
-    with pytest.raises(RuntimeError):
-        commands.config_service.apply(
-            ConfigPatch(
-                scope="workspace",
-                target="preferences",
-                operations=[ConfigPatchOperation(op="set", path="language", value="English")],
-            )
-        )
-    assert (
-        commands.config_service.apply(
-            ConfigPatch(
-                scope="session",
-                target="preferences",
-                operations=[ConfigPatchOperation(op="set", path="language", value="English")],
-            )
-        )
-        == "ok"
-    )
-    commands.config_service.apply(
+    config.apply(
         ConfigPatch(
-            scope="global",
+            scope="workspace",
             target="preferences",
-            operations=[ConfigPatchOperation(op="set", path="response_detail", value="concise")],
+            operations=[ConfigPatchOperation(op="set", path="language", value="中文")],
         )
     )
-    assert app.provider_service.list().providers == {}
-    blocked_save, _ = await commands.handoff_service.generate_and_publish(
-        session, expected_revision=app.project_store.load_handoff(workspace_id).revision
-    )
-    assert blocked_save.status.value == "failed"
-    result = await orchestrator.dispatch("ordinary chat")
-    assert result.events[-1].payload["finish_reason"] == "stop"
 
-    class Console:
-        def print(self, *args, **kwargs):
-            pass
-
-    class ConfirmingTerminal:
-        console = Console()
-
-        async def prompt(self, prompt_session, message):
-            return "y"
-
+    assert inspection.read_only is False
+    assert result == 1
+    assert app.project_store.load_profile(identity.workspace_id).value.profile.name == "demo"
     assert (
-        await _exit(
-            orchestrator,
-            commands.handoff_service,
-            app.project_store,
-            workspace_id,
-            session,
-            ConfirmingTerminal(),
-            object(),
-        )
-        == 0
+        app.project_store.load_preferences(identity.workspace_id).value.preferences.language
+        == "中文"
     )
-    after = {
-        path.name: path.read_bytes()
-        for path in (app.data_root.workspaces_path / workspace_id).glob("*.yaml")
-    }
-    assert after == before
+    assert (primary.read_bytes(), backup.read_bytes()) == before
 
 
 @pytest.mark.asyncio
@@ -734,19 +582,21 @@ async def test_corrupt_workspace_preferences_is_an_isolated_non_overwritable_emp
     workspace_id = identity.workspace_id
     app.project_store.write_preferences(workspace_id, Preferences(language="中文"))
     app.project_store.write_profile(workspace_id, Profile(name="valid profile"))
-    app.project_store.write_handoff(workspace_id, Handoff(current_goal="valid handoff"))
     preferences_path = app.data_root.workspaces_path / workspace_id / "preferences.yaml"
     preferences_path.write_bytes(b"not: [valid")
     before_preferences = preferences_path.read_bytes()
     provider = ScriptedModelProvider(["chat remains available"])
 
     inspection = app.workspace_state_service.inspect(workspace_id)
-    session, _, _, commands, orchestrator = build_session_application(
+    session_app = build_session_application(
         app,
         identity,
         provider=provider,
         model=ModelRef(provider_id="p", model_id="m"),
     )
+    session = session_app.session
+    commands = session_app.commands
+    orchestrator = session_app.orchestrator
 
     assert inspection.read_only is False
     assert inspection.preferences_read_only is True
@@ -754,8 +604,6 @@ async def test_corrupt_workspace_preferences_is_an_isolated_non_overwritable_emp
     assert session.workspace_preferences_read_only is True
     assert session.workspace_preferences == Preferences()
     assert session.profile.name == "valid profile"
-    assert commands.execute("/continue").action == "continue"
-    assert commands.load_handoff().value.handoff.current_goal == "valid handoff"
     with pytest.raises(RuntimeError):
         commands.config_service.apply(
             ConfigPatch(
@@ -768,7 +616,6 @@ async def test_corrupt_workspace_preferences_is_an_isolated_non_overwritable_emp
         commands.reset_preferences("workspace")
     assert commands.execute("/config reset workspace").action is None
     assert commands.execute("/config edit workspace language English").action is None
-    assert commands.execute("/handoff update").action == "update_handoff"
     commands.config_service.apply(
         ConfigPatch(
             scope="workspace",

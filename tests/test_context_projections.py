@@ -39,7 +39,7 @@ def _seed_tool_turn(session: Session, *, result: str = "secret-tool-data") -> No
     session.log.finish_turn(FinishReason.STOP)
 
 
-def test_explicit_projections_keep_tool_data_out_of_structured_and_fallback_views():
+def test_explicit_projections_keep_tool_data_out_of_structured_view():
     session = Session(session_id="s")
     _seed_tool_turn(session)
     seed_user_turn(session, "failed latest user", finish=FinishReason.ERROR)
@@ -49,7 +49,6 @@ def test_explicit_projections_keep_tool_data_out_of_structured_and_fallback_view
     chat_session.log.begin_turn(UserMessage(content="current chat"))
     chat = builder.build(chat_session)
     structured = builder.build(chat_session, purpose="structured")
-    fallback = builder.build(chat_session, purpose="handoff_fallback")
 
     assert len([message for message in chat.messages if message.role == "system"]) == 2
     assert any(isinstance(message, ToolMessage) for message in chat.messages)
@@ -58,11 +57,10 @@ def test_explicit_projections_keep_tool_data_out_of_structured_and_fallback_view
     assert "secret-tool-data" not in "\n".join(
         message.content or "" for message in structured.messages
     )
-    assert [message.content for message in fallback.messages] == [
-        "current chat",
-        "completed final",
-    ]
-    assert structured.tools == fallback.tools == ()
+    assert structured.tools == ()
+    system_state = "\n".join(message.content for message in structured.messages[:2])
+    assert '"handoff"' not in system_state
+    assert "current_goal" not in system_state
 
 
 def test_context_request_pack_and_source_snapshot_are_immutable_and_build_is_pure():
