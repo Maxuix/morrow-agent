@@ -178,7 +178,7 @@ class ProviderService:
         current = self.list()
         config = current.providers.get(provider_id)
         if not config:
-            raise ValueError("Provider 凭据不可用")
+            raise ValueError(f"未知 Provider: {provider_id}")
         credential = self.credential_resolver(provider_id, config.credential_ref)
         if not credential:
             raise ValueError("Provider 凭据不可用")

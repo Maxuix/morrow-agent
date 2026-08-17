@@ -121,7 +121,11 @@ def provider_show(
     provider_id: str, state_root: Path | None = typer.Option(None, "--state-root", hidden=True)
 ) -> None:
     service = build_application(state_root=state_root).provider_service
-    provider = service.provider(provider_id)
+    try:
+        provider = service.provider(provider_id)
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
     typer.echo(f"adapter: {provider.adapter}")
     typer.echo(f"base_url: {provider.base_url}")
     typer.echo(f"credential: {'可用' if service.credential_available(provider_id) else '不可用'}")
@@ -153,6 +157,9 @@ def provider_test(
 ) -> None:
     try:
         result = build_application(state_root=state_root).provider_service.test(provider_id)
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
     except Exception as exc:
         typer.echo(f"连接失败：{type(exc).__name__}", err=True)
         raise typer.Exit(code=2) from exc
@@ -218,7 +225,11 @@ def workspace_relink(
     typer.echo(f"将把 {workspace_id} 指向 {dir.resolve()}")
     if not typer.confirm("确认重连？"):
         raise typer.Exit(code=2)
-    identity = application.workspace_service.relink(workspace_id, dir)
+    try:
+        identity = application.workspace_service.relink(workspace_id, dir)
+    except WorkspaceError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
     typer.echo(f"已重连：{identity.path}")
 
 

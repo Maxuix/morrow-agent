@@ -20,6 +20,8 @@ from morrow.core.models import (
     ModelFinishReason,
     ModelProviderError,
     ModelRef,
+    ProviderConfig,
+    ProviderModelConfig,
     ToolDefinition,
     ToolFunction,
     UserMessage,
@@ -238,6 +240,32 @@ def test_credential_rotation_is_refused_while_environment_masks_store(tmp_path, 
         app.provider_service.configure("opencode-go", secret="replacement", replace_credential=True)
 
     assert app.data_root.config_path.read_bytes() == before
+
+
+def test_provider_test_distinguishes_unknown_provider_from_missing_credential(tmp_path):
+    credentials = MemoryCredentialStore()
+    app = build_application(state_root=tmp_path / "state", credentials=credentials)
+
+    with pytest.raises(ValueError, match="未知 Provider: demo"):
+        app.provider_service.test("demo")
+
+    written = app.global_store.update(
+        lambda value: value.model_copy(
+            update={
+                "providers": {
+                    "demo": ProviderConfig(
+                        adapter="openai-compatible",
+                        base_url="https://example.test",
+                        models={"m": ProviderModelConfig(api_model_id="m")},
+                    )
+                }
+            }
+        )
+    )
+    assert written.status.value == "ok"
+
+    with pytest.raises(ValueError, match="凭据不可用"):
+        app.provider_service.test("demo")
 
 
 def test_provider_test_persists_typed_failure_code(tmp_path):
