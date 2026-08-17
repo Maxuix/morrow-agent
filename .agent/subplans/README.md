@@ -1,30 +1,23 @@
 # Subplans
 
-最近完成的主计划是 Handoff Removal Refactor；当前没有活动主计划：
+当前主计划是 Natural-Language Configuration Tooling，状态为 in progress、review-remediated；
+当前激活 Subplan 25：
 
 | 顺序 | 子计划 | 状态 |
 |---|---|---|
-| 21 | `21-handoff-product-runtime-removal.md` | completed |
-| 22 | `22-handoff-domain-state-excision.md` | completed |
-| 23 | `23-handoff-documentation-reconciliation.md` | completed |
-| 24 | `24-handoff-removal-acceptance.md` | completed |
+| 25 | `25-generic-tool-policy-approval.md` | in progress |
+| 26 | `26-configuration-service-tool.md` | pending |
+| 27 | `27-configuration-single-chain-integration.md` | pending |
+| 28 | `28-configuration-tooling-acceptance.md` | pending |
 
-已完成的 Stage 2 Subplans 17–20 已从活动目录退休，并保留在 Git 历史的
-`831c4ea` 基线中。
+最近完成的 Handoff Removal Refactor Subplans 21–24 已由 commit `cbc3d6d` 保存，不再保留在活动目录。
+已完成的 Stage 2 Subplans 17–20 保留在 commit `831c4ea` 的历史中。
 
 将过大的主计划拆分为按顺序执行的子计划，并将子计划文件放在此目录。
 
 `PLAN.md` 是活文档，只做当前主计划的高层索引：总体目标、子计划列表、依赖、完成状态、当前活动子计划。不要在活动 `PLAN.md` 里保留过期正文；旧版本看 Git 历史。计划和仓库实测冲突时，先改计划再继续实现。
 
 本目录只保留当前活动主计划中未完成或正在执行的子计划。写下一份带新子计划的主计划之前，从工作树移除已被新阶段取代的旧子计划。
-
-建议命名：
-
-```text
-01-foundation.md
-02-runtime.md
-03-validation.md
-```
 
 每个子计划应至少说明：
 

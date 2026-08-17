@@ -574,3 +574,49 @@
   plan link with its historical `831c4ea` location.
 - Focused review regression passed (81). Full offline suite passed (287, one Live test
   deselected); Ruff format/check, compileall, CLI help, and `git diff --check` passed.
+
+## 2026-08-17 — Natural-language configuration tooling plan drafted
+
+- Committed the completed Handoff Removal Refactor first as `cbc3d6d`
+  (`refactor: remove handoff continuity bridge`), leaving a clean implementation baseline
+  before creating the next plan.
+- Accepted one ordinary AgentLoop for all non-Slash input. A standard
+  `update_configuration` FunctionToolCall is the only executable natural-language
+  configuration-intent signal; keyword routing and the separate structured configuration
+  completion are removed during the atomic product cutover.
+- Reconciled the design with the architecture tool boundary: configuration handlers are thin
+  adapters over ConfigPatchService; Provider wire remains standard; local risk and approval
+  metadata stays in Registry/Executor; no AgentLoop, ToolExecutor, Orchestrator, event, or
+  Provider adapter receives a configuration-name branch.
+- Limited the current configuration surface to global/workspace/session Preferences and
+  workspace Profile. Handoff, Provider/credential/model/security/AgentPolicy/workspace
+  identity and all unrelated Stage 3/4 capabilities remain excluded.
+- Split implementation into ordered Subplans 25–28: generic Tool Policy/Approval foundation;
+  shared configuration service and directly tested tool; atomic single-chain product
+  integration; intent evaluation and final acceptance/delivery.
+- Planning files only changed after the baseline commit. Stage 3 implementation remains
+  unstarted; no subplan or executable task is active until the user explicitly authorizes
+  Subplan 25.
+
+## 2026-08-17 — Configuration tooling plan review remediated
+
+- Verified all 19 review findings against the current ToolExecutor, AgentLoop,
+  SessionOrchestrator, ConfigPatchService, CommandService, terminal/CLI composition, state
+  stores, architecture/roadmap wording, and exact production-tool tests. The report's P0/P1
+  findings exist; P2 items are valid contract/documentation gaps rather than false positives.
+- Removed the impossible Subplan 25 Orchestrator scan and moved that assertion to the atomic
+  cutover. Chose full canonical Pydantic JSON Schema as an explicit Provider-wire change
+  while preserving demo-tool outcomes, events, ToolMessages, and history.
+- Locked construction-time ApprovalPort injection through a shared Terminal/PromptSession,
+  whole-turn Ctrl+C/EOF cancellation, cancellable prompt timeouts, running-before-preview,
+  request field minimization, and effect-as-display-only semantics.
+- Locked exact reset representations, the no-op/remove matrix, session `revision: null`,
+  pre-approval degraded-state checks, minimal service results, a typed command/result API,
+  and an unchanged legacy ConfigPatch extraction schema through Subplan 26.
+- Made per-call approval and deliberate partial persistence explicit; documented dirty/logged
+  natural-language turns versus out-of-loop Slash commands, exact inventory-test updates,
+  generic SYSTEM_BOUNDARY wording, zero production `complete_structured` callers after
+  cutover, the current 120-second timeout recovery path, Chinese tool description, and no new
+  Slash list syntax.
+- Planning documents only were changed. Stage 3 remains unstarted and will remain incomplete
+  after this slice; file/search/edit/Shell capabilities require separate authorization.

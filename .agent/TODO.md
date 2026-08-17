@@ -2,13 +2,13 @@
 
 ## Active subplan
 
-None — Handoff Removal Refactor is complete.
+Subplan 25 — Generic Tool Policy and Approval Foundation.
 
-## Executable tasks
+## Tasks
 
-- [x] HR.24.1 Complete the requirement-to-evidence matrix.
-- [x] HR.24.2 Accept the real offline product lifecycle.
-- [x] HR.24.3 Accept degraded state and legacy-data boundaries.
-- [x] HR.24.4 Accept Agent core regression surface.
-- [x] HR.24.5 Accept source, package, documentation, and capability boundaries.
-- [x] HR.24.6 Run final quality gates and close the plan.
+- [>] CT.25.1 — Lock generic contracts and add red boundary tests
+- [ ] CT.25.2 — Add immutable local tool execution metadata
+- [ ] CT.25.3 — Define ApprovalPort and deterministic adapters
+- [ ] CT.25.4 — Enforce policy generically in ToolExecutor
+- [ ] CT.25.5 — Preserve full standard argument Schema
+- [ ] CT.25.6 — Run integrated regression and close the foundation
