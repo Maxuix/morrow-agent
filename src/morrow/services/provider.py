@@ -17,6 +17,7 @@ from morrow.core.models import (
     ModelRef,
     ProviderConfig,
     ProviderModelConfig,
+    UserMessage,
 )
 
 
@@ -44,7 +45,7 @@ class ProviderService:
 
     @staticmethod
     def _probe_messages() -> list[Message]:
-        return [Message(role="user", content="请回复：连接测试成功。")]
+        return [UserMessage(content="请回复：连接测试成功。")]
 
     async def add_async(
         self, preset_id: str, secret: str, *, activate_if_empty: bool = True

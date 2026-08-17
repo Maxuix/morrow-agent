@@ -5,12 +5,20 @@ import time
 
 import pytest
 
-from morrow.application.context import ContextBuilder
+from morrow.application.context import ContextBudgetError
 from morrow.application.structured import StructuredCompletionError, complete_structured
-from morrow.core.models import Handoff, ModelRef
+from morrow.core.models import (
+    AssistantMessage,
+    FinishReason,
+    FunctionToolCall,
+    Handoff,
+    ModelRef,
+    ToolMessage,
+    UserMessage,
+)
 from morrow.runtime.session import Session
 from morrow.services.handoff import HandoffService
-from morrow.testing import ScriptedModelProvider
+from morrow.testing import ScriptedModelProvider, make_context_builder, seed_user_turn
 
 
 class DelayedCompletionProvider:
@@ -33,7 +41,7 @@ async def test_structured_completion_repairs_once_through_context_builder():
     value, repaired = await complete_structured(
         provider,
         ModelRef(provider_id="p", model_id="m"),
-        ContextBuilder(),
+        make_context_builder(),
         Session(session_id="s"),
         Handoff,
         "return handoff",
@@ -47,13 +55,30 @@ async def test_structured_completion_repairs_once_through_context_builder():
 
 
 @pytest.mark.asyncio
+async def test_structured_completion_wraps_context_budget_as_structured_error():
+    session = Session(session_id="s")
+    seed_user_turn(session, "x" * 200, assistant="y" * 200)
+    with pytest.raises(StructuredCompletionError) as exc_info:
+        await complete_structured(
+            ScriptedModelProvider(['{"current_goal":"done"}']),
+            ModelRef(provider_id="p", model_id="m"),
+            make_context_builder(40),
+            session,
+            Handoff,
+            "return handoff",
+        )
+    assert not isinstance(exc_info.value, ContextBudgetError)
+    assert "预算" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
 async def test_structured_completion_stops_after_one_repair():
     provider = ScriptedModelProvider(["bad", "still bad"])
     with pytest.raises(StructuredCompletionError):
         await complete_structured(
             provider,
             ModelRef(provider_id="p", model_id="m"),
-            ContextBuilder(),
+            make_context_builder(),
             Session(session_id="s"),
             Handoff,
             "return handoff",
@@ -73,7 +98,7 @@ async def test_structured_completion_uses_one_total_deadline_across_repair():
         await complete_structured(
             provider,
             ModelRef(provider_id="p", model_id="m"),
-            ContextBuilder(),
+            make_context_builder(),
             Session(session_id="s"),
             Handoff,
             "return handoff for the original task",
@@ -91,7 +116,7 @@ async def test_structured_repair_retains_original_instruction_and_target_schema(
     await complete_structured(
         provider,
         ModelRef(provider_id="p", model_id="m"),
-        ContextBuilder(),
+        make_context_builder(),
         Session(session_id="s"),
         Handoff,
         "return handoff for the original task",
@@ -101,6 +126,62 @@ async def test_structured_repair_retains_original_instruction_and_target_schema(
     assert "return handoff for the original task" in repair_prompt
     assert "current_goal" in repair_prompt
     assert "校验" in repair_prompt
+
+
+@pytest.mark.asyncio
+async def test_structured_and_handoff_fallback_never_consume_tool_envelopes(tmp_path):
+    from morrow.adapters.credentials.keyring import MemoryCredentialStore
+    from morrow.bootstrap import build_application
+
+    app = build_application(state_root=tmp_path / "state", credentials=MemoryCredentialStore())
+    project = tmp_path / "project"
+    project.mkdir()
+    identity = app.workspace_service.confirm(app.workspace_service.resolve(project))
+    session = Session(session_id="s")
+    session.log.begin_turn(UserMessage(content="completed user"))
+    session.log.append_assistant(
+        AssistantMessage(
+            content="intermediate-secret",
+            tool_calls=(FunctionToolCall(id="c1", name="lookup", arguments="{}"),),
+        )
+    )
+    session.log.append_tool_result("c1", "tool-envelope-secret")
+    session.log.append_assistant(AssistantMessage(content="safe final"))
+    session.log.finish_turn(FinishReason.STOP)
+    session.log.begin_turn(UserMessage(content="latest failed user"))
+    session.log.append_assistant(
+        AssistantMessage(tool_calls=(FunctionToolCall(id="c2", name="lookup", arguments="{}"),))
+    )
+    session.log.append_tool_result("c2", "failed-tool-secret")
+    session.log.finish_turn(FinishReason.ERROR)
+
+    structured_provider = ScriptedModelProvider(['{"current_goal":"done"}'])
+    await complete_structured(
+        structured_provider,
+        ModelRef(provider_id="p", model_id="m"),
+        make_context_builder(),
+        session,
+        Handoff,
+        "return handoff",
+    )
+    wire = structured_provider.complete_calls[0]
+    assert all(not isinstance(message, ToolMessage) for message in wire)
+    assert all(not getattr(message, "tool_calls", ()) for message in wire)
+    assert "tool-envelope-secret" not in str(wire)
+    assert "intermediate-secret" not in str(wire)
+
+    service = HandoffService(
+        app.project_store,
+        ScriptedModelProvider([RuntimeError("offline")]),
+        ModelRef(provider_id="p", model_id="m"),
+        make_context_builder(),
+        identity.workspace_id,
+    )
+    fallback, degraded = await service.generate(session)
+    assert degraded is True
+    assert fallback.current_goal == "latest failed user"
+    assert "safe final" in (fallback.recovery_note or "")
+    assert "secret" not in (fallback.recovery_note or "")
 
 
 @pytest.mark.asyncio
@@ -114,12 +195,12 @@ async def test_handoff_service_uses_deterministic_fallback_on_model_failure(tmp_
     identity = app.workspace_service.confirm(app.workspace_service.resolve(project))
     provider = ScriptedModelProvider([RuntimeError("provider down")])
     session = Session(session_id="s")
-    session.accept_user("current request")
+    seed_user_turn(session, "current request")
     service = HandoffService(
         app.project_store,
         provider,
         ModelRef(provider_id="p", model_id="m"),
-        ContextBuilder(),
+        make_context_builder(),
         identity.workspace_id,
     )
     value, degraded = await service.generate(session)
@@ -141,7 +222,7 @@ async def test_independent_fallback_without_user_text_uses_fixed_safe_goal(tmp_p
         app.project_store,
         ScriptedModelProvider([RuntimeError("offline")]),
         ModelRef(provider_id="p", model_id="m"),
-        ContextBuilder(),
+        make_context_builder(),
         identity.workspace_id,
     )
 
@@ -171,12 +252,12 @@ async def test_independent_fallback_never_copies_unloaded_disk_handoff(tmp_path,
         )
         expected_revision = cleared.revision
     session = Session(session_id="s")
-    session.accept_user("independent new goal")
+    seed_user_turn(session, "independent new goal")
     service = HandoffService(
         app.project_store,
         ScriptedModelProvider([RuntimeError("offline")]),
         ModelRef(provider_id="p", model_id="m"),
-        ContextBuilder(),
+        make_context_builder(),
         identity.workspace_id,
     )
 
@@ -204,12 +285,12 @@ async def test_handoff_fallback_publishes_valid_state_and_marks_continuation(tmp
     session = Session(
         session_id="s", loaded_handoff=existing, handoff_source_revision=saved.revision
     )
-    session.accept_user("new request")
+    seed_user_turn(session, "new request")
     service = HandoffService(
         app.project_store,
         ScriptedModelProvider([RuntimeError("offline")]),
         ModelRef(provider_id="p", model_id="m"),
-        ContextBuilder(),
+        make_context_builder(),
         identity.workspace_id,
     )
     result, degraded = await service.generate_and_publish(session, expected_revision=saved.revision)
@@ -236,12 +317,12 @@ async def test_cancelling_handoff_generation_does_not_fallback_or_write(tmp_path
     session = Session(
         session_id="s", loaded_handoff=existing, handoff_source_revision=saved.revision
     )
-    session.accept_user("request")
+    seed_user_turn(session, "request")
     service = HandoffService(
         app.project_store,
         ScriptedModelProvider(["cancel"]),
         ModelRef(provider_id="p", model_id="m"),
-        ContextBuilder(),
+        make_context_builder(),
         identity.workspace_id,
         timeout=30,
     )

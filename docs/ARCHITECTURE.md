@@ -1,9 +1,9 @@
 # Morrow 架构基线
 
-> 状态：目标架构，服务于阶段 1 实现  
+> 状态：阶段 2 完成后的当前架构基线
 > 原则：先锁定依赖方向和数据所有权，具体文件树允许随实现变薄或调整。
 
-本文是 Morrow 的长期架构边界。它不是现有代码的目录说明；在项目尚未形成稳定实现前，任何具体模块都必须以能验证阶段 1 闭环为前提。
+本文描述 Morrow 完成阶段 2 后的稳定所有权和依赖边界。具体文件可以演进，但不能绕过已经验证的单一历史、执行、状态和安全边界。
 
 ## 目标
 
@@ -21,8 +21,12 @@ Morrow 要把“模型调用、项目上下文、用户状态和交互入口”�
 flowchart LR
     UI["CLI / future clients"] --> ORCH["SessionOrchestrator"]
     ORCH --> COMMAND["CommandService"]
-    ORCH --> CONTEXT["ContextBuilder"]
-    ORCH --> RUNTIME["AgentRuntime"]
+    ORCH --> RUNTIME["AgentRuntime → AgentLoop"]
+    RUNTIME --> CONTEXT["ContextBuilder"]
+    RUNTIME --> LOG["ConversationLog"]
+    RUNTIME --> EXECUTOR["ToolExecutor"]
+    EXECUTOR --> TOOLSET["Frozen in-memory ToolSet"]
+    RUNTIME --> POLICY["Resolved RunPolicy"]
     ORCH --> SERVICE["Workspace / Provider / Handoff services"]
     COMMAND --> SERVICE
     RUNTIME --> PROVIDER["ModelProvider"]
@@ -43,9 +47,13 @@ Core 只表达领域对象、协议和状态转换，例如 `Message`、`ModelRe
 
 ### Runtime / services
 
-`AgentRuntime` 只负责把已经组装好的上下文变成一次可观察的模型回合：调用 Provider、归一化结果并发布事件。命令识别、确认、是否加载交接、会话切换和退出码归 `SessionOrchestrator`；上下文组装归 `ContextBuilder`；配置补丁、工作空间状态和交接生成归对应服务。服务层承载用例，但不直接实现终端交互或外部协议。
+普通对话只有一条状态机路径：`AgentLoop.run_task()` 负责任务生命周期、模型重试、工具轮次、deadline/预算、取消闭合、重复循环检测和全部聊天历史写入；`AgentRuntime.run_turn()` 只是薄委托。每个任务恰好一次 `turn.started`/`turn.completed`，fatal error 的 `stop_code` 与完成事件一致。
 
-阶段 1 的 `AgentRuntime.run_turn()` 只代表一轮模型调用。阶段 2 的多步工具循环应作为任务级编排加入，不能把单轮协议悄悄改成不可控的循环。工作空间启动检查和首次 Profile/Handoff 发布由 `WorkspaceStateService` 持有，CLI 只负责收集输入和展示结果；结构化完成协议位于 runtime 边界，供 Handoff 与配置提取复用。
+会话历史由 Session 持有的进程内 `ConversationLog` 单一权威管理（冻结的 System/User/Assistant/Tool 协议）；`Session.messages` 是只读投影。带 calls 的 Assistant 和其有序 ToolMessage 构成不可拆分的 ToolCycle，任何 terminal 或下一消息写入前必须闭合。ContextBuilder 从不可变 Snapshot 生成 Chat/Structured/Handoff-fallback 三种 View，先按完整 Cycle 清理旧结果，再按完整 turn/Cycle 裁剪；它不写事实源、不调用摘要模型。
+
+工具经任务冻结的 Registry/Executor 进入循环。生产组合只在 Adapter 明确声明 OpenAI function-tool 支持时启用 `lookup_record` 和 `calculate` 两个无本地副作用工具，不支持的 Adapter 保持普通聊天。随包 `agent-policy.toml` 经严格校验后解析为任务固定的 RunPolicy，统一约束模型、工具、时间、上下文、结果、Cycle 和循环阈值。模型请求白名单、流片段组装与 reasoning/SDK 元数据隔离归 Provider Adapter。
+
+命令识别、确认、会话切换和退出码仍归 `SessionOrchestrator`；配置补丁、工作空间状态和交接生成归对应服务。StructuredCompletion 和 Handoff 只读取安全投影、从不消费 ToolMessage envelope 或中间 tool-call Assistant。服务层不直接实现终端交互或外部协议。
 
 ### Interfaces
 
@@ -55,7 +63,7 @@ CLI 或未来的 Web、桌面、消息入口只负责输入解析、事件渲染
 
 Provider Adapter、状态存储、凭据存储和终端执行等差异都位于边界层。核心代码通过 Protocol 或等价接口依赖它们；新增 Provider 只需注册新的 Adapter 和预设，不应新增 Provider 名称分支。
 
-## 阶段 1 的最小运行流
+## 当前运行流
 
 ```text
 进入项目目录或传入 --dir
@@ -63,8 +71,11 @@ Provider Adapter、状态存储、凭据存储和终端执行等差异都位于�
   → 检查 Provider 与凭据
   → 加载 Profile，展示但不自动注入 Handoff
   → 用户选择独立开始或显式继续
-  → ContextBuilder 组装 system / profile / handoff / history
-  → AgentRuntime 进行流式单轮对话
+  → AgentRuntime 委托 AgentLoop，ConversationLog 接纳当前 User
+  → ContextBuilder 组装并验证 system / profile / handoff / legal history / tools
+  → Adapter 流式返回文本或 tool calls
+  → ToolExecutor 串行执行受限内存工具并闭合 ToolCycle
+  → AgentLoop 继续模型调用，直到最终回答、取消或确定性 stop_code
   → 接力会话退出时生成 Handoff，失败则使用确定性兜底
   → 需要保存时原子写入，失败则保留最后一份有效状态
   → 独立会话未显式保存时不覆盖现有 Handoff
@@ -72,7 +83,7 @@ Provider Adapter、状态存储、凭据存储和终端执行等差异都位于�
 
 ## 状态所有权
 
-| 状态 | 权威来源 | 允许的写入者 | 阶段 1 规则 |
+| 状态 | 权威来源 | 允许的写入者 | 当前规则 |
 |---|---|---|---|
 | Provider 非敏感配置 | 全局本地状态 | Provider 管理服务 | YAML 不保存密钥，只保存 credential ref |
 | 凭据 | `CredentialStore` / 显式环境变量 | Provider 管理服务 | 不进入日志、事件、交接和模型上下文 |
@@ -80,7 +91,8 @@ Provider Adapter、状态存储、凭据存储和终端执行等差异都位于�
 | 工作空间路径索引 | `workspace-index.yaml` | Workspace 服务 | 独立于项目状态写入；移动候选不得自动认领 |
 | 工作空间 Profile | 工作空间状态目录 | Profile 服务 | 按 `workspace_id` 隔离，原子写入 |
 | Handoff | 工作空间状态目录 | Handoff 服务 | 启动只展示，用户明确选择后才加载 |
-| 当前会话消息 | 进程内会话对象 | Session 编排层 | 阶段 1 不承诺完整历史恢复 |
+| 当前会话消息 | Session 持有的进程内 `ConversationLog` | `AgentLoop`；命令只可 reset | ToolCycle 原子闭合；不持久化、不跨进程恢复 |
+| Agent 运行策略 | 随包 `agent-policy.toml` → task-fixed `RunPolicy` | 开发者配置与 composition root | 不进入用户 Preferences/Profile/Handoff/CLI |
 
 状态写入必须带 schema 版本和 revision；写入顺序为“读取并校验 → 生成新内容 → 临时文件落盘 → 原子替换 → 保留一份可恢复备份”。任何一步失败都不能把旧的有效状态变成半份文件。
 
@@ -98,7 +110,7 @@ Profile 或 Handoff 任一损坏/未来版本会触发保守的工作空间状�
 
 ## 安全与失败语义
 
-- 阶段 1 默认不读写工作空间内容，也不调用 Shell；只识别必要的路径和 Git 元数据。
+- 阶段 2 的两个演示工具只读取注入的内存数据；不读写项目内容、不调用 Shell/Git、不联网。
 - 默认测试不联网、不使用真实钥匙串、不依赖用户主目录。
 - Provider 超时、无效结构化响应和网络错误必须分类，交接生成失败要有确定性兜底。
 - 正常状态和配置失败不能静默切换到另一 Provider 或模型。
@@ -106,7 +118,6 @@ Profile 或 Handoff 任一损坏/未来版本会触发保守的工作空间状�
 
 ## 当前明确不锁死的内容
 
-- 阶段 2 的具体工具事件名称和 Agent Loop 公共入口。
 - 完整会话数据库、长期记忆和向量检索的实现技术。
 - Provider 管理 CLI 的全部命令面。
 - Web、桌面端、消息渠道以及后台调度器的进程模型。

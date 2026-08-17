@@ -6,15 +6,23 @@ from types import SimpleNamespace
 import pytest
 
 from morrow.adapters.credentials.keyring import MemoryCredentialStore
-from morrow.adapters.models.openai_compatible import OpenAICompatibleProvider
+from morrow.adapters.models.openai_compatible import (
+    OpenAICompatibleProvider,
+    StreamAccumulator,
+    serialize_message,
+    serialize_tool,
+)
 from morrow.bootstrap import build_application
 from morrow.core.models import (
-    FinishReason,
-    Message,
+    FunctionToolCall,
     ModelErrorCode,
     ModelEvent,
+    ModelFinishReason,
     ModelProviderError,
     ModelRef,
+    ToolDefinition,
+    ToolFunction,
+    UserMessage,
 )
 
 
@@ -42,8 +50,10 @@ class BrokenChunks:
 class FakeCompletions:
     def __init__(self, response):
         self.response = response
+        self.kwargs = None
 
     async def create(self, **kwargs):
+        self.kwargs = kwargs
         return self.response
 
 
@@ -64,12 +74,63 @@ def stream_chunk(*, text=None, reasoning=None, finish=None):
     )
 
 
+def tool_call_fragment(index, *, call_id=None, name=None, arguments=None, call_type=None):
+    return SimpleNamespace(
+        index=index,
+        id=call_id,
+        type=call_type,
+        function=SimpleNamespace(name=name, arguments=arguments),
+    )
+
+
+def tool_stream_chunk(fragments, *, text=None, finish=None):
+    return SimpleNamespace(
+        choices=[
+            SimpleNamespace(
+                delta=SimpleNamespace(
+                    content=text, reasoning_content=None, tool_calls=list(fragments)
+                ),
+                finish_reason=finish,
+            )
+        ]
+    )
+
+
+def usage_only_chunk():
+    return SimpleNamespace(choices=[], usage=SimpleNamespace(total_tokens=3))
+
+
+def demo_tool(name="lookup_record"):
+    return ToolDefinition(
+        function=ToolFunction(
+            name=name,
+            description="Look up an injected in-memory record.",
+            parameters={
+                "type": "object",
+                "properties": {"key": {"type": "string"}},
+                "required": ["key"],
+            },
+        )
+    )
+
+
+async def collect_stream_with_tools(provider, tools):
+    return [
+        event
+        async for event in provider.stream(
+            ModelRef(provider_id="p", model_id="m"),
+            [UserMessage(content="hello")],
+            tools,
+        )
+    ]
+
+
 async def collect_stream(provider):
     return [
         event
         async for event in provider.stream(
             ModelRef(provider_id="p", model_id="m"),
-            [Message(role="user", content="hello")],
+            [UserMessage(content="hello")],
         )
     ]
 
@@ -216,7 +277,9 @@ async def test_adapter_accepts_only_explicit_stop_and_isolates_reasoning():
         ("text_delta", "visible"),
         ("completed", None),
     ]
-    assert events[-1].finish_reason == FinishReason.STOP
+    assert events[-1].finish_reason == ModelFinishReason.STOP
+    assert events[-1].message is not None
+    assert events[-1].message.content == "visible"
     assert "private reasoning" not in str(events)
 
 
@@ -237,7 +300,21 @@ async def test_adapter_reasoning_only_stream_has_no_visible_delta():
     assert "private reasoning" not in str(events)
 
 
-@pytest.mark.parametrize("finish", ["length", "content_filter", "tool_calls", "function_call"])
+@pytest.mark.parametrize("finish", ["length", "content_filter"])
+@pytest.mark.asyncio
+async def test_adapter_normalizes_abnormal_finish_without_assembled_message(finish):
+    provider = provider_with_stream(
+        AsyncChunks([stream_chunk(text="partial"), stream_chunk(finish=finish)])
+    )
+
+    events = await collect_stream(provider)
+
+    assert [event.kind for event in events] == ["text_delta", "completed"]
+    assert events[-1].finish_reason == ModelFinishReason(finish)
+    assert events[-1].message is None
+
+
+@pytest.mark.parametrize("finish", ["function_call", "vendor_custom"])
 @pytest.mark.asyncio
 async def test_adapter_rejects_non_normal_finish_as_invalid_response(finish):
     provider = provider_with_stream(
@@ -280,8 +357,294 @@ async def test_live_provider_streams_visible_text_without_reasoning():
     visible = []
     async for event in provider.stream(
         ModelRef(provider_id="opencode-go", model_id="deepseek-v4-flash"),
-        [Message(role="user", content="Reply with the single word 好。")],
+        [UserMessage(content="Reply with the single word 好。")],
     ):
         if event.text:
             visible.append(event.text)
     assert "".join(visible).strip()
+
+
+# --- Stage 2 request serialization and fragment accumulation ------------------
+
+
+@pytest.mark.asyncio
+async def test_adapter_request_whitelist_sends_tools_and_choice_only_when_present():
+    provider = provider_with_stream(AsyncChunks([stream_chunk(text="ok", finish="stop")]))
+    events = await collect_stream_with_tools(provider, (demo_tool(), demo_tool("calculate")))
+    completions = provider._client.chat.completions
+    assert completions.kwargs["tools"] == [
+        serialize_tool(demo_tool()),
+        serialize_tool(demo_tool("calculate")),
+    ]
+    assert completions.kwargs["tool_choice"] == "auto"
+    assert completions.kwargs["stream"] is True
+    assert [event.kind for event in events][-1] == "completed"
+
+
+@pytest.mark.asyncio
+async def test_adapter_omits_tools_and_choice_for_text_only_requests():
+    provider = provider_with_stream(AsyncChunks([stream_chunk(text="ok", finish="stop")]))
+    await collect_stream(provider)
+    kwargs = provider._client.chat.completions.kwargs
+    assert "tools" not in kwargs
+    assert "tool_choice" not in kwargs
+    assert kwargs["messages"] == [{"role": "user", "content": "hello"}]
+
+
+@pytest.mark.asyncio
+async def test_adapter_assembles_split_pure_tool_call_stream():
+    provider = provider_with_stream(
+        AsyncChunks(
+            [
+                tool_stream_chunk(
+                    [tool_call_fragment(0, call_id="call_1", name="lookup", call_type="function")]
+                ),
+                tool_stream_chunk([tool_call_fragment(0, name="_record")]),
+                tool_stream_chunk([tool_call_fragment(0, arguments='{"dataset": ')]),
+                tool_stream_chunk(
+                    [tool_call_fragment(0, arguments='"plans"}')], finish="tool_calls"
+                ),
+            ]
+        )
+    )
+
+    events = await collect_stream_with_tools(provider, (demo_tool(),))
+
+    assert [event.kind for event in events] == ["completed"]
+    completed = events[-1]
+    assert completed.finish_reason == ModelFinishReason.TOOL_CALLS
+    assert completed.message is not None
+    assert completed.message.content is None
+    assert completed.message.tool_calls == (
+        FunctionToolCall(id="call_1", name="lookup_record", arguments='{"dataset": "plans"}'),
+    )
+
+
+@pytest.mark.asyncio
+async def test_adapter_assembles_mixed_content_and_normalizes_stop_with_calls():
+    provider = provider_with_stream(
+        AsyncChunks(
+            [
+                tool_stream_chunk(text="正在查询", fragments=[]),
+                tool_stream_chunk(
+                    [tool_call_fragment(0, call_id="call_9", name="calculate", arguments="[1, 2]")],
+                    finish="stop",
+                ),
+            ]
+        )
+    )
+
+    events = await collect_stream_with_tools(provider, (demo_tool("calculate"),))
+
+    assert [event.kind for event in events] == ["text_delta", "completed"]
+    completed = events[-1]
+    assert completed.finish_reason == ModelFinishReason.TOOL_CALLS
+    assert completed.message is not None
+    assert completed.message.content == "正在查询"
+    assert completed.message.tool_calls[0].id == "call_9"
+
+
+@pytest.mark.asyncio
+async def test_adapter_sorts_interleaved_calls_by_vendor_index():
+    provider = provider_with_stream(
+        AsyncChunks(
+            [
+                tool_stream_chunk(
+                    [tool_call_fragment(1, call_id="call_b", name="calculate", arguments="{}")]
+                ),
+                tool_stream_chunk(
+                    [
+                        tool_call_fragment(
+                            0, call_id="call_a", name="lookup_record", arguments='{"k": 1}'
+                        )
+                    ],
+                    finish="tool_calls",
+                ),
+            ]
+        )
+    )
+
+    events = await collect_stream_with_tools(provider, (demo_tool(), demo_tool("calculate")))
+
+    completed = events[-1]
+    assert [call.id for call in completed.message.tool_calls] == ["call_a", "call_b"]
+
+
+@pytest.mark.asyncio
+async def test_adapter_ignores_usage_only_chunks():
+    provider = provider_with_stream(
+        AsyncChunks(
+            [
+                usage_only_chunk(),
+                stream_chunk(text="vis"),
+                usage_only_chunk(),
+                stream_chunk(text="ible", finish="stop"),
+            ]
+        )
+    )
+
+    events = await collect_stream(provider)
+
+    assert [(event.kind, event.text) for event in events] == [
+        ("text_delta", "vis"),
+        ("text_delta", "ible"),
+        ("completed", None),
+    ]
+
+
+def test_accumulator_preserves_argument_string_fidelity():
+    accumulator = StreamAccumulator()
+    accumulator.add_tool_fragment(
+        tool_call_fragment(0, call_id="c", name="calculate", arguments='{"a": 1')
+    )
+    accumulator.add_tool_fragment(tool_call_fragment(0, arguments=', "b": [2, 3]} '))
+    accumulator.set_finish("tool_calls")
+    message, reason = accumulator.build()
+    assert reason == ModelFinishReason.TOOL_CALLS
+    assert message.tool_calls[0].arguments == '{"a": 1, "b": [2, 3]} '
+
+
+@pytest.mark.parametrize(
+    "chunks",
+    [
+        # conflicting id for the same vendor index
+        AsyncChunks(
+            [
+                tool_stream_chunk([tool_call_fragment(0, call_id="call_1", name="lookup_record")]),
+                tool_stream_chunk([tool_call_fragment(0, call_id="call_2")]),
+                stream_chunk(finish="tool_calls"),
+            ]
+        ),
+        # duplicate ids across vendor indexes
+        AsyncChunks(
+            [
+                tool_stream_chunk([tool_call_fragment(0, call_id="same", name="lookup_record")]),
+                tool_stream_chunk([tool_call_fragment(1, call_id="same", name="calculate")]),
+                stream_chunk(finish="tool_calls"),
+            ]
+        ),
+        # id never arrives
+        AsyncChunks(
+            [
+                tool_stream_chunk([tool_call_fragment(0, name="lookup_record")]),
+                stream_chunk(finish="tool_calls"),
+            ]
+        ),
+        # name never arrives
+        AsyncChunks(
+            [
+                tool_stream_chunk([tool_call_fragment(0, call_id="call_1")]),
+                stream_chunk(finish="tool_calls"),
+            ]
+        ),
+        # name violates the Core function-name contract
+        AsyncChunks(
+            [
+                tool_stream_chunk(
+                    [tool_call_fragment(0, call_id="call_1", name="not a valid name")]
+                ),
+                stream_chunk(finish="tool_calls"),
+            ]
+        ),
+        # unsupported fragment type
+        AsyncChunks(
+            [
+                tool_stream_chunk([tool_call_fragment(0, call_id="c", name="x", call_type="code")]),
+                stream_chunk(finish="tool_calls"),
+            ]
+        ),
+        # tool_calls finish without any call fragment
+        AsyncChunks([stream_chunk(text="partial", finish="tool_calls")]),
+        # more than one logical choice
+        AsyncChunks(
+            [
+                SimpleNamespace(
+                    choices=[
+                        SimpleNamespace(
+                            delta=SimpleNamespace(content=None, reasoning_content=None),
+                            finish_reason=None,
+                        ),
+                        SimpleNamespace(
+                            delta=SimpleNamespace(content=None, reasoning_content=None),
+                            finish_reason=None,
+                        ),
+                    ]
+                ),
+                stream_chunk(finish="stop"),
+            ]
+        ),
+    ],
+)
+@pytest.mark.asyncio
+async def test_adapter_rejects_malformed_tool_streams(chunks):
+    provider = provider_with_stream(chunks)
+    events = await collect_stream_with_tools(provider, (demo_tool(),))
+    assert events[-1].kind == "error"
+    assert events[-1].error_code == ModelErrorCode.INVALID_RESPONSE
+
+
+@pytest.mark.asyncio
+async def test_adapter_rejects_non_string_fragment_arguments():
+    provider = provider_with_stream(
+        AsyncChunks(
+            [
+                tool_stream_chunk(
+                    [
+                        SimpleNamespace(
+                            index=0,
+                            id="c",
+                            type="function",
+                            function=SimpleNamespace(name="calculate", arguments=123),
+                        )
+                    ],
+                    finish="tool_calls",
+                ),
+            ]
+        )
+    )
+    events = await collect_stream_with_tools(provider, (demo_tool("calculate"),))
+    assert events[-1].kind == "error"
+    assert events[-1].error_code == ModelErrorCode.INVALID_RESPONSE
+
+
+def test_accumulator_rejects_conflicting_finish_and_reports_progress():
+    accumulator = StreamAccumulator()
+    assert accumulator.made_progress is False
+    accumulator.set_finish("stop")
+    with pytest.raises(ValueError, match="conflicting"):
+        accumulator.set_finish("length")
+    accumulator.add_text("hi")
+    assert accumulator.made_progress is True
+
+
+def test_serialize_after_assemble_round_trip_is_deterministic():
+    accumulator = StreamAccumulator()
+    accumulator.add_tool_fragment(
+        tool_call_fragment(0, call_id="call_1", name="lookup_record", arguments='{"k": 1}')
+    )
+    accumulator.set_finish("tool_calls")
+    message, reason = accumulator.build()
+    assert reason == ModelFinishReason.TOOL_CALLS
+    assert serialize_message(message) == {
+        "role": "assistant",
+        "content": None,
+        "tool_calls": [
+            {
+                "id": "call_1",
+                "type": "function",
+                "function": {"name": "lookup_record", "arguments": '{"k": 1}'},
+            }
+        ],
+    }
+    assert serialize_tool(demo_tool()) == {
+        "type": "function",
+        "function": {
+            "name": "lookup_record",
+            "description": "Look up an injected in-memory record.",
+            "parameters": {
+                "type": "object",
+                "properties": {"key": {"type": "string"}},
+                "required": ["key"],
+            },
+        },
+    }

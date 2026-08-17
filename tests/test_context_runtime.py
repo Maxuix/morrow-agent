@@ -11,16 +11,23 @@ from morrow.core.events import lifecycle_is_valid
 from morrow.core.models import (
     FinishReason,
     Handoff,
-    Message,
     ModelEvent,
+    ModelFinishReason,
     ModelRef,
     Preferences,
     Profile,
+    UserMessage,
 )
 from morrow.interfaces.spike import consume_stream, eof_to_action
 from morrow.runtime.agent import AgentRuntime
 from morrow.runtime.session import Session
-from morrow.testing import FixedClock, FixedIdSource, ScriptedModelProvider
+from morrow.testing import (
+    FixedClock,
+    FixedIdSource,
+    ScriptedModelProvider,
+    make_context_builder,
+    seed_user_turn,
+)
 
 
 class RaisingStreamProvider:
@@ -52,12 +59,12 @@ class EventStreamProvider:
 
 def test_context_excludes_handoff_until_explicit_load():
     session = Session(session_id="s", profile=Profile(name="demo"))
-    builder = ContextBuilder()
-    independent = builder.build(session)
+    builder = make_context_builder()
+    independent = builder.build(session, purpose="structured")
     assert "current_goal" not in "\n".join(message.content for message in independent.messages)
     session.loaded_handoff = Handoff(current_goal="continue this")
     session.handoff_source_revision = 1
-    attached = builder.build(session)
+    attached = builder.build(session, purpose="structured")
     assert "continue this" in "\n".join(message.content for message in attached.messages)
 
 
@@ -72,18 +79,14 @@ def test_preferences_have_global_workspace_session_precedence():
 
 
 def test_context_never_keeps_assistant_without_its_paired_user():
-    session = Session(
-        session_id="s",
-        messages=[
-            Message(role="user", content="u" * 20),
-            Message(role="assistant", content="a"),
-        ],
-    )
-    probe = ContextBuilder()
-    fixed_size = probe._chars(probe._system_messages(session))
-    builder = ContextBuilder(max_chars=fixed_size + len("now") + 5)
+    session = Session(session_id="s")
+    seed_user_turn(session, "u" * 20, assistant="a")
+    session.log.begin_turn(UserMessage(content="now"))
+    probe = make_context_builder()
+    mandatory = (*probe._system_messages(session), UserMessage(content="now"))
+    builder = make_context_builder(probe.estimate_request_chars(mandatory, ()))
 
-    context = builder.build(session, current_user="now")
+    context = builder.build(session)
 
     assert [
         (message.role, message.content) for message in context.messages if message.role != "system"
@@ -91,20 +94,15 @@ def test_context_never_keeps_assistant_without_its_paired_user():
 
 
 def test_context_does_not_skip_newest_oversized_turn_to_admit_older_turn():
-    session = Session(
-        session_id="s",
-        messages=[
-            Message(role="user", content="old"),
-            Message(role="assistant", content="ok"),
-            Message(role="user", content="n" * 10),
-            Message(role="assistant", content="a" * 10),
-        ],
-    )
-    probe = ContextBuilder()
-    fixed_size = probe._chars(probe._system_messages(session))
-    builder = ContextBuilder(max_chars=fixed_size + len("now") + 15)
+    session = Session(session_id="s")
+    seed_user_turn(session, "old", assistant="ok")
+    seed_user_turn(session, "n" * 10, assistant="a" * 10)
+    session.log.begin_turn(UserMessage(content="now"))
+    probe = make_context_builder()
+    mandatory = (*probe._system_messages(session), UserMessage(content="now"))
+    builder = make_context_builder(probe.estimate_request_chars(mandatory, ()))
 
-    context = builder.build(session, current_user="now")
+    context = builder.build(session)
 
     assert [
         (message.role, message.content) for message in context.messages if message.role != "system"
@@ -112,16 +110,12 @@ def test_context_does_not_skip_newest_oversized_turn_to_admit_older_turn():
 
 
 def test_context_retains_unmatched_cancelled_user_as_its_own_history_unit():
-    session = Session(
-        session_id="s",
-        messages=[
-            Message(role="user", content="cancelled request"),
-            Message(role="user", content="completed request"),
-            Message(role="assistant", content="completed answer"),
-        ],
-    )
+    session = Session(session_id="s")
+    seed_user_turn(session, "cancelled request", finish=FinishReason.CANCELLED)
+    seed_user_turn(session, "completed request", assistant="completed answer")
 
-    context = ContextBuilder().build(session, current_user="now")
+    session.log.begin_turn(UserMessage(content="now"))
+    context = make_context_builder().build(session)
 
     assert [message.content for message in context.messages if message.role != "system"] == [
         "cancelled request",
@@ -133,10 +127,16 @@ def test_context_retains_unmatched_cancelled_user_as_its_own_history_unit():
 
 def test_context_rejects_fixed_mandatory_content_over_budget():
     session = Session(session_id="s")
-    fixed_size = ContextBuilder()._chars(ContextBuilder()._system_messages(session))
+    probe = make_context_builder()
+    fixed_size = probe.estimate_request_chars(probe._system_messages(session), ())
 
     with pytest.raises(ValueError):
-        ContextBuilder(max_chars=fixed_size - 1).build(session)
+        make_context_builder(fixed_size - 1).build(session, purpose="structured")
+
+
+def test_context_builder_requires_explicit_limit_and_estimator():
+    with pytest.raises(TypeError):
+        ContextBuilder()
 
 
 @pytest.mark.asyncio
@@ -147,7 +147,7 @@ async def test_runtime_emits_one_ordered_lifecycle_and_admits_complete_history()
     runtime = AgentRuntime(
         provider,
         ModelRef(provider_id="p", model_id="m"),
-        ContextBuilder(),
+        make_context_builder(),
         id_source=ids,
         clock=FixedClock(),
     )
@@ -162,7 +162,9 @@ async def test_runtime_emits_one_ordered_lifecycle_and_admits_complete_history()
 async def test_runtime_default_ids_are_unique_within_and_across_turns():
     provider = ScriptedModelProvider(["first", "second"])
     session = Session(session_id="session")
-    runtime = AgentRuntime(provider, ModelRef(provider_id="p", model_id="m"), ContextBuilder())
+    runtime = AgentRuntime(
+        provider, ModelRef(provider_id="p", model_id="m"), make_context_builder()
+    )
 
     first = [event async for event in runtime.run_turn(session, "one")]
     second = [event async for event in runtime.run_turn(session, "two")]
@@ -205,7 +207,9 @@ def test_one_application_id_source_drives_workspace_and_distinct_sessions(tmp_pa
 async def test_cancel_preserves_user_but_not_partial_assistant():
     provider = ScriptedModelProvider(["cancel"])
     session = Session(session_id="session")
-    runtime = AgentRuntime(provider, ModelRef(provider_id="p", model_id="m"), ContextBuilder())
+    runtime = AgentRuntime(
+        provider, ModelRef(provider_id="p", model_id="m"), make_context_builder()
+    )
     task = asyncio.create_task(_collect(runtime.run_turn(session, "stop me")))
     await asyncio.sleep(0.01)
     task.cancel()
@@ -218,7 +222,9 @@ async def test_cancel_preserves_user_but_not_partial_assistant():
 async def test_conversation_succeeds_after_cancelled_turn():
     provider = ScriptedModelProvider(["cancel", "recovered"])
     session = Session(session_id="session")
-    runtime = AgentRuntime(provider, ModelRef(provider_id="p", model_id="m"), ContextBuilder())
+    runtime = AgentRuntime(
+        provider, ModelRef(provider_id="p", model_id="m"), make_context_builder()
+    )
     task = asyncio.create_task(_collect(runtime.run_turn(session, "cancel this")))
     await asyncio.sleep(0.01)
     task.cancel()
@@ -239,7 +245,7 @@ async def test_ten_turns_preserve_ordered_full_history_and_stream_deltas():
     runtime = AgentRuntime(
         provider,
         ModelRef(provider_id="p", model_id="m"),
-        ContextBuilder(max_chars=100_000),
+        make_context_builder(100_000),
     )
 
     for index in range(10):
@@ -264,8 +270,7 @@ async def test_network_error_retries_once_before_visible_text():
     runtime = AgentRuntime(
         provider,
         ModelRef(provider_id="p", model_id="m"),
-        ContextBuilder(),
-        max_retries=1,
+        make_context_builder(),
     )
     events = [event async for event in runtime.run_turn(session, "retry")]
     assert [event.type for event in events].count("status.changed") == 1
@@ -280,7 +285,7 @@ async def test_provider_exception_always_completes_error_without_assistant_histo
     runtime = AgentRuntime(
         RaisingStreamProvider(partial=partial),
         ModelRef(provider_id="p", model_id="m"),
-        ContextBuilder(),
+        make_context_builder(),
     )
 
     events = [event async for event in runtime.run_turn(session, "raise")]
@@ -296,8 +301,8 @@ async def test_provider_exception_always_completes_error_without_assistant_histo
 @pytest.mark.parametrize(
     "terminal_event",
     [
-        ModelEvent(kind="completed", finish_reason=FinishReason.ERROR),
-        ModelEvent(kind="completed", finish_reason=FinishReason.CANCELLED),
+        ModelEvent(kind="completed", finish_reason=ModelFinishReason.LENGTH),
+        ModelEvent(kind="completed", finish_reason=ModelFinishReason.CONTENT_FILTER),
         ModelEvent(kind="completed"),
         None,
     ],
@@ -311,7 +316,7 @@ async def test_only_explicit_stop_finish_admits_assistant_history(terminal_event
     runtime = AgentRuntime(
         EventStreamProvider(model_events),
         ModelRef(provider_id="p", model_id="m"),
-        ContextBuilder(),
+        make_context_builder(),
     )
 
     events = [event async for event in runtime.run_turn(session, "finish")]
@@ -325,7 +330,9 @@ async def test_only_explicit_stop_finish_admits_assistant_history(terminal_event
 async def test_empty_completion_is_error_without_empty_assistant_message():
     provider = ScriptedModelProvider([[]])
     session = Session(session_id="session")
-    runtime = AgentRuntime(provider, ModelRef(provider_id="p", model_id="m"), ContextBuilder())
+    runtime = AgentRuntime(
+        provider, ModelRef(provider_id="p", model_id="m"), make_context_builder()
+    )
 
     events = [event async for event in runtime.run_turn(session, "empty")]
 
@@ -339,7 +346,7 @@ def test_oversized_current_input_is_rejected_before_model_call():
     runtime = AgentRuntime(
         provider,
         ModelRef(provider_id="p", model_id="m"),
-        ContextBuilder(max_chars=100),
+        make_context_builder(100),
     )
     import asyncio
 

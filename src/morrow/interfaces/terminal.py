@@ -15,14 +15,35 @@ from morrow.core.models import AgentEvent
 class Terminal:
     def __init__(self, console: Console | None = None) -> None:
         self.console = console or Console()
+        self._text_open = False
+        self._tool_activity = False
 
     def show_event(self, event) -> None:
-        if event.type == "text.delta":
+        if event.type == "turn.started":
+            self._text_open = False
+            self._tool_activity = False
+        elif event.type == "text.delta":
             self.console.print(event.payload.get("text", ""), end="")
+            self._text_open = True
+        elif event.type == "tool.status" and event.payload.get("status") == "running":
+            if self._text_open:
+                self.console.print()
+            ordinal = event.payload.get("ordinal", "?")
+            total = event.payload.get("total", "?")
+            name = str(event.payload.get("name", "tool"))[:64]
+            self.console.print(f"↳ 工具步骤 {ordinal}/{total}：{name}")
+            self._text_open = False
+            self._tool_activity = True
         elif event.type == "error":
+            if self._text_open:
+                self.console.print()
             self.console.print(f"\n[red]错误：{event.payload.get('message', '模型调用失败')}[/red]")
+            self._text_open = False
         elif event.type == "turn.completed":
-            self.console.print()
+            if self._text_open:
+                self.console.print()
+            self._text_open = False
+            self._tool_activity = False
 
     async def prompt(self, session: PromptSession, message: str = "你 > ") -> str:
         return await session.prompt_async(message)

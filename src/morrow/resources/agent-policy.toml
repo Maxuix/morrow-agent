@@ -1,0 +1,21 @@
+max_tool_rounds = 30
+max_model_attempts = 40
+max_tool_calls = 128
+max_tool_calls_per_cycle = 32
+max_run_seconds = 1800
+tool_timeout_seconds = 120
+model_retry_limit = 1
+requested_context_chars = 800000
+unknown_model_fallback_chars = 160000
+max_tool_result_chars = 64000
+max_tool_result_request_ratio = 0.10
+max_tool_cycle_chars = 256000
+max_tool_cycle_request_ratio = 0.35
+max_validation_errors = 3
+loop_detection_enabled = true
+loop_repeat_limit = 3
+loop_max_pattern_cycles = 4
+
+# Exact provider_id/model_id entries require verified Live evidence.
+# The initial production table is intentionally empty.
+[model_safe_request_chars]

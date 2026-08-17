@@ -7,6 +7,9 @@ import json
 
 from pydantic import BaseModel, ValidationError
 
+from morrow.application.context import ContextBudgetError
+from morrow.core.models import UserMessage
+
 
 class StructuredCompletionError(RuntimeError):
     pass
@@ -48,11 +51,17 @@ async def complete_structured[T: BaseModel](
         remaining = deadline - loop.time()
         if remaining <= 0:
             raise TimeoutError
+        try:
+            context_builder.validate_request(messages, ())
+        except ContextBudgetError as exc:
+            raise StructuredCompletionError(str(exc)) from exc
         return await asyncio.wait_for(provider.complete(model, messages), timeout=remaining)
 
-    context = context_builder.build(session, purpose=schema.__name__)
-    message_type = type(context.messages[0])
-    prompt = [*context.messages, message_type(role="user", content=instruction)]
+    try:
+        context = context_builder.build(session, purpose="structured")
+    except ContextBudgetError as exc:
+        raise StructuredCompletionError(str(exc)) from exc
+    prompt = [*context.messages, UserMessage(content=instruction)]
     raw = await complete_with_remaining_budget(prompt)
     try:
         return schema.model_validate(extract_json(raw)), False
@@ -64,7 +73,7 @@ async def complete_structured[T: BaseModel](
             f"校验摘要：{type(first_error).__name__}。"
         )
         repaired = await complete_with_remaining_budget(
-            [*context.messages, message_type(role="user", content=repair)]
+            [*context.messages, UserMessage(content=repair)]
         )
         try:
             return schema.model_validate(extract_json(repaired)), True

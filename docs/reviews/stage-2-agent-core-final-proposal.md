@@ -1,9 +1,10 @@
 # Stage 2 Agent Core 完整方案（修订审批稿）
 
-> 状态：待审批，不是当前实施权威文档
+> 状态：已批准并合入正式 Stage 2 路线；本文作为审批裁决与详细设计记录，不是独立实施权威
 > 修订日期：2026-08-15
 > 修订依据：[Stage 2 Agent Core 审批稿 Review](stage-2-agent-core-final-proposal-review.md)、[修订审批稿可执行性 Review](stage-2-agent-core-revised-proposal-review.md)
 > 当前正式路线：[阶段 2：Agent 核心能力](../roadmap/stage-2-agent-core.md)
+> 当前执行计划：[Stage 2 Agent Core Implementation Plan](../../.agent/PLAN.md)
 > 阶段结果：一个能够通过无本地副作用工具自主执行多个步骤、完成简单任务的 Agent
 
 ## 一、Review 裁决摘要
@@ -1297,8 +1298,8 @@ Stage 2 只有同时满足以下条件才能完成：
 - 终端文案的非语义措辞；
 - 在不改变公开协议的前提下进行的内部性能优化。
 
-审批结果：
+实际审批结果：**批准**。
 
-- **批准**：将本稿合并进正式 Stage 2 路线，随后创建四个垂直切片子计划；
-- **有条件批准**：列出需修改的条款，修订后再提交；
-- **不批准**：维持当前 Stage 2 基线，不开始实施规划。
+- 本稿的锁定条款已经机械合入[正式 Stage 2 路线](../roadmap/stage-2-agent-core.md)；
+- 四个垂直切片已经写入[当前执行计划](../../.agent/PLAN.md)；
+- 本文件保留 Review 裁决、设计理由和批准边界，不再与正式路线/执行计划并列维护实施状态。

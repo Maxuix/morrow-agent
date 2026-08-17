@@ -4,7 +4,13 @@ from __future__ import annotations
 
 import asyncio
 
-from morrow.core.models import Handoff, StateWriteStatus, sanitize_text
+from morrow.core.models import (
+    AssistantMessage,
+    Handoff,
+    StateWriteStatus,
+    UserMessage,
+    sanitize_text,
+)
 from morrow.runtime.structured import complete_structured
 
 
@@ -28,15 +34,16 @@ class HandoffService:
 
     def _fallback(self, session) -> Handoff:
         previous = session.loaded_handoff
+        fallback = self.context_builder.build(session, purpose="handoff_fallback")
         last_user = next(
-            (message.content for message in reversed(session.messages) if message.role == "user"),
+            (message.content for message in fallback.messages if isinstance(message, UserMessage)),
             "继续推进当前工作",
         )
         last_assistant = next(
             (
                 message.content
-                for message in reversed(session.messages)
-                if message.role == "assistant"
+                for message in fallback.messages
+                if isinstance(message, AssistantMessage)
             ),
             "",
         )

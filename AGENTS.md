@@ -1,135 +1,89 @@
-# Agent Workflow
+# Morrow agent rules
 
-This repository uses a lightweight execution workflow.
+Morrow is a workspace-scoped terminal agent (Python 3.12+, `uv`, Pydantic v2).
+Application code is `src/morrow/`; tests are `tests/`. Ruff (`line-length = 100`) is the style source.
+This file is the always-on rule set — not a copy of the architecture, roadmap, or plan.
 
-## Project Files
+## Authority
 
-Project context:
+1. The current user request
+2. Code in the tree and commands just run
+3. The active `.agent/PLAN.md` and its active subplan, when an implementation plan is in progress
+4. The current-stage document under `docs/roadmap/`
+5. Proposals and reviews — decision history, not a second implementation spec
 
-* `docs/ROADMAP.md` — high-level project direction and milestones
-* `docs/ARCHITECTURE.md` — current repository structure and component responsibilities
+When code or validation conflicts with a plan or doc, update the stale document.
+The current user request overrides `.agent/TRACKER.md`. Do not refuse requested work because no stage plan is active.
 
-Execution state:
+## Commands
 
-* `.agent/PLAN.md` — current active implementation plan
-* `.agent/TODO.md` — executable tasks and their status
-* `.agent/TRACKER.md` — current progress and next action
-* `.agent/LOG.md` — important execution history
-* `.agent/subplans/` — ordered child plans for work that is too large for one active plan
+```bash
+uv sync
+uv run pytest -m 'not live'
+uv run pytest -q path/to/test_file.py
+uv run ruff format --check .
+uv run ruff check .
+uv run python -m compileall -q src tests
+uv run morrow --help
+git diff --check
+```
 
-## Start / Resume
+Offline (`-m 'not live'`) is the default gate. Do not claim a check passed unless it was run.
+Iterate on the tests you touched; finish implementation work only after those tests and `ruff` succeed.
+Do not run Live / real-network tests unless the user asks and an explicit compatible credential is present.
+Use fake SDK chunks or scripted Providers. Do not assert timing with wall-clock sleeps.
 
-Before working:
+## Boundaries
 
-1. Read `.agent/PLAN.md`.
-2. Read `.agent/TODO.md`.
-3. Read `.agent/TRACKER.md`.
-4. Read recent `.agent/LOG.md` entries only when additional context is needed.
-5. Read `docs/ROADMAP.md` when broader project direction is relevant.
-6. Read relevant parts of `docs/ARCHITECTURE.md` when the task touches project structure or component boundaries.
-7. Inspect the relevant code before making changes.
+**Always**
 
-Continue from the active task or next pending task.
+- Inspect the relevant code before changing it.
+- Keep Session-owned `ConversationLog` as the only chat-history writer.
+- Keep ordinary chat on `AgentLoop.run_task()`; retained `run_turn()` is a thin no-tools delegate.
+- Keep credentials, reasoning, full tool arguments/results, SDK objects, and tracebacks out of events, logs, terminal output, and YAML.
 
-Do not redo completed work unless verification shows it is necessary.
+**Ask first**
 
-## Execute
+- Adding a third-party dependency.
+- Starting Stage 3+ work: local file, Shell, Git, network, or browser tools; MCP; Skills; persistent chat history; LLM summaries; background tasks.
+- Changing bundled `agent-policy.toml` defaults or the public event lifecycle.
 
-Work on one logical task at a time.
+**Never**
 
-Before implementation:
+- Enable those Stage 3+ capabilities unless the user explicitly opens that stage.
+- Write secrets into YAML, logs, events, model context, or the terminal.
+- Mark implementation work complete without running the relevant commands above.
 
-* mark the task `[>]` in `.agent/TODO.md`
-* update the active task in `.agent/TRACKER.md`
+Layering and ownership: `docs/ARCHITECTURE.md`.
 
-Then:
+## Execution state
 
-1. Inspect relevant code.
-2. Implement the task.
-3. Run appropriate validation.
-4. Fix issues caused by the change.
-5. Mark the task complete only after validation succeeds.
+`.agent/` is for planned implementation work, not every session.
 
-## Update
+| File | Role | Update when |
+|---|---|---|
+| `.agent/PLAN.md` | Living plan index | Approach or scope changes |
+| `.agent/TODO.md` | Tasks for the active subplan only | Task status changes |
+| `.agent/TRACKER.md` | Progress, active task, next action | Progress, blockers, or next action change |
+| `.agent/LOG.md` | Material history | Decisions, failures, validation results, blockers |
+| `.agent/subplans/` | Ordered child plans | Splitting or completing a large plan |
 
-Update files only when their state meaningfully changes.
+Also update `docs/ROADMAP.md` / `docs/ARCHITECTURE.md` only when direction or actual structure changes.
 
-* `PLAN.md` — update when the implementation approach materially changes
-* `TODO.md` — update when tasks or task status change
-* `TRACKER.md` — update when current progress, blockers, or next action change
-* `LOG.md` — append important results, decisions, failures, validation results, or blockers
-* `ROADMAP.md` — update only when project direction or milestones change
-* `ARCHITECTURE.md` — update when the actual project structure or component responsibilities change
+Status: `[ ]` pending · `[>]` in progress · `[x]` completed · `[!]` blocked.
 
-Do not log routine operations such as reading files, searching code, or listing directories.
+- Continuing implementation, or the user asked to change the plan → read `PLAN.md`, `TODO.md`, and `TRACKER.md`. Open recent `LOG.md` only to recover a decision or failure. Continue the active task unless the user asked for something else.
+- Question, review, or exploration, and the user did not ask to resume a plan → do not update `.agent/` files.
+- No active plan → do not create the next-stage plan unless the user explicitly asks.
+- Do not redo completed work unless verification shows it is necessary or the user asks to revisit it.
 
-## Task Status
+When an implementation plan is active: one logical task at a time; mark `[>]` while in progress; mark `[x]` only after validation succeeds. Do not log routine reads or searches.
 
-* `[ ]` pending
-* `[>]` in progress
-* `[x]` completed
-* `[!]` blocked
+Split, activate, and retire subplans in `.agent/subplans/README.md`. Do not keep obsolete plan versions in the active `PLAN.md`.
 
-## Plan
+## Read when needed
 
-`PLAN.md` represents the current active plan.
-
-Treat it as a living document, not immutable instructions.
-
-If repository evidence or execution results conflict with the plan, update the plan.
-
-Do not preserve obsolete plan versions in the active file. Git history can be used for previous versions.
-
-## Large Plans
-
-If the current plan is too large to execute directly, split it into ordered subplans under `.agent/subplans/`.
-
-Before writing a new plan with subplans, delete any old completed subplans from `.agent/subplans/`.
-
-`PLAN.md` should remain a high-level index of:
-
-- the overall goal
-- subplans
-- dependencies
-- completion status
-- the currently active subplan
-
-Work on one subplan at a time.
-
-`TODO.md` should contain executable tasks for the active subplan, not the entire master plan.
-
-When a subplan is completed:
-
-1. verify its completion criteria
-2. mark it complete in `PLAN.md`
-3. record the result in `LOG.md`
-4. activate the next subplan
-5. update `TODO.md` and `TRACKER.md`
-
-Avoid creating deeper planning hierarchies unless strictly necessary.
-
-## Verify
-
-Never mark work complete without appropriate validation.
-
-Use the most relevant available validation, such as:
-
-* tests
-* type checks
-* linting
-* build checks
-* direct behavior verification
-
-Do not claim validation passed unless it was actually run.
-
-## Finish
-
-Before finishing work:
-
-1. Verify completed tasks.
-2. Update `.agent/TODO.md`.
-3. Update `.agent/TRACKER.md`.
-4. Update `docs/ARCHITECTURE.md` if the actual architecture changed.
-5. Append important final results to `.agent/LOG.md`.
-
-Actual code and execution results take precedence over outdated documentation.
+- Direction: `docs/ROADMAP.md`, current `docs/roadmap/stage-*.md`
+- Ownership: `docs/ARCHITECTURE.md`
+- Acceptance evidence: `docs/acceptance/`
+- Human usage: `README.md`

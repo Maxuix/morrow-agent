@@ -16,6 +16,7 @@ from morrow.core.models import (
     Profile,
     StateLoadResult,
     StateWriteResult,
+    ToolDefinition,
     WorkspaceIndex,
     WorkspaceResolution,
 )
@@ -23,7 +24,10 @@ from morrow.core.models import (
 
 class ModelProvider(Protocol):
     async def stream(
-        self, model: ModelRef, messages: list[Message]
+        self,
+        model: ModelRef,
+        messages: list[Message],
+        tools: tuple[ToolDefinition, ...] = (),
     ) -> AsyncIterator[ModelEvent]: ...
 
     async def complete(self, model: ModelRef, messages: list[Message]) -> str: ...

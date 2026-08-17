@@ -10,12 +10,14 @@ from __future__ import annotations
 import re
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 CURRENT_SCHEMA_VERSION = 1
 WORKSPACE_DOCUMENT_SCHEMA_VERSION = 2
+
+TOOL_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 
 def utc_now() -> datetime:
@@ -30,16 +32,127 @@ class MorrowModel(BaseModel):
     model_config = ConfigDict(extra="ignore", validate_assignment=True)
 
 
-class Message(MorrowModel):
-    role: Literal["user", "assistant", "system"]
+class ProtocolModel(BaseModel):
+    """Wire protocol objects: immutable, extras rejected, ordered tuples."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+def _require_non_empty(value: str) -> str:
+    if not value.strip():
+        raise ValueError("value must not be empty")
+    return value
+
+
+def _require_tool_name(value: str) -> str:
+    if not TOOL_NAME_PATTERN.match(value):
+        raise ValueError("tool name must match [A-Za-z0-9_-]{1,64}")
+    return value
+
+
+class SystemMessage(ProtocolModel):
+    role: Literal["system"] = "system"
     content: str
 
     @field_validator("content")
     @classmethod
     def non_empty_content(cls, value: str) -> str:
-        if not value.strip():
-            raise ValueError("message content must not be empty")
+        return _require_non_empty(value)
+
+
+class UserMessage(ProtocolModel):
+    role: Literal["user"] = "user"
+    content: str
+
+    @field_validator("content")
+    @classmethod
+    def non_empty_content(cls, value: str) -> str:
+        return _require_non_empty(value)
+
+
+class FunctionToolCall(ProtocolModel):
+    id: str
+    name: str
+    arguments: str
+
+    @field_validator("id")
+    @classmethod
+    def non_empty_id(cls, value: str) -> str:
+        return _require_non_empty(value)
+
+    @field_validator("name")
+    @classmethod
+    def valid_tool_name(cls, value: str) -> str:
+        return _require_tool_name(value)
+
+
+class AssistantMessage(ProtocolModel):
+    role: Literal["assistant"] = "assistant"
+    content: str | None = None
+    tool_calls: tuple[FunctionToolCall, ...] = ()
+
+    @field_validator("content")
+    @classmethod
+    def non_empty_content(cls, value: str | None) -> str | None:
+        if value is not None:
+            return _require_non_empty(value)
         return value
+
+    @model_validator(mode="after")
+    def content_or_calls_required(self) -> AssistantMessage:
+        if self.content is None and not self.tool_calls:
+            raise ValueError("assistant message requires content or at least one tool call")
+        return self
+
+    @model_validator(mode="after")
+    def unique_call_ids(self) -> AssistantMessage:
+        ids = [call.id for call in self.tool_calls]
+        if len(ids) != len(set(ids)):
+            raise ValueError("tool call ids must be unique within one assistant message")
+        return self
+
+
+class ToolMessage(ProtocolModel):
+    role: Literal["tool"] = "tool"
+    tool_call_id: str
+    content: str
+
+    @field_validator("tool_call_id")
+    @classmethod
+    def non_empty_call_id(cls, value: str) -> str:
+        return _require_non_empty(value)
+
+    @field_validator("content")
+    @classmethod
+    def non_empty_content(cls, value: str) -> str:
+        return _require_non_empty(value)
+
+
+Message = Annotated[
+    SystemMessage | UserMessage | AssistantMessage | ToolMessage,
+    Field(discriminator="role"),
+]
+
+
+class ToolFunction(ProtocolModel):
+    name: str
+    description: str
+    parameters: dict[str, Any]
+
+    @field_validator("name")
+    @classmethod
+    def valid_tool_name(cls, value: str) -> str:
+        return _require_tool_name(value)
+
+    @field_validator("description")
+    @classmethod
+    def non_empty_description(cls, value: str) -> str:
+        return _require_non_empty(value)
+
+
+class ToolDefinition(ProtocolModel):
+    type: Literal["function"] = "function"
+    function: ToolFunction
 
 
 class ModelRef(MorrowModel):
@@ -65,18 +178,45 @@ class ModelProviderError(RuntimeError):
         self.code = code
 
 
+class ModelFinishReason(StrEnum):
+    """Normalized internal model finish reasons; vendor values never leak."""
+
+    STOP = "stop"
+    TOOL_CALLS = "tool_calls"
+    LENGTH = "length"
+    CONTENT_FILTER = "content_filter"
+
+
 class FinishReason(StrEnum):
     STOP = "stop"
     CANCELLED = "cancelled"
     ERROR = "error"
 
 
+class AgentStopCode(StrEnum):
+    PROVIDER_AUTH = "provider_auth"
+    PROVIDER_NETWORK = "provider_network"
+    PROVIDER_RATE_LIMIT = "provider_rate_limit"
+    PROVIDER_TIMEOUT = "provider_timeout"
+    INVALID_RESPONSE = "invalid_response"
+    MODEL_OUTPUT_LIMIT = "model_output_limit"
+    CONTENT_FILTERED = "content_filtered"
+    CONTEXT_BUDGET = "context_budget"
+    MODEL_CALL_LIMIT = "model_call_limit"
+    TOOL_CALL_LIMIT = "tool_call_limit"
+    RUN_TIMEOUT = "run_timeout"
+    LOOP_DETECTED = "loop_detected"
+    INTERNAL = "internal"
+
+
 class ModelEvent(MorrowModel):
     kind: Literal["text_delta", "completed", "error"]
     text: str | None = None
-    finish_reason: FinishReason | None = None
+    finish_reason: ModelFinishReason | None = None
+    message: AssistantMessage | None = None
     error_code: ModelErrorCode | None = None
     error_message: str | None = None
+    made_progress: bool = False
 
 
 class Preferences(MorrowModel):

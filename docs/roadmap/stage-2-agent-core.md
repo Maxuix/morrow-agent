@@ -1,10 +1,11 @@
 # 阶段 2：Agent 核心能力
 
-> 状态：设计基线已锁定，尚未开始实现
+> 状态：已完成；Subplans 17–20 与最终树验收通过（2026-08-17）
 > 阶段结果：一个可以通过无本地副作用工具自主执行若干步骤、完成简单任务的 Agent
 > 上级文档：[开发路线总览](../ROADMAP.md)
 > 上一阶段：[阶段 1：方向确定与可运行原型](stage-1-direction-and-prototype.md)
 > 下一阶段：[阶段 3：本地工具与安全](stage-3-local-tools-and-safety.md)
+> 执行计划：[Stage 2 Agent Core Implementation Plan](../../.agent/PLAN.md)
 
 ## 一、阶段目标
 
@@ -16,7 +17,7 @@
 
 - 阶段 1 的最终树离线、Live 和人工验收已经通过。
 - `AgentRuntime.run_turn()` 的单模型回合、公开事件生命周期、ContextBuilder 权威和 Handoff 边界已经稳定。
-- 阶段 2 已解除阻塞；本文的范围和核心契约已经锁定，但生产代码、实施子计划和验收证据尚未开始。
+- 阶段 2 的四个垂直实施子计划已完成。最终代码审查修复后，最终树 300 个离线测试通过、严格收集 301 个测试；包安装、真实终端产品流、能力/副作用边界与哨兵扫描通过。可选 Live 因未提供明确凭据而未运行，未被计为通过或失败。完整证据见 [Stage 2 Acceptance Evidence](../acceptance/stage-2-evidence.md)。
 
 ## 三、锁定原则
 
@@ -42,9 +43,13 @@
 - 进程内 ConversationLog、ToolCycle 配对校验和确定性 terminal 记录。
 - 单用户目标、多模型调用的 Agent Loop。
 - 多个 tool calls 的协议支持与按调用顺序串行执行。
-- 模型调用数、工具调用数、总运行时间、单工具超时和工具输出体积预算。
+- 模型尝试、工具轮次、总调用、单 Cycle 调用、总运行时间、单工具超时、上下文、单结果和单 Cycle 体积预算。
+- 重复 ToolCycle 的提前止损，以及独立的硬轮次兜底。
 - 取消、参数错误、工具不存在、超时、执行失败、预算耗尽和内部错误处理。
 - 旧 Tool Result 的确定性占位替换和合法历史硬裁。
+- Handoff、StructuredCompletion 和确定性 fallback 的安全历史投影。
+- 开发者 TOML 策略、精确 ModelRef 安全请求上限和 Provider 工具能力声明。
+- `tool.status`、精确停止原因和 mixed-content 终端分段。
 - 无文件、Shell、网络等副作用的演示工具。
 - 覆盖消息协议、循环、裁剪、取消和阶段 1 回归的离线测试。
 
@@ -59,6 +64,7 @@
 - 持久化 ConversationLog、完整会话恢复、长期记忆、向量检索或后台任务。
 - 不确定副作用跟踪；Stage 2 工具没有外部副作用。
 - 为当前不存在的原生 Provider 引入 SDK 或空 Adapter 模块。
+- 把 Agent 策略暴露为用户 Preferences、Profile、Handoff、CLI 或自然语言配置。
 
 ## 五、统一工具协议
 
@@ -115,7 +121,7 @@ UserMessage
 AssistantMessage
 ├── role: Literal["assistant"]
 ├── content: str | None
-└── tool_calls: list[FunctionToolCall]
+└── tool_calls: tuple[FunctionToolCall, ...]
 
 ToolMessage
 ├── role: Literal["tool"]
@@ -210,17 +216,15 @@ ConversationRecord =
     MessageRecord | TurnTerminalRecord
 
 MessageRecord
-├── kind: Literal["message"]
 ├── sequence: int
 ├── turn_id: str
 └── message: Message
 
 TurnTerminalRecord
-├── kind: Literal["turn_terminal"]
 ├── sequence: int
 ├── turn_id: str
 ├── terminal_state: completed | cancelled | failed
-└── interrupted_call_ids: list[str]
+└── interrupted_call_ids: tuple[str, ...]
 ```
 
 本阶段不加入 `record_id`、`uncertain_outcome_call_ids`、`abandoned` 或持久化字段。
@@ -235,8 +239,7 @@ ConversationLog
 ├── begin_turn(turn_id, user_message)
 ├── append_assistant(turn_id, message)
 ├── append_tool_result(turn_id, message)
-├── close_unresolved_calls(...)
-├── finish_turn(turn_id, state)
+├── finish_turn(turn_id, state, interrupted_call_ids)
 ├── messages_view()
 └── reset()
 ```
@@ -271,7 +274,7 @@ ToolCycle
 ├── turn_id
 ├── assistant_sequence
 ├── assistant: AssistantMessage
-├── results: list[ToolMessage]
+├── results: tuple[ToolMessage, ...]
 ├── unresolved_call_ids
 └── closed
 ```
@@ -330,8 +333,8 @@ SessionOrchestrator
 只负责一次模型调用：
 
 - 接收 `messages + tools`；
-- 消费 Provider stream；
-- 组装文本和 tool-call fragments；
+- 消费 Adapter 已归一化的 Provider stream，转发可见文本；
+- 接收 Adapter 完整组装的 AssistantMessage 和 ModelFinishReason，不解析 SDK fragments；
 - 返回完整 AssistantMessage 和 ModelFinishReason；
 - 不修改 Session；
 - 不执行工具；
@@ -356,7 +359,7 @@ SessionOrchestrator
 - Handoff、配置提取和 Provider 管理继续使用不带 tools 的结构化或文本完成路径；
 - 不直接操作消息列表。
 
-现有 `AgentRuntime.run_turn()` 保留为无工具兼容入口，内部可以复用 ModelCallRunner。不能把它改成隐式多步循环而破坏阶段 1 的单模型回合契约。
+所有普通聊天从第一个实施切片起都进入 `AgentLoop.run_task()`。现有 `AgentRuntime.run_turn()` 如果为了兼容保留，只能薄委托 `run_task(..., tools=empty)`；不得保留独立的 Session 写入、重试、取消或公开生命周期。StructuredCompletion、Handoff 和 Provider 探测继续使用无 tools 的 `complete()`，不属于聊天状态机。
 
 ### 9.2 状态机
 
@@ -398,17 +401,61 @@ ToolCycle 完成后取消
 
 模型异常结束不接纳部分 AssistantMessage。工具调用已经接纳后发生的任何退出，都必须先生成合成结果关闭 Cycle。
 
+这一不变量从 Slice 1 首个工具 E2E 起成立：用户取消时为所有 unresolved calls 按原顺序写 `cancelled`，接纳 batch 后发生未预期 Runtime/Executor 异常时写有界 `internal`；保留已完成结果，随后才允许 terminal 或下一 User。Slice 3 只扩展完整 commit-point、deadline、`budget_exhausted` 与公开状态语义，不能把最小闭合推迟到最终护栏阶段。
+
 ### 9.4 预算
 
-Stage 2 不使用一个含糊的 `max_steps`，而是分别配置：
+Stage 2 不使用一个含糊的 `max_steps`。所有数值来自随包 `resources/agent-policy.toml`，由标准库 `tomllib` 和现有 Pydantic 解析为严格、冻结的 `AgentPolicy` / `RunPolicy`。测试可以注入更小策略；这些字段不进入任何用户设置面。
 
-- `max_model_calls`；
-- `max_tool_calls`；
-- `max_run_seconds`；
-- `tool_timeout_seconds`；
-- `max_tool_result_chars`。
+```text
+AgentPolicy
+├── max_tool_rounds
+├── max_model_attempts
+├── max_tool_calls
+├── max_tool_calls_per_cycle
+├── max_run_seconds
+├── tool_timeout_seconds
+├── model_retry_limit
+├── requested_context_chars
+├── unknown_model_fallback_chars
+├── max_tool_result_chars
+├── max_tool_result_request_ratio
+├── max_tool_cycle_chars
+├── max_tool_cycle_request_ratio
+├── max_validation_errors
+├── loop_detection_enabled
+├── loop_repeat_limit
+└── loop_max_pattern_cycles
+```
 
-每个 Provider 完成计一次 model call；每个独立 FunctionToolCall 计一次 tool call。具体默认数值在实施计划中确定并由测试锁定。
+初始默认值锚定现代 Agent 的多步能力，属于可由实现/Live 证据调整的开发者策略：30 个工具轮次、40 次模型尝试、128 个工具调用、每 Cycle 32 个调用、1800 秒总时间、120 秒单工具上限、1 次模型重试、800000 请求字符目标、160000 未知模型 fallback、64000 单结果字符、0.10 单结果比例、256000 单 Cycle 字符、0.35 Cycle 比例、3 条验证错误、重复检测开启、重复阈值 3、最大模式长度 4。
+
+每个真实 Provider 请求（包括重试）计一次模型尝试；每个独立 FunctionToolCall 计一次 tool call；每个已闭合 batch 计一个 tool round。每个 call 开始前重新计算剩余总时间，有效 timeout 是单工具上限与剩余时间的较小值。
+
+Provider/Model 能力只声明：
+
+```text
+ProviderToolSupport
+├── tool_protocol: none | openai_function
+├── multiple_tool_calls: bool
+└── safe_request_chars: int | None
+```
+
+`tool_protocol` 与 `multiple_tool_calls` 来自 Adapter 注册信息；`safe_request_chars` 只按随包 TOML 中精确 `provider_id/model_id` 查找。未命中时为 `None`，不按名称或 token window 猜测。首版生产模型表为空，全部真实模型先使用 160000 unknown-model fallback；只有获得精确 ModelRef 的 Live 证据后才增加生产条目，单元测试的 exact-hit 数据只存在于注入策略。
+
+```text
+effective_request_chars =
+    min(requested_context_chars,
+        safe_request_chars if present else unknown_model_fallback_chars)
+
+effective_result_limit =
+    min(max_tool_result_chars,
+        floor(effective_request_chars × max_tool_result_request_ratio))
+
+effective_cycle_limit =
+    min(max_tool_cycle_chars,
+        floor(effective_request_chars × max_tool_cycle_request_ratio))
+```
 
 如果已收到合法 tool calls，但剩余预算不足以执行：
 
@@ -417,18 +464,26 @@ Stage 2 不使用一个含糊的 `max_steps`，而是分别配置：
 3. 写 `terminal(failed)`；
 4. 发布公开 error 和唯一的 `turn.completed(error)`。
 
+单响应 call 数超过 `max_tool_calls_per_cycle` 时不接纳 Assistant。合法 batch 超过剩余总调用额度时接纳 Assistant，但不执行任何 call，为整组写 `budget_exhausted` 并闭合。若 Assistant tool-call wire 已大到无法为每个 call 容纳最小 envelope，则不接纳 Assistant，以 `model_output_limit` 结束，并在内部记录 `stop_detail=tool_cycle_too_large`。
+
+各预算彼此独立。PreparingRequest 的固定顺序是取消 → run deadline → model attempts → tool rounds → context；总 tool calls 与 per-cycle calls 在新 batch 接纳时检查。先命中的项目决定 stop code，因此有重试时 40 次模型尝试可以有意先于 30 个工具轮次耗尽。策略必须满足 `loop_repeat_limit × loop_max_pattern_cycles <= max_tool_rounds`，保证最长配置模式仍能在硬轮次上限前被检测。验收必须覆盖这两种组合行为，不能只逐项测试单一上限。
+
 ## 十、Tool Registry 与 Tool Executor
 
 ### 10.1 注册结构
 
 ```text
 RegisteredTool
-├── definition: ToolDefinition
-└── handler: async (arguments: dict) -> str
+├── name
+├── description
+├── arguments_model: type[BaseModel]
+└── handler: async (validated_arguments: dict) -> str
 ```
 
 - Registry 按精确名称查找，不模糊修复或自动改名。
-- Handler 只接收已解析、已通过参数 Schema 校验的字典。
+- 参数模型使用 Pydantic `extra="forbid"` 与 strict validation；`model_json_schema()` 生成 ToolDefinition，`model_validate_json(..., strict=True)` 验证原始 arguments。
+- 不新增 jsonschema 依赖，也不应用会改变用户输入语义的隐式强制/default。
+- Handler 只接收已解析、已通过参数模型校验的字典。
 - Handler 返回字符串，并支持协作式取消。
 - Stage 2 不在线程中运行不可中断的同步函数。
 
@@ -437,9 +492,8 @@ RegisteredTool
 ```text
 FunctionToolCall
 → 精确查找工具
-→ JSON 解析原始 arguments
-→ 验证顶层是 object
-→ 按 ToolDefinition.parameters 校验
+→ Pydantic 严格解析/验证原始 arguments
+→ 检查剩余 run deadline
 → 用单工具 timeout 调用 handler
 → 限制输出体积
 → 生成 ToolMessage
@@ -495,6 +549,7 @@ Envelope 是 ToolMessage 字符串内容的应用约定，不是第二套模型 
 |---|---:|---|
 | `invalid_arguments` | true | arguments 不是合法 JSON object 或不满足参数 Schema |
 | `tool_not_found` | true | 工具不存在，模型可以选择其他已注册工具 |
+| `not_found` | true | 工具领域内的目标对象不存在 |
 | `timeout` | true | 单次工具执行超时 |
 | `execution_failed` | false | 工具自身执行失败 |
 | `output_limit` | false | Executor 无法形成合法的有界结果 |
@@ -513,6 +568,20 @@ Envelope 是 ToolMessage 字符串内容的应用约定，不是第二套模型 
 - 未知异常转换为经过清理的 `internal`。
 - 无论成功还是失败，每个合法 call 最终都生成一个 ToolMessage。
 
+### 10.6 单 Cycle 结果上限
+
+一次响应允许多个 calls，因此除单结果上限外还要约束整组。Stage 2 使用简单等额分配：
+
+```text
+available_result_chars =
+    effective_cycle_limit - serialized_assistant_tool_call_chars
+
+per_call_result_limit =
+    min(effective_result_limit, floor(available_result_chars / call_count))
+```
+
+接纳 Assistant 前必须确认每个 call 至少能容纳最小成功/失败 envelope。具体执行不滚动转让前一个 call 未使用的配额，避免引入第二套复杂会计。
+
 ## 十一、ContextBuilder 与确定性压缩
 
 ### 11.1 职责
@@ -523,7 +592,7 @@ Stage 2 的“压缩”只包含确定性占位替换和合法历史硬裁，不
 
 ### 11.2 预算估算
 
-Stage 2 继续使用确定性的 `max_chars` 近似。估算对象是实际请求 wire，而不是只计算 `message.content`：
+Stage 2 使用 RunPolicy 的 `effective_request_chars` 作为确定性请求上限。估算对象是 Adapter canonical serializer 产生的实际请求 wire，而不是只计算 `message.content`：
 
 ```text
 request_size =
@@ -559,11 +628,7 @@ ConversationLog
 
 保留 assistant.tool_calls、每个 tool_call_id、ToolMessage 数量与原始顺序，因此协议仍合法。替换仅存在于本次 View，ConversationLog 原始结果不变。
 
-清理顺序：
-
-1. 最老的成功 Cycle；
-2. 最老的失败 Cycle；
-3. 当前未闭合 Cycle 永不清理。
+清理顺序严格按时间：从最老的 ClosedToolCycle 开始，不再按成功、retryable 或失败分类。当前未闭合 Cycle 永不清理。
 
 ### 11.5 硬裁规则
 
@@ -580,6 +645,7 @@ ConversationLog
 保护集：
 
 - 固定 system messages；
+- Profile、Preferences 和显式加载的 Handoff；
 - 当前 active turn 的原始 UserMessage；
 - 当前未闭合 ToolCycle；
 - 当前 Provider 请求所需的 ToolDefinition。
@@ -604,11 +670,20 @@ ConversationLog
 
 Profile、Preferences 和已显式加载的 Handoff 继续作为用户状态数据进入固定上下文，不构成工具授权。
 
+Tool Result 的结构边界同样是硬约束：它只能作为 `role=tool` 进入 Chat View，不得进入 Structured/Fallback View、ConfigIntentGate、CommandService、权限判断或任何直接状态写入路径。ToolExecutor 只返回数据，只有 AgentLoop 可以决定是否继续模型循环；envelope 中即使包含“执行命令/修改系统”等文本也没有产品控制效果。
+
+同一 ConversationSnapshot 必须生成三种明确投影：
+
+- **Chat View**：固定 System、动态用户状态、合法 user/assistant/tool 历史，以及单独 request tools；
+- **Structured View**：真实 User 和 completed turn 的最终无工具 Assistant；排除 ToolMessage、带 tool_calls 的 Assistant、cancelled/failed partial text，并且不发送 tools；
+- **Handoff Fallback View**：最近真实 User 与最近 completed final Assistant，不读取 `content=None`、中间工具说明或 envelope。
+
 必须保持：
 
 - ConversationLog 不写入 Handoff YAML。
 - 自动清理或硬裁不修改 Handoff。
-- Handoff 生成可以读取 ConversationLog，但仍沿用独立 Schema 和显式保存流程。
+- Handoff 生成只能读取 Structured View，仍沿用独立 Schema 和显式保存流程。
+- StructuredCompletion 显式构造 `UserMessage`，不得通过 `type(context.messages[0])` 猜测消息类型。
 - `/continue` 加载 Handoff 不恢复旧 ConversationLog。
 - Stage 2 不引入 ContextSummary，也不让后台状态改写 Handoff.current_goal。
 
@@ -618,22 +693,86 @@ Profile、Preferences 和已显式加载的 Handoff 继续作为用户状态数�
 - `turn.completed.finish_reason` 继续使用 `stop | cancelled | error`。
 - 中间模型调用结束不发布 public turn completion。
 - 可见文本继续使用 `text.delta`，不得暴露 reasoning 或原始 SDK fragments。
-- 工具步骤至少通过现有可扩展事件机制发布工具名称、call ID 和开始/结束状态；不把完整参数、超大结果、异常堆栈或秘密写入公开事件。
+- 工具步骤使用 `tool.status`：
+
+  ```text
+  call_id
+  name
+  status: running | succeeded | failed | cancelled | skipped
+  ordinal
+  total
+  error_code?
+  truncated?
+  ```
+
+- `skipped` 只表示从未启动：取消跳过写 `cancelled` envelope，预算/deadline 跳过写 `budget_exhausted` envelope；已开始后取消使用公开 `cancelled`。
+- 不把完整参数、超大结果、异常堆栈或秘密写入公开事件，终端默认不显示 call_id。
 - 工具错误通常作为 ToolMessage 回传模型，不自动变成 public error；只有循环无法继续、预算耗尽或模型响应无效时才以 public error 结束。
 - 消费者继续忽略未知事件类型和字段。
 
-具体工具事件名称与终端文案在实现子计划中锁定，但不得改变上述生命周期和数据边界。
+fatal `error` 事件负载固定为有界 `message` 和 `stop_code: AgentStopCode`。Stage 1 的公开 `code: ModelErrorCode` 字段被替换而不是并存；ModelErrorCode 只保留为 Adapter/ModelCallRunner 内部分类。紧随其后的 `turn.completed.stop_code` 必须与 error 相同。
 
-## 十四、建议实施顺序
+`turn.completed` 负载固定包含 `finish_reason`、`text`、`text_length`，error 必须包含 `stop_code`，stop/cancelled 不带。公开 AgentStopCode 为：
 
-1. **消息与 Provider wire**：Message 联合类型、ToolDefinition、FunctionToolCall、ModelFinishReason、显式 serializer 和 Adapter fragment 组装。
-2. **ConversationLog 与 ToolCycle**：唯一事实源、受控写入、terminal、配对校验和 Session 兼容迁移。
-3. **确定性 ContextBuilder**：完整请求估算、旧结果清理、合法硬裁和最终 payload 校验。
-4. **Tool Registry / Executor**：参数验证、结果 envelope、输出限制、超时、取消和演示工具。
-5. **Agent Loop**：多模型调用状态机、独立预算、公开事件和失败闭环。
-6. **端到端与回归验收**：正常多步、全部失败路径、取消恢复和阶段 1 行为。
+```text
+provider_auth
+provider_network
+provider_rate_limit
+provider_timeout
+invalid_response
+model_output_limit
+content_filtered
+context_budget
+model_call_limit
+tool_call_limit
+run_timeout
+loop_detected
+internal
+```
 
-实施前应把本顺序拆成独立子计划；不得在第一项同时实现完整 Agent Loop。
+`stop_detail` 只用于内部诊断和测试；Provider length 使用 `provider_length`，Cycle 最小闭合空间不足使用 `tool_cycle_too_large`，两者共享公开 `model_output_limit`。
+
+终端按 `text.delta` 只渲染一次，不重复渲染 completion.text。mixed content 后进入工具阶段时先换行并显示有界步骤标记；工具阶段后最终 Assistant 从新行开始。该规则必须有 `Terminal.show_event` 离线事件序列测试，不能只靠人工观察。
+
+### 13.1 重复循环提前止损
+
+- 只比较当前真实 User turn 内的 ClosedToolCycle；
+- 有效 arguments 使用 canonical JSON，非法 arguments 使用去首尾空白原文；
+- call ID 和 Assistant 中间文本不参与；
+- 成功结果比较状态、截断 metadata 和有界内容，失败比较 error code/retryable；
+- 检测最近后缀中长度 1..`loop_max_pattern_cycles` 的重复模式；
+- 达到 `loop_repeat_limit` 后以 `loop_detected` 结束，不再调用模型解释；
+- 下一真实 User turn 重置；`max_tool_rounds` 仍是独立硬上限。
+
+## 十四、垂直切片实施顺序
+
+模块职责保持解耦，但实施以可运行闭环为单位；完整任务见 [执行计划](../../.agent/PLAN.md)。
+
+1. **Slice 1 — Walking Skeleton**
+   - 第一项先把目录名守卫改为能力/副作用边界守卫；
+   - Message/Tool wire、OpenAI-compatible serializer/fragment accumulator；
+   - Session 从第一天持有 ConversationLog，`run_task()` 是唯一写入者，`Session.messages` 只读，`run_turn()` 只可薄委托；
+   - 最小 Registry/Executor、`lookup_record`、`calculate`；
+   - 同一切片跑通两工具步骤 E2E、普通无工具聊天，以及取消/内部异常后 unresolved calls 的最小合成闭合。
+2. **Slice 2 — History, Context, Product Projections**
+   - 完整 ToolCycle/Snapshot 校验；
+   - Chat/Structured/Fallback View；
+   - canonical request sizing、旧结果清理和合法硬裁；RunPolicy 落地前只允许 composition root 显式注入现有 24000 兼容上限，ContextBuilder 自身无默认值；
+   - 清理剩余历史读者/夹具，迁移 StructuredCompletion 与 Handoff；
+   - `/handoff update`、`/exit`、`/new`、取消后再聊回归。
+3. **Slice 3 — Guardrails, Policy, Observability**
+   - 开发者 TOML、冻结 RunPolicy 与 Provider 工具能力；
+   - 全部模型/工具/时间/context/result/Cycle 预算和逐 call deadline；
+   - 在 Slice 1 最小闭合上补全全部 commit-point/deadline/budget 状态、progress-aware retry 与循环提前止损；
+   - 移除 retry=1/context=24000 两个兼容数值源，最终所有上限只来自 RunPolicy；
+   - AgentStopCode、`tool.status`、mixed-content Terminal 测试；
+   - 护栏整体通过后才在 production bootstrap 启用默认工具。
+4. **Slice 4 — Acceptance and Delivery**
+   - 全部离线单元/集成/E2E、Stage 1 全量回归、包资源与终端验收；
+   - 可选真实 Provider function-calling smoke；
+   - 能力边界复验、验收证据与架构/路线/README 状态同步。
+
+一个切片未通过自身完整质量门禁时不得激活下一个切片；后续切片不能以补丁方式掩盖前一切片的双写、非法历史或协议错误。
 
 ## 十五、验收测试矩阵
 
@@ -644,7 +783,8 @@ Profile、Preferences 和已显式加载的 Handoff 继续作为用户状态数�
 - 多 call arguments 交错 fragment 的正确归并。
 - `content: null`、原始 arguments 保真、显式字段白名单和 reasoning 隔离。
 - 合法 finish reason 与 abnormal/missing finish 的接纳差异。
-- OpenAI-compatible round trip；Anthropic 映射契约使用 fixture 验证，不要求当前引入原生 SDK。
+- OpenAI-compatible 组装后再显式序列化的 round trip。
+- 不为未实现的原生 Provider 建 SDK fixture。
 
 ### 15.2 ConversationLog 与 ToolCycle
 
@@ -653,6 +793,7 @@ Profile、Preferences 和已显式加载的 Handoff 继续作为用户状态数�
 - 新 user/assistant/terminal 不能越过 open Cycle。
 - 取消、失败和预算耗尽先合成结果，再写 terminal。
 - terminal 不进入 Provider payload。
+- Snapshot 深度只读。
 - `/new` 和 reset 清空 Log；不跨进程恢复。
 
 ### 15.3 ContextBuilder
@@ -664,12 +805,15 @@ Profile、Preferences 和已显式加载的 Handoff 继续作为用户状态数�
 - 长 active turn 可裁旧 closed Cycle，但保留当前 UserMessage。
 - 保护集超预算时在 Provider 调用前失败。
 - 裁剪后的实际 wire 再验证且不超预算。
+- Structured View 不含 ToolMessage/中间 Assistant，Fallback 不读取 envelope。
+- Config/Handoff 路径不能把 Tool Result 当用户指令。
 
 ### 15.4 Tool Executor
 
 - 正常结果、截断结果和 original_chars。
 - 非 JSON、非 object、Schema 不匹配和未知工具。
 - timeout、执行异常、内部异常、取消和输出上限。
+- 单结果截断和单 Cycle 等额上限。
 - `retryable` 不触发 Runtime 自动重试。
 - 一个合法 call 始终产生一个 ToolMessage。
 
@@ -677,13 +821,21 @@ Profile、Preferences 和已显式加载的 Handoff 继续作为用户状态数�
 
 - 一个用户目标经过至少两个工具步骤后给出最终答案。
 - 一次响应包含多个 calls，按原始顺序执行并整体闭合。
-- 模型调用数、工具调用数、总时间、单工具超时和输出体积预算。
+- 模型尝试、工具轮次、工具调用、单 Cycle 调用、总时间、单工具超时、上下文、单结果和 Cycle 体积预算。
+- 每个 call 前检查总 deadline，有效 timeout 不超过剩余运行时间。
+- 模型无进展临时错误可有限重试；文本/tool fragment 进展后不重试。
 - 模型流中取消、首个结果前取消、部分结果后取消、Cycle 闭合后取消。
+- 取消/预算对未启动 call 的 envelope 与 `tool.status=skipped` 映射正确。
+- Slice 1 起工具取消/内部异常就先关闭 unresolved calls，且无需 reset 即可开始健康下一 turn。
+- A A A 与 A B A B A B 重复提前停止，参数/结果变化不误判。
+- fatal `error.stop_code` 与随后 `turn.completed.stop_code` 相同，公开 payload 不再保留 Stage 1 `code` 字段。
+- 组合预算顺序可预测：带重试时 model_call_limit 可以先于 tool round 上限；最长循环模式在硬轮次上限前触发。
 - 一个任务只产生一组 public start/completion。
 - 工具失败可被模型消费并继续，不崩溃或无限重试。
 - 工具任务结束后仍可正常对话。
 - 阶段 1 的十轮对话、空响应、异常 finish、重试、取消、配置、结构化完成、Handoff、工作空间隔离和退出行为继续通过。
-- `tests/test_stage_boundary.py` 中阻止预建 Stage 2 模块的旧守卫必须被更精确的阶段边界测试替代，不能通过改名绕过。
+- `Terminal.show_event` 输入 `text.delta → tool.status → text.delta → turn.completed` 时分段正确且最终文本只显示一次。
+- `tests/test_stage_boundary.py` 从 Slice 1 起检查能力/副作用边界，不按合理的 `tools`/`loop` 目录名失败。
 
 ## 十六、阶段交付物
 
@@ -692,9 +844,9 @@ Profile、Preferences 和已显式加载的 Handoff 继续作为用户状态数�
 - 进程内 ConversationLog 和 ToolCycle 校验。
 - 独立于具体 Provider 的 Agent Loop。
 - 最小 Tool Registry、Tool Executor 和无副作用演示工具。
-- 模型、工具、时间、超时和输出体积预算。
+- 随包开发者策略、Provider 工具能力，以及模型、工具、时间、上下文、单结果和单 Cycle 预算。
 - 确定性的旧结果清理和合法历史裁剪。
-- 中断、失败闭环和终端步骤状态。
+- 中断/失败/循环闭环、精确停止码和终端步骤状态。
 - 完整离线测试与阶段 1 回归证据。
 
 ## 十七、阶段完成标准
@@ -703,22 +855,27 @@ Profile、Preferences 和已显式加载的 Handoff 继续作为用户状态数�
 - 每个已接纳 tool call 都有且只有一个对应 ToolMessage，任何退出路径都不留下未闭合 Cycle。
 - OpenAI-compatible Provider 收到的请求只包含合法 wire 字段；Adapter 内部元数据不泄漏。
 - 参数错误、未知工具、超时、执行失败和输出截断都形成规范结果并可回传模型。
-- 达到模型、工具、时间或输出预算时能够安全停止并说明原因。
+- 达到模型、工具、时间、上下文或输出预算时能够安全停止并说明原因。
+- 重复调用在配置阈值内提前停止，硬轮次上限独立兜底。
+- 每个串行 call 都受剩余总 deadline 约束。
 - 用户可以在模型或工具阶段中断任务，之后继续正常对话。
 - ContextBuilder 在预算内保留最近的合法完整轨迹，不修改原始日志，不调用摘要模型。
 - ConversationLog 仅存在于当前进程，不自动修改或替代 Handoff。
+- Handoff/StructuredCompletion 不消费 ToolMessage 或中间 tool-call Assistant。
+- mixed content、工具步骤和最终答案在终端不重复且可区分。
 - 阶段 1 的配置隔离、结构化完成、显式交接、事件生命周期和安全边界没有回归。
 - 默认测试离线通过，且没有加入 Stage 3/4/5 的能力。
 
-## 十八、实施计划仍需确定的参数
+## 十八、实施计划状态
 
-以下内容不改变本文架构，可以在 Stage 2 实施子计划中确定：
+Stage 2 不再保留阻塞实施的设计参数：
 
-- `max_model_calls`、`max_tool_calls`、`max_run_seconds`、`tool_timeout_seconds` 和 `max_tool_result_chars` 的默认值。
-- 演示工具的最小集合及其参数 Schema。
-- ToolDefinition 参数 Schema 使用的具体校验库。
-- 工具步骤公开事件的最终名称和终端文案。
+- 初始开发者策略及其可调整边界见 9.4；
+- 演示工具锁定为 `lookup_record` 和 `calculate`；
+- 参数 Schema/验证使用现有 Pydantic v2；
+- 工具公开事件锁定为 `tool.status`，终端非语义文案可在不改变分段合同的前提下调整；
+- 四个垂直切片及完整任务、门禁、风险与交付物见 [Stage 2 Agent Core Implementation Plan](../../.agent/PLAN.md)。
 
-上述参数确定前可以拆分实施子计划，但不能绕过本文已经锁定的协议、原子性、职责和范围边界。
+数值默认值和内部算法可以在实现证据支持下调整，但不得修改 OpenAI-compatible wire、Adapter/AgentLoop/Conversation/Context/ToolExecutor 所有权、ToolCycle 原子性、单一历史写入、Handoff 边界或 Stage 2 范围。
 
 阶段 2 通过后，才向 Agent 开放真实的本地项目操作能力。

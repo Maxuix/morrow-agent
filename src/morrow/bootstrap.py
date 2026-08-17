@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from morrow.adapters.credentials.keyring import KeyringCredentialStore
-from morrow.adapters.models.openai_compatible import make_openai_compatible
+from morrow.adapters.models.openai_compatible import estimate_request_chars, make_openai_compatible
 from morrow.adapters.registry import AdapterRegistry
 from morrow.adapters.state.yaml import (
     GlobalConfigYamlStore,
@@ -14,13 +14,20 @@ from morrow.adapters.state.yaml import (
     WorkspaceIndexYamlStore,
 )
 from morrow.application.commands import CommandService
-from morrow.application.context import ContextBuilder
+from morrow.application.context import ContextBudgetError, ContextBuilder
 from morrow.application.orchestrator import SessionOrchestrator
 from morrow.application.structured import StructuredCompletionError, complete_structured
 from morrow.core.models import ConfigExtractionResult, Preferences
 from morrow.runtime.agent import AgentRuntime
 from morrow.runtime.ids import RandomIdSource
+from morrow.runtime.policy import AgentPolicy, load_agent_policy
 from morrow.runtime.session import Session
+from morrow.runtime.tools import (
+    ToolExecutor,
+    ToolRegistry,
+    make_calculate_tool,
+    make_lookup_record_tool,
+)
 from morrow.services.handoff import HandoffService
 from morrow.services.preferences import ConfigPatchService
 from morrow.services.provider import ProviderService
@@ -39,6 +46,22 @@ class Application:
     registry: AdapterRegistry
     credentials: object
     id_source: object
+    agent_policy: AgentPolicy
+
+
+DEMO_RECORDS = {
+    ("plans", "starter"): {"monthly_price": 29.0},
+    ("plans", "pro"): {"monthly_price": 79.0},
+    ("regions", "de"): {"tax_rate": 0.19},
+    ("regions", "us-ca"): {"tax_rate": 0.0725},
+}
+
+
+def _default_tool_executor(run_policy) -> ToolExecutor:
+    registry = ToolRegistry()
+    registry.register(make_lookup_record_tool(DEMO_RECORDS))
+    registry.register(make_calculate_tool())
+    return ToolExecutor(registry.snapshot(), run_policy)
 
 
 def build_application(
@@ -50,7 +73,12 @@ def build_application(
     index_store = WorkspaceIndexYamlStore(data_root.root)
     project_store = ProjectStateYamlStore(data_root.root)
     registry = AdapterRegistry()
-    registry.register("openai-compatible", make_openai_compatible)
+    registry.register(
+        "openai-compatible",
+        make_openai_compatible,
+        tool_protocol="openai_function",
+        multiple_tool_calls=True,
+    )
     credential_store = credentials or KeyringCredentialStore()
     application_id_source = id_source or RandomIdSource()
     provider_service = ProviderService(global_store, credential_store, registry)
@@ -70,6 +98,7 @@ def build_application(
         registry,
         credential_store,
         application_id_source,
+        load_agent_policy(),
     )
 
 
@@ -92,10 +121,32 @@ def build_session_application(app: Application, identity, *, provider=None, mode
         read_only=inspection.read_only,
         workspace_preferences_read_only=inspection.preferences_read_only,
     )
-    context_builder = ContextBuilder()
     if provider is None or model is None:
         provider, model = app.provider_service.build_active()
-    runtime = AgentRuntime(provider, model, context_builder, id_source=app.id_source)
+    provider_config = config.providers.get(model.provider_id) if config else None
+    adapter_id = provider_config.adapter if provider_config else "openai-compatible"
+    adapter_support = app.registry.tool_support(adapter_id)
+    run_policy = app.agent_policy.resolve(
+        model,
+        tool_protocol=adapter_support.tool_protocol,
+        multiple_tool_calls=adapter_support.multiple_tool_calls,
+    )
+    context_builder = ContextBuilder(
+        run_policy=run_policy,
+        estimate_request_chars=estimate_request_chars,
+    )
+    tool_executor = (
+        _default_tool_executor(run_policy)
+        if adapter_support.tool_protocol == "openai_function"
+        else None
+    )
+    runtime = AgentRuntime(
+        provider,
+        model,
+        context_builder,
+        id_source=app.id_source,
+        tool_executor=tool_executor,
+    )
     handoff_service = HandoffService(
         app.project_store, provider, model, context_builder, identity.workspace_id
     )
@@ -115,7 +166,7 @@ def build_session_application(app: Application, identity, *, provider=None, mode
                 + text,
             )
             return value
-        except (StructuredCompletionError, TimeoutError, RuntimeError):
+        except (StructuredCompletionError, ContextBudgetError, TimeoutError, RuntimeError):
             return ConfigExtractionResult(
                 result="clarification_required",
                 question="配置结果不明确；请直接使用 /config edit。",

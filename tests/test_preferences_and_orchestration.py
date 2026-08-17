@@ -4,24 +4,28 @@ import pytest
 
 from morrow.adapters.credentials.keyring import MemoryCredentialStore
 from morrow.application.commands import CommandService
-from morrow.application.context import ContextBuilder
+from morrow.application.context import ContextBudgetError, ContextBuilder
 from morrow.application.orchestrator import SessionOrchestrator
 from morrow.bootstrap import build_application, build_session_application
 from morrow.core.models import (
+    AssistantMessage,
     ConfigExtractionResult,
     ConfigPatch,
     ConfigPatchOperation,
     Decision,
+    FinishReason,
+    FunctionToolCall,
     Handoff,
     ModelRef,
     Preferences,
     Profile,
+    UserMessage,
 )
 from morrow.interfaces.terminal import _exit, _save_or_discard_before_switch
 from morrow.runtime.agent import AgentRuntime
 from morrow.runtime.session import Session
 from morrow.services.preferences import ConfigIntentGate, ConfigPatchService
-from morrow.testing import ScriptedModelProvider
+from morrow.testing import ScriptedModelProvider, make_context_builder, seed_user_turn
 
 
 @pytest.mark.parametrize(
@@ -267,7 +271,7 @@ def test_dirty_session_transitions_are_explicit_and_state_clear_is_scoped(tmp_pa
     app.project_store.write_profile(identity.workspace_id, Profile(name="keep"))
     app.project_store.write_handoff(identity.workspace_id, Handoff(current_goal="keep"))
     session = Session(session_id="s")
-    session.accept_user("dirty")
+    seed_user_turn(session, "dirty")
     commands = CommandService(
         session=session,
         identity=identity,
@@ -293,12 +297,14 @@ async def test_stage_1a_orchestrator_has_zero_config_calls_without_gate(tmp_path
         def execute(self, raw):
             return type("Result", (), {"lines": [], "action": None})()
 
-    runtime = AgentRuntime(provider, ModelRef(provider_id="p", model_id="m"), ContextBuilder())
+    runtime = AgentRuntime(
+        provider, ModelRef(provider_id="p", model_id="m"), make_context_builder()
+    )
     orchestrator = SessionOrchestrator(
         session=session,
         runtime=runtime,
         command_service=Commands(),
-        context_builder=ContextBuilder(),
+        context_builder=make_context_builder(),
     )
     result = await orchestrator.dispatch("普通聊天")
     assert provider.complete_calls == []
@@ -316,9 +322,11 @@ async def test_orchestrator_stream_exposes_events_before_terminal_result():
 
     orchestrator = SessionOrchestrator(
         session=session,
-        runtime=AgentRuntime(provider, ModelRef(provider_id="p", model_id="m"), ContextBuilder()),
+        runtime=AgentRuntime(
+            provider, ModelRef(provider_id="p", model_id="m"), make_context_builder()
+        ),
         command_service=Commands(),
-        context_builder=ContextBuilder(),
+        context_builder=make_context_builder(),
     )
     items = [item async for item in orchestrator.stream("普通聊天")]
 
@@ -472,6 +480,95 @@ async def test_two_invalid_config_extraction_shapes_fail_closed_without_chat_or_
 
 
 @pytest.mark.asyncio
+async def test_nl_config_extraction_degrades_when_context_budget_is_exceeded(tmp_path, monkeypatch):
+    async def overflow(*args, **kwargs):
+        raise ContextBudgetError("必要上下文超过预算，请缩短当前输入或状态")
+
+    monkeypatch.setattr("morrow.bootstrap.complete_structured", overflow)
+    app = build_application(state_root=tmp_path / "state", credentials=MemoryCredentialStore())
+    project = tmp_path / "project"
+    project.mkdir()
+    identity = app.workspace_service.confirm(app.workspace_service.resolve(project))
+    provider = ScriptedModelProvider(["should not chat"])
+    _, _, _, _, orchestrator = build_session_application(
+        app,
+        identity,
+        provider=provider,
+        model=ModelRef(provider_id="p", model_id="m"),
+    )
+
+    result = await orchestrator.dispatch("请记住这个项目以后用中文回复")
+
+    assert result.lines == ["配置结果不明确；请直接使用 /config edit。"]
+    assert result.events == []
+    assert provider.stream_calls == []
+    assert provider.complete_calls == []
+
+
+def test_new_then_continue_clears_tool_history_and_loads_only_persisted_handoff(tmp_path):
+    app = build_application(state_root=tmp_path / "state", credentials=MemoryCredentialStore())
+    project = tmp_path / "project"
+    project.mkdir()
+    identity = app.workspace_service.confirm(app.workspace_service.resolve(project))
+    saved = app.project_store.write_handoff(
+        identity.workspace_id, Handoff(current_goal="persisted goal"), expected_revision=0
+    )
+    session, _, _, commands, orchestrator = build_session_application(
+        app,
+        identity,
+        provider=ScriptedModelProvider(["unused"]),
+        model=ModelRef(provider_id="p", model_id="m"),
+    )
+    session.log.begin_turn(UserMessage(content="tool turn"))
+    session.log.append_assistant(
+        AssistantMessage(tool_calls=(FunctionToolCall(id="c1", name="lookup", arguments="{}"),))
+    )
+    session.log.append_tool_result("c1", "tool result")
+    session.log.finish_turn(FinishReason.ERROR)
+
+    orchestrator.reset_session()
+    loaded = commands.load_handoff()
+
+    assert loaded.revision == saved.revision
+    assert session.loaded_handoff.current_goal == "persisted goal"
+    assert session.log.snapshot().records == ()
+    assert app.project_store.load_handoff(identity.workspace_id).value.handoff.current_goal == (
+        "persisted goal"
+    )
+
+
+@pytest.mark.asyncio
+async def test_config_extraction_with_tool_history_receives_only_structured_projection(tmp_path):
+    app = build_application(state_root=tmp_path / "state", credentials=MemoryCredentialStore())
+    project = tmp_path / "project"
+    project.mkdir()
+    identity = app.workspace_service.confirm(app.workspace_service.resolve(project))
+    provider = ScriptedModelProvider(['{"result":"no_change"}'])
+    session, _, _, _, orchestrator = build_session_application(
+        app,
+        identity,
+        provider=provider,
+        model=ModelRef(provider_id="p", model_id="m"),
+    )
+    session.log.begin_turn(UserMessage(content="prior user"))
+    session.log.append_assistant(
+        AssistantMessage(
+            content="intermediate-command-secret",
+            tool_calls=(FunctionToolCall(id="c1", name="lookup", arguments="{}"),),
+        )
+    )
+    session.log.append_tool_result("c1", "tool-envelope-secret")
+    session.log.finish_turn(FinishReason.ERROR)
+
+    await orchestrator.dispatch("请记住这个项目以后用中文回复")
+
+    wire = provider.complete_calls[0]
+    assert all(message.role != "tool" for message in wire)
+    assert all(not getattr(message, "tool_calls", ()) for message in wire)
+    assert "secret" not in str(wire)
+
+
+@pytest.mark.asyncio
 async def test_dirty_independent_save_failure_preserves_session(tmp_path):
     class Console:
         def print(self, *args, **kwargs):
@@ -495,7 +592,7 @@ async def test_dirty_independent_save_failure_preserves_session(tmp_path):
             return type("Loaded", (), {"revision": 0})()
 
     session = Session(session_id="s")
-    session.accept_user("keep me")
+    seed_user_turn(session, "keep me")
     choice = await _save_or_discard_before_switch(
         TerminalStub(), object(), HandoffStub(), StoreStub(), "ws", session
     )

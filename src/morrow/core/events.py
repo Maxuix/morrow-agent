@@ -5,10 +5,10 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from morrow.core.models import AgentEvent, FinishReason, utc_now
+from morrow.core.models import AgentEvent, AgentStopCode, FinishReason, utc_now
 
 PUBLIC_EVENT_TYPES = frozenset(
-    {"turn.started", "status.changed", "text.delta", "error", "turn.completed"}
+    {"turn.started", "status.changed", "text.delta", "tool.status", "error", "turn.completed"}
 )
 
 
@@ -45,8 +45,56 @@ def lifecycle_is_valid(events: list[AgentEvent]) -> bool:
     ):
         return False
     completed = [event for event in events if event.type == "turn.completed"]
-    return len(completed) == 1 and not any(event.type == "turn.started" for event in events[1:])
+    errors = [event for event in events if event.type == "error"]
+    if len(completed) != 1:
+        return False
+    if len(errors) > 1:
+        return False
+    completion = completed[0]
+    if completion.payload.get("finish_reason") == FinishReason.ERROR.value:
+        if len(errors) != 1 or events[-2] is not errors[0]:
+            return False
+    elif "stop_code" in completion.payload or errors:
+        return False
+    if errors and (
+        set(errors[0].payload) != {"message", "stop_code"}
+        or errors[0].payload.get("stop_code") != completion.payload.get("stop_code")
+    ):
+        return False
+    allowed_tool_keys = {
+        "call_id",
+        "name",
+        "status",
+        "ordinal",
+        "total",
+        "error_code",
+        "truncated",
+    }
+    for tool_event in (event for event in events if event.type == "tool.status"):
+        payload = tool_event.payload
+        if not {"call_id", "name", "status", "ordinal", "total"} <= set(payload):
+            return False
+        if not set(payload) <= allowed_tool_keys:
+            return False
+        if payload["status"] not in {"running", "succeeded", "failed", "cancelled", "skipped"}:
+            return False
+        if not (1 <= payload["ordinal"] <= payload["total"]):
+            return False
+    return not any(event.type == "turn.started" for event in events[1:])
 
 
-def completion_payload(reason: FinishReason, text: str = "") -> dict[str, Any]:
-    return {"finish_reason": reason.value, "text_length": len(text)}
+def completion_payload(
+    reason: FinishReason, text: str = "", *, stop_code: AgentStopCode | None = None
+) -> dict[str, Any]:
+    if reason == FinishReason.ERROR and stop_code is None:
+        raise ValueError("error completion requires stop_code")
+    if reason != FinishReason.ERROR and stop_code is not None:
+        raise ValueError("only error completion carries stop_code")
+    payload: dict[str, Any] = {
+        "finish_reason": reason.value,
+        "text": text,
+        "text_length": len(text),
+    }
+    if stop_code is not None:
+        payload["stop_code"] = stop_code.value
+    return payload

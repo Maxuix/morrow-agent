@@ -6,8 +6,10 @@ from contextlib import nullcontext
 import pytest
 
 from morrow.application.orchestrator import DispatchResult
+from morrow.core.models import AgentEvent
 from morrow.interfaces import terminal as terminal_module
 from morrow.runtime.session import Session
+from morrow.testing import seed_user_turn
 
 
 class ConsoleStub:
@@ -77,6 +79,57 @@ def install_terminal(monkeypatch, terminal):
     monkeypatch.setattr(terminal_module, "patch_stdout", nullcontext)
 
 
+def test_terminal_segments_mixed_text_tool_and_final_text_without_replay_or_payload_leak():
+    class RecordingConsole:
+        def __init__(self):
+            self.value = ""
+
+        def print(self, *values, **kwargs):
+            self.value += " ".join(str(value) for value in values)
+            self.value += kwargs.get("end", "\n")
+
+    console = RecordingConsole()
+    terminal = terminal_module.Terminal(console=console)
+
+    def event(event_type, sequence, payload):
+        return AgentEvent(
+            type=event_type,
+            event_id=f"e{sequence}",
+            session_id="s",
+            turn_id="t",
+            sequence=sequence,
+            payload=payload,
+        )
+
+    events = [
+        event("turn.started", 1, {}),
+        event("text.delta", 2, {"text": "先查"}),
+        event(
+            "tool.status",
+            3,
+            {
+                "call_id": "secret-call-id",
+                "name": "lookup_record",
+                "status": "running",
+                "ordinal": 1,
+                "total": 1,
+                "raw_result": "secret-result",
+            },
+        ),
+        event("text.delta", 4, {"text": "最终答案"}),
+        event(
+            "turn.completed",
+            5,
+            {"finish_reason": "stop", "text": "先查最终答案", "text_length": 6},
+        ),
+    ]
+    for item in events:
+        terminal.show_event(item)
+
+    assert console.value == "先查\n↳ 工具步骤 1/1：lookup_record\n最终答案\n"
+    assert "secret" not in console.value
+
+
 @pytest.mark.asyncio
 async def test_clean_primary_eof_exits_once(monkeypatch):
     terminal = ScriptedTerminal([EOFError()])
@@ -98,7 +151,7 @@ async def test_dirty_independent_eof_during_exit_confirmation_terminates_code_tw
     terminal = ScriptedTerminal([EOFError(), EOFError()])
     install_terminal(monkeypatch, terminal)
     session = Session(session_id="s")
-    session.accept_user("unsaved")
+    seed_user_turn(session, "unsaved")
     handoff = HandoffStub()
 
     code = await asyncio.wait_for(
@@ -123,7 +176,7 @@ async def test_closed_switch_prompt_terminates_without_save_or_reset(monkeypatch
     terminal = ScriptedTerminal(["/new", EOFError()])
     install_terminal(monkeypatch, terminal)
     session = Session(session_id="s")
-    session.accept_user("unsaved")
+    seed_user_turn(session, "unsaved")
     handoff = HandoffStub()
     orchestrator = OrchestratorStub({"/new": "switch_new"})
 
@@ -148,7 +201,7 @@ async def test_dirty_continuation_primary_eof_saves_then_exits(monkeypatch):
     terminal = ScriptedTerminal([EOFError()])
     install_terminal(monkeypatch, terminal)
     session = Session(session_id="s", handoff_source_revision=1)
-    session.accept_user("continue")
+    seed_user_turn(session, "continue")
     handoff = HandoffStub()
 
     code = await terminal_module.run_repl(
@@ -168,7 +221,7 @@ async def test_dirty_continuation_primary_eof_saves_then_exits(monkeypatch):
 async def test_cancelled_continuation_save_preserves_session():
     terminal = ScriptedTerminal(["/exit"])
     session = Session(session_id="s", handoff_source_revision=1)
-    session.accept_user("continue")
+    seed_user_turn(session, "continue")
     handoff = HandoffStub(result=asyncio.CancelledError())
 
     code = await terminal_module._exit(

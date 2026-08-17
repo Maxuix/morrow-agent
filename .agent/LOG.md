@@ -292,3 +292,212 @@
 - Published `docs/reviews/stage-2-agent-core-revised-proposal-review.md`. Verdict: executable, recommend conditional approval.
 - Two required amendments, both confined to the slice plan: move the stage-boundary test rewrite into Slice 1 (or forbid new `tools/`/`loop/` directories in Slices 1–3), and pull "Session holds ConversationLog with a single write path" forward into Slice 1 instead of Slice 2. Also listed four one-sentence clarifications (skipped→envelope mapping, `model_output_limit` dual cause, `safe_request_chars` data source, offline-testable terminal segmentation) and a six-item reconciliation list for merging the proposal into the authoritative roadmap.
 - No production or test code was changed.
+
+## 2026-08-15 — Stage 2 implementation plan activated
+
+- Converted the approved Stage 2 design into one active master plan and four ordered vertical subplans: Walking Skeleton; History/Context/Product Projections; Guardrails/Policy/Observability; and Acceptance/Delivery.
+- Made the Slice 1 order executable: capability-based stage guards first, then strict wire/Adapter work, Session-owned ConversationLog and the sole AgentLoop history path, minimal tools, and the first two-tool-step E2E.
+- Kept production tools disabled until the Slice 3 policy/cancellation/budget gate, avoiding an unbounded intermediate product path while still requiring an integrated Slice 1 E2E.
+- Assigned full ToolCycle/context/Handoff projections to Slice 2; configured limits, Cycle bounds, cancellation closure, progress-aware retry, loop detection and terminal events to Slice 3; and final Stage 1/2/package/terminal evidence to Slice 4.
+- Promoted the revised proposal from pending approval record to approved decision history and reconciled the formal Stage 2 roadmap: thin `run_turn()`, chronological result clearing, Pydantic validation, developer policy, Cycle bounds, loop stopping, public tool/stop events and the four-slice order now have one authority.
+- Removed completed Stage 1 subplans from the active subplan directory; Git history remains their archive. No production or test code was changed.
+
+## 2026-08-16 — Stage 2 implementation-plan review applied
+
+- Verified all seven review findings against the active plans and current Stage 1 code. Each finding was valid; the first two exposed real intermediate-slice invariant failures rather than wording issues.
+- Moved the minimal no-tools AgentLoop into the same Slice 1 change as Session/ConversationLog migration, so no temporary writer exists before AgentLoop. The later tool extension now owns minimum `cancelled`/`internal` synthetic closure and next-turn recovery from its first E2E.
+- Clarified Slice 2’s explicit 24000 Stage 1 context-limit bridge and required ContextBuilder to have no default; Slice 3 removes that bridge and the retry=1 bridge when RunPolicy lands.
+- Locked fatal public error payloads to `message + stop_code`, required the following completion to carry the same code, and tasked `PUBLIC_EVENT_TYPES`, `completion_payload` and Stage 1 assertion migration.
+- Locked the initial production exact-model table as empty, added longest-loop-pattern validation, and added combined model-attempt/tool-round precedence acceptance.
+- Updated the formal Stage 2 roadmap, master plan, Subplans 17–20, TODO and TRACKER. No production or test code was changed.
+
+## 2026-08-16 — S2.17.1 Stage 1 baseline frozen
+
+- Baseline validation before any production change: `uv run pytest -q` → 149 passed, 1 skipped (Live opt-in only, gated behind `MORROW_OPENCODE_GO_API_KEY`); `uv run ruff format --check .` → 57 files formatted; `uv run ruff check .` → clean; `uv run python -m compileall -q src tests` → clean; `git diff --check` → clean.
+- History/runtime migration inventory captured with `rg`:
+  - Writers: `Session.accept_user`/`accept_assistant` defined at `runtime/session.py:28,33`; production call sites `runtime/agent.py:43` and `runtime/agent.py:139`; `reset()` clears `messages` at `session.py:39`.
+  - Readers: `services/handoff.py:32,38` and `application/context.py:80` read `session.messages`; `runtime/agent.py:79` consumes `context.messages`; `runtime/structured.py:54-55` infers message type from `context.messages[0]` (must migrate to explicit variants).
+  - Orchestrator routes ordinary chat through `runtime.run_turn` at `application/orchestrator.py:80` — single chat entry exists already.
+  - Tests: 12 `accept_*` call sites plus `session.messages` assertions across test_terminal/test_preferences_and_orchestration/test_context_runtime/test_structured_and_handoff; 13 `run_turn` invocations in test_context_runtime.py.
+- Worktree check: only `.agent/` planning docs and `docs/` changed (the Stage 2 plan set itself); no production or test file overlaps Stage 2 work.
+
+## 2026-08-16 — S2.17.3 core wire protocol introduced
+
+- Added to `morrow.core.models`: frozen `ProtocolModel` base (extras rejected, assignment blocked); discriminated `Message` union over `SystemMessage`/`UserMessage`/`AssistantMessage`/`ToolMessage`; `FunctionToolCall` and nested `ToolFunction`/`ToolDefinition`; separate internal `ModelFinishReason` (stop/tool_calls/length/content_filter) from public `FinishReason`.
+- Protocol enforcement: tool names match `[A-Za-z0-9_-]{1,64}`; call/tool IDs and descriptions non-empty; Assistant requires non-empty content or ≥1 call with unique IDs; arguments stay an untouched string; ordered collections validate to tuples.
+- `ModelEvent.completed` now carries the fully assembled `AssistantMessage` plus normalized model finish reason; vendor reasons never validate.
+- Migrated every explicit construction site: `runtime/session.py`, `application/context.py`, `runtime/structured.py` (type inference removed, explicit `UserMessage`), `services/provider.py`, `adapters/models/openai_compatible.py` (canonical per-variant `serialize_message` with explicit field whitelist), `runtime/agent.py` (final text authority is the assembled message content), `testing.py` scripted provider, and the Stage 1 test suites (17 construction sites).
+- Validation: 168 passed, 1 skipped (Live opt-in); `ruff format --check`, `ruff check`, `compileall`, `git diff --check` all clean. Fourteen new focused protocol contract tests in `tests/test_core_contracts.py`.
+
+## 2026-08-16 — S2.17.4 provider port and OpenAI-compatible accumulation
+
+- Extended `ModelProvider.stream` with an optional ordered `tools` tuple; text-only `complete()` and default streaming send none. `ScriptedModelProvider` records `stream_tools`.
+- Canonical request serialization: `serialize_tool` joins the existing `serialize_message` whitelist; the Adapter sends `tools` + `tool_choice="auto"` only when tools are present.
+- Added `StreamAccumulator` (adapter-owned): ignores usage-only chunks, accepts one logical choice, accumulates text in order, assembles interleaved tool-call fragments by vendor index, keeps the first non-empty ID (rejecting conflicts), concatenates name/arguments in arrival order, tolerates only `function` fragment types, sorts completed calls by index, normalizes stop-with-calls to `tool_calls`, rejects duplicate/missing IDs, empty names, invalid types, non-string arguments and missing/conflicting finish. `length`/`content_filter` normalize into `ModelFinishReason` completions without an assembled message; unknown finishes stay errors.
+- `made_progress` (any text or tool fragment observed) is tracked on the accumulator for later retry policy; fragments never reach Runtime.
+- Validation: 16 new table-driven fake-SDK tests (pure calls, mixed content, interleaved calls, malformed streams, argument fidelity, request whitelist, usage-only chunks, serialize-after-assemble round trip). Full suite 184 passed, 1 skipped; ruff format/check, compileall, `git diff --check` clean.
+
+## 2026-08-16 — S2.17.5 ConversationLog authority and no-tools AgentLoop landed atomically
+
+- Added `morrow/runtime/conversation.py`: frozen `MessageRecord`/`TurnTerminalRecord`/`ConversationSnapshot` DTOs (log sequence independent of AgentEvent sequence) and a process-local `ConversationLog` enforcing one active turn, one opening User, strictly ordered tool results (first-pending-first), and no terminal while a ToolCycle is open.
+- `Session` now owns the Log; `messages` is a read-only derived tuple; `accept_user`/`accept_assistant` were removed. Reset clears the Log and session preferences without touching persisted Handoff.
+- `morrow/runtime/agent.py` rewritten around a pure `ModelCallRunner` (one interpreted attempt: progress tracking, completion classification, error normalization; never touches Session) plus `AgentLoop.run_task()` owning begin-turn, final Assistant/terminal appends, one-start/one-completion lifecycle, cancellation → cancelled terminal, and the explicit Stage 1 zero-progress transient-retry bridge (`max_transient_retries`, default 1). `AgentRuntime.run_turn()` is now a thin no-tools delegate onto the same loop; SessionOrchestrator chat path unchanged through it.
+- Dirty semantics migrated: the real User marks dirty at begin-turn; only Handoff publication (handoff.py:90), reset or explicit discard clears it.
+- Test migration: 16 Stage 1 sites moved from `accept_user`/`Session(messages=[...])` to a `seed_user_turn` testing helper that mirrors AgentLoop writes. Ten new focused tests in `tests/test_conversation_and_loop.py` (log legality, monotonic sequences, deeply read-only views, no public writer, reset semantics, delegate equivalence, cancelled-terminal + next-turn recovery, context-overflow terminal). Stage-boundary guard extended: Session construction/restart never reads or restores ConversationLog.
+- Validation: 195 passed, 1 skipped (Live opt-in); ruff format/check, compileall, `git diff --check` clean. Remaining `session.messages` consumers (ContextBuilder, HandoffService) are read-only readers pending Subplan 18.
+
+## 2026-08-16 — S2.17.6 minimal registry, executor and demo tools
+
+- Added `morrow/runtime/tools.py`: frozen `RegisteredTool`; `ToolRegistry` (unique registration, name-sorted definitions) with `snapshot()` producing an immutable task-frozen `ToolSet`; `ToolExecutor` producing exactly one bounded `ToolExecutionOutcome` per call.
+- Deterministic compact JSON envelopes (`sort_keys`, compact separators, 200-char bounded messages). `ToolErrorCode` covers invalid_arguments/unknown_tool/not_found/division_by_zero/execution_failed plus the synthetic `cancelled`/`internal` closure codes; `asyncio.CancelledError` is re-raised to AgentLoop; tracebacks and raw exceptions never leak.
+- Arguments parse via `model_validate_json(..., strict=True)` with extra=forbid models; handlers run only after validation. ToolDefinition parameters are generated from the argument models.
+- Demo tools: `lookup_record(dataset: plans|regions, key)` over an injected immutable mapping and `calculate(operation, values[2..32])` with ordered left-to-right arithmetic, finite-only numbers, no eval.
+- Boundary guard tightened as promised: demo registry names are exactly `lookup_record`+`calculate`; executing both under NetworkGuard leaves a temporary workspace byte-identical. Production bootstrap still wires no tools.
+- Validation: 19 new tests in `tests/test_tools.py` (duplicates, snapshot isolation, not-found, malformed/strict/extra/range/non-finite arguments, divide-by-zero, unknown tool, bounded handler failure without auto-retry, CancelledError re-raise, envelope determinism, schema generation). Full suite 216 passed, 1 skipped; all gates clean.
+
+## 2026-08-16 — S2.17.7 AgentLoop extended through tools with minimum closure
+
+- `AgentLoop` accepts an injectable `ToolExecutor` (default `None`: tools stay disabled in production bootstrap). Continuation requests reuse the first ContextPack plus only records appended since, so provider payloads stay legal without touching history reduction (Slice 2 owns semantic units).
+- Tool round: accepted batch admitted via one `append_assistant`, calls executed in original order with one result envelope per call, model invoked again; final text appends the Assistant then terminal completed; exactly one start/completion per task.
+- Minimum closure in the shared handlers: `asyncio.CancelledError` preserves completed results, appends one `cancelled` envelope per unresolved call in original order, then terminal cancelled; unexpected post-admission exceptions append bounded `internal` envelopes, emit one fatal internal error, then terminal failed. No terminal or next User can land while a Cycle is open (log invariant).
+- Fixed a real Slice 1 integration bug found by the closure tests: `ContextBuilder._chars` crashed on pure tool-call Assistant messages (`content=None`) after a cancelled tool turn. Full ToolCycle context legality (dropping ToolMessage-less pairs from projections) remains Subplan 18 work.
+- `ScriptedModelProvider` now emits scripted `AssistantMessage` completions (finish reason derived from tool_calls) and records per-call tools.
+- Validation: 7 focused tests in `tests/test_agent_tool_loop.py` — tool round + final text, multi-call ordering, cancel-before-first-result and cancel-after-partial with preserved results, unexpected post-admission exception with internal closure, no-tools rejection before admission, no auto-retry of failed tools; each closed path allows a healthy next turn. Full suite 223 passed, 1 skipped; all gates clean.
+
+## 2026-08-16 — S2.17.8/S2.17.9 vertical slice proven and Subplan 17 closed
+
+- Offline E2E (`tests/test_stage2_e2e.py`) proves the full story through the demo tool set: lookup plan price → lookup region tax → calculate the 3-month tax-inclusive total (282.03) → final text. Asserts ≥2 tool rounds, four ordered provider requests each ending with the previous result, exact call/result pairing, one start/completion pair, no terminal records in any provider payload, tools announced on every request, and one history source (`session.messages == log.messages_view()`).
+- Plain ordinary chat E2E runs through `SessionOrchestrator` → `AgentRuntime.run_turn()` → the same AgentLoop with zero tools sent; mixed-content coverage proves intermediate tool-call Assistant text stays in history while only the final no-tools Assistant completes the turn.
+- Integrated cancellation (gated executor + task.cancel mid-batch) preserves earlier results, closes the unresolved call with one `cancelled` envelope, records terminal cancelled, and the next user turn succeeds without Session reset; the integrated internal-failure path mirrors this with one `internal` envelope and one fatal error event before terminal failed.
+- Slice gates: focused Core/Adapter/Conversation/Tool/Loop/E2E set → 103 passed; full offline suite → 228 passed, 1 Live opt-in skip; `ruff format --check`, `ruff check`, `compileall`, capability boundary suite and `git diff --check` all clean. No unexpected skips or xfails.
+- Completion criteria verified: multi-call ordered pairing, no stranded Cycle on cancel/exception paths, no mutable `Session.messages`, no independent `run_turn()` writer, malformed provider output never enters the Log, explicit Adapter whitelists, deterministic side-effect-free demo tools, and no Stage 3/4/5 capability.
+- Subplan 17 marked complete; Subplan 18 (History, Context, and Product Projections) activated with fresh TODO tasks. ARCHITECTURE.md runtime section updated to the single AgentLoop/ConversationLog authority model. The 24000 context limit and retry=1 remain the two sanctioned Stage 1 compatibility bridges until S2.18.3/S2.19.1.
+
+## 2026-08-17 — S2.18.1 ConversationLog grammar completed
+
+- ConversationLog now enforces the full User-led public-turn grammar: ordered closed ToolCycles, at most one final no-tools Assistant, and a terminal; successful turns cannot close without that final Assistant, while cancelled/failed turns can close after accepted calls are resolved.
+- Added immutable derived `ToolCycleView`/`PublicTurnView`, strict snapshot validation, per-turn call-ID uniqueness, interrupted-call IDs on terminal records, and Runtime propagation of the exact synthetically closed IDs.
+- Focused Conversation/AgentLoop/tool E2E validation passed: 30 tests. Ruff identified one import-order-only issue, corrected before continuing.
+
+## 2026-08-17 — S2.18.2–S2.18.5 context projections and reduction completed
+
+- Replaced the generic mutable context list with frozen `ContextRequest`/`ContextPack` and explicit chat, structured and Handoff-fallback projections. Structured/fallback Views exclude ToolMessage and tool-call Assistant content by construction; chat keeps fixed boundary and dynamic user state as separate System messages.
+- Added Adapter-owned canonical request sizing over the exact serialized messages/tools wire. `ContextBuilder` now requires an injected estimator and explicit limit; production composition contains the sole named 24000 compatibility bridge, and AgentLoop repeats size/pairing validation immediately before every Provider dispatch.
+- Added pure oldest-first whole-Cycle result clearing with the fixed placeholder, then legal hard trimming by oldest whole public turn and oldest whole closed Cycle in the current turn. Protected-set overflow raises typed `context_budget`; source Log snapshots remain unchanged.
+- Focused affected regression passed (132 passed, 1 Live opt-in skip), new projection/reduction set passed (61 tests with overlapping runtime coverage), and the added continuation pre-dispatch rejection passed. Ruff format/check passed after mechanical formatting/import fixes.
+
+## 2026-08-17 — S2.18.6/S2.18.7 product projections migrated
+
+- StructuredCompletion now always requests the structured projection, sends no tools, and repeats canonical size/pairing validation after appending its instruction or repair prompt. Handoff generation inherits that path; deterministic fallback consumes only the explicit latest-User/latest-completed-final-Assistant projection.
+- Removed the final production consumer of generic `session.messages`; it remains only a read-only compatibility projection and test assertion surface. Added product coverage for `/new`/`/continue` semantics with prior tool history, persisted Handoff preservation, and tool-safe natural-language config extraction.
+- Payload assertions prove ToolMessage, raw result envelopes and intermediate/mixed tool-call Assistant text do not enter structured, config or Handoff fallback paths. Product-focused regression passed: 70 tests.
+
+## 2026-08-17 — S2.18.8 Subplan 18 closed
+
+- Full offline suite passed: 249 tests passed, 1 explicit Live opt-in test skipped for missing `MORROW_OPENCODE_GO_API_KEY`; no unexpected skip/xfail.
+- Parent gates passed: `ruff format --check .` (64 files), `ruff check .`, `python -m compileall -q src tests`, capability boundary suite (8 passed), and `git diff --check`.
+- Provider capture inspection is covered directly: chat payload pairing survives clearing/trimming, terminal records never serialize, placeholders never write back to the Log, and structured/config/Handoff payloads contain no ToolMessage, result envelope or intermediate tool-call Assistant content.
+- Subplan 18 marked complete and Subplan 19 activated. Production tools remain disabled pending the policy/guardrail gate.
+
+## 2026-08-17 — S2.19.1 developer policy landed
+
+- Added strict frozen `AgentPolicy`, resolved `RunPolicy` and `ProviderToolSupport`, loaded from bundled `morrow/resources/agent-policy.toml` with clear missing/invalid failures. The production exact-model table is intentionally empty.
+- Effective request/result/Cycle limits use exact `provider_id/model_id` lookup or the 160000 unknown-model fallback and the approved min/ratio formulas. Combination validation covers per-cycle/total calls, tool/run time, retry/attempts and longest loop pattern feasibility.
+- Adapter registry now carries only explicit tool protocol and multi-call metadata; bootstrap resolves a RunPolicy and injects it into ContextBuilder/AgentLoop. The retry=1 and context=24000 compatibility symbols/signatures are removed from production and tests.
+- Focused policy/composition/Provider/boundary regression passed: 100 passed, 1 explicit Live opt-in skip; changed-file Ruff checks passed.
+
+## 2026-08-17 — S2.19.2–S2.19.9 bounded production loop integrated
+
+- AgentLoop now freezes RunPolicy/deadline/counters per task and enforces cancellation → deadline → model attempts → tool rounds → context before each request. Batch admission enforces Provider multi-call support, per-cycle/total call counts and minimum Cycle closure capacity.
+- ToolExecutor uses the resolved result/Cycle policy, caps stable validation details, converts timeout/failures deterministically and truncates large successes into valid bounded JSON with `original_chars`. Each serial call uses the remaining global deadline.
+- One shared synthetic-closure path now covers cancellation/internal/deadline/budget exits. Commit-point tests cover model progress, completed-before-acceptance, before/during/between/after tools, and cancellation after final Assistant commit; accepted history remains closed and recoverable.
+- Retries require transient zero-progress failures. Repeated current-turn Cycle suffixes (including A×3 and AB×3) stop early while changed arguments/results continue.
+- Public lifecycle now uses exact AgentStopCode error/completion matching and bounded `tool.status`; terminal rendering segments mixed text/tool/final output without replay or call/result leakage.
+- Bootstrap resolves unknown models to 160000, enables only `lookup_record` and `calculate` for OpenAI function-tool capability, and falls back to plain chat for unsupported Adapters. Focused Subplan 19 gate: 84 passed.
+- Offline wheel build succeeded and inspection confirmed `morrow/resources/agent-policy.toml` is present in the built artifact.
+
+## 2026-08-17 — S2.19.10 Subplan 19 closed
+
+- Full offline suite passed on the guarded production tree: 288 passed, 1 explicit Live opt-in skip; no unexpected skip/xfail.
+- Parent gates passed: `ruff format --check .` (69 files), `ruff check .`, `python -m compileall -q src tests`, capability boundary suite (9 passed), and `git diff --check`.
+- Public event/terminal sentinel coverage confirms full arguments/results, call IDs in terminal output, tracebacks, reasoning and credentials are absent. Synthetic Log envelopes remain bounded and every accepted batch closes before terminal.
+- Subplan 19 marked complete and Subplan 20 activated for final evidence, package/product acceptance and documentation reconciliation.
+
+## 2026-08-17 — S2.20.1 acceptance evidence matrix established
+
+- Added `docs/acceptance/stage-2-evidence.md` and mapped every roadmap/proposal acceptance branch to its owning slice, exact automated tests, required package/manual/Live check, provisional observed result and remaining limitation.
+- Compound definition-of-done criteria now reference their constituent evidence rows; none is treated as complete until all mandatory final-tree checks are green.
+- Recorded explicit Stage 3/4/5 exclusions and capability-boundary evidence. Earlier 288-pass slice output is provenance only; the document reserves exact final results for S2.20.9.
+
+## 2026-08-17 — S2.20.2 protocol and Adapter acceptance
+
+- Audited the full fake-SDK chunk matrix and added direct Adapter cases for a tool call whose ID never arrives and a function name that violates the Core contract; both classify as invalid Provider responses.
+- Protocol/Core/progress acceptance passed: 59 passed with the one explicit Live Provider test deselected. Coverage includes request tool omission/inclusion, text/pure/mixed calls, interleaving, usage-only chunks, all malformed fragment classes, finish normalization, raw-argument fidelity, serializer round trip, metadata isolation and progress-aware retry classification.
+
+## 2026-08-17 — S2.20.3 ConversationLog and Context acceptance
+
+- Conversation grammar, immutable snapshots, reset/restart behavior, purpose-safe projections, atomic result clearing, whole-boundary trimming, protected context and final-wire validation acceptance passed: 53 tests.
+- Direct captured-request tests confirm chat retains legal tool history while Structured/config/Handoff paths exclude ToolMessage envelopes and intermediate tool-call Assistant content; builds leave the source Log, Session and Handoff unchanged.
+
+## 2026-08-17 — S2.20.4 ToolExecutor acceptance
+
+- Added direct coverage for a success result whose minimum truncation envelope cannot fit the assigned result budget: it returns a bounded `output_failed` result.
+- Added a full AgentLoop multi-call test that derives the expected Cycle allocation and proves every call receives the same bounded result limit after minimum-envelope pre-admission.
+- Tool registry/executor, AgentLoop allocation and one-result closure acceptance passed: 38 tests.
+
+## 2026-08-17 — S2.20.5 AgentLoop/time acceptance
+
+- Added an exact timeout-capture test proving a serial call receives `min(tool_timeout, remaining_run_time)` rather than the nominal tool timeout.
+- Tightened the AB×3 loop test so the longest configured pattern completes exactly at the six-round hard cap and still reports `loop_detected` before a subsequent hard-round check; the distinct model-attempt precedence case remains green.
+- AgentLoop budgets, commit-point cancellation, retry progress, synthetic closure, loop detection, public lifecycle and terminal segmentation acceptance passed: 54 tests.
+
+## 2026-08-17 — S2.20.6 Stage 1 product regression
+
+- Re-ran the complete Stage 1 CLI, Provider/configuration, context/runtime, structured/Handoff, orchestration, workspace/state and terminal surface on the integrated Stage 2 tree: 186 passed, one explicit Live test deselected.
+- Ten-turn streaming, empty/abnormal responses, retry/cancellation, natural-language configuration, repair/deadline behavior, explicit session/Handoff transitions, degraded modes, backups/locking, EOF/Ctrl+C and the migrated public `stop_code` contract remain green.
+
+## 2026-08-17 — S2.20.7 package and product acceptance
+
+- Built the wheel offline, then installed it with all 33 resolved declared dependencies into a fresh CPython 3.12 venv. Import, CLI help, bundled `agent-policy.toml` discovery and policy loading passed. A prior strictly offline dependency install could not resolve uncached `keyring`; it did not exercise the artifact and is recorded as an environment-cache limitation rather than a pass.
+- Added a real `run_repl` product acceptance test with the production bootstrap, Terminal renderer, SessionOrchestrator, demo executor and scripted Provider: mixed text, deterministic tool error, model recovery, healthy follow-up, Handoff update, `/new` and clean exit all pass.
+- Corrected the Scripted Provider to emit text deltas for mixed-content Assistant messages, matching Adapter behavior. Product/policy/boundary/E2E/cancellation acceptance passed: 17 tests; terminal/events/state/Handoff sentinel scans and process-local reset checks passed.
+
+## 2026-08-17 — S2.20.8 optional Live decision
+
+- Secret-safe presence check found no `MORROW_OPENCODE_GO_API_KEY`; the optional real-Provider function-calling smoke was not run and no Live result is claimed. Per the approved gate, credential absence is not a Stage 2 failure.
+
+## 2026-08-17 — S2.20.9 final quality gates
+
+- Final offline suite: 294 passed, one Live test deselected; strict collection: 295 tests including the opt-in Live marker.
+- Ruff format: 70 files already formatted; Ruff lint, compileall and `git diff --check` passed.
+- Rebuilt the final wheel offline and installed all 33 declared packages from cache into a fresh CPython 3.12 environment. Installed import, CLI help, bundled policy discovery/loading and wheel inventory (45 files) passed.
+- Final capability/side-effect/product sentinel gate passed: 10 tests. The production-source sentinel scan had no matches. No mandatory gate, unexpected skip/xfail or confirmed P1-equivalent defect remains.
+
+## 2026-08-17 — S2.20.10 Stage 2 completed
+
+- Reconciled README with the actual tool-step UX, stop/cancellation behavior and no-local-side-effect boundary; updated ARCHITECTURE to the AgentLoop/ConversationLog/ContextBuilder/ToolExecutor/RunPolicy ownership graph and current runtime flow.
+- Marked Stage 2 complete in the overall and detailed roadmaps and linked the final acceptance evidence. Stage 3 remains explicitly unstarted.
+- All mandatory completion criteria are directly evidenced and green. Optional Live was not run because no explicit compatible credential was available. Subplan 20 and the Stage 2 implementation plan are complete.
+
+## 2026-08-17 — S2.20.11 final review remediation completed
+
+- Added focused regressions and fixed six review findings: the total deadline now cancels a hanging Provider stream; every model continuation rebuilds context from the latest ConversationSnapshot; equal result allocation accounts for canonical outer-JSON escaping; cancellation/budget/internal synthetic results reuse the assigned bound; inconsistent finish/message shapes fail closed; and calculator overflow cannot emit non-standard `Infinity` JSON.
+- Added `*.swp` to `.gitignore`. The existing swap file belongs to a live Vim process and was intentionally not deleted.
+- Focused runtime/tool regression passed: 58 tests. Final offline suite passed: 300 tests with one explicit Live test deselected; strict collection found 301 tests. Ruff format/check, compileall, capability/product sentinel tests (10 passed) and `git diff --check` passed.
+- Rebuilt the 45-file wheel and installed 33 packages offline into a fresh uv-managed CPython 3.12.13 environment; installed import, bundled policy load and CLI help passed. An initial packaging command correctly produced the wheel but used an unavailable system `python3.12` and lacked fail-fast behavior, so it was discarded and rerun successfully under strict shell failure handling.
+- All mandatory Stage 2 gates are green and Stage 2 is complete. Optional Live remains unrun because no explicit compatible credential is available; Stage 3 remains unstarted.
+
+## 2026-08-17 — Rewrite root Agents.md as always-on rules
+
+- Replaced the always-on execution SOP with project invariants: authority order, exact validation commands, Always/Ask/Never boundaries, and triggered `.agent/` read-write rules.
+- Moved large-plan split, activation and retirement detail into `.agent/subplans/README.md` as the single home.
+- Question, review and exploration sessions no longer require TODO/TRACKER updates; the current user request overrides TRACKER.
+- No product code or architecture behavior changed. Stage 3 remains unstarted.
+
+## 2026-08-17 — S2.20.12 post-acceptance review defects fixed
+
+- NL config extraction now treats `ContextBudgetError` as `clarification_required`; `complete_structured` wraps the same overflow as `StructuredCompletionError` instead of leaking `ValueError` into the REPL.
+- ConversationLog uniqueness is per ToolCycle. A second Cycle may reuse vendor IDs such as `call_0`. History admission failures finish as `invalid_response`, not `internal`.
+- The run deadline wraps only Provider `anext`, not public yields, so a slow consumer cannot be cancelled by `asyncio.timeout`.
+- `run_task` now closes an active turn in `finally` when the consumer `aclose`s at a yield (`GeneratorExit`), so the next `begin_turn` can proceed.
+- Focused regressions passed (113). Offline suite: 308 passed, 1 Live deselected. Ruff format/check, compileall, and Stage 2 boundary/product sentinel tests (10 passed) are green.

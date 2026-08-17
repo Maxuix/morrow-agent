@@ -1,6 +1,6 @@
 # Morrow 个人 AI Agent 开发路线总览
 
-> 状态：阶段 1 修复与最终树离线、Live、人工验收已完成；阶段 2 设计基线已锁定但尚未开始实现
+> 状态：阶段 1 与阶段 2 已完成；阶段 3 尚未开始
 > 用途：说明项目整体概念，并维护阶段顺序、当前状态和详细路线入口；具体范围、决策与验收标准以各阶段文档为准。
 
 ## 项目概览
@@ -54,7 +54,7 @@ Morrow 的差异化不在于内置最多的工具或支持最多的模型，而�
 | 阶段 | 状态 | 阶段结果 | 详细路线 |
 |---|---|---|---|
 | 1. 方向确定与可运行原型 | 已完成；Subplans 12–16 与最终树离线、Live、人工验收通过 | 一个可以在终端连续对话、识别工作空间并可靠保持项目交接的原型 | [查看阶段 1 路线](roadmap/stage-1-direction-and-prototype.md) |
-| 2. Agent 核心能力 | 设计基线已锁定，尚未开始实现 | 一个可以通过工具调用完成简单任务的 Agent | [查看阶段 2 路线](roadmap/stage-2-agent-core.md) |
+| 2. Agent 核心能力 | 已完成；Subplans 17–20 与最终树离线、包、终端和边界验收通过 | 一个可以通过受限无副作用工具完成多步骤简单任务的 Agent | [查看阶段 2 路线](roadmap/stage-2-agent-core.md) |
 | 3. 本地工具与安全 | 未开始 | 一个可以在指定工作空间内安全执行真实任务的 Agent | [查看阶段 3 路线](roadmap/stage-3-local-tools-and-safety.md) |
 | 4. 会话、上下文与记忆 | 未开始 | 一个能够跨会话延续必要信息的个人 Agent | [查看阶段 4 路线](roadmap/stage-4-sessions-context-and-memory.md) |
 | 5. Skills 与扩展生态 | 未开始 | 一个可按需接入 Skills、MCP 和更多模型服务的 Agent | [查看阶段 5 路线](roadmap/stage-5-skills-and-extensions.md) |
