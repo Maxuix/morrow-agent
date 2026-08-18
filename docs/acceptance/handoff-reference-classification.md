@@ -19,8 +19,8 @@
 | `src/morrow/**` | Current product/source | Zero Handoff implementation or command references; removed. |
 | `README.md` | Legacy-data documentation | Retains only the ignored `handoff.yaml(.bak)` policy; current commands and promises are removed. |
 | `docs/ARCHITECTURE.md` | Legacy-data documentation | Retains only the fact that legacy files are outside the current state API. |
-| `docs/ROADMAP.md` | Historical/future boundary | Labels the Stage 1 experiment as removed and makes Stage 4 persistence explicitly future work. |
-| `docs/roadmap/stage-4-sessions-context-and-memory.md` | Historical/future boundary | Names the removed experiment only to define the clean Stage 4 starting point and no-migration promise. |
+| `docs/ROADMAP.md` | Historical/future boundary | Labels the Stage 1 experiment as removed; the 2026-08-18 route now separates Stage 4 runtime persistence from Stage 5 learning. |
+| `docs/roadmap/stage-4-sessions-context-and-memory.md` | Compatibility entry | The old filename now redirects readers to the new Stage 4 persistence and Stage 5 learning documents. |
 | `tests/test_preferences_and_orchestration.py` | Legacy/negative test | Unknown-command and byte-identical ignored-file sentinels only. |
 | `tests/test_stage2_product_acceptance.py` | Negative product test | `/handoff` and `/continue` must render ordinary unknown-command results. |
 | `tests/test_stage_boundary.py` | Negative boundary | Asserts removed public symbols and store methods are absent. |
@@ -36,7 +36,7 @@
 | `docs/acceptance/stage-1a-evidence.md`, `stage-1b-evidence.md`, `stage-2-evidence.md` | Historical evidence | Results are not rewritten as if the feature never existed. |
 | `docs/reviews/stage-1-direction-and-prototype-review.md` | Historical review | Preserves original product criticism and decisions. |
 | `docs/reviews/stage-2-agent-core-final-proposal.md` and its two review files | Historical proposal/review | Preserves decision history; each document has a historical marker. |
-| `.agent/PLAN.md`, `.agent/TODO.md`, `.agent/TRACKER.md`, `.agent/LOG.md`, `.agent/subplans/21-24-*` | Active removal record/history | Exact removed names are necessary to define, execute, and evidence this refactor. |
+| Git commit `cbc3d6d` 中的 `.agent/PLAN.md`, `.agent/TODO.md`, `.agent/TRACKER.md`, `.agent/subplans/21-24-*`，以及当前 `.agent/LOG.md` | Historical removal record | Living plan files later moved on; the committed snapshot and append-only log retain the exact removal evidence. |
 
 ## Unrelated occurrences
 

@@ -2,7 +2,8 @@
 
 > Evidence date: 2026-08-17
 > Status: final mandatory acceptance complete
-> Authority: [active plan](../../.agent/PLAN.md) and [tracker](../../.agent/TRACKER.md)
+> Historical authority: Git commit `cbc3d6d` 中当时的 `.agent/PLAN.md` 与 `.agent/TRACKER.md`；
+> 当前同名文件是后续工作的 living documents
 
 ## Requirement matrix
 

@@ -63,7 +63,7 @@ P0 不是整份路线的缩写版：它先贯通同一套核心接口，P1 在�
 - 本地数据目录：`~/.morrow`。
 - 标语：`Pick up where you left off.`
 
-阶段 1 的终端界面、命令帮助和错误文案先只提供简体中文；`preferences.language` 只控制模型回复语言。完整界面国际化留到阶段 7。
+阶段 1 的终端界面、命令帮助和错误文案先只提供简体中文；`preferences.language` 只控制模型回复语言。完整界面国际化留到 Stage 10 产品化阶段。
 
 ## 三、阶段边界
 
@@ -100,7 +100,7 @@ P0 不是整份路线的缩写版：它先贯通同一套核心接口，P1 在�
 - Web、桌面端、消息平台、多用户、后台任务和定时任务。
 - 对阶段 2 工具事件名称或 Agent Loop 入口作提前承诺。
 
-其中 `/undo`、彻底删除和完整会话生命周期不是被否定，而是分别留给真实写入体验、阶段 4 和阶段 7 决定。阶段 1 仍通过预览确认、原子写和 `.bak` 保证安全。
+其中 `/undo`、彻底删除和完整会话生命周期不是被否定：通用撤销需结合 Stage 3/4 的真实写入与恢复边界另行设计，完整数据删除在 Stage 10 收口，持久化会话生命周期由 Stage 4 决定。阶段 1 仍通过预览确认、原子写和 `.bak` 保证安全。
 
 ## 四、首个模型服务与 Provider 边界
 
@@ -167,7 +167,7 @@ active_model:
 
 - 首次没有 `active_model` 时复用 `provider add`，不另建 `auth login`。
 - `list/show/model list/model current` 必须离线；只有 `test` 和用户已确认的配置测试步骤可以联网。
-- 阶段 1 的 `add` 在没有当前模型时设置 `active_model`；已有当前模型时不自动切换。`model use/add/sync/remove` 与 Provider 删除进入阶段 5。
+- 阶段 1 的 `add` 在没有当前模型时设置 `active_model`；已有当前模型时不自动切换。`model use/add/sync/remove` 与 Provider 删除进入 Stage 6 的 Provider/Model 扩展切片。
 - 新凭据先以新的 `credential_ref` 暂存，连接测试和配置写入成功后再切换引用；失败时旧配置与旧凭据继续有效。新凭据清理失败只能留下不可达的钥匙串项，不能发布半配置。
 
 ### 首次引导

@@ -3,6 +3,8 @@
 Morrow（承序）是一个以工作空间为边界的终端 Agent。当前版本提供进程内连续对话、受限的
 只读内存工具、经确认的 Profile 与 Preferences 配置，以及 Provider 管理。
 
+长期产品方向与阶段边界见 [开发路线总览](docs/ROADMAP.md)。
+
 ## 安装
 
 需要 Python 3.12 或更新版本，以及 [`uv`](https://docs.astral.sh/uv/)。在仓库根目录执行：
@@ -57,7 +59,7 @@ REPL 常用命令包括 `/workspace`、`/workspace edit summary ...`、`/workspa
 
 当前持久化内容只有工作空间身份、Profile、全局/工作空间 Preferences、Provider 配置和凭据引用。
 Session 持有的 ConversationLog 只存在于当前进程；退出或重启后不能恢复、列出、归档或继续旧会话。
-持久化 Session、Fork、上下文摘要和长期记忆留到阶段 4 另行设计。
+持久化 Session、Fork 和上下文摘要留到 Stage 4；任务后可审查的长期偏好与项目知识学习留到 Stage 5。
 
 旧版本可能留下 `handoff.yaml` 或 `handoff.yaml.bak`。当前版本不读取、校验、迁移、覆盖或自动删除
 这些遗留文件；是否导入或清理需要未来单独的产品与数据决策。
@@ -67,5 +69,5 @@ Profile 损坏或版本较新时，工作空间持久状态进入只读模式；
 
 当前生产工具不读写项目文件、不执行 Shell/Git、不联网；配置工具只通过应用服务更新既有的 Profile/
 Preferences 状态。阶段 3 已交付通用本地审批端口、终端审批 UI 和第一个状态化工具切片；本地项目工具、
-持久化聊天历史、长期记忆/摘要、Skills、MCP 和后台任务仍属于后续阶段。文件读取、搜索、编辑和 Shell
-MVP 尚未完成，不能据此执行真实项目修改。
+文件读取、搜索、编辑和 Shell MVP 尚未完成，不能据此执行真实项目修改。持久化聊天历史/摘要、可审查
+学习、Skills/MCP、Multi-Agent Workflow、GUI 和后台任务分别属于 Stage 4 及之后的路线，当前均未实现。

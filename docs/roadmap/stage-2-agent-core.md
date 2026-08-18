@@ -748,7 +748,8 @@ internal
 
 ## 十四、垂直切片实施顺序
 
-模块职责保持解耦，但实施以可运行闭环为单位；完整任务见 [执行计划](../../.agent/PLAN.md)。
+模块职责保持解耦，但实施以可运行闭环为单位；完整任务保留在 Git commit `831c4ea` 的
+`.agent/PLAN.md`，当前同名文件不再作为 Stage 2 权威。
 
 1. **Slice 1 — Walking Skeleton**
    - 第一项先把目录名守卫改为能力/副作用边界守卫；
@@ -866,7 +867,7 @@ internal
 - Handoff/StructuredCompletion 不消费 ToolMessage 或中间 tool-call Assistant。
 - mixed content、工具步骤和最终答案在终端不重复且可区分。
 - 阶段 1 的配置隔离、结构化完成、显式交接、事件生命周期和安全边界没有回归。
-- 默认测试离线通过，且没有加入 Stage 3/4/5 的能力。
+- 默认测试离线通过，且没有加入任何 Stage 3+ 能力。
 
 ## 十八、实施计划状态
 
@@ -876,7 +877,8 @@ Stage 2 不再保留阻塞实施的设计参数：
 - 演示工具锁定为 `lookup_record` 和 `calculate`；
 - 参数 Schema/验证使用现有 Pydantic v2；
 - 工具公开事件锁定为 `tool.status`，终端非语义文案可在不改变分段合同的前提下调整；
-- 四个垂直切片及完整任务、门禁、风险与交付物见 [Stage 2 Agent Core Implementation Plan](../../.agent/PLAN.md)。
+- 四个垂直切片的最终门禁与验收证据见 [Stage 2 验收记录](../acceptance/stage-2-evidence.md)；
+  `.agent/PLAN.md` 是可复用的当前计划索引，不作为 Stage 2 的永久链接。
 
 数值默认值和内部算法可以在实现证据支持下调整，但不得修改 OpenAI-compatible wire、Adapter/AgentLoop/Conversation/Context/ToolExecutor 所有权、ToolCycle 原子性、单一历史写入、Handoff 边界或 Stage 2 范围。
 
