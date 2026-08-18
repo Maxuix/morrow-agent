@@ -1,9 +1,9 @@
 # Morrow 架构基线
 
-> 状态：阶段 2 完成、阶段 3 通用工具策略/审批与配置工具先行切片完成
+> 状态：阶段 2 完成、阶段 3 已完成（当前声明平台为 macOS；Linux 原生运行仍 unsupported）；阶段 4 已进入规划但尚未实现
 
-本文锁定当前依赖方向、数据所有权和安全边界。阶段 3 的配置工具先行切片已经交付，文件/Shell/Git
-能力仍未实现；Stage 4 的持久化 Session/Task/Artifact、Stage 5 的可审查学习、Stage 6 的 Skills/MCP，
+本文锁定当前依赖方向、数据所有权和安全边界。阶段 3 的能力策略、配置工具、工作空间读搜、冲突安全文件变更、审批后 Host 命令、只读 Git 和当前 macOS 原生沙箱
+已经交付；Linux 原生运行尚未声明支持。Stage 4 已进入规划，持久化 Session/Task/Artifact 尚未实现；Stage 5 的可审查学习、Stage 6 的 Skills/MCP，
 以及 Stage 7–10 的 Workflow、GUI、后台自动化和产品化均尚未开始。
 
 ## 分层与依赖方向
@@ -47,25 +47,45 @@ Session 持有的进程内 `ConversationLog` 是唯一聊天历史权威，`Sess
 带 calls 的 Assistant 与其有序 ToolMessage 构成不可拆分的 ToolCycle。ContextBuilder 从不可变
 Snapshot 生成 Chat 或 Structured 投影，按完整 Cycle/turn 控制预算；它不写事实源、不调用摘要模型。
 
-生产组合只在 Adapter 声明 OpenAI function-tool 支持时启用 `lookup_record`、`calculate` 和
-`update_configuration`。后者是配置服务的薄工具适配器，仍遵循同一标准 ToolCycle。随包
+生产组合只在 Adapter 声明 OpenAI function-tool 支持时启用 `list_directory`、`read_file`、
+`find_files`、`search_text`、`apply_patch`、`write_file`、`show_changes`、`run_command`、`git_status`、`git_diff` 和 `update_configuration`；
+支持原生沙箱时再加入当前运行、始终需审批的 `promote_sandbox_changes`。读搜工具通过冻结的
+`WorkspacePathResolver`、`WorkspaceFileService` 与 `WorkspaceSearchService` 访问当前工作空间，
+并对调用路径及工作区内解析后的文件符号链接目标应用同一受保护策略；变更工具通过
+`WorkspaceMutationService`、`FileSystemAdapter` 与进程内 `ChangeSetService` 执行 SHA-256 冲突检查、
+原子发布和实际 Diff。`update_configuration` 是配置服务的薄工具适配器，三类工具仍遵循同一标准 ToolCycle。随包
 `agent-policy.toml` 解析为任务固定的 RunPolicy。模型请求白名单、流片段组装与 reasoning/SDK 元数据
 隔离归 Provider Adapter。
 
-Runtime 已提供与具体领域无关的 `ToolExecutionPolicy`、本地 `ToolEffect` 和注入式 `ApprovalPort`；
-生产配置工具使用 `effect=persistent_write/approval=required`，通过 Interface 层的
-`TerminalApprovalPort` 接收经过预检和脱敏的预览；副作用元数据不会进入 Provider wire。配置工具、
-Slash 命令与 Profile/Preferences 的校验和写入统一委托给 `ConfigPatchService`。文件/Shell/Git 工具
-以及对应的 Interface 组合仍未进入当前架构基线。
+Runtime 已提供与具体领域无关的 `PermissionProfile`、`WorkspaceCapability`、`CapabilityPolicy`、
+`ToolExecutionPolicy`、本地 `ToolEffect` 和注入式 `ApprovalPort`；生产组合在 Session 构造时冻结工作区
+能力与权限预设，Executor 按 intent 预检和策略判定后才允许审批或执行。生产配置工具使用
+`effect=persistent_write/approval=required`，通过 Interface 层的 `TerminalApprovalPort` 接收经过预检和
+脱敏的预览；权限、原因和副作用元数据不会进入 Provider wire。`ToolRunContext` 与严格 `ToolFact`
+只在进程内保留最近一次完成运行的事实，不写入 ConversationLog 或持久状态；可选
+`RunMetricsSnapshot` 只保留有界 JSON-safe 计数，默认启用但可在 composition root 关闭，同样不持久化、不上传。
+配置工具、Slash 命令与
+Profile/Preferences 的校验和写入统一委托给 `ConfigPatchService`。文件读取与搜索不跟随目录符号链接，
+并把 `.git`、`.morrow`、凭据路径及常见 PEM 私钥内容作为受保护资源；文件变更拒绝符号链接路径、
+混合换行源文件、陈旧 SHA-256、模糊/多匹配编辑和受保护凭据内容，并通过同目录临时文件、文件 `fsync`、
+原子替换和父目录句柄保护发布；结果在领域服务内按当前 ToolCall 预算语义截断。Git 工具通过
+`GitInspectionService` 与固定的 `GitInspectionAdapter` 解析只读状态/Diff，拒绝外部 Git metadata 并禁用
+pager、外部 diff、textconv、hooks-like executable extension points、prompt 和可选锁。`run_command` 通过同一个 `ProcessExecutionService` 选择
+`HostProcessAdapter` 或能力探测通过的 `NativeSandboxProcessAdapter`：Host 命令全部需要审批且不提供操作系统隔离，
+审批预览展示有界脱敏命令，shell 包装的 Git 命令在审批前按写风险拒绝；Auto Sandboxed 则在默认断网的临时
+快照中自动执行。快照准备/收集使用协作式取消和预留临时根，超时等待后台阶段停稳后再清理；沙箱变更只通过
+当前运行、始终需审批的推广工具进入既有冲突安全 mutation 服务，并记录到同一 `ChangeSetService`。
+Linux bubblewrap 在真实 runner 验收前固定探测为 unsupported，不因本机存在二进制而声明支持。
 
 命令识别归 CommandService；调度归 SessionOrchestrator；输入、确认、渲染和退出码归终端接口。
 配置补丁显式分派到 Preferences 或 Profile，不存在兜底目标。`build_session_application()` 返回命名的
-`SessionApplication`，包含 `session`、`context_builder`、`commands` 和 `orchestrator`。
+`SessionApplication`，包含 `session`、`context_builder`、`commands`、`orchestrator`、`files`、`search`、`mutation`、`changes` 和
+`process`。
 
 ### 工具能力边界
 
 `ToolDefinition`、`ToolRegistry`、`ToolExecutor` 与 `AgentLoop` 只拥有标准工具协议、任务级注册冻结、
-参数校验、执行预算、取消闭合、结果限制和通用风险策略，不拥有任何具体工具的领域行为。
+参数校验、intent 预检、能力策略、执行预算、取消闭合、结果限制和通用风险策略，不拥有任何具体工具的领域行为。
 `RegisteredTool` handler 是标准工具协议到领域能力的薄适配层；新增工具不得要求 `AgentLoop`、
 `ToolExecutor` 或 `SessionOrchestrator` 按工具名称增加业务分支。
 
@@ -81,9 +101,13 @@ Service 或 Port：
 - 工具的副作用等级、审批、超时、取消和审计属于通用 Tool Policy/Executor；单个 handler 不得自行读取
   用户输入、发起终端确认或发布公开事件。
 
-`lookup_record` 与 `calculate` 分别属于注入不可变数据和纯计算工具；`update_configuration` 通过注入的
-`ConfigPatchService` 访问既有配置状态。未来文件、Shell、Git、网络等有状态或有副作用工具必须沿用同一
-注册与 ToolCycle 协议，并把实际能力委托给相应 Service/Port。模型请求中的 ToolDefinition 保持标准化；
+`list_directory`、`read_file`、`find_files` 与 `search_text` 通过注入的文件/搜索服务访问冻结工作空间；
+`apply_patch`、`write_file` 与 `show_changes` 通过注入的 mutation/ChangeSet 服务执行和报告当前运行的实际变更；
+`run_command` 通过注入的 `ProcessExecutionService` 执行审批后的 Host 命令，或在 Auto Sandboxed 中执行原生快照命令；
+`promote_sandbox_changes` 通过注入的 `SandboxSnapshotService`、`WorkspaceMutationService` 与
+`ChangeSetService` 推广并记录当前运行的有界文本变更；
+`update_configuration` 通过注入的 `ConfigPatchService` 访问既有配置状态。旧的 `lookup_record` 与 `calculate` 仅保留在显式测试 fixture 中。
+未来 Git、网络等有状态或有副作用工具必须沿用同一注册与 ToolCycle 协议，并把实际能力委托给相应 Service/Port。模型请求中的 ToolDefinition 保持标准化；
 本地风险与审批元数据不得泄露为 Provider 私有协议。
 
 ## 当前运行流
@@ -131,7 +155,8 @@ workspace Preferences 损坏只隔离该层。旧 `handoff.yaml(.bak)` 不属于
 一种 finish_reason。公开事件不包含密钥、原始 SDK 对象、完整异常堆栈、完整工具参数/结果或 Provider
 私有 reasoning。
 
-- 当前工具只读取注入的内存数据，或通过配置服务更新既有状态；不读写项目、不调用 Shell/Git、不联网。
+- 当前工具只读取冻结工作空间，或通过冲突安全的 mutation 服务更新项目文件，或经审批调用非隔离 Host 命令；Auto Sandboxed 只在原生临时快照内执行；Git 只读检查不修改仓库；配置服务更新既有状态；不联网。
+- 当前系统边界按冻结 ToolSet 动态渲染；未提供的能力、工作空间外访问、网络/loopback、Git 写入和权限提升始终被禁止。
 - 默认测试不联网、不使用真实钥匙串、不依赖用户主目录。
 - Provider 和结构化响应失败必须分类；不静默切换 Provider 或模型。
 - Session 持久化、恢复、Fork 和摘要留到 Stage 4 重新设计；长期偏好/知识学习留到 Stage 5。

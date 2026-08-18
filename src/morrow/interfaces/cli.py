@@ -9,8 +9,11 @@ from pathlib import Path
 import typer
 from prompt_toolkit import PromptSession
 
-from morrow.adapters.credentials.keyring import environment_credential
+from morrow.adapters.credentials.keyring import CredentialAccessError, environment_credential
+from morrow.adapters.local.sandbox import default_sandbox_backend
+from morrow.adapters.registry import PRESETS
 from morrow.bootstrap import build_application, build_session_application
+from morrow.core.capabilities import PermissionPreset, PermissionProfile
 from morrow.interfaces.terminal import Terminal, TerminalApprovalPort, run_repl
 from morrow.services.workspace import WorkspaceError, WorkspaceWriterLock
 
@@ -30,14 +33,37 @@ def _secret(provider_id: str = "opencode-go") -> str:
     return getpass.getpass("OpenCode Go API Key（输入不回显）：")
 
 
+def _preset_option_help() -> str:
+    listed = "、".join(PRESETS)
+    return f"可用预设：{listed}。完整列表见 provider presets。"
+
+
+def _echo_credential_error(exc: CredentialAccessError) -> None:
+    typer.echo(exc.message, err=True)
+
+
 @app.callback(invoke_without_command=True)
 def root(
     ctx: typer.Context,
     dir: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
     state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+    permission_mode: PermissionPreset = typer.Option(
+        PermissionPreset.MANUAL,
+        "--permission-mode",
+        "--mode",
+        help="工作空间权限预设：manual、auto-safe 或 auto-sandboxed。",
+    ),
 ) -> None:
     if ctx.invoked_subcommand:
         return
+    if permission_mode is PermissionPreset.AUTO_SANDBOXED:
+        capability = default_sandbox_backend().probe()
+        if not capability.supported:
+            typer.echo(
+                f"Auto Sandboxed 不可用（{capability.reason}）；不会启动交互 Agent，也不会回退到 Host 执行。",
+                err=True,
+            )
+            raise typer.Exit(code=2)
     application = build_application(state_root=state_root)
     global_state = application.global_store.load()
     if global_state.status.value != "ok":
@@ -57,19 +83,29 @@ def root(
         identity = resolution.identity
     try:
         with WorkspaceWriterLock(application.data_root, identity.workspace_id):
-            code = _run_workspace(application, identity)
+            code = _run_workspace(
+                application,
+                identity,
+                permission_profile=PermissionProfile.from_preset(permission_mode),
+            )
     except WorkspaceError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=2) from exc
+    except CredentialAccessError as exc:
+        _echo_credential_error(exc)
+        raise typer.Exit(code=2) from None
     raise typer.Exit(code=code)
 
 
-def _run_workspace(application, identity) -> int:
+def _run_workspace(application, identity, *, permission_profile: PermissionProfile) -> int:
     if not application.provider_service.current_model():
         typer.echo("尚未配置模型，开始 Provider 引导。")
         secret = _secret()
         try:
             application.provider_service.add("opencode-go", secret)
+        except CredentialAccessError as exc:
+            _echo_credential_error(exc)
+            raise typer.Exit(code=2) from None
         except Exception as exc:
             typer.echo(f"Provider 配置失败：{type(exc).__name__}", err=True)
             raise typer.Exit(code=2) from exc
@@ -94,7 +130,19 @@ def _run_workspace(application, identity) -> int:
     terminal = Terminal()
     prompt_session = PromptSession()
     approval_port = TerminalApprovalPort(terminal, prompt_session)
-    session_app = build_session_application(application, identity, approval_port=approval_port)
+    try:
+        session_app = build_session_application(
+            application,
+            identity,
+            approval_port=approval_port,
+            permission_profile=permission_profile,
+        )
+    except CredentialAccessError as exc:
+        _echo_credential_error(exc)
+        raise typer.Exit(code=2) from None
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from None
     session_app.session.read_only = read_only_workspace
     return asyncio.run(
         run_repl(
@@ -128,35 +176,62 @@ def provider_show(
         raise typer.Exit(code=2) from exc
     typer.echo(f"adapter: {provider.adapter}")
     typer.echo(f"base_url: {provider.base_url}")
-    typer.echo(f"credential: {'可用' if service.credential_available(provider_id) else '不可用'}")
+    inspection = service.inspect_credential(provider_id)
+    if inspection.available:
+        typer.echo("credential: 可用")
+    elif inspection.code == "missing":
+        typer.echo("credential: 不可用")
+    else:
+        typer.echo(f"credential: 不可用（{inspection.code}）")
     typer.echo("models: " + ", ".join(provider.models))
     if provider.last_test:
         typer.echo(
             "last_test: "
             + ("ok" if provider.last_test.ok else provider.last_test.message or "failed")
         )
+    if not inspection.available and inspection.code != "missing":
+        typer.echo(inspection.message, err=True)
+        raise typer.Exit(code=2)
+
+
+@provider_app.command("presets")
+def provider_presets() -> None:
+    for preset_id, preset in PRESETS.items():
+        typer.echo(f"{preset_id}\t{preset['provider_id']}/{preset['model_id']}")
 
 
 @provider_app.command("add")
 def provider_add(
-    preset: str = typer.Option("opencode-go", "--preset"),
+    preset: str = typer.Option("opencode-go", "--preset", help=_preset_option_help()),
     state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
 ) -> None:
     service = build_application(state_root=state_root).provider_service
     try:
         model = service.add(preset, _secret())
+    except CredentialAccessError as exc:
+        _echo_credential_error(exc)
+        raise typer.Exit(code=2) from None
     except Exception as exc:
         typer.echo(f"Provider 添加失败：{type(exc).__name__}", err=True)
         raise typer.Exit(code=2) from exc
+    current = service.current_model()
     typer.echo(f"已配置 {model}")
+    if current == model:
+        typer.echo(f"当前模型：{current}")
+    else:
+        typer.echo(f"当前模型未切换：{current}")
 
 
 @provider_app.command("test")
 def provider_test(
     provider_id: str, state_root: Path | None = typer.Option(None, "--state-root", hidden=True)
 ) -> None:
+    typer.echo("正在测试模型连接…")
     try:
         result = build_application(state_root=state_root).provider_service.test(provider_id)
+    except CredentialAccessError as exc:
+        _echo_credential_error(exc)
+        raise typer.Exit(code=2) from None
     except ValueError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=2) from exc
@@ -188,6 +263,9 @@ def provider_configure(
             base_url=base_url,
             replace_credential=replace_credential,
         )
+    except CredentialAccessError as exc:
+        _echo_credential_error(exc)
+        raise typer.Exit(code=2) from None
     except Exception as exc:
         typer.echo(f"Provider 更新失败：{type(exc).__name__}", err=True)
         raise typer.Exit(code=2) from exc

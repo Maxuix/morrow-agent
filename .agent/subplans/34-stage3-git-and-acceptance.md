@@ -1,6 +1,6 @@
 # Subplan 34 — Stage 3F Read-Only Git and Final Acceptance
 
-> Status: pending; not active
+> Status: completed and post-implementation-review remediated on 2026-08-18; claimed platform: macOS
 > Depends on: Subplan 33 completed and accepted
 
 ## Goal
@@ -140,4 +140,6 @@ background task, or multi-agent work.
 
 A fully accepted Stage 3 local Code Agent that can locate, modify, validate, inspect, and
 truthfully report real project work under explicit workspace, approval, and native-sandbox
-boundaries.
+boundaries. The subsequent external 12-finding implementation review was verified against current
+code, remediated without expanding Stage 3 scope, and accepted through refreshed offline,
+host-level macOS sandbox, quality, and wheel gates.

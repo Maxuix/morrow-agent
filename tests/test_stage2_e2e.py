@@ -180,9 +180,17 @@ async def test_ordinary_chat_can_finish_without_calling_advertised_guarded_tools
     ]
     assert records_finish(session_app.session) == [FinishReason.STOP]
     assert {tool.function.name for tool in provider.stream_tools[0]} == {
-        "lookup_record",
-        "calculate",
+        "list_directory",
+        "read_file",
+        "find_files",
+        "search_text",
         "update_configuration",
+        "apply_patch",
+        "write_file",
+        "show_changes",
+        "run_command",
+        "git_status",
+        "git_diff",
     }
 
 

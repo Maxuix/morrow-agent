@@ -1,6 +1,6 @@
 # Subplan 31 — Stage 3C Conflict-Safe File Mutation and Diff
 
-> Status: pending; not active
+> Status: completed; accepted on 2026-08-18
 > Depends on: Subplan 30 completed and accepted
 
 ## Goal

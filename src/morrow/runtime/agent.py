@@ -8,6 +8,7 @@ import time
 from collections.abc import AsyncIterator
 
 from morrow.application.context import ContextBudgetError
+from morrow.core.capabilities import ToolRunContext
 from morrow.core.events import completion_payload, make_event
 from morrow.core.models import (
     AgentEvent,
@@ -214,6 +215,7 @@ class AgentLoop:
 
     async def run_task(self, session: Session, user_input: str) -> AsyncIterator[AgentEvent]:
         turn_id = self._id("turn")
+        run_context = ToolRunContext(run_id=turn_id, session_id=session.session_id)
         sequence = 0
         visible = ""
         policy = self.run_policy
@@ -227,6 +229,13 @@ class AgentLoop:
         active_running_id: str | None = None
         active_result_limit: int | None = None
         final_committed = False
+        facts_retained = False
+
+        def retain_facts(finish_reason: str = "unknown") -> None:
+            nonlocal facts_retained
+            if not facts_retained:
+                session.retain_run_facts(run_context, finish_reason=finish_reason)
+                facts_retained = True
 
         def event(event_type: str, payload: dict) -> AgentEvent:
             nonlocal sequence
@@ -282,6 +291,7 @@ class AgentLoop:
             interrupted: tuple[str, ...] = (),
         ) -> tuple[AgentEvent, AgentEvent]:
             session.log.finish_turn(FinishReason.ERROR, interrupted_call_ids=interrupted)
+            retain_facts(FinishReason.ERROR.value)
             return fatal(message, stop_code)
 
         def synthetic_statuses(
@@ -414,6 +424,7 @@ class AgentLoop:
                         while current.cancelling():
                             current.uncancel()
                     session.log.finish_turn(FinishReason.STOP)
+                    retain_facts(FinishReason.STOP.value)
                     yield event(
                         "turn.completed",
                         completion_payload(FinishReason.STOP, visible),
@@ -518,8 +529,23 @@ class AgentLoop:
                     active_running_id = call.id
                     yield tool_status(call, "running", index, len(calls))
                     try:
+                        execute_with_context = getattr(
+                            self.tool_executor, "execute_with_context", None
+                        )
+                        if execute_with_context is not None:
+                            execution = execute_with_context(
+                                call,
+                                result_limit=per_call_result_limit,
+                                run_context=run_context,
+                                ordinal=index,
+                                total=len(calls),
+                            )
+                        else:
+                            execution = self.tool_executor.execute(
+                                call, result_limit=per_call_result_limit
+                            )
                         result = await asyncio.wait_for(
-                            self.tool_executor.execute(call, result_limit=per_call_result_limit),
+                            execution,
                             timeout=min(policy.tool_timeout_seconds, deadline - now),
                         )
                     except TimeoutError:
@@ -531,6 +557,7 @@ class AgentLoop:
                         )
                     session.log.append_tool_result(call.id, result.envelope)
                     cycle_outcomes.append(result)
+                    run_context.note_tool_outcome(ok=result.ok, error_code=result.error_code)
                     active_running_id = None
                     yield tool_status(
                         call,
@@ -577,6 +604,7 @@ class AgentLoop:
                     )
                 except ConversationLogError:
                     pass
+            retain_facts(FinishReason.CANCELLED.value)
             yield event(
                 "turn.completed",
                 completion_payload(FinishReason.CANCELLED, visible),
@@ -602,10 +630,12 @@ class AgentLoop:
                     session.log.finish_turn(FinishReason.ERROR, interrupted_call_ids=interrupted)
                 except ConversationLogError:
                     pass
+            retain_facts(FinishReason.ERROR.value)
             for item in fatal("模型服务发生未预期错误", AgentStopCode.INTERNAL):
                 yield item
             return
         finally:
+            retain_facts()
             if session.log.has_active_turn:
                 try:
                     interrupted = self._close_unresolved(

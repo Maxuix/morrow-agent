@@ -1,6 +1,6 @@
 # Subplan 29 — Stage 3B.1 Policy and Workspace Foundation
 
-> Status: pending; not active
+> Status: completed; accepted on 2026-08-18
 > Depends on: completed Subplan 28, explicit user authorization, and Gate P0 passed
 
 ## Goal
@@ -134,4 +134,5 @@ persistence, or Full Access activation in this subplan.
 ## Delivered result
 
 A domain-agnostic, argument-aware capability foundation ready for read-only workspace tools,
-with no project capability activated prematurely.
+with no project capability activated prematurely. Focused tests and the complete offline/quality
+gates passed; the read/search cutover is activated in Subplan 30.

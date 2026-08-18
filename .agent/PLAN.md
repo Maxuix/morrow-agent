@@ -1,8 +1,8 @@
 # Stage 3 Local Code Agent and Safety Implementation Plan
 
-> Status: planned; review-remediated; implementation not started
-> Active subplan: none
-> Next action after explicit implementation authorization: run Gate P0, then activate Subplan 29
+> Status: closed on 2026-08-19 on the claimed macOS platform; implementation review and final Mimo acceptance remediated
+> Active subplan: none; Stage 3 Subplans 29–34 accepted
+> Next stage: Stage 4 planning opened; no Stage 4 implementation subplan is active
 > Code baseline: `d9df0d24975217bda0ec375a5f637c39b7f85489`
 > Scope: Stage 3B–3F local file, search, mutation, Host process, native sandbox, read-only Git, and end-to-end acceptance
 
@@ -28,7 +28,21 @@ only when the entire loop works through the existing `AgentLoop` and standard To
 adding a second task state machine or a tool-name branch to Runtime.
 
 This document is the living high-level index. Executable detail is split into ordered Subplans
-29–34. No subplan is active and no implementation is authorized by the creation of this plan.
+29–34. Subplan 34 is accepted; the final acceptance evidence is recorded in
+`docs/acceptance/stage-3-local-code-agent-evidence.md`.
+
+The 2026-08-18 external implementation review was also verified finding by finding. All nine
+bugs, two suggestions, and one nit were actionable and are now covered by focused regressions,
+the refreshed full offline suite, host-level macOS Seatbelt tests, and a rebuilt wheel smoke gate.
+
+## Lifecycle transition
+
+This file is retained as the closed Stage 3 implementation record. The final review on
+2026-08-19 additionally verified the persistent OpenCode Go Mimo v2.5 environment, sanitized
+Keychain failures, connection/first-token feedback, provider preset discovery, and the wrapper
+command's persistent state path. Stage 4 is now open for planning against
+`docs/roadmap/stage-4-task-session-and-persistence.md`; no persistence, Full Access, or other
+Stage 4 production capability is activated by this closeout.
 
 ## Authority and precedence
 
@@ -101,6 +115,21 @@ not relabel Manual + Auto Safe as completed Stage 3. Return to the user for an e
 platform decision. Linux rule/argv construction remains planned, but Linux runtime support is
 claimed only after a real Linux runner passes; it is not a hidden dependency of the macOS gate.
 Windows native sandboxing is explicitly outside the first Stage 3 platform claim.
+
+### Gate P0 result — 2026-08-18
+
+Gate P0 passed before any production or test implementation change. The probe ran on Darwin
+25.6.0, macOS 26.6.1, arm64, using `/usr/bin/sandbox-exec` and the existing
+`/Library/Frameworks/Python.framework/Versions/3.14/bin/python3` standard-library runtime.
+The writable data volume is `/dev/disk3s5`, APFS, mounted at `/System/Volumes/Data`; the
+system volume is an APFS read-only snapshot. A task-private `clonefile` probe returned success,
+produced a different inode on the same device, and preserved the source after mutating the
+clone. The restricted probe allowed only task-private temporary writes and blocked workspace
+and Home writes, `.ssh` directory reads, loopback bind, and external TCP connect; the launched
+environment contained only minimal task variables. The first nested call from the Codex sandbox
+was rejected with `sandbox_apply: Operation not permitted`; the host-level rerun passed, so this
+is recorded as an execution-environment limitation rather than a host backend failure. No bwrap,
+Docker, helper installation, repository write, or persistent Host change was used.
 
 ## Locked product decisions
 
@@ -667,12 +696,12 @@ Git is read-only and separate from arbitrary Shell classification:
 
 | Order | Roadmap slice | File | Status | Depends on |
 |---|---|---|---|---|
-| 29 | 3B.1 | `subplans/29-stage3-policy-workspace-foundation.md` | pending | completed Subplan 28 + Gate P0 passed |
-| 30 | 3B.2 | `subplans/30-stage3-read-search-tools.md` | pending | 29 |
-| 31 | 3C | `subplans/31-stage3-file-mutation-diff.md` | pending | 30 |
-| 32 | 3D | `subplans/32-stage3-host-process-execution.md` | pending | 31 |
-| 33 | 3E | `subplans/33-stage3-native-sandbox.md` | pending | 32 |
-| 34 | 3F | `subplans/34-stage3-git-and-acceptance.md` | pending | 33 |
+| 29 | 3B.1 | `subplans/29-stage3-policy-workspace-foundation.md` | completed | completed Subplan 28 + Gate P0 passed |
+| 30 | 3B.2 | `subplans/30-stage3-read-search-tools.md` | completed | 29 |
+| 31 | 3C | `subplans/31-stage3-file-mutation-diff.md` | completed | 30 |
+| 32 | 3D | `subplans/32-stage3-host-process-execution.md` | completed | 31 |
+| 33 | 3E | `subplans/33-stage3-native-sandbox.md` | completed | 32 |
+| 34 | 3F | `subplans/34-stage3-git-and-acceptance.md` | completed | 33 |
 
 Execution is strictly serial. A later subplan may be refined after evidence from the current
 one, but it may not begin early or change files owned by the active subplan in parallel.
@@ -686,7 +715,8 @@ one, but it may not begin early or change files owned by the active subplan in p
   guard to use exact allowed inventory plus continuing forbidden capability families. At this
   cutover, `lookup_record` and `calculate` leave production registration but remain explicit
   test fixtures; `update_configuration` stays.
-- Subplan 31 atomically registers mutation tools after conflict/atomic-write tests are green.
+- Subplan 31 atomically registers mutation tools after conflict/atomic-write tests are green;
+  it is accepted with actual Diff/ChangeSet and threshold evidence.
 - Subplan 32 adds Host process execution. Manual/Auto Safe never auto-run project code.
 - `auto-sandboxed` may exist as a parsed enum earlier but remains unavailable until Subplan 33
   proves a real backend. Selecting it before then returns a controlled unsupported result.
@@ -828,6 +858,8 @@ During implementation:
 - keep `.agent/PLAN.md`, active subplan, `TODO.md`, `TRACKER.md`, and `LOG.md` synchronized;
 - create `docs/acceptance/stage-3-local-code-agent-evidence.md` in Subplan 34;
 - create `docs/decisions/stage-3-search-adapter.md` in Subplan 30 before search implementation;
+- create `docs/decisions/stage-3-mutation.md` in Subplan 31 before mutation acceptance;
+- create `docs/decisions/stage-3-process.md` in Subplan 32 before process acceptance;
 - update `docs/ARCHITECTURE.md` only when the actual dependency graph changes;
 - update README only for capabilities proven in the production composition;
 - keep `docs/ROADMAP.md` and the Stage 3 roadmap honest about incomplete later slices;
@@ -902,5 +934,6 @@ Stage 3 is complete only when all of the following are directly evidenced:
 22. Full Access and crash-durable intent/fact persistence remain unsupported until Stage 4
     `CapabilityGrant`/AgentRun work.
 
-Only after every clause is green may Stage 3 be marked complete and Stage 4 implementation
-be activated.
+Every clause is now green for the claimed macOS platform. Stage 3 is closed; Stage 4 requires a
+separate scoped implementation subplan and its own persistence/recovery gates before production
+code is changed.

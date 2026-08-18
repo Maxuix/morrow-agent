@@ -127,7 +127,62 @@ def test_terminal_segments_mixed_text_tool_and_final_text_without_replay_or_payl
     for item in events:
         terminal.show_event(item)
 
-    assert console.value == "先查\n↳ 工具步骤 1/1：lookup_record\n最终答案\n"
+    assert console.value == (
+        "正在连接模型并等待首个响应…（Ctrl+C 取消）\n"
+        "先查\n↳ 工具步骤 1/1：lookup_record\n最终答案\n"
+    )
+
+
+def test_terminal_explains_timeout_and_shows_waiting_after_last_tool():
+    class RecordingConsole:
+        def __init__(self):
+            self.lines: list[str] = []
+
+        def print(self, *values, **kwargs):
+            del kwargs
+            self.lines.append(" ".join(str(value) for value in values))
+
+    console = RecordingConsole()
+    terminal = terminal_module.Terminal(console=console)
+
+    def event(event_type, sequence, payload):
+        return AgentEvent(
+            type=event_type,
+            event_id=f"e{sequence}",
+            session_id="s",
+            turn_id="t",
+            sequence=sequence,
+            payload=payload,
+        )
+
+    terminal.show_event(event("turn.started", 1, {}))
+    terminal.show_event(
+        event(
+            "tool.status",
+            2,
+            {"name": "read_file", "status": "running", "ordinal": 1, "total": 1},
+        )
+    )
+    terminal.show_event(
+        event(
+            "tool.status",
+            3,
+            {"name": "read_file", "status": "succeeded", "ordinal": 1, "total": 1},
+        )
+    )
+    terminal.show_event(
+        event(
+            "error",
+            4,
+            {"message": "等待模型首个响应超时", "stop_code": "provider_timeout"},
+        )
+    )
+
+    joined = "\n".join(console.lines)
+    assert "正在连接模型并等待首个响应" in joined
+    assert "正在等待模型继续响应" in joined
+    assert "等待模型首个响应超时" in joined
+    assert "Ctrl+C" in joined
 
 
 @pytest.mark.asyncio

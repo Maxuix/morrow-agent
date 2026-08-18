@@ -1,0 +1,15 @@
+#!/bin/zsh
+
+set -euo pipefail
+
+script_dir="${0:A:h}"
+repo_root="${script_dir:h}"
+mimo_state_root="${MORROW_MIMO_STATE_ROOT:-${HOME}/.morrow}"
+uv_cache_root="${UV_CACHE_DIR:-/private/tmp/morrow-uv-cache}"
+
+cd "$repo_root"
+morrow_args=("$@")
+if [[ "${1:-}" != "provider" || "${2:-}" != "presets" ]]; then
+  morrow_args+=("--state-root" "$mimo_state_root")
+fi
+exec env UV_CACHE_DIR="$uv_cache_root" uv run morrow "${morrow_args[@]}"

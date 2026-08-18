@@ -1,6 +1,6 @@
 # Subplan 32 — Stage 3D Host Process Execution
 
-> Status: pending; not active
+> Status: completed; accepted 2026-08-18
 > Depends on: Subplan 31 completed and accepted
 
 ## Goal
@@ -112,3 +112,19 @@ public output-stream event, background process, or Full Access.
 
 Morrow can validate edits on Host only with explicit informed approval and bounded process
 semantics, while remaining unable to execute Host commands automatically.
+
+## Acceptance evidence
+
+- Fixed Pi comparison recorded in `docs/decisions/stage-3-process.md`.
+- Strict argv/shell models, cwd/timeout bounds, minimal environment, `stdin=DEVNULL`, shell
+  and privilege/network/destructive/Git/protected-path preflight, structured exit/signal/timeout
+  results, output budgets and redaction are covered by `tests/test_process.py`.
+- Manual and Auto Safe require approval; Auto Sandboxed rejects the Host tool even when a
+  sandbox backend is reported available. Directly classified forbidden operations are denied
+  before approval.
+- Signal exit, timeout, cancellation, descendant process-group cleanup, invalid UTF-8, output
+  overflow, spawn failure, environment sentinels, shell bypasses, secret/token redaction and
+  Fake Provider failure recovery are covered. Existing terminal approval/cancellation/timeout
+  tests cover the shared interaction port without changing public events or ConversationLog.
+- Full offline suite: 384 passed, 1 deselected; quality gates passed: Ruff format/check,
+  compileall, CLI help, and `git diff --check`. No Live or real-network test was run.

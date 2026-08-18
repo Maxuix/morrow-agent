@@ -1,6 +1,6 @@
 # Stage 3：本地 Code Agent 与安全闭环
 
-> 状态：进行中（已完成：通用工具策略、终端审批、配置工具先行切片）
+> 状态：已完成（当前声明平台：macOS；Linux 原生运行在真实 runner 验证前保持 unsupported）
 > 阶段结果：一个能够在指定工作空间中安全定位、修改并验证真实代码任务，并可在原生沙箱中自动运行项目命令的单 Agent Code Agent
 > 上级文档：[开发路线总览](../ROADMAP.md)
 > 上一阶段：[Stage 2：Agent 核心能力](stage-2-agent-core.md)
@@ -33,11 +33,15 @@
 - 统一 `ToolDefinition`、`ToolRegistry`、冻结 `ToolSet` 和 `ToolExecutor`。
 - 通用工具参数校验、执行预算、错误闭合与循环限制。
 - 本地 `ToolEffect` 副作用分类、`ToolApproval` 审批要求和注入式 `ApprovalPort`。
+- 三轴 `PermissionProfile`、冻结 `WorkspaceCapability`、参数化 `CapabilityPolicy`、动态系统边界，
+  以及进程内有界 `ToolRunContext`/`ToolFact`。
 - 终端审批 UI，以及拒绝、审批通道不可用和审批超时的安全结果。
 - `update_configuration` 状态化工具及其 `ConfigPatchService` 边界。
 - 带 tool calls 的 Assistant 先进入 `ConversationLog`，再执行工具并闭合 ToolCycle。
 
-尚未完成：文件读取、目录浏览、搜索、编辑、Diff、Shell、测试执行、Git 检查以及这些能力的端到端验收。
+已完成工作区读搜、冲突安全文件变更/实际 Diff、审批后的非交互 Host 命令、只读 Git 检查，以及当前 macOS 的原生
+沙箱/Auto Sandboxed 快照执行；完整阶段端到端验收、事实摘要和本地 metrics 验收已记录在
+`docs/acceptance/stage-3-local-code-agent-evidence.md`。Linux 仅完成后端规则构造测试，尚未声明真实运行支持。
 
 ## 三、进入条件
 
@@ -63,7 +67,7 @@
 
 1. 以当前工作空间根为基准。
 2. 规范化 `.`、`..`、绝对路径、符号链接与平台路径分隔。
-3. 对最终目标和必要父目录执行真实路径检查。
+3. 对最终目标和必要父目录执行真实路径检查；文件符号链接的调用别名与解析目标都应用受保护路径策略。
 4. 默认拒绝工作空间外读取与写入。
 5. 对不存在的新文件，验证最近存在父目录仍在工作空间内。
 6. 任何“路径看起来在工作空间内”的字符串判断都不能替代真实路径约束。
@@ -146,7 +150,7 @@ Pi 使用 MIT License；若实质复制而非独立重写代码，必须保留�
 
 ### 5.1 Workspace Filesystem 基础
 
-建立统一的工作空间文件能力，例如：
+已建立统一的工作空间文件能力：
 
 ```text
 WorkspacePathResolver
@@ -165,7 +169,7 @@ FileMutationResult
 - 大文件、设备文件、Socket、FIFO 与特殊文件默认拒绝。
 - 读取期间文件发生变化时，结果包含必要的 revision/mtime/size 信息。
 
-建议首批工具：
+当前已交付的首批工具：
 
 | 工具 | 目的 | 默认风险 |
 |---|---|---|
@@ -173,6 +177,10 @@ FileMutationResult
 | `read_file` | 按范围读取文本 | read |
 | `find_files` | 按 glob/名称查找文件 | read |
 | `search_text` | 在受限范围内搜索文本 | read |
+| `apply_patch` | 以 SHA-256 和唯一精确编辑修改单个文件 | workspace write |
+| `write_file` | 创建或按 SHA-256 替换单个 UTF-8 文件 | workspace write |
+| `show_changes` | 查看当前运行实际 ChangeSet/Diff | read |
+| `run_command` | 在审批后的非隔离 Host 执行有界非交互命令 | process |
 
 工具命名可以在子计划中调整，但能力边界必须保持一致。
 
@@ -187,7 +195,7 @@ FileMutationResult
 
 - 第一版可以调用已安装的 `rg`，也可以实现 Python fallback；选择必须通过 ADR 固定。
 - 外部二进制只是 Adapter，不得绕过路径和输出限制。
-- 尊重明确的排除目录，例如 `.git`、虚拟环境、构建产物和用户配置的 ignore。
+- 把 `.git`/`.morrow` 作为受保护路径，即使用户直接把它们指定为搜索根也不能读取内容；同时尊重虚拟环境、构建产物和用户配置的 ignore。
 - 返回稳定的文件、行号、匹配片段和截断标记。
 - 搜索无结果是正常结果，不是异常。
 - 对超大仓库设置文件数、总字节数、耗时和结果条目预算。
@@ -201,26 +209,27 @@ FileMutationResult
 - `apply_patch`：基于上下文的增删改，检测基线不匹配。
 - `write_file`：仅用于新文件或用户明确允许的整文件替换。
 - `delete_path`：不进入 MVP；若加入，必须单独确认并限制范围。
-- `show_diff`：读取实际工作树差异，不以模型生成的预览替代。
+- `show_changes`：读取当前运行实际 ChangeSet/Diff，不以模型生成的预览替代；Git 工作树差异留给后续 `git_diff`。
 
 固定约束：
 
 - 修改请求携带预期基线，例如内容哈希、mtime 或补丁上下文。
 - 文件已变化时返回 conflict，不使用 last-write-wins。
 - 写入采用同目录临时文件、必要 `fsync` 和原子替换；保持合理权限。
-- 对换行符、结尾换行和编码变化进行显式处理，避免无意重写全文件。
+- 对换行符、结尾换行和编码变化进行显式处理；统一换行风格保持不变，混合换行源文件明确拒绝修改，避免无意重写全文件。
 - Patch 失败不得退化为“猜测位置后强制写入”。
 - 大范围修改、覆盖已有文件和删除操作需要更高风险等级。
+- 当前实现只允许工作空间内的 create/patch/replace；不提供 delete、rename、chmod 或 link。
+- Auto Safe 的单次 patch 限制为最多 8 个精确编辑、64 个插入加删除行、4 KiB 变更字节和不超过既有非空行的 25%；超过阈值转审批。
+- 每次变更都记录 before/after revision、实际统一 Diff 和当前运行 ChangeSet fact；陈旧 SHA 返回 conflict。
 
 ### 5.4 Diff 与变更集合
 
 Morrow 需要一个独立于最终回答的变更事实源：
 
 ```text
-ChangeSet
-- workspace_id
-- files[]
-- operation: create | modify | delete | rename
+ChangeSet（当前进程内运行范围）
+- entries[]: create | modify | unchanged
 - before/after metadata
 - unified_diff
 - truncated
@@ -232,6 +241,7 @@ ChangeSet
 - 用户可在审批前看预览，也可在任务后查看实际 Diff。
 - 最终回答引用实际 ChangeSet，不根据对话回忆生成文件列表。
 - 若工作区在 Morrow 之外发生变化，标记外部变更或基线漂移。
+- 当前 ChangeSet 只保留在 `ToolRunContext`，不写入 ConversationLog 或持久状态。
 
 ### 5.5 受控 Shell 与测试执行
 
@@ -243,7 +253,7 @@ ChangeSet
 - stdout/stderr 分流、字符与行数限制、截断标记。
 - 退出码、信号、开始/结束时间和资源摘要。
 - 非交互执行；需要 TTY、密码或全屏 UI 的命令明确拒绝。
-- 默认继承最小环境，不把凭据或全部用户环境暴露给模型。
+- 默认只传递最小环境，不把凭据或全部用户环境暴露给子进程；Host 执行仍不是操作系统隔离。
 
 建议工具：
 
@@ -265,9 +275,11 @@ Shell 风险预检至少识别：
 
 - `HostProcessAdapter`：服务 Manual 和受限 Auto Safe。工作目录与命令预检仍然有效，但宿主进程没有
   操作系统级工作空间边界；任何项目代码、测试或不透明命令都必须逐次审批，并在预览中明确显示
-  “非沙箱宿主进程”。
+  有界脱敏命令与“非沙箱宿主进程”。shell 包装、命令替换或直接 shell 中的 Git 命令按 Git 写入风险
+  在审批前拒绝。
 - `NativeSandboxProcessAdapter`：服务 Auto Sandboxed。macOS 以 Seatbelt 类原生机制为目标，Linux
-  以 bubblewrap 类原生机制为目标；具体可用性在启动时探测，不自动安装宿主组件。
+  以 bubblewrap 类原生机制为目标；具体可用性在启动时探测，不自动安装宿主组件。Linux 在真实 runner
+  通过前固定报告 unsupported，即使主机已经安装 `bwrap` 也不声明支持。
 
 Auto Sandboxed 不把真实工作区直接作为可写执行目录。推荐执行过程固定为：
 
@@ -287,7 +299,8 @@ Auto Sandboxed 不把真实工作区直接作为可写执行目录。推荐执�
 - 默认不暴露用户 Home、凭据、SSH/GPG Agent、Docker Socket 或完整宿主环境。
 - 默认禁止全部网络，包括 loopback；未来 loopback 必须作为独立能力逐次授权，不能隐含在“测试”中。
 - 后端不可用、规则生成失败或能力无法证明时 fail closed，绝不回退到 Host 后自动执行。
-- 沙箱内修改不会自动进入真实工作区；推广修改仍受文件冲突检测、Diff 和审批策略约束。
+- 快照准备/收集在线程启动前预留任务私有根，使用协作式取消；超时先等待后台阶段停稳，再清理临时项目副本。
+- 沙箱内修改不会自动进入真实工作区；推广修改仍受文件冲突检测、Diff 和审批策略约束，并记录到统一的当前运行 ChangeSet。
 
 ### 5.6 Git 只读检查
 
@@ -347,7 +360,7 @@ Auto Sandboxed 不把真实工作区直接作为可写执行目录。推荐执�
 
 门禁：Agent 可以修改一个 Fixture Bug，用户能够看到实际 Diff；冲突时不覆盖外部修改。
 
-### 3D：Host Shell、测试与取消
+### 3D：Host Shell、测试与取消（已交付）
 
 交付：
 
@@ -359,7 +372,7 @@ Auto Sandboxed 不把真实工作区直接作为可写执行目录。推荐执�
 
 门禁：Agent 可以在修改后运行测试，并在失败后继续修正；取消不会留下失控子进程。
 
-### 3E：原生沙箱与 Auto Sandboxed
+### 3E：原生沙箱与 Auto Sandboxed（已交付当前 macOS 切片）
 
 交付：
 
@@ -368,12 +381,17 @@ Auto Sandboxed 不把真实工作区直接作为可写执行目录。推荐执�
 - 包含当前未提交修改的临时项目快照。
 - 默认断网、最小环境、只读工具链和私有临时目录。
 - 沙箱 Diff/Artifact 收集及受控 ChangeSet 推广。
+- 快照阶段超时取消、后台线程收敛和预留临时根清理。
 - 沙箱逃逸、符号链接、子进程、网络和真实工作区保护测试。
 
-门禁：Auto Sandboxed 可以在临时快照中自动运行项目命令；无法读取或修改沙箱外用户数据，无法联网，
-也不能直接改变真实工作区。后端不可用时形成明确受限结果，且不会回退宿主执行。
+门禁：当前 macOS 的 Auto Sandboxed 已在宿主级 Seatbelt 测试中通过临时快照执行、工作区/Home/受保护文件/网络
+逃逸阻断，并保持真实工作区不变；后端不可用时形成明确受限结果，且不会回退宿主执行。Linux 后端尚未因缺少真实
+Linux runner 而声明支持。
 
 ### 3F：Git 检查与完整 Code Agent 验收
+
+状态：已完成。只读 Git、两个 Fixture 产品故事、真实终端组合、宿主级 Seatbelt 验收、事实摘要/metrics、质量门禁与
+wheel smoke gate 均通过；当前 macOS 是声明平台，Linux 仍需真实 runner。
 
 交付：
 
@@ -382,7 +400,8 @@ Auto Sandboxed 不把真实工作区直接作为可写执行目录。推荐执�
 - 多个真实风格 Fixture 项目。
 - 人工项目试跑与 acceptance 记录。
 
-门禁：完成“定位—修改—验证—报告”的完整闭环。
+门禁：完成“定位—修改—验证—报告”的完整闭环，详见
+[`Stage 3 验收证据矩阵`](../acceptance/stage-3-local-code-agent-evidence.md)。
 
 ## 七、应用服务与依赖方向
 
@@ -447,7 +466,7 @@ Stage 3 的确定策略：
 - 目录、读取、文件查找和文本搜索工具。
 - 精确 Patch、受控写入和实际 Diff。
 - 受控 Shell/测试执行、超时、取消和输出限制。
-- 原生沙箱 Adapter、临时项目快照与 Auto Sandboxed 模式。
+- 原生沙箱 Adapter、临时项目快照与 Auto Sandboxed 模式（当前 macOS 已验证；Linux 需独立真实 runner）。
 - 只读 Git 状态与 Diff。
 - ChangeSet、CommandResult 与工具审计模型。
 - 统一风险策略和审批预览。
@@ -481,6 +500,8 @@ Stage 3 的确定策略：
 - 绝对路径。
 - 不存在目标文件但父目录经符号链接逃逸。
 - 大小写或路径别名绕过。
+- 指向 `.env`、`.git` 或其他受保护目标的工作区内文件符号链接别名。
+- 嵌入 PKCS#8、RSA、EC、DSA 或 encrypted PEM 私钥的普通文件名内容。
 
 ### 11.4 外部并发修改
 
@@ -491,6 +512,7 @@ Morrow 读取文件后，测试在写入前模拟外部修改。Patch 返回 con
 - 危险命令被拒绝或要求确认。
 - 用户拒绝后 Agent 收到普通工具结果并安全收尾。
 - 超时或 Ctrl+C 能终止进程组。
+- shell 包装的 Git 写命令在审批前被拒绝，审批预览只显示有界脱敏命令。
 - 超大输出被截断，Agent 仍得到退出码和截断标记。
 
 ### 11.6 状态诚实性
@@ -506,6 +528,7 @@ Morrow 读取文件后，测试在写入前模拟外部修改。Patch 返回 con
 - 网络和 loopback 默认不可用。
 - 沙箱内删除或改写项目文件不会直接改变真实工作区。
 - 沙箱生成的修改只有经过 ChangeSet 预览、冲突检查和适用审批后才能推广。
+- 快照准备或收集超时后不遗留 `morrow-sandbox-*` 项目副本。
 - 缺少平台后端或后端启动失败时不执行命令，也不回退 Host。
 
 ## 十二、测试与验证门禁

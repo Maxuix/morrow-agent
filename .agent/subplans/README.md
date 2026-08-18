@@ -1,17 +1,17 @@
 # Subplans
 
-当前主计划是 Stage 3 Local Tool Execution，状态为 `planned / review-remediated`。
-Stage 3 尚未开始实施；当前没有激活子计划。用户明确授权实施后，必须先运行主计划
-Gate P0，只有当前宿主原生沙箱可行性门禁通过，才可激活 Subplan 29：
+Stage 3 Local Tool Execution 已关闭，状态为 `completed / review-remediated`（当前声明平台为
+macOS）。Gate P0、最终验收和 2026-08-19 的 Mimo/provider 最终复核均通过，Subplans 29–34
+已完成；Linux 仍需真实 runner 后才能声明支持。Stage 4 已进入规划，但当前没有活动子计划：
 
 | 顺序 | 子计划 | 状态 |
 |---|---|---|
-| 29 | `29-stage3-policy-workspace-foundation.md` | pending |
-| 30 | `30-stage3-read-search-tools.md` | pending |
-| 31 | `31-stage3-file-mutation-diff.md` | pending |
-| 32 | `32-stage3-host-process-execution.md` | pending |
-| 33 | `33-stage3-native-sandbox.md` | pending |
-| 34 | `34-stage3-git-and-acceptance.md` | pending |
+| 29 | `29-stage3-policy-workspace-foundation.md` | completed |
+| 30 | `30-stage3-read-search-tools.md` | completed |
+| 31 | `31-stage3-file-mutation-diff.md` | completed |
+| 32 | `32-stage3-host-process-execution.md` | completed |
+| 33 | `33-stage3-native-sandbox.md` | completed |
+| 34 | `34-stage3-git-and-acceptance.md` | completed; implementation review remediated |
 
 已完成的 Natural-Language Configuration Tooling Subplans 25–28 由 commit `3772222`
 及后续 Git 历史保存，不再保留在活动目录。更早完成的计划同样以 Git 历史为准。
@@ -33,8 +33,9 @@ Gate P0，只有当前宿主原生沙箱可行性门禁通过，才可激活 Sub
 - 完成标准
 - 交付结果
 
-`TODO.md` 只写当前活动子计划的可执行任务，不要堆整份主计划。计划完成但尚未获得
-实施授权时，保持无活动任务。
+`TODO.md` 只写当前活动子计划的可执行任务，不要堆整份主计划。计划完成或下一阶段只有路线入口
+但尚未锁定实施范围时，保持无活动任务。Stage 4 的持久化、恢复和 Full Access 实现必须先形成
+一个明确子计划并通过对应门禁。
 
 一次只激活和执行一个子计划。除非确有必要，不要创建嵌套子计划。
 

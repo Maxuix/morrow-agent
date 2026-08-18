@@ -8,6 +8,12 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
+from morrow.core.capabilities import (
+    OperationIntent,
+    OperationKind,
+    ToolCallContext,
+    ToolHandlerOutcome,
+)
 from morrow.core.models import ToolEffect
 from morrow.runtime.policy import ToolApproval, ToolExecutionPolicy
 from morrow.runtime.tools import RegisteredTool, ToolErrorCode, ToolExecutionError, make_tool
@@ -206,7 +212,21 @@ def make_configuration_tool(config_service) -> RegisteredTool:
             if isinstance(exc, (KeyboardInterrupt, SystemExit)):
                 raise
             raise _configuration_tool_error(exc) from None
-        return result.model_dump(mode="json")
+        return ToolHandlerOutcome(payload=result.model_dump(mode="json"))
+
+    def intent(arguments: UpdateConfigurationArguments, _: ToolCallContext) -> OperationIntent:
+        command = arguments.to_command()
+        try:
+            config_service.preflight(command)
+        except Exception as exc:
+            if isinstance(exc, (KeyboardInterrupt, SystemExit)):
+                raise
+            raise _configuration_tool_error(exc) from None
+        return OperationIntent(
+            kind=OperationKind.CONFIGURATION_WRITE,
+            effect=ToolEffect.PERSISTENT_WRITE,
+            preview_summary=tuple(render_configuration_preview(command)),
+        )
 
     return make_tool(
         name="update_configuration",
@@ -218,4 +238,5 @@ def make_configuration_tool(config_service) -> RegisteredTool:
             approval=ToolApproval.REQUIRED,
         ),
         approval_preview=preview,
+        intent_resolver=intent,
     )

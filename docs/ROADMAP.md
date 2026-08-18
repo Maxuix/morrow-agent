@@ -1,6 +1,6 @@
 # Morrow 个人 Agent 工作台开发路线总览
 
-> 状态：阶段 1、阶段 2 已完成；阶段 3 进行中；阶段 4–10 未开始
+> 状态：阶段 1、阶段 2、阶段 3 已完成；阶段 4 已进入规划；阶段 5–10 未开始
 > 基线日期：2026-08-18
 > 用途：维护 Morrow 的长期产品方向、阶段顺序、稳定边界与详细阶段文档入口。
 > 执行约定：具体实现任务、活跃子计划、进度与验证结果继续维护在 `.agent/`；本文不承担实时 TODO 或开发日志职责。
@@ -70,7 +70,7 @@ flowchart LR
 
 ## 二、当前架构基线与演进策略
 
-当前代码已经具备工作空间隔离、Provider/Model 抽象、进程内 Session、`ConversationLog`、`AgentLoop`、统一 ToolCycle、通用工具策略、审批端口和配置更新工具。阶段 3 的文件、搜索、编辑、Shell 与 Git 检查能力尚未完成。
+当前代码已经具备工作空间隔离、Provider/Model 抽象、进程内 Session、`ConversationLog`、`AgentLoop`、统一 ToolCycle、通用工具策略、审批端口和配置更新工具。阶段 3 的文件、搜索、编辑、审批后 Host Shell、只读 Git 与当前 macOS 原生沙箱能力及完整阶段验收已交付；Linux 原生运行仍待真实 runner。
 
 后续演进不得通过把所有职责塞入 `AgentLoop` 来实现。稳定策略是：
 
@@ -220,8 +220,8 @@ Morrow 必须在数据模型中区分以下信息，不允许都塞入一个“m
 |---|---|---|---|
 | 1. 方向确定与可运行原型 | 已完成 | 验证终端对话、工作空间识别与早期连续性方向 | [阶段 1](roadmap/stage-1-direction-and-prototype.md) |
 | 2. Agent 核心能力 | 已完成 | 建立稳定 AgentLoop、ToolCycle、预算、取消与错误闭环 | [阶段 2](roadmap/stage-2-agent-core.md) |
-| 3. 本地 Code Agent 与安全闭环 | 进行中 | 在指定工作空间中可靠定位、修改、验证，并可在原生沙箱中自动运行项目命令 | [阶段 3](roadmap/stage-3-local-tools-and-safety.md) |
-| 4. Task、Session、Artifact 与持久化 | 未开始 | 程序重启后可恢复 Session/Task，冻结可审计授权，并在此基础上激活 Full Access | [阶段 4](roadmap/stage-4-task-session-and-persistence.md) |
+| 3. 本地 Code Agent 与安全闭环 | 已完成 | 在指定工作空间中可靠定位、修改、验证，并可在当前 macOS 原生沙箱中自动运行项目命令 | [阶段 3](roadmap/stage-3-local-tools-and-safety.md) |
+| 4. Task、Session、Artifact 与持久化 | 规划中 | 程序重启后可恢复 Session/Task，冻结可审计授权，并在此基础上激活 Full Access | [阶段 4](roadmap/stage-4-task-session-and-persistence.md) |
 | 5. 可审查学习与长期记忆 | 未开始 | 任务后产生有证据的学习候选，由策略和用户决定是否晋升 | [阶段 5](roadmap/stage-5-reviewable-learning-and-memory.md) |
 | 6. Skills 与扩展生命周期 | 未开始 | Skill、MCP 和 Provider 扩展具备版本、权限与生命周期治理 | [阶段 6](roadmap/stage-6-skills-and-extensions.md) |
 | 7. Agent Definition 与静态 Workflow Runtime | 未开始 | 用户可定义多个 Agent，并运行经编译验证的版本化 Workflow | [阶段 7](roadmap/stage-7-workflow-runtime.md) |

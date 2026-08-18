@@ -733,3 +733,204 @@
   tests with exact inventory plus forbidden capability families.
 - Planning documents only were changed. Gate P0 was not run, no subplan was activated, and no
   production/test implementation or implementation validation was performed.
+
+## 2026-08-18 — Gate P0 passed; Subplan 29 activated
+
+- Ran the pre-activation Gate P0 before changing production or test code. The host is Darwin
+  25.6.0, macOS 26.6.1, arm64, with `/usr/bin/sandbox-exec`; the writable data volume is APFS
+  `/dev/disk3s5` at `/System/Volumes/Data`, while the system volume is a read-only APFS snapshot.
+- The host-level restricted probe ran Python 3.14.5 from the existing Framework installation.
+  Task-private temporary writes succeeded; workspace and Home writes, `.ssh` directory reads,
+  loopback bind, and external TCP connect were denied. The environment was launched with a
+  minimal variable set. No repository or persistent Host state changed.
+- `clonefile` succeeded on the APFS data volume, produced a different inode on the same device,
+  and a full source-file comparison stayed unchanged after mutating the clone. No hard link,
+  Docker, helper installation, or Host fallback was used. The first nested Codex-sandbox probe
+  returned `sandbox_apply: Operation not permitted`; the approved host-level rerun passed.
+- Updated `PLAN.md`, `subplans/README.md`, `TODO.md`, and `TRACKER.md` to activate Subplan 29.
+  S3.29.1 baseline capture was then completed; S3.29.2 capability models are now active.
+
+## 2026-08-18 — Subplan 29 S3.29.1 baseline captured
+
+- Current source baseline remains `d9df0d2` (`099d804` is the planning-only HEAD). The production
+  function-tool inventory is exactly `lookup_record`, `calculate`, and `update_configuration` for
+  function-capable adapters; unsupported adapters expose no tools. `ToolExecutor` currently
+  orders validated arguments → static `ToolExecutionPolicy` approval preview/approval → handler →
+  JSON envelope/truncation, with serial calls owned by `AgentLoop` and one `tool.status` lifecycle.
+- The baseline public limits are the bundled unknown-model fallback of 160,000 request characters,
+  16,000 per result, 56,000 per ToolCycle, and 120 seconds per tool. Approval previews are capped
+  at 8 lines × 200 characters. `SYSTEM_BOUNDARY` is a fixed Stage 2 message; there is no
+  capability-derived policy, workspace capability, ToolRunContext, ToolFact, or SensitiveResourcePolicy.
+- The full offline baseline passed with 310 tests and one Live test deselected. Ruff format/check,
+  compileall, CLI help, and `git diff --check` also passed. The working tree had only the planned
+  activation-document changes.
+- Fixed Pi commit `209bc7b9a89b01c8fd05861cf5bbdda3e300037a` confirms the useful behavioral references:
+  pluggable filesystem operations, bounded line/byte truncation with continuation metadata,
+  exact/unique mutation handling, visible Diff, serialized same-file writes, bounded process
+  output/timeout/cancellation, and faux-provider offline tests. Morrow adopts those ergonomics,
+  strengthens them with workspace confinement, revision/atomic publication, local policy and
+  native isolation, and rejects Pi's inherited Host permissions, unrestricted command/network
+  assumptions, and direct last-write-wins mutation model.
+
+## 2026-08-18 — Subplan 29 accepted; Subplan 30 activated
+
+- Implemented strict local `PermissionProfile`, `WorkspaceCapability`, `OperationIntent`,
+  `CapabilityPolicy`, bounded approval metadata, and the tagged `ToolFact` contract. Production
+  composition freezes the selected profile and confirmed workspace root; Full Access and Auto
+  Sandboxed remain fail-closed, and no project filesystem/process/Git tool was registered.
+- Migrated the production three-tool path to intent resolution, policy evaluation, semantic
+  result envelopes, and process-local ordered facts without changing public events or
+  ConversationLog ownership. The system boundary is now derived from the current ToolSet.
+- Added regression coverage for policy truth tables, denial ordering, semantic budgets, facts
+  isolation, prompt/tool inventory alignment, CLI preset fail-closed behavior, read-only
+  intersection, and configuration non-escalation. Full offline suite: 335 passed, 1 deselected;
+  collection: 336 tests; Ruff format/check, compileall, CLI help, and `git diff --check` passed.
+- Activated Subplan 30 for workspace-confined list/read/find/search implementation. Its current
+  production boundary is still the three existing tools until the read/search cutover is green.
+
+## 2026-08-18 — Subplan 30 accepted; Subplan 31 activated
+
+- Added strict local file/revision/read/list/find/search result models, a frozen
+  `WorkspacePathResolver`, stdlib filesystem adapter, `WorkspaceFileService`, rg/Python search
+  adapters, and `WorkspaceSearchService`. Reads reject escapes, external symlinks, special files,
+  binary/invalid UTF-8, and admitted-size overflow; protected paths and magic headers return only
+  bounded metadata.
+- Added `list_directory`, `read_file`, `find_files`, and `search_text` with context-aware semantic
+  budgets, actionable read continuation, stable ordering, no directory-symlink traversal, fixed
+  rg argv/no-config/no-download behavior, bounded Python fallback, ignore subtraction, and the
+  search ADR at `docs/decisions/stage-3-search-adapter.md`. Production now exposes exactly these
+  four read tools plus `update_configuration`; demo tools remain fixture-only.
+- Added path/symlink/special-file/text/protected-content/search parity/fallback/result-budget and
+  Fake Provider list-search-read-continue acceptance coverage. Full offline suite: 354 passed,
+  1 deselected; collection: 355 tests; Ruff format/check, compileall, CLI help, and
+  `git diff --check` passed.
+- Activated Subplan 31 for exact SHA-256 revision mutation, atomic publication, actual Diff, and
+  current-run ChangeSet facts. Process, sandbox, Git, network, and destructive capabilities stay
+  outside the active boundary.
+
+## 2026-08-18 — Subplan 31 accepted; Subplan 32 activated
+
+- Added strict exact-edit, mutation mode/status/result, and current-run ChangeSet contracts. Patch
+  and replace require the exact source SHA-256; create requires absence; matching is unique and
+  non-overlapping, with no fuzzy or last-write-wins fallback. BOM, newline style, final-newline
+  choices, and existing file mode are preserved for patch/replace.
+- Added bounded create-parent handling (at most four levels), symlink-component rejection,
+  per-target serialization, directory-handle-aware atomic publication, temporary-file cleanup,
+  revalidation, protected-content checks, actual unified Diff, and generic ChangeToolFact wiring.
+  `show_changes` reads only the current ToolRunContext ChangeSet and does not persist or derive
+  paths from assistant prose.
+- Registered `apply_patch`, `write_file`, and `show_changes` beside the four read/search tools and
+  configuration. Manual writes prompt with actual bounded Diff; Auto Safe allows only the exact
+  small structured thresholds and routes over-threshold edits/bytes/lines/files or replace calls
+  to approval. Delete/rename/chmod/link, process, sandbox, Git, network, and Full Access remain
+  absent.
+- Added `docs/decisions/stage-3-mutation.md`, production Fake Provider coverage for search → read
+  → patch → show changes, stale recovery, Manual approval, Auto Safe, cancellation, failure and
+  parent-swap cases, plus threshold and protected-content tests. Full offline suite: 373 passed,
+  1 deselected; Ruff format/check, compileall, CLI help, and `git diff --check` passed.
+- Activated Subplan 32 for bounded Host process execution. Host commands remain approval-required
+  and non-isolated; native sandbox and Git tools stay unregistered.
+
+## 2026-08-18 — Subplan 32 accepted; Subplan 33 activated
+
+- Added strict `CommandRequest`/`CommandResult` contracts and `run_command` through the existing
+  ToolExecutor/ToolCycle. Host execution uses a minimal allowlisted environment, `stdin=DEVNULL`,
+  concurrent bounded stdout/stderr tails, deterministic invalid-UTF-8 handling, exact/token
+  redaction, process-group timeout/cancellation cleanup, and typed spawn/cleanup failures.
+- Added structural preflight for workspace/cwd, protected resources, outside paths, network and
+  loopback, package/destructive operations, Git redirection/write, shell bypasses and privilege
+  escalation. Manual and Auto Safe always approve Host commands; Auto Sandboxed rejects the Host
+  adapter even if a native backend is available. No public event or ConversationLog contract changed.
+- Added the fixed-Pi process comparison at `docs/decisions/stage-3-process.md`, production
+  inventory/prompt/boundary updates, signal/descendant/cancellation/output/redaction/environment
+  tests, and Fake Provider failure-recovery coverage. Full offline suite: 384 passed,
+  1 deselected; Ruff format/check, compileall, CLI help, and `git diff --check` passed.
+- Activated Subplan 33 for native sandbox capability revalidation, snapshots, platform adapters,
+  isolation tests, and fail-closed Auto Sandboxed integration. Host remains approval-required;
+  Git tools remain unregistered.
+
+## 2026-08-18 — Subplan 33 accepted; Subplan 34 activated
+
+- Revalidated Gate P0 on macOS 26.6.1 / Darwin 25.6.0 / arm64 with `/usr/bin/sandbox-exec`,
+  the system Python 3.14 runtime, APFS `clonefile`, and blocked workspace/Home/`.ssh`/network
+  probe cases. The nested Codex Seatbelt limitation was kept separate from host-level evidence.
+- Implemented and tested bounded task-private snapshots, protected/cache/VCS exclusion, internal
+  symlink preservation, native Seatbelt and fixed bubblewrap builders, private environment and
+  phase budgets, sandbox Diff facts, and current-run approval-required conflict-safe promotion.
+  Auto Sandboxed has no Host fallback; Linux runtime remains unsupported pending a real runner.
+- Host-level macOS escape/isolation tests passed 2/2. After replacing a startup race in the
+  descendant-timeout test with process readiness synchronization, the full offline suite passed
+  387 tests with 2 intentional nested-environment skips and 1 deselected; Ruff format/check,
+  compileall, CLI help, and `git diff --check` also passed.
+- Updated the sandbox ADR, README, ARCHITECTURE, roadmap, and execution-state documents, then
+  activated Subplan 34 for read-only Git inspection and final Stage 3 acceptance. Git writes,
+  external metadata, network, and Full Access remain outside scope.
+
+## 2026-08-18 — Subplan 34 accepted; Stage 3 complete on claimed macOS platform
+
+- Implemented bounded read-only `git_status`/`git_diff` with frozen workspace and Git metadata
+  confinement, fixed config/environment/argv, disabled pager/external diff/textconv/fsmonitor/
+  prompts/optional locks, protected-file Diff suppression, typed non-repository/external-metadata/
+  timeout results, and no Git write surface. Added the fixed-Pi comparison ADR.
+- Locked the exact production inventory: 11 common tools plus only current-run approval-required
+  `promote_sandbox_changes` for supported Auto Sandboxed composition. Demo lookup/calculate remain
+  fixture-only; Provider schemas are strict and local policy metadata stays out of Provider wire.
+- Added two Fake Provider product stories (Python failure/recovery and nested text with a pre-existing
+  user change), real REPL fact-summary coverage, bounded process-local `RunMetricsSnapshot` with an
+  explicit composition disable switch, and the requirement-to-evidence matrix.
+- Final gates: `397 passed, 2 skipped, 1 deselected`; `400 tests collected`; Ruff format/check,
+  compileall, CLI help, and `git diff --check` passed. Host-level macOS Seatbelt acceptance passed
+  `2 passed`. Wheel build succeeded with 61 files and SHA256
+  `794da836c4b2896ee31e2746a148992c78dcdb21b72092765d935d24d7e20378`; fresh-venv wheel import,
+  bundled policy load, and installed CLI help passed using verified offline runtime dependencies.
+- Updated README, ARCHITECTURE, ROADMAP, Stage 3 roadmap, execution state, and
+  `docs/acceptance/stage-3-local-code-agent-evidence.md`. Linux remains unsupported without a
+  real runner; Live/network, Full Access, persistent AgentRun/Artifact, and Stage 4 work remain
+  outside this execution.
+
+## 2026-08-18 — Stage 3 external implementation review remediated
+
+- Verified all 12 findings from external reviewer `01a014c5-7a97-7101-b3df-6803112795b6`
+  against the current uncommitted Stage 3 tree before editing. All nine bugs, two suggestions,
+  and one nit were actionable; no roadmap-only capability was treated as a defect.
+- Closed file/content protection gaps by applying sensitive-path policy to both aliases and
+  resolved in-workspace file-symlink targets, protecting `.git`/`.morrow`, and recognizing
+  PKCS#8, RSA, EC, DSA, encrypted PEM, OpenSSH, and PGP private-key markers across file, search,
+  mutation, snapshot, and Git paths.
+- Allowed legal empty read windows past EOF and after semantic budget trimming; mapped
+  `not_found`, `git_failed`, and mixed-newline failures to stable tool errors. Patch/replace now
+  reject mixed-newline sources without changing their bytes rather than normalizing the file.
+- Added shell-wrapped Git command detection and bounded redacted command text to Host approval
+  previews. Sandbox promotion now records every applied `MutationResult` in the injected
+  `ChangeSetService`, so `show_changes` reports promoted files.
+- Snapshot prepare/collect now reserve ownership before the worker starts, cooperate with an
+  explicit cancellation token, settle timed-out workers, and clean the reserved root. Linux
+  bubblewrap retains rule-construction tests with PID namespace isolation but probes unsupported
+  until a real Linux runner passes. The verbose Auto Safe schema-history comment was condensed.
+- Focused remediation slice passed `65 passed, 2 skipped`; full offline gate passed
+  `404 passed, 2 skipped, 1 deselected`, with `407 tests collected`. Ruff format/check,
+  compileall, CLI help, and `git diff --check` passed. The two real macOS Seatbelt tests passed
+  at host level (`2 passed`).
+- Rebuilt the 61-file wheel with SHA256
+  `070424b6958ed41a0580d31354ea48e59360755f33038f6e65bf41ed5bd8686e`; a fresh no-deps venv
+  import, bundled-policy, installed sensitive-policy, and CLI smoke passed. Build isolation used
+  approved PyPI access only to resolve declared hatchling requirements; product/Provider network,
+  Live credentials, commit, and push remained outside this execution.
+
+## 2026-08-19 — Stage 3 final recheck and transition to Stage 4 planning
+
+- Reproduced the persistent Mimo environment through `scripts/morrow-mimo`: `provider presets`,
+  `model current`, `provider show opencode-go`, and the real `provider test opencode-go` all
+  passed; the latter read the existing macOS Keychain credential and returned `连接成功`.
+- Found and fixed a wrapper edge case where `provider presets` received the persistence-only
+  `--state-root` option; the wrapper now preserves `~/.morrow` for stateful commands and leaves
+  preset discovery option-free.
+- Re-ran the full offline suite: `418 passed, 2 skipped, 1 deselected` from 421 collected;
+  Ruff check/format, Compileall, CLI help, and `git diff --check` passed. The two host-level
+  macOS Seatbelt tests passed. A rebuilt 61-file wheel had SHA256
+  `926f1655b495b2c26d2505169f66a51d2c24c1a01937158c751f53e1eb19108a`; fresh Python 3.13
+  no-deps install, bundled policy checks, and installed CLI help passed using verified runtime
+  dependencies.
+- Updated the acceptance/evidence reports with final counts and Mimo results, closed Stage 3 on
+  macOS, and opened Stage 4 planning without activating persistence, Full Access, or another
+  production capability. No push was performed.

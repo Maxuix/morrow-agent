@@ -1,6 +1,6 @@
 # Stage 4：Task、Session、Artifact 与持久化
 
-> 状态：未开始
+> 状态：规划中（实现未开始）
 > 阶段结果：Morrow 的会话、任务、工具周期、权限授权和关键产物可在进程退出后恢复，并能对未完成副作用进行安全对账
 > 上级文档：[开发路线总览](../ROADMAP.md)
 > 上一阶段：[Stage 3：本地 Code Agent 与安全闭环](stage-3-local-tools-and-safety.md)

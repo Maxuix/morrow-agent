@@ -5,7 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from morrow.adapters.credentials.keyring import KeyringCredentialStore
+from morrow.adapters.credentials.keyring import CredentialAccessError, KeyringCredentialStore
+from morrow.adapters.local.sandbox import (
+    NativeSandboxProcessAdapter,
+    default_sandbox_backend,
+)
 from morrow.adapters.models.openai_compatible import estimate_request_chars, make_openai_compatible
 from morrow.adapters.registry import AdapterRegistry
 from morrow.adapters.state.yaml import (
@@ -16,20 +20,37 @@ from morrow.adapters.state.yaml import (
 from morrow.application.commands import CommandService
 from morrow.application.configuration import make_configuration_tool
 from morrow.application.context import ContextBuilder
+from morrow.application.local_tools import (
+    make_apply_patch_tool,
+    make_git_diff_tool,
+    make_git_status_tool,
+    make_promote_sandbox_tool,
+    make_read_search_tools,
+    make_run_command_tool,
+    make_show_changes_tool,
+    make_write_file_tool,
+)
 from morrow.application.orchestrator import SessionOrchestrator
+from morrow.core.capabilities import PermissionProfile, ProcessIsolation, WorkspaceCapability
 from morrow.core.models import Preferences
 from morrow.runtime.agent import AgentRuntime
+from morrow.runtime.capabilities import CapabilityPolicy
 from morrow.runtime.ids import RandomIdSource
 from morrow.runtime.policy import AgentPolicy, load_agent_policy
 from morrow.runtime.session import Session
-from morrow.runtime.tools import (
-    ToolExecutor,
-    ToolRegistry,
-    make_calculate_tool,
-    make_lookup_record_tool,
+from morrow.runtime.tools import ToolExecutor, ToolRegistry
+from morrow.services.changes import ChangeSetService
+from morrow.services.files import (
+    WorkspaceFileService,
+    WorkspaceMutationService,
+    WorkspacePathResolver,
 )
+from morrow.services.git import GitInspectionService
 from morrow.services.preferences import ConfigPatchService
+from morrow.services.process import ProcessExecutionService
 from morrow.services.provider import ProviderService
+from morrow.services.sandbox import SandboxSnapshotService
+from morrow.services.search import WorkspaceSearchService
 from morrow.services.workspace import DataRoot, WorkspaceService, WorkspaceStateService
 
 
@@ -54,23 +75,49 @@ class SessionApplication:
     context_builder: ContextBuilder
     commands: CommandService
     orchestrator: SessionOrchestrator
+    files: WorkspaceFileService
+    search: WorkspaceSearchService
+    mutation: WorkspaceMutationService
+    changes: ChangeSetService
+    process: ProcessExecutionService
+    git: GitInspectionService
+    sandbox_capability: object
 
 
-DEMO_RECORDS = {
-    ("plans", "starter"): {"monthly_price": 29.0},
-    ("plans", "pro"): {"monthly_price": 79.0},
-    ("regions", "de"): {"tax_rate": 0.19},
-    ("regions", "us-ca"): {"tax_rate": 0.0725},
-}
-
-
-def _default_tool_executor(run_policy, *, config_service=None, approval_port=None) -> ToolExecutor:
+def _default_tool_executor(
+    run_policy,
+    *,
+    config_service=None,
+    approval_port=None,
+    capability_policy=None,
+    files: WorkspaceFileService,
+    search: WorkspaceSearchService,
+    mutation: WorkspaceMutationService,
+    changes: ChangeSetService,
+    process: ProcessExecutionService,
+    git: GitInspectionService,
+    sandbox: SandboxSnapshotService | None = None,
+    sandbox_enabled: bool = False,
+) -> ToolExecutor:
     registry = ToolRegistry()
-    registry.register(make_lookup_record_tool(DEMO_RECORDS))
-    registry.register(make_calculate_tool())
     if config_service is not None:
         registry.register(make_configuration_tool(config_service))
-    return ToolExecutor(registry.snapshot(), run_policy, approval_port=approval_port)
+    for tool in make_read_search_tools(files, search):
+        registry.register(tool)
+    registry.register(make_apply_patch_tool(mutation, changes))
+    registry.register(make_write_file_tool(mutation, changes))
+    registry.register(make_show_changes_tool(changes))
+    registry.register(make_run_command_tool(process))
+    for tool in (make_git_status_tool(git), make_git_diff_tool(git)):
+        registry.register(tool)
+    if sandbox is not None and process.requires_sandbox and sandbox_enabled:
+        registry.register(make_promote_sandbox_tool(sandbox, mutation, changes))
+    return ToolExecutor(
+        registry.snapshot(),
+        run_policy,
+        approval_port=approval_port,
+        capability_policy=capability_policy,
+    )
 
 
 def build_application(
@@ -118,11 +165,19 @@ def build_session_application(
     provider=None,
     model=None,
     approval_port=None,
+    permission_profile: PermissionProfile | None = None,
+    metrics_enabled: bool = True,
 ):
     inspection = app.workspace_state_service.inspect(identity.workspace_id)
     profile_result = inspection.profile
     preferences_result = inspection.preferences
     config = app.global_store.load().value
+    permission_profile = permission_profile or PermissionProfile()
+    workspace_capability = WorkspaceCapability(
+        workspace_id=identity.workspace_id,
+        root=Path(identity.path),
+        read_only=inspection.read_only,
+    )
     session = Session(
         session_id=app.id_source.new_id("ses"),
         profile=(
@@ -136,13 +191,56 @@ def build_session_application(
         else Preferences(),
         read_only=inspection.read_only,
         workspace_preferences_read_only=inspection.preferences_read_only,
+        permission_profile=permission_profile,
+        workspace_capability=workspace_capability,
+        metrics_enabled=metrics_enabled,
     )
+    files = WorkspaceFileService(WorkspacePathResolver(workspace_capability.root))
+    search = WorkspaceSearchService(files)
+    mutation = WorkspaceMutationService(files)
+    changes = ChangeSetService()
+    git = GitInspectionService(files)
+    sandbox_backend = default_sandbox_backend()
+    sandbox_capability = sandbox_backend.probe()
+    sandbox = SandboxSnapshotService(files)
     config_service = ConfigPatchService(
         app.project_store, app.global_store, identity.workspace_id, session
     )
     if provider is None or model is None:
         provider, model = app.provider_service.build_active()
     provider_config = config.providers.get(model.provider_id) if config else None
+    try:
+        active_credential = (
+            app.provider_service.credential_resolver(
+                model.provider_id, provider_config.credential_ref
+            )
+            if provider_config is not None
+            else None
+        )
+    except CredentialAccessError as exc:
+        raise ValueError(exc.message) from None
+    if permission_profile.process_isolation is ProcessIsolation.NATIVE_SANDBOX:
+        process = ProcessExecutionService(
+            files,
+            adapter=NativeSandboxProcessAdapter(
+                workspace_capability.root,
+                sandbox,
+                sandbox_backend,
+            ),
+            secrets=(active_credential,) if active_credential else (),
+            requires_host=False,
+            requires_sandbox=True,
+        )
+    else:
+        process = ProcessExecutionService(
+            files,
+            secrets=(active_credential,) if active_credential else (),
+        )
+    capability_policy = CapabilityPolicy(
+        permission_profile,
+        workspace_capability,
+        sandbox_available=sandbox_capability.supported,
+    )
     adapter_id = provider_config.adapter if provider_config else "openai-compatible"
     adapter_support = app.registry.tool_support(adapter_id)
     run_policy = app.agent_policy.resolve(
@@ -159,6 +257,15 @@ def build_session_application(
             run_policy,
             config_service=config_service,
             approval_port=approval_port,
+            capability_policy=capability_policy,
+            files=files,
+            search=search,
+            mutation=mutation,
+            changes=changes,
+            process=process,
+            git=git,
+            sandbox=sandbox,
+            sandbox_enabled=sandbox_capability.supported,
         )
         if adapter_support.tool_protocol == "openai_function"
         else None
@@ -188,4 +295,11 @@ def build_session_application(
         context_builder=context_builder,
         commands=commands,
         orchestrator=orchestrator,
+        files=files,
+        search=search,
+        mutation=mutation,
+        changes=changes,
+        process=process,
+        git=git,
+        sandbox_capability=sandbox_capability,
     )

@@ -9,7 +9,19 @@ from prompt_toolkit.patch_stdout import patch_stdout
 from rich.console import Console
 
 from morrow.application.orchestrator import DispatchResult
+from morrow.core.capabilities import CommandToolFact
 from morrow.core.models import AgentEvent, ToolApprovalDecision, ToolApprovalRequest
+
+_MODEL_WAIT_MESSAGE = "正在连接模型并等待首个响应…（Ctrl+C 取消）"
+_MODEL_CONTINUE_MESSAGE = "正在等待模型继续响应…（Ctrl+C 取消）"
+_MODEL_RETRY_MESSAGE = "模型暂时不可用，正在重试…（Ctrl+C 取消）"
+_STOP_HINTS = {
+    "provider_auth": "请检查 API Key 或重新配置 Provider。",
+    "provider_network": "请检查网络后重试。",
+    "provider_rate_limit": "请稍后重试。",
+    "provider_timeout": "可按 Ctrl+C 取消后重试。",
+    "run_timeout": "任务超过总运行时间。",
+}
 
 
 class Terminal:
@@ -22,6 +34,12 @@ class Terminal:
         if event.type == "turn.started":
             self._text_open = False
             self._tool_activity = False
+            self.console.print(_MODEL_WAIT_MESSAGE)
+        elif event.type == "status.changed" and event.payload.get("status") == "retrying":
+            if self._text_open:
+                self.console.print()
+            self.console.print(_MODEL_RETRY_MESSAGE)
+            self._text_open = False
         elif event.type == "text.delta":
             self.console.print(event.payload.get("text", ""), end="")
             self._text_open = True
@@ -34,16 +52,60 @@ class Terminal:
             self.console.print(f"↳ 工具步骤 {ordinal}/{total}：{name}")
             self._text_open = False
             self._tool_activity = True
+        elif event.type == "tool.status":
+            ordinal = event.payload.get("ordinal")
+            total = event.payload.get("total")
+            if ordinal == total and event.payload.get("status") in {
+                "succeeded",
+                "failed",
+                "cancelled",
+                "skipped",
+            }:
+                if self._text_open:
+                    self.console.print()
+                self.console.print(_MODEL_CONTINUE_MESSAGE)
+                self._text_open = False
         elif event.type == "error":
             if self._text_open:
                 self.console.print()
-            self.console.print(f"\n[red]错误：{event.payload.get('message', '模型调用失败')}[/red]")
+            message = str(event.payload.get("message") or "模型调用失败")
+            hint = _STOP_HINTS.get(str(event.payload.get("stop_code") or ""))
+            rendered = f"错误：{message}" if not hint else f"错误：{message} {hint}"
+            self.console.print(f"\n[red]{rendered}[/red]")
             self._text_open = False
         elif event.type == "turn.completed":
             if self._text_open:
                 self.console.print()
             self._text_open = False
             self._tool_activity = False
+
+    def show_run_summary(self, session) -> None:
+        """Render one bounded fact summary without exposing Diff or tool payloads."""
+
+        metrics = getattr(session, "latest_metrics", None)
+        facts = getattr(session, "latest_tool_facts", ())
+        if metrics is None or metrics.tool_calls == 0:
+            return
+        validation = {
+            "not_run": "未运行",
+            "passed": "通过",
+            "failed": "失败",
+            "timeout": "超时",
+            "cancelled": "取消",
+        }.get(metrics.validation_outcome, "未知")
+        markers: list[str] = []
+        command_facts = tuple(fact for fact in facts if isinstance(fact, CommandToolFact))
+        if any(fact.output_truncated for fact in command_facts):
+            markers.append("输出截断")
+        if any(fact.redaction_count for fact in command_facts):
+            markers.append("输出脱敏")
+        suffix = f"；{'、'.join(markers)}" if markers else ""
+        line = (
+            f"事实摘要：工具 {metrics.tool_calls} 次，成功 {metrics.successful_tool_calls}，"
+            f"失败 {metrics.failed_tool_calls}，修改 {metrics.changed_file_count} 个文件，"
+            f"验证 {validation}{suffix}"
+        )
+        self.console.print(line[:200])
 
     async def prompt(self, session: PromptSession, message: str = "你 > ") -> str:
         return await session.prompt_async(message)
@@ -165,13 +227,17 @@ async def run_repl(
 
 async def _consume_dispatch(orchestrator, text: str, terminal: Terminal) -> DispatchResult:
     result = DispatchResult()
+    completed = False
     async for item in orchestrator.stream(text):
         if isinstance(item, AgentEvent):
             terminal.show_event(item)
+            completed = item.type == "turn.completed"
         else:
             result = item
             for line in result.lines:
                 terminal.console.print(line)
+    if completed and getattr(orchestrator, "session", None) is not None:
+        terminal.show_run_summary(orchestrator.session)
     return result
 
 

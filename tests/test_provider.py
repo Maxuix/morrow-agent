@@ -1,19 +1,29 @@
 from __future__ import annotations
 
+import asyncio
 import os
+import sys
 from types import SimpleNamespace
 
 import pytest
 
-from morrow.adapters.credentials.keyring import MemoryCredentialStore
+from morrow.adapters.credentials.keyring import (
+    CredentialAccessError,
+    KeyringCredentialStore,
+    MemoryCredentialStore,
+    translate_keyring_error,
+)
 from morrow.adapters.models.openai_compatible import (
     OpenAICompatibleProvider,
     StreamAccumulator,
+    classify_error,
+    provider_error_message,
     serialize_message,
     serialize_tool,
 )
 from morrow.bootstrap import build_application
 from morrow.core.models import (
+    CredentialRef,
     FunctionToolCall,
     ModelErrorCode,
     ModelEvent,
@@ -173,6 +183,38 @@ def test_provider_onboarding_publishes_model_after_explicit_test(tmp_path):
     assert fake.complete_messages[0][0].role == "user"
 
 
+def test_opencode_go_mimo_preset_registers_mimo_v25(tmp_path):
+    credentials = MemoryCredentialStore()
+    app = build_application(state_root=tmp_path / "state", credentials=credentials)
+    fake = FakeProvider()
+    app.registry.register("openai-compatible", lambda config, credential: fake)
+
+    model = app.provider_service.add("opencode-go-mimo", "credential-sentinel")
+
+    assert str(model) == "opencode-go/mimo-v2.5"
+    config = app.global_store.load().value
+    provider = config.providers["opencode-go"]
+    assert provider.models["mimo-v2.5"].api_model_id == "mimo-v2.5"
+    assert config.active_model == model
+
+
+def test_adding_mimo_preset_keeps_existing_active_model_and_registers_both_models(tmp_path):
+    credentials = MemoryCredentialStore()
+    app = build_application(state_root=tmp_path / "state", credentials=credentials)
+    app.registry.register("openai-compatible", lambda config, credential: FakeProvider())
+
+    existing = app.provider_service.add("opencode-go", "first")
+    added = app.provider_service.add("opencode-go-mimo", "second")
+
+    config = app.global_store.load().value
+    assert added == ModelRef(provider_id="opencode-go", model_id="mimo-v2.5")
+    assert config.active_model == existing
+    assert set(config.providers["opencode-go"].models) == {
+        "deepseek-v4-flash",
+        "mimo-v2.5",
+    }
+
+
 def test_adding_another_provider_preserves_existing_active_model(tmp_path):
     credentials = MemoryCredentialStore()
     app = build_application(state_root=tmp_path / "state", credentials=credentials)
@@ -266,6 +308,127 @@ def test_provider_test_distinguishes_unknown_provider_from_missing_credential(tm
 
     with pytest.raises(ValueError, match="凭据不可用"):
         app.provider_service.test("demo")
+
+
+def test_keyring_errors_are_translated_without_backend_text():
+    denied = translate_keyring_error(RuntimeError("User canceled (-128)"))
+    locked = translate_keyring_error(RuntimeError("Keychain is locked"))
+    unknown = translate_keyring_error(RuntimeError("(-50, Unknown Error)"))
+
+    assert denied.code == "denied"
+    assert locked.code == "locked"
+    assert unknown.code == "unavailable"
+    for error in (denied, locked, unknown):
+        assert "(-50" not in str(error)
+        assert "Unknown Error" not in str(error)
+        assert "解锁 Keychain" in error.message
+
+
+def test_keyring_store_get_raises_sanitized_error(monkeypatch):
+    monkeypatch.setitem(
+        sys.modules,
+        "keyring",
+        SimpleNamespace(
+            get_password=lambda *args, **kwargs: (_ for _ in ()).throw(
+                RuntimeError("(-50, Unknown Error)")
+            )
+        ),
+    )
+    with pytest.raises(CredentialAccessError) as caught:
+        KeyringCredentialStore().get("provider:demo:abcd")
+    assert caught.value.code == "unavailable"
+    assert "(-50" not in str(caught.value)
+
+
+def test_inspect_credential_reports_backend_failure_without_secret(tmp_path):
+    class RaisingStore(MemoryCredentialStore):
+        def get(self, ref):
+            del ref
+            raise CredentialAccessError(
+                "unavailable",
+                "凭据暂时不可用；请解锁 Keychain 或检查钥匙串权限后重试",
+            )
+
+    app = build_application(state_root=tmp_path / "state", credentials=RaisingStore())
+    written = app.global_store.update(
+        lambda value: value.model_copy(
+            update={
+                "providers": {
+                    "demo": ProviderConfig(
+                        adapter="openai-compatible",
+                        base_url="https://example.test",
+                        credential_ref=CredentialRef(ref="provider:demo:test"),
+                        models={"m": ProviderModelConfig(api_model_id="m")},
+                    )
+                }
+            }
+        )
+    )
+    assert written.status.value == "ok"
+    inspection = app.provider_service.inspect_credential("demo")
+    assert inspection.available is False
+    assert inspection.code == "unavailable"
+    assert app.provider_service.credential_available("demo") is False
+
+
+def test_provider_error_messages_distinguish_network_auth_rate_limit_and_timeout():
+    assert "认证" in provider_error_message(ModelErrorCode.AUTH)
+    assert "网络" in provider_error_message(ModelErrorCode.NETWORK)
+    assert "限流" in provider_error_message(ModelErrorCode.RATE_LIMIT)
+    assert "超时" in provider_error_message(ModelErrorCode.TIMEOUT)
+    assert provider_error_message(ModelErrorCode.NETWORK, phase="connect") == "连接模型服务超时"
+    assert (
+        provider_error_message(ModelErrorCode.TIMEOUT, phase="first_token")
+        == "等待模型首个响应超时"
+    )
+    assert classify_error(TimeoutError()) is ModelErrorCode.TIMEOUT
+
+
+@pytest.mark.asyncio
+async def test_adapter_connect_timeout_is_network_without_waiting_for_token():
+    class HangingCompletions:
+        async def create(self, **kwargs):
+            del kwargs
+            await asyncio.Event().wait()
+
+    provider = OpenAICompatibleProvider(
+        "https://example.test",
+        "credential-sentinel",
+        connect_timeout=0.01,
+    )
+    provider._client = SimpleNamespace(chat=SimpleNamespace(completions=HangingCompletions()))
+
+    events = await collect_stream(provider)
+
+    assert [event.kind for event in events] == ["error"]
+    assert events[0].error_code == ModelErrorCode.NETWORK
+    assert events[0].error_message == "连接模型服务超时"
+
+
+@pytest.mark.asyncio
+async def test_adapter_first_token_timeout_is_distinct_from_connect_timeout():
+    class FirstTokenHang:
+        async def create(self, **kwargs):
+            del kwargs
+
+            async def gen():
+                await asyncio.Event().wait()
+                yield stream_chunk(text="late", finish="stop")
+
+            return gen()
+
+    provider = OpenAICompatibleProvider(
+        "https://example.test",
+        "credential-sentinel",
+        first_token_timeout=0.01,
+    )
+    provider._client = SimpleNamespace(chat=SimpleNamespace(completions=FirstTokenHang()))
+
+    events = await collect_stream(provider)
+
+    assert [event.kind for event in events] == ["error"]
+    assert events[0].error_code == ModelErrorCode.TIMEOUT
+    assert events[0].error_message == "等待模型首个响应超时"
 
 
 def test_provider_test_persists_typed_failure_code(tmp_path):

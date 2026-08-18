@@ -62,7 +62,18 @@ OPENCODE_GO_PRESET: dict[str, Any] = {
     "api_model_id": "deepseek-v4-flash",
 }
 
-PRESETS: dict[str, dict[str, Any]] = {OPENCODE_GO_PRESET["preset_id"]: OPENCODE_GO_PRESET}
+OPENCODE_GO_MIMO_PRESET: dict[str, Any] = {
+    "preset_id": "opencode-go-mimo",
+    "provider_id": "opencode-go",
+    "adapter": "openai-compatible",
+    "base_url": "https://opencode.ai/zen/go/v1",
+    "model_id": "mimo-v2.5",
+    "api_model_id": "mimo-v2.5",
+}
+
+PRESETS: dict[str, dict[str, Any]] = {
+    preset["preset_id"]: preset for preset in (OPENCODE_GO_PRESET, OPENCODE_GO_MIMO_PRESET)
+}
 
 
 def provider_model_ref(provider_id: str, config: ProviderConfig, model_id: str) -> ModelRef:

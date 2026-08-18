@@ -1,6 +1,6 @@
 # Subplan 30 — Stage 3B.2 Workspace Read and Search Tools
 
-> Status: pending; not active
+> Status: completed; accepted on 2026-08-18
 > Depends on: Subplan 29 completed and accepted
 
 ## Goal
@@ -115,4 +115,5 @@ No file mutation, command execution, sandbox, Git command, network, or public-ev
 ## Delivered result
 
 Morrow can safely locate and read the minimum code context needed for a real task while
-remaining unable to modify or execute the project.
+remaining unable to modify or execute the project. Focused tests, the Fake Provider read path,
+the complete offline suite, and all quality gates passed; mutation is activated in Subplan 31.

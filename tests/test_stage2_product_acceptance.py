@@ -89,7 +89,11 @@ async def test_real_terminal_product_flow_is_ordered_recoverable_and_secret_safe
 
     rendered = output.getvalue()
     assert exit_code == 0
-    assert "先查\n↳ 工具步骤 1/1：lookup_record\n工具错误后恢复。\n" in rendered
+    assert (
+        "先查\n↳ 工具步骤 1/1：lookup_record\n"
+        "正在等待模型继续响应…（Ctrl+C 取消）\n工具错误后恢复。\n"
+    ) in rendered
+    assert "事实摘要：工具 1 次" in rendered
     assert rendered.count("工具错误后恢复。") == 1
     assert rendered.count("后续对话正常。") == 1
     assert "未知命令：/handoff" in rendered

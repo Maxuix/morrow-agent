@@ -2,32 +2,43 @@
 
 ## Current status
 
-Stage 3 Local Tool Execution has a review-remediated implementation plan and six ordered
-subplans. All confirmed findings from `docs/reviews/stage-3-implementation-plan-review.md` are
-resolved in the plan contract. Implementation has not started, no subplan is active, and no
-application or test code was changed as part of remediation.
+Stage 3 Local Tool Execution is closed on the claimed macOS platform under the
+review-remediated implementation plan. All confirmed findings from
+`docs/reviews/stage-3-implementation-plan-review.md` are resolved in the plan contract. Gate P0,
+Subplans 29–34, final product/security acceptance, and package gates passed on 2026-08-18. The
+later external implementation review's 12 findings were also verified and remediated, with
+refreshed offline, host-level sandbox, quality, and wheel evidence. The final 2026-08-19
+recheck also passed the persistent OpenCode Go Mimo v2.5 environment and user-facing Provider
+error/feedback paths.
 
 ## Last completed task
 
-Verified the review against current code and remediated the plan: capability-derived system
-boundary, RunPolicy-compatible semantic results, numeric Auto Safe limits, bounded parent creation,
-Gate P0/CoW/toolchain/sandbox phase budgets, mutation Diff preview, production demo-tool removal,
-current-run sandbox promotion, search ADR/budgets, Git metadata confinement, locked ToolFacts,
-terminal summary/local metrics, exact capability guards, and configuration non-escalation tests.
+Completed the post-acceptance implementation review remediation: protected symlink targets and
+`.git`, all common PEM private-key headers, empty read windows, shell-wrapped Git writes,
+sandbox-promotion ChangeSet recording, stable error mapping, mixed-newline fail-closed behavior,
+cancellable snapshot phases, redacted command previews, Linux fail-closed probing, and the review
+nit. Then rechecked Keychain sanitization, connection/first-token feedback, Mimo preset discovery,
+the persistent wrapper, and final gates: 418 offline tests passed with 2 intentional skips, 2
+host-level Seatbelt tests passed, and the rebuilt wheel smoke gate passed. The accepted evidence is in
+`docs/acceptance/stage-3-local-code-agent-evidence.md`.
 
 ## Next action
 
-After explicit implementation authorization, re-check the repository baseline and run Gate P0 on
-the current macOS host. If it passes, activate Subplan 29. If it fails, do not begin implementation
-or silently downgrade Stage 3; return for an explicit scope/platform decision.
+Stage 3 has no remaining action. Stage 4 is now open for planning against
+`docs/roadmap/stage-4-task-session-and-persistence.md`; define and authorize one scoped
+implementation subplan before changing persistence or Full Access behavior.
 
 ## Active task
 
-None; this is a planning-only state.
+No active subplan. Subplan 34 completed with native macOS snapshot execution, fail-closed backend
+selection, read-only Git inspection, real escape evidence, bounded sandbox Diff, approval-required
+promotion, product stories, local metrics, package evidence, and final Mimo/provider acceptance.
 
 ## Blockers
 
-None.
+None. Gate P0 passed on the current macOS host. The nested probe was blocked by the Codex
+execution sandbox, but the approved host-level rerun proved the required Seatbelt and APFS
+capabilities.
 
 ## Active boundary
 

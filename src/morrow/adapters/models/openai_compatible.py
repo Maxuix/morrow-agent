@@ -198,6 +198,35 @@ def classify_error(error: BaseException) -> ModelErrorCode:
     return ModelErrorCode.INTERNAL
 
 
+def provider_error_message(code: ModelErrorCode, *, phase: str | None = None) -> str:
+    if phase == "connect":
+        return "连接模型服务超时"
+    if phase == "first_token":
+        return "等待模型首个响应超时"
+    return {
+        ModelErrorCode.AUTH: "认证失败，请检查 API Key 或重新配置 Provider",
+        ModelErrorCode.NETWORK: "无法连接模型服务，请检查网络后重试",
+        ModelErrorCode.RATE_LIMIT: "模型服务限流，请稍后重试",
+        ModelErrorCode.TIMEOUT: "等待模型响应超时",
+        ModelErrorCode.INVALID_RESPONSE: "模型响应无效",
+        ModelErrorCode.INTERNAL: "模型服务暂时不可用",
+    }[code]
+
+
+async def _close_response(response) -> None:
+    for name in ("aclose", "close"):
+        closer = getattr(response, name, None)
+        if closer is None:
+            continue
+        try:
+            result = closer()
+            if hasattr(result, "__await__"):
+                await result
+        except Exception:
+            return
+        return
+
+
 class OpenAICompatibleProvider:
     def __init__(
         self,
@@ -206,11 +235,15 @@ class OpenAICompatibleProvider:
         *,
         api_model_ids: dict[str, str] | None = None,
         timeout: float = 60.0,
+        connect_timeout: float = 20.0,
+        first_token_timeout: float = 45.0,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.credential = credential
         self.api_model_ids = api_model_ids or {}
         self.timeout = timeout
+        self.connect_timeout = connect_timeout
+        self.first_token_timeout = first_token_timeout
         self._client = None
 
     def _get_client(self):
@@ -233,6 +266,7 @@ class OpenAICompatibleProvider:
         tools: tuple[ToolDefinition, ...] = (),
     ) -> AsyncIterator[ModelEvent]:
         accumulator = StreamAccumulator()
+        response = None
         try:
             request: dict = {
                 "model": self.api_model_ids.get(model.model_id, model.model_id),
@@ -242,8 +276,38 @@ class OpenAICompatibleProvider:
             if tools:
                 request["tools"] = [serialize_tool(tool) for tool in tools]
                 request["tool_choice"] = "auto"
-            response = await self._get_client().chat.completions.create(**request)
-            async for chunk in response:
+            try:
+                async with asyncio.timeout(self.connect_timeout):
+                    response = await self._get_client().chat.completions.create(**request)
+            except TimeoutError:
+                yield ModelEvent(
+                    kind="error",
+                    error_code=ModelErrorCode.NETWORK,
+                    error_message=provider_error_message(ModelErrorCode.NETWORK, phase="connect"),
+                )
+                return
+            iterator = aiter(response)
+            first = True
+            while True:
+                try:
+                    if first:
+                        async with asyncio.timeout(self.first_token_timeout):
+                            chunk = await anext(iterator)
+                    else:
+                        chunk = await anext(iterator)
+                except StopAsyncIteration:
+                    break
+                except TimeoutError:
+                    yield ModelEvent(
+                        kind="error",
+                        error_code=ModelErrorCode.TIMEOUT,
+                        error_message=provider_error_message(
+                            ModelErrorCode.TIMEOUT, phase="first_token"
+                        ),
+                        made_progress=accumulator.made_progress,
+                    )
+                    return
+                first = False
                 choices = getattr(chunk, "choices", None) or []
                 if not choices:
                     continue
@@ -271,20 +335,25 @@ class OpenAICompatibleProvider:
         except asyncio.CancelledError:
             raise
         except Exception as exc:
+            code = classify_error(exc)
             yield ModelEvent(
                 kind="error",
-                error_code=classify_error(exc),
-                error_message="模型服务暂时不可用",
+                error_code=code,
+                error_message=provider_error_message(code),
                 made_progress=accumulator.made_progress,
             )
+        finally:
+            if response is not None:
+                await _close_response(response)
 
     async def complete(self, model: ModelRef, messages: list[Message]) -> str:
         try:
-            response = await self._get_client().chat.completions.create(
-                model=self.api_model_ids.get(model.model_id, model.model_id),
-                messages=self._messages(messages),
-                stream=False,
-            )
+            async with asyncio.timeout(self.connect_timeout + self.first_token_timeout):
+                response = await self._get_client().chat.completions.create(
+                    model=self.api_model_ids.get(model.model_id, model.model_id),
+                    messages=self._messages(messages),
+                    stream=False,
+                )
             choices = getattr(response, "choices", None) or []
             if not choices:
                 raise ValueError("empty model response")
@@ -297,7 +366,7 @@ class OpenAICompatibleProvider:
             raise
         except Exception as exc:
             code = classify_error(exc)
-            raise ModelProviderError(code, "模型服务暂时不可用") from None
+            raise ModelProviderError(code, provider_error_message(code)) from None
 
 
 def make_openai_compatible(config, credential: str) -> OpenAICompatibleProvider:

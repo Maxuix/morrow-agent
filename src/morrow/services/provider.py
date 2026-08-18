@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import secrets
+from dataclasses import dataclass
 
-from morrow.adapters.credentials.keyring import environment_credential
+from morrow.adapters.credentials.keyring import CredentialAccessError, environment_credential
 from morrow.adapters.registry import PRESETS, AdapterRegistry
 from morrow.core.models import (
     CredentialRef,
@@ -19,6 +20,13 @@ from morrow.core.models import (
     ProviderModelConfig,
     UserMessage,
 )
+
+
+@dataclass(frozen=True)
+class CredentialInspection:
+    available: bool
+    code: str
+    message: str = ""
 
 
 class ProviderService:
@@ -36,9 +44,24 @@ class ProviderService:
             return configured
         return self.credentials.get(credential_ref.ref) if credential_ref else None
 
-    def credential_available(self, provider_id: str) -> bool:
+    def _read_credential(self, provider_id: str, credential_ref) -> str | None:
+        try:
+            return self.credential_resolver(provider_id, credential_ref)
+        except CredentialAccessError as exc:
+            raise ValueError(exc.message) from None
+
+    def inspect_credential(self, provider_id: str) -> CredentialInspection:
         config = self.provider(provider_id)
-        return bool(self.credential_resolver(provider_id, config.credential_ref))
+        try:
+            secret = self.credential_resolver(provider_id, config.credential_ref)
+        except CredentialAccessError as exc:
+            return CredentialInspection(available=False, code=exc.code, message=exc.message)
+        if secret:
+            return CredentialInspection(available=True, code="available")
+        return CredentialInspection(available=False, code="missing", message="凭据不可用")
+
+    def credential_available(self, provider_id: str) -> bool:
+        return self.inspect_credential(provider_id).available
 
     def _ref(self, provider_id: str) -> CredentialRef:
         return CredentialRef(ref=f"provider:{provider_id}:{secrets.token_hex(4)}")
@@ -55,11 +78,15 @@ class ProviderService:
             raise ValueError(f"未知 Provider 预设: {preset_id}")
         provider_id = preset["provider_id"]
         model_id = preset["model_id"]
+        current = self.global_store.load()
+        existing = current.value.providers.get(provider_id) if current.value else None
+        models = {**(existing.models if existing else {})}
+        models[model_id] = ProviderModelConfig(api_model_id=preset["api_model_id"])
         config = ProviderConfig(
             adapter=preset["adapter"],
             base_url=preset["base_url"],
             credential_ref=self._ref(provider_id),
-            models={model_id: ProviderModelConfig(api_model_id=preset["api_model_id"])},
+            models=models,
         )
         if not self.registry.contains(config.adapter):
             raise ValueError(f"未注册 Adapter: {config.adapter}")
@@ -72,7 +99,6 @@ class ProviderService:
         except Exception:
             self.credentials.delete(config.credential_ref.ref)
             raise
-        current = self.global_store.load()
         existing_active = current.value.active_model if current.value else None
         result = self.global_store.update(
             lambda value: value.model_copy(
@@ -129,7 +155,7 @@ class ProviderService:
             next_config = next_config.model_copy(update={"credential_ref": new_ref})
             credential = secret
         else:
-            credential = self.credential_resolver(provider_id, old.credential_ref)
+            credential = self._read_credential(provider_id, old.credential_ref)
         if not credential:
             raise ValueError("Provider 凭据不可用")
         model_id = next(iter(next_config.models))
@@ -179,7 +205,7 @@ class ProviderService:
         config = current.providers.get(provider_id)
         if not config:
             raise ValueError(f"未知 Provider: {provider_id}")
-        credential = self.credential_resolver(provider_id, config.credential_ref)
+        credential = self._read_credential(provider_id, config.credential_ref)
         if not credential:
             raise ValueError("Provider 凭据不可用")
         model_id = next(iter(config.models))
@@ -240,7 +266,7 @@ class ProviderService:
         if not config.active_model:
             raise ValueError("尚未配置 active_model")
         provider_config = config.providers[config.active_model.provider_id]
-        credential = self.credential_resolver(
+        credential = self._read_credential(
             config.active_model.provider_id, provider_config.credential_ref
         )
         if not credential:

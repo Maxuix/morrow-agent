@@ -799,9 +799,17 @@ async def test_production_composition_uses_one_agent_loop_and_refreshes_state_pr
         "assistant",
     ]
     assert {tool.function.name for tool in provider.stream_tools[0]} == {
-        "lookup_record",
-        "calculate",
+        "list_directory",
+        "read_file",
+        "find_files",
+        "search_text",
         "update_configuration",
+        "apply_patch",
+        "write_file",
+        "show_changes",
+        "run_command",
+        "git_status",
+        "git_diff",
     }
     assert "中文" in str(provider.stream_calls[1])
     assert len(approval.requests) == 1

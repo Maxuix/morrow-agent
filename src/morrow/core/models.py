@@ -155,13 +155,15 @@ class ToolEffect(StrEnum):
 
 
 class ToolApprovalRequest(ProtocolModel):
-    """Minimal, sanitized local context shown to an approval adapter."""
+    """Sanitized local context shown to an approval adapter."""
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     call_id: str
     effect: ToolEffect
     preview: tuple[str, ...] = ()
+    policy_verdict: Literal["require_approval"] = "require_approval"
+    reason_codes: tuple[str, ...] = ()
 
     @field_validator("call_id")
     @classmethod

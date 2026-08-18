@@ -1,6 +1,6 @@
 # Subplan 33 — Stage 3E Native Sandbox and Auto Sandboxed
 
-> Status: pending; not active
+> Status: completed; accepted 2026-08-18
 > Depends on: Gate P0 passed and Subplan 32 completed and accepted
 
 ## Goal
@@ -128,6 +128,28 @@ Artifact store, raw Host auto mode, or public event change.
 - No Docker, network grant, Full Access, global permission persistence, or raw auto mode enters.
 - Focused/unit/real-platform tests, full offline suite, quality gates, CLI help, and
   `git diff --check` pass.
+
+## Acceptance evidence — 2026-08-18
+
+- Gate P0 was revalidated on the current host: macOS 26.6.1 / Darwin 25.6.0 / arm64,
+  `/usr/bin/sandbox-exec`, the system Python 3.14 runtime, APFS `clonefile` success with a
+  distinct inode and unchanged source, and a restricted probe that blocked workspace/Home/
+  `.ssh`/loopback/external writes or reads as specified. No Docker, helper installation,
+  repository write, or persistent Host change was used.
+- The real host-level macOS escape suite passed both production isolation cases: the Seatbelt
+  command could write only its private snapshot, while real workspace, Home, protected `.env`,
+  and network/loopback attempts remained blocked; Auto Sandboxed production composition exposed
+  the native command and approval-required promotion path without changing the real workspace.
+- Native backend builder tests cover default-deny Seatbelt rules, fixed bubblewrap argv, snapshot
+  exclusion/CoW-or-copy admission, internal/external symlinks, bounded Diff, protected content,
+  and promotion through Subplan 31 mutation services. Host process tests cover timeout and
+  descendant cleanup without wall-clock assertions.
+- `UV_CACHE_DIR=/private/tmp/morrow-uv-cache uv run pytest -m 'not live'`: 387 passed, 2 skipped
+  only because the nested Codex sandbox cannot run host-level Seatbelt tests, 1 deselected.
+  Host-level rerun of the two skipped macOS tests: 2 passed. Ruff format/check, compileall,
+  `morrow --help`, and `git diff --check` all passed.
+- Linux rule construction is tested, but Linux runtime support is explicitly unsupported until a
+  real Linux runner passes; Windows remains outside this Stage 3 target.
 
 ## Delivered result
 

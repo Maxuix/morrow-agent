@@ -20,24 +20,15 @@ from morrow.bootstrap import build_application, build_session_application
 from morrow.core.models import FunctionToolCall, ModelRef
 from morrow.testing import FixedIdSource, ScriptedModelProvider, make_run_policy
 
-# Capability families that must stay outside Stage 2: filesystem, shell,
-# git, network, browser, MCP and skill access.
+# Capability families that must stay outside the current Stage 3F
+# slice: arbitrary shell, Git writes, network, browser, MCP and skill access.
 FORBIDDEN_TOOL_KEYWORDS = frozenset(
     {
-        "file",
-        "read_file",
-        "write_file",
-        "edit",
-        "list_dir",
-        "glob",
-        "grep",
         "shell",
         "bash",
         "zsh",
         "exec",
-        "run_command",
         "subprocess",
-        "git",
         "commit",
         "checkout",
         "network",
@@ -148,7 +139,19 @@ def test_no_forbidden_tool_capability_is_registered_or_exposed(tmp_path):
         products.orchestrator,
     ]
     names = _collect_tool_names(_iter_graph(graph))
-    assert names == {"lookup_record", "calculate", "update_configuration"}
+    assert names == {
+        "update_configuration",
+        "list_directory",
+        "read_file",
+        "find_files",
+        "search_text",
+        "apply_patch",
+        "write_file",
+        "show_changes",
+        "run_command",
+        "git_status",
+        "git_diff",
+    }
     for name in names:
         casefolded = name.casefold()
         assert not any(keyword in casefolded for keyword in FORBIDDEN_TOOL_KEYWORDS), name
