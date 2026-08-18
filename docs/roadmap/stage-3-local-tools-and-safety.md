@@ -1,7 +1,7 @@
 # Stage 3：本地 Code Agent 与安全闭环
 
 > 状态：进行中（已完成：通用工具策略、终端审批、配置工具先行切片）
-> 阶段结果：一个能够在指定工作空间中安全定位、修改并验证真实代码任务的单 Agent Code Agent
+> 阶段结果：一个能够在指定工作空间中安全定位、修改并验证真实代码任务，并可在原生沙箱中自动运行项目命令的单 Agent Code Agent
 > 上级文档：[开发路线总览](../ROADMAP.md)
 > 上一阶段：[Stage 2：Agent 核心能力](stage-2-agent-core.md)
 > 下一阶段：[Stage 4：Task、Session、Artifact 与持久化](stage-4-task-session-and-persistence.md)
@@ -88,6 +88,59 @@
 - 工具成功只能表示真实写入完成，不能只表示模型生成了内容。
 - 最终回答必须区分“已修改”“已验证”“未验证”“验证失败”。
 - 测试失败不能被自动包装成工具基础设施错误；命令退出码与诊断输出必须保留为类型化结果。
+
+### 4.5 权限范围、审批与隔离正交建模
+
+权限系统不实现为一个混合所有语义的“四档枚举”，而由三个正交维度组成：
+
+```text
+AccessScope: workspace | full_access
+ApprovalMode: manual | auto_safe | auto
+ProcessIsolation: host | native_sandbox
+```
+
+面向用户的模式只是这三个维度的预设：
+
+| 用户模式 | AccessScope | ApprovalMode | ProcessIsolation |
+|---|---|---|---|
+| Manual | workspace | manual | host |
+| Auto Safe | workspace | auto_safe | host |
+| Auto Sandboxed | workspace | auto | native_sandbox |
+| Full Access Manual | full_access | manual | host |
+| Full Access Auto | full_access | auto | host |
+
+Stage 3 只激活前三个工作空间模式。`full_access` 可以进入领域模型和策略合同，但在 Stage 4
+建立可持久、可撤销、可冻结的 `CapabilityGrant` 前必须明确返回 unsupported，不能静默降级或临时绕过
+工作空间解析器。
+
+参数校验后，领域预检生成包含规范化路径、命令类别和风险原因的 `OperationIntent`；统一策略返回
+`allow`、`require_approval` 或 `deny`。同一工具可以因实际参数得到不同结果，不能继续只依赖注册时的
+静态 `never|required` 审批标记。拒绝必须发生在审批之前，用户确认不能提升当前模式根本未授予的能力。
+
+### 4.6 成熟实现参考基线
+
+Stage 3 以 [earendil-works/pi](https://github.com/earendil-works/pi) 的 coding-agent 工具内核作为主要
+成熟实现参照，首个固定研究基线为 `@earendil-works/pi-coding-agent 0.84.2`、提交
+[`209bc7b9a89b01c8fd05861cf5bbdda3e300037a`](https://github.com/earendil-works/pi/commit/209bc7b9a89b01c8fd05861cf5bbdda3e300037a)。
+后续比较必须引用固定提交，不能以持续变化的 `main` 作为验收事实。
+
+重点借鉴：
+
+- 小而稳定的 read/write/edit/bash/grep/find/ls 工具内核和可替换 operations/adapter。
+- 行数与字节数双重输出限制、可继续读取提示和有界流式命令输出。
+- 唯一文本匹配、多处不重叠编辑、展示 Diff 与 unified patch。
+- 同一文件写入串行化，以及 Shell 超时、取消、进程树终止和 faux provider 离线测试。
+
+明确不照搬：
+
+- Pi 默认继承启动用户的文件、进程、网络和凭据权限；Morrow 必须执行本阶段的工作空间、审批与原生
+  沙箱边界。
+- 不接受绝对路径或默认工作空间外访问，不自动下载 `rg`/`fd` 等宿主工具。
+- 不直接覆盖写入，不采用无 revision/hash 的 last-write-wins，也不自动应用模糊文本匹配。
+- 不把任意 Shell、测试或项目脚本在 Host 上归类为可自动安全执行。
+
+目标表述固定为：**Pi 级编码工具体验，加上 Morrow 级工作空间安全、可见修改和可审计策略。**
+Pi 使用 MIT License；若实质复制而非独立重写代码，必须保留对应版权和许可声明。
 
 ## 五、计划范围
 
@@ -208,6 +261,34 @@ Shell 风险预检至少识别：
 
 第一版若无法可靠解析复杂 shell 字符串，应优先接受 `argv[]`，并把需要 shell 解释器的命令提升为高风险或默认拒绝。
 
+进程执行分成两个后端，但共享同一 `ProcessExecutionService`、`CommandResult`、预算、取消和输出合同：
+
+- `HostProcessAdapter`：服务 Manual 和受限 Auto Safe。工作目录与命令预检仍然有效，但宿主进程没有
+  操作系统级工作空间边界；任何项目代码、测试或不透明命令都必须逐次审批，并在预览中明确显示
+  “非沙箱宿主进程”。
+- `NativeSandboxProcessAdapter`：服务 Auto Sandboxed。macOS 以 Seatbelt 类原生机制为目标，Linux
+  以 bubblewrap 类原生机制为目标；具体可用性在启动时探测，不自动安装宿主组件。
+
+Auto Sandboxed 不把真实工作区直接作为可写执行目录。推荐执行过程固定为：
+
+```text
+当前工作区（包含未提交修改）
+→ 创建临时项目快照
+→ 以快照为可写根启动原生沙箱
+→ 收集 CommandResult、Artifact 和实际 Diff
+→ 丢弃快照
+→ 用户要保留命令修改时，通过受控 ChangeSet/Patch 路径写回真实工作区
+```
+
+首版沙箱合同：
+
+- 真实工作区不得以可写方式暴露给沙箱命令。
+- 项目快照可写；系统与必要工具链只读；临时目录为任务私有可写目录。
+- 默认不暴露用户 Home、凭据、SSH/GPG Agent、Docker Socket 或完整宿主环境。
+- 默认禁止全部网络，包括 loopback；未来 loopback 必须作为独立能力逐次授权，不能隐含在“测试”中。
+- 后端不可用、规则生成失败或能力无法证明时 fail closed，绝不回退到 Host 后自动执行。
+- 沙箱内修改不会自动进入真实工作区；推广修改仍受文件冲突检测、Diff 和审批策略约束。
+
 ### 5.6 Git 只读检查
 
 本阶段至少提供：
@@ -266,18 +347,33 @@ Shell 风险预检至少识别：
 
 门禁：Agent 可以修改一个 Fixture Bug，用户能够看到实际 Diff；冲突时不覆盖外部修改。
 
-### 3D：Shell、测试与取消
+### 3D：Host Shell、测试与取消
 
 交付：
 
 - ProcessExecutionService。
+- HostProcessAdapter 与动态 OperationIntent 风险判定。
 - 超时、输出限制、进程树取消。
 - 受控环境与命令风险预检。
-- 运行项目测试的闭环。
+- Manual 下运行项目测试的审批闭环。
 
 门禁：Agent 可以在修改后运行测试，并在失败后继续修正；取消不会留下失控子进程。
 
-### 3E：Git 检查与完整 Code Agent 验收
+### 3E：原生沙箱与 Auto Sandboxed
+
+交付：
+
+- NativeSandboxProcessAdapter 与平台能力探测。
+- macOS/Linux 后端的统一合同和 fail-closed 选择。
+- 包含当前未提交修改的临时项目快照。
+- 默认断网、最小环境、只读工具链和私有临时目录。
+- 沙箱 Diff/Artifact 收集及受控 ChangeSet 推广。
+- 沙箱逃逸、符号链接、子进程、网络和真实工作区保护测试。
+
+门禁：Auto Sandboxed 可以在临时快照中自动运行项目命令；无法读取或修改沙箱外用户数据，无法联网，
+也不能直接改变真实工作区。后端不可用时形成明确受限结果，且不会回退宿主执行。
+
+### 3F：Git 检查与完整 Code Agent 验收
 
 交付：
 
@@ -311,17 +407,18 @@ Filesystem / Subprocess / Git adapters
 
 ## 八、权限与审批策略
 
-建议的默认策略：
+Stage 3 的确定策略：
 
-| 操作 | 默认行为 |
-|---|---|
-| 列目录、读取文本、搜索、Git status/diff | 工作空间内自动允许，可由用户收紧 |
-| 创建新文件、应用小范围 Patch | 预览后确认；未来可由可信模式调整 |
-| 覆盖已有整文件、大范围批量修改 | 必须确认 |
-| 删除、权限变更、清理、重置 | 默认拒绝或逐次强确认 |
-| 运行只读/测试命令 | 根据命令类别自动允许或确认 |
-| 包安装、构建脚本、任意 shell 语法 | 必须确认 |
-| 网络、push、发布、部署 | 本阶段默认不可用 |
+| 操作 | Manual | 受限 Auto Safe | Auto Sandboxed |
+|---|---|---|---|
+| 工作区列目录、读取、搜索、Git status/diff | 自动允许 | 自动允许 | 自动允许 |
+| 新文件、精确小范围 Patch | 每次审批 | 自动允许 | 自动允许；仍由结构化文件工具写真实工作区 |
+| 整文件覆盖、大范围修改 | 强确认 | 强确认 | 强确认 |
+| 删除、权限变更、链接、清理、reset | 默认拒绝 | 默认拒绝 | 默认拒绝 |
+| 测试与项目命令 | Host 每次审批 | Host 每次审批 | 临时快照内自动允许 |
+| 任意或不透明 Shell | Host 每次审批 | 审批或拒绝，不自动 | 沙箱内允许；结果修改不自动推广 |
+| Git 写入 | 不提供 | 不提供 | 不提供 |
+| 网络、工作区外直接访问 | 拒绝 | 拒绝 | 由沙箱强制拒绝 |
 
 审批预览必须展示用户能理解的信息：
 
@@ -340,7 +437,7 @@ Filesystem / Subprocess / Git adapters
 - MCP、浏览器、云端机器、远程执行环境。
 - 多 Agent、Workflow、后台和周期任务。
 - 自动 Git 提交、推送、发布、部署。
-- 任意工作空间外文件访问。
+- Full Access 及任意工作空间外文件访问；Stage 4 建立 CapabilityGrant 后再激活。
 - 交互式 TTY、sudo、密码输入和全系统包管理。
 - 通用撤销系统；本阶段依靠 Diff、Git 工作树和冲突保护，完整恢复策略进入后续阶段。
 
@@ -350,6 +447,7 @@ Filesystem / Subprocess / Git adapters
 - 目录、读取、文件查找和文本搜索工具。
 - 精确 Patch、受控写入和实际 Diff。
 - 受控 Shell/测试执行、超时、取消和输出限制。
+- 原生沙箱 Adapter、临时项目快照与 Auto Sandboxed 模式。
 - 只读 Git 状态与 Diff。
 - ChangeSet、CommandResult 与工具审计模型。
 - 统一风险策略和审批预览。
@@ -401,6 +499,15 @@ Morrow 读取文件后，测试在写入前模拟外部修改。Patch 返回 con
 - 测试未运行时，最终回答明确标注未验证。
 - Git 工作区原有用户改动不会被归因于 Morrow。
 
+### 11.7 原生沙箱与真实工作区保护
+
+- Auto Sandboxed 在包含当前未提交修改的临时快照中运行测试。
+- 沙箱无法读取用户 Home、凭据、宿主 Socket 或工作区外测试文件。
+- 网络和 loopback 默认不可用。
+- 沙箱内删除或改写项目文件不会直接改变真实工作区。
+- 沙箱生成的修改只有经过 ChangeSet 预览、冲突检查和适用审批后才能推广。
+- 缺少平台后端或后端启动失败时不执行命令，也不回退 Host。
+
 ## 十二、测试与验证门禁
 
 至少覆盖：
@@ -408,6 +515,7 @@ Morrow 读取文件后，测试在写入前模拟外部修改。Patch 返回 con
 - 路径解析、符号链接、特殊文件与编码单元测试。
 - Patch 成功、上下文不匹配、revision 冲突与原子写测试。
 - Shell 退出码、超时、取消、子进程、输出截断测试。
+- 沙箱规则、网络、挂载、环境、临时快照、逃逸和 fail-closed 测试。
 - 风险策略和审批正反例。
 - ToolCycle 在成功、失败、拒绝、取消下保持闭合。
 - Fake Provider 驱动的端到端任务。
@@ -429,6 +537,8 @@ Morrow 读取文件后，测试在写入前模拟外部修改。Patch 返回 con
 | 风险 | 缓解 |
 |---|---|
 | Shell 变成绕过所有工具边界的万能入口 | 动态风险预检、受控工作目录、最小环境、默认拒绝外部/危险命令 |
+| 原生沙箱只保护宿主却允许命令破坏真实项目 | 在临时项目快照中执行，真实工作区不以可写方式挂载，修改通过 ChangeSet 推广 |
+| 沙箱不可用时自动降级为 Host | 启动能力探测、明确 unsupported、任何自动模式 fail closed |
 | 补丁误覆盖用户并发修改 | 基线哈希/mtime、上下文匹配、冲突返回、不做 last-write-wins |
 | 搜索和大文件耗尽上下文 | 文件/字节/结果预算、截断标记、分范围读取 |
 | 跨平台进程取消不一致 | 独立 Process Adapter、平台测试、进程组清理 |
@@ -443,10 +553,13 @@ Morrow 读取文件后，测试在写入前模拟外部修改。Patch 返回 con
 2. 默认无法读取或修改工作空间外路径，所有逃逸测试通过。
 3. Patch 能检测并发变化，不静默覆盖。
 4. Shell 超时、取消和超量输出不会卡死 AgentLoop 或留下失控进程。
-5. 高风险命令和修改不会在缺少明确授权时执行。
-6. 用户可以查看实际 Diff、命令结果和已发生副作用。
-7. 最终回答的修改与测试声明均能追溯到工具事实。
-8. 相关离线测试、静态检查和人工 acceptance 通过。
-9. `README.md` 与 `docs/ARCHITECTURE.md` 准确描述当前已实现能力。
+5. Manual 与受限 Auto Safe 不会在宿主上自动运行项目代码或不透明命令。
+6. Auto Sandboxed 可以在临时项目快照中自动运行项目命令，且平台缺失或隔离失败时不会回退 Host。
+7. 沙箱默认无网络、无用户 Home/凭据/宿主 Socket，且不能直接修改真实工作区。
+8. 高风险命令和修改不会在缺少明确授权时执行。
+9. 用户可以查看实际 Diff、命令结果和已发生副作用。
+10. 最终回答的修改与测试声明均能追溯到工具事实。
+11. 相关离线测试、静态检查、平台隔离测试和人工 acceptance 通过。
+12. `README.md` 与 `docs/ARCHITECTURE.md` 准确描述当前已实现能力。
 
 Stage 3 完成后，Morrow 才具备后续持久 Task、学习和 Workflow 所需的真实任务基础。

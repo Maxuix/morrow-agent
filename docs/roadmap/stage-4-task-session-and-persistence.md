@@ -1,7 +1,7 @@
 # Stage 4：Task、Session、Artifact 与持久化
 
 > 状态：未开始
-> 阶段结果：Morrow 的会话、任务、工具周期和关键产物可在进程退出后恢复，并能对未完成副作用进行安全对账
+> 阶段结果：Morrow 的会话、任务、工具周期、权限授权和关键产物可在进程退出后恢复，并能对未完成副作用进行安全对账
 > 上级文档：[开发路线总览](../ROADMAP.md)
 > 上一阶段：[Stage 3：本地 Code Agent 与安全闭环](stage-3-local-tools-and-safety.md)
 > 下一阶段：[Stage 5：可审查学习与长期记忆](stage-5-reviewable-learning-and-memory.md)
@@ -17,6 +17,7 @@ Stage 4 把 Morrow 从“进程内可用的 Code Agent”变成“具有可靠�
 → 创建或恢复 Session
 → 接受一个可能跨多轮的 TaskRun
 → 记录 Turn / AgentRun / ToolCycle / Approval / Artifact
+→ 冻结本次 AgentRun 的权限范围、审批模式与授权来源
 → 在副作用前持久化执行意图
 → 完成、暂停、失败或等待用户
 → 进程退出或崩溃
@@ -31,6 +32,7 @@ Stage 4 把 Morrow 从“进程内可用的 Code Agent”变成“具有可靠�
 - 哪些操作完成、失败、取消或结果未知？
 - 下次启动应该继续、重试、对账还是重新询问用户？
 - 长上下文中哪些内容被保留、压缩或转为 Artifact？
+- 当时实际授予了什么权限、由谁授予、何时失效或撤销？
 
 ## 二、本阶段与 Stage 5 的边界
 
@@ -41,6 +43,8 @@ Stage 4 负责：
 - 长上下文压缩与任务摘要。
 - 生成结构化 `TaskOutcome`。
 - 保存来源明确的 Artifact 和执行证据。
+- 持久化、冻结、查询和撤销显式 `CapabilityGrant`。
+- 在可靠审计与恢复边界上先激活 Full Access Manual，再提供受控 Full Access Auto。
 
 Stage 4 不负责：
 
@@ -135,13 +139,43 @@ Stage 4 先建立单 Agent 运行记录：
 
 - 使用的 Provider/Model。
 - 冻结的 RunPolicy、工具集和配置快照引用。
+- 冻结的 AccessScope、ApprovalMode、ProcessIsolation 与 CapabilityGrant 引用。
 - 开始、结束和状态。
 - 输入/输出消息范围。
 - Token、调用次数、停止原因和错误分类。
 
 Stage 7 再把它扩展为由 `AgentDefinition` 和 Workflow Node 构造的通用执行单元。
 
-### 4.5 Artifact
+### 4.5 CapabilityGrant
+
+`CapabilityGrant` 是用户明确授予高权限能力的本地授权记录，不是 Preference、Memory、Skill 或模型输出。
+第一版至少包含：
+
+```text
+grant_id
+scope: full_access
+approval_mode: manual | auto
+subject_task_run_id
+subject_agent_run_id
+granted_by: user
+created_at / expires_at
+revoked_at
+policy_version
+reason_summary
+```
+
+确定规则：
+
+- Stage 4 第一版只允许用户在当前前台任务中显式创建授权；模型、Tool、Skill、Memory、项目文件和
+  Provider 响应都不能创建、延长或提升授权。
+- Full Access 默认只对一个 AgentRun 有效，Run 结束即失效；不得保存为全局默认或从历史自动恢复。
+- AgentRun 开始后冻结有效权限快照；配置变化不得让运行中的 Run 静默获得更高权限。
+- 撤销会阻止新的副作用，并请求取消仍在执行的相关工具；已发生操作保留事实记录，不伪装回滚。
+- `full_access + manual` 先开放；受控 `full_access + auto` 只能自动执行可结构化判定的操作，不透明
+  Shell/脚本仍需审批。
+- 真正“任意宿主命令永不询问”的 raw auto 不属于默认 Full Access，也不进入本阶段。
+
+### 4.6 Artifact
 
 Artifact 是不适合完整放进聊天历史、但需要保留和传递的任务产物。
 
@@ -175,7 +209,7 @@ metadata
 
 聊天历史保存 Artifact 引用和有界摘要，而不是重复保存大内容。
 
-### 4.6 TaskOutcome
+### 4.7 TaskOutcome
 
 任务结束时生成结构化结果：
 
@@ -557,6 +591,19 @@ REPL 至少支持：
 
 门禁：杀死进程后可以恢复真实 Stage 3 任务，并准确说明已发生和未知副作用。
 
+### 4F：CapabilityGrant 与 Full Access 激活
+
+交付：
+
+- CapabilityGrant 领域模型、Store、Command/Query API 与审计投影。
+- AgentRun 权限快照、有效期、撤销和 fail-closed 恢复。
+- Full Access Manual 的显式逐次审批。
+- 受控 Full Access Auto：结构化操作可自动，不透明 Shell/脚本继续审批。
+- 权限提升来源、过期、撤销、崩溃点和跨工作空间隔离测试。
+
+门禁：用户可以为一个前台 AgentRun 明确授予并撤销 Full Access；系统重启后不会自动恢复过期或未能
+证明有效的授权，模型和长期状态不能提升权限，所有副作用都能追溯到当时冻结的授权与审批策略。
+
 ## 十二、测试与故障注入
 
 至少覆盖：
@@ -573,6 +620,10 @@ REPL 至少支持：
 - Fork 后父子隔离。
 - Session 删除与仍被引用 Artifact 的保留。
 - Provider 流中断和部分文本。
+- CapabilityGrant 创建、冻结、过期、撤销和恢复。
+- 模型、Skill、Memory、项目配置或历史记录尝试提升权限。
+- Full Access 在工作空间、TaskRun 和 AgentRun 之间错误复用。
+- Full Access Auto 对结构化操作与不透明 Shell 的策略分流。
 
 测试不得依赖不稳定 wall-clock sleep；使用可控时钟、故障注入点和脚本化 Provider/Runner。
 
@@ -586,6 +637,7 @@ REPL 至少支持：
 - 上下文压缩、checkpoint 和 Fork。
 - Command/Query/Event 接口。
 - RecoveryReport、备份和故障注入测试。
+- CapabilityGrant、AgentRun 权限快照与 Full Access Command/Query API。
 - 更新后的 ARCHITECTURE、README 和数据边界说明。
 
 ## 十四、完成标准
@@ -599,7 +651,9 @@ REPL 至少支持：
 7. 所有摘要和 Artifact 都可追溯到原始记录。
 8. A 工作空间 Session 不会默认在 B 工作空间恢复或注入。
 9. 存储损坏、迁移失败和 Artifact 缺失不会静默覆盖原数据。
-10. Stage 3 的真实 Code Agent 任务可以在故障注入后恢复并继续。
+10. CapabilityGrant 只能由用户显式创建，按 AgentRun 冻结和失效，且可查询、撤销、审计。
+11. Full Access Manual 与受控 Full Access Auto 不会被模型、配置、Skill、Memory 或恢复流程静默开启。
+12. Stage 3 的真实 Code Agent 任务可以在故障注入后恢复并继续。
 
 ## 十五、明确不包含
 
@@ -610,6 +664,7 @@ REPL 至少支持：
 - 后台 Worker、定时任务和跨重启自动运行。
 - 多设备同步和团队共享。
 - 完整桌面 GUI。
+- 可持久设为全局默认的 Full Access，以及任意宿主命令永不询问的 raw auto 专家模式。
 
 ## 十六、进入 Stage 5 前必须确认
 

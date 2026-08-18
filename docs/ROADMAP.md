@@ -220,8 +220,8 @@ Morrow 必须在数据模型中区分以下信息，不允许都塞入一个“m
 |---|---|---|---|
 | 1. 方向确定与可运行原型 | 已完成 | 验证终端对话、工作空间识别与早期连续性方向 | [阶段 1](roadmap/stage-1-direction-and-prototype.md) |
 | 2. Agent 核心能力 | 已完成 | 建立稳定 AgentLoop、ToolCycle、预算、取消与错误闭环 | [阶段 2](roadmap/stage-2-agent-core.md) |
-| 3. 本地 Code Agent 与安全闭环 | 进行中 | 在指定工作空间中可靠定位、修改并验证真实代码任务 | [阶段 3](roadmap/stage-3-local-tools-and-safety.md) |
-| 4. Task、Session、Artifact 与持久化 | 未开始 | 程序重启后可恢复 Session/Task，并保留可查询运行产物 | [阶段 4](roadmap/stage-4-task-session-and-persistence.md) |
+| 3. 本地 Code Agent 与安全闭环 | 进行中 | 在指定工作空间中可靠定位、修改、验证，并可在原生沙箱中自动运行项目命令 | [阶段 3](roadmap/stage-3-local-tools-and-safety.md) |
+| 4. Task、Session、Artifact 与持久化 | 未开始 | 程序重启后可恢复 Session/Task，冻结可审计授权，并在此基础上激活 Full Access | [阶段 4](roadmap/stage-4-task-session-and-persistence.md) |
 | 5. 可审查学习与长期记忆 | 未开始 | 任务后产生有证据的学习候选，由策略和用户决定是否晋升 | [阶段 5](roadmap/stage-5-reviewable-learning-and-memory.md) |
 | 6. Skills 与扩展生命周期 | 未开始 | Skill、MCP 和 Provider 扩展具备版本、权限与生命周期治理 | [阶段 6](roadmap/stage-6-skills-and-extensions.md) |
 | 7. Agent Definition 与静态 Workflow Runtime | 未开始 | 用户可定义多个 Agent，并运行经编译验证的版本化 Workflow | [阶段 7](roadmap/stage-7-workflow-runtime.md) |
