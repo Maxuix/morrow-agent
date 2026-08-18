@@ -2,26 +2,28 @@
 
 ## Current status
 
-The Natural-Language Configuration Tooling plan is complete after explicit user authorization.
-Subplans 25–28 delivered and accepted the generic approval boundary, typed shared configuration
-service, production `update_configuration` registration, terminal approval composition, atomic
-single-AgentLoop routing cutover, final evidence, package smoke, and documentation. Stage 3
-local file/search/edit/Shell work remains out of scope.
+Stage 3 Local Tool Execution has a review-remediated implementation plan and six ordered
+subplans. All confirmed findings from `docs/reviews/stage-3-implementation-plan-review.md` are
+resolved in the plan contract. Implementation has not started, no subplan is active, and no
+application or test code was changed as part of remediation.
 
 ## Last completed task
 
-Completed Subplan 28 final acceptance: strict collection, full offline regression, quality
-gates, source/capability scans, Markdown reference audit, fresh wheel inventory, fresh-env
-import/policy discovery, and installed CLI help are green. Live intent evaluation was not run.
+Verified the review against current code and remediated the plan: capability-derived system
+boundary, RunPolicy-compatible semantic results, numeric Auto Safe limits, bounded parent creation,
+Gate P0/CoW/toolchain/sandbox phase budgets, mutation Diff preview, production demo-tool removal,
+current-run sandbox promotion, search ADR/budgets, Git metadata confinement, locked ToolFacts,
+terminal summary/local metrics, exact capability guards, and configuration non-escalation tests.
 
 ## Next action
 
-No planned implementation action remains. A future change should start a new explicitly
-authorized plan or reopen this one with fresh scope.
+After explicit implementation authorization, re-check the repository baseline and run Gate P0 on
+the current macOS host. If it passes, activate Subplan 29. If it fails, do not begin implementation
+or silently downgrade Stage 3; return for an explicit scope/platform decision.
 
 ## Active task
 
-None; the active plan is complete.
+None; this is a planning-only state.
 
 ## Blockers
 
@@ -29,14 +31,29 @@ None.
 
 ## Active boundary
 
-- One AgentLoop for every non-Slash input.
-- One standard `update_configuration` tool for natural-language Preferences/Profile changes.
-- No keyword authority or secondary structured configuration route.
-- No configuration-specific AgentLoop, ToolExecutor, Orchestrator, event, or approval branch.
-- Generic local Tool Policy/ApprovalPort; thin handler over ConfigPatchService.
-- Per-call approval and atomic writes with deliberate cross-call partial persistence; no
-  rollback transaction.
-- Existing reset tombstones, session-null revision, fixed no-op matrix, and dirty/history
-  semantics are locked before implementation.
-- No Handoff, Provider/credential/security tool, file/Shell/Git/network capability, or
-  persistent Session work.
+- Stage 3 delivers `manual` and restricted `auto-safe`, then native-isolated
+  `auto-sandboxed`; it does not deliver unrestricted Full Access.
+- Full Access remains a separate Stage 4 scope and must not appear as a working Stage 3 mode.
+- Permission scope and approval behavior are independent axes; the initial scope remains
+  workspace-only.
+- Native sandboxing requires current-host macOS Gate P0 plus definitive real escape evidence,
+  never Docker or Host fallback. Linux is claimed only after a real runner passes; Windows is not
+  a first-release Auto Sandboxed target.
+- Network, loopback, workspace escape, home-directory access, credential/socket access,
+  destructive commands, arbitrary Git writes, background jobs, browser, MCP, Skills, persistent
+  chat history, and LLM summaries are outside the Stage 3 boundary unless the plan is explicitly
+  revised and re-authorized.
+- SensitiveResourcePolicy blocks protected credential/private-key content across file, search,
+  mutation, Diff, snapshot, process-output, and Git paths; example/template exceptions are explicit.
+- Approved Manual/Auto Safe Host commands are not OS-isolated and may attempt outside/network
+  access; previews and acceptance must say so. Only Auto Sandboxed claims enforced confinement.
+- The planned common production surface is configuration plus list/read/find/search,
+  patch/write/show changes, command execution, and read-only Git status/diff. Supported sandbox
+  composition adds only current-run, approval-required sandbox-change promotion; demo lookup/
+  calculate tools become test-only.
+- Read windows are capped at 400 lines/8 KiB and tightened to current result budgets; Auto Safe
+  mutation has explicit per-call/cumulative thresholds and whole-file replace always prompts.
+- Pi is the primary behavioral reference, Hermes is secondary evidence, and neither project is
+  copied wholesale or treated as Morrow's architecture authority.
+- Subplans execute serially in order 29–34; public event lifecycle or bundled policy-default
+  changes are hold points that require separate user approval.

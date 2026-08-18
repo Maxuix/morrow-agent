@@ -691,3 +691,45 @@
   into a fresh Python 3.13 virtual environment with offline dependency reuse; import,
   bundled-policy discovery, configuration-module discovery, and installed `morrow --help`
   passed. The master plan is complete; no implementation subplan remains active.
+
+## 2026-08-18 — Stage 3 implementation plan drafted
+
+- Re-checked the current repository, architecture, roadmap, tests, and completed configuration-
+  tooling plan before drafting Stage 3. No local file, search, edit, Shell, Git, or native-sandbox
+  project tool was treated as already implemented.
+- Locked permissions as independent access-scope, approval-mode, and process-isolation axes.
+  Stage 3 plans `manual`, restricted `auto-safe`, and fail-closed native `auto-sandboxed`;
+  unrestricted Full Access remains reserved for Stage 4.
+- Selected Pi coding agent release `0.84.2` / commit
+  `209bc7b9a89b01c8fd05861cf5bbdda3e300037a` as the primary fixed behavioral reference, with
+  Hermes as secondary evidence. Morrow keeps its own Core/Application/Runtime/Adapter ownership.
+- Defined the policy-decision contract, workspace path rules, bounded tool contracts, process and
+  Git boundaries, sensitive-resource/output protections, honest Host non-isolation boundary,
+  error taxonomy, validation gates, hold points, and final acceptance evidence.
+- Split execution into ordered Subplans 29–34: policy/workspace foundation; read/search; file
+  mutation and diff; host process execution; native sandbox; read-only Git and final acceptance.
+  No subplan was activated and `TODO.md` intentionally contains no executable task.
+- Removed completed Subplans 25–28 from the active subplan directory; their contents remain in Git
+  history. Planning files only were changed. No source code, test code, implementation command, or
+  implementation validation was performed or claimed.
+
+## 2026-08-18 — Stage 3 plan review remediated
+
+- Verified all 14 findings in `docs/reviews/stage-3-implementation-plan-review.md` against the
+  current system prompt, RunPolicy/result truncation, ToolExecutor/approval contracts, bootstrap
+  inventory, workspace identity, terminal/event surfaces, configuration schema, and boundary tests.
+- Confirmed Issues 1–5 as implementation blockers and Issues 6–13 as real plan gaps worth fixing.
+  Issue 14's current schema already excludes permission fields, but the missing anti-escalation
+  regression was added to Subplan 29.
+- Replaced the incompatible 2,000-line/50-KiB read promise with a 400-line/8-KiB ceiling plus
+  dynamic semantic envelope budgeting. Added capability-derived system prompts, exact Auto Safe
+  per-call/cumulative thresholds, four-level safe parent creation, and visible Diff approval.
+- Added pre-activation Gate P0 and kept Auto Sandboxed as a Stage 3 completion requirement, matching
+  the user's prior scope choice. Locked CoW/no-hardlink snapshotting, standard-library toolchain,
+  15/75/15/10-second phase budgets, current-host macOS evidence, and conditional Linux claims.
+- Removed demo lookup/calculation tools from the Stage 3 production endpoint, added the current-run
+  approval-required sandbox-promotion subset tool, fixed rg/fallback/ADR budgets, confined Git
+  metadata, locked ToolFact/terminal-summary/local-metrics fields, and replaced substring boundary
+  tests with exact inventory plus forbidden capability families.
+- Planning documents only were changed. Gate P0 was not run, no subplan was activated, and no
+  production/test implementation or implementation validation was performed.

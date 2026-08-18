@@ -2,13 +2,10 @@
 
 ## Active subplan
 
-None; the current plan is complete.
+None. Stage 3 is review-remediated but implementation has not started.
 
 ## Tasks
 
-- [x] CT.28.1 — Build the requirement-to-evidence matrix
-- [x] CT.28.2 — Accept intent-policy behavior honestly
-- [x] CT.28.3 — Accept the real offline terminal product flow
-- [x] CT.28.4 — Accept architecture, state, and capability boundaries
-- [x] CT.28.5 — Reconcile product and architecture documentation
-- [x] CT.28.6 — Run final package and quality gates
+No executable task is active. After explicit implementation authorization, run the
+non-repository-mutating Gate P0. Only if the current-host native-sandbox contract passes may
+Subplan 29 be activated and its current executable tasks copied into this file.
