@@ -1,8 +1,7 @@
 # Subplans
 
-Stage 4 Durable Task, Session, Artifact, and Recovery is the active master plan. Subplan 44 owns
-CapabilityGrant and Full Access Manual and is ready to close; Subplan 45 remains inactive until the
-completion commit and explicit execution-state transition.
+Stage 4 Durable Task, Session, Artifact, and Recovery is complete. Subplan 45 closed the integrated
+acceptance; Stage 5 remains inactive until the user explicitly requests activation.
 
 Subplan 35 and the conditional review remediation were accepted on 2026-08-19 and preserved in Git
 history at `20fb43e`; its retired task file is no longer kept in the active subplan directory.
@@ -18,7 +17,7 @@ history at `20fb43e`; its retired task file is no longer kept in the active subp
 | 42 | `42-stage4-context-fork.md` | completed |
 | 43 | `43-stage4-api-cli-doctor-backup.md` | completed |
 | 44 | `44-stage4-full-access-manual.md` | completed |
-| 45 | `45-stage4-acceptance.md` | pending |
+| 45 | `45-stage4-acceptance.md` | completed |
 
 Completed Stage 3 Subplans 29–34 were removed from the active directory when this master plan was
 created; they remain recoverable in Git history together with their accepted evidence.

@@ -1,8 +1,8 @@
 # Stage 4 Durable Task, Session, Artifact, and Recovery Plan
 
-> Status: active — production implementation
-> Active subplan: 44 — CapabilityGrant and Full Access Manual
-> Production implementation: authorized; v8 application API, events, doctor, backup, and cleanup have landed
+> Status: complete — Stage 4 accepted
+> Active subplan: none (Stage 5 remains inactive until the user requests activation)
+> Production implementation: authorized; v9 grants, v8 application API, events, doctor, backup, and cleanup have landed
 > Stage 3 production baseline: `003dbdaab652520ca5cadf451ebca7a13bcba36d`
 > Stage 4 accepted contract baseline: `20fb43e`
 > Scope: durable foreground-agent operation, recovery, artifacts, context checkpoints,
@@ -316,8 +316,8 @@ but must preserve accepted public and safety contracts or explicitly reopen the 
 | 41 | Artifact Store and durable payload budgets | completed | integrity-checked bounded artifacts and missing-file behavior |
 | 42 | Context checkpoint and conversation fork | completed | budgeted context with immutable provenance and isolated fork |
 | 43 | Command/Query/Event, CLI, doctor, and backup | completed | one application API and operable recovery UX |
-| 44 | CapabilityGrant and Full Access Manual | active | auditable run-bound manual elevation; no Full Access Auto |
-| 45 | End-to-end acceptance and Stage 4 closeout | pending | crash-tested packaged durable personal agent |
+| 44 | CapabilityGrant and Full Access Manual | completed | auditable run-bound manual elevation; no Full Access Auto |
+| 45 | End-to-end acceptance and Stage 4 closeout | completed | crash-tested packaged durable personal agent |
 
 Detailed executable tasks and gates are in `.agent/subplans/36-*.md` through
 `.agent/subplans/45-*.md`. Completed Subplan 35 is preserved in Git history at `20fb43e`.
@@ -421,13 +421,14 @@ Stage 4 is complete only when all of the following are evidenced:
 - Controlled Full Access Auto and arbitrary unapproved Host execution;
 - complete export/delete product lifecycle, multi-device sync, team sharing, and GUI.
 
-## Active gate
+## Stage 4 closeout
 
-Subplan 39 landed recovery classification, hash-based file reconciliation, Host/sandbox
-outcome_unknown, ConversationLog recovery-close, and subprocess crash evidence on 2026-08-19.
-Subplan 40 landed the complete TaskRun state machine and versioned TaskOutcome (schema v5), including
-independent review remediation and offline validation. Subplan 41 landed the Artifact Store and v6
-metadata migration with bounded, redacted, integrity-checked payloads. Subplan 42 is now the only
-active work and may implement deterministic checkpoints and conversation fork. Grants, public-event
-changes, and Full Access remain inactive until their own subplans and hold points are explicitly
-activated.
+Subplans 36–44 delivered the production Operational Store v1–v9, durable Session/Task/Turn/AgentRun
+history, ToolExecution/Approval/Recovery evidence, TaskOutcome, bounded Artifacts, ContextCheckpoint,
+Session Fork, the unified API/CLI/REPL surface, doctor, backup/restore, and auditable Full Access
+Manual grants. Subplan 45 completed the integrated product, fault, migration, security, packaging,
+and documentation acceptance on 2026-08-20. The reproducible evidence is recorded in
+`docs/acceptance/stage-4-durable-agent-evidence.md`.
+
+Stage 5 is deliberately not activated by this closeout. Its planning boundary remains available only
+after a new user request.

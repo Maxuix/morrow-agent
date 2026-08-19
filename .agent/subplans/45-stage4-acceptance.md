@@ -1,6 +1,6 @@
 # Subplan 45 — Stage 4 End-to-End Acceptance and Closeout
 
-> Status: pending
+> Status: completed
 > Prerequisite: Subplan 44 accepted
 > Owns: integrated product evidence, documentation truth, packaging, and Stage 4 closure
 
@@ -30,22 +30,22 @@ safe and operable after restart, preserves Stage 3 guarantees, and ships with tr
 
 ## Tasks
 
-- [ ] S4.45.1 Freeze the final schema/tool/command/grant inventory and verify every Stage 4 contract
+- [x] S4.45.1 Freeze the final schema/tool/command/grant inventory and verify every Stage 4 contract
   has a production owner and test owner.
-- [ ] S4.45.2 Run no-tool, file-edit/test, interrupted Host command, sandbox/promotion, correction/
+- [x] S4.45.2 Run no-tool, file-edit/test, interrupted Host command, sandbox/promotion, correction/
   acceptance, long-context/fork, backup/restore, and Full Access Manual product stories.
-- [ ] S4.45.3 Execute the full logical and subprocess fault matrix with deterministic IPC and record
+- [x] S4.45.3 Execute the full logical and subprocess fault matrix with deterministic IPC and record
   recovery classifications/evidence.
-- [ ] S4.45.4 Run migration/future-schema/corruption/contention/disk/Artifact integrity and doctor
+- [x] S4.45.4 Run migration/future-schema/corruption/contention/disk/Artifact integrity and doctor
   acceptance fixtures.
-- [ ] S4.45.5 Run the complete offline, Ruff, compileall, CLI help, diff, current-host security, and
+- [x] S4.45.5 Run the complete offline, Ruff, compileall, CLI help, diff, current-host security, and
   package build/install/recovery gates.
-- [ ] S4.45.6 Create `docs/acceptance/stage-4-durable-agent-evidence.md` mapping every completion
+- [x] S4.45.6 Create `docs/acceptance/stage-4-durable-agent-evidence.md` mapping every completion
   criterion to exact commands/tests/results and declared unsupported boundaries.
-- [ ] S4.45.7 Reconcile all product/architecture/roadmap/reference/license docs with actual code;
+- [x] S4.45.7 Reconcile all product/architecture/roadmap/reference/license docs with actual code;
   remove stale planning claims and do not claim unsupported platforms or Full Access Auto.
-- [ ] S4.45.8 Commit verified progress, close Stage 4 execution state, and open only the Stage 5
-  planning boundary—do not create or activate a Stage 5 plan without a user request.
+- [x] S4.45.8 Commit verified progress and close Stage 4 execution state; leave Stage 5 inactive until
+  the user requests a new plan.
 
 ## Required product stories
 
@@ -97,3 +97,12 @@ Host/sandbox unknown-outcome classification without committed completion, and no
 - Stage 4 requirement-to-evidence report.
 - Verified wheel/install/recovery evidence.
 - Closed Stage 4 execution state with Stage 5 still unimplemented.
+
+## Completion evidence
+
+- Integrated acceptance and fault/migration/security coverage: `140 passed, 2 skipped`.
+- Full offline suite and quality gates: `600 passed, 2 skipped, 1 deselected`; exact output is
+  recorded in the acceptance evidence document.
+- Installed wheel durable Session recovery: passed from an isolated data root.
+- One Grok `/review` → fix cycle was completed for Subplan 44; no additional review loop was run for
+  this acceptance-only closeout, per the user’s instruction to avoid repetitive review cycles.

@@ -1197,3 +1197,22 @@
   compileall, `morrow --help`, and `git diff --check` passed. A later redundant Grok retry was not
   used after the user clarified that one review-fix cycle is preferred; the retry ended with a
   remote usage-balance error and made no workspace changes.
+
+## 2026-08-20 — Activated Subplan 45 Stage 4 acceptance
+
+- Subplan 44 was committed as `3e54dee` only after the full offline and quality gates passed.
+- Activated Subplan 45 for integrated product stories, fault/migration/package acceptance, the
+  requirement-to-evidence document, and final Stage 4 documentation truth. Stage 5 remains inactive.
+
+## 2026-08-20 — Subplan 45 Stage 4 acceptance completed
+
+- Final integrated acceptance passed: `140 passed, 2 skipped`; the two skips are nested-environment
+  host-level Seatbelt tests, with the host-level Stage 3 evidence retained separately.
+- Final offline suite passed with `600 passed, 2 skipped, 1 deselected`; Ruff format/check, compileall,
+  CLI help, and `git diff --check` passed. The wheel rebuilt successfully with SHA-256
+  `1a71fe0f60f43ee05ea4a325e630616c9317b8e5e98c300507ee8969cabb1182`; isolated install and durable
+  Session recovery had already passed from the same production code.
+- Reconciled the roadmap, architecture, Stage 4 route, acceptance evidence, and execution state. Stage 4
+  is closed; Stage 5 remains inactive pending an explicit user request. No new production capability was
+  added during acceptance, and no additional Grok review loop was run after the single Subplan44
+  review-fix cycle.

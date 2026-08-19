@@ -2,32 +2,30 @@
 
 ## Current stage
 
-Stage 4 production implementation is active at CapabilityGrant and Full Access Manual. The
-Command/Query/Event, CLI, doctor, and backup surface has landed; Subplan 44 is ready to close and
-Stage 5 remains inactive.
+Stage 4 end-to-end acceptance and closeout is complete. Subplans 36–45 are complete; Stage 5 remains
+inactive until the user explicitly requests its activation.
 
 ## Active subplan
 
-Subplan 44 — CapabilityGrant and Full Access Manual.
+None — Stage 4 is closed.
 
 ## Tasks
 
-- [x] S4.44.1 Implement strict CapabilityGrant/PermissionSnapshot models and schemas with explicit
-  capability subsets, subject IDs, source/user evidence, expiry, revocation, and policy version.
-- [x] S4.44.2 Implement user-interface-only grant create/query/revoke commands with command receipts,
-  optimistic concurrency, and no Tool/model-callable elevation path.
-- [x] S4.44.3 Resolve and freeze the effective PermissionSnapshot at AgentRun start; link every
-  elevated ToolExecution/Approval and fail closed on missing, stale, expired, revoked, mismatched,
-  or unprovable evidence after restart.
-- [x] S4.44.4 Implement only `unconfined_host_process` for Full Access Manual, without adding
-  outside-file/network/browser/MCP/Git-write tool families or weakening ordinary workspace modes.
-- [x] S4.44.5 Add the mandatory `unconfined_host` preview and explicit approval language for opaque
-  Host commands, including reachability of user files, network, credentials, and Morrow state.
-- [x] S4.44.6 Implement revocation: block new effects, request cancellation of active relevant tools,
-  preserve completed/unknown facts, and never pretend to roll back.
-- [x] S4.44.7 Add threat-model and boundary tests for every possible elevation source and every
-  cross-scope reuse, including crash-created AgentRuns; extend doctor/application-event coverage for
-  grants and keep Controlled Auto explicitly unsupported.
-- [x] S4.44.8 Run product/security/crash/package regressions and update public permission docs.
+- [x] S4.45.1 Freeze the final schema/tool/command/grant inventory and verify every Stage 4 contract
+  has a production owner and test owner.
+- [x] S4.45.2 Run no-tool, file-edit/test, interrupted Host command, sandbox/promotion, correction/
+  acceptance, long-context/fork, backup/restore, and Full Access Manual product stories.
+- [x] S4.45.3 Execute the full logical and subprocess fault matrix with deterministic IPC and record
+  recovery classifications/evidence.
+- [x] S4.45.4 Run migration/future-schema/corruption/contention/disk/Artifact integrity and doctor
+  acceptance fixtures.
+- [x] S4.45.5 Run the complete offline, Ruff, compileall, CLI help, diff, current-host security, and
+  package build/install/recovery gates.
+- [x] S4.45.6 Create `docs/acceptance/stage-4-durable-agent-evidence.md` mapping every completion
+  criterion to exact commands/tests/results and declared unsupported boundaries.
+- [x] S4.45.7 Reconcile all product/architecture/roadmap/reference/license docs with actual code;
+  remove stale planning claims and do not claim unsupported platforms or Full Access Auto.
+- [x] S4.45.8 Commit verified progress and close Stage 4 execution state; leave Stage 5 inactive until
+  the user requests a new plan.
 
-Only Subplan 44 may be executed. Stage 5 remains inactive.
+Stage 4 is closed. Stage 5 remains inactive.
