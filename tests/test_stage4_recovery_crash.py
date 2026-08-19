@@ -5,7 +5,7 @@ from __future__ import annotations
 import multiprocessing
 import os
 import random
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -14,6 +14,7 @@ from morrow.adapters.state.journal import SqliteOperationalJournal
 from morrow.adapters.state.operational import BusyRetryPolicy, OperationalStore
 from morrow.application.recovery import RecoveryService
 from morrow.application.turns import SessionPersistence
+from morrow.core.capabilities import AccessScope, ApprovalMode, ProcessIsolation
 from morrow.core.domain import (
     AgentRunSnapshot,
     DurableAgentRun,
@@ -34,6 +35,15 @@ from morrow.core.execution import (
     transition_execution,
 )
 from morrow.core.models import ModelRef, Preferences, Profile
+from morrow.core.permissions import (
+    CapabilityGrant,
+    CapabilityIsolation,
+    CapabilityName,
+    GrantSource,
+    IsolationLabel,
+    PermissionSnapshot,
+    capability_grant_digest,
+)
 from morrow.core.recovery import FileObservation, RecoveryResolution
 from morrow.core.store import StoreOpenMode
 from morrow.runtime.conversation import ConversationLog
@@ -309,6 +319,133 @@ def test_restore_blocks_new_input_until_recovery(tmp_path: Path):
             session, "hello again", "client-new", turn_id="turn_9", agent_run_id="arun_9"
         )
         assert result.kind == "recovery"
+    finally:
+        handle.close()
+
+
+def test_recovery_resume_creates_an_ungranted_agent_run(tmp_path: Path):
+    store, handle, journal = _open(tmp_path)
+    try:
+        _seed(journal)
+        now = store.clock.now()
+        grant = CapabilityGrant(
+            grant_id="grt_1",
+            workspace_id="ws_1",
+            task_run_id="task_1",
+            agent_run_id="arun_1",
+            capabilities=(CapabilityName.UNCONFINED_HOST_PROCESS,),
+            granted_by=GrantSource.LOCAL_INTERFACE_COMMAND,
+            command_id="cmd_grant",
+            reason="prior foreground elevation",
+            preview_digest=_digest("preview"),
+            created_at=now,
+            expires_at=now + timedelta(hours=1),
+        )
+        journal.put_capability_grant("ws_1", grant)
+        journal.freeze_agent_run_permission_snapshot(
+            "ws_1",
+            "arun_1",
+            PermissionSnapshot(
+                permission_snapshot_id="psnap_1",
+                workspace_id="ws_1",
+                session_id="ses_1",
+                task_run_id="task_1",
+                turn_id="turn_1",
+                agent_run_id="arun_1",
+                access_scope=AccessScope.FULL_ACCESS,
+                approval_mode=ApprovalMode.MANUAL,
+                process_isolation=ProcessIsolation.HOST,
+                workspace_root_digest=_digest("root"),
+                workspace_read_only=False,
+                tool_schema_digest=_digest("tools"),
+                run_policy_digest=_digest("policy"),
+                permission_profile_digest=_digest("perms"),
+                source_revisions=_snapshot().source_revisions,
+                grant_id=grant.grant_id,
+                grant_digest=capability_grant_digest(grant),
+                granted_capabilities=grant.capabilities,
+                capability_isolations=(
+                    CapabilityIsolation(
+                        capability=CapabilityName.UNCONFINED_HOST_PROCESS,
+                        isolation=IsolationLabel.UNCONFINED_HOST,
+                    ),
+                ),
+                created_at=now,
+            ),
+        )
+        intent = _intent(
+            tool_name="run_command",
+            effect_class=EffectClass.UNCONFINED_EXTERNAL_EFFECT,
+            requires_approval=True,
+            preview=("unconfined_host: prior opaque Host command",),
+        )
+        prepared = journal.put_execution(
+            "ws_1",
+            _execution(
+                intent,
+                tool_name="run_command",
+                permission_snapshot_id="psnap_1",
+                grant_id="grt_1",
+                isolation=IsolationLabel.UNCONFINED_HOST,
+            ),
+        )
+        executing = transition_execution(
+            prepared,
+            ToolExecutionState.EXECUTING,
+            expected_row_version=1,
+            now=now,
+        )
+        journal.save_execution("ws_1", executing, expected_row_version=1)
+    finally:
+        handle.close()
+
+    store = OperationalStore(
+        tmp_path / "state", retry_policy=_retry(), clock=FixedClock(), maintenance_timeout=0
+    )
+    handle = store.open(StoreOpenMode.READ_WRITE)
+    try:
+        journal = SqliteOperationalJournal(handle)
+        session = Session(session_id="ses_1")
+        ids = FixedIdSource()
+        ids.counts["arun"] = 1
+        ids.counts["psnap"] = 1
+        persistence = SessionPersistence(
+            workspace_id="ws_1",
+            journal=journal,
+            store_session=handle,
+            id_source=ids,
+            model=ModelRef(provider_id="p", model_id="m"),
+            run_policy=type("P", (), {"model_dump": lambda self, mode=None: {}})(),
+            runtime_instance_id="host-2",
+            clock=store.clock,
+        )
+        persistence.restore_into(session)
+        assert persistence.open_report is not None
+        item = persistence.open_report.items[0]
+        persistence.apply_recovery(
+            session,
+            command_id="cmd_ack",
+            resolution=RecoveryResolution.ACKNOWLEDGE,
+            item_id=item.item_id,
+        )
+        resumed = persistence.apply_recovery(
+            session,
+            command_id="cmd_resume",
+            resolution=RecoveryResolution.RESUME,
+        )
+        assert resumed.status.value == "resolved"
+        assert persistence.current_agent_run_id == "arun_2"
+        new_run = journal.get_agent_run("ws_1", "arun_2")
+        assert new_run is not None
+        assert new_run.resume_of_agent_run_id == "arun_1"
+        assert new_run.permission_snapshot_id is None
+        assert journal.get_permission_snapshot_for_run("ws_1", "arun_2") is None
+        assert journal.list_capability_grants("ws_1", agent_run_id="arun_2") == ()
+        assert journal.get_agent_run("ws_1", "arun_1").permission_snapshot_id == "psnap_1"
+        resumed_snapshot = persistence.freeze_permission_snapshot(session, tools=())
+        assert resumed_snapshot.agent_run_id == "arun_2"
+        assert resumed_snapshot.grant_id is None
+        assert journal.get_permission_snapshot_for_run("ws_1", "arun_2") == resumed_snapshot
     finally:
         handle.close()
 

@@ -21,6 +21,7 @@ from morrow.core.execution import (
     tool_declaration,
 )
 from morrow.core.models import AssistantMessage, FunctionToolCall
+from morrow.core.permissions import UNCONFINED_HOST_WARNING, IsolationLabel
 from morrow.core.ports import IdSource
 from morrow.runtime.policy import ToolApproval
 from morrow.runtime.session import Session
@@ -113,6 +114,9 @@ def prepare_cycle_executions(
     agent_run_id: str,
     mutation=None,
     isolation: ProcessIsolation = ProcessIsolation.HOST,
+    permission_snapshot_id: str | None = None,
+    grant_id: str | None = None,
+    isolation_label: IsolationLabel | None = None,
 ) -> tuple[DurableToolExecution, ...]:
     permission_digest = sha256_digest(
         canonical_json_bytes(session.permission_profile.model_dump(mode="json"))
@@ -130,6 +134,13 @@ def prepare_cycle_executions(
             permission_digest=permission_digest,
             mutation=mutation,
             isolation=isolation,
+            grant_id=grant_id,
+        )
+        elevated = (
+            grant_id is not None
+            and call.name == "run_command"
+            and intent.effect_class is EffectClass.UNCONFINED_EXTERNAL_EFFECT
+            and intent.requires_approval
         )
         state = (
             ToolExecutionState.AWAITING_APPROVAL
@@ -149,6 +160,9 @@ def prepare_cycle_executions(
                 tool_name=call.name,
                 intent=intent,
                 state=state,
+                permission_snapshot_id=permission_snapshot_id,
+                grant_id=grant_id if elevated else None,
+                isolation=isolation_label if elevated else None,
             )
         )
     return tuple(executions)
@@ -165,6 +179,7 @@ def _prepare_one(
     permission_digest: str,
     mutation,
     isolation: ProcessIsolation,
+    grant_id: str | None,
 ) -> PreparedIntent:
     registered = tool_executor.tool_set.tools.get(call.name) if tool_executor is not None else None
     schema_digest = (
@@ -178,6 +193,7 @@ def _prepare_one(
     file_evidence: tuple[FileMutationEvidence, ...] = ()
     config_evidence = None
     preview: tuple[str, ...] = ()
+    policy_verdict: PolicyVerdict | None = None
     if registered is not None:
         try:
             arguments = registered.arguments_model.model_validate_json(call.arguments, strict=True)
@@ -198,9 +214,21 @@ def _prepare_one(
                         "prepared intent cannot await during persist",
                     )
                 if tool_executor.capability_policy is not None:
-                    decision = tool_executor.capability_policy.evaluate(resolved)
+                    decision = tool_executor.capability_policy.evaluate(
+                        resolved,
+                        allow_unconfined_host=grant_id is not None and call.name == "run_command",
+                    )
+                    policy_verdict = decision.verdict
                     requires_approval = decision.verdict is PolicyVerdict.REQUIRE_APPROVAL
                     policy_preview = tuple(decision.preview_summary)
+                    if (
+                        decision.verdict is PolicyVerdict.REQUIRE_APPROVAL
+                        and grant_id is not None
+                        and call.name == "run_command"
+                        and resolved.kind.value == "process"
+                        and resolved.requires_host
+                    ):
+                        policy_preview = (UNCONFINED_HOST_WARNING, *policy_preview)
             if registered.context_approval_preview is not None:
                 local_preview = registered.context_approval_preview(arguments, context)
             elif registered.approval_preview is not None:
@@ -227,6 +255,7 @@ def _prepare_one(
         permission_context_digest=permission_digest,
         effect_class=_declaration_effect(call.name, isolation),
         requires_approval=requires_approval,
+        policy_verdict=policy_verdict,
         file_evidence=file_evidence,
         config_evidence=config_evidence,
         preview=preview,

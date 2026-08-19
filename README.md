@@ -28,7 +28,7 @@ Linux 在真实 runner 验证前保持 unsupported，后端不可用时 fail clo
 ## 使用
 
 ```bash
-morrow [--dir PATH] [--permission-mode manual|auto-safe|auto-sandboxed]
+morrow [--dir PATH] [--permission-mode manual|auto-safe|auto-sandboxed|full-access-manual]
 morrow provider list
 morrow provider presets
 morrow provider add --preset opencode-go
@@ -37,6 +37,9 @@ morrow provider configure opencode-go
 morrow provider configure opencode-go --replace-credential
 morrow provider test opencode-go
 morrow model current
+morrow grant list --agent-run-id AGENT_RUN_ID
+morrow grant create TASK_RUN_ID AGENT_RUN_ID --reason "一次明确的本地验证"
+morrow grant revoke GRANT_ID --reason "用户撤销"
 ```
 
 用于 OpenCode Go Mimo v2.5 的持久化验收环境可使用仓库内包装命令；首次执行会隐藏输入
@@ -74,6 +77,11 @@ REPL 常用命令包括 `/workspace`、`/workspace edit summary ...`、`/workspa
 Host 命令审批会展示有界且脱敏的 argv/shell、工作目录、类别和超时；shell 包装的 Git 命令仍按
 Git 写入风险在审批前拒绝。命令文本只用于本地审批，不进入 `CommandResult`、Provider、公开事件或持久状态。
 
+`full-access-manual` 不会自动获得能力：只有本地 REPL 的 `/grant` 确认或 CLI `grant create` 命令能为一个前台
+AgentRun 授予 `unconfined_host_process`，且每次 opaque Host 命令仍要单独审批。审批前会明确说明该进程没有操作系统
+隔离，可能以当前用户权限触达用户文件、网络、凭据、套接字和 Morrow 状态；Grant 只对创建它的 AgentRun
+有效，过期、撤销或崩溃恢复后的新 AgentRun 都会 fail closed。
+
 `Ctrl+C` 在模型或工具活动期间取消当前任务，之后可以直接继续对话。`/new` 创建并切换到新的
 Session，不删除或归档旧会话；仅当对话仍只存在于进程内时才要求确认丢弃。`/exit` 和输入 EOF 在
 已持久化会话上直接退出并保留历史；仅进程内未保存对话仍需确认丢弃，取消则留在 REPL，确认提示
@@ -104,5 +112,6 @@ Auto Sandboxed 快照执行；支持后端时还提供始终需审批的当前�
 Linux 原生运行仍在真实 runner 验证前保持 unsupported。每次完成工具轮次后，终端可显示一行由本地 ToolFacts/metrics
 生成的有界事实摘要；该摘要不进入 Provider、公开事件或持久状态。
 `auto-sandboxed` 在 native backend 不可用或无法证明时会 fail closed。持久化聊天历史、Artifact、恢复、
-checkpoint 和 fork 属于 Stage 4；Full Access Manual 仍在 Stage 4 后续子计划；可审查学习从 Stage 5 开始，Skills/MCP、
-Multi-Agent Workflow、GUI 和后台任务属于更后续阶段，当前均未实现。
+checkpoint、fork、按 AgentRun 冻结的 CapabilityGrant 与 Full Access Manual 属于 Stage 4；Full Access Auto
+和 raw auto 仍不支持。可审查学习从 Stage 5 开始，Skills/MCP、Multi-Agent Workflow、GUI 和后台任务属于
+更后续阶段，当前均未实现。

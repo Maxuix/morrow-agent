@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from morrow.adapters.state.journal import SqliteOperationalJournal
 from morrow.application.artifacts import ArtifactService
@@ -13,6 +13,11 @@ from morrow.application.checkpoints import (
     SessionForkService,
 )
 from morrow.application.cleanup import ArtifactCleanupService
+from morrow.application.grants import (
+    CapabilityGrantError,
+    CapabilityGrantService,
+    validate_capability_subset,
+)
 from morrow.application.recovery import RecoveryService
 from morrow.application.tasks import (
     TaskCommandConflict,
@@ -30,6 +35,7 @@ from morrow.core.application import (
     QueryPage,
 )
 from morrow.core.artifacts import ArtifactError, ArtifactMetadata
+from morrow.core.capabilities import PermissionPreset, PermissionProfile
 from morrow.core.domain import (
     COMMAND_ID_PREFIX,
     WORKSPACE_ID_PREFIX,
@@ -41,7 +47,20 @@ from morrow.core.domain import (
     sha256_digest,
     validate_prefixed_id,
 )
-from morrow.core.execution import DurableApproval, DurableToolExecution
+from morrow.core.execution import (
+    DurableApproval,
+    DurableToolExecution,
+    ToolExecutionDisposition,
+    ToolExecutionState,
+    transition_execution,
+)
+from morrow.core.permissions import (
+    CAPABILITY_GRANT_ID_PREFIX,
+    PERMISSION_POLICY_VERSION,
+    CapabilityGrant,
+    CapabilityName,
+    PermissionSnapshot,
+)
 from morrow.core.ports import IdSource
 from morrow.core.recovery import (
     RecoveryDecisionError,
@@ -55,6 +74,13 @@ from morrow.runtime.ids import RandomIdSource
 
 def request_digest(operation: str, payload: dict[str, object]) -> str:
     return sha256_digest(canonical_json_bytes({"operation": operation, **payload}))
+
+
+_FULL_ACCESS_MANUAL_PROFILE_DIGEST = sha256_digest(
+    canonical_json_bytes(
+        PermissionProfile.from_preset(PermissionPreset.FULL_ACCESS_MANUAL).model_dump(mode="json")
+    )
+)
 
 
 def _now(clock: Callable[[], datetime] | None) -> datetime:
@@ -132,6 +158,50 @@ class OperationalApplicationService:
         if self.artifacts is None:
             return None
         return self._query(lambda: self.artifacts.get(artifact_id))
+
+    def get_grant(self, grant_id: str) -> CapabilityGrant | None:
+        return self._query(lambda: self.journal.get_capability_grant(self.workspace_id, grant_id))
+
+    def list_grants(
+        self,
+        *,
+        agent_run_id: str | None = None,
+        cursor: str | None = None,
+        limit: int = 50,
+    ) -> QueryPage[CapabilityGrant]:
+        offset = self._offset(cursor, limit)
+        grants = self._query(
+            lambda: self.journal.list_capability_grants(
+                self.workspace_id, agent_run_id=agent_run_id
+            )
+        )
+        page = grants[offset : offset + limit]
+        return QueryPage(
+            page, str(offset + len(page)) if offset + len(page) < len(grants) else None
+        )
+
+    def get_permission_snapshot(self, permission_snapshot_id: str) -> PermissionSnapshot | None:
+        return self._query(
+            lambda: self.journal.get_permission_snapshot(self.workspace_id, permission_snapshot_id)
+        )
+
+    def list_permission_snapshots(
+        self,
+        *,
+        agent_run_id: str | None = None,
+        cursor: str | None = None,
+        limit: int = 50,
+    ) -> QueryPage[PermissionSnapshot]:
+        offset = self._offset(cursor, limit)
+        snapshots = self._query(
+            lambda: self.journal.list_permission_snapshots(
+                self.workspace_id, agent_run_id=agent_run_id
+            )
+        )
+        page = snapshots[offset : offset + limit]
+        return QueryPage(
+            page, str(offset + len(page)) if offset + len(page) < len(snapshots) else None
+        )
 
     def list_artifacts(
         self,
@@ -406,6 +476,234 @@ class OperationalApplicationService:
                 session_id=execution.session_id,
                 result_kind="approval",
                 result_id=value.approval_id,
+                event_cursor=event.cursor,
+            )
+            return ApplicationCommandResult(value, receipt)
+
+        return self._translate(lambda: self.journal.transact(work))
+
+    def create_grant(
+        self,
+        *,
+        task_run_id: str,
+        agent_run_id: str,
+        capabilities: tuple[CapabilityName, ...],
+        reason: str,
+        preview_digest: str,
+        expires_at: datetime | None = None,
+        grant_id: str | None = None,
+        command_id: str | None = None,
+    ) -> ApplicationCommandResult[CapabilityGrant]:
+        """Create a grant from an explicit local-interface application command."""
+
+        try:
+            capabilities = validate_capability_subset(capabilities)
+        except CapabilityGrantError as exc:
+            raise self._translate_exception(exc) from exc
+        operation = "grant_create"
+        payload = {
+            "task_run_id": task_run_id,
+            "agent_run_id": agent_run_id,
+            "capabilities": tuple(value.value for value in capabilities),
+            "reason": reason,
+            "preview_digest": preview_digest,
+            "expires_at": expires_at.isoformat() if expires_at is not None else None,
+            "grant_id": grant_id,
+        }
+        command_id, digest, replay = self._prepare(operation, payload, command_id)
+        if replay is not None:
+            value = self._query(
+                lambda: self.journal.get_capability_grant(self.workspace_id, replay.result_id or "")
+            )
+            if value is None:
+                raise ApplicationError(
+                    ApplicationErrorCode.NEEDS_RECOVERY, "grant result is missing"
+                )
+            return ApplicationCommandResult(value, replay)
+
+        def work(txn: SqliteOperationalJournal):
+            existing = self._replay_in_txn(txn, command_id, digest)
+            if existing is not None:
+                value = txn.get_capability_grant(self.workspace_id, existing.result_id or "")
+                if value is None:
+                    raise ApplicationError(
+                        ApplicationErrorCode.NEEDS_RECOVERY, "grant result is missing"
+                    )
+                return ApplicationCommandResult(value, existing)
+            run = txn.get_agent_run(self.workspace_id, agent_run_id)
+            task = txn.get_task_run(self.workspace_id, task_run_id)
+            if run is None or task is None:
+                raise ApplicationError(ApplicationErrorCode.NOT_FOUND, "grant subject is missing")
+            turn = txn.get_turn(self.workspace_id, run.turn_id)
+            if turn is None or turn.task_run_id != task_run_id or run.session_id != task.session_id:
+                raise ApplicationError(
+                    ApplicationErrorCode.CROSS_WORKSPACE,
+                    "grant subject does not match the requested TaskRun",
+                )
+            if run.snapshot.permission_profile_digest != _FULL_ACCESS_MANUAL_PROFILE_DIGEST:
+                raise ApplicationError(
+                    ApplicationErrorCode.INVALID,
+                    "CapabilityGrant requires a Full Access Manual AgentRun",
+                )
+            created_at = _now(self.clock)
+            value = CapabilityGrantService(txn, workspace_id=self.workspace_id).create(
+                CapabilityGrant(
+                    grant_id=grant_id or self.id_source.new_id(CAPABILITY_GRANT_ID_PREFIX),
+                    workspace_id=self.workspace_id,
+                    task_run_id=task_run_id,
+                    agent_run_id=agent_run_id,
+                    capabilities=capabilities,
+                    command_id=command_id,
+                    reason=reason,
+                    preview_digest=preview_digest,
+                    policy_version=PERMISSION_POLICY_VERSION,
+                    created_at=created_at,
+                    expires_at=expires_at or created_at + timedelta(minutes=15),
+                ),
+                now=created_at,
+            )
+            event = self._event(
+                txn,
+                event_type="grant.created",
+                aggregate_kind="grant",
+                aggregate_id=value.grant_id,
+                payload={
+                    "task_run_id": value.task_run_id,
+                    "agent_run_id": value.agent_run_id,
+                    "capabilities": tuple(item.value for item in value.capabilities),
+                    "granted_by": value.granted_by.value,
+                    "expires_at": value.expires_at.isoformat(),
+                },
+            )
+            receipt = self._receipt(
+                txn,
+                command_id=command_id,
+                operation=operation,
+                digest=digest,
+                session_id=run.session_id,
+                result_kind="grant",
+                result_id=value.grant_id,
+                row_version=value.row_version,
+                event_cursor=event.cursor,
+            )
+            return ApplicationCommandResult(value, receipt)
+
+        return self._translate(lambda: self.journal.transact(work))
+
+    def revoke_grant(
+        self,
+        grant_id: str,
+        *,
+        reason: str,
+        expected_row_version: int | None = None,
+        command_id: str | None = None,
+    ) -> ApplicationCommandResult[CapabilityGrant]:
+        operation = "grant_revoke"
+        payload = {
+            "grant_id": grant_id,
+            "reason": reason,
+            "expected_row_version": expected_row_version,
+        }
+        command_id, digest, replay = self._prepare(operation, payload, command_id)
+        if replay is not None:
+            value = self._query(
+                lambda: self.journal.get_capability_grant(self.workspace_id, replay.result_id or "")
+            )
+            if value is None:
+                raise ApplicationError(
+                    ApplicationErrorCode.NEEDS_RECOVERY, "grant result is missing"
+                )
+            return ApplicationCommandResult(value, replay)
+
+        def work(txn: SqliteOperationalJournal):
+            existing = self._replay_in_txn(txn, command_id, digest)
+            if existing is not None:
+                value = txn.get_capability_grant(self.workspace_id, existing.result_id or "")
+                if value is None:
+                    raise ApplicationError(
+                        ApplicationErrorCode.NEEDS_RECOVERY, "grant result is missing"
+                    )
+                return ApplicationCommandResult(value, existing)
+            current = txn.get_capability_grant(self.workspace_id, grant_id)
+            if current is None:
+                raise ApplicationError(
+                    ApplicationErrorCode.NOT_FOUND, "capability grant is missing"
+                )
+            expected = current.row_version if expected_row_version is None else expected_row_version
+            was_unrevoked = current.revoked_at is None
+            value = CapabilityGrantService(txn, workspace_id=self.workspace_id).revoke(
+                current,
+                reason=reason,
+                now=_now(self.clock),
+                expected_row_version=expected,
+            )
+            invalidated_approvals = 0
+            cancellation_requests = 0
+            if was_unrevoked:
+                revoke_reason = "capability grant revoked"
+                for approval in txn.list_approvals_for_grant(self.workspace_id, value.grant_id):
+                    if approval.resolution.value == "pending" and approval.consumed_at is None:
+                        txn.revoke_approval_in_txn(
+                            self.workspace_id,
+                            approval.approval_id,
+                            now=value.revoked_at or _now(self.clock),
+                            reason=revoke_reason,
+                        )
+                        invalidated_approvals += 1
+                for execution in txn.list_executions_for_grant(self.workspace_id, value.grant_id):
+                    stamp = value.revoked_at or _now(self.clock)
+                    if execution.state in {
+                        ToolExecutionState.PREPARED,
+                        ToolExecutionState.AWAITING_APPROVAL,
+                    }:
+                        closed = transition_execution(
+                            execution,
+                            ToolExecutionState.CLOSED,
+                            expected_row_version=execution.row_version,
+                            disposition=ToolExecutionDisposition.DENIED,
+                            now=stamp,
+                        )
+                        txn.save_execution(
+                            self.workspace_id,
+                            closed,
+                            expected_row_version=execution.row_version,
+                        )
+                    elif execution.state is ToolExecutionState.EXECUTING:
+                        requested = txn.request_execution_cancellation_in_txn(
+                            self.workspace_id,
+                            execution.tool_execution_id,
+                            now=stamp,
+                            reason=revoke_reason,
+                        )
+                        if requested is not None and requested.cancel_requested_at is not None:
+                            cancellation_requests += 1
+            run = txn.get_agent_run(self.workspace_id, value.agent_run_id)
+            if run is None:
+                raise ApplicationError(
+                    ApplicationErrorCode.NEEDS_RECOVERY, "grant subject is missing"
+                )
+            event = self._event(
+                txn,
+                event_type="grant.revoked",
+                aggregate_kind="grant",
+                aggregate_id=value.grant_id,
+                payload={
+                    "agent_run_id": value.agent_run_id,
+                    "revoked_at": value.revoked_at.isoformat() if value.revoked_at else None,
+                    "row_version": value.row_version,
+                    "invalidated_approvals": invalidated_approvals,
+                    "cancellation_requests": cancellation_requests,
+                },
+            )
+            receipt = self._receipt(
+                txn,
+                command_id=command_id,
+                operation=operation,
+                digest=digest,
+                session_id=run.session_id,
+                result_kind="grant",
+                result_id=value.grant_id,
+                row_version=value.row_version,
                 event_cursor=event.cursor,
             )
             return ApplicationCommandResult(value, receipt)
@@ -1153,6 +1451,8 @@ class OperationalApplicationService:
                 else ApplicationErrorCode.INVALID
             )
             return ApplicationError(code, text)
+        if isinstance(exc, CapabilityGrantError):
+            return ApplicationError(exc.code, str(exc))
         if isinstance(exc, ArtifactError):
             code = (
                 ApplicationErrorCode.NOT_FOUND

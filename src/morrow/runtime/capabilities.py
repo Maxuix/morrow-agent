@@ -21,6 +21,8 @@ from morrow.core.capabilities import (
 class CapabilityReason(StrEnum):
     ALLOWED = "allowed"
     FULL_ACCESS_UNSUPPORTED = "full_access_unsupported"
+    FULL_ACCESS_GRANT_REQUIRED = "full_access_grant_required"
+    FULL_ACCESS_HOST_APPROVAL_REQUIRED = "full_access_host_approval_required"
     INVALID_PROFILE = "invalid_profile"
     READ_ONLY_SESSION = "read_only_session"
     PROTECTED_RESOURCE = "protected_resource"
@@ -70,13 +72,27 @@ class CapabilityPolicy:
         self.workspace = workspace
         self.sandbox_available = sandbox_available
 
-    def evaluate(self, intent: OperationIntent) -> PolicyDecision:
-        if self.profile.access_scope is AccessScope.FULL_ACCESS:
-            return self._deny(CapabilityReason.FULL_ACCESS_UNSUPPORTED)
+    def evaluate(
+        self, intent: OperationIntent, *, allow_unconfined_host: bool = False
+    ) -> PolicyDecision:
         if not self._profile_supported():
-            return self._deny(CapabilityReason.INVALID_PROFILE)
+            reason = (
+                CapabilityReason.FULL_ACCESS_UNSUPPORTED
+                if self.profile.access_scope is AccessScope.FULL_ACCESS
+                else CapabilityReason.INVALID_PROFILE
+            )
+            return self._deny(reason)
+        full_access_host = self._is_full_access_host(intent)
+        if full_access_host and not allow_unconfined_host:
+            return self._deny(CapabilityReason.FULL_ACCESS_GRANT_REQUIRED)
         for flag, reason in _DENIED_RISKS.items():
             if flag in intent.risk_flags:
+                if full_access_host and flag in {
+                    RiskFlag.OUTSIDE_WORKSPACE,
+                    RiskFlag.NETWORK,
+                    RiskFlag.LOOPBACK,
+                }:
+                    continue
                 return self._deny(reason)
         if intent.kind is OperationKind.EXTERNAL_EFFECT:
             return self._deny(CapabilityReason.EXTERNAL_EFFECT_NOT_ENABLED)
@@ -99,6 +115,11 @@ class CapabilityPolicy:
                 if not self.sandbox_available:
                     return self._deny(CapabilityReason.SANDBOX_UNAVAILABLE)
                 return self._allow()
+            if self.profile.access_scope is AccessScope.FULL_ACCESS:
+                return self._approval(
+                    CapabilityReason.FULL_ACCESS_HOST_APPROVAL_REQUIRED,
+                    intent,
+                )
             return self._approval(
                 CapabilityReason.HOST_PROCESS_APPROVAL_REQUIRED,
                 intent,
@@ -118,9 +139,21 @@ class CapabilityPolicy:
         return self._deny(CapabilityReason.INVALID_PROFILE)
 
     def _profile_supported(self) -> bool:
+        if self.profile.access_scope is AccessScope.FULL_ACCESS:
+            return (
+                self.profile.approval_mode is ApprovalMode.MANUAL
+                and self.profile.process_isolation is ProcessIsolation.HOST
+            )
         if self.profile.approval_mode is ApprovalMode.AUTO:
             return self.profile.process_isolation is ProcessIsolation.NATIVE_SANDBOX
         return self.profile.process_isolation is ProcessIsolation.HOST
+
+    def _is_full_access_host(self, intent: OperationIntent) -> bool:
+        return (
+            self.profile.access_scope is AccessScope.FULL_ACCESS
+            and intent.kind is OperationKind.PROCESS
+            and intent.requires_host
+        )
 
     @staticmethod
     def _mutates_or_runs(intent: OperationIntent) -> bool:

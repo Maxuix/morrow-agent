@@ -7,6 +7,7 @@ import pytest
 
 from morrow.application.orchestrator import DispatchResult
 from morrow.core.models import AgentEvent, ToolApprovalRequest, ToolEffect
+from morrow.core.permissions import UNCONFINED_HOST_WARNING
 from morrow.interfaces import terminal as terminal_module
 from morrow.runtime.session import Session
 from morrow.testing import seed_user_turn
@@ -25,11 +26,13 @@ class ScriptedTerminal:
     def __init__(self, inputs) -> None:
         self.inputs = list(inputs)
         self.prompt_count = 0
+        self.prompts: list[str] = []
         self.console = ConsoleStub()
 
     async def prompt(self, session, message="你 > "):
-        del session, message
+        del session
         self.prompt_count += 1
+        self.prompts.append(message)
         if not self.inputs:
             raise EOFError
         value = self.inputs.pop(0)
@@ -89,6 +92,24 @@ async def test_terminal_approval_shows_durable_approval_id():
 
     assert decision.approved is True
     assert any("apr_1" in line for line in terminal.console.lines)
+
+
+@pytest.mark.asyncio
+async def test_terminal_approval_calls_out_unconfined_host_risk():
+    terminal = ScriptedTerminal(["y"])
+    port = terminal_module.TerminalApprovalPort(terminal, object())
+
+    decision = await port.request(
+        ToolApprovalRequest(
+            call_id="c1",
+            effect=ToolEffect.PERSISTENT_WRITE,
+            preview=(UNCONFINED_HOST_WARNING,),
+        )
+    )
+
+    assert decision.approved is True
+    assert any("不会获得操作系统隔离" in line for line in terminal.console.lines)
+    assert terminal.prompts == ["确认执行这条未受操作系统隔离的 Host 命令？ [y/N] "]
 
 
 @pytest.mark.asyncio

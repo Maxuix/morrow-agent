@@ -11,6 +11,7 @@ from rich.console import Console
 from morrow.application.orchestrator import DispatchResult
 from morrow.core.capabilities import CommandToolFact
 from morrow.core.models import AgentEvent, ToolApprovalDecision, ToolApprovalRequest
+from morrow.core.permissions import UNCONFINED_HOST_APPROVAL_LANGUAGE
 
 _MODEL_WAIT_MESSAGE = "正在连接模型并等待首个响应…（Ctrl+C 取消）"
 _MODEL_CONTINUE_MESSAGE = "正在等待模型继续响应…（Ctrl+C 取消）"
@@ -121,11 +122,19 @@ class TerminalApprovalPort:
     async def request(self, request: ToolApprovalRequest) -> ToolApprovalDecision:
         lines = request.preview or ("未提供额外预览。",)
         self.terminal.console.print("\n".join(lines))
+        elevated = any(line.startswith("unconfined_host:") for line in lines)
+        if elevated:
+            self.terminal.console.print(UNCONFINED_HOST_APPROVAL_LANGUAGE)
         self.terminal.console.print(f"副作用级别：{request.effect.value}")
         if request.approval_id:
             self.terminal.console.print(f"审批编号：{request.approval_id}")
         try:
-            answer = await self.terminal.prompt(self.prompt_session, "确认执行？ [y/N] ")
+            prompt = (
+                "确认执行这条未受操作系统隔离的 Host 命令？ [y/N] "
+                if elevated
+                else "确认执行？ [y/N] "
+            )
+            answer = await self.terminal.prompt(self.prompt_session, prompt)
         except (EOFError, KeyboardInterrupt):
             raise asyncio.CancelledError from None
         return ToolApprovalDecision(approved=answer.strip().casefold() in {"y", "yes", "是"})
@@ -225,6 +234,21 @@ async def run_repl(
                         terminal.console.print(f"配置保存失败：{exc}")
                     else:
                         terminal.console.print("配置已保存。")
+            if result.action == "arm_full_access_grant":
+                confirmation = await _confirm(
+                    terminal,
+                    prompt_session,
+                    "确认在下一次前台 AgentRun 授予未受操作系统隔离的 Host 权限？",
+                )
+                if confirmation == "closed":
+                    return _closed_input(terminal)
+                if confirmation == "yes":
+                    try:
+                        _command_service(orchestrator).arm_full_access_grant()
+                    except (ValueError, RuntimeError) as exc:
+                        terminal.console.print(f"权限授予准备失败：{exc}")
+                    else:
+                        terminal.console.print("已准备下一次前台 AgentRun 的 Host 权限授予。")
 
 
 async def _consume_dispatch(orchestrator, text: str, terminal: Terminal) -> DispatchResult:

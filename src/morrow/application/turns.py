@@ -36,10 +36,12 @@ from morrow.core.execution import (
     ApprovalResolution,
     DurableApproval,
     DurableToolExecution,
+    EffectClass,
     HandlerResultEnvelope,
     ToolExecutionDisposition,
     ToolExecutionState,
     approval_preview_digest,
+    assert_handler_may_enter,
     consume_approval,
     intent_hash,
     resolve_approval,
@@ -54,7 +56,18 @@ from morrow.core.models import (
     UserMessage,
     utc_now,
 )
-from morrow.core.ports import IdSource
+from morrow.core.permissions import (
+    PERMISSION_POLICY_VERSION,
+    CapabilityGrant,
+    CapabilityIsolation,
+    IsolationLabel,
+    PermissionEvidenceError,
+    PermissionSnapshot,
+    assert_grant_snapshot_matches,
+    capability_grant_digest,
+    workspace_root_digest,
+)
+from morrow.core.ports import Clock, IdSource
 from morrow.core.recovery import RecoveryReport, RecoveryReportStatus, RecoveryResolution
 from morrow.core.store import StorageError
 from morrow.runtime.conversation import (
@@ -124,6 +137,72 @@ def build_agent_run_snapshot(
     )
 
 
+def build_permission_snapshot(
+    session: Session,
+    *,
+    workspace_id: str,
+    base_snapshot: AgentRunSnapshot,
+    permission_snapshot_id: str,
+    task_run_id: str,
+    turn_id: str,
+    agent_run_id: str,
+    grant: CapabilityGrant | None = None,
+    created_at: datetime | None = None,
+) -> PermissionSnapshot:
+    stamp = created_at or utc_now()
+    capability = session.workspace_capability
+    root_digest = (
+        workspace_root_digest(capability.root)
+        if capability is not None
+        else sha256_digest(f"workspace:{workspace_id}".encode())
+    )
+    if grant is not None:
+        if not grant.is_active(stamp):
+            raise RuntimeError("capability grant is expired or revoked")
+        if (
+            grant.workspace_id != workspace_id
+            or grant.task_run_id != task_run_id
+            or grant.agent_run_id != agent_run_id
+        ):
+            raise RuntimeError("capability grant does not match the AgentRun subjects")
+        grant_digest = capability_grant_digest(grant)
+        capabilities = grant.capabilities
+        isolations = tuple(
+            CapabilityIsolation(
+                capability=item,
+                isolation=IsolationLabel.UNCONFINED_HOST,
+            )
+            for item in capabilities
+        )
+    else:
+        grant_digest = None
+        capabilities = ()
+        isolations = ()
+    return PermissionSnapshot(
+        permission_snapshot_id=permission_snapshot_id,
+        workspace_id=workspace_id,
+        session_id=session.session_id,
+        task_run_id=task_run_id,
+        turn_id=turn_id,
+        agent_run_id=agent_run_id,
+        access_scope=session.permission_profile.access_scope,
+        approval_mode=session.permission_profile.approval_mode,
+        process_isolation=session.permission_profile.process_isolation,
+        workspace_root_digest=root_digest,
+        workspace_read_only=session.read_only or bool(capability and capability.read_only),
+        tool_schema_digest=base_snapshot.tool_schema_digest,
+        run_policy_digest=base_snapshot.run_policy_digest,
+        permission_profile_digest=base_snapshot.permission_profile_digest,
+        policy_version=PERMISSION_POLICY_VERSION,
+        source_revisions=base_snapshot.source_revisions,
+        grant_id=grant.grant_id if grant is not None else None,
+        grant_digest=grant_digest,
+        granted_capabilities=capabilities,
+        capability_isolations=isolations,
+        created_at=stamp,
+    )
+
+
 class SessionPersistence:
     """Journal-backed Session committer and turn-submit coordinator."""
 
@@ -140,6 +219,7 @@ class SessionPersistence:
         mutation=None,
         artifacts=None,
         faults: FaultInjector | None = None,
+        clock: Clock | None = None,
     ) -> None:
         self.workspace_id = workspace_id
         self.journal = journal
@@ -151,6 +231,7 @@ class SessionPersistence:
         self.mutation = mutation
         self.artifacts = artifacts
         self.faults = faults or NoOpFaultInjector()
+        self.clock = clock
         self.tasks = TaskService(
             journal=journal,
             workspace_id=workspace_id,
@@ -167,6 +248,7 @@ class SessionPersistence:
         self.current_turn_id: str | None = None
         self.current_task_run_id: str | None = None
         self.current_agent_run_id: str | None = None
+        self.current_permission_snapshot_id: str | None = None
         self.open_report: RecoveryReport | None = None
 
     def attach(self, session: Session) -> None:
@@ -179,6 +261,66 @@ class SessionPersistence:
             id_source=self.id_source,
         )
         session.committer = self
+
+    def _now(self) -> datetime:
+        return self.clock.now() if self.clock is not None else utc_now()
+
+    def freeze_permission_snapshot(
+        self,
+        session: Session,
+        *,
+        tools: tuple = (),
+        now: datetime | None = None,
+    ) -> PermissionSnapshot:
+        """Freeze base permissions and any already-explicit run-bound grant once."""
+
+        if self.current_agent_run_id is None:
+            raise RuntimeError("permission snapshot requires an open AgentRun")
+        run = self.journal.get_agent_run(self.workspace_id, self.current_agent_run_id)
+        if run is None:
+            raise RuntimeError("durable AgentRun is missing")
+        if run.permission_snapshot_id is not None:
+            snapshot = self.journal.get_permission_snapshot(
+                self.workspace_id, run.permission_snapshot_id
+            )
+            if snapshot is None:
+                raise RuntimeError("durable PermissionSnapshot is missing")
+            self.current_permission_snapshot_id = snapshot.permission_snapshot_id
+            return snapshot
+        if self.current_turn_id is None or self.current_task_run_id is None:
+            raise RuntimeError("permission snapshot subjects are incomplete")
+        # The durable AgentRun snapshot is the authority for the later freeze.
+        # In particular, a crash-resumed run may intentionally start with no
+        # live tool definitions; rebuilding from that transient input would
+        # make its permission evidence impossible to persist deterministically.
+        base = run.snapshot
+        stamp = now or self._now()
+        candidates = tuple(
+            grant
+            for grant in self.journal.list_capability_grants(
+                self.workspace_id, agent_run_id=self.current_agent_run_id
+            )
+            if grant.is_active(stamp)
+        )
+        if len(candidates) > 1:
+            raise RuntimeError("AgentRun has conflicting active capability grants")
+        grant = candidates[0] if candidates else None
+        snapshot = build_permission_snapshot(
+            session,
+            workspace_id=self.workspace_id,
+            base_snapshot=base,
+            permission_snapshot_id=self.id_source.new_id("psnap"),
+            task_run_id=self.current_task_run_id,
+            turn_id=self.current_turn_id,
+            agent_run_id=self.current_agent_run_id,
+            grant=grant,
+            created_at=stamp,
+        )
+        self.journal.freeze_agent_run_permission_snapshot(
+            self.workspace_id, self.current_agent_run_id, snapshot
+        )
+        self.current_permission_snapshot_id = snapshot.permission_snapshot_id
+        return snapshot
 
     def commit(self, planned: ConversationAppend) -> None:
         if self.writer is None:
@@ -379,6 +521,7 @@ class SessionPersistence:
             self.current_turn_id = turn_id
             self.current_task_run_id = task_id
             self.current_agent_run_id = stored_agent_run_id
+            self.current_permission_snapshot_id = None
             return turn_id
 
         accepted_turn = self.journal.transact(work)
@@ -397,6 +540,7 @@ class SessionPersistence:
         self.current_turn_id = None
         self.current_task_run_id = None
         self.current_agent_run_id = None
+        self.current_permission_snapshot_id = None
         self.open_report = None
         self.context_checkpoint = None
         self.attach(session)
@@ -423,6 +567,7 @@ class SessionPersistence:
         except StorageError:
             session.context_checkpoint = None
         self.current_task_run_id = row.current_task_run_id
+        self.current_permission_snapshot_id = None
         try:
             session.log = restore_conversation_log(
                 self.journal, self.workspace_id, session.session_id
@@ -445,6 +590,14 @@ class SessionPersistence:
             if report is not None:
                 self.current_turn_id = report.turn_id
                 self.current_agent_run_id = report.agent_run_id
+                interrupted = (
+                    self.journal.get_agent_run(self.workspace_id, report.agent_run_id)
+                    if report.agent_run_id is not None
+                    else None
+                )
+                self.current_permission_snapshot_id = (
+                    interrupted.permission_snapshot_id if interrupted is not None else None
+                )
             if report is not None and session.health is not SessionHealth.QUARANTINED:
                 session.health = SessionHealth.NEEDS_RECOVERY
             elif session.log.has_active_turn and session.health is SessionHealth.OK:
@@ -477,6 +630,17 @@ class SessionPersistence:
             or self.current_agent_run_id is None
         ):
             raise RuntimeError("durable tool intents require an open AgentRun")
+        snapshot = self.freeze_permission_snapshot(
+            self._session,
+            tools=tool_executor.definitions if tool_executor is not None else (),
+        )
+        grant_id = snapshot.grant_id
+        isolation_label = snapshot.isolation_label if grant_id is not None else None
+        if grant_id is not None:
+            grant = self.journal.get_capability_grant(self.workspace_id, grant_id)
+            if grant is None or not grant.is_active(self._now()):
+                grant_id = None
+                isolation_label = None
         executions = prepare_cycle_executions(
             message,
             session=self._session,
@@ -489,6 +653,9 @@ class SessionPersistence:
             agent_run_id=self.current_agent_run_id,
             mutation=self.mutation,
             isolation=self._session.permission_profile.process_isolation,
+            permission_snapshot_id=snapshot.permission_snapshot_id,
+            grant_id=grant_id,
+            isolation_label=isolation_label,
         )
         writer = self.writer
         self.faults.check(FaultPoint.CONVERSATION_BEFORE_COMMIT)
@@ -566,6 +733,7 @@ class SessionPersistence:
             session.health = SessionHealth.OK
             if resolution is RecoveryResolution.RESUME and self.current_turn_id is not None:
                 self.current_agent_run_id = self.id_source.new_id(AGENT_RUN_ID_PREFIX)
+                self.current_permission_snapshot_id = None
                 self.journal.create_agent_run(
                     self.workspace_id,
                     DurableAgentRun(
@@ -597,7 +765,8 @@ class SessionPersistence:
     def create_pending_approval(
         self, execution: DurableToolExecution, *, now: datetime | None = None
     ) -> DurableApproval:
-        stamp = now or utc_now()
+        stamp = now or self._now()
+        self._assert_execution_permission(execution, stamp)
         preview = execution.intent.preview
         approval = DurableApproval(
             approval_id=self.id_source.new_id(APPROVAL_ID_PREFIX),
@@ -608,6 +777,9 @@ class SessionPersistence:
             requested_scope=f"{execution.intent.effect_class.value}:{execution.tool_name}",
             preview=preview,
             preview_digest=approval_preview_digest(preview),
+            permission_snapshot_id=execution.permission_snapshot_id,
+            grant_id=execution.grant_id,
+            isolation=execution.isolation,
             created_at=stamp,
             expires_at=stamp + APPROVAL_TTL,
         )
@@ -624,7 +796,8 @@ class SessionPersistence:
         now: datetime | None = None,
         command_id: str | None = None,
     ) -> tuple[DurableToolExecution, DurableApproval, bool]:
-        stamp = now or utc_now()
+        stamp = now or self._now()
+        self._assert_execution_permission(execution, stamp)
         resolved = resolve_approval(
             approval,
             approved=approved,
@@ -683,7 +856,8 @@ class SessionPersistence:
     def mark_executing(
         self, execution: DurableToolExecution, *, now: datetime | None = None
     ) -> DurableToolExecution:
-        stamp = now or utc_now()
+        stamp = now or self._now()
+        self._assert_execution_permission(execution, stamp)
         executing = transition_execution(
             execution,
             ToolExecutionState.EXECUTING,
@@ -694,11 +868,167 @@ class SessionPersistence:
             self.workspace_id, executing, expected_row_version=execution.row_version
         )
 
-    def record_handler_completed(
-        self, execution: DurableToolExecution, result, *, now: datetime | None = None
+    def _assert_execution_permission(self, execution: DurableToolExecution, now: datetime) -> None:
+        if execution.permission_snapshot_id is None:
+            if execution.grant_id is not None or execution.isolation is not None:
+                raise PermissionEvidenceError("execution permission evidence is incomplete")
+            return
+        snapshot = self.journal.get_permission_snapshot(
+            self.workspace_id, execution.permission_snapshot_id
+        )
+        if snapshot is None:
+            raise PermissionEvidenceError("permission snapshot is missing")
+        if (
+            snapshot.session_id != execution.session_id
+            or snapshot.turn_id != execution.turn_id
+            or snapshot.task_run_id != execution.task_run_id
+            or snapshot.agent_run_id != execution.agent_run_id
+        ):
+            raise PermissionEvidenceError("execution permission snapshot subjects are mismatched")
+        if snapshot.grant_id is None:
+            if execution.grant_id is not None or execution.isolation is not None:
+                raise PermissionEvidenceError("execution cannot add elevated evidence")
+            return
+        if execution.grant_id is None:
+            if execution.isolation is not None:
+                raise PermissionEvidenceError("execution added an incomplete elevated label")
+            if (
+                execution.tool_name == "run_command"
+                and execution.intent.effect_class is EffectClass.UNCONFINED_EXTERNAL_EFFECT
+                and execution.intent.requires_approval
+            ):
+                raise PermissionEvidenceError("elevated Host execution dropped grant evidence")
+            return
+        if execution.isolation is not snapshot.isolation_label:
+            raise PermissionEvidenceError("execution elevated evidence is mismatched")
+        grant = self.journal.get_capability_grant(self.workspace_id, execution.grant_id)
+        if grant is None:
+            raise PermissionEvidenceError("capability grant is missing")
+        assert_grant_snapshot_matches(
+            snapshot,
+            grant,
+            now=now,
+            workspace_id=self.workspace_id,
+            task_run_id=execution.task_run_id,
+            agent_run_id=execution.agent_run_id,
+        )
+
+    def get_execution(self, tool_execution_id: str) -> DurableToolExecution | None:
+        return self.journal.get_execution(self.workspace_id, tool_execution_id)
+
+    def _close_execution_before_handler(
+        self,
+        execution: DurableToolExecution,
+        *,
+        disposition: ToolExecutionDisposition,
+        now: datetime | None = None,
     ) -> DurableToolExecution:
-        stamp = now or utc_now()
-        disposition = (
+        """Close an execution whose handler has not been allowed to enter."""
+
+        current = self.get_execution(execution.tool_execution_id)
+        if current is None:
+            raise PermissionEvidenceError("tool execution is missing")
+        if current.state is ToolExecutionState.CLOSED:
+            return current
+        if current.state is ToolExecutionState.HANDLER_COMPLETED:
+            return current
+        stamp = now or self._now()
+        approval = self.journal.get_approval_for_execution(
+            self.workspace_id, current.tool_execution_id
+        )
+        resolved_approval = None
+        if (
+            approval is not None
+            and approval.resolution is ApprovalResolution.PENDING
+            and approval.consumed_at is None
+        ):
+            resolved_approval = resolve_approval(
+                approval,
+                approved=False,
+                expected_row_version=approval.row_version,
+                now=stamp,
+            )
+        closed = transition_execution(
+            current,
+            ToolExecutionState.CLOSED,
+            expected_row_version=current.row_version,
+            disposition=disposition,
+            now=stamp,
+        )
+        if resolved_approval is None:
+            return self.journal.save_execution(
+                self.workspace_id, closed, expected_row_version=current.row_version
+            )
+
+        def work(txn: SqliteOperationalJournal) -> DurableToolExecution:
+            txn.save_approval(
+                self.workspace_id,
+                resolved_approval,
+                expected_row_version=approval.row_version,
+            )
+            return txn.save_execution(
+                self.workspace_id, closed, expected_row_version=current.row_version
+            )
+
+        return self.journal.transact(work)
+
+    def deny_execution_before_handler(
+        self, execution: DurableToolExecution, *, now: datetime | None = None
+    ) -> DurableToolExecution:
+        return self._close_execution_before_handler(
+            execution, disposition=ToolExecutionDisposition.DENIED, now=now
+        )
+
+    def cancel_execution_before_handler(
+        self, execution: DurableToolExecution, *, now: datetime | None = None
+    ) -> DurableToolExecution:
+        return self._close_execution_before_handler(
+            execution, disposition=ToolExecutionDisposition.CANCELLED, now=now
+        )
+
+    def assert_handler_may_enter(
+        self, execution: DurableToolExecution, *, now: datetime | None = None
+    ) -> DurableToolExecution:
+        """Re-read immutable evidence immediately before a side-effecting handler."""
+
+        stamp = now or self._now()
+        current = self.get_execution(execution.tool_execution_id)
+        if current is None:
+            raise PermissionEvidenceError("tool execution is missing")
+        approval = (
+            self.journal.get_approval_for_execution(self.workspace_id, current.tool_execution_id)
+            if current.intent.requires_approval
+            else None
+        )
+        snapshot = (
+            self.journal.get_permission_snapshot(self.workspace_id, current.permission_snapshot_id)
+            if current.permission_snapshot_id is not None
+            else None
+        )
+        grant = (
+            self.journal.get_capability_grant(self.workspace_id, current.grant_id)
+            if current.grant_id is not None
+            else None
+        )
+        assert_handler_may_enter(
+            current,
+            approval,
+            now=stamp,
+            permission_snapshot=snapshot,
+            grant=grant,
+        )
+        return current
+
+    def record_handler_completed(
+        self,
+        execution: DurableToolExecution,
+        result,
+        *,
+        now: datetime | None = None,
+        disposition: ToolExecutionDisposition | None = None,
+    ) -> DurableToolExecution:
+        stamp = now or self._now()
+        final_disposition = disposition or (
             ToolExecutionDisposition.SUCCEEDED if result.ok else ToolExecutionDisposition.FAILED
         )
         artifact_refs: tuple[ArtifactReference, ...] = ()
@@ -721,7 +1051,7 @@ class SessionPersistence:
             execution,
             ToolExecutionState.HANDLER_COMPLETED,
             expected_row_version=execution.row_version,
-            disposition=disposition,
+            disposition=final_disposition,
             now=stamp,
             result_envelope=_envelope_from_outcome(result),
             error_code=result.error_code.value if result.error_code is not None else None,
@@ -744,7 +1074,7 @@ class SessionPersistence:
     ) -> DurableToolExecution:
         if self.writer is None or self._session is None:
             raise RuntimeError("session persistence is not attached")
-        stamp = now or utc_now()
+        stamp = now or self._now()
         writer = self.writer
         self.faults.check(FaultPoint.CONVERSATION_BEFORE_TOOL_MESSAGE_COMMIT)
         if execution.state is ToolExecutionState.CLOSED:

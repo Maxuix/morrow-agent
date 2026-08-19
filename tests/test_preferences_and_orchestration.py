@@ -7,6 +7,7 @@ from morrow.application.commands import CommandService
 from morrow.application.context import ContextBuilder
 from morrow.application.orchestrator import SessionOrchestrator
 from morrow.bootstrap import build_application, build_session_application
+from morrow.core.capabilities import PermissionPreset, PermissionProfile
 from morrow.core.models import (
     ConfigPatch,
     ConfigPatchOperation,
@@ -141,6 +142,35 @@ def test_dirty_session_transition_requires_discard_and_removed_commands_are_unkn
         assert refused.action is None
         assert refused.value is None
         assert refused.lines == [f"未知命令：{raw.split()[0]}"]
+
+
+def test_full_access_grant_command_is_local_confirmation_gated_and_one_run_armed(tmp_path):
+    app = build_application(state_root=tmp_path / "state", credentials=MemoryCredentialStore())
+    project = tmp_path / "project"
+    project.mkdir()
+    identity = app.workspace_service.confirm(app.workspace_service.resolve(project))
+    session = Session(
+        session_id="s",
+        permission_profile=PermissionProfile.from_preset(PermissionPreset.FULL_ACCESS_MANUAL),
+    )
+    commands = CommandService(
+        session=session,
+        identity=identity,
+        project_store=app.project_store,
+    )
+
+    preview = commands.execute("/grant")
+    assert preview.action == "arm_full_access_grant"
+    assert session.pending_full_access_grant is False
+    assert "unconfined_host_process" in " ".join(preview.lines)
+
+    commands.arm_full_access_grant()
+    assert session.pending_full_access_grant is True
+    assert commands.execute("/grant").action is None
+
+    session.permission_profile = PermissionProfile()
+    session.pending_full_access_grant = False
+    assert commands.execute("/grant").action is None
 
 
 @pytest.mark.asyncio

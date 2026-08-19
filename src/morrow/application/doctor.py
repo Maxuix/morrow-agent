@@ -12,6 +12,7 @@ from morrow.core.artifacts import ArtifactIntegrityError, ArtifactState
 from morrow.core.doctor import DoctorHealth, DoctorIssue, DoctorReport, DoctorSeverity
 from morrow.core.domain import WORKSPACE_ID_PREFIX, validate_prefixed_id
 from morrow.core.execution import ToolExecutionState
+from morrow.core.permissions import capability_grant_digest
 from morrow.core.store import StorageError, StoreHealth, StoreOpenMode
 from morrow.runtime.conversation import ConversationSnapshot
 from morrow.runtime.durable_log import conversation_record_from_durable
@@ -95,8 +96,16 @@ class OperationalDoctor:
                         count=len(foreign_keys),
                     )
                 )
-            checks.extend(("conversation_history", "tasks_and_executions", "checkpoints_and_forks"))
+            checks.extend(
+                (
+                    "conversation_history",
+                    "tasks_and_executions",
+                    "checkpoints_and_forks",
+                    "grants_and_permission_snapshots",
+                )
+            )
             self._inspect_domains(journal, workspace_id, counts, issues)
+            self._inspect_permissions(journal, workspace_id, counts, issues)
             checks.extend(("artifacts_and_references", "application_events"))
             self._inspect_artifacts(journal, workspace_id, counts, issues)
             self._inspect_events(journal, workspace_id, counts, issues)
@@ -263,6 +272,90 @@ class OperationalDoctor:
                 )
         except StorageError:
             raise
+
+    def _inspect_permissions(self, journal, workspace_id, counts, issues) -> None:
+        grants = journal.list_capability_grants(workspace_id)
+        snapshots = journal.list_permission_snapshots(workspace_id)
+        counts["capability_grants"] = len(grants)
+        counts["permission_snapshots"] = len(snapshots)
+        for grant in grants:
+            task = journal.get_task_run(workspace_id, grant.task_run_id)
+            run = journal.get_agent_run(workspace_id, grant.agent_run_id)
+            if task is None or run is None or task.session_id != run.session_id:
+                issues.append(
+                    self._issue(
+                        "grant_scope",
+                        DoctorSeverity.ERROR,
+                        "CapabilityGrant subject or frozen link is invalid",
+                    )
+                )
+            if grant.revoked_at is not None:
+                counts["revoked_grants"] += 1
+            elif not grant.is_active(self.store.clock.now()):
+                counts["expired_grants"] += 1
+        for snapshot in snapshots:
+            counts["permission_evidence"] += 1
+            run = journal.get_agent_run(workspace_id, snapshot.agent_run_id)
+            task = journal.get_task_run(workspace_id, snapshot.task_run_id)
+            turn = journal.get_turn(workspace_id, snapshot.turn_id)
+            if (
+                run is None
+                or task is None
+                or turn is None
+                or run.permission_snapshot_id != snapshot.permission_snapshot_id
+                or task.session_id != snapshot.session_id
+                or turn.session_id != snapshot.session_id
+                or turn.task_run_id != snapshot.task_run_id
+                or run.session_id != snapshot.session_id
+                or run.turn_id != snapshot.turn_id
+            ):
+                issues.append(
+                    self._issue(
+                        "permission_snapshot_link",
+                        DoctorSeverity.ERROR,
+                        "PermissionSnapshot is not linked to its AgentRun",
+                    )
+                )
+            if snapshot.grant_id is not None:
+                grant = journal.get_capability_grant(workspace_id, snapshot.grant_id)
+                if (
+                    grant is None
+                    or snapshot.grant_digest != capability_grant_digest(grant)
+                    or snapshot.task_run_id != grant.task_run_id
+                    or snapshot.agent_run_id != grant.agent_run_id
+                ):
+                    issues.append(
+                        self._issue(
+                            "permission_grant_evidence",
+                            DoctorSeverity.ERROR,
+                            "PermissionSnapshot grant evidence is inconsistent",
+                        )
+                    )
+        for grant in grants:
+            for approval in journal.list_approvals_for_grant(workspace_id, grant.grant_id):
+                if grant.revoked_at is not None and approval.resolution.value == "pending":
+                    issues.append(
+                        self._issue(
+                            "revoked_pending_approval",
+                            DoctorSeverity.ERROR,
+                            "revoked CapabilityGrant still has a pending Approval",
+                        )
+                    )
+            for execution in journal.list_executions_for_grant(workspace_id, grant.grant_id):
+                if grant.revoked_at is None or execution.state is ToolExecutionState.CLOSED:
+                    continue
+                if (
+                    execution.state is ToolExecutionState.EXECUTING
+                    and execution.cancel_requested_at is not None
+                ):
+                    continue
+                issues.append(
+                    self._issue(
+                        "revoked_active_execution",
+                        DoctorSeverity.ERROR,
+                        "revoked CapabilityGrant execution remains non-terminal",
+                    )
+                )
 
     def _inspect_events(self, journal, workspace_id, counts, issues) -> None:
         after = 0

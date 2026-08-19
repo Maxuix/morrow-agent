@@ -66,6 +66,7 @@ class PermissionPreset(StrEnum):
     MANUAL = "manual"
     AUTO_SAFE = "auto-safe"
     AUTO_SANDBOXED = "auto-sandboxed"
+    FULL_ACCESS_MANUAL = "full-access-manual"
 
 
 class LocalCapabilityModel(ProtocolModel):
@@ -91,6 +92,12 @@ class PermissionProfile(LocalCapabilityModel):
             return cls(
                 approval_mode=ApprovalMode.AUTO,
                 process_isolation=ProcessIsolation.NATIVE_SANDBOX,
+            )
+        if preset is PermissionPreset.FULL_ACCESS_MANUAL:
+            return cls(
+                access_scope=AccessScope.FULL_ACCESS,
+                approval_mode=ApprovalMode.MANUAL,
+                process_isolation=ProcessIsolation.HOST,
             )
         raise ValueError("unsupported permission preset")
 

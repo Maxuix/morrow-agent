@@ -22,6 +22,7 @@ from morrow.core.artifacts import (
     ArtifactSensitivity,
     ArtifactState,
 )
+from morrow.core.capabilities import AccessScope, ApprovalMode, ProcessIsolation
 from morrow.core.context import (
     ContextCheckpoint,
     ContextCheckpointOmission,
@@ -40,6 +41,7 @@ from morrow.core.domain import (
     DurableTurn,
     SessionHealth,
     SessionLifecycle,
+    SourceRevisionRef,
     TaskCommandDisposition,
     TaskCommandReceipt,
     TaskRunStatus,
@@ -53,11 +55,25 @@ from morrow.core.execution import (
     DurableApproval,
     DurableToolExecution,
     DurableToolFacts,
+    EffectClass,
     HandlerResultEnvelope,
     PreparedIntent,
     ToolExecutionDisposition,
     ToolExecutionState,
     intent_hash,
+    request_execution_cancellation,
+    revoke_approval,
+)
+from morrow.core.permissions import (
+    CapabilityGrant,
+    CapabilityIsolation,
+    CapabilityName,
+    GrantSource,
+    IsolationLabel,
+    PermissionEvidenceError,
+    PermissionSnapshot,
+    assert_grant_snapshot_matches,
+    capability_grant_digest,
 )
 from morrow.core.recovery import RecoveryReceipt, RecoveryReport, RecoveryResolution
 from morrow.core.store import StorageError, StorageErrorCode
@@ -77,7 +93,8 @@ _TASK_SELECT = (
 )
 _TURN_COLUMNS = "turn_id, session_id, task_run_id, client_message_id, created_at_unix"
 _AGENT_COLUMNS = (
-    "agent_run_id, turn_id, session_id, resume_of_agent_run_id, snapshot_json, created_at_unix"
+    "agent_run_id, turn_id, session_id, resume_of_agent_run_id, snapshot_json, created_at_unix, "
+    "permission_snapshot_id"
 )
 _RECORD_COLUMNS = "record_id, session_id, conversation_position, kind, payload_json, payload_bytes"
 _RECEIPT_COLUMNS = "session_id, client_message_id, request_digest, disposition, turn_id, command_id"
@@ -87,19 +104,22 @@ _EXECUTION_COLUMNS = (
     "retry_of_execution_id, approval_id, intent_json, intent_hash, schema_digest, "
     "permission_context_digest, result_envelope_json, facts_json, error_code, error_detail, "
     "created_at_unix, executing_at_unix, handler_completed_at_unix, closed_at_unix, "
-    "artifact_refs_json"
+    "artifact_refs_json, permission_snapshot_id, grant_id, isolation, "
+    "cancel_requested_at_unix, cancel_request_reason"
 )
 _APPROVAL_COLUMNS = (
     "approval_id, tool_execution_id, intent_hash, tool_schema_digest, "
     "permission_context_digest, requested_scope, granted_scope, preview_json, preview_digest, "
     "row_version, created_at_unix, expires_at_unix, resolution, resolved_at_unix, "
-    "consumed_at_unix, command_id"
+    "consumed_at_unix, command_id, permission_snapshot_id, grant_id, isolation, "
+    "revoked_at_unix, revocation_reason"
 )
 _APPROVAL_SELECT = (
     "a.approval_id, a.tool_execution_id, a.intent_hash, a.tool_schema_digest, "
     "a.permission_context_digest, a.requested_scope, a.granted_scope, a.preview_json, "
     "a.preview_digest, a.row_version, a.created_at_unix, a.expires_at_unix, a.resolution, "
-    "a.resolved_at_unix, a.consumed_at_unix, a.command_id"
+    "a.resolved_at_unix, a.consumed_at_unix, a.command_id, a.permission_snapshot_id, "
+    "a.grant_id, a.isolation, a.revoked_at_unix, a.revocation_reason"
 )
 _REPORT_COLUMNS = (
     "report_id, workspace_id, session_id, turn_id, agent_run_id, status, "
@@ -136,6 +156,20 @@ _APPLICATION_RECEIPT_COLUMNS = (
     "command_id, workspace_id, session_id, operation, request_digest, disposition, "
     "result_kind, result_id, event_cursor, row_version, created_at_unix"
 )
+_GRANT_COLUMNS = (
+    "grant_id, workspace_id, task_run_id, agent_run_id, capabilities_json, granted_by, "
+    "command_id, reason, preview_digest, policy_version, schema_version, created_at_unix, "
+    "expires_at_unix, revoked_at_unix, revocation_reason, row_version"
+)
+_GRANT_SELECT = f"g.{_GRANT_COLUMNS.replace(', ', ', g.')}"
+_SNAPSHOT_COLUMNS = (
+    "permission_snapshot_id, workspace_id, session_id, task_run_id, turn_id, agent_run_id, "
+    "access_scope, approval_mode, process_isolation, workspace_root_digest, workspace_read_only, "
+    "tool_schema_digest, run_policy_digest, permission_profile_digest, policy_version, "
+    "schema_version, source_revisions_json, grant_id, grant_digest, granted_capabilities_json, "
+    "capability_isolations_json, created_at_unix"
+)
+_SNAPSHOT_SELECT = f"p.{_SNAPSHOT_COLUMNS.replace(', ', ', p.')}"
 
 
 def _unix(value: datetime) -> int:
@@ -1088,43 +1122,70 @@ class SqliteOperationalJournal:
 
     def create_agent_run(self, workspace_id: str, run: DurableAgentRun) -> DurableAgentRun:
         def work(journal: SqliteOperationalJournal) -> DurableAgentRun:
-            turn = journal.get_turn(workspace_id, run.turn_id)
-            if turn is None or turn.session_id != run.session_id:
-                raise StorageError(
-                    StorageErrorCode.UNAVAILABLE, "operational run does not belong to the turn"
-                )
-            if run.resume_of_agent_run_id is not None:
-                previous = journal.get_agent_run(workspace_id, run.resume_of_agent_run_id)
-                if previous is None or previous.turn_id != run.turn_id:
-                    raise StorageError(
-                        StorageErrorCode.UNAVAILABLE,
-                        "operational run resume target is missing",
-                    )
-            snapshot = canonical_json_bytes(run.snapshot.model_dump(mode="json")).decode("utf-8")
-            journal._executor_or_raise().execute(
-                f"INSERT INTO agent_runs({_AGENT_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?)",
-                (
-                    run.agent_run_id,
-                    run.turn_id,
-                    run.session_id,
-                    run.resume_of_agent_run_id,
-                    snapshot,
-                    _unix(run.created_at),
-                ),
+            journal._insert_agent_run(workspace_id, run)
+            return journal._agent_run_or_raise(workspace_id, run.agent_run_id)
+
+        return self.transact(work)
+
+    def create_agent_run_with_permission_snapshot(
+        self,
+        workspace_id: str,
+        run: DurableAgentRun,
+        permission_snapshot: PermissionSnapshot,
+    ) -> DurableAgentRun:
+        if run.permission_snapshot_id is not None:
+            raise StorageError(
+                StorageErrorCode.UNAVAILABLE, "AgentRun permission snapshot is already linked"
             )
-            loaded = journal.get_agent_run(workspace_id, run.agent_run_id)
-            if loaded is None:
+        if permission_snapshot.agent_run_id != run.agent_run_id:
+            raise StorageError(
+                StorageErrorCode.UNAVAILABLE, "permission snapshot does not match the AgentRun"
+            )
+
+        def work(journal: SqliteOperationalJournal) -> DurableAgentRun:
+            journal._insert_agent_run(workspace_id, run)
+            journal._insert_permission_snapshot(workspace_id, permission_snapshot)
+            journal._link_agent_run_permission_snapshot(
+                workspace_id, run.agent_run_id, permission_snapshot.permission_snapshot_id
+            )
+            return journal._agent_run_or_raise(workspace_id, run.agent_run_id)
+
+        return self.transact(work)
+
+    def freeze_agent_run_permission_snapshot(
+        self,
+        workspace_id: str,
+        agent_run_id: str,
+        permission_snapshot: PermissionSnapshot,
+    ) -> DurableAgentRun:
+        if permission_snapshot.agent_run_id != agent_run_id:
+            raise StorageError(
+                StorageErrorCode.UNAVAILABLE, "permission snapshot does not match the AgentRun"
+            )
+
+        def work(journal: SqliteOperationalJournal) -> DurableAgentRun:
+            run = journal.get_agent_run(workspace_id, agent_run_id)
+            if run is None:
+                raise StorageError(StorageErrorCode.NOT_FOUND, "operational run is missing")
+            if run.permission_snapshot_id is not None:
+                if run.permission_snapshot_id == permission_snapshot.permission_snapshot_id:
+                    return run
                 raise StorageError(
-                    StorageErrorCode.UNAVAILABLE, "operational run could not be read"
+                    StorageErrorCode.UNAVAILABLE,
+                    "AgentRun permission snapshot cannot be replaced",
                 )
-            return loaded
+            journal._insert_permission_snapshot(workspace_id, permission_snapshot)
+            journal._link_agent_run_permission_snapshot(
+                workspace_id, agent_run_id, permission_snapshot.permission_snapshot_id
+            )
+            return journal._agent_run_or_raise(workspace_id, agent_run_id)
 
         return self.transact(work)
 
     def get_agent_run(self, workspace_id: str, agent_run_id: str) -> DurableAgentRun | None:
         row = self._read_one(
             "SELECT r.agent_run_id, r.turn_id, r.session_id, r.resume_of_agent_run_id, "
-            "r.snapshot_json, r.created_at_unix FROM agent_runs r "
+            "r.snapshot_json, r.created_at_unix, r.permission_snapshot_id FROM agent_runs r "
             "JOIN sessions s ON s.session_id = r.session_id "
             "WHERE r.agent_run_id = ? AND s.workspace_id = ?",
             (agent_run_id, workspace_id),
@@ -1132,6 +1193,71 @@ class SqliteOperationalJournal:
         if row is None:
             return None
         return _agent_from_row(row)
+
+    def get_permission_snapshot(
+        self, workspace_id: str, permission_snapshot_id: str
+    ) -> PermissionSnapshot | None:
+        row = self._read_one(
+            f"SELECT {_SNAPSHOT_SELECT} FROM permission_snapshots p "
+            "WHERE p.permission_snapshot_id = ? AND p.workspace_id = ?",
+            (permission_snapshot_id, workspace_id),
+        )
+        if row is None:
+            return None
+        return _permission_snapshot_from_row(row)
+
+    def get_permission_snapshot_for_run(
+        self, workspace_id: str, agent_run_id: str
+    ) -> PermissionSnapshot | None:
+        row = self._read_one(
+            f"SELECT {_SNAPSHOT_SELECT} FROM permission_snapshots p "
+            "WHERE p.agent_run_id = ? AND p.workspace_id = ?",
+            (agent_run_id, workspace_id),
+        )
+        if row is None:
+            return None
+        return _permission_snapshot_from_row(row)
+
+    def list_permission_snapshots(
+        self, workspace_id: str, *, agent_run_id: str | None = None
+    ) -> tuple[PermissionSnapshot, ...]:
+        sql = f"SELECT {_SNAPSHOT_SELECT} FROM permission_snapshots p WHERE p.workspace_id = ?"
+        parameters: list[object] = [workspace_id]
+        if agent_run_id is not None:
+            sql += " AND p.agent_run_id = ?"
+            parameters.append(agent_run_id)
+        sql += " ORDER BY p.created_at_unix ASC, p.permission_snapshot_id ASC"
+        return tuple(
+            _permission_snapshot_from_row(row) for row in self._read_all(sql, tuple(parameters))
+        )
+
+    def put_permission_snapshot(
+        self, workspace_id: str, permission_snapshot: PermissionSnapshot
+    ) -> PermissionSnapshot:
+        def work(journal: SqliteOperationalJournal) -> PermissionSnapshot:
+            journal._insert_permission_snapshot(workspace_id, permission_snapshot)
+            loaded = journal.get_permission_snapshot(
+                workspace_id, permission_snapshot.permission_snapshot_id
+            )
+            if loaded is None:
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE,
+                    "operational permission snapshot could not be read",
+                )
+            return loaded
+
+        return self.transact(work)
+
+    def link_agent_run_permission_snapshot(
+        self, workspace_id: str, agent_run_id: str, permission_snapshot_id: str
+    ) -> DurableAgentRun:
+        def work(journal: SqliteOperationalJournal) -> DurableAgentRun:
+            journal._link_agent_run_permission_snapshot(
+                workspace_id, agent_run_id, permission_snapshot_id
+            )
+            return journal._agent_run_or_raise(workspace_id, agent_run_id)
+
+        return self.transact(work)
 
     def append_records(
         self, workspace_id: str, records: Sequence[DurableConversationRecord]
@@ -1586,6 +1712,16 @@ class SqliteOperationalJournal:
         )
         return tuple(_execution_from_row(row) for row in rows)
 
+    def list_executions_for_grant(
+        self, workspace_id: str, grant_id: str
+    ) -> tuple[DurableToolExecution, ...]:
+        rows = self._read_all(
+            f"SELECT {_EXECUTION_COLUMNS} FROM tool_executions "
+            "WHERE workspace_id = ? AND grant_id = ? ORDER BY created_at_unix ASC, ordinal ASC",
+            (workspace_id, grant_id),
+        )
+        return tuple(_execution_from_row(row) for row in rows)
+
     def list_session_executions(
         self, workspace_id: str, session_id: str
     ) -> tuple[DurableToolExecution, ...]:
@@ -1621,65 +1757,113 @@ class SqliteOperationalJournal:
             )
 
         def work(journal: SqliteOperationalJournal) -> DurableToolExecution:
-            existing = journal.get_execution(workspace_id, execution.tool_execution_id)
-            if existing is None:
-                raise StorageError(StorageErrorCode.NOT_FOUND, "operational execution is missing")
-            if existing.row_version != expected_row_version:
-                raise StorageError(
-                    StorageErrorCode.UNAVAILABLE, "operational execution row version is stale"
-                )
-            if execution.row_version != expected_row_version + 1:
-                raise StorageError(
-                    StorageErrorCode.UNAVAILABLE, "operational execution row version is stale"
-                )
-            journal._validate_artifact_refs(
-                workspace_id,
-                execution.artifact_refs,
-                session_id=execution.session_id,
-                task_run_id=execution.task_run_id,
+            return journal._save_execution_in_txn(
+                workspace_id, execution, expected_row_version=expected_row_version
             )
-            journal._executor_or_raise().execute(
-                """
-                UPDATE tool_executions
-                SET state = ?, disposition = ?, row_version = ?, approval_id = ?,
-                    result_envelope_json = ?, facts_json = ?, error_code = ?,
-                    error_detail = ?, executing_at_unix = ?,
-                    handler_completed_at_unix = ?, closed_at_unix = ?, artifact_refs_json = ?
-                WHERE tool_execution_id = ? AND workspace_id = ? AND row_version = ?
-                """,
-                (
-                    execution.state.value,
-                    execution.disposition.value,
-                    execution.row_version,
-                    execution.approval_id,
-                    _optional_json(execution.result_envelope),
-                    _optional_json(execution.facts),
-                    execution.error_code,
-                    execution.error_detail,
-                    _optional_unix(execution.executing_at),
-                    _optional_unix(execution.handler_completed_at),
-                    _optional_unix(execution.closed_at),
-                    _optional_json(execution.artifact_refs),
-                    execution.tool_execution_id,
-                    workspace_id,
-                    expected_row_version,
-                ),
-            )
-            journal._replace_artifact_references(
-                workspace_id,
-                owner_kind="tool_execution",
-                owner_id=execution.tool_execution_id,
-                references=execution.artifact_refs,
-                created_at=execution.created_at,
-            )
-            loaded = journal.get_execution(workspace_id, execution.tool_execution_id)
-            if loaded is None or loaded.row_version != execution.row_version:
-                raise StorageError(
-                    StorageErrorCode.UNAVAILABLE, "operational execution row version is stale"
-                )
-            return loaded
 
         return self.transact(work)
+
+    def request_execution_cancellation_in_txn(
+        self,
+        workspace_id: str,
+        tool_execution_id: str,
+        *,
+        now: datetime,
+        reason: str,
+    ) -> DurableToolExecution | None:
+        existing = self.get_execution(workspace_id, tool_execution_id)
+        if existing is None or existing.state is not ToolExecutionState.EXECUTING:
+            return existing
+        requested = request_execution_cancellation(
+            existing,
+            expected_row_version=existing.row_version,
+            now=now,
+            reason=reason,
+        )
+        return self._save_execution_in_txn(
+            workspace_id, requested, expected_row_version=existing.row_version
+        )
+
+    def _save_execution_in_txn(
+        self,
+        workspace_id: str,
+        execution: DurableToolExecution,
+        *,
+        expected_row_version: int,
+    ) -> DurableToolExecution:
+        if execution.workspace_id != workspace_id:
+            raise StorageError(
+                StorageErrorCode.UNAVAILABLE, "operational execution is outside the workspace"
+            )
+        existing = self.get_execution(workspace_id, execution.tool_execution_id)
+        if existing is None:
+            raise StorageError(StorageErrorCode.NOT_FOUND, "operational execution is missing")
+        if existing.row_version != expected_row_version:
+            raise StorageError(
+                StorageErrorCode.UNAVAILABLE, "operational execution row version is stale"
+            )
+        if execution.row_version != expected_row_version + 1:
+            raise StorageError(
+                StorageErrorCode.UNAVAILABLE, "operational execution row version is stale"
+            )
+        if (
+            existing.permission_snapshot_id != execution.permission_snapshot_id
+            or existing.grant_id != execution.grant_id
+            or existing.isolation != execution.isolation
+        ):
+            raise StorageError(
+                StorageErrorCode.UNAVAILABLE,
+                "operational execution permission evidence is immutable",
+            )
+        self._validate_artifact_refs(
+            workspace_id,
+            execution.artifact_refs,
+            session_id=execution.session_id,
+            task_run_id=execution.task_run_id,
+        )
+        self._executor_or_raise().execute(
+            """
+            UPDATE tool_executions
+            SET state = ?, disposition = ?, row_version = ?, approval_id = ?,
+                result_envelope_json = ?, facts_json = ?, error_code = ?,
+                error_detail = ?, executing_at_unix = ?,
+                handler_completed_at_unix = ?, closed_at_unix = ?, artifact_refs_json = ?,
+                cancel_requested_at_unix = ?, cancel_request_reason = ?
+            WHERE tool_execution_id = ? AND workspace_id = ? AND row_version = ?
+            """,
+            (
+                execution.state.value,
+                execution.disposition.value,
+                execution.row_version,
+                execution.approval_id,
+                _optional_json(execution.result_envelope),
+                _optional_json(execution.facts),
+                execution.error_code,
+                execution.error_detail,
+                _optional_unix(execution.executing_at),
+                _optional_unix(execution.handler_completed_at),
+                _optional_unix(execution.closed_at),
+                _optional_json(execution.artifact_refs),
+                _optional_unix(execution.cancel_requested_at),
+                execution.cancel_request_reason,
+                execution.tool_execution_id,
+                workspace_id,
+                expected_row_version,
+            ),
+        )
+        self._replace_artifact_references(
+            workspace_id,
+            owner_kind="tool_execution",
+            owner_id=execution.tool_execution_id,
+            references=execution.artifact_refs,
+            created_at=execution.created_at,
+        )
+        loaded = self.get_execution(workspace_id, execution.tool_execution_id)
+        if loaded is None or loaded.row_version != execution.row_version:
+            raise StorageError(
+                StorageErrorCode.UNAVAILABLE, "operational execution row version is stale"
+            )
+        return loaded
 
     def put_approval(self, workspace_id: str, approval: DurableApproval) -> DurableApproval:
         def work(journal: SqliteOperationalJournal) -> DurableApproval:
@@ -1691,14 +1875,52 @@ class SqliteOperationalJournal:
                 approval.intent_hash != stored_hash
                 or approval.tool_schema_digest != execution.intent.schema_digest
                 or approval.permission_context_digest != execution.intent.permission_context_digest
+                or approval.permission_snapshot_id != execution.permission_snapshot_id
+                or approval.grant_id != execution.grant_id
+                or approval.isolation != execution.isolation
             ):
                 raise StorageError(
                     StorageErrorCode.UNAVAILABLE,
                     "operational approval does not match the execution",
                 )
+            elevated_intent = (
+                execution.tool_name == "run_command"
+                and execution.intent.effect_class is EffectClass.UNCONFINED_EXTERNAL_EFFECT
+                and execution.intent.requires_approval
+                and execution.grant_id is not None
+            )
+            if approval.grant_id is None and elevated_intent:
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE,
+                    "elevated Host approval requires capability grant evidence",
+                )
+            if approval.grant_id is not None:
+                snapshot = journal.get_permission_snapshot(
+                    workspace_id, approval.permission_snapshot_id or ""
+                )
+                grant = journal.get_capability_grant(workspace_id, approval.grant_id)
+                if snapshot is None or grant is None:
+                    raise StorageError(
+                        StorageErrorCode.UNAVAILABLE,
+                        "operational approval permission evidence is missing",
+                    )
+                try:
+                    assert_grant_snapshot_matches(
+                        snapshot,
+                        grant,
+                        now=approval.created_at,
+                        workspace_id=workspace_id,
+                        task_run_id=execution.task_run_id,
+                        agent_run_id=execution.agent_run_id,
+                    )
+                except PermissionEvidenceError as exc:
+                    raise StorageError(
+                        StorageErrorCode.UNAVAILABLE,
+                        "operational approval capability grant is not active",
+                    ) from exc
             journal._executor_or_raise().execute(
                 f"INSERT INTO approvals({_APPROVAL_COLUMNS}) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                f"VALUES ({', '.join('?' for _ in range(21))})",
                 (
                     approval.approval_id,
                     approval.tool_execution_id,
@@ -1716,6 +1938,11 @@ class SqliteOperationalJournal:
                     _optional_unix(approval.resolved_at),
                     _optional_unix(approval.consumed_at),
                     approval.command_id,
+                    approval.permission_snapshot_id,
+                    approval.grant_id,
+                    approval.isolation.value if approval.isolation is not None else None,
+                    _optional_unix(approval.revoked_at),
+                    approval.revocation_reason,
                 ),
             )
             loaded = journal.get_approval(workspace_id, approval.approval_id)
@@ -1759,43 +1986,270 @@ class SqliteOperationalJournal:
         expected_row_version: int,
     ) -> DurableApproval:
         def work(journal: SqliteOperationalJournal) -> DurableApproval:
-            existing = journal.get_approval(workspace_id, approval.approval_id)
-            if existing is None:
-                raise StorageError(StorageErrorCode.NOT_FOUND, "operational approval is missing")
-            if existing.row_version != expected_row_version:
+            return journal._save_approval_in_txn(
+                workspace_id, approval, expected_row_version=expected_row_version
+            )
+
+        return self.transact(work)
+
+    def list_approvals_for_grant(
+        self, workspace_id: str, grant_id: str
+    ) -> tuple[DurableApproval, ...]:
+        rows = self._read_all(
+            f"SELECT {_APPROVAL_SELECT} FROM approvals a "
+            "JOIN tool_executions e ON e.tool_execution_id = a.tool_execution_id "
+            "WHERE e.workspace_id = ? AND a.grant_id = ? "
+            "ORDER BY a.created_at_unix ASC, a.approval_id ASC",
+            (workspace_id, grant_id),
+        )
+        return tuple(_approval_from_row(row) for row in rows)
+
+    def revoke_approval_in_txn(
+        self,
+        workspace_id: str,
+        approval_id: str,
+        *,
+        now: datetime,
+        reason: str,
+    ) -> DurableApproval | None:
+        existing = self.get_approval(workspace_id, approval_id)
+        if existing is None:
+            return None
+        revoked = revoke_approval(
+            existing,
+            expected_row_version=existing.row_version,
+            now=now,
+            reason=reason,
+        )
+        return self._save_approval_in_txn(
+            workspace_id, revoked, expected_row_version=existing.row_version
+        )
+
+    def _save_approval_in_txn(
+        self,
+        workspace_id: str,
+        approval: DurableApproval,
+        *,
+        expected_row_version: int,
+    ) -> DurableApproval:
+        existing = self.get_approval(workspace_id, approval.approval_id)
+        if existing is None:
+            raise StorageError(StorageErrorCode.NOT_FOUND, "operational approval is missing")
+        if existing.row_version != expected_row_version:
+            raise StorageError(
+                StorageErrorCode.UNAVAILABLE, "operational approval row version is stale"
+            )
+        if approval.row_version != expected_row_version + 1:
+            raise StorageError(
+                StorageErrorCode.UNAVAILABLE, "operational approval row version is stale"
+            )
+        if (
+            existing.permission_snapshot_id != approval.permission_snapshot_id
+            or existing.grant_id != approval.grant_id
+            or existing.isolation != approval.isolation
+        ):
+            raise StorageError(
+                StorageErrorCode.UNAVAILABLE,
+                "operational approval permission evidence is immutable",
+            )
+        self._executor_or_raise().execute(
+            """
+            UPDATE approvals
+            SET granted_scope = ?, row_version = ?, resolution = ?,
+                resolved_at_unix = ?, consumed_at_unix = ?, command_id = ?,
+                revoked_at_unix = ?, revocation_reason = ?
+            WHERE approval_id = ? AND row_version = ?
+            """,
+            (
+                approval.granted_scope,
+                approval.row_version,
+                approval.resolution.value,
+                _optional_unix(approval.resolved_at),
+                _optional_unix(approval.consumed_at),
+                approval.command_id,
+                _optional_unix(approval.revoked_at),
+                approval.revocation_reason,
+                approval.approval_id,
+                expected_row_version,
+            ),
+        )
+        loaded = self.get_approval(workspace_id, approval.approval_id)
+        if loaded is None or loaded.row_version != approval.row_version:
+            raise StorageError(
+                StorageErrorCode.UNAVAILABLE, "operational approval row version is stale"
+            )
+        return loaded
+
+    def put_capability_grant(self, workspace_id: str, grant: CapabilityGrant) -> CapabilityGrant:
+        self._validate_grant_scope(workspace_id, grant)
+
+        def work(journal: SqliteOperationalJournal) -> CapabilityGrant:
+            journal._validate_grant_scope(workspace_id, grant)
+            run = journal.get_agent_run(workspace_id, grant.agent_run_id)
+            if run is not None and run.permission_snapshot_id is not None:
                 raise StorageError(
-                    StorageErrorCode.UNAVAILABLE, "operational approval row version is stale"
-                )
-            if approval.row_version != expected_row_version + 1:
-                raise StorageError(
-                    StorageErrorCode.UNAVAILABLE, "operational approval row version is stale"
+                    StorageErrorCode.UNAVAILABLE,
+                    "operational capability grant cannot be added after the AgentRun snapshot is frozen",
                 )
             journal._executor_or_raise().execute(
-                """
-                UPDATE approvals
-                SET granted_scope = ?, row_version = ?, resolution = ?,
-                    resolved_at_unix = ?, consumed_at_unix = ?, command_id = ?
-                WHERE approval_id = ? AND row_version = ?
-                """,
+                f"INSERT INTO capability_grants({_GRANT_COLUMNS}) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
-                    approval.granted_scope,
-                    approval.row_version,
-                    approval.resolution.value,
-                    _optional_unix(approval.resolved_at),
-                    _optional_unix(approval.consumed_at),
-                    approval.command_id,
-                    approval.approval_id,
-                    expected_row_version,
+                    grant.grant_id,
+                    grant.workspace_id,
+                    grant.task_run_id,
+                    grant.agent_run_id,
+                    canonical_json_bytes([value.value for value in grant.capabilities]).decode(
+                        "utf-8"
+                    ),
+                    grant.granted_by.value,
+                    grant.command_id,
+                    grant.reason,
+                    grant.preview_digest,
+                    grant.policy_version,
+                    grant.schema_version,
+                    _unix(grant.created_at),
+                    _unix(grant.expires_at),
+                    _optional_unix(grant.revoked_at),
+                    grant.revocation_reason,
+                    grant.row_version,
                 ),
             )
-            loaded = journal.get_approval(workspace_id, approval.approval_id)
-            if loaded is None or loaded.row_version != approval.row_version:
+            loaded = journal.get_capability_grant(workspace_id, grant.grant_id)
+            if loaded is None:
                 raise StorageError(
-                    StorageErrorCode.UNAVAILABLE, "operational approval row version is stale"
+                    StorageErrorCode.UNAVAILABLE, "operational capability grant could not be read"
                 )
             return loaded
 
         return self.transact(work)
+
+    def get_capability_grant(self, workspace_id: str, grant_id: str) -> CapabilityGrant | None:
+        row = self._read_one(
+            f"SELECT {_GRANT_SELECT} FROM capability_grants g "
+            "WHERE g.grant_id = ? AND g.workspace_id = ?",
+            (grant_id, workspace_id),
+        )
+        if row is None:
+            return None
+        return _grant_from_row(row)
+
+    def list_capability_grants(
+        self, workspace_id: str, *, agent_run_id: str | None = None
+    ) -> tuple[CapabilityGrant, ...]:
+        sql = f"SELECT {_GRANT_SELECT} FROM capability_grants g WHERE g.workspace_id = ?"
+        parameters: list[object] = [workspace_id]
+        if agent_run_id is not None:
+            sql += " AND g.agent_run_id = ?"
+            parameters.append(agent_run_id)
+        sql += " ORDER BY g.created_at_unix ASC, g.grant_id ASC"
+        return tuple(_grant_from_row(row) for row in self._read_all(sql, tuple(parameters)))
+
+    def save_capability_grant(
+        self,
+        workspace_id: str,
+        grant: CapabilityGrant,
+        *,
+        expected_row_version: int,
+    ) -> CapabilityGrant:
+        if grant.workspace_id != workspace_id:
+            raise StorageError(
+                StorageErrorCode.UNAVAILABLE,
+                "operational capability grant is outside the workspace",
+            )
+
+        def work(journal: SqliteOperationalJournal) -> CapabilityGrant:
+            existing = journal.get_capability_grant(workspace_id, grant.grant_id)
+            if existing is None:
+                raise StorageError(
+                    StorageErrorCode.NOT_FOUND, "operational capability grant is missing"
+                )
+            if existing.row_version != expected_row_version:
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE,
+                    "operational capability grant row version is stale",
+                )
+            if grant.row_version != expected_row_version + 1:
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE,
+                    "operational capability grant row version is stale",
+                )
+            immutable_fields = (
+                "grant_id",
+                "workspace_id",
+                "task_run_id",
+                "agent_run_id",
+                "capabilities",
+                "granted_by",
+                "command_id",
+                "reason",
+                "preview_digest",
+                "policy_version",
+                "schema_version",
+                "created_at",
+                "expires_at",
+            )
+            if any(getattr(existing, field) != getattr(grant, field) for field in immutable_fields):
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE,
+                    "operational capability grant authority is immutable",
+                )
+            if existing.revoked_at is not None:
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE,
+                    "operational capability grant is already revoked",
+                )
+            if grant.revoked_at is None or grant.revocation_reason is None:
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE,
+                    "operational capability grant revocation is incomplete",
+                )
+            journal._validate_grant_scope(workspace_id, grant)
+            journal._executor_or_raise().execute(
+                """
+                UPDATE capability_grants
+                SET revoked_at_unix = ?, revocation_reason = ?, row_version = ?
+                WHERE grant_id = ? AND workspace_id = ? AND row_version = ?
+                """,
+                (
+                    _optional_unix(grant.revoked_at),
+                    grant.revocation_reason,
+                    grant.row_version,
+                    grant.grant_id,
+                    workspace_id,
+                    expected_row_version,
+                ),
+            )
+            loaded = journal.get_capability_grant(workspace_id, grant.grant_id)
+            if loaded is None or loaded.row_version != grant.row_version:
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE,
+                    "operational capability grant row version is stale",
+                )
+            return loaded
+
+        return self.transact(work)
+
+    def _validate_grant_scope(self, workspace_id: str, grant: CapabilityGrant) -> None:
+        if grant.workspace_id != workspace_id:
+            raise StorageError(
+                StorageErrorCode.UNAVAILABLE,
+                "operational capability grant is outside the workspace",
+            )
+        task = self.get_task_run(workspace_id, grant.task_run_id)
+        run = self.get_agent_run(workspace_id, grant.agent_run_id)
+        if task is None or run is None:
+            raise StorageError(StorageErrorCode.NOT_FOUND, "operational grant subject is missing")
+        turn = self.get_turn(workspace_id, run.turn_id)
+        if (
+            task.workspace_id != workspace_id
+            or run.session_id != task.session_id
+            or turn is None
+            or turn.task_run_id != task.task_run_id
+        ):
+            raise StorageError(
+                StorageErrorCode.UNAVAILABLE, "operational capability grant subject is mismatched"
+            )
 
     def put_report(self, workspace_id: str, report: RecoveryReport) -> RecoveryReport:
         if report.workspace_id != workspace_id:
@@ -1943,6 +2397,167 @@ class SqliteOperationalJournal:
 
         return self.transact(work)
 
+    def _insert_agent_run(self, workspace_id: str, run: DurableAgentRun) -> None:
+        turn = self.get_turn(workspace_id, run.turn_id)
+        if turn is None or turn.session_id != run.session_id:
+            raise StorageError(
+                StorageErrorCode.UNAVAILABLE, "operational run does not belong to the turn"
+            )
+        if run.permission_snapshot_id is not None:
+            raise StorageError(
+                StorageErrorCode.UNAVAILABLE,
+                "permission snapshot must be linked after the AgentRun is created",
+            )
+        if run.resume_of_agent_run_id is not None:
+            previous = self.get_agent_run(workspace_id, run.resume_of_agent_run_id)
+            if previous is None or previous.turn_id != run.turn_id:
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE,
+                    "operational run resume target is missing",
+                )
+        snapshot = canonical_json_bytes(run.snapshot.model_dump(mode="json")).decode("utf-8")
+        self._executor_or_raise().execute(
+            f"INSERT INTO agent_runs({_AGENT_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                run.agent_run_id,
+                run.turn_id,
+                run.session_id,
+                run.resume_of_agent_run_id,
+                snapshot,
+                _unix(run.created_at),
+                None,
+            ),
+        )
+
+    def _agent_run_or_raise(self, workspace_id: str, agent_run_id: str) -> DurableAgentRun:
+        value = self.get_agent_run(workspace_id, agent_run_id)
+        if value is None:
+            raise StorageError(StorageErrorCode.UNAVAILABLE, "operational run could not be read")
+        return value
+
+    def _insert_permission_snapshot(
+        self, workspace_id: str, permission_snapshot: PermissionSnapshot
+    ) -> None:
+        if permission_snapshot.workspace_id != workspace_id:
+            raise StorageError(
+                StorageErrorCode.UNAVAILABLE,
+                "operational permission snapshot is outside the workspace",
+            )
+        run = self.get_agent_run(workspace_id, permission_snapshot.agent_run_id)
+        task = self.get_task_run(workspace_id, permission_snapshot.task_run_id)
+        turn = self.get_turn(workspace_id, permission_snapshot.turn_id)
+        if (
+            run is None
+            or task is None
+            or turn is None
+            or run.session_id != permission_snapshot.session_id
+            or run.turn_id != permission_snapshot.turn_id
+            or turn.session_id != permission_snapshot.session_id
+            or turn.task_run_id != permission_snapshot.task_run_id
+            or task.session_id != permission_snapshot.session_id
+        ):
+            raise StorageError(
+                StorageErrorCode.UNAVAILABLE,
+                "operational permission snapshot subjects are mismatched",
+            )
+        if run.permission_snapshot_id is not None:
+            raise StorageError(
+                StorageErrorCode.UNAVAILABLE,
+                "AgentRun permission snapshot is already frozen",
+            )
+        if permission_snapshot.grant_id is not None:
+            grant = self.get_capability_grant(workspace_id, permission_snapshot.grant_id)
+            if (
+                grant is None
+                or grant.workspace_id != permission_snapshot.workspace_id
+                or grant.task_run_id != permission_snapshot.task_run_id
+                or grant.agent_run_id != permission_snapshot.agent_run_id
+                or grant.capabilities != permission_snapshot.granted_capabilities
+                or not grant.is_active(permission_snapshot.created_at)
+                or permission_snapshot.grant_digest != capability_grant_digest(grant)
+            ):
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE,
+                    "permission snapshot grant evidence is mismatched",
+                )
+        if (
+            permission_snapshot.tool_schema_digest != run.snapshot.tool_schema_digest
+            or permission_snapshot.run_policy_digest != run.snapshot.run_policy_digest
+            or permission_snapshot.permission_profile_digest
+            != run.snapshot.permission_profile_digest
+            or permission_snapshot.source_revisions != run.snapshot.source_revisions
+        ):
+            raise StorageError(
+                StorageErrorCode.UNAVAILABLE,
+                "permission snapshot does not match the frozen AgentRun snapshot",
+            )
+        self._executor_or_raise().execute(
+            f"INSERT INTO permission_snapshots({_SNAPSHOT_COLUMNS}) "
+            f"VALUES ({', '.join('?' for _ in range(22))})",
+            (
+                permission_snapshot.permission_snapshot_id,
+                permission_snapshot.workspace_id,
+                permission_snapshot.session_id,
+                permission_snapshot.task_run_id,
+                permission_snapshot.turn_id,
+                permission_snapshot.agent_run_id,
+                permission_snapshot.access_scope.value,
+                permission_snapshot.approval_mode.value,
+                permission_snapshot.process_isolation.value,
+                permission_snapshot.workspace_root_digest,
+                int(permission_snapshot.workspace_read_only),
+                permission_snapshot.tool_schema_digest,
+                permission_snapshot.run_policy_digest,
+                permission_snapshot.permission_profile_digest,
+                permission_snapshot.policy_version,
+                permission_snapshot.schema_version,
+                canonical_json_bytes(
+                    [item.model_dump(mode="json") for item in permission_snapshot.source_revisions]
+                ).decode("utf-8"),
+                permission_snapshot.grant_id,
+                permission_snapshot.grant_digest,
+                canonical_json_bytes(
+                    [item.value for item in permission_snapshot.granted_capabilities]
+                ).decode("utf-8"),
+                canonical_json_bytes(
+                    [
+                        item.model_dump(mode="json")
+                        for item in permission_snapshot.capability_isolations
+                    ]
+                ).decode("utf-8"),
+                _unix(permission_snapshot.created_at),
+            ),
+        )
+
+    def _link_agent_run_permission_snapshot(
+        self, workspace_id: str, agent_run_id: str, permission_snapshot_id: str
+    ) -> None:
+        run = self.get_agent_run(workspace_id, agent_run_id)
+        snapshot = self.get_permission_snapshot(workspace_id, permission_snapshot_id)
+        if (
+            run is None
+            or snapshot is None
+            or snapshot.agent_run_id != agent_run_id
+            or snapshot.session_id != run.session_id
+            or snapshot.turn_id != run.turn_id
+        ):
+            raise StorageError(
+                StorageErrorCode.UNAVAILABLE,
+                "permission snapshot does not belong to the AgentRun",
+            )
+        if run.permission_snapshot_id is not None:
+            if run.permission_snapshot_id == permission_snapshot_id:
+                return
+            raise StorageError(
+                StorageErrorCode.UNAVAILABLE,
+                "AgentRun permission snapshot cannot be replaced",
+            )
+        self._executor_or_raise().execute(
+            "UPDATE agent_runs SET permission_snapshot_id = ? "
+            "WHERE agent_run_id = ? AND permission_snapshot_id IS NULL",
+            (permission_snapshot_id, agent_run_id),
+        )
+
     def _insert_execution(self, workspace_id: str, execution: DurableToolExecution) -> None:
         if execution.workspace_id != workspace_id:
             raise StorageError(
@@ -1957,6 +2572,52 @@ class SqliteOperationalJournal:
             raise StorageError(
                 StorageErrorCode.UNAVAILABLE, "operational execution does not belong to the run"
             )
+        if run.permission_snapshot_id != execution.permission_snapshot_id:
+            raise StorageError(
+                StorageErrorCode.UNAVAILABLE,
+                "operational execution permission snapshot does not match the run",
+            )
+        if execution.permission_snapshot_id is not None:
+            permission_snapshot = self.get_permission_snapshot(
+                workspace_id, execution.permission_snapshot_id
+            )
+            if (
+                permission_snapshot is None
+                or permission_snapshot.agent_run_id != execution.agent_run_id
+                or permission_snapshot.task_run_id != execution.task_run_id
+                or permission_snapshot.turn_id != execution.turn_id
+            ):
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE,
+                    "operational execution permission snapshot is mismatched",
+                )
+            elevated_intent = (
+                execution.tool_name == "run_command"
+                and execution.intent.effect_class is EffectClass.UNCONFINED_EXTERNAL_EFFECT
+                and execution.intent.requires_approval
+            )
+            if permission_snapshot.grant_id is None:
+                if execution.grant_id is not None or execution.isolation is not None:
+                    raise StorageError(
+                        StorageErrorCode.UNAVAILABLE,
+                        "ordinary execution cannot carry elevated permission evidence",
+                    )
+            elif elevated_intent:
+                if execution.grant_id != permission_snapshot.grant_id:
+                    raise StorageError(
+                        StorageErrorCode.UNAVAILABLE,
+                        "operational execution grant does not match the snapshot",
+                    )
+                if execution.isolation is not IsolationLabel.UNCONFINED_HOST:
+                    raise StorageError(
+                        StorageErrorCode.UNAVAILABLE,
+                        "elevated execution requires the unconfined_host label",
+                    )
+            elif execution.grant_id is not None or execution.isolation is not None:
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE,
+                    "only an approved opaque Host command may carry elevated evidence",
+                )
         task = self.get_task_run(workspace_id, execution.task_run_id)
         if task is None or task.session_id != execution.session_id:
             raise StorageError(
@@ -1970,7 +2631,7 @@ class SqliteOperationalJournal:
         )
         self._executor_or_raise().execute(
             f"INSERT INTO tool_executions({_EXECUTION_COLUMNS}) "
-            f"VALUES ({', '.join('?' for _ in range(28))})",
+            f"VALUES ({', '.join('?' for _ in range(33))})",
             (
                 execution.tool_execution_id,
                 execution.workspace_id,
@@ -2000,6 +2661,11 @@ class SqliteOperationalJournal:
                 _optional_unix(execution.handler_completed_at),
                 _optional_unix(execution.closed_at),
                 _optional_json(execution.artifact_refs),
+                execution.permission_snapshot_id,
+                execution.grant_id,
+                execution.isolation.value if execution.isolation is not None else None,
+                _optional_unix(execution.cancel_requested_at),
+                execution.cancel_request_reason,
             ),
         )
         self._replace_artifact_references(
@@ -2333,6 +2999,7 @@ def _agent_from_row(row: tuple[object, ...]) -> DurableAgentRun:
         resume_of_agent_run_id=str(row[3]) if row[3] is not None else None,
         snapshot=snapshot,
         created_at=_from_unix(row[5]),
+        permission_snapshot_id=str(row[6]) if row[6] is not None else None,
     )
 
 
@@ -2429,45 +3096,55 @@ def _load_mapping(raw: object, *, label: str) -> dict:
 
 
 def _execution_from_row(row: tuple[object, ...]) -> DurableToolExecution:
-    intent = PreparedIntent.model_validate(_load_mapping(row[15], label="prepared intent"))
-    envelope = None
-    if row[19] is not None:
-        envelope = HandlerResultEnvelope.model_validate(
-            _load_mapping(row[19], label="tool result envelope")
+    try:
+        intent = PreparedIntent.model_validate(_load_mapping(row[15], label="prepared intent"))
+        envelope = None
+        if row[19] is not None:
+            envelope = HandlerResultEnvelope.model_validate(
+                _load_mapping(row[19], label="tool result envelope")
+            )
+        facts = None
+        if row[20] is not None:
+            facts = DurableToolFacts.model_validate(
+                _load_mapping(row[20], label="structured tool facts")
+            )
+        artifact_refs = _artifact_refs_from_raw(row[27])
+        return DurableToolExecution(
+            tool_execution_id=str(row[0]),
+            workspace_id=str(row[1]),
+            session_id=str(row[2]),
+            task_run_id=str(row[3]),
+            turn_id=str(row[4]),
+            agent_run_id=str(row[5]),
+            assistant_record_id=str(row[6]) if row[6] is not None else None,
+            call_id=str(row[7]),
+            ordinal=int(row[8]),
+            tool_name=str(row[9]),
+            state=ToolExecutionState(str(row[10])),
+            disposition=ToolExecutionDisposition(str(row[11])),
+            row_version=int(row[12]),
+            retry_of_execution_id=str(row[13]) if row[13] is not None else None,
+            approval_id=str(row[14]) if row[14] is not None else None,
+            intent=intent,
+            result_envelope=envelope,
+            facts=facts,
+            artifact_refs=artifact_refs,
+            error_code=str(row[21]) if row[21] is not None else None,
+            error_detail=str(row[22]) if row[22] is not None else None,
+            created_at=_from_unix(row[23]),
+            executing_at=_from_unix(row[24]) if row[24] is not None else None,
+            handler_completed_at=_from_unix(row[25]) if row[25] is not None else None,
+            closed_at=_from_unix(row[26]) if row[26] is not None else None,
+            permission_snapshot_id=str(row[28]) if row[28] is not None else None,
+            grant_id=str(row[29]) if row[29] is not None else None,
+            isolation=IsolationLabel(str(row[30])) if row[30] is not None else None,
+            cancel_requested_at=_from_unix(row[31]) if row[31] is not None else None,
+            cancel_request_reason=str(row[32]) if row[32] is not None else None,
         )
-    facts = None
-    if row[20] is not None:
-        facts = DurableToolFacts.model_validate(
-            _load_mapping(row[20], label="structured tool facts")
-        )
-    artifact_refs = _artifact_refs_from_raw(row[27])
-    return DurableToolExecution(
-        tool_execution_id=str(row[0]),
-        workspace_id=str(row[1]),
-        session_id=str(row[2]),
-        task_run_id=str(row[3]),
-        turn_id=str(row[4]),
-        agent_run_id=str(row[5]),
-        assistant_record_id=str(row[6]) if row[6] is not None else None,
-        call_id=str(row[7]),
-        ordinal=int(row[8]),
-        tool_name=str(row[9]),
-        state=ToolExecutionState(str(row[10])),
-        disposition=ToolExecutionDisposition(str(row[11])),
-        row_version=int(row[12]),
-        retry_of_execution_id=str(row[13]) if row[13] is not None else None,
-        approval_id=str(row[14]) if row[14] is not None else None,
-        intent=intent,
-        result_envelope=envelope,
-        facts=facts,
-        artifact_refs=artifact_refs,
-        error_code=str(row[21]) if row[21] is not None else None,
-        error_detail=str(row[22]) if row[22] is not None else None,
-        created_at=_from_unix(row[23]),
-        executing_at=_from_unix(row[24]) if row[24] is not None else None,
-        handler_completed_at=_from_unix(row[25]) if row[25] is not None else None,
-        closed_at=_from_unix(row[26]) if row[26] is not None else None,
-    )
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise StorageError(
+            StorageErrorCode.NEEDS_REPAIR, "operational tool execution is invalid"
+        ) from exc
 
 
 def _artifact_from_row(row: tuple[object, ...]) -> ArtifactMetadata:
@@ -2502,27 +3179,120 @@ def _artifact_from_row(row: tuple[object, ...]) -> ArtifactMetadata:
 
 
 def _approval_from_row(row: tuple[object, ...]) -> DurableApproval:
-    preview_raw = json.loads(str(row[7]))
-    if not isinstance(preview_raw, list) or any(not isinstance(item, str) for item in preview_raw):
-        raise StorageError(StorageErrorCode.NEEDS_REPAIR, "approval preview is not a string list")
-    return DurableApproval(
-        approval_id=str(row[0]),
-        tool_execution_id=str(row[1]),
-        intent_hash=str(row[2]),
-        tool_schema_digest=str(row[3]),
-        permission_context_digest=str(row[4]),
-        requested_scope=str(row[5]),
-        granted_scope=str(row[6]) if row[6] is not None else None,
-        preview=tuple(str(item) for item in preview_raw),
-        preview_digest=str(row[8]),
-        row_version=int(row[9]),
-        created_at=_from_unix(row[10]),
-        expires_at=_from_unix(row[11]),
-        resolution=ApprovalResolution(str(row[12])),
-        resolved_at=_from_unix(row[13]) if row[13] is not None else None,
-        consumed_at=_from_unix(row[14]) if row[14] is not None else None,
-        command_id=str(row[15]) if row[15] is not None else None,
-    )
+    try:
+        preview_raw = json.loads(str(row[7]))
+        if not isinstance(preview_raw, list) or any(
+            not isinstance(item, str) for item in preview_raw
+        ):
+            raise ValueError("approval preview is not a string list")
+        return DurableApproval(
+            approval_id=str(row[0]),
+            tool_execution_id=str(row[1]),
+            intent_hash=str(row[2]),
+            tool_schema_digest=str(row[3]),
+            permission_context_digest=str(row[4]),
+            requested_scope=str(row[5]),
+            granted_scope=str(row[6]) if row[6] is not None else None,
+            preview=tuple(str(item) for item in preview_raw),
+            preview_digest=str(row[8]),
+            row_version=int(row[9]),
+            created_at=_from_unix(row[10]),
+            expires_at=_from_unix(row[11]),
+            resolution=ApprovalResolution(str(row[12])),
+            resolved_at=_from_unix(row[13]) if row[13] is not None else None,
+            consumed_at=_from_unix(row[14]) if row[14] is not None else None,
+            command_id=str(row[15]) if row[15] is not None else None,
+            permission_snapshot_id=str(row[16]) if row[16] is not None else None,
+            grant_id=str(row[17]) if row[17] is not None else None,
+            isolation=IsolationLabel(str(row[18])) if row[18] is not None else None,
+            revoked_at=_from_unix(row[19]) if row[19] is not None else None,
+            revocation_reason=str(row[20]) if row[20] is not None else None,
+        )
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise StorageError(
+            StorageErrorCode.NEEDS_REPAIR, "operational approval is invalid"
+        ) from exc
+
+
+def _grant_from_row(row: tuple[object, ...]) -> CapabilityGrant:
+    try:
+        capabilities_raw = json.loads(str(row[4]))
+        if not isinstance(capabilities_raw, list):
+            raise ValueError("grant capabilities are not a list")
+        return CapabilityGrant(
+            grant_id=str(row[0]),
+            workspace_id=str(row[1]),
+            task_run_id=str(row[2]),
+            agent_run_id=str(row[3]),
+            capabilities=tuple(CapabilityName(str(value)) for value in capabilities_raw),
+            granted_by=GrantSource(str(row[5])),
+            command_id=str(row[6]),
+            reason=str(row[7]),
+            preview_digest=str(row[8]),
+            policy_version=str(row[9]),
+            schema_version=int(row[10]),
+            created_at=_from_unix(row[11]),
+            expires_at=_from_unix(row[12]),
+            revoked_at=_from_unix(row[13]) if row[13] is not None else None,
+            revocation_reason=str(row[14]) if row[14] is not None else None,
+            row_version=int(row[15]),
+        )
+    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise StorageError(
+            StorageErrorCode.NEEDS_REPAIR, "operational capability grant is invalid"
+        ) from exc
+
+
+def _permission_snapshot_from_row(row: tuple[object, ...]) -> PermissionSnapshot:
+    try:
+        source_revisions = json.loads(str(row[16]))
+        granted_capabilities = json.loads(str(row[19]))
+        capability_isolations = json.loads(str(row[20]))
+        if row[10] not in (0, 1):
+            raise ValueError("permission snapshot read-only flag is invalid")
+        if not all(
+            isinstance(value, list)
+            for value in (source_revisions, granted_capabilities, capability_isolations)
+        ):
+            raise ValueError("permission snapshot JSON columns are not lists")
+        return PermissionSnapshot(
+            permission_snapshot_id=str(row[0]),
+            workspace_id=str(row[1]),
+            session_id=str(row[2]),
+            task_run_id=str(row[3]),
+            turn_id=str(row[4]),
+            agent_run_id=str(row[5]),
+            access_scope=AccessScope(str(row[6])),
+            approval_mode=ApprovalMode(str(row[7])),
+            process_isolation=ProcessIsolation(str(row[8])),
+            workspace_root_digest=str(row[9]),
+            workspace_read_only=bool(row[10]),
+            tool_schema_digest=str(row[11]),
+            run_policy_digest=str(row[12]),
+            permission_profile_digest=str(row[13]),
+            policy_version=str(row[14]),
+            schema_version=int(row[15]),
+            source_revisions=tuple(
+                SourceRevisionRef.model_validate(item) for item in source_revisions
+            ),
+            grant_id=str(row[17]) if row[17] is not None else None,
+            grant_digest=str(row[18]) if row[18] is not None else None,
+            granted_capabilities=tuple(
+                CapabilityName(str(value)) for value in granted_capabilities
+            ),
+            capability_isolations=tuple(
+                CapabilityIsolation(
+                    capability=CapabilityName(str(item["capability"])),
+                    isolation=IsolationLabel(str(item["isolation"])),
+                )
+                for item in capability_isolations
+            ),
+            created_at=_from_unix(row[21]),
+        )
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise StorageError(
+            StorageErrorCode.NEEDS_REPAIR, "operational permission snapshot is invalid"
+        ) from exc
 
 
 def _report_from_row(row: tuple[object, ...]) -> RecoveryReport:

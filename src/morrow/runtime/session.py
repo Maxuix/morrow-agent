@@ -48,6 +48,7 @@ class Session:
     metrics_enabled: bool = True
     latest_metrics: RunMetricsSnapshot | None = None
     committer: SessionCommitter | None = None
+    pending_full_access_grant: bool = False
     health: SessionHealth = SessionHealth.OK
     lifecycle: SessionLifecycle = SessionLifecycle.ACTIVE
     profile_revision: int = 0
@@ -99,6 +100,7 @@ class Session:
         self.latest_tool_facts = ()
         self.latest_metrics = None
         self.context_checkpoint = None
+        self.pending_full_access_grant = False
 
     def retain_run_facts(
         self, run_context: ToolRunContext, *, finish_reason: str = "unknown"

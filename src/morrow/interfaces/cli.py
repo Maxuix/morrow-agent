@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import getpass
 import json
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import typer
@@ -26,6 +27,11 @@ from morrow.application.tasks import TaskService
 from morrow.bootstrap import build_application, build_session_application
 from morrow.core.application import ApplicationError, ApplicationErrorCode
 from morrow.core.capabilities import PermissionPreset, PermissionProfile
+from morrow.core.permissions import (
+    UNCONFINED_HOST_WARNING,
+    UNCONFINED_HOST_WARNING_DIGEST,
+    CapabilityName,
+)
 from morrow.core.recovery import RecoveryResolution
 from morrow.core.store import StorageError, StorageErrorCode, StoreOpenMode
 from morrow.interfaces.terminal import Terminal, TerminalApprovalPort, run_repl
@@ -41,6 +47,7 @@ session_app = typer.Typer(help="Session 生命周期与历史。")
 task_app = typer.Typer(help="TaskRun 操作。")
 artifact_app = typer.Typer(help="Artifact 查看与保留。")
 recovery_app = typer.Typer(help="恢复报告与决策。")
+grant_app = typer.Typer(help="Foreground AgentRun 的手动权限授予与撤销。")
 state_app = typer.Typer(help="Operational Store 诊断、事件与备份。")
 app.add_typer(provider_app, name="provider")
 app.add_typer(model_app, name="model")
@@ -49,6 +56,7 @@ app.add_typer(session_app, name="session")
 app.add_typer(task_app, name="task")
 app.add_typer(artifact_app, name="artifact")
 app.add_typer(recovery_app, name="recovery")
+app.add_typer(grant_app, name="grant")
 app.add_typer(state_app, name="state")
 
 
@@ -77,7 +85,7 @@ def root(
         PermissionPreset.MANUAL,
         "--permission-mode",
         "--mode",
-        help="工作空间权限预设：manual、auto-safe 或 auto-sandboxed。",
+        help="权限预设：manual、auto-safe、auto-sandboxed 或 full-access-manual。",
     ),
 ) -> None:
     if ctx.invoked_subcommand:
@@ -701,6 +709,128 @@ def task_resume(
         state_root,
         expected_row_version,
     )
+
+
+@grant_app.command("list")
+def grant_list(
+    agent_run_id: str | None = typer.Option(None, "--agent-run-id"),
+    workspace_id: str | None = typer.Option(None, "--workspace-id"),
+    directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+) -> None:
+    handle = None
+    try:
+        _application, handle, api, _doctor, _backup = _state_services(
+            state_root=state_root, workspace_id=workspace_id, directory=directory, write=False
+        )
+        for grant in api.list_grants(agent_run_id=agent_run_id).items:
+            typer.echo(
+                f"{grant.grant_id}\t{grant.agent_run_id}\t"
+                f"{','.join(value.value for value in grant.capabilities)}\t"
+                f"expires={grant.expires_at.isoformat()}\t"
+                f"revoked={grant.revoked_at.isoformat() if grant.revoked_at else '-'}"
+            )
+    except Exception as exc:
+        _cli_error(exc)
+        raise typer.Exit(code=2) from None
+    finally:
+        _close_state(handle)
+
+
+@grant_app.command("show")
+def grant_show(
+    grant_id: str,
+    workspace_id: str | None = typer.Option(None, "--workspace-id"),
+    directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+) -> None:
+    handle = None
+    try:
+        _application, handle, api, _doctor, _backup = _state_services(
+            state_root=state_root, workspace_id=workspace_id, directory=directory, write=False
+        )
+        value = api.get_grant(grant_id)
+        if value is None:
+            raise ApplicationError(ApplicationErrorCode.NOT_FOUND, "CapabilityGrant is missing")
+        _emit_model(value)
+    except Exception as exc:
+        _cli_error(exc)
+        raise typer.Exit(code=2) from None
+    finally:
+        _close_state(handle)
+
+
+@grant_app.command("create")
+def grant_create(
+    task_run_id: str,
+    agent_run_id: str,
+    reason: str = typer.Option(..., "--reason"),
+    expires_minutes: int = typer.Option(15, "--expires-minutes", min=1, max=1_440),
+    preview_digest: str | None = typer.Option(None, "--preview-digest"),
+    command_id: str | None = typer.Option(None, "--command-id"),
+    workspace_id: str | None = typer.Option(None, "--workspace-id"),
+    directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+) -> None:
+    """Explicitly grant only unconfined_host_process to one foreground AgentRun."""
+
+    typer.echo(UNCONFINED_HOST_WARNING, err=True)
+    if not typer.confirm("确认授予该 AgentRun 一次手动 Host 执行权限？"):
+        raise typer.Exit(code=2)
+    handle = None
+    try:
+        if preview_digest is not None and preview_digest != UNCONFINED_HOST_WARNING_DIGEST:
+            raise typer.BadParameter(
+                "--preview-digest must match the canonical digest of the displayed Host warning"
+            )
+        _application, handle, api, _doctor, _backup = _state_services(
+            state_root=state_root, workspace_id=workspace_id, directory=directory, write=True
+        )
+        result = api.create_grant(
+            task_run_id=task_run_id,
+            agent_run_id=agent_run_id,
+            capabilities=(CapabilityName.UNCONFINED_HOST_PROCESS,),
+            reason=reason,
+            preview_digest=UNCONFINED_HOST_WARNING_DIGEST,
+            expires_at=datetime.now(UTC) + timedelta(minutes=expires_minutes),
+            command_id=command_id,
+        )
+        _emit_model(result.value)
+    except Exception as exc:
+        _cli_error(exc)
+        raise typer.Exit(code=2) from None
+    finally:
+        _close_state(handle)
+
+
+@grant_app.command("revoke")
+def grant_revoke(
+    grant_id: str,
+    reason: str = typer.Option("revoked by local interface", "--reason"),
+    expected_row_version: int | None = typer.Option(None, "--expected-row-version", min=1),
+    command_id: str | None = typer.Option(None, "--command-id"),
+    workspace_id: str | None = typer.Option(None, "--workspace-id"),
+    directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+) -> None:
+    handle = None
+    try:
+        _application, handle, api, _doctor, _backup = _state_services(
+            state_root=state_root, workspace_id=workspace_id, directory=directory, write=True
+        )
+        _emit_model(
+            api.revoke_grant(
+                grant_id,
+                reason=reason,
+                expected_row_version=expected_row_version,
+                command_id=command_id,
+            ).value
+        )
+    except Exception as exc:
+        _cli_error(exc)
+        raise typer.Exit(code=2) from None
+    finally:
+        _close_state(handle)
 
 
 @artifact_app.command("list")

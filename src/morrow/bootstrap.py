@@ -41,10 +41,17 @@ from morrow.application.local_tools import (
 )
 from morrow.application.orchestrator import SessionOrchestrator
 from morrow.application.turns import SessionPersistence
-from morrow.core.capabilities import PermissionProfile, ProcessIsolation, WorkspaceCapability
+from morrow.core.capabilities import (
+    AccessScope,
+    ApprovalMode,
+    PermissionProfile,
+    ProcessIsolation,
+    WorkspaceCapability,
+)
 from morrow.core.domain import DurableSession
 from morrow.core.execution import missing_declarations
 from morrow.core.models import Preferences
+from morrow.core.permissions import UNCONFINED_HOST_WARNING_DIGEST, CapabilityName
 from morrow.core.store import (
     OperationalStoreLayout,
     StorageError,
@@ -371,6 +378,30 @@ def build_session_application(
         forks=forks,
         persistence=persistence,
     )
+
+    def create_foreground_grant(current_session: Session):
+        profile = current_session.permission_profile
+        if (
+            profile.access_scope is not AccessScope.FULL_ACCESS
+            or profile.approval_mode is not ApprovalMode.MANUAL
+            or profile.process_isolation is not ProcessIsolation.HOST
+        ):
+            raise RuntimeError("只有 full-access-manual 预设支持本地 Host 权限授予")
+        task_run_id = getattr(current_session.committer, "current_task_run_id", None)
+        agent_run_id = getattr(current_session.committer, "current_agent_run_id", None)
+        if task_run_id is None or agent_run_id is None:
+            raise RuntimeError("当前前台 AgentRun 尚未创建")
+        result = api.create_grant(
+            task_run_id=task_run_id,
+            agent_run_id=agent_run_id,
+            capabilities=(CapabilityName.UNCONFINED_HOST_PROCESS,),
+            reason="local interface approved unconfined Host access for this foreground AgentRun",
+            preview_digest=UNCONFINED_HOST_WARNING_DIGEST,
+            command_id=app.id_source.new_id("cmd"),
+        )
+        return result.value
+
+    runtime.loop.grant_provider = create_foreground_grant
     operational_store = OperationalStore(app.data_root.root)
     doctor = OperationalDoctor(operational_store)
     backup = OperationalBackupService(operational_store, journal=journal)

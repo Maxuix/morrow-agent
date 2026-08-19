@@ -6,7 +6,9 @@ from dataclasses import dataclass
 
 from morrow.application.configuration import ConfigurationCommand, render_configuration_preview
 from morrow.application.tasks import TaskCommandError, TaskCommandResult
+from morrow.core.capabilities import AccessScope, ApprovalMode, ProcessIsolation
 from morrow.core.domain import SessionHealth, TaskRunStatus
+from morrow.core.permissions import UNCONFINED_HOST_WARNING
 from morrow.core.preferences import merge_preferences
 
 
@@ -65,6 +67,38 @@ class CommandService:
             ConfigurationCommand(scope=scope, target="preferences", operation="reset")
         )
 
+    def arm_full_access_grant(self) -> None:
+        profile = self.session.permission_profile
+        if (
+            profile.access_scope is not AccessScope.FULL_ACCESS
+            or profile.approval_mode is not ApprovalMode.MANUAL
+            or profile.process_isolation is not ProcessIsolation.HOST
+        ):
+            raise RuntimeError("只有 full-access-manual 预设支持本地 Host 权限授予")
+        if self.session.read_only:
+            raise RuntimeError("当前工作空间不可安全写入，无法授予权限")
+        self.session.pending_full_access_grant = True
+
+    def _grant_command(self) -> CommandResult:
+        profile = self.session.permission_profile
+        if (
+            profile.access_scope is not AccessScope.FULL_ACCESS
+            or profile.approval_mode is not ApprovalMode.MANUAL
+            or profile.process_isolation is not ProcessIsolation.HOST
+        ):
+            return CommandResult(["当前回合不是 full-access-manual，未授予任何额外权限。"])
+        if self.session.read_only:
+            return CommandResult(["当前工作空间不可安全写入，无法授予权限。"])
+        if self.session.pending_full_access_grant:
+            return CommandResult(["下一次前台 AgentRun 已有待确认的 Host 权限授予。"])
+        return CommandResult(
+            [
+                UNCONFINED_HOST_WARNING,
+                "确认后仅为下一次前台 AgentRun 授予 unconfined_host_process；每条 Host 命令仍需单独手动审批。",
+            ],
+            action="arm_full_access_grant",
+        )
+
     def execute(self, raw: str) -> CommandResult:
         parts = raw.strip().split()
         if not parts:
@@ -102,6 +136,8 @@ class CommandService:
                     f"当前会话：{current}",
                 ]
             )
+        if command == "/grant":
+            return self._grant_command()
         if command == "/task":
             return self._task_command(parts)
         if command == "/accept":

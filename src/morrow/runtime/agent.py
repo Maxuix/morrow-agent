@@ -3,14 +3,21 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import time
 from collections.abc import AsyncIterator
 
 from morrow.application.context import ContextBudgetError
-from morrow.core.capabilities import ToolRunContext
+from morrow.core.capabilities import PolicyVerdict, ToolRunContext
 from morrow.core.events import completion_payload, make_event
-from morrow.core.execution import ToolExecutionState
+from morrow.core.execution import (
+    ApprovalDecisionError,
+    EffectClass,
+    ExecutionTransitionError,
+    ToolExecutionDisposition,
+    ToolExecutionState,
+)
 from morrow.core.faults import FaultPoint, InjectedFault
 from morrow.core.models import (
     AgentEvent,
@@ -31,6 +38,7 @@ from morrow.core.models import (
     sanitize_text,
     utc_now,
 )
+from morrow.core.permissions import PermissionEvidenceError
 from morrow.core.ports import Clock, IdSource, ModelProvider
 from morrow.runtime.conversation import ConversationLogError
 from morrow.runtime.ids import RandomIdSource
@@ -193,6 +201,10 @@ def _consume_cancellation_request() -> None:
             task.uncancel()
 
 
+class _ToolCancellationRequested(Exception):
+    """The durable cancellation flag was observed before the handler completed."""
+
+
 class AgentLoop:
     """Owns task lifecycle, budgets, tool execution and every chat history write."""
 
@@ -205,6 +217,7 @@ class AgentLoop:
         id_source: IdSource | None = None,
         clock: Clock | None = None,
         tool_executor: ToolExecutor | None = None,
+        grant_provider=None,
         monotonic=None,
     ) -> None:
         self.runner = ModelCallRunner(provider, model)
@@ -213,10 +226,47 @@ class AgentLoop:
         self.clock = clock
         self.run_policy = context_builder.run_policy
         self.tool_executor = tool_executor
+        self.grant_provider = grant_provider
         self.monotonic = monotonic or time.monotonic
 
     def _id(self, prefix: str) -> str:
         return self.id_source.new_id(prefix)
+
+    def _wall_now(self, session: Session | None = None):
+        clock = self.clock
+        if clock is None and session is not None:
+            clock = getattr(getattr(session, "committer", None), "clock", None)
+        return clock.now() if clock is not None else utc_now()
+
+    async def _request_pending_grant(self, session: Session) -> None:
+        if not getattr(session, "pending_full_access_grant", False):
+            return
+        if self.grant_provider is None:
+            raise RuntimeError("本地 Host 权限授予接口不可用")
+        result = self.grant_provider(session)
+        if inspect.isawaitable(result):
+            result = await result
+        if not result:
+            raise RuntimeError("本地 Host 权限授予未完成")
+        session.pending_full_access_grant = False
+
+    async def _await_tool_with_cancellation(self, execution, session: Session, durable_execution):
+        task = asyncio.ensure_future(execution)
+        try:
+            while True:
+                done, _pending = await asyncio.wait((task,), timeout=0.05)
+                if done:
+                    return await task
+                current = self._reload_durable(session, durable_execution)
+                if current is not None and current.cancel_requested_at is not None:
+                    task.cancel()
+                    await asyncio.gather(task, return_exceptions=True)
+                    raise _ToolCancellationRequested
+        except asyncio.CancelledError:
+            if not task.done():
+                task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+            raise
 
     async def run_task(
         self,
@@ -372,9 +422,18 @@ class AgentLoop:
             else:
                 session.begin_user_turn(UserMessage(content=user_input))
 
-            yield event("turn.started", {})
             started = True
             tools = self.tool_executor.definitions if self.tool_executor else ()
+            yield event("turn.started", {})
+            freeze = getattr(session.committer, "freeze_permission_snapshot", None)
+            permission_snapshot = None
+            await self._request_pending_grant(session)
+
+            def freeze_permissions() -> None:
+                nonlocal permission_snapshot
+                if freeze is None or permission_snapshot is not None:
+                    return
+                permission_snapshot = freeze(session, tools=tools)
 
             while True:
                 if _pending_cancellation():
@@ -468,6 +527,7 @@ class AgentLoop:
                 )
                 if is_final_text:
                     try:
+                        freeze_permissions()
                         session.append_assistant(message)
                     except ConversationLogError:
                         for item in terminal_error(
@@ -518,6 +578,7 @@ class AgentLoop:
 
                 durable_executions = ()
                 try:
+                    freeze_permissions()
                     planned = session.log.plan_append_assistant(message)
                     prepare = getattr(session.committer, "prepare_and_commit_assistant", None)
                     if prepare is not None:
@@ -605,26 +666,70 @@ class AgentLoop:
                     yield tool_status(call, "running", index, len(calls))
                     durable = durable_executions[index - 1] if durable_executions else None
                     skip_approval = durable is not None
-                    wall = self.clock.now() if self.clock is not None else utc_now()
                     denied_result = None
+                    handler_disposition = None
                     if durable is not None:
-                        durable, run_handler, denied_result = await self._gate_durable(
-                            session,
-                            durable,
-                            call,
-                            now=wall,
-                            result_limit=per_call_result_limit,
-                        )
+                        if durable.intent.policy_verdict is PolicyVerdict.DENY:
+                            denied_result = self.tool_executor.error_outcome(
+                                call,
+                                ToolErrorCode.PERMISSION_DENIED,
+                                "当前能力策略拒绝此操作",
+                                result_limit=per_call_result_limit,
+                            )
+                            deny_before_handler = getattr(
+                                session.committer, "deny_execution_before_handler", None
+                            )
+                            if deny_before_handler is not None:
+                                durable = deny_before_handler(durable, now=self._wall_now(session))
+                        else:
+                            try:
+                                durable, run_handler, denied_result = await self._gate_durable(
+                                    session,
+                                    durable,
+                                    call,
+                                    now=self._wall_now(session),
+                                    result_limit=per_call_result_limit,
+                                )
+                            except (
+                                ApprovalDecisionError,
+                                ExecutionTransitionError,
+                                PermissionEvidenceError,
+                            ):
+                                denied_result = self.tool_executor.error_outcome(
+                                    call,
+                                    ToolErrorCode.PERMISSION_DENIED,
+                                    "权限证据已撤销或不可证明",
+                                    result_limit=per_call_result_limit,
+                                )
+                                durable = self._reload_durable(session, durable)
+                                deny_before_handler = getattr(
+                                    session.committer, "deny_execution_before_handler", None
+                                )
+                                if deny_before_handler is not None:
+                                    durable = deny_before_handler(
+                                        durable, now=self._wall_now(session)
+                                    )
                     try:
                         if denied_result is not None:
                             result = denied_result
                         else:
                             if durable is not None:
                                 session.committer.faults.check(FaultPoint.HANDLER_BEFORE_ENTER)
+                                verify_handler = getattr(
+                                    session.committer, "assert_handler_may_enter", None
+                                )
+                                if verify_handler is not None:
+                                    verified = verify_handler(durable, now=self._wall_now(session))
+                                    if verified is not None:
+                                        durable = verified
                             execute_with_context = getattr(
                                 self.tool_executor, "execute_with_context", None
                             )
                             extra = {"skip_approval": True} if skip_approval else {}
+                            if call.name == "run_command" and self._has_active_unconfined_grant(
+                                session, durable
+                            ):
+                                extra["allow_unconfined_host"] = True
                             if execute_with_context is not None:
                                 execution = execute_with_context(
                                     call,
@@ -641,7 +746,7 @@ class AgentLoop:
                                     **extra,
                                 )
                             result = await asyncio.wait_for(
-                                execution,
+                                self._await_tool_with_cancellation(execution, session, durable),
                                 timeout=min(policy.tool_timeout_seconds, deadline - now),
                             )
                             if durable is not None:
@@ -653,13 +758,62 @@ class AgentLoop:
                             "工具执行超时",
                             result_limit=per_call_result_limit,
                         )
+                    except _ToolCancellationRequested:
+                        result = self.tool_executor.error_outcome(
+                            call,
+                            ToolErrorCode.CANCELLED,
+                            "工具执行已收到撤销请求",
+                            result_limit=per_call_result_limit,
+                        )
+                        durable = self._reload_durable(session, durable)
+                        if durable is not None and durable.state is ToolExecutionState.EXECUTING:
+                            if (
+                                durable.tool_name == "run_command"
+                                and durable.intent.effect_class
+                                is EffectClass.UNCONFINED_EXTERNAL_EFFECT
+                            ):
+                                # The opaque Host process may already have taken effect.
+                                handler_disposition = ToolExecutionDisposition.UNKNOWN
+                        elif durable is not None and durable.state in {
+                            ToolExecutionState.PREPARED,
+                            ToolExecutionState.AWAITING_APPROVAL,
+                        }:
+                            cancel_before_handler = getattr(
+                                session.committer, "cancel_execution_before_handler", None
+                            )
+                            if cancel_before_handler is not None:
+                                durable = cancel_before_handler(
+                                    durable, now=self._wall_now(session)
+                                )
+                    except (
+                        ApprovalDecisionError,
+                        ExecutionTransitionError,
+                        PermissionEvidenceError,
+                    ):
+                        result = self.tool_executor.error_outcome(
+                            call,
+                            ToolErrorCode.PERMISSION_DENIED,
+                            "权限证据已撤销或不可证明",
+                            result_limit=per_call_result_limit,
+                        )
+                        durable = self._reload_durable(session, durable)
+                        deny_before_handler = getattr(
+                            session.committer, "deny_execution_before_handler", None
+                        )
+                        if deny_before_handler is not None and durable is not None:
+                            durable = deny_before_handler(durable, now=self._wall_now(session))
                     if durable is not None:
-                        if durable.state is not ToolExecutionState.CLOSED:
+                        if durable.state is ToolExecutionState.EXECUTING:
                             durable = session.committer.record_handler_completed(
-                                durable, result, now=wall
+                                durable,
+                                result,
+                                now=self._wall_now(session),
+                                disposition=handler_disposition,
                             )
                         planned_tool = session.log.plan_append_tool_result(call.id, result.envelope)
-                        session.committer.commit_tool_message(planned_tool, durable, now=wall)
+                        session.committer.commit_tool_message(
+                            planned_tool, durable, now=self._wall_now(session)
+                        )
                     else:
                         session.append_tool_result(call.id, result.envelope)
                     cycle_outcomes.append(result)
@@ -758,6 +912,26 @@ class AgentLoop:
                 except Exception:
                     pass
 
+    @staticmethod
+    def _reload_durable(session, execution):
+        if execution is None or session.committer is None:
+            return execution
+        getter = getattr(session.committer, "get_execution", None)
+        if getter is None:
+            return execution
+        return getter(execution.tool_execution_id) or execution
+
+    def _has_active_unconfined_grant(self, session: Session, execution) -> bool:
+        if execution is None or execution.grant_id is None:
+            return False
+        committer = getattr(session, "committer", None)
+        journal = getattr(committer, "journal", None)
+        workspace_id = getattr(committer, "workspace_id", None)
+        if journal is None or workspace_id is None:
+            return False
+        grant = journal.get_capability_grant(workspace_id, execution.grant_id)
+        return grant is not None and grant.is_active(self._wall_now(session))
+
     async def _gate_durable(self, session, execution, call, *, now, result_limit):
         committer = session.committer
         if execution.intent.requires_approval:
@@ -779,8 +953,9 @@ class AgentLoop:
             )
             decision = await self.tool_executor._request_approval(request)
             approved = bool(decision is not None and decision.approved)
+            consume_now = self._wall_now(session)
             execution, _approval, run_handler = committer.consume_and_mark_executing(
-                execution, approval, approved=approved, now=now
+                execution, approval, approved=approved, now=consume_now
             )
             if run_handler:
                 return execution, True, None
@@ -857,6 +1032,7 @@ class AgentRuntime:
         id_source: IdSource | None = None,
         clock: Clock | None = None,
         tool_executor: ToolExecutor | None = None,
+        grant_provider=None,
     ) -> None:
         self._loop = AgentLoop(
             provider,
@@ -865,6 +1041,7 @@ class AgentRuntime:
             id_source=id_source,
             clock=clock,
             tool_executor=tool_executor,
+            grant_provider=grant_provider,
         )
 
     @property

@@ -2,8 +2,8 @@
 
 ## Status
 
-Accepted for Stage 4 implementation planning by S4.35.6. Full Access remains unimplemented and
-unsupported until Subplan 44 passes.
+Accepted for Stage 4 implementation planning by S4.35.6 and implemented by Subplan 44. Full Access
+Auto remains unsupported; Subplan 45 owns the final Stage 4 acceptance evidence.
 
 ## Authority boundary
 

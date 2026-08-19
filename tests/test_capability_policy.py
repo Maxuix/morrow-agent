@@ -112,12 +112,66 @@ def test_forbidden_risks_are_denied_before_approval_for_all_workspace_modes():
         assert decision.reason_codes == (CapabilityReason.NETWORK_NOT_ENABLED,)
 
 
-def test_full_access_and_read_only_intersection_fail_closed():
-    full_access = _policy(access_scope=AccessScope.FULL_ACCESS).evaluate(
-        _intent(OperationKind.INTERNAL_READ)
+def test_full_access_manual_requires_a_grant_and_keeps_structured_risks_denied():
+    policy = _policy(access_scope=AccessScope.FULL_ACCESS)
+    assert policy.evaluate(_intent(OperationKind.INTERNAL_READ)).verdict is PolicyVerdict.ALLOW
+    no_grant = policy.evaluate(_intent(OperationKind.PROCESS, requires_host=True))
+    assert no_grant.verdict is PolicyVerdict.DENY
+    assert no_grant.reason_codes == (CapabilityReason.FULL_ACCESS_GRANT_REQUIRED,)
+
+    outside = policy.evaluate(
+        _intent(
+            OperationKind.PROCESS,
+            requires_host=True,
+            risk_flags=(RiskFlag.OUTSIDE_WORKSPACE, RiskFlag.NETWORK),
+        ),
+        allow_unconfined_host=True,
     )
-    assert full_access.verdict is PolicyVerdict.DENY
-    assert full_access.reason_codes == (CapabilityReason.FULL_ACCESS_UNSUPPORTED,)
+    assert outside.verdict is PolicyVerdict.REQUIRE_APPROVAL
+    assert outside.reason_codes == (CapabilityReason.FULL_ACCESS_HOST_APPROVAL_REQUIRED,)
+
+    destructive = policy.evaluate(
+        _intent(
+            OperationKind.PROCESS,
+            requires_host=True,
+            risk_flags=(RiskFlag.DESTRUCTIVE,),
+        ),
+        allow_unconfined_host=True,
+    )
+    assert destructive.verdict is PolicyVerdict.DENY
+    assert destructive.reason_codes == (CapabilityReason.DESTRUCTIVE_NOT_ENABLED,)
+
+    full_access_auto = _policy(
+        access_scope=AccessScope.FULL_ACCESS,
+        approval_mode=ApprovalMode.AUTO,
+        process_isolation=ProcessIsolation.HOST,
+    ).evaluate(_intent(OperationKind.INTERNAL_READ))
+    assert full_access_auto.verdict is PolicyVerdict.DENY
+    assert full_access_auto.reason_codes == (CapabilityReason.FULL_ACCESS_UNSUPPORTED,)
+
+
+@pytest.mark.parametrize(
+    ("risk", "reason"),
+    [
+        (RiskFlag.CREDENTIAL_ACCESS, CapabilityReason.CREDENTIAL_ACCESS_DENIED),
+        (RiskFlag.GIT_WRITE, CapabilityReason.GIT_WRITE_NOT_ENABLED),
+        (RiskFlag.PRIVILEGE_ESCALATION, CapabilityReason.PRIVILEGE_ESCALATION_NOT_ENABLED),
+    ],
+)
+def test_full_access_host_does_not_grant_credential_git_or_privilege_risks(risk, reason):
+    decision = _policy(access_scope=AccessScope.FULL_ACCESS).evaluate(
+        _intent(
+            OperationKind.PROCESS,
+            requires_host=True,
+            risk_flags=(RiskFlag.OUTSIDE_WORKSPACE, risk),
+        ),
+        allow_unconfined_host=True,
+    )
+    assert decision.verdict is PolicyVerdict.DENY
+    assert decision.reason_codes == (reason,)
+
+
+def test_read_only_intersection_still_denies_workspace_writes():
 
     read_only = _policy(read_only=True).evaluate(_intent(OperationKind.WORKSPACE_WRITE))
     assert read_only.verdict is PolicyVerdict.DENY

@@ -1180,3 +1180,20 @@
 - Validation: offline suite `570 passed, 2 skipped, 1 deselected`; focused application/backup/
   cleanup/CLI suite `9 passed`; Ruff format/check, compileall, `morrow --help`, and `git diff --check`
   passed. Activated Subplan 44 for CapabilityGrant and Full Access Manual.
+
+## 2026-08-20 — Subplan 44 CapabilityGrant and Full Access Manual completed
+
+- Added v9 CapabilityGrant and immutable PermissionSnapshot evidence with local-interface-only
+  grant creation, Full Access Manual profile gating, explicit unconfined Host warning/approval,
+  per-execution evidence, expiry, revocation, cancellation requests, and read-only doctor checks.
+- Kept Stage 4 intentionally narrow: only `unconfined_host_process` is elevated; structured
+  workspace tools retain their existing boundaries, Full Access Auto remains unsupported, and
+  crash-resumed AgentRuns inherit neither grants nor permission snapshots.
+- The single successful Grok `/review` found no blocker. Its actionable suggestions were reviewed
+  and fixed: freeze uses the durable AgentRun snapshot, revoked grants cannot stamp new elevated
+  executions and close pending work, warning digests are canonical, Host cancellation after entry
+  records UNKNOWN, execution rechecks grant activity, and grant errors carry typed codes.
+- Final Subplan44 validation: offline suite `600 passed, 2 skipped, 1 deselected`; Ruff format/check,
+  compileall, `morrow --help`, and `git diff --check` passed. A later redundant Grok retry was not
+  used after the user clarified that one review-fix cycle is preferred; the retry ended with a
+  remote usage-balance error and made no workspace changes.

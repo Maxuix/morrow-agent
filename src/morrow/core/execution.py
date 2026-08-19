@@ -12,7 +12,7 @@ from typing import Any, Literal
 
 from pydantic import Field, field_validator, model_validator
 
-from morrow.core.capabilities import ProcessIsolation
+from morrow.core.capabilities import AccessScope, PolicyVerdict, ProcessIsolation
 from morrow.core.domain import (
     AGENT_RUN_ID_PREFIX,
     AGENT_RUN_SNAPSHOT_MAX_BYTES,
@@ -21,6 +21,7 @@ from morrow.core.domain import (
     CONVERSATION_RECORD_MAX_BYTES,
     DIGEST_PATTERN,
     ERROR_DETAIL_MAX_BYTES,
+    PERMISSION_SNAPSHOT_ID_PREFIX,
     SESSION_ID_PREFIX,
     TASK_RUN_ID_PREFIX,
     TURN_ID_PREFIX,
@@ -33,6 +34,15 @@ from morrow.core.domain import (
     validate_prefixed_id,
 )
 from morrow.core.models import TOOL_NAME_PATTERN, ProtocolModel, utc_now
+from morrow.core.permissions import (
+    CAPABILITY_GRANT_ID_PREFIX,
+    UNCONFINED_HOST_WARNING,
+    CapabilityGrant,
+    IsolationLabel,
+    PermissionEvidenceError,
+    PermissionSnapshot,
+    assert_grant_snapshot_matches,
+)
 
 TOOL_EXECUTION_ID_PREFIX = "tex"
 APPROVAL_ID_PREFIX = "apr"
@@ -130,6 +140,7 @@ LEGAL_EXECUTION_TRANSITIONS: frozenset[tuple[ToolExecutionState, ToolExecutionSt
         (ToolExecutionState.AWAITING_APPROVAL, ToolExecutionState.EXECUTING),
         (ToolExecutionState.AWAITING_APPROVAL, ToolExecutionState.CLOSED),
         (ToolExecutionState.EXECUTING, ToolExecutionState.HANDLER_COMPLETED),
+        (ToolExecutionState.EXECUTING, ToolExecutionState.CLOSED),
         (ToolExecutionState.HANDLER_COMPLETED, ToolExecutionState.CLOSED),
     }
 )
@@ -215,7 +226,16 @@ def _budget_and_redact(payload: dict[str, Any] | object, maximum: int, *, label:
     dumped = payload if isinstance(payload, dict) else payload.model_dump(mode="json")
     encoded = canonical_json_bytes(dumped)
     require_payload_budget(encoded, maximum, label=label)
-    refuse_secret_material(encoded, label=label)
+    secret_scan = dumped
+    if isinstance(dumped, dict) and isinstance(dumped.get("preview"), list):
+        # This fixed safety warning intentionally mentions credentials.  It is
+        # policy metadata, not user-supplied secret material; scan all other
+        # preview lines and all other fields normally.
+        secret_scan = {
+            **dumped,
+            "preview": [line for line in dumped["preview"] if line != UNCONFINED_HOST_WARNING],
+        }
+    refuse_secret_material(canonical_json_bytes(secret_scan), label=label)
 
 
 def intent_hash(intent: PreparedIntent) -> str:
@@ -318,6 +338,7 @@ class PreparedIntent(ProtocolModel):
     permission_context_digest: str
     effect_class: EffectClass
     requires_approval: bool = False
+    policy_verdict: PolicyVerdict | None = None
     redacted_arguments: dict[str, Any] = Field(default_factory=dict)
     file_evidence: tuple[FileMutationEvidence, ...] = ()
     config_evidence: ConfigMutationEvidence | None = None
@@ -388,6 +409,11 @@ class DurableToolExecution(ProtocolModel):
     assistant_record_id: str | None = None
     retry_of_execution_id: str | None = None
     approval_id: str | None = None
+    permission_snapshot_id: str | None = None
+    grant_id: str | None = None
+    isolation: IsolationLabel | None = None
+    cancel_requested_at: datetime | None = None
+    cancel_request_reason: str | None = None
     result_envelope: HandlerResultEnvelope | None = None
     facts: DurableToolFacts | None = None
     artifact_refs: tuple[ArtifactReference, ...] = ()
@@ -449,6 +475,20 @@ class DurableToolExecution(ProtocolModel):
             return None
         return validate_prefixed_id(value, APPROVAL_ID_PREFIX)
 
+    @field_validator("permission_snapshot_id")
+    @classmethod
+    def valid_permission_snapshot_id(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return validate_prefixed_id(value, PERMISSION_SNAPSHOT_ID_PREFIX)
+
+    @field_validator("grant_id")
+    @classmethod
+    def valid_grant_id(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return validate_prefixed_id(value, CAPABILITY_GRANT_ID_PREFIX)
+
     @field_validator("call_id")
     @classmethod
     def valid_call(cls, value: str) -> str:
@@ -467,6 +507,17 @@ class DurableToolExecution(ProtocolModel):
         require_payload_budget(value.encode("utf-8"), ERROR_DETAIL_MAX_BYTES, label="error detail")
         refuse_secret_material(value, label="error detail")
         return value
+
+    @field_validator("cancel_request_reason")
+    @classmethod
+    def valid_cancel_request_reason(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        require_payload_budget(
+            value.encode("utf-8"), ERROR_DETAIL_MAX_BYTES, label="cancellation reason"
+        )
+        refuse_secret_material(value, label="cancellation reason")
+        return " ".join(value.split()) or None
 
     @field_validator("artifact_refs")
     @classmethod
@@ -495,6 +546,15 @@ class DurableToolExecution(ProtocolModel):
             and self.disposition is ToolExecutionDisposition.PENDING
         ):
             raise ValueError("handler_completed requires a non-pending disposition")
+        if self.grant_id is not None and (
+            self.permission_snapshot_id is None
+            or self.isolation is not IsolationLabel.UNCONFINED_HOST
+        ):
+            raise ValueError("elevated execution requires a snapshot and unconfined_host label")
+        if self.isolation is IsolationLabel.UNCONFINED_HOST and self.grant_id is None:
+            raise ValueError("unconfined_host execution requires a capability grant")
+        if (self.cancel_requested_at is None) != (self.cancel_request_reason is None):
+            raise ValueError("cancellation request requires a bounded reason and timestamp")
         return self
 
 
@@ -515,6 +575,11 @@ class DurableApproval(ProtocolModel):
     resolved_at: datetime | None = None
     consumed_at: datetime | None = None
     command_id: str | None = None
+    permission_snapshot_id: str | None = None
+    grant_id: str | None = None
+    isolation: IsolationLabel | None = None
+    revoked_at: datetime | None = None
+    revocation_reason: str | None = None
 
     @field_validator("approval_id")
     @classmethod
@@ -548,6 +613,31 @@ class DurableApproval(ProtocolModel):
             return None
         return validate_prefixed_id(value, COMMAND_ID_PREFIX)
 
+    @field_validator("permission_snapshot_id")
+    @classmethod
+    def valid_permission_snapshot_id(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return validate_prefixed_id(value, PERMISSION_SNAPSHOT_ID_PREFIX)
+
+    @field_validator("grant_id")
+    @classmethod
+    def valid_grant_id(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return validate_prefixed_id(value, CAPABILITY_GRANT_ID_PREFIX)
+
+    @field_validator("revocation_reason")
+    @classmethod
+    def valid_revocation_reason(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        require_payload_budget(
+            value.encode("utf-8"), ERROR_DETAIL_MAX_BYTES, label="approval revocation reason"
+        )
+        refuse_secret_material(value, label="approval revocation reason")
+        return " ".join(value.split()) or None
+
     @model_validator(mode="after")
     def enforce_contract(self) -> DurableApproval:
         if self.expires_at <= self.created_at:
@@ -558,6 +648,20 @@ class DurableApproval(ProtocolModel):
             raise ValueError("approved approval requires a granted scope")
         if self.consumed_at is not None and self.resolution is not ApprovalResolution.APPROVED:
             raise ValueError("only an approved approval can be consumed")
+        if self.grant_id is not None and (
+            self.permission_snapshot_id is None
+            or self.isolation is not IsolationLabel.UNCONFINED_HOST
+        ):
+            raise ValueError("elevated approval requires a snapshot and unconfined_host label")
+        if self.isolation is IsolationLabel.UNCONFINED_HOST and self.grant_id is None:
+            raise ValueError("unconfined_host approval requires a capability grant")
+        if (self.revoked_at is None) != (self.revocation_reason is None):
+            raise ValueError("approval revocation requires a bounded reason and timestamp")
+        if self.revoked_at is not None:
+            if self.resolution is not ApprovalResolution.DENIED:
+                raise ValueError("revoked approval must be denied")
+            if self.resolved_at is None or self.consumed_at is not None:
+                raise ValueError("revoked approval cannot be consumed")
         _budget_and_redact(self, APPROVAL_RECORD_MAX_BYTES, label="approval record")
         return self
 
@@ -815,15 +919,116 @@ def consume_approval(
     return approval.model_copy(update={"consumed_at": now, "row_version": approval.row_version + 1})
 
 
+def revoke_approval(
+    approval: DurableApproval,
+    *,
+    expected_row_version: int,
+    now: datetime,
+    reason: str,
+) -> DurableApproval:
+    assert_fresh_row_version(approval.row_version, expected_row_version, label="approval")
+    if approval.revoked_at is not None:
+        return approval
+    if approval.resolution is not ApprovalResolution.PENDING or approval.consumed_at is not None:
+        raise ApprovalDecisionError("approval is no longer pending and cannot be revoked")
+    updated = approval.model_copy(
+        update={
+            "resolution": ApprovalResolution.DENIED,
+            "resolved_at": now,
+            "row_version": approval.row_version + 1,
+            "revoked_at": now,
+            "revocation_reason": _clean_transition_reason(reason, label="approval revocation"),
+        }
+    )
+    return DurableApproval.model_validate(updated.model_dump(), strict=True)
+
+
+def request_execution_cancellation(
+    execution: DurableToolExecution,
+    *,
+    expected_row_version: int,
+    now: datetime,
+    reason: str,
+) -> DurableToolExecution:
+    assert_fresh_row_version(execution.row_version, expected_row_version, label="tool execution")
+    if execution.cancel_requested_at is not None:
+        return execution
+    if execution.state is not ToolExecutionState.EXECUTING:
+        return execution
+    updated = execution.model_copy(
+        update={
+            "row_version": execution.row_version + 1,
+            "cancel_requested_at": now,
+            "cancel_request_reason": _clean_transition_reason(reason, label="cancellation"),
+        }
+    )
+    return DurableToolExecution.model_validate(updated.model_dump(), strict=True)
+
+
+def _clean_transition_reason(value: str, *, label: str) -> str:
+    cleaned = " ".join(value.split())
+    if not cleaned:
+        raise ApprovalDecisionError(f"{label} reason is empty")
+    require_payload_budget(cleaned.encode("utf-8"), ERROR_DETAIL_MAX_BYTES, label=f"{label} reason")
+    refuse_secret_material(cleaned, label=f"{label} reason")
+    return cleaned
+
+
 def assert_handler_may_enter(
     execution: DurableToolExecution,
     approval: DurableApproval | None,
     *,
     now: datetime,
+    permission_snapshot: PermissionSnapshot | None = None,
+    grant: CapabilityGrant | None = None,
 ) -> None:
     if execution.state is not ToolExecutionState.EXECUTING:
         raise ExecutionTransitionError("handler requires executing state")
+    if execution.cancel_requested_at is not None:
+        raise PermissionEvidenceError("handler cancellation has been requested")
+    if (
+        permission_snapshot is not None
+        and permission_snapshot.access_scope is AccessScope.FULL_ACCESS
+        and execution.tool_name == "run_command"
+        and execution.intent.effect_class is EffectClass.UNCONFINED_EXTERNAL_EFFECT
+        and execution.grant_id is None
+    ):
+        raise PermissionEvidenceError("Full Access Host handler requires a capability grant")
+    if (
+        permission_snapshot is not None
+        and permission_snapshot.grant_id is not None
+        and execution.tool_name == "run_command"
+        and execution.intent.effect_class is EffectClass.UNCONFINED_EXTERNAL_EFFECT
+        and execution.intent.requires_approval
+        and execution.grant_id is None
+    ):
+        raise PermissionEvidenceError("elevated Host handler dropped capability grant evidence")
     if not execution.intent.requires_approval:
+        if execution.permission_snapshot_id is not None:
+            if permission_snapshot is None:
+                raise PermissionEvidenceError("permission snapshot is missing")
+            if permission_snapshot.permission_snapshot_id != execution.permission_snapshot_id:
+                raise PermissionEvidenceError(
+                    "handler permission snapshot does not match execution"
+                )
+            if (
+                permission_snapshot.session_id != execution.session_id
+                or permission_snapshot.task_run_id != execution.task_run_id
+                or permission_snapshot.turn_id != execution.turn_id
+                or permission_snapshot.agent_run_id != execution.agent_run_id
+            ):
+                raise PermissionEvidenceError("handler permission subjects are mismatched")
+            if execution.grant_id is not None:
+                if grant is None:
+                    raise PermissionEvidenceError("capability grant is missing")
+                assert_grant_snapshot_matches(
+                    permission_snapshot,
+                    grant,
+                    now=now,
+                    workspace_id=execution.workspace_id,
+                    task_run_id=execution.task_run_id,
+                    agent_run_id=execution.agent_run_id,
+                )
         return
     if approval is None:
         raise ApprovalDecisionError("handler requires consumed approval")
@@ -835,6 +1040,37 @@ def assert_handler_may_enter(
         raise ApprovalDecisionError("approval schema digest mismatch")
     if approval.permission_context_digest != execution.intent.permission_context_digest:
         raise ApprovalDecisionError("approval permission digest mismatch")
+    if (
+        approval.permission_snapshot_id != execution.permission_snapshot_id
+        or approval.grant_id != execution.grant_id
+        or approval.isolation != execution.isolation
+    ):
+        raise ApprovalDecisionError("approval permission evidence mismatch")
+    if execution.permission_snapshot_id is not None:
+        if permission_snapshot is None:
+            raise PermissionEvidenceError("permission snapshot is missing")
+        if permission_snapshot.permission_snapshot_id != execution.permission_snapshot_id:
+            raise PermissionEvidenceError("handler permission snapshot does not match execution")
+        if (
+            permission_snapshot.session_id != execution.session_id
+            or permission_snapshot.task_run_id != execution.task_run_id
+            or permission_snapshot.turn_id != execution.turn_id
+            or permission_snapshot.agent_run_id != execution.agent_run_id
+        ):
+            raise PermissionEvidenceError("handler permission subjects are mismatched")
+        if execution.grant_id is not None:
+            if grant is None:
+                raise PermissionEvidenceError("elevated handler evidence is missing")
+            assert_grant_snapshot_matches(
+                permission_snapshot,
+                grant,
+                now=now,
+                workspace_id=execution.workspace_id,
+                task_run_id=execution.task_run_id,
+                agent_run_id=execution.agent_run_id,
+            )
+        elif permission_snapshot.grant_id is not None:
+            raise PermissionEvidenceError("handler dropped elevated grant evidence")
     if approval.consumed_at is None:
         raise ApprovalDecisionError("approval is not consumed")
     if approval.resolution is not ApprovalResolution.APPROVED:

@@ -321,8 +321,8 @@ def test_foreign_sqlite_file_is_left_intact(tmp_path):
 def test_future_schema_is_refused_and_left_intact(tmp_path):
     root, store = _initialized(tmp_path)
     raw = sqlite3.connect(store.layout.database)
-    raw.execute("PRAGMA user_version = 9")
-    raw.execute("UPDATE store_identity SET schema_version = 9 WHERE singleton = 1")
+    raw.execute("PRAGMA user_version = 10")
+    raw.execute("UPDATE store_identity SET schema_version = 10 WHERE singleton = 1")
     raw.commit()
     raw.close()
     before = store.layout.database.read_bytes()
@@ -572,10 +572,12 @@ def test_ordered_checksummed_migration_rolls_back_a_failed_step(tmp_path):
         "artifact_store_and_references",
         "context_checkpoints_and_session_lineage",
         "application_events_and_command_receipts",
+        "capability_grants_and_permission_snapshots",
     )
     assert report.backup_name
     assert (store.layout.backups_dir / report.backup_name).is_file()
 
+    broken_root, _broken_store = _initialized(tmp_path / "broken", registry=_v1_registry())
     broken = SchemaMigration(
         version=9,
         name="broken_step",
@@ -590,10 +592,10 @@ def test_ordered_checksummed_migration_rolls_back_a_failed_step(tmp_path):
     broken_registry.add(V8)
     broken_registry.add(broken)
     with pytest.raises(StorageError) as error:
-        _store(root, registry=broken_registry).migrate()
+        _store(broken_root, registry=broken_registry).migrate()
     assert error.value.code is StorageErrorCode.UNAVAILABLE
-    reopened = _store(root)
-    assert reopened.classify().schema_version == SUPPORTED_SCHEMA_VERSION
+    reopened = _store(broken_root)
+    assert reopened.classify().schema_version == 8
 
 
 def test_interrupted_migration_before_commit_leaves_previous_version(tmp_path):

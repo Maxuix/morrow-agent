@@ -1,6 +1,6 @@
 # Subplan 44 — CapabilityGrant and Full Access Manual
 
-> Status: pending
+> Status: completed
 > Prerequisite: Subplan 43 accepted
 > Owns: explicit elevated authority, immutable permission evidence, and honest Host risk UX
 > Schema: v9 CapabilityGrant and complete PermissionSnapshot
@@ -35,23 +35,23 @@ Host confinement unmistakable.
 
 ## Tasks
 
-- [ ] S4.44.1 Implement strict CapabilityGrant/PermissionSnapshot models and schemas with explicit
+- [x] S4.44.1 Implement strict CapabilityGrant/PermissionSnapshot models and schemas with explicit
   capability subsets, subject IDs, source/user evidence, expiry, revocation, and policy version.
-- [ ] S4.44.2 Implement user-interface-only grant create/query/revoke commands with command receipts,
+- [x] S4.44.2 Implement user-interface-only grant create/query/revoke commands with command receipts,
   optimistic concurrency, and no Tool/model-callable elevation path.
-- [ ] S4.44.3 Resolve and freeze the effective PermissionSnapshot at AgentRun start; link every
+- [x] S4.44.3 Resolve and freeze the effective PermissionSnapshot at AgentRun start; link every
   elevated ToolExecution/Approval and fail closed on missing, stale, expired, revoked, mismatched,
   or unprovable evidence after restart.
-- [ ] S4.44.4 Implement only `unconfined_host_process` for Full Access Manual, without adding
+- [x] S4.44.4 Implement only `unconfined_host_process` for Full Access Manual, without adding
   outside-file/network/browser/MCP/Git-write tool families or weakening ordinary workspace modes.
-- [ ] S4.44.5 Add the mandatory `unconfined_host` preview and explicit approval language for opaque
+- [x] S4.44.5 Add the mandatory `unconfined_host` preview and explicit approval language for opaque
   Host commands, including reachability of user files, network, credentials, and Morrow state.
-- [ ] S4.44.6 Implement revocation: block new effects, request cancellation of active relevant tools,
+- [x] S4.44.6 Implement revocation: block new effects, request cancellation of active relevant tools,
   preserve completed/unknown facts, and never pretend to roll back.
-- [ ] S4.44.7 Add threat-model and boundary tests for every possible elevation source and every
+- [x] S4.44.7 Add threat-model and boundary tests for every possible elevation source and every
   cross-scope reuse, including crash-created AgentRuns; extend doctor/application-event coverage for
   grants and keep Controlled Auto explicitly unsupported.
-- [ ] S4.44.8 Run product/security/crash/package regressions and update public permission docs.
+- [x] S4.44.8 Run product/security/crash/package regressions and update public permission docs.
 
 ## Locked product contracts
 
@@ -90,3 +90,10 @@ confuses approved Host execution with OS isolation, and no Full Access Auto path
 - CapabilityGrant/PermissionSnapshot domain, persistence, and application APIs.
 - v9 migration, grant-aware doctor/events, and Full Access Manual unconfined Host UX.
 - Complete escalation, revocation, crash, and isolation evidence.
+
+## Completion evidence
+
+- Grok `/review` completed on the full uncommitted Subplan44 diff; no blocking findings. The
+  actionable suggestions were fixed and the resulting local suite passed.
+- Validation: `600 passed, 2 skipped, 1 deselected` with `pytest -m 'not live'`; Ruff format/check,
+  compileall, `morrow --help`, and `git diff --check` passed.

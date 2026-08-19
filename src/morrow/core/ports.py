@@ -22,6 +22,7 @@ from morrow.core.models import (
     WorkspaceIndex,
     WorkspaceResolution,
 )
+from morrow.core.permissions import CapabilityGrant, PermissionSnapshot
 
 
 class ModelProvider(Protocol):
@@ -114,6 +115,44 @@ class Clock(Protocol):
 
 class IdSource(Protocol):
     def new_id(self, prefix: str) -> str: ...
+
+
+class CapabilityGrantPort(Protocol):
+    """Run-bound grant persistence; implementations must be workspace-scoped."""
+
+    def put_capability_grant(
+        self, workspace_id: str, grant: CapabilityGrant
+    ) -> CapabilityGrant: ...
+
+    def get_capability_grant(self, workspace_id: str, grant_id: str) -> CapabilityGrant | None: ...
+
+    def list_capability_grants(
+        self, workspace_id: str, *, agent_run_id: str | None = None
+    ) -> tuple[CapabilityGrant, ...]: ...
+
+    def save_capability_grant(
+        self,
+        workspace_id: str,
+        grant: CapabilityGrant,
+        *,
+        expected_row_version: int,
+    ) -> CapabilityGrant: ...
+
+
+class PermissionSnapshotPort(Protocol):
+    """Immutable permission evidence frozen once for one foreground AgentRun."""
+
+    def get_permission_snapshot(
+        self, workspace_id: str, permission_snapshot_id: str
+    ) -> PermissionSnapshot | None: ...
+
+    def get_permission_snapshot_for_run(
+        self, workspace_id: str, agent_run_id: str
+    ) -> PermissionSnapshot | None: ...
+
+    def list_permission_snapshots(
+        self, workspace_id: str, *, agent_run_id: str | None = None
+    ) -> tuple[PermissionSnapshot, ...]: ...
 
 
 class ArtifactByteStorePort(Protocol):

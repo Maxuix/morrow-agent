@@ -1,7 +1,7 @@
 """Ordered, checksummed Operational Store migrations.
 
-Production currently owns schema v1–v8. Version 9 stays reserved for later
-subplans and must not be renumbered after it lands.
+Production currently owns schema v1–v9. Version 9 adds run-bound capability
+grants and immutable permission snapshots without rewriting older evidence.
 """
 
 from __future__ import annotations
@@ -569,6 +569,128 @@ V8_STATEMENTS = (
 
 V8 = SchemaMigration(version=8, name=V8_NAME, statements=V8_STATEMENTS)
 
+V9_NAME = "capability_grants_and_permission_snapshots"
+V9_STATEMENTS = (
+    """
+    CREATE TABLE capability_grants (
+        grant_id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        task_run_id TEXT NOT NULL REFERENCES task_runs(task_run_id),
+        agent_run_id TEXT NOT NULL REFERENCES agent_runs(agent_run_id),
+        capabilities_json TEXT NOT NULL,
+        granted_by TEXT NOT NULL CHECK (granted_by = 'local_interface_command'),
+        command_id TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        preview_digest TEXT NOT NULL CHECK (length(preview_digest) = 64),
+        policy_version TEXT NOT NULL,
+        schema_version INTEGER NOT NULL CHECK (schema_version = 9),
+        created_at_unix INTEGER NOT NULL,
+        expires_at_unix INTEGER NOT NULL,
+        revoked_at_unix INTEGER,
+        revocation_reason TEXT,
+        row_version INTEGER NOT NULL CHECK (row_version >= 1),
+        CHECK (expires_at_unix > created_at_unix),
+        CHECK (revoked_at_unix IS NULL OR revoked_at_unix >= created_at_unix),
+        CHECK (revoked_at_unix IS NOT NULL OR revocation_reason IS NULL),
+        CHECK (revoked_at_unix IS NULL OR revocation_reason IS NOT NULL)
+    )
+    """,
+    """
+    CREATE INDEX capability_grants_workspace_run
+        ON capability_grants(workspace_id, agent_run_id, task_run_id, expires_at_unix)
+    """,
+    """
+    CREATE TABLE permission_snapshots (
+        permission_snapshot_id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        session_id TEXT NOT NULL REFERENCES sessions(session_id),
+        task_run_id TEXT NOT NULL REFERENCES task_runs(task_run_id),
+        turn_id TEXT NOT NULL REFERENCES turns(turn_id),
+        agent_run_id TEXT NOT NULL UNIQUE REFERENCES agent_runs(agent_run_id),
+        access_scope TEXT NOT NULL CHECK (access_scope IN ('workspace', 'full_access')),
+        approval_mode TEXT NOT NULL CHECK (approval_mode IN ('manual', 'auto_safe', 'auto')),
+        process_isolation TEXT NOT NULL CHECK (
+            process_isolation IN ('host', 'native_sandbox')
+        ),
+        workspace_root_digest TEXT NOT NULL CHECK (length(workspace_root_digest) = 64),
+        workspace_read_only INTEGER NOT NULL CHECK (workspace_read_only IN (0, 1)),
+        tool_schema_digest TEXT NOT NULL CHECK (length(tool_schema_digest) = 64),
+        run_policy_digest TEXT NOT NULL CHECK (length(run_policy_digest) = 64),
+        permission_profile_digest TEXT NOT NULL CHECK (length(permission_profile_digest) = 64),
+        policy_version TEXT NOT NULL,
+        schema_version INTEGER NOT NULL CHECK (schema_version = 9),
+        source_revisions_json TEXT NOT NULL,
+        grant_id TEXT REFERENCES capability_grants(grant_id),
+        grant_digest TEXT CHECK (grant_digest IS NULL OR length(grant_digest) = 64),
+        granted_capabilities_json TEXT NOT NULL,
+        capability_isolations_json TEXT NOT NULL,
+        created_at_unix INTEGER NOT NULL
+    )
+    """,
+    """
+    CREATE INDEX permission_snapshots_workspace_run
+        ON permission_snapshots(workspace_id, agent_run_id, created_at_unix)
+    """,
+    """
+    ALTER TABLE agent_runs
+        ADD COLUMN permission_snapshot_id TEXT
+        REFERENCES permission_snapshots(permission_snapshot_id)
+    """,
+    """
+    CREATE UNIQUE INDEX agent_runs_permission_snapshot
+        ON agent_runs(permission_snapshot_id)
+        WHERE permission_snapshot_id IS NOT NULL
+    """,
+    """
+    ALTER TABLE tool_executions ADD COLUMN permission_snapshot_id TEXT
+        REFERENCES permission_snapshots(permission_snapshot_id)
+    """,
+    """
+    ALTER TABLE tool_executions ADD COLUMN grant_id TEXT
+        REFERENCES capability_grants(grant_id)
+    """,
+    """
+    ALTER TABLE tool_executions ADD COLUMN isolation TEXT CHECK (
+        isolation IS NULL OR isolation IN ('workspace', 'native_sandbox', 'unconfined_host')
+    )
+    """,
+    """
+    ALTER TABLE approvals ADD COLUMN permission_snapshot_id TEXT
+        REFERENCES permission_snapshots(permission_snapshot_id)
+    """,
+    """
+    ALTER TABLE approvals ADD COLUMN grant_id TEXT
+        REFERENCES capability_grants(grant_id)
+    """,
+    """
+    ALTER TABLE approvals ADD COLUMN isolation TEXT CHECK (
+        isolation IS NULL OR isolation IN ('workspace', 'native_sandbox', 'unconfined_host')
+    )
+    """,
+    """
+    ALTER TABLE approvals ADD COLUMN revoked_at_unix INTEGER
+    """,
+    """
+    ALTER TABLE approvals ADD COLUMN revocation_reason TEXT
+    """,
+    """
+    ALTER TABLE tool_executions ADD COLUMN cancel_requested_at_unix INTEGER
+    """,
+    """
+    ALTER TABLE tool_executions ADD COLUMN cancel_request_reason TEXT
+    """,
+    """
+    CREATE INDEX tool_executions_permission_snapshot
+        ON tool_executions(workspace_id, permission_snapshot_id, grant_id)
+    """,
+    """
+    CREATE INDEX approvals_permission_snapshot
+        ON approvals(permission_snapshot_id, grant_id)
+    """,
+)
+
+V9 = SchemaMigration(version=9, name=V9_NAME, statements=V9_STATEMENTS)
+
 
 class MigrationRegistry:
     def __init__(self, *, supported_version: int = SUPPORTED_SCHEMA_VERSION) -> None:
@@ -631,6 +753,7 @@ def production_registry() -> MigrationRegistry:
     registry.add(V6)
     registry.add(V7)
     registry.add(V8)
+    registry.add(V9)
     return registry
 
 

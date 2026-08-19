@@ -21,6 +21,7 @@ from morrow.core.domain import (
     TurnSubmitReceipt,
 )
 from morrow.core.execution import DurableApproval, DurableToolExecution
+from morrow.core.permissions import CapabilityGrant, PermissionSnapshot
 from morrow.core.recovery import RecoveryReceipt, RecoveryReport
 
 
@@ -147,6 +148,25 @@ class AgentRunPort(Protocol):
 
     def get_agent_run(self, workspace_id: str, agent_run_id: str) -> DurableAgentRun | None: ...
 
+    def get_permission_snapshot(
+        self, workspace_id: str, permission_snapshot_id: str
+    ) -> PermissionSnapshot | None: ...
+
+    def get_permission_snapshot_for_run(
+        self, workspace_id: str, agent_run_id: str
+    ) -> PermissionSnapshot | None: ...
+
+    def list_permission_snapshots(
+        self, workspace_id: str, *, agent_run_id: str | None = None
+    ) -> tuple[PermissionSnapshot, ...]: ...
+
+    def freeze_agent_run_permission_snapshot(
+        self,
+        workspace_id: str,
+        agent_run_id: str,
+        permission_snapshot: PermissionSnapshot,
+    ) -> DurableAgentRun: ...
+
 
 class TurnSubmitReceiptPort(Protocol):
     def get_receipt(
@@ -185,6 +205,10 @@ class ToolExecutionJournalPort(Protocol):
         expected_row_version: int,
     ) -> DurableToolExecution: ...
 
+    def list_executions_for_grant(
+        self, workspace_id: str, grant_id: str
+    ) -> tuple[DurableToolExecution, ...]: ...
+
 
 class ApprovalJournalPort(Protocol):
     def put_approval(self, workspace_id: str, approval: DurableApproval) -> DurableApproval: ...
@@ -202,6 +226,30 @@ class ApprovalJournalPort(Protocol):
         *,
         expected_row_version: int,
     ) -> DurableApproval: ...
+
+    def list_approvals_for_grant(
+        self, workspace_id: str, grant_id: str
+    ) -> tuple[DurableApproval, ...]: ...
+
+
+class CapabilityGrantJournalPort(Protocol):
+    def put_capability_grant(
+        self, workspace_id: str, grant: CapabilityGrant
+    ) -> CapabilityGrant: ...
+
+    def get_capability_grant(self, workspace_id: str, grant_id: str) -> CapabilityGrant | None: ...
+
+    def list_capability_grants(
+        self, workspace_id: str, *, agent_run_id: str | None = None
+    ) -> tuple[CapabilityGrant, ...]: ...
+
+    def save_capability_grant(
+        self,
+        workspace_id: str,
+        grant: CapabilityGrant,
+        *,
+        expected_row_version: int,
+    ) -> CapabilityGrant: ...
 
 
 class RecoveryJournalPort(Protocol):

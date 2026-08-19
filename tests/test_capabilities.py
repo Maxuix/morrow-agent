@@ -43,13 +43,17 @@ def test_permission_profile_and_workspace_capability_are_strict_and_frozen(tmp_p
         WorkspaceCapability(workspace_id="w1", root=Path("relative"))
 
 
-def test_permission_presets_are_process_local_and_full_access_has_no_stage3_preset():
+def test_permission_presets_are_process_local_and_full_access_is_manual_only():
     assert PermissionProfile.from_preset(PermissionPreset.MANUAL) == PermissionProfile()
     auto_safe = PermissionProfile.from_preset(PermissionPreset.AUTO_SAFE)
     assert auto_safe.approval_mode is ApprovalMode.AUTO_SAFE
     auto_sandboxed = PermissionProfile.from_preset(PermissionPreset.AUTO_SANDBOXED)
     assert auto_sandboxed.process_isolation is ProcessIsolation.NATIVE_SANDBOX
     assert auto_sandboxed.approval_mode is ApprovalMode.AUTO
+    full_access = PermissionProfile.from_preset(PermissionPreset.FULL_ACCESS_MANUAL)
+    assert full_access.access_scope is AccessScope.FULL_ACCESS
+    assert full_access.approval_mode is ApprovalMode.MANUAL
+    assert full_access.process_isolation is ProcessIsolation.HOST
 
 
 def test_operation_intent_and_policy_decision_bound_local_metadata():

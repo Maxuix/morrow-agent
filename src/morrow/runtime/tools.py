@@ -297,6 +297,7 @@ class ToolExecutor:
         *,
         result_limit: int | None = None,
         skip_approval: bool = False,
+        allow_unconfined_host: bool = False,
     ) -> ToolExecutionOutcome:
         limit = result_limit or self.run_policy.effective_result_limit
         registered = self.tool_set.tools.get(call.name)
@@ -345,7 +346,9 @@ class ToolExecutor:
                         ToolErrorCode.PREFLIGHT_FAILED,
                         "工具能力预检结果无效",
                     )
-                policy_decision = self.capability_policy.evaluate(intent)
+                policy_decision = self.capability_policy.evaluate(
+                    intent, allow_unconfined_host=allow_unconfined_host
+                )
             except asyncio.CancelledError:
                 raise
             except ToolExecutionError as exc:
@@ -503,6 +506,7 @@ class ToolExecutor:
         ordinal: int,
         total: int,
         skip_approval: bool = False,
+        allow_unconfined_host: bool = False,
     ) -> ToolExecutionOutcome:
         previous = (self._active_run_context, self._active_ordinal, self._active_total)
         self._active_run_context = run_context
@@ -510,6 +514,8 @@ class ToolExecutor:
         self._active_total = total
         try:
             extra = {"skip_approval": True} if skip_approval else {}
+            if allow_unconfined_host:
+                extra["allow_unconfined_host"] = True
             return await self.execute(call, result_limit=result_limit, **extra)
         finally:
             self._active_run_context, self._active_ordinal, self._active_total = previous

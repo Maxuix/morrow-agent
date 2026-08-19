@@ -34,6 +34,8 @@ AGENT_RUN_ID_PREFIX = "arun"
 CONVERSATION_RECORD_ID_PREFIX = "rec"
 COMMAND_ID_PREFIX = "cmd"
 CHECKPOINT_ID_PREFIX = "chk"
+CAPABILITY_GRANT_ID_PREFIX = "grt"
+PERMISSION_SNAPSHOT_ID_PREFIX = "psnap"
 
 ID_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{0,127}$")
 CLIENT_MESSAGE_ID_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
@@ -742,6 +744,7 @@ class DurableAgentRun(ProtocolModel):
     turn_id: str
     session_id: str
     snapshot: AgentRunSnapshot
+    permission_snapshot_id: str | None = None
     resume_of_agent_run_id: str | None = None
     created_at: datetime = Field(default_factory=utc_now)
 
@@ -766,6 +769,13 @@ class DurableAgentRun(ProtocolModel):
         if value is None:
             return None
         return validate_prefixed_id(value, AGENT_RUN_ID_PREFIX)
+
+    @field_validator("permission_snapshot_id")
+    @classmethod
+    def valid_permission_snapshot_id(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return validate_prefixed_id(value, PERMISSION_SNAPSHOT_ID_PREFIX)
 
 
 class TurnSubmitReceipt(ProtocolModel):
