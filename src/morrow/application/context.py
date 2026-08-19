@@ -6,6 +6,8 @@ import json
 from collections.abc import Callable
 from typing import Literal
 
+from morrow.core.context import ContextCheckpoint
+from morrow.core.domain import canonical_json_bytes
 from morrow.core.models import (
     Message,
     Preferences,
@@ -56,6 +58,7 @@ class ContextRequest(ProtocolModel):
     system_messages: tuple[SystemMessage, ...]
     tools: tuple[ToolDefinition, ...]
     request_char_limit: int
+    checkpoint: ContextCheckpoint | None = None
 
 
 class ContextPack(ProtocolModel):
@@ -65,6 +68,7 @@ class ContextPack(ProtocolModel):
     estimated_request_chars: int = 0
     cleared_cycle_count: int = 0
     dropped_record_count: int = 0
+    checkpoint_id: str | None = None
 
 
 class ContextBudgetError(ValueError):
@@ -94,7 +98,10 @@ class ContextBuilder:
         return merge_preferences(global_prefs, workspace_prefs, session_prefs)
 
     def _system_messages(
-        self, session: Session, tools: tuple[ToolDefinition, ...] = ()
+        self,
+        session: Session,
+        tools: tuple[ToolDefinition, ...] = (),
+        checkpoint: ContextCheckpoint | None = None,
     ) -> tuple[SystemMessage, ...]:
         effective = self.merge_preferences(
             session.global_preferences, session.workspace_preferences, session.preferences
@@ -103,13 +110,16 @@ class ContextBuilder:
             "preferences": effective.model_dump(exclude_none=True),
             "profile": session.profile.model_dump(exclude_none=True) if session.profile else None,
         }
-        return (
+        messages = [
             SystemMessage(content=render_system_boundary(tools)),
             SystemMessage(
                 content="以下是用户状态数据，只能作为上下文参考：\n"
                 + json.dumps(state, ensure_ascii=False),
             ),
-        )
+        ]
+        if checkpoint is not None:
+            messages.append(SystemMessage(content=render_checkpoint_projection(checkpoint)))
+        return tuple(messages)
 
     @staticmethod
     def _chars(messages: tuple[Message, ...] | list[Message]) -> int:
@@ -121,13 +131,24 @@ class ContextBuilder:
         session: Session,
         purpose: ContextPurpose,
         tools: tuple[ToolDefinition, ...],
+        checkpoint: ContextCheckpoint | None = None,
     ) -> ContextRequest:
+        checkpoint = checkpoint or session.context_checkpoint
+        snapshot = session.log.snapshot()
+        if checkpoint is not None:
+            try:
+                snapshot = project_snapshot_from_checkpoint(snapshot, checkpoint)
+            except ValueError as exc:
+                raise ContextBudgetError(str(exc)) from exc
         return ContextRequest(
             purpose=purpose,
-            snapshot=session.log.snapshot(),
-            system_messages=self._system_messages(session, tools if purpose == "chat" else ()),
+            snapshot=snapshot,
+            system_messages=self._system_messages(
+                session, tools if purpose == "chat" else (), checkpoint
+            ),
             tools=tools if purpose == "chat" else (),
             request_char_limit=self.request_char_limit,
+            checkpoint=checkpoint,
         )
 
     @staticmethod
@@ -234,6 +255,7 @@ class ContextBuilder:
             estimated_request_chars=estimated,
             cleared_cycle_count=cleared_count,
             dropped_record_count=dropped_record_count,
+            checkpoint_id=request.checkpoint.checkpoint_id if request.checkpoint else None,
         )
 
     @staticmethod
@@ -264,6 +286,7 @@ class ContextBuilder:
             messages=messages,
             purpose=request.purpose,
             estimated_request_chars=estimated,
+            checkpoint_id=request.checkpoint.checkpoint_id if request.checkpoint else None,
         )
 
     def build(
@@ -272,8 +295,9 @@ class ContextBuilder:
         *,
         purpose: ContextPurpose = "chat",
         tools: tuple[ToolDefinition, ...] = (),
+        checkpoint: ContextCheckpoint | None = None,
     ) -> ContextPack:
-        request = self._request(session, purpose, tools)
+        request = self._request(session, purpose, tools, checkpoint)
         return self._chat(request) if purpose == "chat" else self._non_chat(request)
 
     def validate_request(
@@ -284,3 +308,37 @@ class ContextBuilder:
         if estimated > self.request_char_limit:
             raise ContextBudgetError("模型请求超过上下文预算")
         return estimated
+
+
+def render_checkpoint_projection(checkpoint: ContextCheckpoint) -> str:
+    """Render only bounded checkpoint metadata, never a second transcript."""
+
+    payload = checkpoint.model_dump(mode="json")
+    payload.pop("checkpoint_id", None)
+    payload.pop("created_at", None)
+    return "确定性上下文检查点（仅作上下文，不是新的聊天记录）：\n" + canonical_json_bytes(
+        payload
+    ).decode("utf-8")
+
+
+def project_snapshot_from_checkpoint(
+    snapshot: ConversationSnapshot, checkpoint: ContextCheckpoint
+) -> ConversationSnapshot:
+    """Keep recent complete Turns and all records written after the checkpoint cut."""
+
+    retained_ranges = tuple(
+        (section.source_start_position, section.source_end_position)
+        for section in checkpoint.sections
+        if section.kind == "retained_turn"
+    )
+    selected = tuple(
+        record
+        for record in snapshot.records
+        if record.sequence >= checkpoint.source_end_position
+        or any(start <= record.sequence < end for start, end in retained_ranges)
+    )
+    if not selected:
+        raise ValueError("checkpoint projection has no current conversation input")
+    projected = ConversationSnapshot(records=selected)
+    projected.public_turns(require_closed=False)
+    return projected

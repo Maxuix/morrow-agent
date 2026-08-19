@@ -1,6 +1,6 @@
 """Ordered, checksummed Operational Store migrations.
 
-Production currently owns schema v1–v6. Versions 7–9 stay reserved for later
+Production currently owns schema v1–v7. Versions 8–9 stay reserved for later
 subplans and must not be renumbered after they land.
 """
 
@@ -460,6 +460,71 @@ V6_STATEMENTS = (
 
 V6 = SchemaMigration(version=6, name=V6_NAME, statements=V6_STATEMENTS)
 
+V7_NAME = "context_checkpoints_and_session_lineage"
+V7_STATEMENTS = (
+    """
+    CREATE TABLE context_checkpoints (
+        checkpoint_id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        session_id TEXT NOT NULL REFERENCES sessions(session_id),
+        task_run_id TEXT REFERENCES task_runs(task_run_id),
+        source_agent_run_id TEXT REFERENCES agent_runs(agent_run_id),
+        codec TEXT NOT NULL,
+        method_version TEXT NOT NULL,
+        source_start_record_id TEXT,
+        source_start_position INTEGER NOT NULL CHECK (source_start_position >= 0),
+        source_end_record_id TEXT NOT NULL,
+        source_end_position INTEGER NOT NULL CHECK (source_end_position > source_start_position),
+        retained_record_ids_json TEXT NOT NULL,
+        sections_json TEXT NOT NULL,
+        omitted_sections_json TEXT NOT NULL,
+        artifact_refs_json TEXT NOT NULL,
+        input_bytes INTEGER NOT NULL CHECK (input_bytes >= 0),
+        output_bytes INTEGER NOT NULL CHECK (output_bytes >= 0),
+        request_estimate_chars INTEGER NOT NULL CHECK (request_estimate_chars >= 0),
+        created_at_unix INTEGER NOT NULL,
+        CHECK (task_run_id IS NULL OR session_id IS NOT NULL)
+    )
+    """,
+    """
+    CREATE INDEX context_checkpoints_scope
+        ON context_checkpoints(workspace_id, session_id, task_run_id, source_end_position)
+    """,
+    """
+    ALTER TABLE sessions ADD COLUMN parent_session_id TEXT REFERENCES sessions(session_id)
+    """,
+    """
+    ALTER TABLE sessions ADD COLUMN parent_cut_record_id TEXT
+    """,
+    """
+    ALTER TABLE sessions ADD COLUMN parent_cut_position INTEGER
+        CHECK (parent_cut_position IS NULL OR parent_cut_position >= 1)
+    """,
+    """
+    ALTER TABLE sessions ADD COLUMN parent_checkpoint_id TEXT
+        REFERENCES context_checkpoints(checkpoint_id)
+    """,
+    """
+    ALTER TABLE sessions ADD COLUMN fork_reason TEXT
+    """,
+    """
+    CREATE TABLE checkpoint_artifact_references (
+        artifact_id TEXT NOT NULL REFERENCES artifacts(artifact_id),
+        workspace_id TEXT NOT NULL,
+        checkpoint_id TEXT NOT NULL REFERENCES context_checkpoints(checkpoint_id),
+        role TEXT NOT NULL CHECK (length(role) BETWEEN 1 AND 64),
+        created_at_unix INTEGER NOT NULL,
+        PRIMARY KEY (artifact_id, checkpoint_id, role)
+    )
+    """,
+    """
+    CREATE INDEX checkpoint_artifact_references_workspace
+        ON checkpoint_artifact_references(workspace_id, checkpoint_id)
+    """,
+)
+
+V7 = SchemaMigration(version=7, name=V7_NAME, statements=V7_STATEMENTS)
+
 
 class MigrationRegistry:
     def __init__(self, *, supported_version: int = SUPPORTED_SCHEMA_VERSION) -> None:
@@ -520,6 +585,7 @@ def production_registry() -> MigrationRegistry:
     registry.add(V4)
     registry.add(V5)
     registry.add(V6)
+    registry.add(V7)
     return registry
 
 

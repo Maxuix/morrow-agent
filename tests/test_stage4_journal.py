@@ -178,6 +178,7 @@ def test_v3_store_migrates_to_v4_recovery(tmp_path):
         "recovery_reports",
         "task_run_lifecycle_and_outcomes",
         "artifact_store_and_references",
+        "context_checkpoints_and_session_lineage",
     )
 
 
@@ -215,6 +216,7 @@ def test_v4_task_children_survive_task_run_rebuild_to_v5(tmp_path):
     assert report.applied == (
         "task_run_lifecycle_and_outcomes",
         "artifact_store_and_references",
+        "context_checkpoints_and_session_lineage",
     )
     with upgraded.open(StoreOpenMode.READ_WRITE) as opened:
         journal = SqliteOperationalJournal(opened)

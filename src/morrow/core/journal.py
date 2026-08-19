@@ -6,6 +6,7 @@ from collections.abc import Sequence
 from typing import Protocol
 
 from morrow.core.artifacts import ArtifactMetadata
+from morrow.core.context import ContextCheckpoint, SessionLineage
 from morrow.core.domain import (
     DurableAgentRun,
     DurableConversationRecord,
@@ -32,6 +33,12 @@ class SessionLifecyclePort(Protocol):
     def list_sessions(self, workspace_id: str) -> tuple[DurableSession, ...]: ...
 
     def save_session(self, workspace_id: str, session: DurableSession) -> DurableSession: ...
+
+    def get_session_lineage(self, workspace_id: str, session_id: str) -> SessionLineage | None: ...
+
+    def create_fork_session(
+        self, session: DurableSession, *, lineage: SessionLineage
+    ) -> DurableSession: ...
 
     def get_task_run(self, workspace_id: str, task_run_id: str) -> DurableTaskRun | None: ...
 
@@ -82,6 +89,22 @@ class ConversationJournalPort(Protocol):
     def load_records(
         self, workspace_id: str, session_id: str
     ) -> tuple[DurableConversationRecord, ...]: ...
+
+    def load_effective_records(
+        self, workspace_id: str, session_id: str
+    ) -> tuple[DurableConversationRecord, ...]: ...
+
+    def put_context_checkpoint(
+        self, workspace_id: str, checkpoint: ContextCheckpoint
+    ) -> ContextCheckpoint: ...
+
+    def get_context_checkpoint(
+        self, workspace_id: str, checkpoint_id: str
+    ) -> ContextCheckpoint | None: ...
+
+    def list_context_checkpoints(
+        self, workspace_id: str, session_id: str, *, task_run_id: str | None = None
+    ) -> tuple[ContextCheckpoint, ...]: ...
 
 
 class AgentRunPort(Protocol):

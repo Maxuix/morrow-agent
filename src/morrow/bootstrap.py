@@ -22,6 +22,7 @@ from morrow.adapters.state.yaml import (
     WorkspaceIndexYamlStore,
 )
 from morrow.application.artifacts import ArtifactService
+from morrow.application.checkpoints import ContextCheckpointService, SessionForkService
 from morrow.application.commands import CommandService
 from morrow.application.configuration import make_configuration_tool
 from morrow.application.context import ContextBuilder
@@ -99,6 +100,8 @@ class SessionApplication:
     persistence: object | None = None
     tasks: object | None = None
     artifacts: ArtifactService | None = None
+    checkpoints: ContextCheckpointService | None = None
+    forks: SessionForkService | None = None
 
 
 def _default_tool_executor(
@@ -323,6 +326,16 @@ def build_session_application(
         workspace_id=identity.workspace_id,
         id_source=app.id_source,
     )
+    checkpoints = ContextCheckpointService(
+        journal,
+        workspace_id=identity.workspace_id,
+        id_source=app.id_source,
+    )
+    forks = SessionForkService(
+        journal,
+        workspace_id=identity.workspace_id,
+        id_source=app.id_source,
+    )
     persistence = SessionPersistence(
         workspace_id=identity.workspace_id,
         journal=journal,
@@ -372,4 +385,6 @@ def build_session_application(
         persistence=persistence,
         tasks=persistence.tasks,
         artifacts=artifacts,
+        checkpoints=checkpoints,
+        forks=forks,
     )

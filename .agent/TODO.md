@@ -2,29 +2,24 @@
 
 ## Current stage
 
-Stage 4 production implementation is active at deterministic context checkpoints and conversation
-fork. TaskRun/TaskOutcome, recovery classification, and the Artifact Store have landed; Full Access
+Stage 4 production implementation is active at the Command/Query/Event, CLI, doctor, and backup
+surface. Deterministic context checkpoints and immutable Session fork have landed; Full Access
 remains inactive.
 
 ## Active subplan
 
-Subplan 42 — Context Checkpoints and Conversation Fork.
+Subplan 43 — Command/Query/Event, CLI, Doctor, and Backup.
 
 ## Tasks
 
-- [>] S4.42.1 Define checkpoint/provenance/fork models and legal complete-cycle source boundaries.
-- [ ] S4.42.2 Implement deterministic compaction from durable records/Artifacts with typed omitted-
-  content reasons and exact budgets.
-- [ ] S4.42.3 Integrate ContextBuilder selection of fixed boundary, resolved run snapshot, active
-  task state, checkpoint projection, recent complete cycles, Artifact excerpts, and current input.
-- [ ] S4.42.4 Implement fork creation from a legal Turn/checkpoint in one transaction, with immutable
-  parent-prefix links, exact included record IDs/cut position, reference-only Artifact sharing, and
-  no copied Session Preferences, TaskRun, Approval, or CapabilityGrant.
-- [ ] S4.42.5 Add interruption, regeneration, corrupt/missing Artifact, boundary, budget, and
-  parent/child isolation tests.
-- [ ] S4.42.6 Prove a long scripted task continues after multiple checkpoints and that source records
-  remain queryable and unchanged.
-- [ ] S4.42.7 Document the distinction among raw history, context projection, Artifact, TaskOutcome,
-  and future Stage 5 memory; run gates.
+- [>] S4.43.1 Define stable Command/Query DTOs, error mapping, command receipts, cursor pagination,
+  and workspace isolation for completed domains.
+- [ ] S4.43.2 Implement sanitized versioned application events in the same business transaction.
+- [ ] S4.43.3 Prove the existing public runtime event lifecycle remains unchanged.
+- [ ] S4.43.4 Implement CLI/REPL Session, Task, Artifact, fork, archive, acceptance, and recovery flows.
+- [ ] S4.43.5 Implement read-only doctor and health/quarantine reporting.
+- [ ] S4.43.6 Implement online backup plus Artifact manifest/copy and restore verification.
+- [ ] S4.43.7 Add deterministic dry-run orphan cleanup for exact managed targets.
+- [ ] S4.43.8 Run application/CLI/crash/backup/security regressions and update user/architecture docs.
 
-Only Subplan 42 may be executed. Grants, Command/Query/Event, and Full Access remain inactive.
+Only Subplan 43 may be executed. Grants and Full Access remain inactive.

@@ -33,6 +33,7 @@ TURN_ID_PREFIX = "turn"
 AGENT_RUN_ID_PREFIX = "arun"
 CONVERSATION_RECORD_ID_PREFIX = "rec"
 COMMAND_ID_PREFIX = "cmd"
+CHECKPOINT_ID_PREFIX = "chk"
 
 ID_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{0,127}$")
 CLIENT_MESSAGE_ID_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
@@ -511,6 +512,11 @@ class DurableSession(ProtocolModel):
     health: SessionHealth = SessionHealth.OK
     current_task_run_id: str | None = None
     conversation_position: int = Field(default=0, ge=0)
+    parent_session_id: str | None = None
+    parent_cut_record_id: str | None = None
+    parent_cut_position: int | None = Field(default=None, ge=1)
+    parent_checkpoint_id: str | None = None
+    fork_reason: str | None = Field(default=None, max_length=256)
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
 
@@ -531,8 +537,58 @@ class DurableSession(ProtocolModel):
             return None
         return validate_prefixed_id(value, TASK_RUN_ID_PREFIX)
 
+    @field_validator("parent_session_id")
+    @classmethod
+    def valid_parent_session_id(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return validate_prefixed_id(value, SESSION_ID_PREFIX)
+
+    @field_validator("parent_cut_record_id")
+    @classmethod
+    def valid_parent_cut_record_id(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return validate_prefixed_id(value, CONVERSATION_RECORD_ID_PREFIX)
+
+    @field_validator("parent_checkpoint_id")
+    @classmethod
+    def valid_parent_checkpoint_id(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return validate_prefixed_id(value, CHECKPOINT_ID_PREFIX)
+
+    @field_validator("fork_reason")
+    @classmethod
+    def valid_fork_reason(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = " ".join(value.split())
+        if not cleaned:
+            raise ValueError("fork reason must not be empty")
+        refuse_secret_material(cleaned, label="Session fork reason")
+        return cleaned
+
     @model_validator(mode="after")
     def quarantine_is_health_not_lifecycle(self) -> DurableSession:
+        has_parent = self.parent_session_id is not None
+        if has_parent != (self.parent_cut_record_id is not None):
+            raise ValueError("forked Session must include parent and cut record IDs")
+        if has_parent != (self.parent_cut_position is not None):
+            raise ValueError("forked Session must include a parent cut position")
+        if has_parent != (self.fork_reason is not None):
+            raise ValueError("forked Session must include a fork reason")
+        if not has_parent and self.parent_checkpoint_id is not None:
+            raise ValueError("checkpoint provenance requires a parent Session")
+        if has_parent and self.current_task_run_id is not None:
+            raise ValueError("forked Session cannot inherit a current TaskRun")
+        if not has_parent and self.fork_reason is not None:
+            raise ValueError("fork reason requires a parent Session")
+        if (
+            self.parent_cut_position is not None
+            and self.conversation_position < self.parent_cut_position
+        ):
+            raise ValueError("forked Session conversation position cannot precede its cut position")
         if self.lifecycle is SessionLifecycle.DELETED and self.health is SessionHealth.OK:
             return self
         return self

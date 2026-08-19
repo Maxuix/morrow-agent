@@ -1,6 +1,6 @@
 # Subplan 42 — Context Checkpoints and Conversation Fork
 
-> Status: pending
+> Status: completed
 > Prerequisite: Subplan 41 accepted
 > Owns: deterministic long-context projections and immutable conversation branching
 > Schema: v7 ContextCheckpoint and immutable Session lineage
@@ -33,19 +33,19 @@ raw records immutable, complete ToolCycles intact, and project files untouched.
 
 ## Tasks
 
-- [ ] S4.42.1 Define checkpoint/provenance/fork models and legal complete-cycle source boundaries.
-- [ ] S4.42.2 Implement deterministic compaction from durable records/Artifacts with typed omitted-
+- [x] S4.42.1 Define checkpoint/provenance/fork models and legal complete-cycle source boundaries.
+- [x] S4.42.2 Implement deterministic compaction from durable records/Artifacts with typed omitted-
   content reasons and exact budgets.
-- [ ] S4.42.3 Integrate ContextBuilder selection of fixed boundary, resolved run snapshot, active
+- [x] S4.42.3 Integrate ContextBuilder selection of fixed boundary, resolved run snapshot, active
   task state, checkpoint projection, recent complete cycles, Artifact excerpts, and current input.
-- [ ] S4.42.4 Implement fork creation from a legal Turn/checkpoint in one transaction, with immutable
+- [x] S4.42.4 Implement fork creation from a legal Turn/checkpoint in one transaction, with immutable
   parent-prefix links, exact included record IDs/cut position, reference-only Artifact sharing, and
   no copied Session Preferences, TaskRun, Approval, or CapabilityGrant.
-- [ ] S4.42.5 Add interruption, regeneration, corrupt/missing Artifact, boundary, budget, and parent/
+- [x] S4.42.5 Add interruption, regeneration, corrupt/missing Artifact, boundary, budget, and parent/
   child isolation tests.
-- [ ] S4.42.6 Prove a long scripted task continues after multiple checkpoints and that source records
+- [x] S4.42.6 Prove a long scripted task continues after multiple checkpoints and that source records
   remain queryable and unchanged.
-- [ ] S4.42.7 Document the distinction among raw history, context projection, Artifact, TaskOutcome,
+- [x] S4.42.7 Document the distinction among raw history, context projection, Artifact, TaskOutcome,
   and future Stage 5 memory; run gates.
 
 ## Locked contracts

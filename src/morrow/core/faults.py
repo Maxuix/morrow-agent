@@ -33,6 +33,10 @@ class FaultPoint(StrEnum):
     ARTIFACT_AFTER_PARENT_FSYNC = "artifact.after_parent_fsync"
     ARTIFACT_BEFORE_MARK_AVAILABLE = "artifact.before_mark_available"
     ARTIFACT_AFTER_MARK_AVAILABLE = "artifact.after_mark_available"
+    CHECKPOINT_BEFORE_COMMIT = "checkpoint.before_commit"
+    CHECKPOINT_AFTER_COMMIT = "checkpoint.after_commit"
+    FORK_BEFORE_COMMIT = "fork.before_commit"
+    FORK_AFTER_COMMIT = "fork.after_commit"
 
 
 REQUIRED_FAULT_POINTS = frozenset(FaultPoint)

@@ -398,6 +398,7 @@ class SessionPersistence:
         self.current_task_run_id = None
         self.current_agent_run_id = None
         self.open_report = None
+        self.context_checkpoint = None
         self.attach(session)
 
     def restore_into(self, session: Session) -> None:
@@ -410,6 +411,17 @@ class SessionPersistence:
             return
         session.lifecycle = row.lifecycle
         session.health = row.health
+        try:
+            checkpoints = self.journal.list_context_checkpoints(
+                self.workspace_id, session.session_id
+            )
+            session.context_checkpoint = checkpoints[-1] if checkpoints else None
+            if session.context_checkpoint is None and row.parent_checkpoint_id is not None:
+                session.context_checkpoint = self.journal.get_context_checkpoint(
+                    self.workspace_id, row.parent_checkpoint_id
+                )
+        except StorageError:
+            session.context_checkpoint = None
         self.current_task_run_id = row.current_task_run_id
         try:
             session.log = restore_conversation_log(

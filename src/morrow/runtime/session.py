@@ -12,6 +12,7 @@ from morrow.core.capabilities import (
     ToolRunContext,
     WorkspaceCapability,
 )
+from morrow.core.context import ContextCheckpoint
 from morrow.core.domain import SessionHealth, SessionLifecycle
 from morrow.core.models import (
     AssistantMessage,
@@ -51,6 +52,7 @@ class Session:
     lifecycle: SessionLifecycle = SessionLifecycle.ACTIVE
     profile_revision: int = 0
     preferences_revision: int = 0
+    context_checkpoint: ContextCheckpoint | None = None
 
     @property
     def persisted(self) -> bool:
@@ -96,6 +98,7 @@ class Session:
         self.latest_run_id = None
         self.latest_tool_facts = ()
         self.latest_metrics = None
+        self.context_checkpoint = None
 
     def retain_run_facts(
         self, run_context: ToolRunContext, *, finish_reason: str = "unknown"

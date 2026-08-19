@@ -84,7 +84,7 @@ def restore_conversation_log(
 ) -> ConversationLog:
     records = tuple(
         conversation_record_from_durable(item)
-        for item in journal.load_records(workspace_id, session_id)
+        for item in journal.load_effective_records(workspace_id, session_id)
     )
     return ConversationLog.from_snapshot(ConversationSnapshot(records=records))
 

@@ -85,8 +85,9 @@ Session，不删除或归档旧会话；仅当对话仍只存在于进程内时�
 以及数据根 Operational Store 中的 Session / TaskRun 状态、版本化 TaskOutcome、Turn / ConversationLog 与受控 Artifact
 和 ToolExecution 恢复证据。最终回答只把 TaskRun 置为待接受；普通追问继续同一 TaskRun，只有显式
 `/accept`、`/task new`、取消、放弃或恢复命令才改变任务语义。
-可用同一 `session_id` 在重启后恢复合法对话；conversation Fork、工具恢复和确定性上下文
-checkpoint 仍未实现。工作空间/代码回退不属于 Stage 4，任务后可审查的长期偏好与项目知识学习留到
+可用同一 `session_id` 在重启后恢复合法对话；确定性上下文 checkpoint 会保留完整最近 Turn、source provenance
+和 checkpoint 后的新输入，conversation Fork 通过 parent/cut lineage 创建隔离子 Session；工具恢复仍遵循持久化证据分类。
+工作空间/代码回退不属于 Stage 4，任务后可审查的长期偏好与项目知识学习留到
 Stage 5。
 
 旧版本可能留下 `handoff.yaml` 或 `handoff.yaml.bak`。当前版本不读取、校验、迁移、覆盖或自动删除
@@ -102,6 +103,6 @@ Profile 损坏或版本较新时，工作空间持久状态进入只读模式；
 Auto Sandboxed 快照执行；支持后端时还提供始终需审批的当前运行沙箱变更推广。Stage 3 的当前 macOS 验收已完成，
 Linux 原生运行仍在真实 runner 验证前保持 unsupported。每次完成工具轮次后，终端可显示一行由本地 ToolFacts/metrics
 生成的有界事实摘要；该摘要不进入 Provider、公开事件或持久状态。
-`auto-sandboxed` 在 native backend 不可用或无法证明时会 fail closed。持久化聊天历史、Artifact、
-恢复属于 Stage 4；checkpoint、fork 和 Full Access Manual 仍在 Stage 4 后续子计划；可审查学习从 Stage 5 开始，Skills/MCP、
+`auto-sandboxed` 在 native backend 不可用或无法证明时会 fail closed。持久化聊天历史、Artifact、恢复、
+checkpoint 和 fork 属于 Stage 4；Full Access Manual 仍在 Stage 4 后续子计划；可审查学习从 Stage 5 开始，Skills/MCP、
 Multi-Agent Workflow、GUI 和后台任务属于更后续阶段，当前均未实现。

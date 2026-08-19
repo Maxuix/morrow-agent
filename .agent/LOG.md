@@ -1135,3 +1135,24 @@
   same-path verification race. A preliminary concern about closed execution dropping refs was checked
   against `transition_execution`'s preserving `model_copy` behavior and was not applicable.
 - Activated Subplan 42 for deterministic context checkpoints and conversation fork.
+
+## 2026-08-19 — Subplan 42 Context Checkpoint and Session Fork completed
+
+- Added v7 immutable `ContextCheckpoint` and `SessionLineage` contracts with bounded deterministic
+  sections, omission reasons, source ranges, Artifact references, budget facts, and secret refusal.
+- Added durable checkpoint rows/reference edges and Session parent/cut provenance. Effective history
+  restores a parent immutable prefix plus child-local records without copying or mutating parent rows;
+  child positions remain appendable after the initial fork cut.
+- Added `ContextCheckpointService` deterministic compaction/regeneration and `SessionForkService`,
+  including closed-boundary checks, optional checkpoint cuts, missing/corrupt Artifact reference
+  fallback, crash fault points, and production `SessionApplication` wiring. ContextBuilder consumes
+  the latest restored checkpoint while preserving complete retained Turns and post-checkpoint input.
+- Added context/fork, migration, artifact-reference, fault-boundary, regeneration, parent/child
+  isolation, and auto-restore coverage. Final offline validation: `561 passed, 2 skipped,
+  1 deselected`; Ruff format/check, compileall, and `git diff --check` passed.
+- Requested Grok `/review` twice for this subplan. Both calls inspected/started against the local
+  diff but the Grok proxy timed out before returning a final report; neither call modified files.
+  Independent review fixed unvalidated post-update checkpoint metadata budgets, regeneration source
+  drift, unavailable Artifact handling, child position invariants, effective-record sequence checks,
+  and added lineage/query and production checkpoint wiring.
+- Activated Subplan 43 for the Command/Query/Event, CLI, doctor, and backup surface.

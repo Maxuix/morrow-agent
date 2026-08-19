@@ -17,6 +17,12 @@ from morrow.core.artifacts import (
     ArtifactSensitivity,
     ArtifactState,
 )
+from morrow.core.context import (
+    ContextCheckpoint,
+    ContextCheckpointOmission,
+    ContextCheckpointSection,
+    SessionLineage,
+)
 from morrow.core.domain import (
     AgentRunSnapshot,
     ArtifactReference,
@@ -53,7 +59,8 @@ from morrow.core.store import StorageError, StorageErrorCode
 
 _SESSION_COLUMNS = (
     "session_id, workspace_id, lifecycle, health, current_task_run_id, "
-    "conversation_position, created_at_unix, updated_at_unix"
+    "conversation_position, parent_session_id, parent_cut_record_id, parent_cut_position, "
+    "parent_checkpoint_id, fork_reason, created_at_unix, updated_at_unix"
 )
 _TASK_INSERT_COLUMNS = (
     "task_run_id, session_id, workspace_id, status, row_version, attempt, "
@@ -109,6 +116,9 @@ _ARTIFACT_COLUMNS = (
 _ARTIFACT_REFERENCE_COLUMNS = (
     "artifact_id, workspace_id, owner_kind, owner_id, role, created_at_unix"
 )
+_CHECKPOINT_ARTIFACT_REFERENCE_COLUMNS = (
+    "artifact_id, workspace_id, checkpoint_id, role, created_at_unix"
+)
 _TASK_RECEIPT_COLUMNS = (
     "command_id, workspace_id, session_id, task_run_id, operation, request_digest, "
     "disposition, result_task_run_id, outcome_id, task_status, row_version, created_at_unix"
@@ -162,6 +172,7 @@ class SqliteOperationalJournal:
             session = session.model_copy(update={"current_task_run_id": task.task_run_id})
 
         def work(journal: SqliteOperationalJournal) -> DurableSession:
+            journal._validate_session_lineage(session)
             journal._insert_session(session)
             if task is not None:
                 journal._insert_task(task)
@@ -192,6 +203,24 @@ class SqliteOperationalJournal:
         )
         return tuple(_session_from_row(row) for row in rows)
 
+    def get_session_lineage(self, workspace_id: str, session_id: str) -> SessionLineage | None:
+        session = self.get_session(workspace_id, session_id)
+        if session is None or session.parent_session_id is None:
+            return None
+        return SessionLineage(
+            workspace_id=workspace_id,
+            child_session_id=session.session_id,
+            parent_session_id=session.parent_session_id,
+            cut_record_id=session.parent_cut_record_id,
+            cut_position=session.parent_cut_position,
+            checkpoint_id=session.parent_checkpoint_id,
+            reason=session.fork_reason,
+            created_at=session.created_at,
+        )
+
+    def get_lineage(self, workspace_id: str, session_id: str) -> SessionLineage | None:
+        return self.get_session_lineage(workspace_id, session_id)
+
     def save_session(self, workspace_id: str, session: DurableSession) -> DurableSession:
         if session.workspace_id != workspace_id:
             raise StorageError(
@@ -202,6 +231,10 @@ class SqliteOperationalJournal:
             existing = journal.get_session(workspace_id, session.session_id)
             if existing is None:
                 raise StorageError(StorageErrorCode.NOT_FOUND, "operational session is missing")
+            if _session_lineage_fields(existing) != _session_lineage_fields(session):
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE, "operational Session lineage is immutable"
+                )
             if session.current_task_run_id is not None:
                 task = journal.get_task_run(workspace_id, session.current_task_run_id)
                 if task is None or task.session_id != session.session_id:
@@ -691,9 +724,21 @@ class SqliteOperationalJournal:
         if artifact_id is not None:
             sql += " AND artifact_id = ?"
             parameters.append(artifact_id)
-        sql += " ORDER BY artifact_id ASC, owner_kind ASC, owner_id ASC, role ASC"
         rows = self._read_all(sql, tuple(parameters))
-        return tuple((str(row[0]), str(row[2]), str(row[3]), str(row[4])) for row in rows)
+        checkpoint_sql = (
+            "SELECT artifact_id, workspace_id, checkpoint_id, role "
+            "FROM checkpoint_artifact_references WHERE workspace_id = ?"
+        )
+        checkpoint_parameters: list[object] = [workspace_id]
+        if artifact_id is not None:
+            checkpoint_sql += " AND artifact_id = ?"
+            checkpoint_parameters.append(artifact_id)
+        checkpoint_rows = self._read_all(checkpoint_sql, tuple(checkpoint_parameters))
+        references = [(str(row[0]), str(row[2]), str(row[3]), str(row[4])) for row in rows]
+        references.extend(
+            (str(row[0]), "context_checkpoint", str(row[2]), str(row[3])) for row in checkpoint_rows
+        )
+        return tuple(sorted(references, key=lambda item: (item[0], item[1], item[2], item[3])))
 
     def _validate_artifact_scope(self, workspace_id: str, metadata: ArtifactMetadata) -> None:
         if metadata.session_id is None:
@@ -712,30 +757,6 @@ class SqliteOperationalJournal:
             if task is None or task.session_id != metadata.session_id:
                 raise StorageError(
                     StorageErrorCode.UNAVAILABLE, "operational artifact task scope is invalid"
-                )
-
-    def _validate_artifact_refs(
-        self,
-        workspace_id: str,
-        references: tuple[ArtifactReference, ...],
-        *,
-        session_id: str,
-        task_run_id: str,
-    ) -> None:
-        for reference in references:
-            artifact = self.get_artifact(workspace_id, reference.artifact_id)
-            if artifact is None:
-                raise StorageError(StorageErrorCode.NOT_FOUND, "operational artifact is missing")
-            if artifact.session_id not in {None, session_id} or artifact.task_run_id not in {
-                None,
-                task_run_id,
-            }:
-                raise StorageError(
-                    StorageErrorCode.UNAVAILABLE, "operational artifact reference scope is invalid"
-                )
-            if artifact.state is not ArtifactState.AVAILABLE:
-                raise StorageError(
-                    StorageErrorCode.UNAVAILABLE, "only available artifacts may be referenced"
                 )
 
     def _replace_artifact_references(
@@ -1017,6 +1038,275 @@ class SqliteOperationalJournal:
             (session_id,),
         )
         return tuple(_record_from_row(row) for row in rows)
+
+    def load_effective_records(
+        self, workspace_id: str, session_id: str
+    ) -> tuple[DurableConversationRecord, ...]:
+        """Return the immutable parent prefix followed by local child records."""
+
+        visited: set[str] = set()
+
+        def visit(current_session_id: str, depth: int) -> tuple[DurableConversationRecord, ...]:
+            if depth > 32 or current_session_id in visited:
+                raise StorageError(
+                    StorageErrorCode.NEEDS_REPAIR, "operational Session lineage is cyclic"
+                )
+            visited.add(current_session_id)
+            session = self.get_session(workspace_id, current_session_id)
+            if session is None:
+                raise StorageError(StorageErrorCode.NOT_FOUND, "operational session is missing")
+            local = self.load_records(workspace_id, current_session_id)
+            if session.parent_session_id is None:
+                _validate_record_sequence(
+                    local, expected_start=1, expected_count=session.conversation_position
+                )
+                visited.remove(current_session_id)
+                return local
+            parent_records = visit(session.parent_session_id, depth + 1)
+            if len(parent_records) < session.parent_cut_position:
+                raise StorageError(
+                    StorageErrorCode.NEEDS_REPAIR, "operational Session lineage cut is missing"
+                )
+            prefix = parent_records[: session.parent_cut_position]
+            cut = prefix[-1]
+            if (
+                cut.conversation_position != session.parent_cut_position
+                or cut.record_id != session.parent_cut_record_id
+                or cut.kind != "terminal"
+            ):
+                raise StorageError(
+                    StorageErrorCode.NEEDS_REPAIR, "operational Session lineage cut is invalid"
+                )
+            expected = session.parent_cut_position + 1
+            _validate_record_sequence(
+                local,
+                expected_start=expected,
+                expected_count=session.conversation_position - session.parent_cut_position,
+            )
+            visited.remove(current_session_id)
+            return (*prefix, *local)
+
+        return visit(session_id, 0)
+
+    def put_context_checkpoint(
+        self, workspace_id: str, checkpoint: ContextCheckpoint
+    ) -> ContextCheckpoint:
+        if checkpoint.workspace_id != workspace_id:
+            raise StorageError(
+                StorageErrorCode.UNAVAILABLE, "context checkpoint is outside the workspace"
+            )
+
+        def work(journal: SqliteOperationalJournal) -> ContextCheckpoint:
+            existing = journal.get_context_checkpoint(workspace_id, checkpoint.checkpoint_id)
+            if existing is not None:
+                if existing.model_dump(mode="json") != checkpoint.model_dump(mode="json"):
+                    raise StorageError(
+                        StorageErrorCode.UNAVAILABLE, "context checkpoint identity is immutable"
+                    )
+                return existing
+            journal._validate_checkpoint_scope(workspace_id, checkpoint)
+            executor = journal._executor_or_raise()
+            executor.execute(
+                """
+                INSERT INTO context_checkpoints(
+                    checkpoint_id, workspace_id, session_id, task_run_id,
+                    source_agent_run_id, codec, method_version, source_start_record_id,
+                    source_start_position, source_end_record_id, source_end_position,
+                    retained_record_ids_json, sections_json, omitted_sections_json,
+                    artifact_refs_json, input_bytes, output_bytes, request_estimate_chars,
+                    created_at_unix
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    checkpoint.checkpoint_id,
+                    checkpoint.workspace_id,
+                    checkpoint.session_id,
+                    checkpoint.task_run_id,
+                    checkpoint.source_agent_run_id,
+                    checkpoint.codec,
+                    checkpoint.method_version,
+                    checkpoint.source_start_record_id,
+                    checkpoint.source_start_position,
+                    checkpoint.source_end_record_id,
+                    checkpoint.source_end_position,
+                    _optional_json(checkpoint.retained_record_ids),
+                    _optional_json(checkpoint.sections),
+                    _optional_json(checkpoint.omitted_sections),
+                    _optional_json(checkpoint.artifact_refs),
+                    checkpoint.input_bytes,
+                    checkpoint.output_bytes,
+                    checkpoint.request_estimate_chars,
+                    _unix(checkpoint.created_at),
+                ),
+            )
+            for reference in checkpoint.artifact_refs:
+                executor.execute(
+                    f"INSERT INTO checkpoint_artifact_references({_CHECKPOINT_ARTIFACT_REFERENCE_COLUMNS}) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (
+                        reference.artifact_id,
+                        workspace_id,
+                        checkpoint.checkpoint_id,
+                        reference.role,
+                        _unix(checkpoint.created_at),
+                    ),
+                )
+            loaded = journal.get_context_checkpoint(workspace_id, checkpoint.checkpoint_id)
+            if loaded is None:
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE, "context checkpoint could not be read"
+                )
+            return loaded
+
+        return self.transact(work)
+
+    def get_context_checkpoint(
+        self, workspace_id: str, checkpoint_id: str
+    ) -> ContextCheckpoint | None:
+        row = self._read_one(
+            "SELECT checkpoint_id, workspace_id, session_id, task_run_id, "
+            "source_agent_run_id, codec, method_version, source_start_record_id, "
+            "source_start_position, source_end_record_id, source_end_position, "
+            "retained_record_ids_json, sections_json, omitted_sections_json, "
+            "artifact_refs_json, input_bytes, output_bytes, request_estimate_chars, "
+            "created_at_unix FROM context_checkpoints "
+            "WHERE checkpoint_id = ? AND workspace_id = ?",
+            (checkpoint_id, workspace_id),
+        )
+        if row is None:
+            return None
+        return _checkpoint_from_row(row)
+
+    def list_context_checkpoints(
+        self, workspace_id: str, session_id: str, *, task_run_id: str | None = None
+    ) -> tuple[ContextCheckpoint, ...]:
+        sql = (
+            "SELECT checkpoint_id, workspace_id, session_id, task_run_id, "
+            "source_agent_run_id, codec, method_version, source_start_record_id, "
+            "source_start_position, source_end_record_id, source_end_position, "
+            "retained_record_ids_json, sections_json, omitted_sections_json, "
+            "artifact_refs_json, input_bytes, output_bytes, request_estimate_chars, "
+            "created_at_unix FROM context_checkpoints "
+            "WHERE workspace_id = ? AND session_id = ?"
+        )
+        parameters: list[object] = [workspace_id, session_id]
+        if task_run_id is not None:
+            sql += " AND task_run_id = ?"
+            parameters.append(task_run_id)
+        sql += " ORDER BY source_end_position ASC, created_at_unix ASC, checkpoint_id ASC"
+        rows = self._read_all(sql, tuple(parameters))
+        return tuple(_checkpoint_from_row(row) for row in rows)
+
+    def _validate_checkpoint_scope(self, workspace_id: str, checkpoint: ContextCheckpoint) -> None:
+        session = self.get_session(workspace_id, checkpoint.session_id)
+        if session is None:
+            raise StorageError(StorageErrorCode.NOT_FOUND, "checkpoint Session is missing")
+        if checkpoint.task_run_id is not None:
+            task = self.get_task_run(workspace_id, checkpoint.task_run_id)
+            if task is None or task.session_id != checkpoint.session_id:
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE, "checkpoint TaskRun scope is invalid"
+                )
+        if checkpoint.source_agent_run_id is not None:
+            run = self.get_agent_run(workspace_id, checkpoint.source_agent_run_id)
+            if run is None or run.session_id != checkpoint.session_id:
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE, "checkpoint AgentRun scope is invalid"
+                )
+        records = self.load_effective_records(workspace_id, checkpoint.session_id)
+        by_position = {record.conversation_position: record for record in records}
+        if checkpoint.source_end_position > session.conversation_position + 1:
+            raise StorageError(StorageErrorCode.UNAVAILABLE, "checkpoint source range is invalid")
+        if checkpoint.source_end_position - 1 not in by_position:
+            raise StorageError(StorageErrorCode.UNAVAILABLE, "checkpoint source end is missing")
+        end_record = by_position[checkpoint.source_end_position - 1]
+        if end_record.record_id != checkpoint.source_end_record_id or end_record.kind != "terminal":
+            raise StorageError(StorageErrorCode.UNAVAILABLE, "checkpoint must end at a closed Turn")
+        if checkpoint.source_start_position:
+            start_record = by_position.get(checkpoint.source_start_position)
+            if start_record is None or start_record.record_id != checkpoint.source_start_record_id:
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE, "checkpoint source start is invalid"
+                )
+        elif checkpoint.source_start_record_id is not None:
+            raise StorageError(StorageErrorCode.UNAVAILABLE, "checkpoint source start is invalid")
+        valid_ids = {
+            record.record_id
+            for record in records
+            if checkpoint.source_start_position
+            <= record.conversation_position
+            < checkpoint.source_end_position
+        }
+        if not set(checkpoint.retained_record_ids).issubset(valid_ids):
+            raise StorageError(
+                StorageErrorCode.UNAVAILABLE, "checkpoint retained records are invalid"
+            )
+        for section in checkpoint.sections:
+            self._validate_checkpoint_section(section, checkpoint, valid_ids)
+        for omission in checkpoint.omitted_sections:
+            if not (
+                checkpoint.source_start_position <= omission.source_start_position
+                and omission.source_end_position <= checkpoint.source_end_position
+            ):
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE, "checkpoint omission range is invalid"
+                )
+            if not set(omission.record_ids).issubset(valid_ids):
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE, "checkpoint omission records are invalid"
+                )
+        self._validate_artifact_refs(
+            workspace_id,
+            checkpoint.artifact_refs,
+            session_id=checkpoint.session_id,
+            task_run_id=checkpoint.task_run_id,
+            require_available=False,
+        )
+
+    def _validate_artifact_refs(
+        self,
+        workspace_id: str,
+        references: tuple[ArtifactReference, ...],
+        *,
+        session_id: str,
+        task_run_id: str | None,
+        require_available: bool = True,
+    ) -> None:
+        for reference in references:
+            artifact = self.get_artifact(workspace_id, reference.artifact_id)
+            if artifact is None:
+                raise StorageError(StorageErrorCode.NOT_FOUND, "operational artifact is missing")
+            if artifact.session_id not in {None, session_id} or artifact.task_run_id not in {
+                None,
+                task_run_id,
+            }:
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE, "operational artifact reference scope is invalid"
+                )
+            if require_available and artifact.state is not ArtifactState.AVAILABLE:
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE, "only available artifacts may be referenced"
+                )
+
+    def _validate_checkpoint_section(
+        self,
+        section: ContextCheckpointSection,
+        checkpoint: ContextCheckpoint,
+        valid_ids: set[str],
+    ) -> None:
+        if not (
+            checkpoint.source_start_position <= section.source_start_position
+            and section.source_end_position <= checkpoint.source_end_position
+        ):
+            raise StorageError(StorageErrorCode.UNAVAILABLE, "checkpoint section range is invalid")
+        if not set(reference.artifact_id for reference in section.artifact_refs).issubset(
+            {reference.artifact_id for reference in checkpoint.artifact_refs}
+        ):
+            raise StorageError(
+                StorageErrorCode.UNAVAILABLE, "checkpoint section artifact is invalid"
+            )
+        if not valid_ids:
+            raise StorageError(StorageErrorCode.UNAVAILABLE, "checkpoint source range is empty")
 
     def get_receipt(
         self, workspace_id: str, session_id: str, client_message_id: str
@@ -1549,7 +1839,7 @@ class SqliteOperationalJournal:
 
     def _insert_session(self, session: DurableSession) -> None:
         self._executor_or_raise().execute(
-            f"INSERT INTO sessions({_SESSION_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            f"INSERT INTO sessions({_SESSION_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 session.session_id,
                 session.workspace_id,
@@ -1557,10 +1847,64 @@ class SqliteOperationalJournal:
                 session.health.value,
                 session.current_task_run_id,
                 session.conversation_position,
+                session.parent_session_id,
+                session.parent_cut_record_id,
+                session.parent_cut_position,
+                session.parent_checkpoint_id,
+                session.fork_reason,
                 _unix(session.created_at),
                 _unix(session.updated_at),
             ),
         )
+
+    def _validate_session_lineage(self, session: DurableSession) -> None:
+        if session.parent_session_id is None:
+            return
+        parent = self.get_session(session.workspace_id, session.parent_session_id)
+        if parent is None:
+            raise StorageError(StorageErrorCode.NOT_FOUND, "fork parent Session is missing")
+        if parent.lifecycle is SessionLifecycle.DELETED:
+            raise StorageError(StorageErrorCode.UNAVAILABLE, "deleted Session cannot be forked")
+        if session.current_task_run_id is not None:
+            raise StorageError(StorageErrorCode.UNAVAILABLE, "forked Session cannot have a TaskRun")
+        parent_records = self.load_effective_records(session.workspace_id, parent.session_id)
+        cut = parent_records[: session.parent_cut_position]
+        if len(cut) != session.parent_cut_position:
+            raise StorageError(
+                StorageErrorCode.UNAVAILABLE, "fork cut is outside the parent history"
+            )
+        cut_record = cut[-1]
+        if cut_record.record_id != session.parent_cut_record_id or cut_record.kind != "terminal":
+            raise StorageError(StorageErrorCode.UNAVAILABLE, "fork cut must end at a closed Turn")
+        if session.parent_checkpoint_id is not None:
+            checkpoint = self.get_context_checkpoint(
+                session.workspace_id, session.parent_checkpoint_id
+            )
+            if checkpoint is None or checkpoint.session_id != parent.session_id:
+                raise StorageError(StorageErrorCode.UNAVAILABLE, "fork checkpoint is invalid")
+            if (
+                checkpoint.source_end_position != session.parent_cut_position + 1
+                or checkpoint.source_end_record_id != session.parent_cut_record_id
+            ):
+                raise StorageError(StorageErrorCode.UNAVAILABLE, "fork checkpoint cut is invalid")
+
+    def create_fork_session(
+        self, session: DurableSession, *, lineage: SessionLineage
+    ) -> DurableSession:
+        """Create a child Session after validating the immutable lineage contract."""
+
+        if (
+            lineage.workspace_id != session.workspace_id
+            or lineage.child_session_id != session.session_id
+            or lineage.parent_session_id != session.parent_session_id
+            or lineage.cut_record_id != session.parent_cut_record_id
+            or lineage.cut_position != session.parent_cut_position
+            or lineage.checkpoint_id != session.parent_checkpoint_id
+        ):
+            raise StorageError(StorageErrorCode.UNAVAILABLE, "fork Session lineage is inconsistent")
+        if session.fork_reason != lineage.reason:
+            raise StorageError(StorageErrorCode.UNAVAILABLE, "fork Session reason is inconsistent")
+        return self.create_session(session)
 
     def _insert_task(self, task: DurableTaskRun) -> None:
         self._executor_or_raise().execute(
@@ -1608,9 +1952,74 @@ def _session_from_row(row: tuple[object, ...]) -> DurableSession:
         health=SessionHealth(str(row[3])),
         current_task_run_id=str(row[4]) if row[4] is not None else None,
         conversation_position=int(row[5]),
-        created_at=_from_unix(row[6]),
-        updated_at=_from_unix(row[7]),
+        parent_session_id=str(row[6]) if row[6] is not None else None,
+        parent_cut_record_id=str(row[7]) if row[7] is not None else None,
+        parent_cut_position=int(row[8]) if row[8] is not None else None,
+        parent_checkpoint_id=str(row[9]) if row[9] is not None else None,
+        fork_reason=str(row[10]) if row[10] is not None else None,
+        created_at=_from_unix(row[11]),
+        updated_at=_from_unix(row[12]),
     )
+
+
+def _session_lineage_fields(session: DurableSession) -> tuple[object, ...]:
+    return (
+        session.parent_session_id,
+        session.parent_cut_record_id,
+        session.parent_cut_position,
+        session.parent_checkpoint_id,
+        session.fork_reason,
+    )
+
+
+def _validate_record_sequence(
+    records: tuple[DurableConversationRecord, ...], *, expected_start: int, expected_count: int
+) -> None:
+    if expected_count < 0 or len(records) != expected_count:
+        raise StorageError(
+            StorageErrorCode.NEEDS_REPAIR, "operational conversation position is inconsistent"
+        )
+    for offset, record in enumerate(records):
+        if record.conversation_position != expected_start + offset:
+            raise StorageError(
+                StorageErrorCode.NEEDS_REPAIR,
+                "operational conversation positions are invalid",
+            )
+
+
+def _checkpoint_from_row(row: tuple[object, ...]) -> ContextCheckpoint:
+    try:
+        retained = json.loads(str(row[11]))
+        sections = json.loads(str(row[12]))
+        omissions = json.loads(str(row[13]))
+        artifacts = json.loads(str(row[14]))
+        if not all(isinstance(value, list) for value in (retained, sections, omissions, artifacts)):
+            raise ValueError("checkpoint JSON columns are not lists")
+        return ContextCheckpoint(
+            checkpoint_id=str(row[0]),
+            workspace_id=str(row[1]),
+            session_id=str(row[2]),
+            task_run_id=str(row[3]) if row[3] is not None else None,
+            source_agent_run_id=str(row[4]) if row[4] is not None else None,
+            codec=str(row[5]),
+            method_version=str(row[6]),
+            source_start_record_id=str(row[7]) if row[7] is not None else None,
+            source_start_position=int(row[8]),
+            source_end_record_id=str(row[9]),
+            source_end_position=int(row[10]),
+            retained_record_ids=tuple(str(item) for item in retained),
+            sections=tuple(ContextCheckpointSection.model_validate(item) for item in sections),
+            omitted_sections=tuple(
+                ContextCheckpointOmission.model_validate(item) for item in omissions
+            ),
+            artifact_refs=tuple(ArtifactReference.model_validate(item) for item in artifacts),
+            input_bytes=int(row[15]),
+            output_bytes=int(row[16]),
+            request_estimate_chars=int(row[17]),
+            created_at=_from_unix(row[18]),
+        )
+    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise StorageError(StorageErrorCode.NEEDS_REPAIR, "context checkpoint is invalid") from exc
 
 
 def _task_from_row(row: tuple[object, ...]) -> DurableTaskRun:

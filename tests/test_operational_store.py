@@ -21,6 +21,7 @@ from morrow.adapters.state.migrations import (
     V4,
     V5,
     V6,
+    V7,
     MigrationRegistry,
     SchemaMigration,
 )
@@ -335,7 +336,7 @@ def test_future_schema_is_refused_and_left_intact(tmp_path):
 def test_identity_and_user_version_mismatch_is_repair(tmp_path):
     root, store = _initialized(tmp_path)
     raw = sqlite3.connect(store.layout.database)
-    raw.execute("PRAGMA user_version = 7")
+    raw.execute("PRAGMA user_version = 6")
     raw.commit()
     raw.close()
     before = store.layout.database.read_bytes()
@@ -568,20 +569,22 @@ def test_ordered_checksummed_migration_rolls_back_a_failed_step(tmp_path):
         "recovery_reports",
         "task_run_lifecycle_and_outcomes",
         "artifact_store_and_references",
+        "context_checkpoints_and_session_lineage",
     )
     assert report.backup_name
     assert (store.layout.backups_dir / report.backup_name).is_file()
 
     broken = SchemaMigration(
-        version=7,
+        version=8,
         name="broken_step",
         statements=("THIS IS NOT SQL",),
     )
-    broken_registry = MigrationRegistry(supported_version=7)
+    broken_registry = MigrationRegistry(supported_version=8)
     for migration in (V1, V2, V3, V4):
         broken_registry.add(migration)
     broken_registry.add(V5)
     broken_registry.add(V6)
+    broken_registry.add(V7)
     broken_registry.add(broken)
     with pytest.raises(StorageError) as error:
         _store(root, registry=broken_registry).migrate()

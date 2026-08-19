@@ -377,6 +377,10 @@ def test_fault_injector_inventory_and_one_shot_behavior():
         "artifact.after_parent_fsync",
         "artifact.before_mark_available",
         "artifact.after_mark_available",
+        "checkpoint.before_commit",
+        "checkpoint.after_commit",
+        "fork.before_commit",
+        "fork.after_commit",
     }
     NoOpFaultInjector().check(FaultPoint.HANDLER_BEFORE_ENTER)
     injector = OnceFaultInjector(FaultPoint.HANDLER_BEFORE_ENTER)

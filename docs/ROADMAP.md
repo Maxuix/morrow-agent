@@ -1,6 +1,6 @@
 # Morrow 个人 Agent 工作台开发路线总览
 
-> 状态：阶段 1、阶段 2、阶段 3 已完成；阶段 4 实施中（Subplan 42，Context Checkpoint 与 Fork）；阶段 5–10 未开始
+> 状态：阶段 1、阶段 2、阶段 3 已完成；阶段 4 实施中（Subplan 43，Command/Query/Event、CLI、Doctor 与 Backup）；阶段 5–10 未开始
 > 基线日期：2026-08-19
 > 用途：维护 Morrow 的长期产品方向、阶段顺序、稳定边界与详细阶段文档入口。
 > 执行约定：具体实现任务、活跃子计划、进度与验证结果继续维护在 `.agent/`；本文不承担实时 TODO 或开发日志职责。
