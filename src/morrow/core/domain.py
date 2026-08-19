@@ -281,6 +281,33 @@ class DurableTurn(ProtocolModel):
         return value
 
 
+class DurableConversationRecord(ProtocolModel):
+    record_id: str
+    session_id: str
+    conversation_position: int = Field(ge=1)
+    kind: Literal["message", "terminal"]
+    payload: dict[str, Any]
+
+    @field_validator("record_id")
+    @classmethod
+    def valid_record_id(cls, value: str) -> str:
+        return validate_prefixed_id(value, CONVERSATION_RECORD_ID_PREFIX)
+
+    @field_validator("session_id")
+    @classmethod
+    def valid_session_id(cls, value: str) -> str:
+        return validate_prefixed_id(value, SESSION_ID_PREFIX)
+
+    @model_validator(mode="after")
+    def enforce_payload_budget(self) -> DurableConversationRecord:
+        require_payload_budget(
+            canonical_json_bytes(self.payload),
+            CONVERSATION_RECORD_MAX_BYTES,
+            label="conversation record",
+        )
+        return self
+
+
 class DurableAgentRun(ProtocolModel):
     agent_run_id: str
     turn_id: str

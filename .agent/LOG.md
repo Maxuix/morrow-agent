@@ -1028,3 +1028,14 @@
   status, prefixed opaque IDs, three sequence namespaces, budgeted AgentRun snapshots, and
   turn-submit receipts. `client_message_id` is a command field, not UserMessage content.
 - Focused tests in `tests/test_stage4_domain.py` passed with Ruff check on the new files.
+
+## 2026-08-19 — S4.37.2 v2 journal schema and ports
+
+- Bumped the production schema to v2 with Session, open TaskRun pointer, Turn, AgentRun snapshot,
+  conversation records, and turn-submit receipts. Queries are workspace-scoped; conversation
+  positions are unique and monotonic; failed appends do not advance the session pointer.
+- Added `SqliteOperationalJournal` implementing the narrow Core ports plus a re-entrant `transact`
+  for later ConversationLog commits. Existing store tests now use production v2 FKs and keep a
+  v1-only registry for migration faults.
+- Focused journal/store/domain tests passed (45) along with conversation and core contract
+  regressions. AgentLoop is not wired yet.

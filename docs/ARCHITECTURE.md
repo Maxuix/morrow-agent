@@ -164,8 +164,9 @@ workspace Preferences 损坏只隔离该层。旧 `handoff.yaml(.bak)` 不属于
 ```
 
 `DataRoot` 暴露 `store_path`、`artifacts_path`、`backups_path` 与 `operational_lock_path`。
-生产启动不会自动创建或打开该库。v1 只有 `store_identity` 与 `schema_migrations`；Session、对话、
-工具和 Artifact 业务表仍未创建。损坏、外源或未来版本文件保持原字节并失败关闭。
+生产启动不会自动创建或打开该库。v2 增加了 Session / 打开的 TaskRun 指针 / Turn / AgentRun /
+conversation records / turn-submit receipt 表。AgentLoop 仍写入进程内 ConversationLog，尚未接到
+这些表。损坏、外源或未来版本文件保持原字节并失败关闭。
 
 ## 事件与安全边界
 

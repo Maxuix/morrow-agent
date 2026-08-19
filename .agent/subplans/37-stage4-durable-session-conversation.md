@@ -38,9 +38,9 @@ evidence.
 
 - [x] S4.37.1 Add typed domain models, separate lifecycle/health axes, immutable IDs, the three
   order namespaces, base AgentRun source snapshots, and payload validators.
-- [>] S4.37.2 Add lifecycle and conversation-journal schemas/ports with workspace-scoped queries,
+- [x] S4.37.2 Add lifecycle and conversation-journal schemas/ports with workspace-scoped queries,
   foreign keys, uniqueness, and sequence constraints.
-- [ ] S4.37.3 Refactor ConversationLog behind a durable append boundary that validates first, commits
+- [>] S4.37.3 Refactor ConversationLog behind a durable append boundary that validates first, commits
   atomically, and updates its in-memory projection only from the committed record.
 - [ ] S4.37.4 Integrate Session construction and AgentLoop no-tool begin/assistant/finish writes so
   Turn/User commit precedes `turn.started` and Provider invocation, without adding a second

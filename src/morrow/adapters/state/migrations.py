@@ -1,6 +1,6 @@
 """Ordered, checksummed Operational Store migrations.
 
-Production currently owns schema v1 only. Versions 2–9 stay reserved for later
+Production currently owns schema v1–v2. Versions 3–9 stay reserved for later
 subplans and must not be renumbered after they land.
 """
 
@@ -53,6 +53,97 @@ class SchemaMigration:
 
 
 V1 = SchemaMigration(version=1, name=V1_NAME, statements=V1_STATEMENTS)
+
+V2_NAME = "durable_session_conversation"
+V2_STATEMENTS = (
+    """
+    CREATE TABLE sessions (
+        session_id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        lifecycle TEXT NOT NULL
+            CHECK (lifecycle IN ('active', 'archived', 'deleted')),
+        health TEXT NOT NULL
+            CHECK (health IN ('ok', 'needs_recovery', 'quarantined', 'read_only')),
+        current_task_run_id TEXT,
+        conversation_position INTEGER NOT NULL CHECK (conversation_position >= 0),
+        created_at_unix INTEGER NOT NULL,
+        updated_at_unix INTEGER NOT NULL
+    )
+    """,
+    """
+    CREATE INDEX sessions_workspace_lifecycle
+        ON sessions(workspace_id, lifecycle)
+    """,
+    """
+    CREATE TABLE task_runs (
+        task_run_id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL REFERENCES sessions(session_id),
+        workspace_id TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('open')),
+        created_at_unix INTEGER NOT NULL
+    )
+    """,
+    """
+    CREATE INDEX task_runs_session ON task_runs(session_id)
+    """,
+    """
+    CREATE TABLE turns (
+        turn_id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL REFERENCES sessions(session_id),
+        task_run_id TEXT NOT NULL REFERENCES task_runs(task_run_id),
+        client_message_id TEXT NOT NULL,
+        created_at_unix INTEGER NOT NULL,
+        UNIQUE (session_id, client_message_id)
+    )
+    """,
+    """
+    CREATE INDEX turns_session ON turns(session_id)
+    """,
+    """
+    CREATE TABLE agent_runs (
+        agent_run_id TEXT PRIMARY KEY,
+        turn_id TEXT NOT NULL REFERENCES turns(turn_id),
+        session_id TEXT NOT NULL REFERENCES sessions(session_id),
+        resume_of_agent_run_id TEXT REFERENCES agent_runs(agent_run_id),
+        snapshot_json TEXT NOT NULL,
+        created_at_unix INTEGER NOT NULL
+    )
+    """,
+    """
+    CREATE INDEX agent_runs_turn ON agent_runs(turn_id)
+    """,
+    """
+    CREATE TABLE conversation_records (
+        record_id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL REFERENCES sessions(session_id),
+        conversation_position INTEGER NOT NULL CHECK (conversation_position >= 1),
+        kind TEXT NOT NULL CHECK (kind IN ('message', 'terminal')),
+        payload_json TEXT NOT NULL,
+        payload_bytes INTEGER NOT NULL CHECK (payload_bytes >= 0),
+        UNIQUE (session_id, conversation_position)
+    )
+    """,
+    """
+    CREATE INDEX conversation_records_session
+        ON conversation_records(session_id, conversation_position)
+    """,
+    """
+    CREATE TABLE turn_submit_receipts (
+        session_id TEXT NOT NULL REFERENCES sessions(session_id),
+        client_message_id TEXT NOT NULL,
+        request_digest TEXT NOT NULL,
+        disposition TEXT NOT NULL
+            CHECK (disposition IN (
+                'accepted_open', 'accepted_closed', 'recovery', 'conflict'
+            )),
+        turn_id TEXT REFERENCES turns(turn_id),
+        command_id TEXT,
+        PRIMARY KEY (session_id, client_message_id)
+    )
+    """,
+)
+
+V2 = SchemaMigration(version=2, name=V2_NAME, statements=V2_STATEMENTS)
 
 
 class MigrationRegistry:
@@ -109,6 +200,7 @@ class MigrationRegistry:
 def production_registry() -> MigrationRegistry:
     registry = MigrationRegistry(supported_version=SUPPORTED_SCHEMA_VERSION)
     registry.add(V1)
+    registry.add(V2)
     return registry
 
 

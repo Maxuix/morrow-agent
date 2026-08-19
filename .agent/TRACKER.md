@@ -9,18 +9,19 @@ remain inactive.
 
 ## Last completed task
 
-S4.37.1 added typed Session/Task/Turn/AgentRun domain models, independent lifecycle/health axes,
-prefixed opaque IDs, three sequence namespaces, and a budgeted non-secret AgentRun snapshot.
+S4.37.2 added schema v2 and a SQLite journal adapter: workspace-scoped Session/Task/Turn/AgentRun
+rows, monotonic conversation positions, turn-submit receipts, and foreign-key/uniqueness checks.
+AgentLoop is still process-local.
 
 ## Active task
 
-S4.37.2 — add lifecycle and conversation-journal schemas/ports with workspace-scoped queries,
-foreign keys, uniqueness, and sequence constraints.
+S4.37.3 — refactor ConversationLog behind a durable append boundary that validates first, commits
+atomically, and updates its in-memory projection only from the committed record.
 
 ## Next action
 
-Implement schema v2 and narrow lifecycle/conversation journal ports on the Operational Store
-adapter, with focused tests, without wiring AgentLoop yet.
+Add a ConversationLog candidate/validate/apply API so a failed persist cannot leave a memory-only
+record, then wire a journal-backed append helper without changing AgentLoop production paths yet.
 
 ## Blockers
 

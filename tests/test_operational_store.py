@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 from morrow.adapters.credentials.keyring import MemoryCredentialStore
-from morrow.adapters.state.migrations import V1, MigrationRegistry, SchemaMigration
+from morrow.adapters.state.migrations import V1, V2, MigrationRegistry, SchemaMigration
 from morrow.adapters.state.operational import (
     SQLITE_HEADER,
     BusyRetryPolicy,
@@ -41,6 +41,7 @@ from morrow.core.store import (
     MAINTENANCE_LOCK_NAME,
     OPERATIONAL_BACKUPS_DIRNAME,
     STORE_DIRNAME,
+    SUPPORTED_SCHEMA_VERSION,
     WRITE_RETRY_ATTEMPTS,
     OperationalStoreLayout,
     StorageError,
@@ -52,8 +53,8 @@ from morrow.services.workspace import DataRoot
 from morrow.testing import FixedClock
 
 STAGE3_FIXTURE = Path(__file__).parent / "fixtures" / "stage3_data_root"
-V2_PROBE = SchemaMigration(
-    version=2,
+V3_PROBE = SchemaMigration(
+    version=3,
     name="test_probe_records",
     statements=(
         """
@@ -88,13 +89,15 @@ def _retry(busy_timeout_ms: int = 0) -> BusyRetryPolicy:
 def _registry(*extra: SchemaMigration, supported: int | None = None) -> MigrationRegistry:
     registry = MigrationRegistry(supported_version=supported or (extra[-1].version if extra else 1))
     registry.add(V1)
+    if registry.supported_version >= 2 and all(item.version != 2 for item in extra):
+        registry.add(V2)
     for migration in extra:
         registry.add(migration)
     return registry
 
 
-def _process_test_registry() -> MigrationRegistry:
-    return _registry(V2_PROBE, supported=2)
+def _v1_registry() -> MigrationRegistry:
+    return _registry()
 
 
 def _store(root: Path, **kwargs) -> OperationalStore:
@@ -157,7 +160,7 @@ def _hold_maintenance_then_exit(root: str, ready) -> None:
 
 def _migrate_v2(root: str, result) -> None:
     try:
-        report = _store(Path(root), registry=_process_test_registry()).migrate()
+        report = _store(Path(root)).migrate()
         result.put(("ok", report.to_version))
     except StorageError as exc:
         result.put((exc.code.value, None))
@@ -168,7 +171,7 @@ def _migrate_and_exit(root: str, fault: str) -> None:
         if point == fault:
             os._exit(17)
 
-    _store(Path(root), registry=_process_test_registry(), failure_injector=injector).migrate()
+    _store(Path(root), failure_injector=injector).migrate()
 
 
 def _touch_identity(root: str, count: int, ready, start) -> None:
@@ -229,9 +232,9 @@ def test_create_reopen_and_layout_permissions(tmp_path):
 
     with store.open(StoreOpenMode.READ_WRITE) as session:
         assert session.health is StoreHealth.OK
-        assert session.schema_version == 1
+        assert session.schema_version == SUPPORTED_SCHEMA_VERSION
         assert int(_pragma(session, "application_id")) == APPLICATION_ID
-        assert int(_pragma(session, "user_version")) == 1
+        assert int(_pragma(session, "user_version")) == SUPPORTED_SCHEMA_VERSION
         assert str(_pragma(session, "journal_mode")).lower() == "wal"
         assert int(_pragma(session, "synchronous")) == 2
         assert int(_pragma(session, "foreign_keys")) == 1
@@ -241,7 +244,7 @@ def test_create_reopen_and_layout_permissions(tmp_path):
                 "SELECT application_name, schema_version FROM store_identity WHERE singleton = 1"
             )
         )
-        assert row == ((APPLICATION_NAME, 1),)
+        assert row == ((APPLICATION_NAME, SUPPORTED_SCHEMA_VERSION),)
 
     again = store.initialize()
     again.close()
@@ -318,7 +321,7 @@ def test_future_schema_is_refused_and_left_intact(tmp_path):
 def test_identity_and_user_version_mismatch_is_repair(tmp_path):
     root, store = _initialized(tmp_path)
     raw = sqlite3.connect(store.layout.database)
-    raw.execute("PRAGMA user_version = 2")
+    raw.execute("PRAGMA user_version = 3")
     raw.commit()
     raw.close()
     before = store.layout.database.read_bytes()
@@ -381,13 +384,15 @@ def test_run_read_cannot_write(tmp_path):
 
 
 def test_foreign_keys_are_enforced_on_reopen(tmp_path):
-    root, store = _initialized(tmp_path, registry=_registry(V2_PROBE, supported=2))
+    _root, store = _initialized(tmp_path)
     with store.open(StoreOpenMode.READ_WRITE) as session:
-        assert session.schema_version == 2
+        assert session.schema_version == SUPPORTED_SCHEMA_VERSION
         with pytest.raises(StorageError) as error:
             session.run_write(
                 lambda executor: executor.execute(
-                    "INSERT INTO probe_children(id, parent_id) VALUES (1, 99)"
+                    "INSERT INTO turns(turn_id, session_id, task_run_id, "
+                    "client_message_id, created_at_unix) "
+                    "VALUES ('turn_1', 'ses_missing', 'task_missing', 'c1', 0)"
                 )
             )
         assert error.value.code is StorageErrorCode.UNAVAILABLE
@@ -513,7 +518,7 @@ def test_maintenance_lock_excludes_a_second_process(tmp_path):
         assert error.value.code is StorageErrorCode.BUSY
         _assert_sanitized(error.value, str(root))
         with pytest.raises(StorageError) as migrate_error:
-            _store(root, registry=_registry(V2_PROBE, supported=2)).migrate()
+            _store(root, registry=_registry(V3_PROBE, supported=3)).migrate()
         assert migrate_error.value.code is StorageErrorCode.BUSY
         with pytest.raises(StorageError) as backup_error:
             store.backup()
@@ -538,12 +543,12 @@ def test_dead_maintenance_lock_owner_releases_the_os_lock(tmp_path):
 
 
 def test_ordered_checksummed_migration_rolls_back_a_failed_step(tmp_path):
-    root, store = _initialized(tmp_path)
-    good = _store(root, registry=_registry(V2_PROBE, supported=2))
+    root, store = _initialized(tmp_path, registry=_v1_registry())
+    good = _store(root)
     report = good.migrate()
     assert report.from_version == 1
     assert report.to_version == 2
-    assert report.applied == ("test_probe_records",)
+    assert report.applied == ("durable_session_conversation",)
     assert report.backup_name
     assert (store.layout.backups_dir / report.backup_name).is_file()
 
@@ -553,14 +558,14 @@ def test_ordered_checksummed_migration_rolls_back_a_failed_step(tmp_path):
         statements=("THIS IS NOT SQL",),
     )
     with pytest.raises(StorageError) as error:
-        _store(root, registry=_registry(V2_PROBE, broken, supported=3)).migrate()
+        _store(root, registry=_registry(broken, supported=3)).migrate()
     assert error.value.code is StorageErrorCode.UNAVAILABLE
-    reopened = _store(root, registry=_registry(V2_PROBE, supported=2))
+    reopened = _store(root)
     assert reopened.classify().schema_version == 2
 
 
 def test_interrupted_migration_before_commit_leaves_previous_version(tmp_path):
-    root, _store_obj = _initialized(tmp_path)
+    root, _store_obj = _initialized(tmp_path, registry=_v1_registry())
     context = multiprocessing.get_context("spawn")
     process = context.Process(target=_migrate_and_exit, args=(str(root), "before_migration_commit"))
     process.start()
@@ -572,7 +577,7 @@ def test_interrupted_migration_before_commit_leaves_previous_version(tmp_path):
 
 
 def test_migration_versus_writer_does_not_rewrite_the_file(tmp_path):
-    root, _store_obj = _initialized(tmp_path)
+    root, _store_obj = _initialized(tmp_path, registry=_v1_registry())
     before = Path(root, STORE_DIRNAME, DATABASE_NAME).read_bytes()
     context = multiprocessing.get_context("spawn")
     ready = context.Event()
@@ -644,25 +649,24 @@ def test_read_only_filesystem_refuses_writes(tmp_path):
 
 
 def test_write_failure_rolls_back(tmp_path):
-    root, store = _initialized(tmp_path, registry=_registry(V2_PROBE, supported=2))
+    root, store = _initialized(tmp_path)
 
     def injector(point: str) -> None:
         if point == "before_commit":
             raise sqlite3.OperationalError("database or disk is full")
 
-    failing = _store(root, registry=_registry(V2_PROBE, supported=2), failure_injector=injector)
+    failing = _store(root, failure_injector=injector)
     with failing.open(StoreOpenMode.READ_WRITE) as session, pytest.raises(StorageError) as error:
         session.run_write(
             lambda executor: executor.execute(
-                "INSERT INTO probe_records(key, value) VALUES (?, ?)",
-                ("lost", "value"),
+                "INSERT INTO sessions(session_id, workspace_id, lifecycle, health, "
+                "current_task_run_id, conversation_position, created_at_unix, updated_at_unix) "
+                "VALUES ('ses_lost', 'ws_1', 'active', 'ok', NULL, 0, 0, 0)"
             )
         )
     assert error.value.code is StorageErrorCode.UNAVAILABLE
     with store.open(StoreOpenMode.READ_WRITE) as session:
-        count = session.run_read(
-            lambda executor: executor.execute("SELECT COUNT(*) FROM probe_records")
-        )
+        count = session.run_read(lambda executor: executor.execute("SELECT COUNT(*) FROM sessions"))
         assert count[0][0] == 0
 
 
