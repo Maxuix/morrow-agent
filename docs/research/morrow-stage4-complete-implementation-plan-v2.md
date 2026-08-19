@@ -1,13 +1,15 @@
 # Morrow Stage 4 完整实施方案 V2（成熟项目参考增强版）
 
-> 文档性质：Stage 4 实施主计划，可作为新的 `.agent/PLAN.md` 基线  
+> **状态：已被当前 [`.agent/PLAN.md`](../../.agent/PLAN.md) 与 Stage 4 ADR 取代。本文仅是研究/决策输入，禁止作为实施规格。**
+> **已否决或延期：Controlled Full Access Auto/raw auto、WorkspaceCheckpoint/rewind、EventOutbox/ack/worker、RunClaim/lease、approval nonce、FTS5 默认依赖、自动业务历史修复，以及本文旧 Subplan 35–48 编号。**
+> 文档性质：历史研究提案；不是活动 Stage 4 主计划
 > 阶段主题：Task、Session、Artifact 与持久化  
 > 目标状态：从“进程内 Code Agent”升级为“可恢复、可审计、能安全对账副作用的长期 Agent Runtime”  
 > 上位依据：`docs/ROADMAP.md`、`docs/roadmap/stage-4-task-session-and-persistence.md`、`docs/ARCHITECTURE.md`  
 > 实施基线：激活计划时以 `git rev-parse HEAD` 回填，不沿用旧 Stage 3 基线哈希  
 > 范围状态：Stage 4 已由用户正式开启；长期学习、Skill、Multi-Agent、后台自动化和完整 GUI 仍不在本阶段  
 > 修订版本：V2，2026-08-19；已对照 Pi、Hermes Agent、OpenAI Codex 与 Claude Code  
-> 配套评审：`docs/research/stage-4-mature-agent-reference-review.md`  
+> 配套评审：`docs/research/morrow-stage4-mature-agent-reference-review.md`
 > 采用原则：Morrow 原生领域不变量优先；协议与算法语义可借鉴，直接代码复用必须固定 commit、完成许可证审查并登记来源
 
 ---

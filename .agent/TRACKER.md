@@ -3,37 +3,41 @@
 ## Current status
 
 Stage 4 Durable Task, Session, Artifact, and Recovery planning is active. The three research
-documents have been reconciled against the Stage 3 code baseline. The accepted route is one
+documents have been demoted to superseded decision input and reconciled against the Stage 3 code
+baseline. The accepted route is one
 data-root SQLite operational database plus filesystem Artifacts, durable ConversationLog and tool
 journal boundaries, deterministic recovery, foreground TaskRun outcomes, context checkpoints,
 conversation-only fork, auditable grants, and Full Access Manual.
+
+The conditional plan review was confirmed against current code. Its five P0 findings and associated
+P1 ownership/evidence findings are real; accepted ADRs now close them, and Subplans 36–45 have been
+rewritten to consume those contracts without moving ownership forward or backward.
 
 No Stage 4 production adapter, schema, public event change, or Full Access behavior has been
 implemented.
 
 ## Last completed task
 
-S4.35.2 accepted `docs/decisions/stage-4-operational-store.md` and proved the locked `sqlite3`
-settings in `tests/test_stage4_operational_store_spike.py`: WAL + `synchronous=FULL`,
-`BEGIN IMMEDIATE`, crash commit/rollback, typed busy retry, global maintenance lock, future/foreign
-refusal without rewrite, and online backup during writes. Spike tests passed `15 passed`. No
-production adapter, schema, public event, policy default, or Full Access behavior changed.
+S4.35.7 accepted the reference-adoption ADR: Stage 4 uses upstream projects only for semantic and
+failure-mode input, with zero copied code/schema/fixture/asset today. The three research drafts are
+visibly superseded; any later direct reuse requires a new pinned provenance/license/notice hold
+point.
 
 ## Active task
 
-S4.35.3 — write the domain/ownership ADR: identifiers, Session lifecycle versus health, TaskRun
-continuation rules, AgentRun snapshots, ConversationLog single-writer protocol, and targeted
-command idempotency.
+S4.35.8 — finish cross-document consistency and validation after applying the review remediation to
+the fault matrix and Subplans 36–45.
 
 ## Next action
 
-Inspect current Session, ConversationLog, AgentLoop, and command/id types, then write the
-domain/ownership ADR without adding production persistence.
+Present the validated review remediation for explicit acceptance. If accepted, commit/close
+Subplan 35 and activate Subplan 36 only through a separate execution-state update.
 
 ## Blockers
 
-None for planning. Production implementation remains gated on acceptance of all Subplan 35 ADRs
-and explicit activation of Subplan 36.
+No implementation dead end is known. S4.35.8 validation has passed; production implementation
+remains deliberately gated on explicit acceptance of the remediation and a separate Subplan 36
+activation.
 
 ## Active boundary
 

@@ -970,3 +970,30 @@
   `git diff --check`. Temporary data roots only.
 - No `src/morrow` production adapter, schema, dependency, public event, or runtime behavior change.
   Next task is S4.35.3 domain/ownership ADR.
+
+## 2026-08-19 — Stage 4 conditional plan review remediated; activation still gated
+
+- Verified `docs/reviews/stage-4-plan-review.md` against the Stage 3 runtime and accepted all five
+  P0 findings plus the material P1/P2 ownership and evidence corrections. In particular, the current
+  ConversationLog mutates its in-memory sequence before persistence exists, `turn.started` precedes
+  User append, production `run_turn()` may have a ToolExecutor, and Host/sandbox restart evidence
+  cannot prove safe replay.
+- Added accepted planning ADRs for domain/conversation ownership, durable execution/recovery,
+  Artifact/checkpoint/fork, permission grants, and reference adoption, plus the S4.35.8 fault
+  matrix. They lock one Turn/UserMessage per client command rather than one model call forever,
+  `ready_for_acceptance` as non-terminal, validate→COMMIT→projection conversation writes, error-only
+  recovery closure, three separate order namespaces, explicit payload ceilings, and regrant for a
+  crash-created AgentRun.
+- Narrowed the Operational Store ADR and Subplans 36–45 around the reserved v1–v9 schema map.
+  Subplan 36 now owns unproved migration/thread/sidecar/retry evidence; 37 owns only an open current
+  Task pointer and bounded no-tool durability; 38 excludes application events; 39 treats missing
+  Host/native-sandbox completion as unknown; 40 does not depend on Artifact; 43 excludes grant
+  doctor checks; and 44 exposes only manually approved `unconfined_host_process` elevation.
+- Marked all three research drafts as superseded decision input and corrected their missing paths.
+  No upstream code/schema/fixture/asset is adopted; Auto, rewind, Outbox, RunClaim, nonce, FTS, and
+  automatic history repair remain rejected or deferred.
+- Validation with a task-private uv cache: Operational Store spike `15 passed`; Ruff format check
+  `107 files already formatted`; Ruff check passed; compileall passed; local Markdown links and
+  `git diff --check` passed. No production source, test, dependency, schema, public-event lifecycle,
+  policy default, or runtime behavior changed. Subplan 35 remains active pending explicit review
+  acceptance; Subplan 36 remains inactive.

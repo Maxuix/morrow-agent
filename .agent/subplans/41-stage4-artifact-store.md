@@ -3,6 +3,7 @@
 > Status: pending
 > Prerequisite: Subplan 40 accepted
 > Owns: large durable payload publication, integrity, provenance, and retention safety
+> Schema: v6 Artifact metadata and references
 
 ## Objective
 
@@ -21,7 +22,8 @@ without creating a secret archive, a second message authority, or an enterprise 
 - Tool/TaskOutcome links and missing/corrupt/orphan states.
 - Explicit durable byte/record budgets for arguments, results, errors, events, snapshots, metadata,
   excerpts, and Artifact content.
-- Deterministic orphan cleanup candidates and retention/reference checks.
+- Read-only orphan candidate and retention/reference reports; Stage 4 performs no automatic
+  Artifact deletion.
 
 ## Out of scope
 
@@ -42,7 +44,8 @@ without creating a secret archive, a second message authority, or an enterprise 
   missing/corrupt states.
 - [ ] S4.41.5 Integrate bounded redacted command output, diff/report production, ToolExecution links,
   and TaskOutcome references without duplicating complete bytes in conversation rows.
-- [ ] S4.41.6 Implement pin/reference-aware retention checks and read-only orphan candidate reports.
+- [ ] S4.41.6 Implement pin/reference-aware retention checks and read-only orphan candidate reports;
+  do not implement automatic deletion or heuristic retention.
 - [ ] S4.41.7 Add redaction, symlink/path-escape, permission, disk failure, crash, and payload exact-
   boundary tests; update storage/security docs.
 
@@ -56,13 +59,18 @@ without creating a secret archive, a second message authority, or an enterprise 
 - Missing/corrupt bytes are explicit facts. The system does not silently drop the reference or
   recreate evidence from an unrelated source.
 - Current credential/sensitive-resource redaction applies before persistence, not only on display.
+- The initial `command_output` Artifact may contain only the existing bounded, fully redacted command
+  result. Full/raw process streams remain unsupported until a separate streaming-redactor contract
+  exists; Subplan 41 does not impose that future capability as a gate.
+- Locked limits are metadata 32 KiB, excerpt 8 KiB, one Artifact 64 MiB, and one TaskRun 256 MiB,
+  alongside the row-level budgets in the durable-execution ADR.
 
 ## Tests and faults
 
 - file and metadata crash points for no row/orphan/temp/published states;
 - hash mismatch, truncation, missing file, wrong permissions, symlink, traversal, and ID collision;
 - exact budget boundaries and multibyte UTF-8 accounting;
-- redaction split across chunks for the bounded streaming writer;
+- existing bounded command-result redaction, exact limits, and multibyte truncation semantics;
 - referenced/pinned/unreferenced retention decisions;
 - backup manifest compatibility required by Subplan 43.
 
@@ -75,6 +83,7 @@ by automatic cleanup.
 ## Deliverables
 
 - Artifact Core model, metadata port, and filesystem adapter.
+- v6 migration that adds Artifact references to ToolExecution/TaskOutcome without changing prior
+  outcome evidence.
 - Durable payload budget/redaction policy.
 - Tool/TaskOutcome integration and fault evidence.
-

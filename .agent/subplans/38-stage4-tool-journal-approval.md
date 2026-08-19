@@ -3,6 +3,7 @@
 > Status: pending
 > Prerequisite: Subplan 37 accepted
 > Owns: persist-before-effect protocol, durable tool states, and one-shot approval consumption
+> Schema: v3 tool execution, approval, and structured fact journal
 
 ## Objective
 
@@ -16,8 +17,8 @@ through ConversationLog.
 - Independent `EffectClass` and recovery-policy declaration for every production tool.
 - Sanitized/bounded durable argument intent, schema digest, permission digest, side-effect evidence,
   result envelope, and state transitions.
-- One transaction for Assistant tool-call message, ordered ToolExecutions, run status, and any
-  application events that describe that mutation.
+- One transaction for Assistant tool-call message, ordered ToolExecutions, and run status;
+  `application_events` remain owned by Subplan 43.
 - Approval request/resolution/expiry/atomic consume with optimistic row version.
 - ToolExecutor/AgentLoop integration: no handler before committed intent; `handler_completed` is not
   the same as persisted ToolMessage/closed ToolCycle.
@@ -32,18 +33,22 @@ through ConversationLog.
 
 ## Tasks
 
-- [ ] S4.38.1 Define ToolExecution, Approval, EffectClass, recovery declaration, and transition
-  models with strict payload/redaction budgets.
+- [ ] S4.38.1 Define ToolExecution, Approval, EffectClass, recovery declaration, structured tool
+  facts, transition models, and the named test-only fault-injector port with the ADR's exact
+  payload/redaction budgets.
 - [ ] S4.38.2 Add journal/approval schemas and constraints for ordered calls, intent hashes, schema/
   permission digests, result evidence, row versions, expiry, resolution, and consumption.
 - [ ] S4.38.3 Persist Assistant tool call plus all ordered execution intents atomically through the
-  durable ConversationLog boundary before dispatch.
+  durable ConversationLog boundary before dispatch, including pre-effect file/config evidence such
+  as before hash, expected-after hash, expected size, target/parent conditions, and truncation facts.
 - [ ] S4.38.4 Integrate approval creation/resolution so consume and `executing` transition are one
-  transaction and duplicate/stale decisions are deterministic.
+  transaction, expiry uses the injected production Clock, Terminal resolution delegates through the
+  same application path, and duplicate/stale decisions are deterministic.
 - [ ] S4.38.5 Persist handler success/failure/cancellation as `handler_completed`, then append
   ToolMessage and close each ordered execution through ConversationLog.
-- [ ] S4.38.6 Classify every current production tool and fail composition if a registered tool lacks
-  a durable effect/recovery declaration.
+- [ ] S4.38.6 Hand-classify every current production tool independently of `ToolEffect`; Host and
+  native sandbox default to externally effectful/unknown, and composition fails if any registered
+  tool lacks a durable declaration.
 - [ ] S4.38.7 Add fault-point, redaction, payload-boundary, transition, and Stage 3 regression tests;
   document the protocol.
 
@@ -53,12 +58,17 @@ through ConversationLog.
   connection.
 - Tool calls in one Assistant message retain provider order; results close in that order under the
   existing ConversationLog grammar.
-- Approval identity is opaque and bound to intent, schema, permission snapshot, granted subset,
-  expiry, and row version. One approval can be consumed once.
+- Approval identity is opaque and bound to intent, Tool Schema, the effective Stage 3 permission-
+  context digest, granted subset, expiry, and row version. Subplan 44 later adds a
+  PermissionSnapshot FK. One approval can be consumed once.
 - Durable argument/result material is the minimum bounded redacted evidence needed for recovery and
   user explanation, never an unbounded copy of provider or command data.
 - `ToolEffect` may remain for current policy decisions; crash semantics use the independent durable
   classification.
+- File writes larger than the supported revision limit are rejected before effect; they are not
+  advertised as hash-reconcilable. `handler_completed` is the only durable handler-result boundary.
+- The v3 journal persists bounded structured changed-path/config/validation facts needed by
+  TaskOutcome; full diffs and large reports wait for Subplan 41 Artifacts.
 
 ## Tests and faults
 
@@ -68,6 +78,11 @@ through ConversationLog.
 - multiple ordered tool calls with mixed approve/deny/fail/cancel outcomes;
 - side-effect spy proves zero calls when intent commit or approval consume fails;
 - exact payload/redaction boundaries and missing classification at composition;
+- exact inventory covers `update_configuration`, `list_directory`, `read_file`, `find_files`,
+  `search_text`, `apply_patch`, `write_file`, `show_changes`, `run_command`, `git_status`,
+  `git_diff`, and capability-gated `promote_sandbox_changes`;
+- named one-shot logical faults at prepare, intent commit, approval, handler entry/result, message
+  append, and cycle close are available to Subplan 39 without production behavior;
 - no changes to existing public event cardinality before Subplan 43.
 
 ## Completion gate

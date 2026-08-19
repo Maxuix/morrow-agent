@@ -1,9 +1,11 @@
 # Morrow Stage 4 成熟 Agent 设计对照与复用评审
 
+> **状态：决策输入，非实施规格。当前权威是 [`.agent/PLAN.md`](../../.agent/PLAN.md) 与 `docs/decisions/stage-4-*.md`。**
+> **本文提到的 Full Access Auto、WorkspaceCheckpoint/rewind、EventOutbox、RunClaim、approval nonce、FTS5 和旧 Subplan 编号已被否决或延期；不得按这些段落施工。**
 > 评审日期：2026-08-19  
 > 对照项目：Pi、Hermes Agent、OpenAI Codex、Claude Code  
 > 目的：为 Morrow Stage 4 的 Session、TaskRun、ToolCycle、Artifact、恢复、审批、权限和上下文压缩设计查漏补缺  
-> 结论：**不引入某个现成 Agent 作为 Morrow 的运行时依赖；采用“协议借鉴 + 算法语义移植 + 小型代码选择性复用 + 上游故障回归化”的组合策略。**
+> 结论更新：**Stage 4 只采用协议语义和故障模式，不直接复用上游代码、Schema、fixture 或资产；任何未来直接复用必须另立 hold point。**
 
 ---
 

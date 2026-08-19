@@ -72,7 +72,8 @@ Before completing a subplan:
 
 - Inspect the relevant code before changing it.
 - Keep Session-owned `ConversationLog` as the only chat-history writer.
-- Keep ordinary chat on `AgentLoop.run_task()`; retained `run_turn()` is a thin no-tools delegate.
+- Keep ordinary chat on `AgentLoop.run_task()`; retained `run_turn()` is a thin delegate to that
+  same loop and production composition may supply its frozen `ToolExecutor`.
 - Keep credentials, reasoning, full tool arguments/results, SDK objects, and tracebacks out of events, logs, terminal output, and YAML.
 
 **Ask first**

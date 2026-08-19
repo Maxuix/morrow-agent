@@ -33,8 +33,9 @@
 ## Current continuity boundary
 
 Persisted: workspace identity, Profile, global/workspace Preferences, Provider configuration, and credential
-references. Process-local only: Session-owned ConversationLog. Persistent Sessions, resume/list/archive/delete,
-Fork, summaries/checkpoints, and memory are deferred to Stage 4. No legacy import or deletion is promised.
+references. At this historical acceptance point, Session-owned ConversationLog was process-local. Persistent
+Sessions, resume/list/archive/delete, conversation Fork, and deterministic checkpoints belong to Stage 4;
+reviewable long-term memory belongs to Stage 5. No legacy import or deletion is promised.
 
 ## Final observed gates
 

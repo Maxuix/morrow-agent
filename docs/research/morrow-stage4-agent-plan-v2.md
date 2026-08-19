@@ -1,10 +1,10 @@
 # Stage 4 — Task, Session, Artifact and Persistence
 
-> Status: active; opened by the user on 2026-08-19  
-> Active subplan: 35 — contracts, ADRs and reference lock  
-> Code baseline: replace with `git rev-parse HEAD` when committed  
-> Detailed design: `docs/implementation/stage-4-complete-plan.md`  
-> Reference review: `docs/research/stage-4-mature-agent-reference-review.md`
+> **Status: superseded research draft; not an active implementation plan.**
+> **Authority: [`.agent/PLAN.md`](../../.agent/PLAN.md) and accepted `docs/decisions/stage-4-*.md`.**
+> **Rejected/deferred from this draft: Controlled Full Access Auto/raw auto, managed WorkspaceCheckpoint/rewind, EventOutbox/worker, RunClaim/lease, approval nonce, FTS5, automatic repair, and the old Subplan numbering below.**
+> Current detailed plan: [`.agent/PLAN.md`](../../.agent/PLAN.md)
+> Reference review: [`morrow-stage4-mature-agent-reference-review.md`](morrow-stage4-mature-agent-reference-review.md)
 
 ## Objective
 

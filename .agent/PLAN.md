@@ -40,15 +40,26 @@ Precedence for this plan is:
 1. The current user request and later explicit decisions.
 2. Current code and validation just run.
 3. This plan and its one active subplan.
-4. `docs/roadmap/stage-4-task-session-and-persistence.md`.
-5. The three Stage 4 research documents under `docs/research/` as decision input, not competing
+4. Accepted Stage 4 ADRs under `docs/decisions/`.
+5. `docs/roadmap/stage-4-task-session-and-persistence.md`.
+6. `docs/reviews/stage-4-plan-review.md` as the accepted remediation input.
+7. The three Stage 4 research documents under `docs/research/` as superseded decision input, not competing
    implementation specifications.
 
-The research review supports semantic borrowing from mature agents. It does not authorize copying
-code. Before any direct reuse, Subplan 35 must pin the exact upstream repository and commit, verify
-its license and notices, and record the adopted files. The local Hermes snapshot without Git
-provenance is research evidence only. `THIRD_PARTY_NOTICES.md` is required only if distributed code
-or assets are actually reused.
+The accepted reference decision is semantic/failure-mode adoption with zero direct upstream code,
+schema, fixture, or asset reuse. The local Hermes snapshot without Git provenance is research
+evidence only. Any future direct reuse is a new hold point requiring repository/commit/path pinning,
+license review, adoption log, and notices when distribution actually requires them.
+
+Accepted Stage 4 decisions:
+
+- `docs/decisions/stage-4-operational-store.md`;
+- `docs/decisions/stage-4-domain-and-conversation.md`;
+- `docs/decisions/stage-4-durable-execution-and-recovery.md`;
+- `docs/decisions/stage-4-artifact-context-and-fork.md`;
+- `docs/decisions/stage-4-permission-grants.md`;
+- `docs/decisions/stage-4-reference-adoption.md`;
+- `docs/decisions/stage-4-fault-matrix.md`.
 
 ## Current baseline
 
@@ -56,7 +67,8 @@ At the baseline commit:
 
 - `Session` and its `ConversationLog` are process-local; restart loses the conversation.
 - `ConversationLog` is the only legal message grammar and append authority. `AgentLoop.run_task()`
-  owns ordinary chat writes; retained `run_turn()` is a thin no-tools delegate.
+  owns ordinary chat writes; retained `run_turn()` delegates to that same loop and production
+  composition may supply its frozen `ToolExecutor`.
 - Stage 3 provides workspace-confined read/search/mutation, approval-gated non-isolated Host
   commands, native macOS sandbox execution, current-run sandbox promotion, and read-only Git.
 - `WorkspaceWriterLock` is workspace-scoped and cannot serialize migration of one shared global
@@ -64,8 +76,14 @@ At the baseline commit:
 - Profile and Preferences use revisioned YAML; Provider secrets remain in `CredentialStore` or the
   environment. These authorities must not migrate into the operational database.
 - `ToolEffect` is a current-run policy hint with only `none`, `session_write`, and
-  `persistent_write`; it is not sufficient to decide crash replay.
-- tool facts and metrics are bounded process-local observations, not durable audit records.
+  `persistent_write`; it is not sufficient to decide crash replay, and current Host command intent
+  is incorrectly marked `NONE` despite possible external effects.
+- Conversation positions, public-event sequence, client-message receipts, AgentRun identity,
+  process identity, expected-after write evidence, durable approvals, and recovery records do not
+  exist. Tool facts, ChangeSets, sandbox snapshots, and metrics are process-local.
+- `turn.started` currently precedes `ConversationLog.begin_turn()`; `/new` resets memory and
+  `/exit` speaks about discarding unsaved history. These are Stage 37 migration obligations, not
+  durable behavior already present.
 - the public event lifecycle and bundled policy defaults remain unchanged until their specific
   Stage 4 hold points are authorized.
 
@@ -88,12 +106,15 @@ At the baseline commit:
   `trusted_schema=OFF`, `application_id=0x4D4F5257`, matching `user_version` and `store_identity`.
 - Use explicit schema metadata, forward-version refusal, foreign keys, crash-tested journaling and
   synchronous settings, short transactions, at most 8 injected-backoff busy retries, and a global
-  operational-store maintenance lock for initialization, migration, backup, and repair-mode
+  operational-store maintenance lock for initialization, migration, backup, and diagnose/quarantine
   transitions. Ordinary writes do not take that lock; `WorkspaceWriterLock` remains YAML/REPL only.
 - SQLite is the authority for operational records. Artifact bytes live in the Artifact Store;
   SQLite stores identity, integrity, provenance, retention, and bounded excerpts.
 - Online backup uses `Connection.backup()` into `backups/operational/` and never copies live
   `-wal`/`-shm` files. Empty, foreign, corrupt, or future files are refused and left intact.
+- The S4.35.2 spike proves the exercised WAL/transaction/contention/maintenance-lock/backup cases,
+  not migration, WAL/SHM modes, thread affinity, or every error class. Those are explicit Subplan 36
+  gates. Schema versions v1–v9 are reserved by owning subplan in the Operational Store ADR.
 - Do not introduce an ORM, service daemon, FTS5, distributed lease, background worker, or second
   database unless measured evidence and a separately approved ADR require one.
 
@@ -118,37 +139,50 @@ clients call those services; they do not issue SQL or duplicate transition rules
 - `ConversationLog` remains the sole message-order and ToolCycle grammar authority.
 - `AgentLoop` requests durable ConversationLog appends for ordinary chat. `TaskService` coordinates
   TaskRun and command idempotency but never direct-writes chat messages.
-- Recovery may call only a narrow ConversationLog recovery API that validates and closes an
-  already-recorded interrupted ToolCycle. It may not synthesize a successful result.
-- Persisted records and restored snapshots use one monotonic sequence authority. There is no
-  in-memory-versus-database dual-write window before a side effect.
+- The commit protocol is candidate construction → ConversationLog validation → one
+  `BEGIN IMMEDIATE` transaction for records/companion rows → COMMIT → projection refresh from
+  committed rows. Failure before COMMIT leaves the projection unchanged.
+- Recovery may call only a narrow ConversationLog API that appends ordered interrupted/error
+  ToolMessages and a truthful non-success terminal for an already-recorded ToolCycle. It may not
+  append User/Assistant or synthesize a successful tool result.
+- `conversation_position` (per Session), `runtime_event_sequence` (per Turn stream), and
+  `application_event_cursor` (durable audit stream) are independent namespaces.
+- Subplan 37 commits Turn + UserMessage before emitting the existing `turn.started` event and before
+  invoking the Provider. Event type/payload/cardinality remain unchanged.
 
 ### Session, TaskRun, Turn, and AgentRun semantics
 
-Session lifecycle and storage health are independent:
+Store health, Session lifecycle, and Session health are independent:
 
 ```text
-lifecycle: active | archived | deleted
-health:     ok | needs_recovery | needs_repair | read_only
+store_health:      ok | read_only | needs_repair | future_schema
+session_lifecycle: active | archived | deleted
+session_health:    ok | needs_recovery | quarantined | read_only
 ```
 
-Quarantine changes health, never rewrites the user's lifecycle choice.
+`deleted` is a tombstone. Quarantine changes Session health, never rewrites lifecycle.
 
 Locked foreground semantics:
 
-- The first ordinary input in a Session creates a TaskRun if none is current.
-- A final assistant answer closes its Turn and moves the TaskRun to `completed`, but does not mean
-  the user accepted it.
-- Ordinary follow-up after `completed` is a continuation/correction in the same TaskRun by default.
+- The first ordinary input in a Session creates an `open` TaskRun if none is current.
+- Subplan 37 persists only the open current-task pointer. Subplan 40 owns the complete state machine:
+  `open → ready_for_acceptance → accepted`, with ordinary follow-up returning
+  `ready_for_acceptance → open`; cancel/fail/abandon are explicit truthful exits.
+- A final assistant answer closes its Turn and, only after Subplan 40, moves TaskRun to the
+  non-terminal `ready_for_acceptance`. It is neither acceptance nor a Stage 5 learning trigger.
 - `/accept` records explicit acceptance; `/task new` creates a new TaskRun; `/new` creates a new
   Session.
-- A crash resume with no new user input creates a new AgentRun inside the same open Turn. New user
-  input creates a new Turn.
+- A crash resume with no new user input creates a new AgentRun with `resume_of_agent_run_id` inside
+  the same open Turn and appends no UserMessage. New user input creates a new Turn only after
+  blocking recovery is resolved/closed.
 - Failed, cancelled, or interrupted records retain known side effects and never pretend to roll
   them back.
+- `/new` creates/selects a new Session without resetting, deleting, or auto-archiving the old one;
+  session-scoped Preferences do not carry. `/exit` never asks to discard persisted history and
+  leaves unproved work as `needs_recovery`.
 
-Subplan 35 may refine names and legal transitions in an ADR, but it may not weaken these observable
-rules without returning to the user.
+The accepted domain/conversation ADR owns the exact transitions, receipt table, commit protocol,
+sequence namespaces, and `/new`/`/exit` semantics.
 
 ### Tool execution journal and recovery
 
@@ -176,10 +210,11 @@ Rules:
 - a structured idempotent operation may use its idempotency key and persisted result;
 - file mutation reconciliation uses captured before hash, expected after hash, expected size, and
   required parent/auxiliary conditions rather than volatile mtime-based revision equality;
-- every Host process is potentially externally effectful; if completion cannot be proved it is
+- every Host process is externally effectful; without `handler_completed` it is
   `outcome_unknown` and never automatically replayed;
-- a sandbox process is not automatically safe to retry unless the old process is proved terminated
-  and no promotion or outside effect occurred;
+- native sandbox execution also becomes `outcome_unknown` without `handler_completed` in Stage 4
+  v1 because PID/PGID, temp-root ownership, and snapshot evidence are not durable;
+- sandbox promotion is reconciled per file from pre-effect hashes and is never retried as a sandbox;
 - all side-effecting handlers are forbidden until their intent transaction commits.
 
 Recovery is classification and user-guided reconciliation, not automatic rewriting of business
@@ -187,13 +222,18 @@ history.
 
 ### Approval and idempotency
 
-- `client_message_id` is mandatory for a turn submission and unique in its Session.
+- `client_message_id` is a turn-submit command field, not UserMessage content, and is unique in its
+  Session. It guarantees one Turn/User acceptance, not one model invocation forever.
+- A duplicate open/interrupted submission returns its receipt plus recovery disposition; explicit
+  recovery may create another AgentRun in the same Turn. A duplicate closed submission returns the
+  committed result with no new run. Same key with a different canonical request is a conflict.
 - Use command receipts only for retry-sensitive mutation commands such as turn submission,
   approval resolution, recovery resolution, grant creation/revocation, and Session/Task lifecycle
   mutation. Do not burden every read or local helper with generic exactly-once machinery.
-- A durable Approval contains an opaque `approval_id`, intent hash, tool-schema digest, permission
-  snapshot digest, requested and granted scope, optimistic `row_version`, expiry, resolution, and
-  `consumed_at`.
+- A durable Approval initially contains an opaque `approval_id`, intent hash, tool-schema digest,
+  effective Stage 3 permission-context digest, requested and granted scope, optimistic
+  `row_version`, expiry, resolution, and `consumed_at`; Subplan 44 adds the full PermissionSnapshot
+  link.
 - Resolve and consume an approval atomically with the transition to executing. The initial local
   design does not need a separate approval nonce.
 
@@ -209,6 +249,8 @@ history.
 - Tool arguments, results, errors, events, and snapshots each have explicit byte/record limits.
   Provider reasoning, SDK objects, credentials, unfiltered environments, full tracebacks, and
   unbounded command output never become durable payloads.
+- Initial row ceilings and Artifact limits are locked in the execution and Artifact ADRs. Existing
+  tighter Stage 3 limits continue to win; storage limits do not enlarge model/tool policy.
 
 ### Context checkpoints and fork
 
@@ -222,12 +264,15 @@ history.
 
 ### Events, diagnostics, and backup
 
-- Business mutations may append a sanitized, versioned `application_events` row in the same SQLite
-  transaction. Cursor replay is sufficient for Stage 4.
+- Beginning in Subplan 43, business mutations append a sanitized, versioned `application_events`
+  row in the same SQLite transaction. Cursor replay is sufficient for Stage 4.
 - Do not add a delivery outbox, acknowledgement state, event worker, or background queue; those
   belong with Stage 9 reliability needs.
 - Changing the existing public event lifecycle is an explicit Subplan 43 hold point. Until approved,
   existing `turn.started`, `tool.status`, and `turn.completed` behavior stays intact.
+- Public runtime events remain an ephemeral UI stream with `runtime_event_sequence` and token
+  deltas. Durable `application_events` contain sanitized lifecycle/audit facts only, use
+  `application_event_cursor`, and never reconstruct ConversationLog or share a consumer contract.
 - State doctor is read-only. It may diagnose, export, quarantine, and identify deterministic orphan
   cleanup candidates; it does not invent or repair conversation/tool history.
 - Backup uses SQLite's online backup mechanism plus an integrity-checked Artifact manifest and
@@ -235,12 +280,16 @@ history.
 
 ### Permission grants and Full Access
 
-- A user is the only authority that can create or elevate a `CapabilityGrant`. Model output, tools,
+- Only an explicit trusted local interface command can create or elevate a `CapabilityGrant`;
+  Morrow has no local authentication subsystem. Model output, tools,
   Profile, Preferences, Memory, Skill, project files, and restored history cannot do so.
 - Grants are workspace/task/run bound, time bounded, revocable, and frozen into an immutable
   AgentRun `PermissionSnapshot`. Unprovable or expired grants fail closed after restart.
-- Stage 4 delivers the grant substrate and **Full Access Manual** only. Every outside-workspace,
-  network, or otherwise elevated operation remains explicitly approved and journaled.
+- Crash resume creates a new AgentRun and PermissionSnapshot and never inherits the old run-bound
+  grant; the user must explicitly grant again.
+- Stage 4 delivers the grant substrate and **Full Access Manual** only. Its sole elevated capability
+  family is an explicitly approved `unconfined_host_process`; it does not add general outside-file,
+  browser, MCP, Git-write, or network-specific tools.
 - Opaque approved Host commands are not OS-isolated. The product must label this
   `unconfined_host`, explain that the process may reach user files, network, credentials, and Morrow
   state, and never imply that string classification is confinement.
@@ -334,12 +383,13 @@ Stage 4 is complete only when all of the following are evidenced:
 
 1. A user can create, list, resume, archive, and fork a workspace-isolated Session after restart.
 2. Persisted messages restore in exactly one legal ConversationLog order with complete ToolCycles.
-3. Turn submission is idempotent by `client_message_id` and produces no duplicate model run.
+3. Turn submission is idempotent by `client_message_id` and produces exactly one accepted Turn/
+   UserMessage. An interrupted Turn may create a linked new AgentRun only through recovery.
 4. Every side-effecting tool intent commits before handler execution.
-5. Interrupted reads, file writes, sandbox runs, and Host commands are classified without blindly
-   replaying an unknown effect.
-6. Session lifecycle and health/quarantine remain independent; corrupt or future storage is never
-   silently replaced.
+5. Interrupted reads and structured writes are classified from persisted evidence; Host and native
+   sandbox executions without committed completion are unknown and never automatically replayed.
+6. Store health, Session lifecycle, and Session health/quarantine remain independent; corrupt or
+   future storage is never silently replaced.
 7. A foreground TaskRun preserves continuation, correction, acceptance, cancellation, and versioned
    deterministic TaskOutcome evidence across restarts.
 8. Artifacts are bounded, redacted, hash-verified, provenance-linked, and fail visibly when missing
@@ -351,7 +401,7 @@ Stage 4 is complete only when all of the following are evidenced:
 11. Online backup, read-only doctor, recovery decisions, migration failure, lock contention, disk/
     filesystem failure, and Artifact orphan cases have deterministic tests.
 12. CapabilityGrant can be explicitly created, queried, frozen, expired, and revoked for one
-    foreground AgentRun; restart never silently elevates it.
+    foreground AgentRun; a crash-created AgentRun never inherits it.
 13. Full Access Manual clearly exposes unconfined Host risk and keeps every elevated effect under
     explicit approval. Controlled Full Access Auto remains unavailable.
 14. Stage 3 product stories and security gates still pass, and the installed package can operate on
@@ -372,7 +422,9 @@ Stage 4 is complete only when all of the following are evidenced:
 
 ## Active gate
 
-Subplan 35 is the only active work. It may add ADRs, design-spike tests, and planning documentation,
-but it must not add the SQLite production adapter, change public events, activate Full Access, or
-alter existing Stage 3 runtime behavior. Production implementation begins only after Subplan 35 is
-accepted and Subplan 36 is explicitly activated in the execution state.
+Subplan 35 is the only active work. The Stage 4 plan review's P0/P1 findings are valid; this plan and
+the accepted ADRs incorporate their corrections. Subplan 36 remains blocked until S4.35.8 verifies
+every Subplan 36–45 gate against those ADRs, all planning/spike validation passes, the review
+remediation is accepted, and the execution state explicitly activates Subplan 36. No planning edit
+implicitly authorizes the SQLite production adapter, public-event change, Full Access activation,
+or another Stage 4 runtime behavior.

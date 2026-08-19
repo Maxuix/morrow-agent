@@ -5,6 +5,9 @@ only active subplan; it changes contracts and runs disposable design spikes but 
 production persistence. Later subplans remain inactive until the preceding gate passes and execution
 state is updated.
 
+The conditional review in `docs/reviews/stage-4-plan-review.md` is accepted as remediation input.
+Its P0/P1 findings must be closed and the Subplan 35 gate accepted before Subplan 36 is activated.
+
 | Order | File | Status |
 |---|---|---|
 | 35 | `35-stage4-contract-activation.md` | active |

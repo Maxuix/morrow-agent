@@ -17,7 +17,7 @@ safe and operable after restart, preserves Stage 3 guarantees, and ships with tr
   recovery, grants, backup, and migration.
 - Current-host Stage 3 security/sandbox regression gates relevant to the claimed platform.
 - Upgrade fixture from the Stage 3/no-operational-store state and at least one prior Stage 4 schema
-  fixture established during development.
+  fixture established and retained by Subplans 36/37.
 - Wheel build/install smoke with isolated data root and durable Session recovery.
 - Requirement-to-evidence matrix and accepted Stage 4 evidence document.
 - Final README, ARCHITECTURE, ROADMAP, stage document, CLI help, and `.agent` execution-state update.
@@ -49,17 +49,19 @@ safe and operable after restart, preserves Stage 3 guarantees, and ships with tr
 
 ## Required product stories
 
-1. Create a Session, complete several no-tool Turns, exit, list, resume, and continue exactly once.
+1. Create a Session, complete several no-tool Turns, exit, list, resume, and prove each accepted
+   command creates one Turn/UserMessage; an interrupted Turn may resume with a linked AgentRun.
 2. Perform a real Stage 3 code task with file edits and validation, crash at selected boundaries,
    reconcile safely, correct the answer, and explicitly accept the TaskRun.
-3. Interrupt an approved Host command where effect is not provable; restart reports unknown and
-   never automatically replays it.
+3. Interrupt approved Host and native-sandbox commands without committed completion; restart
+   reports unknown and never automatically replays either. Promotion reconciles per file.
 4. Produce bounded redacted Artifacts, compact long context, restart, and fork without changing
    parent history or workspace files.
 5. Back up an active installation, restore to an isolated target, verify hashes/integrity, and resume
    without credentials in the bundle.
-6. Grant one Full Access Manual AgentRun, display/consume explicit unconfined Host approval, revoke,
-   restart, and prove no silent elevation or Auto path.
+6. Grant one Full Access Manual AgentRun, display/consume explicit unconfined Host approval, crash,
+   prove the recovery AgentRun has no inherited grant, explicitly regrant if desired, revoke, and
+   prove no silent elevation or Auto path.
 
 ## Final validation
 
@@ -84,6 +86,10 @@ Every definition-of-done item in `.agent/PLAN.md` maps to reproducible evidence;
 claimed-platform gates pass; packaged recovery works from an isolated data root; documents match
 actual behavior; known limitations are explicit; and no unresolved high-severity durability,
 security, migration, or recovery finding remains.
+
+Acceptance cannot expand capability to make a story pass. In particular it must preserve one
+Turn/UserMessage rather than one-model-call idempotency, non-terminal `ready_for_acceptance`,
+Host/sandbox unknown-outcome classification without committed completion, and no grant inheritance.
 
 ## Deliverables
 

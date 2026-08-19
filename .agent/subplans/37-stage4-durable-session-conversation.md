@@ -3,6 +3,7 @@
 > Status: pending
 > Prerequisite: Subplan 36 accepted
 > Owns: durable foreground identities and legal no-tool conversation history
+> Schema: v2 Session, minimal open TaskRun pointer, Turn, base AgentRun, conversation, and receipt
 
 ## Objective
 
@@ -23,7 +24,9 @@ evidence.
 - AgentRun snapshots containing resolved bounded non-secret Profile/Preferences/config values,
   source revisions/hashes, model/provider references, RunPolicy/tool schema digests, and runtime
   instance identity.
-- Clean shutdown and restart of no-tool chat.
+- Clean shutdown and restart of bounded short no-tool chat, plus a narrow internal resume test
+  entry point; arbitrary long context waits for Subplan 42.
+- Durable `/new`, `/exit`, system-boundary, and process-local `dirty` semantic migration.
 
 ## Out of scope
 
@@ -33,51 +36,68 @@ evidence.
 
 ## Tasks
 
-- [ ] S4.37.1 Add typed domain models, legal lifecycle/health values, immutable IDs, source
-  snapshots, and payload validators.
+- [ ] S4.37.1 Add typed domain models, separate lifecycle/health axes, immutable IDs, the three
+  order namespaces, base AgentRun source snapshots, and payload validators.
 - [ ] S4.37.2 Add lifecycle and conversation-journal schemas/ports with workspace-scoped queries,
   foreign keys, uniqueness, and sequence constraints.
 - [ ] S4.37.3 Refactor ConversationLog behind a durable append boundary that validates first, commits
   atomically, and updates its in-memory projection only from the committed record.
-- [ ] S4.37.4 Integrate Session construction and AgentLoop no-tool begin/assistant/finish writes
-  without adding a second ordinary-chat path.
-- [ ] S4.37.5 Implement `client_message_id` command receipt behavior, duplicate-result replay, and
-  conflict rejection for same key/different payload.
+- [ ] S4.37.4 Integrate Session construction and AgentLoop no-tool begin/assistant/finish writes so
+  Turn/User commit precedes `turn.started` and Provider invocation, without adding a second
+  ordinary-chat path.
+- [ ] S4.37.5 Implement command-level `client_message_id` receipts: replay closed results, return an
+  open/interrupted recovery disposition without duplicating Turn/User, and reject the same key with
+  a different payload.
 - [ ] S4.37.6 Restore legal snapshots after clean exit, reject orphan/invalid sequences, and keep
-  lifecycle separate from health quarantine.
-- [ ] S4.37.7 Prove workspace isolation, snapshot redaction/budgets, rollback behavior, and Stage 3
+  lifecycle separate from health quarantine; create the v2 fixture for later migration acceptance.
+- [ ] S4.37.7 Replace process-local-only system prompt, `/new`, `/exit`, dirty, and persistence tests;
+  prove workspace isolation, snapshot redaction/budgets, rollback behavior, and Stage 3
   conversation regressions; update architecture data ownership.
 
 ## Locked contracts
 
-- First ordinary input creates a current TaskRun if needed. A final assistant answer yields a
-  completed-but-not-accepted TaskRun.
+- First ordinary input creates an `open` current TaskRun pointer if needed. Subplan 37 does not
+  implement completion, acceptance, correction, terminal Task states, or TaskOutcome.
 - ConversationLog validates every append and is the only component allowed to change chat history.
-- `TaskService` may atomically coordinate IDs/status with a ConversationLog append through an
-  application transaction, but may not manufacture User/Assistant records itself.
-- A duplicate `client_message_id` returns the committed command result and never starts another
-  AgentRun; a mismatched duplicate is a conflict.
-- AgentRun snapshots are immutable evidence, not a new Preferences/Profile authority.
+- The only append protocol is candidate construction and validation, one `BEGIN IMMEDIATE`
+  transaction for conversation plus companion rows, COMMIT, then projection replacement from
+  committed rows. Failed commit leaves no memory-only record.
+- An application service may coordinate IDs and the minimal Task pointer with that append, but may
+  not manufacture User/Assistant records itself.
+- One accepted `client_message_id` creates exactly one Turn and one UserMessage. A duplicate closed
+  command replays its committed result; a duplicate open/interrupted command returns the receipt and
+  recovery disposition. A later recovery may create a linked AgentRun in that Turn. A mismatched
+  duplicate is a conflict.
+- AgentRun base snapshots contain Stage 3 permission-context digests, not the Subplan 44
+  PermissionSnapshot/grant schema, and remain immutable evidence rather than configuration authority.
+- `/new` creates/selects a new Session without resetting, deleting, or auto-archiving the old one;
+  unresolved recovery blocks it and Session-scoped Preferences do not carry. `/exit` never offers to
+  discard already-persisted conversation.
 
 ## Tests and faults
 
 - create/reopen/resume an isolated multi-turn no-tool Session;
-- duplicate and conflicting client message IDs across same/different Sessions;
+- duplicate and conflicting client message IDs in absent/open/interrupted/closed states across
+  same/different Sessions;
 - exception and `os._exit` before/after user append, assistant append, and Turn close commit;
+- failed commit never advances `conversation_position`; committed Turn/User exists before
+  `turn.started`, and runtime/application/conversation order counters do not alias;
 - invalid sequence, orphan assistant, incomplete/crossed Turn, and foreign-workspace lookup;
 - later YAML change does not alter an older AgentRun snapshot; credentials/reasoning are absent;
-- existing ConversationLog grammar, cancellation, and `run_turn()` delegation tests remain green.
+- short history fits the current context budget; explicit over-budget behavior remains until 42;
+- durable system boundary plus `/new`/`/exit` UX, ConversationLog grammar, cancellation, and
+  `run_turn()` same-loop delegation tests remain green.
 
 ## Completion gate
 
-A scripted Provider conversation survives process restart with identical legal records, exactly one
-model execution per accepted client message, correct workspace isolation, and reproducible
-non-secret run evidence. No tool-related schema or behavior is required yet.
+A bounded scripted Provider conversation survives restart with identical legal records, exactly one
+Turn/UserMessage per accepted client command, correct open/interrupted duplicate disposition,
+workspace isolation, and reproducible non-secret base run evidence. No tool recovery, complete Task
+state machine, PermissionSnapshot, or arbitrary-long-context claim is required yet.
 
 ## Deliverables
 
 - Durable lifecycle and conversation journal ports/adapters.
-- Session/Task/Turn/AgentRun Core models and snapshot contract.
+- Session/minimal-open-Task/Turn/AgentRun Core models, v2 migration, and base snapshot contract.
 - AgentLoop no-tool integration and idempotent turn submission.
 - Restart/crash evidence for a multi-turn no-tool Session.
-

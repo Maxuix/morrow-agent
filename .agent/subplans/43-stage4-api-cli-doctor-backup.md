@@ -4,6 +4,7 @@
 > Prerequisite: Subplan 42 accepted
 > Owns: one client boundary and daily-operability surfaces
 > Hold point: any change to the existing public event lifecycle requires explicit authorization
+> Schema: v8 application audit events and completed-domain command/query receipts
 
 ## Objective
 
@@ -13,13 +14,15 @@ backup—without adding a worker or second business implementation.
 
 ## In scope
 
-- Typed Command and Query application services over existing narrow ports.
+- Typed Session, Task, Recovery, Artifact, and operational Command/Query application services over
+  existing narrow ports. The current slash `CommandService` remains a parser/thin adapter.
 - Retry-sensitive command receipts, optimistic versions, workspace authorization, and stable errors.
 - Sanitized versioned `application_events` appended in the same business transaction and queried by
   monotonic cursor.
 - CLI/REPL Session, Task, Artifact, status, recovery, fork, archive, and acceptance flows.
-- Read-only state doctor: schema/integrity/foreign-key/history/Artifact/reference/permission checks,
-  health classification, and bounded report/export.
+- Read-only state doctor: schema/integrity/foreign-key/history/Artifact/reference checks for domains
+  implemented through Subplan 42, health classification, and bounded report/export. Grant checks
+  are added by Subplan 44.
 - Online backup command combining SQLite backup, Artifact manifest/copy, hashes, and restore
   verification in a separate target.
 - Quarantine and explicit deterministic orphan-cleanup command only where the accepted ADR permits.
@@ -28,22 +31,24 @@ backup—without adding a worker or second business implementation.
 
 - Event delivery outbox, acknowledgements, worker, push subscription, scheduler, or background work.
 - Direct SQL/filesystem access from UI code.
-- Automatic repair/rewrite of messages, ToolExecutions, approvals, outcomes, or grants.
+- Automatic repair/rewrite of messages, ToolExecutions, approvals, or outcomes.
 - In-flight `agent.steer`, full GUI, remote API server, or network transport.
 - Physical secure delete/export completeness promised by Stage 10.
 
 ## Tasks
 
 - [ ] S4.43.1 Define stable Command/Query DTOs, error mapping, command receipts, cursor pagination,
-  and workspace isolation for the completed Stage 4 domains.
+  and workspace isolation for completed domains; add cohesive application services instead of
+  putting SQL/lifecycle rules in the slash parser or CLI.
 - [ ] S4.43.2 Implement application events in the same business transaction with schema version,
   sanitized bounded payload, ordering, and cursor replay.
 - [ ] S4.43.3 Reach the public-event hold point: prove whether existing runtime events can remain
-  unchanged; request explicit authorization before changing lifecycle/cardinality/payload.
+  unchanged, with persisted Turn/User preceding `turn.started`; request explicit authorization
+  before changing lifecycle/cardinality/payload.
 - [ ] S4.43.4 Implement CLI/REPL create/list/resume/status/archive/fork, Task show/new/accept/cancel,
   Artifact list/show, and recovery show/resolve through the same services.
 - [ ] S4.43.5 Implement read-only doctor and health/quarantine reporting for database, conversation,
-  execution, Artifact, and grant invariants.
+  execution, Task, checkpoint/fork, and Artifact invariants; leave grant invariants to 44.
 - [ ] S4.43.6 Implement online backup plus Artifact manifest/copy and isolated restore verification;
   guarantee credentials are excluded.
 - [ ] S4.43.7 Add deterministic orphan-cleanup only for proven unreferenced managed temp/orphan files,
@@ -64,6 +69,9 @@ service and return the same domain errors.
 
 - Business state and its application event commit together. Cursor replay is observation, not an
   asynchronous reliability protocol.
+- `application_event_cursor`, runtime `AgentEvent.runtime_event_sequence`, and ConversationLog
+  `conversation_position` are separate order domains. Terminal/REPL continues consuming runtime
+  events; application events never rebuild ConversationLog or replay token deltas.
 - Existing public runtime event behavior remains unchanged unless the hold point is explicitly
   authorized and all consumers/tests update atomically.
 - Doctor never edits operational history. Quarantine is a health state and does not archive/delete.
@@ -79,8 +87,8 @@ service and return the same domain errors.
 - unknown event version/field tolerance and payload redaction/budgets;
 - CLI/REPL parity and stable exit/error behavior;
 - doctor on healthy/future/corrupt/inconsistent/missing Artifact states remains read-only;
-- backup during bounded writes, crash at each backup phase, missing Artifact, changed source, and
-  restored fixture end-to-end verification;
+- backup during bounded writes, crash at each backup phase, a concurrently missing/changed Artifact
+  reported visibly in the manifest/restore verifier, and restored fixture end-to-end verification;
 - cleanup dry-run, exact target count/type/link checks, and referenced-item refusal.
 
 ## Completion gate
@@ -95,3 +103,6 @@ backup can restore an isolated fixture without credentials or hidden repairs.
 - Stage 4 CLI/REPL flows.
 - Read-only doctor, quarantine UX, online backup, and restore verification.
 
+Earlier Subplans 37–42 expose only narrow test-facing application entry points needed to exercise
+their product semantics. This subplan composes them into the public CLI/REPL surface without moving
+their domain ownership here.

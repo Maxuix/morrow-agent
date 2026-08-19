@@ -2,11 +2,15 @@
 
 ## Status
 
-Accepted by S4.35.2. Production adapter work remains gated on Subplan 36.
+Accepted by S4.35.2 and narrowed after the Stage 4 plan review. Production adapter work remains
+gated on completion/acceptance of Subplan 35 and explicit activation of Subplan 36.
 
 Executable evidence for the chosen SQLite settings lives in
 `tests/test_stage4_operational_store_spike.py`. That file is a disposable design spike, not a
-production store.
+production store. Its 15 tests prove the facts listed under “Transactions, WAL, and crash behavior”
+and the exercised identity/contention/maintenance-lock/backup cases. They do **not** prove ordered
+migration, WAL/SHM permissions, thread affinity, every error class, or migration-versus-writer
+behavior; those remain Subplan 36 gates.
 
 ## Fixed reference
 
@@ -95,9 +99,27 @@ Open classification:
 A future, corrupt, empty, or foreign file is never deleted, truncated, or recreated in place.
 Doctor and backup may open a diagnose/read-only path; they do not repair business history.
 
-`schema_migrations` (checksum, applied-at, name) belongs to Subplan 36. This ADR only requires
-that migrations are ordered, preflighted, backed up, applied in one maintenance transaction
-sequence, and refused when the file is newer than the running binary.
+`schema_migrations` (checksum, applied-at, name) belongs to Subplan 36. This ADR requires that
+migrations are ordered, preflighted, backed up, applied in one maintenance transaction sequence,
+and refused when the file is newer than the running binary; the current spike has not yet proved
+those migration behaviors.
+
+Schema versions are reserved now and never renumbered after an implementation commit:
+
+| Version | Owning subplan | New authority |
+|---:|---|---|
+| 1 | 36 | store identity, migration ledger, no business tables |
+| 2 | 37 | Session, minimal open TaskRun/current pointer, Turn, AgentRun base snapshot, conversation records, turn-submit receipt |
+| 3 | 38 | ToolExecution, Approval, durable structured tool/change facts |
+| 4 | 39 | RecoveryReport/items/decisions and recovery receipts |
+| 5 | 40 | complete TaskRun state and TaskOutcome versions |
+| 6 | 41 | Artifact metadata/references/pins |
+| 7 | 42 | ContextCheckpoint and Session fork lineage |
+| 8 | 43 | application events and remaining command/query projections |
+| 9 | 44 | CapabilityGrant and full PermissionSnapshot links |
+
+Empty migrations are allowed when a subplan needs no schema change, but the reserved number is not
+reassigned. Subplans 36 and 37 retain v1 and v2 fixtures for Subplan 45 upgrade acceptance.
 
 ## Connection policy
 
@@ -108,6 +130,7 @@ On every accepted Morrow connection:
 ```text
 isolation_level = None          # explicit transactions only
 check_same_thread = True
+sqlite3.connect timeout = 0     # do not stack an implicit wait with the explicit PRAGMA
 PRAGMA foreign_keys = ON        # per connection; not persistent
 PRAGMA busy_timeout = 250       # milliseconds; tests may inject 0
 PRAGMA synchronous = FULL       # per connection
@@ -120,19 +143,23 @@ file must be left byte-for-byte intact, including its original journaling mode.
 
 Additional rules:
 
-- The connecting owner is the only closer. Connections are not shared across threads or
-  processes.
+- The connecting owner is the only closer. Connections are not shared across threads or processes.
+  Ordinary SQLite calls execute synchronously on the owning Agent event-loop thread. Blocking file
+  handlers, `asyncio.to_thread` work, subprocesses, and adapters never receive a connection.
 - A process may keep one ordinary operational connection for a CLI/REPL lifetime. It must not
   keep a write transaction across a model call, approval wait, filesystem publication, subprocess,
   terminal read, or network call.
-- Maintenance (initialize, migrate, backup, repair-mode transition) acquires the global
+- Maintenance (initialize, migrate, backup, diagnose/quarantine-mode transition) acquires the global
   maintenance lock first, then opens a dedicated connection.
 - Adapters convert rows into typed Core objects at the boundary. `sqlite3.Row` and raw SQL do
   not leak upward.
 - Public errors use stable codes (`busy`, `future_schema`, `identity_mismatch`, `needs_repair`,
   `not_found`, `unavailable`). They do not include credentials, SQL, or sensitive absolute paths.
-- `PRAGMA integrity_check` runs at startup open, migrate, backup, and doctor—not on every short
-  statement. The spike still checks on existing-file open because those databases are tiny.
+- Full `PRAGMA integrity_check` runs on create verification, migrate, backup, and doctor. Ordinary
+  `read_write` startup validates the SQLite header, application identity/version agreement,
+  per-connection pragmas, and required WAL mode; it does not scan the whole growing database. The
+  disposable spike checks integrity on each tiny existing fixture, which is evidence behavior, not
+  the production daily-open policy.
 
 ## Transactions, WAL, and crash behavior
 
@@ -156,7 +183,8 @@ write.
 
 SQLite busy handling is bounded and typed.
 
-- Connection `busy_timeout` is 250 ms.
+- `sqlite3.connect(timeout=0)` avoids an additional implicit wait; `PRAGMA busy_timeout=250` is the
+  single SQLite wait for production connections. Contention tests inject `busy_timeout=0`.
 - Application retry surrounds only the short `BEGIN IMMEDIATE` + in-transaction statements.
 - At most 8 attempts. Backoff uses an injected clock and RNG; tests must not wall-clock sleep.
 - Retry only `SQLITE_BUSY` / `SQLITE_LOCKED`. Do not retry constraint, integrity, programming, or
@@ -174,12 +202,13 @@ Path: `{data_root}/locks/operational-store.lock`.
 Implementation: existing `filelock.FileLock` (POSIX advisory lock). Process death releases the
 OS lock; a leftover `.lock` file is not an exclusive holder.
 
-The lock is required for initialize, migrate, online backup, and repair-mode transitions. It is
+The lock is required for initialize, migrate, online backup, and diagnose/quarantine-mode
+transitions. It is
 not required for ordinary Session/Task/conversation writes.
 
 - Two maintenance operations must not overlap.
 - Backup may run while ordinary short writers continue.
-- Migrate/init/repair may make ordinary writers see `busy` or `unavailable`; they must not rewrite
+- Migrate/init/diagnose-mode transitions may make ordinary writers see `busy` or `unavailable`; they must not rewrite
   the file out from under a live writer.
 - Stale-owner recovery is "process exited, lock is free", not a PID-file reaper.
 
@@ -204,11 +233,11 @@ Store-level health is independent of a Session's `active | archived | deleted` l
 | `create` | first initialize under the maintenance lock |
 | `read_write` | ordinary business access after identity checks |
 | `read_only` | doctor, inspect, or a non-writable filesystem |
-| `diagnose` | integrity/export of a damaged file without migration |
+| `diagnose` | integrity/export of a damaged file without migration or repair |
 
 | Store health | Meaning |
 |---|---|
-| `ok` | identity matches, integrity passed |
+| `ok` | every check required by the selected open/maintenance mode passed |
 | `needs_repair` | corrupt, identity mismatch, or FK/integrity failure |
 | `read_only` | usable for inspect/backup, not for business writes |
 | `future_schema` | running binary is older than the file |
@@ -224,10 +253,15 @@ reason to recreate the database.
 - Moving Profile, Preferences, Provider config, or credentials into SQLite.
 - Treating `WorkspaceWriterLock` as the operational-store maintenance lock.
 - Holding a write transaction across model, approval, process, or network waits.
+- Publishing or replacing the live SQLite database with the YAML Store's temp-file/`os.replace`
+  protocol; WAL databases are opened, transacted, checkpointed, and backed up through SQLite APIs.
 
 ## Production follow-through
 
-Subplan 36 implements `DataRoot` paths, the connection factory, the maintenance lock, schema
-identity/migrations, typed storage errors, and the online-backup primitive. Later subplans add
-business tables against this contract. They may not weaken durability, future-schema refusal, or
-the YAML/CredentialStore boundary without a new ADR.
+Subplan 36 implements `DataRoot` paths, the connection factory, the maintenance lock, v1 identity/
+migrations, typed storage errors, and the online-backup primitive. It must add evidence not supplied
+by the spike: ordered migration/rollback, version-authority mismatch, valid-header corruption,
+database/WAL/SHM `0600`, thread affinity, retry filtering, two-workspace ordinary writers, and
+migration/write contention. Later subplans add the reserved business-schema versions above. They
+may not weaken durability, future-schema refusal, or the YAML/CredentialStore boundary without a
+new ADR.

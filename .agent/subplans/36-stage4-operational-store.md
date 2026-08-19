@@ -4,6 +4,7 @@
 > Prerequisite: Subplan 35 accepted
 > Owns: SQLite foundation, schema lifecycle, shared transaction primitives, maintenance/backup base
 > Contract: `docs/decisions/stage-4-operational-store.md`
+> Schema: v1 identity/migration foundation only
 
 ## Objective
 
@@ -19,7 +20,8 @@ is future-versioned, corrupt, or not writable.
 - Explicit schema/application identity and ordered forward migrations.
 - Global operational-store maintenance lock distinct from `WorkspaceWriterLock`.
 - Short read/write transactions, bounded busy handling, deterministic rollback, and test faults.
-- Startup integrity/future-version classification and read-only/quarantine modes.
+- Startup identity/header/future-version classification and explicit diagnose/quarantine modes.
+- Full integrity checks on create, migrate, backup, and doctor entry points; bounded daily open.
 - Online database backup primitive and manifest metadata needed by Subplan 43.
 
 ## Out of scope
@@ -34,14 +36,17 @@ is future-versioned, corrupt, or not writable.
 
 - [ ] S4.36.1 Add typed operational-store paths, open modes, health classifications, and sanitized
   storage errors without leaking absolute sensitive paths or raw SQL internals.
-- [ ] S4.36.2 Implement fixed connection initialization, foreign-key enforcement, transaction
-  helpers, bounded lock retry, and rollback/close behavior.
+- [ ] S4.36.2 Implement fixed connection initialization on the event-loop owner thread,
+  `check_same_thread=True`, foreign-key enforcement, transaction helpers, BUSY/LOCKED-only bounded
+  retry, and deterministic rollback/close behavior.
 - [ ] S4.36.3 Implement the validated global maintenance lock and prove two workspace processes
   cannot migrate or back up the shared store concurrently.
-- [ ] S4.36.4 Implement schema identity/version metadata and ordered migrations with preflight,
-  backup, transactional application, post-check, and future-version refusal.
-- [ ] S4.36.5 Add corruption, read-only filesystem, disk/write failure, interrupted migration, and
-  stale-lock-owner tests with deterministic fault injection.
+- [ ] S4.36.4 Implement schema v1 identity/version metadata and the reserved v1-v9 ordered migration
+  registry with checksums, preflight, backup, transactional application, post-check, and
+  future-version refusal; create the Stage 3-to-v1 upgrade fixture for Subplan 45.
+- [ ] S4.36.5 Add identity/`user_version` mismatch, valid-header corruption, sidecar permission,
+  read-only filesystem, disk/write failure, interrupted migration, concurrent ordinary writers,
+  migration-versus-writer, and stale-lock-owner tests with deterministic fault injection.
 - [ ] S4.36.6 Implement the online SQLite backup primitive and integrity metadata without artifacts
   or credentials.
 - [ ] S4.36.7 Document the storage layout and run focused, quality, and Stage 3 regression gates.
@@ -52,20 +57,34 @@ is future-versioned, corrupt, or not writable.
   by stored workspace identity and application queries, not one database per repository.
 - Every connection enables required safety pragmas and validates schema identity before business
   access.
+- SQLite connections stay on their creating event-loop thread and are never passed into tool
+  handlers, `asyncio.to_thread`, filesystem adapters, or subprocess code. Maintenance operations use
+  separate maintenance connections.
 - Writers do not hold a database transaction across model calls, approvals, filesystem operations,
   subprocess execution, terminal input, or network calls.
+- Driver timeout is zero; the production PRAGMA busy timeout is the ADR's sole SQLite wait and tests
+  inject zero. Only SQLite BUSY/LOCKED enters the bounded application retry policy. Constraint,
+  integrity, programming, and disk errors fail immediately.
 - Contention has a bounded typed result; it never spins forever or silently drops a write.
 - A future or corrupt schema is never recreated over the original. Diagnosis/backup may remain
   available through an explicit safe mode.
+- Daily read-write open checks application identity, schema metadata, settings, and a quick header;
+  full integrity/FK checks run only for create/migrate/backup/doctor.
+- Live SQLite files are never published with the YAML `os.replace` protocol; the database and any
+  WAL/SHM sidecars remain SQLite-owned and mode `0600` under `0700` directories.
 
 ## Tests and faults
 
 - fresh create, reopen, and idempotent initialization;
-- ordered multi-version migration and failed-step rollback;
+- ordered checksummed multi-version migration, pre-migration backup, failed-step rollback, and no
+  version renumbering;
 - future schema/application mismatch refusal;
 - two connections and two subprocesses contending for write and maintenance locks;
 - abrupt subprocess exit before/after migration commit;
-- read-only root, short write/disk failure simulation, malformed header, and integrity failure;
+- read-only root, short write/disk failure simulation, malformed header, valid-header integrity
+  failure, identity/version mismatch, and `check_same_thread` enforcement;
+- database/WAL/SHM/lock/backup permissions and migration-versus-ordinary-writer behavior;
+- non-BUSY failures are attempted once; BUSY/LOCKED exhaust the exact injected retry schedule;
 - online backup while ordinary bounded writes occur, followed by restore/integrity verification.
 
 ## Completion gate
@@ -79,5 +98,4 @@ runtime behavior or existing YAML/CredentialStore authority changes.
 - Shared SQLite adapter foundation and migration registry.
 - Global maintenance lock and health/open-mode model.
 - Online backup primitive.
-- Focused durability/concurrency tests and accepted storage documentation.
-
+- Stage 3-to-v1 fixture plus focused durability/concurrency tests and accepted storage documentation.
