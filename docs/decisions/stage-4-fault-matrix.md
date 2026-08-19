@@ -2,8 +2,8 @@
 
 ## Status
 
-Prepared as the S4.35.8 planning matrix. Subplan 35 remains active, and Subplan 36 stays inactive
-until this remediation passes validation, is accepted, and execution state explicitly activates it.
+Accepted as the S4.35.8 planning matrix on 2026-08-19 after validation and user confirmation.
+Subplan 36 is active; later owners remain gated by their ordered subplans.
 
 Every crash-sensitive implementation subplan provides both logical fault injection and subprocess
 `os._exit` evidence at its committed boundaries. Tests use injected Clock/RNG, barriers, pipes, and

@@ -1,9 +1,10 @@
 # Stage 4 Durable Task, Session, Artifact, and Recovery Plan
 
-> Status: active — planning and contract lock only
-> Active subplan: 35 — contract activation and design spikes
-> Production implementation: not started
-> Code baseline: `003dbdaab652520ca5cadf451ebca7a13bcba36d`
+> Status: active — production implementation
+> Active subplan: 36 — Operational Store and migration foundation
+> Production implementation: authorized; no production adapter has landed at activation
+> Stage 3 production baseline: `003dbdaab652520ca5cadf451ebca7a13bcba36d`
+> Stage 4 accepted contract baseline: `20fb43e`
 > Scope: durable foreground-agent operation, recovery, artifacts, context checkpoints,
 > conversation fork, auditable grants, and Full Access Manual
 
@@ -306,8 +307,8 @@ but must preserve accepted public and safety contracts or explicitly reopen the 
 
 | Order | Subplan | Status | Exit result |
 |---|---|---|---|
-| 35 | Contract activation and design spikes | active | ADRs, source lock, fault matrix, executable contracts |
-| 36 | Operational Store and migration foundation | pending | safe SQLite foundation, schema/migration/backup primitives |
+| 35 | Contract activation and design spikes | completed | ADRs, source lock, fault matrix, executable contracts |
+| 36 | Operational Store and migration foundation | active | safe SQLite foundation, schema/migration/backup primitives |
 | 37 | Durable Session/Task/Turn/AgentRun and no-tool conversation | pending | restart-safe multi-turn Session without tools |
 | 38 | Tool execution journal and durable Approval | pending | intent-before-effect and closed ToolCycle protocol |
 | 39 | Recovery, reconciliation, and crash harness | pending | no blind replay; classified interrupted real tools |
@@ -318,8 +319,8 @@ but must preserve accepted public and safety contracts or explicitly reopen the 
 | 44 | CapabilityGrant and Full Access Manual | pending | auditable run-bound manual elevation; no Full Access Auto |
 | 45 | End-to-end acceptance and Stage 4 closeout | pending | crash-tested packaged durable personal agent |
 
-Detailed executable tasks and gates are in `.agent/subplans/35-*.md` through
-`.agent/subplans/45-*.md`.
+Detailed executable tasks and gates are in `.agent/subplans/36-*.md` through
+`.agent/subplans/45-*.md`. Completed Subplan 35 is preserved in Git history at `20fb43e`.
 
 ## Dependency route
 
@@ -422,9 +423,8 @@ Stage 4 is complete only when all of the following are evidenced:
 
 ## Active gate
 
-Subplan 35 is the only active work. The Stage 4 plan review's P0/P1 findings are valid; this plan and
-the accepted ADRs incorporate their corrections. Subplan 36 remains blocked until S4.35.8 verifies
-every Subplan 36–45 gate against those ADRs, all planning/spike validation passes, the review
-remediation is accepted, and the execution state explicitly activates Subplan 36. No planning edit
-implicitly authorizes the SQLite production adapter, public-event change, Full Access activation,
-or another Stage 4 runtime behavior.
+Subplan 35 was accepted on 2026-08-19 after the review remediation and planning/spike gates passed.
+Subplan 36 is now the only active work and may implement only the v1 Operational Store foundation
+defined by its subplan and ADR. Conversation/business schemas v2–v9, public-event changes, Full
+Access, and all later Stage 4 runtime behavior remain inactive until their own subplans and hold
+points are explicitly activated.

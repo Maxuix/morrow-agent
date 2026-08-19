@@ -1,10 +1,10 @@
 # Morrow 架构基线
 
-> 状态：阶段 2 完成、阶段 3 已完成（当前声明平台为 macOS；Linux 原生运行仍 unsupported）；阶段 4 合同设计已激活但尚未实现
+> 状态：阶段 2、阶段 3 已完成（当前声明平台为 macOS；Linux 原生运行仍 unsupported）；阶段 4 已激活 Subplan 36，但尚无生产持久化实现
 
 本文锁定当前依赖方向、数据所有权和安全边界。阶段 3 的能力策略、配置工具、工作空间读搜、冲突安全文件变更、审批后 Host 命令、只读 Git 和当前 macOS 原生沙箱
-已经交付；Linux 原生运行尚未声明支持。Stage 4 已激活 Subplan 35 锁定持久化与恢复合同，
-Session/Task/Artifact 生产实现尚未开始；Stage 5 的可审查学习、Stage 6 的 Skills/MCP，
+已经交付；Linux 原生运行尚未声明支持。Stage 4 合同已经锁定并激活 Subplan 36 的 Operational Store
+基础，生产适配器尚未落地；Stage 5 的可审查学习、Stage 6 的 Skills/MCP，
 以及 Stage 7–10 的 Workflow、GUI、后台自动化和产品化均尚未开始。
 
 ## 分层与依赖方向

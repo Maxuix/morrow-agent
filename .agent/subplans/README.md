@@ -1,17 +1,15 @@
 # Subplans
 
-Stage 4 Durable Task, Session, Artifact, and Recovery is the active master plan. Subplan 35 is the
-only active subplan; it changes contracts and runs disposable design spikes but does not implement
-production persistence. Later subplans remain inactive until the preceding gate passes and execution
-state is updated.
+Stage 4 Durable Task, Session, Artifact, and Recovery is the active master plan. Subplan 36 is the
+only active subplan and owns the v1 Operational Store foundation. Later subplans remain inactive
+until the preceding gate passes and execution state is updated.
 
-The conditional review in `docs/reviews/stage-4-plan-review.md` is accepted as remediation input.
-Its P0/P1 findings must be closed and the Subplan 35 gate accepted before Subplan 36 is activated.
+Subplan 35 and the conditional review remediation were accepted on 2026-08-19 and preserved in Git
+history at `20fb43e`; its retired task file is no longer kept in the active subplan directory.
 
 | Order | File | Status |
 |---|---|---|
-| 35 | `35-stage4-contract-activation.md` | active |
-| 36 | `36-stage4-operational-store.md` | pending |
+| 36 | `36-stage4-operational-store.md` | active |
 | 37 | `37-stage4-durable-session-conversation.md` | pending |
 | 38 | `38-stage4-tool-journal-approval.md` | pending |
 | 39 | `39-stage4-recovery-crash.md` | pending |

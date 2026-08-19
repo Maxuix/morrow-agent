@@ -1,6 +1,6 @@
 # Subplan 36 — Operational Store and Migration Foundation
 
-> Status: pending
+> Status: active
 > Prerequisite: Subplan 35 accepted
 > Owns: SQLite foundation, schema lifecycle, shared transaction primitives, maintenance/backup base
 > Contract: `docs/decisions/stage-4-operational-store.md`
@@ -34,7 +34,7 @@ is future-versioned, corrupt, or not writable.
 
 ## Tasks
 
-- [ ] S4.36.1 Add typed operational-store paths, open modes, health classifications, and sanitized
+- [>] S4.36.1 Add typed operational-store paths, open modes, health classifications, and sanitized
   storage errors without leaking absolute sensitive paths or raw SQL internals.
 - [ ] S4.36.2 Implement fixed connection initialization on the event-loop owner thread,
   `check_same_thread=True`, foreign-key enforcement, transaction helpers, BUSY/LOCKED-only bounded

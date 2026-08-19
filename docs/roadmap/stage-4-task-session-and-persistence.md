@@ -1,6 +1,6 @@
 # Stage 4：Task、Session、Artifact 与持久化
 
-> 状态：实施规划已激活（Subplan 35；生产实现尚未开始）
+> 状态：生产实施已激活（Subplan 36：Operational Store v1 基础；尚无生产适配器落地）
 > 阶段结果：前台 Session、TaskRun、ToolCycle、授权与关键产物可在进程退出后恢复，未完成副作用可被安全解释和对账
 > 上级文档：[开发路线总览](../ROADMAP.md)
 > 上一阶段：[Stage 3：本地 Code Agent 与安全闭环](stage-3-local-tools-and-safety.md)
@@ -78,7 +78,8 @@ Host 命令、原生快照沙箱、变更推广与只读 Git 均经过验收。S
 - 生产 ToolSet 中每个工具必须继续使用同一 ToolExecutor/ToolCycle 协议，不能在 AgentLoop 中按名称
   增加业务分支。
 
-进入生产实现前，Subplan 35 必须通过 SQLite、并发、迁移、恢复、Payload、权限和来源治理 ADR 门禁。
+Subplan 35 的 SQLite、并发、迁移、恢复、Payload、权限和来源治理 ADR 门禁已经通过；当前只激活
+Subplan 36 的 Operational Store v1 基础。
 
 ## 四、领域语义与所有权
 

@@ -2,8 +2,8 @@
 
 ## Status
 
-Accepted by S4.35.2 and narrowed after the Stage 4 plan review. Production adapter work remains
-gated on completion/acceptance of Subplan 35 and explicit activation of Subplan 36.
+Accepted by S4.35.2, narrowed after the Stage 4 plan review, and confirmed with Subplan 35 on
+2026-08-19. Subplan 36 is active for the production v1 foundation.
 
 Executable evidence for the chosen SQLite settings lives in
 `tests/test_stage4_operational_store_spike.py`. That file is a disposable design spike, not a

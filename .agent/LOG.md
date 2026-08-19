@@ -997,3 +997,13 @@
   `git diff --check` passed. No production source, test, dependency, schema, public-event lifecycle,
   policy default, or runtime behavior changed. Subplan 35 remains active pending explicit review
   acceptance; Subplan 36 remains inactive.
+
+## 2026-08-19 — Subplan 35 accepted; Subplan 36 activated
+
+- The user explicitly accepted the validated Stage 4 review remediation. Commit `20fb43e` preserves
+  the complete ADR, fault-matrix, research-demotion, and Subplan 36–45 contract update.
+- Closed S4.35.8 and retired the completed Subplan 35 task file from the active directory. Activated
+  Subplan 36 and S4.36.1 for the v1 Operational Store foundation only.
+- No production adapter/schema or runtime behavior changed during activation. Conversation, Task,
+  tool, Artifact, application-event, grant, Full Access, public-event, and bundled-policy work
+  remain gated by their later subplans or hold points.

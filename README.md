@@ -82,7 +82,8 @@ Git 写入风险在审批前拒绝。命令文本只用于本地审批，不进�
 
 当前持久化内容只有工作空间身份、Profile、全局/工作空间 Preferences、Provider 配置和凭据引用。
 Session 持有的 ConversationLog 只存在于当前进程；退出或重启后不能恢复、列出、归档或继续旧会话。
-持久化 Session、conversation Fork 和确定性上下文 checkpoint 已进入 Stage 4 合同设计但尚未实现；
+Stage 4 已进入 Operational Store 基础实施，但持久化 Session、conversation Fork 和确定性上下文
+checkpoint 尚未实现；
 工作空间/代码回退不属于 Stage 4，任务后可审查的长期偏好与项目知识学习留到 Stage 5。
 
 旧版本可能留下 `handoff.yaml` 或 `handoff.yaml.bak`。当前版本不读取、校验、迁移、覆盖或自动删除

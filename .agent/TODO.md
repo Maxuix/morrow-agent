@@ -2,34 +2,31 @@
 
 ## Current stage
 
-Stage 4 is active for contract planning. Production persistence and Full Access behavior have not
-started.
+Stage 4 production implementation is active at the Operational Store foundation. No production
+adapter or schema has landed yet; Full Access remains inactive.
 
 ## Active subplan
 
-Subplan 35 — Stage 4 Contract Activation and Design Spikes.
+Subplan 36 — Operational Store and Migration Foundation.
 
 ## Tasks
 
-- [x] S4.35.1 Activate the reconciled master plan, subplan index, roadmap status, and execution
-  state without changing production behavior.
-- [x] S4.35.2 Write the Operational Store ADR and prove the chosen `sqlite3` transaction, WAL/
-  synchronous, lock-contention, migration-lock, future-schema, and online-backup behavior in a
-  task-private spike.
-- [x] S4.35.3 Write the domain/ownership ADR: identifiers, Session lifecycle versus health,
-  TaskRun continuation rules, AgentRun snapshots, ConversationLog single-writer protocol, and
-  targeted command idempotency.
-- [x] S4.35.4 Write the durable execution ADR: payload budgets, ToolExecution/Approval transitions,
-  EffectClass, persist-before-effect transaction boundary, and recovery classifications.
-- [x] S4.35.5 Write the Artifact/context/fork ADR, including atomic publication, hash verification,
-  deterministic checkpoints, provenance ranges, and the no-workspace-rewind boundary.
-- [x] S4.35.6 Write the permissions ADR: local-interface-only grants, run-bound snapshots,
-  crash-resume regrant, revocation, Full Access Manual, honest unconfined Host warning, and deferred
-  Auto.
-- [x] S4.35.7 Mark the research drafts as superseded decision input and accept zero direct upstream
-  reuse; make any future copy a new pin/license/notice hold point.
-- [>] S4.35.8 Finish the fault matrix, review every later subplan against the ADRs and external
-  review, and run the Subplan gate. Keep Subplan 36 inactive until this remediation is accepted.
+- [>] S4.36.1 Add typed operational-store paths, open modes, health classifications, and sanitized
+  storage errors without leaking absolute sensitive paths or raw SQL internals.
+- [ ] S4.36.2 Implement fixed connection initialization on the event-loop owner thread,
+  `check_same_thread=True`, required pragmas, transaction helpers, BUSY/LOCKED-only bounded retry,
+  and deterministic rollback/close behavior.
+- [ ] S4.36.3 Implement the validated global maintenance lock and prove two workspace processes
+  cannot migrate or back up the shared store concurrently.
+- [ ] S4.36.4 Implement schema v1 identity/version metadata and the reserved v1–v9 ordered migration
+  registry with checksums, preflight, backup, transactional application, post-check, future-version
+  refusal, and the Stage 3-to-v1 upgrade fixture.
+- [ ] S4.36.5 Add identity/version mismatch, valid-header corruption, sidecar permission,
+  read-only/disk/write failure, interrupted migration, concurrent writer, migration-versus-writer,
+  and stale-lock-owner tests.
+- [ ] S4.36.6 Implement the online SQLite backup primitive and integrity metadata without Artifacts
+  or credentials.
+- [ ] S4.36.7 Document the storage layout and run focused, quality, and Stage 3 regression gates.
 
-Only Subplan 35 may be executed. Subplans 36–45 are revised but inactive; this review turn does not
-activate Subplan 36.
+Only Subplan 36 may be executed. Business schemas and behavior owned by Subplans 37–45 remain
+inactive.
