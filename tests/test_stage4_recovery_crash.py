@@ -12,6 +12,7 @@ import pytest
 
 from morrow.adapters.state.journal import SqliteOperationalJournal
 from morrow.adapters.state.operational import BusyRetryPolicy, OperationalStore
+from morrow.application.api import OperationalApplicationService
 from morrow.application.recovery import RecoveryService
 from morrow.application.turns import SessionPersistence
 from morrow.core.capabilities import AccessScope, ApprovalMode, ProcessIsolation
@@ -31,10 +32,18 @@ from morrow.core.execution import (
     FileMutationEvidence,
     PreparedIntent,
     RecoveryClassification,
+    ToolExecutionDisposition,
     ToolExecutionState,
     transition_execution,
 )
-from morrow.core.models import ModelRef, Preferences, Profile
+from morrow.core.models import (
+    AssistantMessage,
+    FunctionToolCall,
+    ModelRef,
+    Preferences,
+    Profile,
+    UserMessage,
+)
 from morrow.core.permissions import (
     CapabilityGrant,
     CapabilityIsolation,
@@ -47,6 +56,7 @@ from morrow.core.permissions import (
 from morrow.core.recovery import FileObservation, RecoveryResolution
 from morrow.core.store import StoreOpenMode
 from morrow.runtime.conversation import ConversationLog
+from morrow.runtime.durable_log import DurableConversationWriter
 from morrow.runtime.session import Session
 from morrow.testing import FixedClock, FixedIdSource
 
@@ -145,7 +155,7 @@ def _execution(intent: PreparedIntent | None = None, **overrides) -> DurableTool
     return DurableToolExecution(**values)
 
 
-def test_discover_classifies_interrupted_read_as_safe_to_retry(tmp_path: Path):
+def test_discover_classifies_interrupted_read_without_exposing_unimplemented_retry(tmp_path: Path):
     _store, handle, journal = _open(tmp_path)
     try:
         _seed(journal)
@@ -161,7 +171,7 @@ def test_discover_classifies_interrupted_read_as_safe_to_retry(tmp_path: Path):
         report = service.discover("ses_1", ConversationLog())
         assert report is not None
         assert report.items[0].classification is RecoveryClassification.SAFE_TO_RETRY
-        assert RecoveryResolution.RETRY in report.items[0].allowed_resolutions
+        assert RecoveryResolution.RETRY not in report.items[0].allowed_resolutions
     finally:
         handle.close()
 
@@ -255,7 +265,7 @@ def test_recovery_receipt_replays_and_conflicts(tmp_path: Path):
         updated, receipt, planned = service.decide(
             report,
             command_id="cmd_1",
-            resolution=RecoveryResolution.RETRY,
+            resolution=RecoveryResolution.QUARANTINE,
             item_id=item_id,
             log=log,
         )
@@ -265,7 +275,7 @@ def test_recovery_receipt_replays_and_conflicts(tmp_path: Path):
         again, replay, _planned = service.decide(
             saved,
             command_id="cmd_1",
-            resolution=RecoveryResolution.RETRY,
+            resolution=RecoveryResolution.QUARANTINE,
             item_id=item_id,
             log=log,
         )
@@ -278,6 +288,171 @@ def test_recovery_receipt_replays_and_conflicts(tmp_path: Path):
             log=log,
         )
         assert conflict.kind == "conflict"
+    finally:
+        handle.close()
+
+
+def test_application_recovery_updates_health_and_resume_run_atomically(tmp_path: Path):
+    _store, handle, journal = _open(tmp_path)
+    try:
+        _seed(journal)
+        prepared = journal.put_execution("ws_1", _execution())
+        executing = transition_execution(
+            prepared,
+            ToolExecutionState.EXECUTING,
+            expected_row_version=1,
+            now=datetime(2026, 1, 1, tzinfo=UTC),
+        )
+        journal.save_execution("ws_1", executing, expected_row_version=1)
+        completed = transition_execution(
+            executing,
+            ToolExecutionState.HANDLER_COMPLETED,
+            expected_row_version=2,
+            disposition=ToolExecutionDisposition.FAILED,
+            now=datetime(2026, 1, 1, tzinfo=UTC),
+        )
+        journal.save_execution("ws_1", completed, expected_row_version=2)
+        ids = FixedIdSource()
+        log = ConversationLog()
+        writer = DurableConversationWriter(
+            log,
+            journal,
+            workspace_id="ws_1",
+            session_id="ses_1",
+            id_source=ids,
+        )
+        writer.commit(log.plan_begin_turn(UserMessage(content="read")))
+        writer.commit(
+            log.plan_append_assistant(
+                AssistantMessage(
+                    tool_calls=(FunctionToolCall(id="call1", name="read_file", arguments="{}"),)
+                )
+            )
+        )
+        recovery = RecoveryService(journal, workspace_id="ws_1", id_source=ids)
+        ids.counts["arun"] = 1
+        api = OperationalApplicationService(
+            journal=journal,
+            workspace_id="ws_1",
+            id_source=ids,
+            recovery=recovery,
+        )
+        report = recovery.discover("ses_1", log)
+        assert report is not None
+        acknowledged = api.resolve_recovery(
+            report,
+            command_id="cmd_ack_api",
+            resolution=RecoveryResolution.ACKNOWLEDGE,
+            item_id=report.items[0].item_id,
+            log=log,
+            writer=writer,
+        )
+        assert acknowledged.value.status.value == "open"
+        assert journal.get_session("ws_1", "ses_1").health is SessionHealth.NEEDS_RECOVERY
+        assert journal.get_execution("ws_1", "tex_1").state is ToolExecutionState.CLOSED
+        assert log.unresolved_call_ids == ()
+
+        resumed = api.resolve_recovery(
+            acknowledged.value,
+            command_id="cmd_resume_api",
+            resolution=RecoveryResolution.RESUME,
+            log=log,
+            writer=writer,
+        )
+        assert resumed.value.status.value == "resolved"
+        assert journal.get_session("ws_1", "ses_1").health is SessionHealth.OK
+        runs = journal.list_session_agent_runs("ws_1", "ses_1")
+        assert len(runs) == 2
+        assert runs[-1].resume_of_agent_run_id == "arun_1"
+    finally:
+        handle.close()
+
+
+def test_item_recovery_does_not_close_other_open_executions(tmp_path: Path):
+    _store, handle, journal = _open(tmp_path)
+    try:
+        _seed(journal)
+        first = journal.put_execution("ws_1", _execution())
+        second_intent = _intent(call_id="call2", ordinal=2)
+        second = journal.put_execution("ws_1", _execution(second_intent, tool_execution_id="tex_2"))
+        for execution in (first, second):
+            executing = transition_execution(
+                execution,
+                ToolExecutionState.EXECUTING,
+                expected_row_version=1,
+                now=datetime(2026, 1, 1, tzinfo=UTC),
+            )
+            journal.save_execution("ws_1", executing, expected_row_version=1)
+            if execution is first:
+                completed = transition_execution(
+                    executing,
+                    ToolExecutionState.HANDLER_COMPLETED,
+                    expected_row_version=2,
+                    disposition=ToolExecutionDisposition.FAILED,
+                    now=datetime(2026, 1, 1, tzinfo=UTC),
+                )
+                journal.save_execution("ws_1", completed, expected_row_version=2)
+        log = ConversationLog()
+        writer = DurableConversationWriter(
+            log,
+            journal,
+            workspace_id="ws_1",
+            session_id="ses_1",
+            id_source=FixedIdSource(),
+        )
+        writer.commit(log.plan_begin_turn(UserMessage(content="read")))
+        writer.commit(
+            log.plan_append_assistant(
+                AssistantMessage(
+                    tool_calls=(
+                        FunctionToolCall(id="call1", name="read_file", arguments="{}"),
+                        FunctionToolCall(id="call2", name="read_file", arguments="{}"),
+                    )
+                )
+            )
+        )
+        service = RecoveryService(journal, workspace_id="ws_1", id_source=FixedIdSource())
+        report = service.discover("ses_1", log)
+        assert report is not None
+
+        first_update, first_receipt, first_planned = service.decide(
+            report,
+            command_id="cmd_first",
+            resolution=RecoveryResolution.ACKNOWLEDGE,
+            item_id=report.items[0].item_id,
+            log=log,
+        )
+        saved = service.commit_decision(
+            first_update,
+            first_receipt,
+            planned=first_planned,
+            log=log,
+            writer=writer,
+            close_all=False,
+        )
+        assert saved.status.value == "open"
+        assert journal.get_execution("ws_1", "tex_1").state is ToolExecutionState.CLOSED
+        assert journal.get_execution("ws_1", "tex_2").state is ToolExecutionState.EXECUTING
+        assert log.unresolved_call_ids == ("call2",)
+
+        second_update, second_receipt, second_planned = service.decide(
+            saved,
+            command_id="cmd_second",
+            resolution=RecoveryResolution.ABORT,
+            item_id=saved.items[1].item_id,
+            log=log,
+        )
+        saved = service.commit_decision(
+            second_update,
+            second_receipt,
+            planned=second_planned,
+            log=log,
+            writer=writer,
+            close_all=False,
+        )
+        assert saved.status.value == "resolved"
+        assert journal.get_execution("ws_1", "tex_2").state is ToolExecutionState.CLOSED
+        assert log.has_active_turn is False
     finally:
         handle.close()
 

@@ -10,6 +10,7 @@ from morrow.core.capabilities import AccessScope, ApprovalMode, ProcessIsolation
 from morrow.core.domain import SessionHealth, TaskRunStatus
 from morrow.core.permissions import UNCONFINED_HOST_WARNING
 from morrow.core.preferences import merge_preferences
+from morrow.core.recovery import RecoveryReportStatus, RecoveryResolution
 
 
 @dataclass
@@ -17,6 +18,13 @@ class CommandResult:
     lines: list[str]
     action: str | None = None
     value: object | None = None
+
+
+@dataclass(frozen=True)
+class RecoveryCommandRequest:
+    report_id: str
+    resolution: RecoveryResolution
+    item_id: str | None = None
 
 
 class CommandService:
@@ -99,6 +107,76 @@ class CommandService:
             action="arm_full_access_grant",
         )
 
+    def _recovery_command(self, parts: list[str]) -> CommandResult:
+        if self.api is None:
+            return CommandResult(["Recovery 服务尚未就绪。"])
+        reports = self.api.list_recovery(self.session.session_id)
+        report = next(
+            (item for item in reversed(reports) if item.status is RecoveryReportStatus.OPEN), None
+        )
+        if report is None:
+            return CommandResult(["当前没有待处理的 Recovery 报告。"])
+        if len(parts) == 1:
+            lines = [f"Recovery 报告：{report.report_id}", f"状态：{report.status.value}"]
+            if not report.items:
+                lines.append("没有未闭合的工具项；可执行 /recovery resume。")
+            for item in report.items:
+                allowed = ", ".join(value.value for value in item.allowed_resolutions)
+                resolution = item.resolution.value if item.resolution is not None else "open"
+                lines.append(
+                    f"{item.item_id} {item.tool_name}：{item.classification.value}；"
+                    f"resolution={resolution}；可选={allowed}"
+                )
+            return CommandResult(lines)
+
+        operation = parts[1].casefold()
+        if operation == "show":
+            return self._recovery_command([parts[0]])
+        aliases = {
+            "ack": RecoveryResolution.ACKNOWLEDGE,
+            "acknowledge": RecoveryResolution.ACKNOWLEDGE,
+            "abort": RecoveryResolution.ABORT,
+            "quarantine": RecoveryResolution.QUARANTINE,
+            "resume": RecoveryResolution.RESUME,
+        }
+        if operation == "retry":
+            return CommandResult(
+                ["Recovery 暂不支持无损 linked retry；请使用 abort 或 quarantine。"]
+            )
+        resolution = aliases.get(operation)
+        if resolution is None:
+            return CommandResult(["用法：/recovery [show|ack|abort|quarantine|resume] [item_id]"])
+        item_id = parts[2] if len(parts) > 2 else None
+        if resolution is RecoveryResolution.RESUME and item_id is not None:
+            return CommandResult(["resume 是报告级操作，不接受 item_id。"])
+        if resolution is RecoveryResolution.ACKNOWLEDGE and item_id is None:
+            return CommandResult(["ack 需要 item_id；请先执行 /recovery 查看待处理项。"])
+        if resolution is RecoveryResolution.QUARANTINE and item_id is not None:
+            return CommandResult(["quarantine 是报告级操作，不接受 item_id。"])
+        return CommandResult(
+            [f"将对 Recovery 报告执行 {resolution.value}。"],
+            action="resolve_recovery",
+            value=RecoveryCommandRequest(report.report_id, resolution, item_id),
+        )
+
+    def resolve_recovery(self, request: RecoveryCommandRequest):
+        if self.api is None:
+            raise RuntimeError("Recovery 服务尚未就绪")
+        report = self.api.get_recovery(request.report_id)
+        if report is None:
+            raise RuntimeError("Recovery 报告不存在")
+        committer = self.session.committer
+        writer = getattr(committer, "writer", None)
+        return self.api.resolve_recovery(
+            report,
+            command_id=self.id_source.new_id("cmd") if self.id_source is not None else None,
+            resolution=request.resolution,
+            item_id=request.item_id,
+            log=self.session.log,
+            writer=writer,
+            close_all=request.resolution is RecoveryResolution.ABORT and request.item_id is None,
+        ).value
+
     def execute(self, raw: str) -> CommandResult:
         parts = raw.strip().split()
         if not parts:
@@ -138,6 +216,8 @@ class CommandService:
             )
         if command == "/grant":
             return self._grant_command()
+        if command == "/recovery":
+            return self._recovery_command(parts)
         if command == "/task":
             return self._task_command(parts)
         if command == "/accept":

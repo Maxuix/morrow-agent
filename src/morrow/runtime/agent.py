@@ -41,6 +41,7 @@ from morrow.core.models import (
 from morrow.core.permissions import PermissionEvidenceError
 from morrow.core.ports import Clock, IdSource, ModelProvider
 from morrow.runtime.conversation import ConversationLogError
+from morrow.runtime.durable_log import durable_call_id
 from morrow.runtime.ids import RandomIdSource
 from morrow.runtime.session import Session
 from morrow.runtime.tools import (
@@ -274,6 +275,7 @@ class AgentLoop:
         user_input: str,
         *,
         client_message_id: str | None = None,
+        resume_current_turn: bool = False,
     ) -> AsyncIterator[AgentEvent]:
         client_message_id = client_message_id or self._id("cmsg")
         turn_id = self._id("turn")
@@ -288,6 +290,7 @@ class AgentLoop:
         retry_count = 0
         cycle_signatures: list[tuple] = []
         active_calls = ()
+        durable_executions = ()
         active_running_id: str | None = None
         active_result_limit: int | None = None
         final_committed = False
@@ -378,49 +381,59 @@ class AgentLoop:
         started = False
         settled = False
         try:
-            submit = getattr(session.committer, "submit_user", None)
-            if submit is not None:
-                submit_outcome = submit(
-                    session,
-                    user_input,
-                    client_message_id,
-                    turn_id=turn_id,
-                    agent_run_id=self._id("arun"),
-                    tools=self.tool_executor.definitions if self.tool_executor else (),
-                )
-                if submit_outcome.turn_id:
-                    turn_id = submit_outcome.turn_id
+            if resume_current_turn:
+                if not session.log.has_active_turn:
+                    raise ConversationLogError("no active turn is available to resume")
+                current_turn_id = getattr(session.committer, "current_turn_id", None)
+                if current_turn_id:
+                    turn_id = current_turn_id
                     run_context = ToolRunContext(run_id=turn_id, session_id=session.session_id)
-                if submit_outcome.kind != "accepted":
-                    yield event("turn.started", {})
-                    started = True
-                    settled = True
-                    if submit_outcome.kind == "closed_replay":
-                        text = submit_outcome.assistant_text or ""
-                        if text:
-                            yield event("text.delta", {"text": text})
-                        retain_facts(FinishReason.STOP.value)
-                        yield event("turn.completed", completion_payload(FinishReason.STOP, text))
-                        return
-                    message = (
-                        "当前回合需要恢复后才能继续"
-                        if submit_outcome.kind == "recovery"
-                        else "client_message_id 与已有请求冲突"
-                    )
-                    yield event(
-                        "error",
-                        {"message": message, "stop_code": AgentStopCode.INTERNAL.value},
-                    )
-                    retain_facts(FinishReason.ERROR.value)
-                    yield event(
-                        "turn.completed",
-                        completion_payload(
-                            FinishReason.ERROR, "", stop_code=AgentStopCode.INTERNAL
-                        ),
-                    )
-                    return
             else:
-                session.begin_user_turn(UserMessage(content=user_input))
+                submit = getattr(session.committer, "submit_user", None)
+                if submit is not None:
+                    submit_outcome = submit(
+                        session,
+                        user_input,
+                        client_message_id,
+                        turn_id=turn_id,
+                        agent_run_id=self._id("arun"),
+                        tools=self.tool_executor.definitions if self.tool_executor else (),
+                    )
+                    if submit_outcome.turn_id:
+                        turn_id = submit_outcome.turn_id
+                        run_context = ToolRunContext(run_id=turn_id, session_id=session.session_id)
+                    if submit_outcome.kind != "accepted":
+                        yield event("turn.started", {})
+                        started = True
+                        settled = True
+                        if submit_outcome.kind == "closed_replay":
+                            text = submit_outcome.assistant_text or ""
+                            if text:
+                                yield event("text.delta", {"text": text})
+                            retain_facts(FinishReason.STOP.value)
+                            yield event(
+                                "turn.completed", completion_payload(FinishReason.STOP, text)
+                            )
+                            return
+                        message = (
+                            "当前回合需要恢复后才能继续"
+                            if submit_outcome.kind == "recovery"
+                            else "client_message_id 与已有请求冲突"
+                        )
+                        yield event(
+                            "error",
+                            {"message": message, "stop_code": AgentStopCode.INTERNAL.value},
+                        )
+                        retain_facts(FinishReason.ERROR.value)
+                        yield event(
+                            "turn.completed",
+                            completion_payload(
+                                FinishReason.ERROR, "", stop_code=AgentStopCode.INTERNAL
+                            ),
+                        )
+                        return
+                else:
+                    session.begin_user_turn(UserMessage(content=user_input))
 
             started = True
             tools = self.tool_executor.definitions if self.tool_executor else ()
@@ -576,7 +589,6 @@ class AgentLoop:
                         yield item
                     return
 
-                durable_executions = ()
                 try:
                     freeze_permissions()
                     planned = session.log.plan_append_assistant(message)
@@ -645,6 +657,7 @@ class AgentLoop:
                         interrupted = self._close_unresolved(
                             session,
                             active_calls,
+                            durable_executions,
                             ToolErrorCode.BUDGET_EXHAUSTED,
                             "任务总运行时间已耗尽",
                             result_limit=active_result_limit,
@@ -852,6 +865,7 @@ class AgentLoop:
             interrupted = self._close_unresolved(
                 session,
                 active_calls,
+                durable_executions,
                 ToolErrorCode.CANCELLED,
                 "任务已取消，工具调用未完成",
                 result_limit=active_result_limit,
@@ -878,6 +892,7 @@ class AgentLoop:
             interrupted = self._close_unresolved(
                 session,
                 active_calls,
+                durable_executions,
                 ToolErrorCode.INTERNAL,
                 "内部错误，工具调用未完成",
                 result_limit=active_result_limit,
@@ -904,6 +919,7 @@ class AgentLoop:
                     interrupted = self._close_unresolved(
                         session,
                         active_calls,
+                        durable_executions,
                         ToolErrorCode.CANCELLED,
                         "任务已取消，工具调用未完成",
                         result_limit=active_result_limit,
@@ -997,6 +1013,7 @@ class AgentLoop:
         self,
         session: Session,
         active_calls,
+        durable_executions,
         code: ToolErrorCode,
         message: str,
         *,
@@ -1005,9 +1022,13 @@ class AgentLoop:
         """One synthetic envelope per unresolved call, in original order."""
         interrupted = session.log.unresolved_call_ids
         calls_by_id = {call.id: call for call in active_calls}
+        executions_by_call_id = {durable_call_id(item.call_id): item for item in durable_executions}
+        committer = getattr(session, "committer", None)
         while session.log.unresolved_call_ids:
             call_id = session.log.unresolved_call_ids[0]
-            call = calls_by_id[call_id]
+            call = calls_by_id.get(call_id)
+            if call is None:
+                raise RuntimeError("open ToolCycle call is missing from the active batch")
             if self.tool_executor is None:
                 raise RuntimeError("open ToolCycle requires a ToolExecutor")
             outcome = self.tool_executor.error_outcome(
@@ -1016,7 +1037,37 @@ class AgentLoop:
                 message,
                 result_limit=result_limit,
             )
-            session.append_tool_result(call_id, outcome.envelope)
+            durable = executions_by_call_id.get(durable_call_id(call_id))
+            if durable is None or committer is None:
+                session.append_tool_result(call_id, outcome.envelope)
+                continue
+
+            durable = self._reload_durable(session, durable)
+            if durable.state in {
+                ToolExecutionState.PREPARED,
+                ToolExecutionState.AWAITING_APPROVAL,
+            }:
+                cancel = getattr(committer, "cancel_execution_before_handler", None)
+                if cancel is not None:
+                    durable = cancel(durable, now=self._wall_now(session))
+            elif durable.state is ToolExecutionState.EXECUTING:
+                complete = getattr(committer, "record_handler_completed", None)
+                if complete is not None:
+                    durable = complete(
+                        durable,
+                        outcome,
+                        now=self._wall_now(session),
+                        disposition=ToolExecutionDisposition.UNKNOWN,
+                    )
+            commit_tool = getattr(committer, "commit_tool_message", None)
+            if commit_tool is None or durable.state not in {
+                ToolExecutionState.CLOSED,
+                ToolExecutionState.HANDLER_COMPLETED,
+            }:
+                session.append_tool_result(call_id, outcome.envelope)
+                continue
+            planned = session.log.plan_append_tool_result(call_id, outcome.envelope)
+            commit_tool(planned, durable, now=self._wall_now(session))
         return interrupted
 
 

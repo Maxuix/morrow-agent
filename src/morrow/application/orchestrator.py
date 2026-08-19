@@ -72,3 +72,13 @@ class SessionOrchestrator:
                 result = item
         result.events = events
         return result
+
+    async def resume_recovery(self):
+        """Continue an already-open Turn after an explicit recovery decision."""
+
+        async for event in self.runtime.loop.run_task(
+            self.session,
+            "",
+            resume_current_turn=True,
+        ):
+            yield event

@@ -7,6 +7,7 @@ import pytest
 from pydantic import TypeAdapter, ValidationError
 
 from morrow.adapters.registry import AdapterRegistry
+from morrow.core.domain import refuse_secret_material
 from morrow.core.events import lifecycle_is_valid, make_event
 from morrow.core.models import (
     AgentEvent,
@@ -159,6 +160,12 @@ def test_tool_call_ids_and_tool_message_ids_must_be_non_empty():
         _tool_call(id=" ")
     with pytest.raises(ValidationError):
         ToolMessage(tool_call_id="", content="{}")
+
+
+def test_secret_scan_avoids_bare_sk_prefix_false_positives():
+    refuse_secret_material("please mask-this example", label="test")
+    with pytest.raises(ValueError):
+        refuse_secret_material("sk-12345678901234567890", label="test")
 
 
 def test_assistant_requires_content_or_tool_call_and_unique_ids():

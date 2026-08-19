@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
+import re
+
 from pydantic import TypeAdapter
 
 from morrow.adapters.state.journal import SqliteOperationalJournal
-from morrow.core.domain import CONVERSATION_RECORD_ID_PREFIX, DurableConversationRecord
+from morrow.core.domain import (
+    CONVERSATION_RECORD_ID_PREFIX,
+    DurableConversationRecord,
+    sha256_digest,
+)
 from morrow.core.models import FinishReason, Message
 from morrow.core.ports import IdSource
 from morrow.runtime.conversation import (
@@ -17,6 +23,23 @@ from morrow.runtime.conversation import (
 )
 
 _MESSAGE_ADAPTER: TypeAdapter[Message] = TypeAdapter(Message)
+_DURABLE_CALL_ID_PATTERN = re.compile(r"^call_[0-9a-f]{64}$")
+
+
+def durable_call_id(call_id: str) -> str:
+    """Return a stable, non-sensitive correlation ID for durable projections.
+
+    Provider call IDs are correlation data, not durable secrets.  Keeping them
+    verbatim would leak arbitrary provider-controlled values into the
+    operational store, while generating an ordinal alias per append can break
+    the link between an Assistant tool call, its ToolMessage, and its
+    ToolExecution.  A deterministic digest provides one stable ID for every
+    projection without retaining the provider value.
+    """
+
+    if _DURABLE_CALL_ID_PATTERN.fullmatch(call_id):
+        return call_id
+    return f"call_{sha256_digest(call_id)}"
 
 
 def conversation_record_from_durable(record: DurableConversationRecord):
@@ -33,19 +56,17 @@ def conversation_record_from_durable(record: DurableConversationRecord):
     )
 
 
-def _redacted_message_payload(record: MessageRecord, call_aliases: dict[str, str]) -> dict:
+def _redacted_message_payload(record: MessageRecord) -> dict:
     message = record.message
     if message.role == "assistant" and message.tool_calls:
         calls = []
-        for index, call in enumerate(message.tool_calls, start=1):
-            alias = f"call{index}"
-            call_aliases[call.id] = alias
-            calls.append({"id": alias, "name": call.name, "arguments": "{}"})
+        for call in message.tool_calls:
+            calls.append({"id": durable_call_id(call.id), "name": call.name, "arguments": "{}"})
         return {"role": "assistant", "content": message.content, "tool_calls": calls}
     if message.role == "tool":
         return {
             "role": "tool",
-            "tool_call_id": call_aliases.get(message.tool_call_id, "call0"),
+            "tool_call_id": durable_call_id(message.tool_call_id),
             "content": '{"redacted":true}',
         }
     return message.model_dump(mode="json")
@@ -56,19 +77,17 @@ def durable_from_conversation_record(
     *,
     record_id: str,
     session_id: str,
-    call_aliases: dict[str, str] | None = None,
 ) -> DurableConversationRecord:
-    aliases = call_aliases if call_aliases is not None else {}
     if isinstance(record, TurnTerminalRecord):
         payload = {
             "finish_reason": record.finish_reason.value,
             "interrupted_call_ids": [
-                aliases.get(call_id, call_id) for call_id in record.interrupted_call_ids
+                durable_call_id(call_id) for call_id in record.interrupted_call_ids
             ],
         }
         kind = "terminal"
     else:
-        payload = _redacted_message_payload(record, aliases)
+        payload = _redacted_message_payload(record)
         kind = "message"
     return DurableConversationRecord(
         record_id=record_id,
@@ -106,11 +125,6 @@ class DurableConversationWriter:
         self.workspace_id = workspace_id
         self.session_id = session_id
         self.id_source = id_source
-        self._call_aliases: dict[str, str] = {}
-
-    @property
-    def call_aliases(self) -> dict[str, str]:
-        return self._call_aliases
 
     def persist_with_records(
         self, planned: ConversationAppend
@@ -120,7 +134,6 @@ class DurableConversationWriter:
                 record,
                 record_id=self.id_source.new_id(CONVERSATION_RECORD_ID_PREFIX),
                 session_id=self.session_id,
-                call_aliases=self._call_aliases,
             )
             for record in planned.added
         )
@@ -135,10 +148,7 @@ class DurableConversationWriter:
         return snapshot
 
     def apply_persisted(self, committed: ConversationSnapshot) -> None:
-        current = self.log.snapshot().records
-        self.log.apply_committed(
-            ConversationAppend(added=committed.records[len(current) :], snapshot=committed)
-        )
+        self.log.install_snapshot(committed)
 
     def commit(self, planned: ConversationAppend) -> None:
         self.persist(planned)

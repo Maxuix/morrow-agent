@@ -8,10 +8,9 @@ Artifacts, application events, backup/doctor operation, and Full Access Manual g
 
 ## Last completed task
 
-Subplan 45 completed S4.45.1–S4.45.8: integrated product stories, deterministic logical/subprocess
-fault coverage, migration/doctor/backup/Artifact acceptance, isolated wheel installation and durable
-Session recovery, final documentation reconciliation, and the Stage 4 evidence report. The final
-offline and quality gates are recorded in `docs/acceptance/stage-4-durable-agent-evidence.md`.
+Stage 4 final Grok review and the single review-fix cycle completed after Subplan 45 closeout. The
+review report is `docs/reviews/stage-4-final-grok-review.md`; the final offline and quality gates are
+recorded in `docs/acceptance/stage-4-durable-agent-evidence.md`.
 
 Subplan 43 closed after S4.43.1–S4.43.8: v8 typed Command/Query/Event boundary, same-transaction
 sanitized application events and receipts, CLI/REPL adapters, read-only doctor, online backup with

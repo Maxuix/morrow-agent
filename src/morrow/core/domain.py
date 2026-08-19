@@ -45,7 +45,8 @@ CONVERSATION_RECORD_MAX_BYTES = 256 * 1024
 AGENT_RUN_SNAPSHOT_MAX_BYTES = 64 * 1024
 ERROR_DETAIL_MAX_BYTES = 4 * 1024
 TASK_OUTCOME_MAX_BYTES = 64 * 1024
-SECRET_NEEDLES = ("api_key", "authorization", "password", "credential", "sk-")
+SECRET_NEEDLES = ("api_key", "authorization", "password", "credential")
+SECRET_TOKEN_PATTERN = re.compile(r"(?<![A-Za-z0-9])sk-[A-Za-z0-9_-]{20,}")
 
 
 class SessionLifecycle(StrEnum):
@@ -406,9 +407,10 @@ def require_payload_budget(payload: bytes, maximum: int, *, label: str) -> bytes
 def refuse_secret_material(payload: str | bytes, *, label: str) -> None:
     text = payload if isinstance(payload, str) else payload.decode("utf-8")
     serialized = text.casefold()
-    for needle in SECRET_NEEDLES:
-        if needle in serialized:
-            raise ValueError(f"{label} cannot contain secret material")
+    if any(needle in serialized for needle in SECRET_NEEDLES) or SECRET_TOKEN_PATTERN.search(
+        serialized
+    ):
+        raise ValueError(f"{label} cannot contain secret material")
 
 
 def validate_prefixed_id(value: str, prefix: str) -> str:
@@ -572,7 +574,7 @@ class DurableSession(ProtocolModel):
         return cleaned
 
     @model_validator(mode="after")
-    def quarantine_is_health_not_lifecycle(self) -> DurableSession:
+    def validate_fork_provenance(self) -> DurableSession:
         has_parent = self.parent_session_id is not None
         if has_parent != (self.parent_cut_record_id is not None):
             raise ValueError("forked Session must include parent and cut record IDs")
@@ -591,8 +593,6 @@ class DurableSession(ProtocolModel):
             and self.conversation_position < self.parent_cut_position
         ):
             raise ValueError("forked Session conversation position cannot precede its cut position")
-        if self.lifecycle is SessionLifecycle.DELETED and self.health is SessionHealth.OK:
-            return self
         return self
 
 

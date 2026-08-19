@@ -1,7 +1,7 @@
 # Stage 4 Durable Agent 验收证据
 
 > 验收日期：2026-08-20
-> 当前状态：Subplan 45 验收完成；Stage 5 保持未激活
+> 当前状态：Subplan 45 验收及 Stage 4 最终 review-fix 完成；Stage 5 保持未激活
 > 当前分支：`feat/stage4-operational-store`
 > Subplan 44 基线提交：`3e54dee` (`feat(permissions): complete Full Access Manual grants`)
 
@@ -31,7 +31,7 @@ outside-file 工具；CLI/REPL/API 的 grant command 是唯一提权入口；Ful
 
 | # | 要求 | 证据 | 结果 |
 |---:|---|---|---|
-| 1 | 工作空间隔离的 Session 可创建、列出、恢复、归档、Fork | `tests/test_stage_boundary.py`, `tests/test_stage4_session_conversation.py`, `tests/test_stage4_context_fork.py`；隔离 wheel smoke 的 Session 重启脚本 | 通过 |
+| 1 | 工作空间隔离的 Session 可创建、列出、恢复、归档、Fork | `tests/test_stage_boundary.py`, `tests/test_stage4_session_conversation.py`, `tests/test_stage4_context_fork.py`；`morrow --session-id` 与 `morrow session resume` 进入同一 REPL 恢复路径 | 通过 |
 | 2 | 消息顺序和 ToolCycle 恢复唯一且合法 | `tests/test_stage4_session_conversation.py`, `tests/test_stage4_durable_log.py`, `tests/test_stage4_tool_persist.py` | 通过 |
 | 3 | turn submit 按 `client_message_id` 幂等，恢复只创建关联 AgentRun | `tests/test_stage4_recovery.py`, `tests/test_stage4_recovery_crash.py`, `tests/test_stage_boundary.py` | 通过 |
 | 4 | side-effecting intent 在 handler 前提交 | `tests/test_stage4_tool_persist.py::test_intents_are_visible_from_a_fresh_connection_before_handler`, `::test_handler_does_not_run_when_intent_commit_fails` | 通过 |
@@ -40,7 +40,7 @@ outside-file 工具；CLI/REPL/API 的 grant command 是唯一提权入口；Ful
 | 7 | TaskRun 跨 Turn 继续、纠正、取消、接受并生成版本化 Outcome | `tests/test_stage4_task_outcome.py` | 通过 |
 | 8 | Artifact 有界、脱敏、hash/size/provenance 可验证 | `tests/test_stage4_artifacts.py`, `tests/test_stage4_backup.py` | 通过 |
 | 9 | checkpoint 保留完整 Cycle/来源，Fork 不修改父 Session/文件 | `tests/test_stage4_context_fork.py` | 通过 |
-| 10 | CLI/REPL/未来客户端共享 Application boundary，events 有序且无 outbox | `tests/test_stage4_application_api.py`, `tests/test_stage4_cli_operational.py`, `tests/test_stage4_doctor.py` | 通过 |
+| 10 | CLI/REPL/未来客户端共享 Application boundary，events 有序且无 outbox | `tests/test_stage4_application_api.py`, `tests/test_stage4_cli_operational.py`, `tests/test_stage4_doctor.py`；CLI/REPL recovery 使用同一 `resolve_recovery` boundary | 通过 |
 | 11 | Doctor、online backup、restore、migration、contention、corruption、Artifact fault 有证据 | `tests/test_stage4_doctor.py`, `tests/test_stage4_backup.py`, `tests/test_operational_store.py`, `tests/test_stage4_operational_store_spike.py`, `tests/test_stage4_artifacts.py` | 通过 |
 | 12 | CapabilityGrant 按 AgentRun 创建、冻结、过期、撤销，crash resume 不继承 | `tests/test_stage4_permissions.py`, `tests/test_stage4_recovery_crash.py`, `tests/test_stage4_tool_persist.py` | 通过 |
 | 13 | Full Access Manual 每次 elevated effect 单独审批并展示 unconfined 风险，Auto 不可用 | `tests/test_stage4_tool_persist.py`, `tests/test_capability_policy.py`, `tests/test_capability_executor.py` | 通过 |
@@ -87,7 +87,7 @@ sleep 作为断言。
 ```text
 UV_CACHE_DIR=/tmp/morrow-uv-cache uv build --wheel
 → Successfully built dist/morrow_agent-0.1.0-py3-none-any.whl
-SHA-256: 1a71fe0f60f43ee05ea4a325e630616c9317b8e5e98c300507ee8969cabb1182
+SHA-256: 22ef2890cc20854177dfc23b644af3fd9e6190e2bd3f4863bcd3928466e694a1
 ```
 
 Wheel 在 `/private/tmp/morrow-stage4-package-smoke.TJE9l1/.venv` 中以 `uv pip install --no-deps`
@@ -116,7 +116,7 @@ Subplan45 closeout 重新运行了最终代码门禁：
 
 ```text
 UV_CACHE_DIR=/tmp/morrow-uv-cache uv run pytest -m 'not live'
-→ 600 passed, 2 skipped, 1 deselected in 12.02s
+→ 605 passed, 2 skipped, 1 deselected in 10.81s（最终 Grok review-fix 后）
 
 UV_CACHE_DIR=/tmp/morrow-uv-cache uv run ruff format --check .
 → 158 files already formatted
@@ -135,10 +135,17 @@ git diff --check
 
 UV_CACHE_DIR=/tmp/morrow-uv-cache uv build --wheel
 → Successfully built dist/morrow_agent-0.1.0-py3-none-any.whl
-→ SHA-256: 1a71fe0f60f43ee05ea4a325e630616c9317b8e5e98c300507ee8969cabb1182
+→ SHA-256: 22ef2890cc20854177dfc23b644af3fd9e6190e2bd3f4863bcd3928466e694a1
 ```
 
 隔离 wheel 安装、CLI help、bundled policy 资源检查和同一 Session 的重建恢复已通过；结果见第 4
 节。两个 Seatbelt skip 是 nested Codex 环境限制，宿主级历史证据仍由 Stage 3 acceptance 保留。
 Live Provider/network、Linux native runner、Windows sandbox、Full Access Auto、background tasks、
 GUI、MCP/Skills 和 multi-agent 仍明确为未实现或 unsupported。
+
+## 6. Stage 4 最终 Grok review
+
+最终只读审核报告及单轮核验/修复记录见
+[`docs/reviews/stage-4-final-grok-review.md`](../reviews/stage-4-final-grok-review.md)。报告指出的
+B1/B2/H1–H4 与确认存在的普通问题均已判断并修复；O5 及 S1–S6 属非阻塞优化，未扩大本轮范围。
+没有进行第二轮 Grok review；Stage 5 继续保持未激活。

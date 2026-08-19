@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 
@@ -39,7 +40,7 @@ from morrow.core.recovery import (
     observe_file,
 )
 from morrow.runtime.conversation import ConversationAppend, ConversationLog
-from morrow.runtime.durable_log import DurableConversationWriter
+from morrow.runtime.durable_log import DurableConversationWriter, durable_call_id
 from morrow.runtime.tools import ToolErrorCode, tool_error_envelope
 
 RECOVERY_LOST_RESULT = "恢复关闭：原始工具结果未能提交"
@@ -49,9 +50,20 @@ def recovery_tool_envelope(message: str = RECOVERY_LOST_RESULT) -> str:
     return tool_error_envelope(ToolErrorCode.INTERNAL, message)
 
 
-def recovery_envelopes_for(log: ConversationLog) -> tuple[tuple[str, str], ...]:
+def recovery_envelopes_for(
+    log: ConversationLog, call_ids: tuple[str, ...] | None = None
+) -> tuple[tuple[str, str], ...]:
     content = recovery_tool_envelope()
-    return tuple((call_id, content) for call_id in log.unresolved_call_ids)
+    unresolved = log.unresolved_call_ids
+    durable_call_ids = {durable_call_id(call_id) for call_id in call_ids or ()}
+    selected = (
+        unresolved
+        if call_ids is None
+        else tuple(
+            call_id for call_id in unresolved if durable_call_id(call_id) in durable_call_ids
+        )
+    )
+    return tuple((call_id, content) for call_id in selected)
 
 
 def _isolation_for(effect: EffectClass) -> ProcessIsolation | None:
@@ -157,7 +169,7 @@ class RecoveryService:
             for item in self.journal.list_session_executions(self.workspace_id, session_id)
             if item.state is not ToolExecutionState.CLOSED
         ]
-        if not executions and not log.has_active_turn:
+        if not executions:
             return None
         report_id = self.id_source.new_id(RECOVERY_REPORT_ID_PREFIX)
         items = tuple(
@@ -173,8 +185,8 @@ class RecoveryService:
             report_id=report_id,
             workspace_id=self.workspace_id,
             session_id=session_id,
-            turn_id=executions[0].turn_id if executions else None,
-            agent_run_id=executions[0].agent_run_id if executions else None,
+            turn_id=executions[0].turn_id,
+            agent_run_id=executions[0].agent_run_id,
             items=items,
         )
         return self.journal.put_report(self.workspace_id, report)
@@ -225,13 +237,27 @@ class RecoveryService:
             if resolution is RecoveryResolution.QUARANTINE:
                 status = RecoveryReportStatus.QUARANTINED
             elif resolution is RecoveryResolution.ABORT:
-                status = RecoveryReportStatus.RESOLVED
+                status = (
+                    RecoveryReportStatus.RESOLVED
+                    if not any(item.blocking and item.resolution is None for item in items)
+                    else report.status
+                )
             else:
                 status = report.status
-            updated = report.model_copy(update={"items": items, "status": status})
+            updates = {"items": items, "status": status}
+            if status is RecoveryReportStatus.RESOLVED:
+                updates["resolved_at"] = stamp
+            updated = report.model_copy(update=updates)
             if resolution in {RecoveryResolution.ACKNOWLEDGE, RecoveryResolution.ABORT}:
-                envelopes = recovery_envelopes_for(log)
-                reason = FinishReason.CANCELLED if resolution is RecoveryResolution.ABORT else None
+                execution = self.journal.get_execution(self.workspace_id, target.tool_execution_id)
+                call_ids = (execution.call_id,) if execution is not None else ()
+                envelopes = recovery_envelopes_for(log, call_ids)
+                reason = (
+                    FinishReason.CANCELLED
+                    if resolution is RecoveryResolution.ABORT
+                    and status is RecoveryReportStatus.RESOLVED
+                    else None
+                )
                 if envelopes or reason is not None:
                     planned = log.plan_recovery_close(envelopes, reason)
         receipt = RecoveryReceipt(
@@ -253,6 +279,8 @@ class RecoveryService:
         log: ConversationLog,
         writer: DurableConversationWriter | None,
         close_all: bool,
+        apply_log_projection: bool = True,
+        finalize: Callable[[SqliteOperationalJournal, RecoveryReport], None] | None = None,
     ) -> RecoveryReport:
         def work(txn: SqliteOperationalJournal) -> RecoveryReport:
             saved = txn.save_report(self.workspace_id, report)
@@ -277,10 +305,12 @@ class RecoveryService:
                 if writer is None:
                     raise RecoveryDecisionError("recovery conversation writer is missing")
                 writer.persist_with_records(planned)
+            if finalize is not None:
+                finalize(txn, saved)
             return saved
 
         saved = self.journal.transact(work)
-        if planned is not None:
+        if planned is not None and apply_log_projection:
             log.apply_committed(planned)
         return saved
 

@@ -76,7 +76,11 @@ from morrow.runtime.conversation import (
     ConversationLogError,
     TurnTerminalRecord,
 )
-from morrow.runtime.durable_log import DurableConversationWriter, restore_conversation_log
+from morrow.runtime.durable_log import (
+    DurableConversationWriter,
+    durable_call_id,
+    restore_conversation_log,
+)
 from morrow.runtime.session import Session
 
 
@@ -250,6 +254,7 @@ class SessionPersistence:
         self.current_agent_run_id: str | None = None
         self.current_permission_snapshot_id: str | None = None
         self.open_report: RecoveryReport | None = None
+        self.pending_resume = False
 
     def attach(self, session: Session) -> None:
         self._session = session
@@ -433,6 +438,12 @@ class SessionPersistence:
                     assistant_text=_last_assistant_text(session.log),
                 )
             session.health = SessionHealth.NEEDS_RECOVERY
+            row = self.journal.get_session(self.workspace_id, session.session_id)
+            if row is not None and row.health is not SessionHealth.NEEDS_RECOVERY:
+                self.journal.save_session(
+                    self.workspace_id,
+                    row.model_copy(update={"health": SessionHealth.NEEDS_RECOVERY}),
+                )
             return TurnSubmitResult("recovery", existing.turn_id, existing)
         if session.health is SessionHealth.NEEDS_RECOVERY:
             return TurnSubmitResult("recovery", self.current_turn_id, None)
@@ -542,6 +553,7 @@ class SessionPersistence:
         self.current_agent_run_id = None
         self.current_permission_snapshot_id = None
         self.open_report = None
+        self.pending_resume = False
         self.context_checkpoint = None
         self.attach(session)
 
@@ -568,6 +580,8 @@ class SessionPersistence:
             session.context_checkpoint = None
         self.current_task_run_id = row.current_task_run_id
         self.current_permission_snapshot_id = None
+        self._last_client_message_id = None
+        self.pending_resume = False
         try:
             session.log = restore_conversation_log(
                 self.journal, self.workspace_id, session.session_id
@@ -590,6 +604,10 @@ class SessionPersistence:
             if report is not None:
                 self.current_turn_id = report.turn_id
                 self.current_agent_run_id = report.agent_run_id
+                if report.turn_id is not None:
+                    turn = self.journal.get_turn(self.workspace_id, report.turn_id)
+                    if turn is not None:
+                        self._last_client_message_id = turn.client_message_id
                 interrupted = (
                     self.journal.get_agent_run(self.workspace_id, report.agent_run_id)
                     if report.agent_run_id is not None
@@ -601,7 +619,13 @@ class SessionPersistence:
             if report is not None and session.health is not SessionHealth.QUARANTINED:
                 session.health = SessionHealth.NEEDS_RECOVERY
             elif session.log.has_active_turn and session.health is SessionHealth.OK:
-                session.health = SessionHealth.NEEDS_RECOVERY
+                turns = self.journal.list_session_turns(self.workspace_id, session.session_id)
+                runs = self.journal.list_session_agent_runs(self.workspace_id, session.session_id)
+                self.current_turn_id = turns[-1].turn_id if turns else None
+                self.current_agent_run_id = runs[-1].agent_run_id if runs else None
+                if turns:
+                    self._last_client_message_id = turns[-1].client_message_id
+                self.pending_resume = True
         if session.health is SessionHealth.NEEDS_RECOVERY:
             self.journal.save_session(
                 self.workspace_id,
@@ -663,18 +687,19 @@ class SessionPersistence:
         def work(txn: SqliteOperationalJournal) -> tuple[DurableToolExecution, ...]:
             durables, _snapshot = writer.persist_with_records(planned)
             assistant_id = durables[0].record_id if durables else None
-            aliases = writer.call_aliases
             stored: list[DurableToolExecution] = []
             for execution in executions:
-                alias = aliases.get(execution.call_id, execution.call_id)
+                durable_id = durable_call_id(execution.call_id)
                 stored.append(
                     txn.put_execution(
                         self.workspace_id,
                         execution.model_copy(
                             update={
                                 "assistant_record_id": assistant_id,
-                                "call_id": alias,
-                                "intent": execution.intent.model_copy(update={"call_id": alias}),
+                                "call_id": durable_id,
+                                "intent": execution.intent.model_copy(
+                                    update={"call_id": durable_id}
+                                ),
                             }
                         ),
                     )
@@ -698,6 +723,7 @@ class SessionPersistence:
     ) -> RecoveryReport:
         if self.open_report is None:
             raise RuntimeError("no open recovery report")
+        report = self.open_report
         root = None
         if self.mutation is not None:
             root = self.mutation.files.resolver.root
@@ -708,7 +734,7 @@ class SessionPersistence:
             workspace_root=root,
         )
         updated, receipt, planned = service.decide(
-            self.open_report,
+            report,
             command_id=command_id,
             resolution=resolution,
             item_id=item_id,
@@ -718,46 +744,121 @@ class SessionPersistence:
             raise RuntimeError("recovery command conflicts with a previous request")
         if receipt.kind == "replay":
             return self.open_report
+        resumed_agent_run_id: list[str] = []
         saved = service.commit_decision(
             updated,
             receipt,
             planned=planned,
             log=session.log,
             writer=self.writer,
-            close_all=resolution is RecoveryResolution.ABORT,
+            close_all=resolution is RecoveryResolution.ABORT and item_id is None,
+            finalize=lambda txn, saved_report: self._finalize_recovery_in_txn(
+                txn,
+                session,
+                report=report,
+                saved=saved_report,
+                resolution=resolution,
+                resumed_agent_run_id=resumed_agent_run_id,
+            ),
         )
         self.open_report = saved if saved.status is not RecoveryReportStatus.RESOLVED else None
         if saved.status is RecoveryReportStatus.QUARANTINED:
             session.health = SessionHealth.QUARANTINED
         elif saved.status is RecoveryReportStatus.RESOLVED:
             session.health = SessionHealth.OK
-            if resolution is RecoveryResolution.RESUME and self.current_turn_id is not None:
-                self.current_agent_run_id = self.id_source.new_id(AGENT_RUN_ID_PREFIX)
+            if resumed_agent_run_id:
+                self.current_agent_run_id = resumed_agent_run_id[0]
                 self.current_permission_snapshot_id = None
-                self.journal.create_agent_run(
+        else:
+            session.health = SessionHealth.NEEDS_RECOVERY
+        return saved
+
+    def _finalize_recovery_in_txn(
+        self,
+        txn: SqliteOperationalJournal,
+        session,
+        *,
+        report: RecoveryReport,
+        saved: RecoveryReport,
+        resolution: RecoveryResolution,
+        resumed_agent_run_id: list[str],
+    ) -> None:
+        row = txn.get_session(self.workspace_id, session.session_id)
+        if row is None:
+            raise RuntimeError("operational Session is missing during recovery")
+        health = SessionHealth.NEEDS_RECOVERY
+        task_id = row.current_task_run_id
+        if saved.status is RecoveryReportStatus.QUARANTINED:
+            health = SessionHealth.QUARANTINED
+        elif saved.status is RecoveryReportStatus.RESOLVED:
+            health = SessionHealth.OK
+            if resolution is RecoveryResolution.RESUME and saved.agent_run_id is not None:
+                previous = txn.get_agent_run(self.workspace_id, saved.agent_run_id)
+                if previous is None:
+                    raise RuntimeError("recovery AgentRun is missing")
+                new_id = self.id_source.new_id(AGENT_RUN_ID_PREFIX)
+                txn.create_agent_run(
                     self.workspace_id,
                     DurableAgentRun(
-                        agent_run_id=self.current_agent_run_id,
-                        turn_id=self.current_turn_id,
-                        session_id=session.session_id,
-                        resume_of_agent_run_id=saved.agent_run_id,
-                        snapshot=build_agent_run_snapshot(
-                            session,
-                            model=self.model,
-                            run_policy=self.run_policy,
-                            tools=(),
-                            runtime_instance_id=self.runtime_instance_id,
+                        agent_run_id=new_id,
+                        turn_id=previous.turn_id,
+                        session_id=previous.session_id,
+                        resume_of_agent_run_id=previous.agent_run_id,
+                        snapshot=previous.snapshot.model_copy(
+                            update={"runtime_instance_id": self.runtime_instance_id}
                         ),
                     ),
                 )
-        else:
-            session.health = SessionHealth.NEEDS_RECOVERY
-        row = self.journal.get_session(self.workspace_id, session.session_id)
-        if row is not None:
-            self.journal.save_session(
-                self.workspace_id, row.model_copy(update={"health": session.health})
+                resumed_agent_run_id.append(new_id)
+            elif resolution is RecoveryResolution.ABORT:
+                task_id = self._abort_recovery_task_in_txn(txn, row, turn_id=report.turn_id)
+                self._close_recovery_receipt_in_txn(txn, report)
+        txn.save_session(
+            self.workspace_id,
+            row.model_copy(update={"health": health, "current_task_run_id": task_id}),
+        )
+
+    def _abort_recovery_task_in_txn(
+        self, txn: SqliteOperationalJournal, session, *, turn_id: str | None
+    ) -> str | None:
+        task_id = session.current_task_run_id
+        if task_id is None:
+            return None
+        task = txn.get_task_run(self.workspace_id, task_id)
+        if task is None:
+            raise RuntimeError("recovery TaskRun is missing")
+        if task.status in {TaskRunStatus.OPEN, TaskRunStatus.READY_FOR_ACCEPTANCE}:
+            task = self.tasks._transition_in_txn(
+                txn,
+                task,
+                TaskRunStatus.CANCELLED,
+                reason="recovery_abort",
+                turn_id=turn_id,
             )
-        return saved
+            self.tasks._outcome_in_txn(
+                txn,
+                task,
+                trigger=TaskOutcomeTrigger.TERMINAL_CLOSE,
+                summary="TaskRun cancelled during recovery abort.",
+            )
+            return None
+        return task_id if not task.status.is_terminal else None
+
+    def _close_recovery_receipt_in_txn(
+        self, txn: SqliteOperationalJournal, report: RecoveryReport
+    ) -> None:
+        if report.turn_id is None:
+            return
+        turn = txn.get_turn(self.workspace_id, report.turn_id)
+        if turn is None:
+            return
+        receipt = txn.get_receipt(self.workspace_id, report.session_id, turn.client_message_id)
+        if receipt is None or receipt.disposition is TurnSubmitDisposition.ACCEPTED_CLOSED:
+            return
+        txn.update_receipt(
+            self.workspace_id,
+            receipt.model_copy(update={"disposition": TurnSubmitDisposition.ACCEPTED_CLOSED}),
+        )
 
     def execution_is_visible(self, tool_execution_id: str) -> bool:
         return self.journal.get_execution(self.workspace_id, tool_execution_id) is not None

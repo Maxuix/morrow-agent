@@ -50,6 +50,8 @@ class SessionLifecyclePort(Protocol):
 
     def list_task_turns(self, workspace_id: str, task_run_id: str) -> tuple[DurableTurn, ...]: ...
 
+    def list_session_turns(self, workspace_id: str, session_id: str) -> tuple[DurableTurn, ...]: ...
+
     def transition_task_run(
         self,
         workspace_id: str,
@@ -147,6 +149,10 @@ class AgentRunPort(Protocol):
     def create_agent_run(self, workspace_id: str, run: DurableAgentRun) -> DurableAgentRun: ...
 
     def get_agent_run(self, workspace_id: str, agent_run_id: str) -> DurableAgentRun | None: ...
+
+    def list_session_agent_runs(
+        self, workspace_id: str, session_id: str
+    ) -> tuple[DurableAgentRun, ...]: ...
 
     def get_permission_snapshot(
         self, workspace_id: str, permission_snapshot_id: str

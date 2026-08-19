@@ -282,8 +282,9 @@ never_started | safe_to_retry | requires_reconciliation | outcome_unknown | comp
 - Stage 4 v1 没有 durable PID/PGID/temp-root/snapshot 证据，因此 Sandbox process 与 Host process 一样：
   缺少 `handler_completed` 时一律 outcome_unknown，禁止自动重放。推广只按文件 expected-after 对账。
 
-恢复输出 RecoveryReport，让用户选择继续、显式重试、接受未知、取消或保持 quarantine。恢复是分类和
-对账，不是自动改写事实。
+恢复输出 RecoveryReport，让用户选择继续、接受已知结果、取消或保持 quarantine。安全重试仍由分类器
+保留为后续 linked-attempt 扩展的判定依据；Stage 4 v1 在真正的 linked retry 原子路径实现前不暴露重试
+操作。恢复是分类和对账，不是自动改写事实。
 
 ## 七、上下文与 Fork
 

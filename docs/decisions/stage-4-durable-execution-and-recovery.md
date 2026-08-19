@@ -27,8 +27,9 @@ No recovery classifier may infer safety from the current `ToolEffect` or from th
 
 ## Execution records and state
 
-Each provider ToolCall has one immutable ToolExecution intent and may have linked attempts only when
-recovery explicitly allows retry.
+Each provider ToolCall has one immutable ToolExecution intent. The v1 recovery surface does not expose
+retry until it can create and execute a linked attempt atomically; a future linked attempt will use the
+`retry_of_execution_id` field.
 
 ```text
 prepared
@@ -43,8 +44,15 @@ unknown`. `handler_completed` means a bounded result/failure and structured fact
 means the ordered ToolMessage also committed through ConversationLog. Denial and pre-start policy
 failure still produce a legal ToolMessage and close the call without running the handler.
 
-State changes use optimistic row versions. Old rows are immutable audit evidence; a retry creates a
-new ToolExecution linked by `retry_of_execution_id`.
+State changes use optimistic row versions. Old rows are immutable audit evidence; any future retry must
+create a new ToolExecution linked by `retry_of_execution_id`.
+
+Provider-controlled ToolCall IDs are not written verbatim to durable state. Conversation records,
+ToolExecution intents, ToolMessages, and terminal interrupted-call lists use the same deterministic
+`call_<sha256>` opaque projection. This keeps the Assistant/ToolMessage/ToolExecution correlation
+stable across restore and retry without allowing an arbitrary provider ID to leak into the
+Operational Store; the in-process ConversationLog may retain the wire ID until its committed
+projection is replaced.
 
 ## Prepare and persist before effect
 
@@ -105,14 +113,14 @@ Every production tool has an explicit declaration written by Morrow; none is der
 
 | Tool | Effect class | Missing `handler_completed` after restart |
 |---|---|---|
-| `list_directory` | bounded read | safe to issue a linked retry |
-| `read_file` | bounded read | safe to issue a linked retry |
-| `find_files` | bounded read | safe to issue a linked retry |
-| `search_text` | bounded read | safe to issue a linked retry |
-| `show_changes` | durable-state read after Subplan 38 facts exist | safe to issue a linked retry |
-| `git_status` | bounded external read | safe to retry only with the frozen workspace/Git confinement |
-| `git_diff` | bounded external read | safe to retry only with the frozen workspace/Git confinement |
-| `calculate` / fixture-only pure tools | pure | safe to retry; never production-enables the fixture |
+| `list_directory` | bounded read | classified safe for a future linked retry; v1 requires explicit close/quarantine |
+| `read_file` | bounded read | classified safe for a future linked retry; v1 requires explicit close/quarantine |
+| `find_files` | bounded read | classified safe for a future linked retry; v1 requires explicit close/quarantine |
+| `search_text` | bounded read | classified safe for a future linked retry; v1 requires explicit close/quarantine |
+| `show_changes` | durable-state read after Subplan 38 facts exist | classified safe for a future linked retry; v1 requires explicit close/quarantine |
+| `git_status` | bounded external read | classified safe only with frozen confinement; v1 requires explicit close/quarantine |
+| `git_diff` | bounded external read | classified safe only with frozen confinement; v1 requires explicit close/quarantine |
+| `calculate` / fixture-only pure tools | pure | classified safe for a future linked retry; never production-enables the fixture |
 | `update_configuration` | reconcileable structured state write | requires revision/value reconciliation; never blind retry |
 | `apply_patch` | reconcileable file write | requires file/parent evidence reconciliation |
 | `write_file` | reconcileable file write | requires file/parent evidence reconciliation |
@@ -175,11 +183,11 @@ completed
 | Durable/observed condition | Classification/action |
 |---|---|
 | no committed execution row | no tool attempt exists |
-| intent committed; handler-entry fault point not crossed | `never_started`; retry only if declaration permits |
-| bounded read executing without completion | `safe_to_retry` as a linked attempt |
+| intent committed; handler-entry fault point not crossed | `never_started`; linked retry is reserved for a future v1 extension |
+| bounded read executing without completion | `safe_to_retry` classification; current v1 requires an explicit close/quarantine decision |
 | structured file/config write executing without completion | `requires_reconciliation` from expected evidence |
 | actual state matches expected after | record reconciliation result; close with truthful recovered-completed evidence, never synthesize original handler payload |
-| actual state matches before | may offer explicit linked retry if policy allows |
+| actual state matches before | eligible for a future linked retry after the linked-attempt path exists |
 | actual state matches neither or evidence missing | `outcome_unknown` |
 | Host/sandbox process lacks completion | `outcome_unknown` |
 | handler_completed but ToolMessage missing | append a recovery interrupted/error ToolMessage explaining lost result delivery; never invent original output or synthesize success |

@@ -75,7 +75,7 @@ def _item(**overrides) -> RecoveryItem:
         "tool_execution_id": "tex_1",
         "tool_name": "read_file",
         "classification": RecoveryClassification.SAFE_TO_RETRY,
-        "allowed_resolutions": (RecoveryResolution.RETRY, RecoveryResolution.ABORT),
+        "allowed_resolutions": (RecoveryResolution.ABORT,),
         "evidence": RecoveryEvidence(
             execution_state=ToolExecutionState.EXECUTING,
             effect_class=EffectClass.BOUNDED_READ,
@@ -237,11 +237,13 @@ def test_config_observation_uses_revisions():
 
 def test_item_resolution_is_idempotent_and_rejects_illegal_choices():
     item = _item()
-    retried = apply_item_resolution(item, RecoveryResolution.RETRY)
-    assert retried.resolution is RecoveryResolution.RETRY
-    assert apply_item_resolution(retried, RecoveryResolution.RETRY) is retried
+    with pytest.raises(RecoveryDecisionError, match="linked retry"):
+        apply_item_resolution(item, RecoveryResolution.RETRY)
+    aborted = apply_item_resolution(item, RecoveryResolution.ABORT)
+    assert aborted.resolution is RecoveryResolution.ABORT
+    assert apply_item_resolution(aborted, RecoveryResolution.ABORT) is aborted
     with pytest.raises(RecoveryDecisionError, match="mismatch"):
-        apply_item_resolution(retried, RecoveryResolution.ABORT)
+        apply_item_resolution(aborted, RecoveryResolution.QUARANTINE)
     with pytest.raises(RecoveryDecisionError, match="not allowed"):
         apply_item_resolution(item, RecoveryResolution.ACKNOWLEDGE)
     with pytest.raises(RecoveryDecisionError, match="report-level"):
@@ -258,7 +260,7 @@ def test_report_resume_requires_blocking_items_closed():
     with pytest.raises(RecoveryDecisionError, match="blocking"):
         apply_report_resume(report)
     closed = report.model_copy(
-        update={"items": (apply_item_resolution(_item(), RecoveryResolution.RETRY),)}
+        update={"items": (apply_item_resolution(_item(), RecoveryResolution.ABORT),)}
     )
     resolved = apply_report_resume(closed, now=datetime(2026, 1, 1, tzinfo=UTC))
     assert resolved.status is RecoveryReportStatus.RESOLVED

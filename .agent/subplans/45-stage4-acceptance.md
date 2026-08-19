@@ -101,8 +101,10 @@ Host/sandbox unknown-outcome classification without committed completion, and no
 ## Completion evidence
 
 - Integrated acceptance and fault/migration/security coverage: `140 passed, 2 skipped`.
-- Full offline suite and quality gates: `600 passed, 2 skipped, 1 deselected`; exact output is
-  recorded in the acceptance evidence document.
+- Full offline suite and quality gates after the final review-fix: `605 passed, 2 skipped, 1 deselected`;
+  exact output is recorded in the acceptance evidence document.
 - Installed wheel durable Session recovery: passed from an isolated data root.
 - One Grok `/review` → fix cycle was completed for Subplan 44; no additional review loop was run for
-  this acceptance-only closeout, per the user’s instruction to avoid repetitive review cycles.
+- One final Stage 4-wide Grok `/review` was completed and its findings were handled in one Codex
+  review-fix cycle; no second Grok pass was run, per the user's instruction to avoid repetitive review
+  cycles.

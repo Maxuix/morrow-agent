@@ -1,6 +1,6 @@
 # Morrow
 
-Morrow（承序）是一个以工作空间为边界的终端 Code Agent。当前版本提供进程内连续对话、
+Morrow（承序）是一个以工作空间为边界的终端 Code Agent。当前版本提供可恢复的持久化对话、
 受保护的本地读搜与冲突安全文件修改、审批后 Host 命令、当前 macOS 原生沙箱、只读 Git、
 经确认的 Profile 与 Preferences 配置，以及 Provider 管理。
 
@@ -29,6 +29,7 @@ Linux 在真实 runner 验证前保持 unsupported，后端不可用时 fail clo
 
 ```bash
 morrow [--dir PATH] [--permission-mode manual|auto-safe|auto-sandboxed|full-access-manual]
+morrow [--dir PATH] --session-id SESSION_ID
 morrow provider list
 morrow provider presets
 morrow provider add --preset opencode-go
@@ -40,6 +41,10 @@ morrow model current
 morrow grant list --agent-run-id AGENT_RUN_ID
 morrow grant create TASK_RUN_ID AGENT_RUN_ID --reason "一次明确的本地验证"
 morrow grant revoke GRANT_ID --reason "用户撤销"
+morrow session list --dir PATH
+morrow session resume SESSION_ID --dir PATH
+morrow recovery show SESSION_ID --dir PATH
+morrow recovery resolve REPORT_ID RESOLUTION --command-id COMMAND_ID --dir PATH
 ```
 
 用于 OpenCode Go Mimo v2.5 的持久化验收环境可使用仓库内包装命令；首次执行会隐藏输入
@@ -57,7 +62,10 @@ scripts/morrow-mimo model current
 `--replace-credential` 轮换存储凭据。
 
 REPL 常用命令包括 `/workspace`、`/workspace edit summary ...`、`/workspace reset`、`/status`、
-`/config`、`/config edit workspace language 中文`、`/config reset workspace`、`/new` 和 `/exit`。
+`/config`、`/config edit workspace language 中文`、`/config reset workspace`、`/task`、`/accept`、
+`/grant`、`/recovery`、`/new` 和 `/exit`。默认启动会创建新的 Session；若要继续已有 Session，
+使用 `--session-id SESSION_ID` 或 `session resume SESSION_ID`。检测到已有可恢复 Session 时，启动会
+显示其 ID；恢复后如有未完成的安全对账，先用 `/recovery` 查看并处理，再继续同一回合。
 所有确定性编辑和自然语言配置都会先显示作用域、目标、操作、字段和值，确认后才写入。
 自然语言配置只在用户明确要求保存、写入、记住或更新时调用标准
 `update_configuration` 工具；本次回答风格、问题、解释、假设、引用和否定句不会持久化。

@@ -8,6 +8,7 @@ from prompt_toolkit import PromptSession
 from prompt_toolkit.patch_stdout import patch_stdout
 from rich.console import Console
 
+from morrow.application.commands import RecoveryCommandRequest
 from morrow.application.orchestrator import DispatchResult
 from morrow.core.capabilities import CommandToolFact
 from morrow.core.models import AgentEvent, ToolApprovalDecision, ToolApprovalRequest
@@ -146,11 +147,21 @@ async def run_repl(
     session=None,
     terminal: Terminal | None = None,
     prompt_session: PromptSession | None = None,
+    resume_current_turn: bool = False,
 ) -> int:
     terminal = terminal or Terminal()
     prompt_session = prompt_session or PromptSession()
     terminal.console.print("Morrow 承序 · Workspace terminal agent.")
     with patch_stdout():
+        if resume_current_turn:
+            try:
+                async for item in orchestrator.resume_recovery():
+                    terminal.show_event(item)
+            except (RuntimeError, ValueError) as exc:
+                terminal.console.print(f"Recovery 继续失败：{exc}")
+            else:
+                if session is not None:
+                    terminal.show_run_summary(session)
         while True:
             try:
                 text = await terminal.prompt(prompt_session)
@@ -189,6 +200,31 @@ async def run_repl(
                     continue
                 _reset_session(orchestrator)
                 terminal.console.print("已切换到新的独立会话。")
+            if result.action == "resolve_recovery":
+                request = result.value
+                if not isinstance(request, RecoveryCommandRequest):
+                    terminal.console.print("Recovery 请求无效。")
+                    continue
+                confirmation = await _confirm(
+                    terminal,
+                    prompt_session,
+                    f"确认执行 Recovery {request.resolution.value}？",
+                )
+                if confirmation == "closed":
+                    return _closed_input(terminal)
+                if confirmation != "yes":
+                    continue
+                try:
+                    saved = _command_service(orchestrator).resolve_recovery(request)
+                except (ValueError, RuntimeError) as exc:
+                    terminal.console.print(f"Recovery 处理失败：{exc}")
+                    continue
+                terminal.console.print(f"Recovery 已处理：{saved.status.value}。")
+                if request.resolution.value == "resume":
+                    async for item in orchestrator.resume_recovery():
+                        terminal.show_event(item)
+                    if session is not None:
+                        terminal.show_run_summary(session)
             if result.action == "reset_profile":
                 confirmation = await _confirm(terminal, prompt_session, "确认重置 Profile？")
                 if confirmation == "closed":

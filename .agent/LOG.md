@@ -1216,3 +1216,17 @@
   is closed; Stage 5 remains inactive pending an explicit user request. No new production capability was
   added during acceptance, and no additional Grok review loop was run after the single Subplan44
   review-fix cycle.
+
+## 2026-08-20 — Stage 4 final Grok review and single review-fix
+
+- Ran the requested one-time read-only Grok review over the complete Stage 4 implementation and saved
+  [`docs/reviews/stage-4-final-grok-review.md`](../docs/reviews/stage-4-final-grok-review.md). No second
+  Grok review was run.
+- Confirmed and fixed the report's B1/B2/H1–H4 findings plus O1/O3/O4/O6/O7: explicit Session resume,
+  same-transaction recovery lifecycle, `/recovery`, removal of the no-op public RETRY path, item-scoped
+  recovery closure, stable opaque durable tool-call correlations, fail-closed backup verification,
+  secret-token false-positive reduction, lifecycle-validator clarification, and recoverable-session
+  startup guidance.
+- Final validation after fixes: offline suite `605 passed, 2 skipped, 1 deselected`; focused review-fix
+  regression `70 passed`; Ruff format/check, compileall, CLI help, `git diff --check`, wheel build, and
+  isolated wheel import/help passed. Stage 4 remains closed and Stage 5 remains inactive.

@@ -1120,6 +1120,17 @@ class SqliteOperationalJournal:
         )
         return tuple(_turn_from_row(row) for row in rows)
 
+    def list_session_turns(self, workspace_id: str, session_id: str) -> tuple[DurableTurn, ...]:
+        rows = self._read_all(
+            "SELECT t.turn_id, t.session_id, t.task_run_id, t.client_message_id, "
+            "t.created_at_unix FROM turns t "
+            "JOIN sessions s ON s.session_id = t.session_id "
+            "WHERE t.session_id = ? AND s.workspace_id = ? "
+            "ORDER BY t.created_at_unix ASC, t.turn_id ASC",
+            (session_id, workspace_id),
+        )
+        return tuple(_turn_from_row(row) for row in rows)
+
     def create_agent_run(self, workspace_id: str, run: DurableAgentRun) -> DurableAgentRun:
         def work(journal: SqliteOperationalJournal) -> DurableAgentRun:
             journal._insert_agent_run(workspace_id, run)
@@ -1193,6 +1204,19 @@ class SqliteOperationalJournal:
         if row is None:
             return None
         return _agent_from_row(row)
+
+    def list_session_agent_runs(
+        self, workspace_id: str, session_id: str
+    ) -> tuple[DurableAgentRun, ...]:
+        rows = self._read_all(
+            "SELECT r.agent_run_id, r.turn_id, r.session_id, r.resume_of_agent_run_id, "
+            "r.snapshot_json, r.created_at_unix, r.permission_snapshot_id FROM agent_runs r "
+            "JOIN sessions s ON s.session_id = r.session_id "
+            "WHERE r.session_id = ? AND s.workspace_id = ? "
+            "ORDER BY r.created_at_unix ASC, r.agent_run_id ASC",
+            (session_id, workspace_id),
+        )
+        return tuple(_agent_from_row(row) for row in rows)
 
     def get_permission_snapshot(
         self, workspace_id: str, permission_snapshot_id: str

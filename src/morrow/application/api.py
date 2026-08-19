@@ -37,12 +37,18 @@ from morrow.core.application import (
 from morrow.core.artifacts import ArtifactError, ArtifactMetadata
 from morrow.core.capabilities import PermissionPreset, PermissionProfile
 from morrow.core.domain import (
+    AGENT_RUN_ID_PREFIX,
     COMMAND_ID_PREFIX,
     WORKSPACE_ID_PREFIX,
+    DurableAgentRun,
     DurableSession,
     DurableTaskOutcome,
     DurableTaskRun,
+    SessionHealth,
     SessionLifecycle,
+    TaskOutcomeTrigger,
+    TaskRunStatus,
+    TurnSubmitDisposition,
     canonical_json_bytes,
     sha256_digest,
     validate_prefixed_id,
@@ -65,6 +71,7 @@ from morrow.core.ports import IdSource
 from morrow.core.recovery import (
     RecoveryDecisionError,
     RecoveryReport,
+    RecoveryReportStatus,
     RecoveryResolution,
 )
 from morrow.core.store import StorageError, StorageErrorCode
@@ -1068,7 +1075,7 @@ class OperationalApplicationService:
         item_id: str | None = None,
         log=None,
         writer=None,
-        close_all: bool = True,
+        close_all: bool = False,
     ) -> ApplicationCommandResult[RecoveryReport]:
         if self.recovery is None or log is None:
             raise ApplicationError(
@@ -1094,6 +1101,7 @@ class OperationalApplicationService:
                 )
             return ApplicationCommandResult(value, replay)
         try:
+            resumed_agent_run_id: list[str] = []
             updated, recovery_receipt, planned = self.recovery.decide(
                 report,
                 command_id=command_id,
@@ -1126,6 +1134,8 @@ class OperationalApplicationService:
                 )
                 return ApplicationCommandResult(value, receipt)
 
+            close_all = close_all or (resolution is RecoveryResolution.ABORT and item_id is None)
+
             def work(txn: SqliteOperationalJournal):
                 existing = self._replay_in_txn(txn, command_id, digest)
                 if existing is not None:
@@ -1142,6 +1152,14 @@ class OperationalApplicationService:
                     log=log,
                     writer=writer,
                     close_all=close_all,
+                    apply_log_projection=False,
+                    finalize=lambda finalize_txn, saved: self._apply_recovery_lifecycle_in_txn(
+                        finalize_txn,
+                        report=report,
+                        saved=saved,
+                        resolution=resolution,
+                        resumed_agent_run_id=resumed_agent_run_id,
+                    ),
                 )
                 event = self._event(
                     txn,
@@ -1163,7 +1181,11 @@ class OperationalApplicationService:
                 return ApplicationCommandResult(value, receipt)
 
             try:
-                return self._translate(lambda: self.journal.transact(work))
+                result = self._translate(lambda: self.journal.transact(work))
+                if planned is not None:
+                    log.apply_committed(planned)
+                self._sync_recovery_persistence(result.value, resumed_agent_run_id)
+                return result
             except ApplicationError:
                 self._restore_log_projection(log, report.session_id)
                 raise
@@ -1172,6 +1194,115 @@ class OperationalApplicationService:
         except Exception as exc:
             self._restore_log_projection(log, report.session_id)
             raise self._translate_exception(exc) from exc
+
+    def _apply_recovery_lifecycle_in_txn(
+        self,
+        txn: SqliteOperationalJournal,
+        *,
+        report: RecoveryReport,
+        saved: RecoveryReport,
+        resolution: RecoveryResolution,
+        resumed_agent_run_id: list[str],
+    ) -> None:
+        """Keep Session health, turn receipts, tasks, and resume runs atomic with recovery."""
+
+        session = txn.get_session(self.workspace_id, report.session_id)
+        if session is None:
+            raise StorageError(StorageErrorCode.NOT_FOUND, "operational session is missing")
+
+        health = SessionHealth.NEEDS_RECOVERY
+        current_task_run_id = session.current_task_run_id
+        if saved.status is RecoveryReportStatus.QUARANTINED:
+            health = SessionHealth.QUARANTINED
+        elif saved.status is RecoveryReportStatus.RESOLVED:
+            health = SessionHealth.OK
+            if resolution is RecoveryResolution.RESUME and saved.agent_run_id is not None:
+                previous = txn.get_agent_run(self.workspace_id, saved.agent_run_id)
+                if previous is None:
+                    raise StorageError(StorageErrorCode.NOT_FOUND, "recovery AgentRun is missing")
+                new_id = self.id_source.new_id(AGENT_RUN_ID_PREFIX)
+                txn.create_agent_run(
+                    self.workspace_id,
+                    DurableAgentRun(
+                        agent_run_id=new_id,
+                        turn_id=previous.turn_id,
+                        session_id=previous.session_id,
+                        resume_of_agent_run_id=previous.agent_run_id,
+                        snapshot=previous.snapshot,
+                    ),
+                )
+                resumed_agent_run_id.append(new_id)
+            elif resolution is RecoveryResolution.ABORT:
+                current_task_run_id = self._abort_recovery_task_in_txn(
+                    txn, session, turn_id=report.turn_id
+                )
+                self._close_recovery_receipt_in_txn(txn, report)
+
+        txn.save_session(
+            self.workspace_id,
+            session.model_copy(
+                update={"health": health, "current_task_run_id": current_task_run_id}
+            ),
+        )
+
+    def _sync_recovery_persistence(
+        self, report: RecoveryReport, resumed_agent_run_id: list[str]
+    ) -> None:
+        persistence = self.persistence
+        session = getattr(persistence, "_session", None) if persistence is not None else None
+        if persistence is None or session is None or session.session_id != report.session_id:
+            return
+        row = self.journal.get_session(self.workspace_id, report.session_id)
+        if row is None:
+            return
+        session.health = row.health
+        persistence.current_task_run_id = row.current_task_run_id
+        if resumed_agent_run_id:
+            persistence.current_agent_run_id = resumed_agent_run_id[0]
+            persistence.current_permission_snapshot_id = None
+        persistence.open_report = None if report.status is RecoveryReportStatus.RESOLVED else report
+
+    def _abort_recovery_task_in_txn(
+        self, txn: SqliteOperationalJournal, session: DurableSession, *, turn_id: str | None
+    ) -> str | None:
+        task_id = session.current_task_run_id
+        if task_id is None:
+            return None
+        task = txn.get_task_run(self.workspace_id, task_id)
+        if task is None:
+            raise StorageError(StorageErrorCode.NOT_FOUND, "recovery TaskRun is missing")
+        if task.status in {TaskRunStatus.OPEN, TaskRunStatus.READY_FOR_ACCEPTANCE}:
+            task = self.tasks._transition_in_txn(
+                txn,
+                task,
+                TaskRunStatus.CANCELLED,
+                reason="recovery_abort",
+                turn_id=turn_id,
+            )
+            self.tasks._outcome_in_txn(
+                txn,
+                task,
+                trigger=TaskOutcomeTrigger.TERMINAL_CLOSE,
+                summary="TaskRun cancelled during recovery abort.",
+            )
+            return None
+        return task_id if not task.status.is_terminal else None
+
+    def _close_recovery_receipt_in_txn(
+        self, txn: SqliteOperationalJournal, report: RecoveryReport
+    ) -> None:
+        if report.turn_id is None:
+            return
+        turn = txn.get_turn(self.workspace_id, report.turn_id)
+        if turn is None:
+            return
+        receipt = txn.get_receipt(self.workspace_id, report.session_id, turn.client_message_id)
+        if receipt is None or receipt.disposition is TurnSubmitDisposition.ACCEPTED_CLOSED:
+            return
+        txn.update_receipt(
+            self.workspace_id,
+            receipt.model_copy(update={"disposition": TurnSubmitDisposition.ACCEPTED_CLOSED}),
+        )
 
     # Internal composition helpers -------------------------------------------
 

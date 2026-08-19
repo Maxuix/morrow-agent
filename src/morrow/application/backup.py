@@ -83,8 +83,10 @@ class OperationalBackupService:
             restrict_path(temporary_digest, FILE_MODE)
             os.replace(temporary_digest, manifest_digest)
             verified = self.verify(bundle)
-            if not verified.database_integrity_ok or not verified.foreign_keys_ok:
-                raise BackupBundleError("backup database failed integrity verification")
+            if not verified.ok:
+                raise BackupBundleError(
+                    "backup bundle failed verification: " + ", ".join(verified.issues)
+                )
             return BackupBundleReport(
                 bundle_name=bundle.name,
                 database_name="database.sqlite",

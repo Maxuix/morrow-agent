@@ -87,6 +87,9 @@ def root(
         "--mode",
         help="权限预设：manual、auto-safe、auto-sandboxed 或 full-access-manual。",
     ),
+    session_id: str | None = typer.Option(
+        None, "--session-id", help="恢复指定 Session；不提供时创建新的前台 Session。"
+    ),
 ) -> None:
     if ctx.invoked_subcommand:
         return
@@ -121,6 +124,7 @@ def root(
                 application,
                 identity,
                 permission_profile=PermissionProfile.from_preset(permission_mode),
+                resume_session_id=session_id,
             )
     except WorkspaceError as exc:
         typer.echo(str(exc), err=True)
@@ -131,7 +135,13 @@ def root(
     raise typer.Exit(code=code)
 
 
-def _run_workspace(application, identity, *, permission_profile: PermissionProfile) -> int:
+def _run_workspace(
+    application,
+    identity,
+    *,
+    permission_profile: PermissionProfile,
+    resume_session_id: str | None = None,
+) -> int:
     if not application.provider_service.current_model():
         typer.echo("尚未配置模型，开始 Provider 引导。")
         secret = _secret()
@@ -161,6 +171,13 @@ def _run_workspace(application, identity, *, permission_profile: PermissionProfi
         except WorkspaceError as exc:
             typer.echo(str(exc), err=True)
             raise typer.Exit(code=2) from exc
+    if resume_session_id is None:
+        candidates = _resume_candidates(application, identity.workspace_id)
+        if candidates:
+            listed = ", ".join(candidates)
+            typer.echo(
+                f"检测到可恢复 Session：{listed}；如需继续，请使用 --session-id SESSION_ID。"
+            )
     terminal = Terminal()
     prompt_session = PromptSession()
     approval_port = TerminalApprovalPort(terminal, prompt_session)
@@ -170,6 +187,7 @@ def _run_workspace(application, identity, *, permission_profile: PermissionProfi
             identity,
             approval_port=approval_port,
             permission_profile=permission_profile,
+            resume_session_id=resume_session_id,
         )
     except CredentialAccessError as exc:
         _echo_credential_error(exc)
@@ -184,8 +202,37 @@ def _run_workspace(application, identity, *, permission_profile: PermissionProfi
             session=session_app.session,
             terminal=terminal,
             prompt_session=prompt_session,
+            resume_current_turn=session_app.persistence.pending_resume,
         )
     )
+
+
+def _resume_candidates(application, workspace_id: str) -> tuple[str, ...]:
+    """Find resumable Sessions without making the default REPL choose for the user."""
+
+    store = OperationalStore(application.data_root.root)
+    try:
+        handle = store.open(StoreOpenMode.READ_ONLY)
+    except StorageError as exc:
+        if exc.code is StorageErrorCode.NOT_FOUND:
+            return ()
+        return ()
+    try:
+        journal = SqliteOperationalJournal(handle)
+        candidates: list[str] = []
+        for session in journal.list_sessions(workspace_id):
+            if session.health.value == "needs_recovery":
+                candidates.append(session.session_id)
+                continue
+            active = restore_conversation_log(journal, workspace_id, session.session_id)
+            executions = journal.list_session_executions(workspace_id, session.session_id)
+            if active.has_active_turn or any(item.state.value != "closed" for item in executions):
+                candidates.append(session.session_id)
+        return tuple(candidates)
+    except (RuntimeError, StorageError, ValueError):
+        return ()
+    finally:
+        handle.close()
 
 
 @provider_app.command("list")
@@ -484,8 +531,7 @@ def session_create(
 
 
 @session_app.command("status")
-@session_app.command("resume")
-def session_resume(
+def session_status(
     session_id: str,
     workspace_id: str | None = typer.Option(None, "--workspace-id"),
     directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
@@ -505,6 +551,51 @@ def session_resume(
         raise typer.Exit(code=2) from None
     finally:
         _close_state(handle)
+
+
+@session_app.command("resume")
+def session_resume(
+    session_id: str,
+    workspace_id: str | None = typer.Option(None, "--workspace-id"),
+    directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
+    permission_mode: PermissionPreset = typer.Option(
+        PermissionPreset.MANUAL,
+        "--permission-mode",
+        "--mode",
+        help="权限预设：manual、auto-safe、auto-sandboxed 或 full-access-manual。",
+    ),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+) -> None:
+    try:
+        application = build_application(state_root=state_root)
+        global_state = application.global_store.load()
+        if global_state.status.value != "ok":
+            raise WorkspaceError(
+                f"全局状态不可安全加载（{global_state.status.value}），已阻止恢复。"
+            )
+        resolution = application.workspace_service.resolve(directory)
+        if resolution.status != "existing" or resolution.identity is None:
+            raise WorkspaceError("工作空间尚未登记；请先用主命令确认工作空间。")
+        identity = resolution.identity
+        if workspace_id is not None and workspace_id != identity.workspace_id:
+            raise WorkspaceError("--workspace-id 与 --dir 不属于同一工作空间。")
+        with WorkspaceWriterLock(application.data_root, identity.workspace_id):
+            code = _run_workspace(
+                application,
+                identity,
+                permission_profile=PermissionProfile.from_preset(permission_mode),
+                resume_session_id=session_id,
+            )
+    except (WorkspaceError, CredentialAccessError) as exc:
+        if isinstance(exc, CredentialAccessError):
+            _echo_credential_error(exc)
+        else:
+            typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from None
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from None
+    raise typer.Exit(code=code)
 
 
 @session_app.command("archive")
@@ -986,6 +1077,7 @@ def recovery_resolve(
             item_id=item_id,
             log=log,
             writer=writer,
+            close_all=resolution is RecoveryResolution.ABORT and item_id is None,
         )
         _emit_model(result.value)
     except Exception as exc:

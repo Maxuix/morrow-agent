@@ -10,10 +10,14 @@ import pytest
 from morrow.adapters.state.journal import SqliteOperationalJournal
 from morrow.adapters.state.operational import BusyRetryPolicy, OperationalStore
 from morrow.core.domain import DurableSession, DurableTaskRun
-from morrow.core.models import AssistantMessage, FinishReason, UserMessage
+from morrow.core.models import AssistantMessage, FinishReason, FunctionToolCall, UserMessage
 from morrow.core.store import StorageError, StorageErrorCode, StoreOpenMode
 from morrow.runtime.conversation import ConversationLog
-from morrow.runtime.durable_log import DurableConversationWriter, restore_conversation_log
+from morrow.runtime.durable_log import (
+    DurableConversationWriter,
+    durable_call_id,
+    restore_conversation_log,
+)
 from morrow.testing import FixedClock, FixedIdSource
 
 
@@ -110,5 +114,44 @@ def test_committed_append_restores_identical_legal_records(tmp_path):
         assert restored.snapshot() == log.snapshot()
         assert [message.content for message in restored.messages_view()] == ["hello", "hi"]
         assert restored.has_active_turn is False
+    finally:
+        session.close()
+
+
+def test_tool_call_ids_have_stable_opaque_durable_correlations(tmp_path):
+    _store, session, journal = _journal(tmp_path)
+    try:
+        log = ConversationLog()
+        writer = DurableConversationWriter(
+            log,
+            journal,
+            workspace_id="ws_a",
+            session_id="ses_1",
+            id_source=FixedIdSource(),
+        )
+        writer.commit(log.plan_begin_turn(UserMessage(content="read")))
+        writer.commit(
+            log.plan_append_assistant(
+                AssistantMessage(
+                    tool_calls=(
+                        FunctionToolCall(
+                            id="provider-call-42",
+                            name="read_file",
+                            arguments='{"path":"notes.txt"}',
+                        ),
+                    )
+                )
+            )
+        )
+        writer.commit(log.plan_append_tool_result("provider-call-42", '{"ok":true}'))
+        writer.commit(log.plan_append_assistant(AssistantMessage(content="done")))
+        writer.commit(log.plan_finish_turn(FinishReason.STOP))
+
+        restored = restore_conversation_log(journal, "ws_a", "ses_1")
+        cycle = restored.snapshot().public_turns()[0].cycles[0]
+        durable_id = durable_call_id("provider-call-42")
+        assert durable_id != "provider-call-42"
+        assert cycle.assistant.message.tool_calls[0].id == durable_id
+        assert cycle.results[0].message.tool_call_id == durable_id
     finally:
         session.close()

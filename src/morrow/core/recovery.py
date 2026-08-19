@@ -251,11 +251,11 @@ def allowed_resolutions(
     if classification is RecoveryClassification.COMPLETED:
         return (RecoveryResolution.ACKNOWLEDGE,)
     if classification is RecoveryClassification.SAFE_TO_RETRY:
-        return (RecoveryResolution.RETRY, *abortable)
+        return abortable
     if classification is RecoveryClassification.NEVER_STARTED:
         if declaration.missing_handler_completed is MissingCompletionPolicy.OUTCOME_UNKNOWN:
             return (RecoveryResolution.ACKNOWLEDGE, *abortable)
-        return (RecoveryResolution.RETRY, *abortable)
+        return abortable
     if classification is RecoveryClassification.REQUIRES_RECONCILIATION:
         return (RecoveryResolution.ACKNOWLEDGE, *abortable)
     return (RecoveryResolution.ACKNOWLEDGE, *abortable)
@@ -350,6 +350,8 @@ def apply_item_resolution(item: RecoveryItem, resolution: RecoveryResolution) ->
         raise RecoveryDecisionError("recovery resolution mismatch")
     if resolution is RecoveryResolution.RESUME:
         raise RecoveryDecisionError("resume is a report-level resolution")
+    if resolution is RecoveryResolution.RETRY:
+        raise RecoveryDecisionError("linked retry is not available in this recovery surface")
     if resolution not in item.allowed_resolutions:
         raise RecoveryDecisionError("recovery resolution is not allowed")
     return item.model_copy(update={"resolution": resolution})
