@@ -2,28 +2,32 @@
 
 ## Current stage
 
-Stage 3 is closed on the claimed macOS platform. Stage 4 is open for planning, but no Stage 4
-implementation subplan is active.
+Stage 4 is active for contract planning. Production persistence and Full Access behavior have not
+started.
 
 ## Active subplan
 
-None.
+Subplan 35 — Stage 4 Contract Activation and Design Spikes.
 
 ## Tasks
 
-- [x] S3.34.1 Implement safe Git inspection.
-- [x] S3.34.2 Lock the final production tool inventory.
-- [x] S3.34.3 Run complete Fake Provider product stories.
-- [x] S3.34.4 Run real terminal and security acceptance.
-- [x] S3.34.5 Create requirement-to-evidence matrix.
-- [x] S3.34.6 Reconcile product and architecture documentation.
-- [x] S3.34.7 Run final quality and package gates.
+- [x] S4.35.1 Activate the reconciled master plan, subplan index, roadmap status, and execution
+  state without changing production behavior.
+- [x] S4.35.2 Write the Operational Store ADR and prove the chosen `sqlite3` transaction, WAL/
+  synchronous, lock-contention, migration-lock, future-schema, and online-backup behavior in a
+  task-private spike.
+- [ ] S4.35.3 Write the domain/ownership ADR: identifiers, Session lifecycle versus health,
+  TaskRun continuation rules, AgentRun snapshots, ConversationLog single-writer protocol, and
+  targeted command idempotency.
+- [ ] S4.35.4 Write the durable execution ADR: payload budgets, ToolExecution/Approval transitions,
+  EffectClass, persist-before-effect transaction boundary, and recovery classifications.
+- [ ] S4.35.5 Write the Artifact/context/fork ADR, including atomic publication, hash verification,
+  deterministic checkpoints, provenance ranges, and the no-workspace-rewind boundary.
+- [ ] S4.35.6 Write the permissions ADR: user-only grants, run-bound snapshots, revocation, Full
+  Access Manual, protected direct tools, honest unconfined Host warning, and deferred Auto.
+- [ ] S4.35.7 Pin any reference used beyond semantics, record license/provenance, and decide whether
+  third-party notices are actually required.
+- [ ] S4.35.8 Finish the fault matrix, review every later subplan against the ADRs, run the Subplan
+  gate, and activate Subplan 36 only after acceptance.
 
-Subplan 34 completed on 2026-08-18 after read-only Git hardening, two Fake Provider product
-stories, real terminal/security acceptance, host-level macOS Seatbelt tests, full offline and
-package gates, and the requirement-to-evidence matrix. The external review's nine bugs, two
-suggestions, and one nit were remediated. On 2026-08-19 the persistent Mimo v2.5 environment,
-Keychain error boundary, connection feedback, preset discovery, wrapper state routing, and final
-quality/package gates were rechecked. Current macOS Auto Sandboxed is native and fail-closed;
-Linux runtime remains explicitly unsupported until a real runner passes. Full Access and Stage 4
-persistence remain unimplemented and are now the next planning scope.
+Only Subplan 35 may be executed. Subplans 36–45 are planned but inactive.

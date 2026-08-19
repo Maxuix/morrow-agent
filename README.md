@@ -82,7 +82,8 @@ Git 写入风险在审批前拒绝。命令文本只用于本地审批，不进�
 
 当前持久化内容只有工作空间身份、Profile、全局/工作空间 Preferences、Provider 配置和凭据引用。
 Session 持有的 ConversationLog 只存在于当前进程；退出或重启后不能恢复、列出、归档或继续旧会话。
-持久化 Session、Fork 和上下文摘要留到 Stage 4；任务后可审查的长期偏好与项目知识学习留到 Stage 5。
+持久化 Session、conversation Fork 和确定性上下文 checkpoint 已进入 Stage 4 合同设计但尚未实现；
+工作空间/代码回退不属于 Stage 4，任务后可审查的长期偏好与项目知识学习留到 Stage 5。
 
 旧版本可能留下 `handoff.yaml` 或 `handoff.yaml.bak`。当前版本不读取、校验、迁移、覆盖或自动删除
 这些遗留文件；是否导入或清理需要未来单独的产品与数据决策。
@@ -97,5 +98,6 @@ Profile 损坏或版本较新时，工作空间持久状态进入只读模式；
 Auto Sandboxed 快照执行；支持后端时还提供始终需审批的当前运行沙箱变更推广。Stage 3 的当前 macOS 验收已完成，
 Linux 原生运行仍在真实 runner 验证前保持 unsupported。每次完成工具轮次后，终端可显示一行由本地 ToolFacts/metrics
 生成的有界事实摘要；该摘要不进入 Provider、公开事件或持久状态。
-`auto-sandboxed` 在 native backend 不可用或无法证明时会 fail closed。持久化聊天历史/摘要、可审查
-学习、Skills/MCP、Multi-Agent Workflow、GUI 和后台任务分别属于 Stage 4 及之后的路线，当前均未实现。
+`auto-sandboxed` 在 native backend 不可用或无法证明时会 fail closed。持久化聊天历史、Artifact、
+checkpoint、恢复和 Full Access Manual 属于 Stage 4；可审查学习从 Stage 5 开始，Skills/MCP、
+Multi-Agent Workflow、GUI 和后台任务属于更后续阶段，当前均未实现。

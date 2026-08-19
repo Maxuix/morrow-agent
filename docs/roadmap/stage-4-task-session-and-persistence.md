@@ -1,676 +1,363 @@
 # Stage 4：Task、Session、Artifact 与持久化
 
-> 状态：规划中（实现未开始）
-> 阶段结果：Morrow 的会话、任务、工具周期、权限授权和关键产物可在进程退出后恢复，并能对未完成副作用进行安全对账
+> 状态：实施规划已激活（Subplan 35；生产实现尚未开始）
+> 阶段结果：前台 Session、TaskRun、ToolCycle、授权与关键产物可在进程退出后恢复，未完成副作用可被安全解释和对账
 > 上级文档：[开发路线总览](../ROADMAP.md)
 > 上一阶段：[Stage 3：本地 Code Agent 与安全闭环](stage-3-local-tools-and-safety.md)
 > 下一阶段：[Stage 5：可审查学习与长期记忆](stage-5-reviewable-learning-and-memory.md)
+> 当前执行方案：[`.agent/PLAN.md`](../../.agent/PLAN.md)
 
 ## 一、阶段目标
 
-Stage 4 把 Morrow 从“进程内可用的 Code Agent”变成“具有可靠运行历史和恢复边界的长期工具”。
-
-本阶段首先解决运行状态，不急于解决自动学习：
+Stage 4 把 Morrow 从进程内 Code Agent 变成可长期日用、可诊断、可备份的本地前台 Agent：
 
 ```text
-用户进入工作空间
+进入工作空间
 → 创建或恢复 Session
-→ 接受一个可能跨多轮的 TaskRun
-→ 记录 Turn / AgentRun / ToolCycle / Approval / Artifact
-→ 冻结本次 AgentRun 的权限范围、审批模式与授权来源
-→ 在副作用前持久化执行意图
-→ 完成、暂停、失败或等待用户
-→ 进程退出或崩溃
-→ 重启后恢复到可解释、可继续或可对账的状态
-→ 生成结构化 TaskOutcome
+→ 在一个 TaskRun 中接受多个 Turn
+→ 冻结 AgentRun 的非敏感配置与权限证据
+→ 在副作用前持久化消息、审批与 ToolExecution intent
+→ 闭合或对账 ToolCycle
+→ 生成 Artifact、ContextCheckpoint 与版本化 TaskOutcome
+→ 正常退出或崩溃
+→ 以安全健康状态重新打开
+→ 继续、对账、Fork、归档或接受
 ```
 
-阶段完成后，Morrow 应能准确回答：
+完成后，系统必须能准确回答：
 
-- 当前在做什么任务？
-- 已经执行了哪些工具和副作用？
-- 哪些操作完成、失败、取消或结果未知？
-- 下次启动应该继续、重试、对账还是重新询问用户？
-- 长上下文中哪些内容被保留、压缩或转为 Artifact？
-- 当时实际授予了什么权限、由谁授予、何时失效或撤销？
+- 当前工作空间有哪些 Session，当前目标属于哪个 TaskRun？
+- 哪些 Turn、AgentRun、ToolExecution 和审批已经提交？
+- 哪些副作用确定完成、确定未开始、可安全重试、需要对账或结果未知？
+- 恢复时为什么继续、阻止、重试或重新询问用户？
+- 上下文中哪些原始记录仍保留，哪些只通过 checkpoint 或 Artifact 引用？
+- 当时实际冻结了什么配置、工具 Schema、权限和 CapabilityGrant？
 
-## 二、本阶段与 Stage 5 的边界
+本阶段不是一次性 Demo，也不建设分布式企业调度平台。目标是可靠的单机、单用户、前台个人
+Agent：具备事务、迁移、备份、损坏降级、故障注入和清晰产品语义，但不提前引入后台 Worker、
+分布式租约、多设备同步或组织权限系统。
+
+## 二、边界
 
 Stage 4 负责：
 
-- 可靠保存运行历史。
-- 恢复 Session 和 TaskRun。
-- 长上下文压缩与任务摘要。
-- 生成结构化 `TaskOutcome`。
-- 保存来源明确的 Artifact 和执行证据。
-- 持久化、冻结、查询和撤销显式 `CapabilityGrant`。
-- 在可靠审计与恢复边界上先激活 Full Access Manual，再提供受控 Full Access Auto。
+- 单一 Operational Store 中的 Session、TaskRun、Turn、AgentRun、消息、ToolExecution、Approval、
+  TaskOutcome、Artifact 元数据、ContextCheckpoint、CapabilityGrant 与必要查询投影。
+- ConversationLog 的同步持久化边界与唯一消息语法。
+- 有副作用工具的 intent-before-effect、崩溃分类和用户可理解的恢复对账。
+- 有界、脱敏、完整性可验证的 Artifact。
+- 确定性上下文压缩、原始记录来源和 conversation/session Fork。
+- 统一 Command/Query 边界、CLI/REPL、只读 doctor、在线备份与恢复验证。
+- 用户显式、可撤销、按 AgentRun 冻结的 CapabilityGrant 与 Full Access Manual。
 
 Stage 4 不负责：
 
-- 从摘要中直接推断长期偏好。
-- 自动把项目事实写入长期记忆。
-- 自动创建 Skill。
-- 根据历史选择 Multi-Agent Workflow。
+- 从历史自动学习 Preference、Knowledge 或 Skill；
+- LLM 摘要作为完成门禁、向量数据库、Embedding 或 FTS5；
+- Multi-Agent Workflow、in-flight steering、后台运行、队列、周期任务或通知；
+- 事件投递 Outbox/Worker 或分布式 RunClaim/租约；
+- 自动修复业务历史、静默重建数据库或把不确定副作用改写为成功；
+- 工作空间/代码 rewind、恢复或删除用户文件；
+- Controlled Full Access Auto、raw auto 或任意宿主命令免审批；
+- 完整 GUI、多设备同步、团队共享和 Stage 10 的完整导出/彻底删除体验。
 
-换言之：
+> **Stage 4 可靠记录“发生了什么”；Stage 5 才评审“什么值得长期学习”。**
 
-> **Stage 4 让系统记得“发生了什么”；Stage 5 才决定“什么值得长期学习”。**
+## 三、当前基线与进入条件
 
-## 三、进入条件
+Stage 3 已在当前声明的 macOS 平台完成真实 Code Agent 闭环：工作空间读搜、冲突安全变更、审批后
+Host 命令、原生快照沙箱、变更推广与只读 Git 均经过验收。Stage 4 必须保持以下基线：
 
-- Stage 3 已完成真实 Code Agent 闭环。
-- 文件、Shell 和 Git 工具的结果模型、取消语义和副作用记录已稳定。
-- `ConversationLog`、ToolCycle 和公开事件可以覆盖正常、拒绝、失败、超时和取消。
-- 工作空间身份、Profile、Preferences、Provider 与凭据仍有明确权威来源。
-- 已有真实任务数据表明哪些输出会造成上下文压力。
+- 普通聊天只走 `AgentLoop.run_task()`；保留的 `run_turn()` 仍是薄的 no-tools 委托。
+- Session-owned `ConversationLog` 是唯一聊天历史写入者和 ToolCycle 语法权威。
+- Profile、Preferences 与 Provider 非敏感配置继续由现有 YAML Store 管理；凭据继续由
+  CredentialStore/环境变量管理。
+- 公开事件生命周期和随包 `agent-policy.toml` 默认值在明确 hold point 前不改变。
+- Host 命令在 Stage 3 Manual/Auto Safe 中需要审批且没有 OS 隔离；只有 Auto Sandboxed 声明原生隔离。
+- 生产 ToolSet 中每个工具必须继续使用同一 ToolExecutor/ToolCycle 协议，不能在 AgentLoop 中按名称
+  增加业务分支。
 
-## 四、核心概念与所有权
+进入生产实现前，Subplan 35 必须通过 SQLite、并发、迁移、恢复、Payload、权限和来源治理 ADR 门禁。
+
+## 四、领域语义与所有权
 
 ### 4.1 Session
 
-`Session` 是可恢复交互容器，绑定：
-
-- `session_id`
-- `workspace_id`
-- 创建、最近活动和归档时间
-- 当前模型/配置引用或快照
-- 当前活跃 TaskRun
-- 展示标题与用户标签
-- 生命周期状态
-
-建议状态：
+Session 是工作空间隔离的可恢复交互容器。生命周期与存储健康必须分开：
 
 ```text
-active
-archived
-deleted（逻辑删除或 tombstone，具体策略在阶段评审锁定）
+lifecycle: active | archived | deleted
+health:     ok | needs_recovery | needs_repair | read_only
 ```
 
-一个 Session 可以顺序承载多个 TaskRun，但同一时刻默认只有一个前台活跃 TaskRun。
+Quarantine 只能改变 health，不能把用户选择的 active/archived/deleted 改成另一种业务状态。一个 Session
+可以顺序承载多个 TaskRun，默认只有一个前台 current TaskRun。
 
 ### 4.2 TaskRun
 
-`TaskRun` 表示一个用户目标，而不是一次模型回合。它可以跨越：
+TaskRun 表示一个用户目标，不等于一次模型请求。锁定的首版语义是：
 
-- 多个用户补充 Turn。
-- 多次工具调用。
-- 多个 AgentRun（Stage 7 后）。
-- 暂停、恢复和用户审批。
-- 失败后的修正与重试。
+- Session 没有 current TaskRun 时，第一条普通输入创建一个 TaskRun。
+- 最终 Assistant 回答使 TaskRun 进入 `completed`，但不代表用户已经接受。
+- `completed` 后的普通输入默认属于同一个 TaskRun 的继续或纠正。
+- `/accept` 记录显式接受；`/task new` 创建新 TaskRun；`/new` 创建新 Session。
+- failed/cancelled/interrupted 保留已发生副作用，显式 resume/retry 创建可关联的新尝试，不能伪装回滚。
 
-建议状态机：
+TaskRun 的合法状态和精确转换由 Stage 4 ADR 固定；任何 CLI/REPL/未来 GUI 都调用同一个
+Application Service，不能自行解释状态。
 
-```mermaid
-stateDiagram-v2
-    [*] --> active
-    active --> waiting_user
-    active --> waiting_approval
-    active --> completed
-    active --> failed
-    active --> cancelled
-    active --> abandoned
-    waiting_user --> active
-    waiting_approval --> active
-    completed --> accepted
-    completed --> corrected
-    corrected --> active
-    failed --> active: explicit retry
-    cancelled --> active: explicit resume/retry
-    accepted --> [*]
-    abandoned --> [*]
-```
+### 4.3 Turn 与 AgentRun
 
-关键语义：
+Turn 表示一次被接纳的用户输入及其闭合结果。`client_message_id` 是 turn submit 的必填幂等键：同一
+Session 中相同键和相同 Payload 返回已提交结果，不产生第二次模型运行；相同键但不同 Payload 返回冲突。
 
-- `completed`：系统认为任务已给出结果，但尚未获得最终接受证据。
-- `accepted`：用户明确接受，或确定性验收条件通过并满足配置策略。
-- `corrected`：用户指出结果或协作方式需要修正。
-- `abandoned`：用户放弃，不应作为正向学习证据。
-- `failed`/`cancelled`：保留已发生副作用，不伪装回滚。
+一次 Turn 可以因崩溃恢复包含多个 AgentRun。没有新用户输入的 crash resume 在同一 open Turn 中创建新
+AgentRun；有新输入时创建新 Turn。
 
-### 4.3 Turn
+AgentRun 冻结：
 
-`Turn` 仍表示一次被接受的用户输入及其闭合结果。Stage 4 将现有进程内生命周期持久化，但不改变普通聊天必须经过 `AgentLoop.run_task()` 的原则。
+- Provider/Model 引用与非敏感解析结果；
+- 有界的已解析 Profile、Preferences、配置值及其来源 revision/hash；
+- RunPolicy、ToolSet/Schema digest、Runtime instance；
+- AccessScope、ApprovalMode、ProcessIsolation、PermissionSnapshot 与 grant 引用；
+- 开始/结束、状态、消息范围、调用计数、停止原因和错误分类。
 
-### 4.4 AgentRun
+快照是不可变运行证据，不是新的 Profile/Preferences 权威；密钥、完整环境变量、Provider reasoning 和
+SDK 对象不得进入快照。
 
-Stage 4 先建立单 Agent 运行记录：
+### 4.4 ConversationLog
 
-- 使用的 Provider/Model。
-- 冻结的 RunPolicy、工具集和配置快照引用。
-- 冻结的 AccessScope、ApprovalMode、ProcessIsolation 与 CapabilityGrant 引用。
-- 开始、结束和状态。
-- 输入/输出消息范围。
-- Token、调用次数、停止原因和错误分类。
+- ConversationLog 继续拥有 User/Assistant/ToolMessage 的合法顺序、完整 ToolCycle 与 Turn 闭合规则。
+- AgentLoop 通过 durable ConversationLog append 提交普通聊天；TaskService 可以协调事务和幂等，但不能
+  直接写聊天记录。
+- 恢复只能调用一个窄化的 ConversationLog recovery API，校验并闭合已记录的中断 ToolCycle；不能合成
+  成功 ToolMessage。
+- 数据库 sequence 是恢复顺序权威；持久记录与内存投影之间不得在副作用前存在未提交双写窗口。
 
-Stage 7 再把它扩展为由 `AgentDefinition` 和 Workflow Node 构造的通用执行单元。
+### 4.5 TaskOutcome
 
-### 4.5 CapabilityGrant
+TaskOutcome 是从持久事实确定性生成、不可变且可版本化的任务结果，至少引用：
 
-`CapabilityGrant` 是用户明确授予高权限能力的本地授权记录，不是 Preference、Memory、Skill 或模型输出。
-第一版至少包含：
+- user goal 与 TaskRun 状态；
+- result summary；
+- changed paths；
+- validation facts/results；
+- 已知、未知和未解决的副作用；
+- Artifact 与原始证据引用；
+- completion basis 与显式用户反馈。
 
-```text
-grant_id
-scope: full_access
-approval_mode: manual | auto
-subject_task_run_id
-subject_agent_run_id
-granted_by: user
-created_at / expires_at
-revoked_at
-policy_version
-reason_summary
-```
+纠正不会改写旧 Outcome，而是生成新的 superseding version。Stage 5 可以读取 Outcome 作为学习证据，
+但不能借此获得 Stage 4 历史写权限。
 
-确定规则：
+## 五、存储架构
 
-- Stage 4 第一版只允许用户在当前前台任务中显式创建授权；模型、Tool、Skill、Memory、项目文件和
-  Provider 响应都不能创建、延长或提升授权。
-- Full Access 默认只对一个 AgentRun 有效，Run 结束即失效；不得保存为全局默认或从历史自动恢复。
-- AgentRun 开始后冻结有效权限快照；配置变化不得让运行中的 Run 静默获得更高权限。
-- 撤销会阻止新的副作用，并请求取消仍在执行的相关工具；已发生操作保留事实记录，不伪装回滚。
-- `full_access + manual` 先开放；受控 `full_access + auto` 只能自动执行可结构化判定的操作，不透明
-  Shell/脚本仍需审批。
-- 真正“任意宿主命令永不询问”的 raw auto 不属于默认 Full Access，也不进入本阶段。
-
-### 4.6 Artifact
-
-Artifact 是不适合完整放进聊天历史、但需要保留和传递的任务产物。
-
-首批类型：
-
-- `command_output`
-- `patch`
-- `diff`
-- `test_report`
-- `task_summary`
-- `diagnostic_report`
-- `file_snapshot`（仅在必要时，避免复制整个项目）
-
-Artifact 至少包含：
-
-```text
-artifact_id
-kind
-workspace_id
-task_run_id
-producer_run_id
-content_location / inline_excerpt
-content_hash
-mime_type / encoding
-size
-created_at
-sensitivity
-retention_policy
-metadata
-```
-
-聊天历史保存 Artifact 引用和有界摘要，而不是重复保存大内容。
-
-### 4.7 TaskOutcome
-
-任务结束时生成结构化结果：
-
-```text
-TaskOutcome
-- task_run_id
-- status
-- user_goal
-- result_summary
-- changed_paths
-- validation_performed
-- validation_results
-- unresolved_items
-- side_effects
-- artifacts
-- evidence_refs
-- completion_basis
-- user_feedback
-```
-
-`TaskOutcome` 是 Stage 5 LearningReview 的唯一标准入口之一，但它本身不产生长期状态变更。
-
-## 五、持久化顺序与副作用一致性
-
-### 5.1 核心原则
-
-> **先持久化执行意图，再执行有副作用的工具。**
-
-推荐顺序：
-
-```text
-模型生成 Assistant tool call
-→ AgentLoop 请求 ConversationLog 追加合法 AssistantMessage
-→ ConversationLog 在同一逻辑追加边界校验并持久化 AssistantMessage、ToolCall 和 Run 状态
-→ 提交成功
-→ ToolExecutor 执行预检与审批
-→ 持久化审批结果
-→ 执行副作用
-→ AgentLoop 请求 ConversationLog 持久化 ToolResult 与副作用摘要并闭合 ToolCycle
-→ 继续模型循环
-```
-
-如果 ToolCall 无法可靠持久化，具有副作用的 handler 不得运行。这里的“ConversationLog 追加”包含
-同步的持久化成功条件，不能先只改内存、再依赖异步事件最终落盘。
-
-### 5.2 未完成工具调用
-
-崩溃后可能出现：
-
-1. ToolCall 已持久化，尚未开始执行。
-2. 已获得审批，尚未执行。
-3. 工具可能已执行，但 ToolResult 未持久化。
-4. ToolResult 已生成但消息事务未完成。
-
-恢复时不得盲目重放。每个工具需要声明恢复语义：
-
-```text
-never_started
-safe_to_retry
-requires_reconciliation
-outcome_unknown
-completed
-```
-
-- 纯读取通常可重试。
-- 带幂等键的操作可按合同重试。
-- 文件写入可通过内容 hash、目标 revision 或 Artifact 对账。
-- Shell 命令若无法确定是否已产生副作用，必须标记 `outcome_unknown` 并提示用户。
-- Stage 9 才为后台任务建立更完整的幂等与检查点框架。
-
-### 5.3 ConversationLog 与数据库
-
-保持一个逻辑权威：
-
-- `ConversationLog` 仍拥有消息追加规则和 ToolCycle 合法性。
-- 持久化 Store 通过 ConversationLog 的同步 durable adapter 或应用层事务边界接入，不重新实现第二套
-  消息状态机；异步 event sink 只能生成投影，不能作为副作用前持久化门禁。
-- 恢复时由持久化记录重建合法 Snapshot，并执行完整一致性校验。
-- 不允许数据库中一套顺序、内存中另一套顺序。
-
-## 六、存储架构方向
-
-### 6.1 默认技术方向
-
-本阶段默认采用 SQLite 作为运行状态权威存储，原因是它适合本地单用户、事务、索引、迁移和恢复场景。最终选择需在激活阶段通过 Spike 验证，但不得继续把 Session 数据无限追加到 `ProjectStateStore` YAML 门面。
-
-### 6.2 职责分离
+### 5.1 权威来源
 
 ```text
 现有 YAML / CredentialStore
-- Global Preferences
-- Workspace Preferences
-- Profile
-- Provider non-secret config
-- credential refs / credentials
+- Global / Workspace / Session-resolved Preferences authority
+- Workspace Profile authority
+- Provider non-secret config and credential refs
+- credentials
 
-SQLite Operational Store
-- Sessions
-- TaskRuns
-- Turns / Messages / ToolCalls / ToolResults
-- AgentRuns
-- Approvals
-- Events
-- Artifact metadata
-- TaskOutcomes
+SQLite Operational Store（一个 data root）
+- Session / TaskRun / Turn / AgentRun
+- Conversation records / ToolExecution / Approval
+- TaskOutcome versions / ContextCheckpoint
+- Artifact metadata / CapabilityGrant / PermissionSnapshot
+- retry-sensitive CommandReceipt / sanitized application_events
 
-Filesystem Artifact Store
-- 大型命令输出
-- Patch / Diff / TestReport
-- 导出与备份包
+Filesystem Artifact Store（同一 data root 下的受管目录）
+- bounded redacted command output
+- patch / diff / test and diagnostic reports
+- deterministic summary/checkpoint payloads when too large for rows
 ```
 
-### 6.3 数据库最低要求
+每类状态只有一个权威。AgentRun 中保存已解析非敏感值是历史证据，不把 SQLite 变成配置写入源。
 
-- 显式 schema version。
-- 事务与外键约束。
-- 单调 sequence 或等价顺序权威。
-- WAL/同步策略经过崩溃测试。
-- 数据库迁移可预检、备份和回滚失败。
-- 任何损坏或未来版本不被静默重建覆盖。
-- 不把密钥、Provider reasoning 或未清洗 traceback 写入数据库。
+### 5.2 SQLite 最低合同
 
-### 6.4 数据保留
+- 首版使用 Python 标准库 `sqlite3`，不默认增加 ORM。
+- 显式 application/schema identity、顺序迁移、future-schema refusal、外键和完整性检查。
+- WAL/`synchronous=FULL`/250ms busy/`BEGIN IMMEDIATE`/最多 8 次可注入退避已由
+  [Operational Store ADR](../decisions/stage-4-operational-store.md) 和
+  `tests/test_stage4_operational_store_spike.py` 锁定。
+- 写事务短小，不跨模型请求、用户审批、文件 IO、子进程或网络调用。
+- bounded busy retry/typed contention；失败不能无限等待或丢写。
+- 一个全局 Operational Store maintenance lock（`locks/operational-store.lock`）负责初始化、迁移、
+  备份与 repair-mode 转换；现有 workspace-scoped `WorkspaceWriterLock` 不足以承担该职责。
+- 迁移前预检和备份，失败保持原数据；未来版本或损坏数据不得静默删除/重建。
+- doctor 默认只读；业务历史没有自动修复路径。
+- 数据根下的保留路径：`store/operational.sqlite`、`artifacts/`、`backups/operational/`。
 
-本阶段锁定机制，不急于锁定所有默认期限：
+不要建立一个包含所有表方法的 `OperationalStore` God Protocol。Core 使用按 Session/Task、Conversation、
+Execution/Approval、Artifact、Grant、Receipt、Query/Event 划分的窄 Port；一个 SQLite Adapter 可以共享
+连接和事务基础设施。
 
-- Session 可归档。
-- Artifact 可根据类型设置保留策略。
-- 删除应区分隐藏、逻辑删除和物理清理。
-- 导出与彻底删除的完整产品流在 Stage 10 完成。
-- 任何自动清理不得删除仍被 TaskOutcome、Learning Evidence 或用户 Pin 引用的 Artifact。
+### 5.3 Artifact Store
 
-## 七、上下文管理
+Artifact 使用 opaque ID 管理路径并用 SHA-256（或 ADR 锁定的等价算法）校验内容；首版不要求内容寻址
+去重。发布顺序是：受管临时文件写入 → file fsync → atomic rename → parent fsync → metadata commit，
+每个故障点都有确定的 orphan/缺失状态。
 
-### 7.1 PromptAssembler 的过渡
+首版只持久化经过流式/完整红线测试的有界脱敏输出。没有被证明安全的 full/raw command stream 不写盘。
+聊天与 TaskOutcome 只保存 Artifact 引用和有界 excerpt，不复制大内容。
 
-当前 `ContextBuilder` 在本阶段演进为更明确的分层组装器，但不必提前实现完整 Multi-Agent Prompt 系统。
+## 六、ToolExecution、Approval 与恢复
 
-建议输入层：
+### 6.1 intent-before-effect
 
 ```text
-fixed system boundary
-+ resolved Preferences
-+ Workspace Profile
-+ active Task goal and state
-+ recent complete ToolCycles / Turns
-+ compacted context summaries
-+ referenced Artifact excerpts
-+ current user message
-+ frozen tool definitions
+Assistant ToolCall 通过 ConversationLog 校验
+→ 消息、ordered ToolExecution intent、AgentRun 状态在同一事务提交
+→ 必要时创建/解决 Approval
+→ Approval consume 与 executing 状态原子提交
+→ handler 执行
+→ handler_completed 保存有界脱敏结果证据
+→ ConversationLog 追加 ToolMessage 并闭合 ToolCycle
 ```
 
-### 7.2 完整 Cycle 边界
+任何有副作用 handler 都不能在 intent 事务成功前运行。`handler_completed` 与聊天中 ToolMessage 已持久化
+是两个不同事实，崩溃恢复必须能区分。
 
-压缩和裁剪不能拆开：
+### 6.2 Approval
 
-- Assistant tool call 与对应 ToolResult。
-- 当前用户消息与其最终闭合结果。
-- 需要恢复的审批和错误上下文。
+Approval 至少绑定：opaque approval ID、intent hash、Tool Schema digest、PermissionSnapshot digest、
+请求/授予子集、row version、过期时间、解决结果和 consumed_at。解决/consume 只能发生一次，且与
+`executing` 转换原子提交。单机首版不需要额外 approval nonce。
 
-### 7.3 压缩策略
+### 6.3 恢复分类
 
-分级处理：
-
-1. 移除可重新获取的重复工具输出，只保留 Artifact 引用。
-2. 对旧命令输出、Diff 和搜索结果生成确定性摘要。
-3. 对较旧完整 Turn 生成会话压缩摘要。
-4. 必要时创建新的 context checkpoint。
-5. 始终保留当前任务目标、关键约束、未完成项、最近失败和当前 Turn。
-
-摘要必须带：
-
-- 覆盖的消息范围。
-- 生成方法/模型。
-- 原始记录引用。
-- 创建时间和版本。
-- 是否可重新生成。
-
-摘要不是新的项目事实源。
-
-### 7.4 Fork
-
-支持从历史 Turn 或 checkpoint 创建新 Session/Task 分支：
-
-- 原记录不可变。
-- 新分支保存 parent_session_id、parent_turn_id 或 checkpoint_id。
-- 不复制大 Artifact 内容，只增加引用。
-- Fork 后的修改、偏好和后续任务不反写父分支。
-
-## 八、恢复语义
-
-### 8.1 正常恢复
-
-用户可以：
-
-- 列出当前工作空间 Session。
-- 查看最近任务、状态和摘要。
-- 恢复一个 active/waiting/completed Session。
-- 归档或删除不需要的 Session。
-- 新建独立 Session。
-
-### 8.2 崩溃恢复
-
-启动时执行：
+当前 `ToolEffect` 只服务运行期策略，不能决定 crash replay。每个生产工具必须声明独立、持久的
+EffectClass/RecoveryPolicy，至少能得到：
 
 ```text
-打开 Operational Store
-→ 校验 schema 与事务状态
-→ 查找非终止 Run
-→ 重建合法 ConversationLog Snapshot
-→ 对未闭合 ToolCycle 分类
-→ 生成 RecoveryReport
-→ 自动继续安全部分或要求用户决策
+never_started | safe_to_retry | requires_reconciliation | outcome_unknown | completed
 ```
 
-默认不自动重做可能有副作用的未知操作。
+- 只读工具只有在声明且前置条件满足时才可重试。
+- 结构化幂等操作使用幂等键和已提交结果。
+- 文件变更对账使用 before hash、expected-after hash、expected size 与父目录/辅助条件，不用包含 mtime 的
+  完整 FileRevision 做唯一真值。
+- 所有 Host process 都可能产生外部副作用；无法证明完成时标为 outcome_unknown，绝不自动重放。
+- Sandbox process 只有在旧进程已终止、无推广和无外部效果得到证明时才可能安全重试。
 
-### 8.3 Provider 流中断
+恢复输出 RecoveryReport，让用户选择继续、显式重试、接受未知、取消或保持 quarantine。恢复是分类和
+对账，不是自动改写事实。
 
-- 已持久化用户消息保留。
-- 可见但未完成的 Assistant 文本可作为诊断记录保存，但默认不进入后续权威聊天上下文。
-- 工具参数只有在形成完整合法 ToolCall 后才可执行。
-- 恢复后可以重新发起模型回合，但必须清楚标记前一回合未完成。
+## 七、上下文与 Fork
 
-## 九、Command、Query 与 Event 接口
+ContextCheckpoint 是对不可变记录的确定性投影，记录 source record ID/range、算法/version、预算事实、
+Artifact 引用和创建来源。它不复制一份新的 `retained_tail_json` 作为第二聊天权威。
 
-为未来 GUI 建立统一边界，但不在本阶段建设完整 GUI。
+压缩顺序优先：
 
-### 9.1 Command API
+1. 用 Artifact 引用替代可重新读取的大输出；
+2. 对旧工具输出和 Diff 生成确定性摘要；
+3. 按完整 Turn/ToolCycle 生成 checkpoint；
+4. 始终保留当前 Task 目标、约束、未解决项、最近失败、open Approval/Recovery 与当前 Turn。
 
-至少支持：
+LLM 摘要可以在未来作为带来源的附加投影，但不是 Stage 4 完成条件，也不能成为项目事实源。
 
-```text
-session.create
-session.resume
-session.archive
-session.delete
-task.start
-task.resume
-task.cancel
-task.accept
-task.correct
-approval.resolve
-artifact.pin / artifact.release
-```
+Conversation/session Fork 从合法 Turn 边界或 checkpoint 创建新 Session，保存 parent provenance，共享不可变
+Artifact 引用，后续历史互不反写。Fork 不回退、恢复或删除工作空间文件。
 
-### 9.2 Query API
+## 八、Command、Query、Event、Doctor 与 Backup
 
-至少支持：
+CLI、REPL 和未来客户端必须调用同一 Command/Query Application Service。需要幂等 receipt 的是 turn
+submit、approval/recovery resolve、grant create/revoke 和 Session/Task 等重试敏感 mutation；普通 Query
+不需要泛化 exactly-once 设施。
 
-```text
-workspace.current
-session.list / session.get
-task.list / task.get
-run.get
-artifact.list / artifact.get
-event.list
-recovery.get
-```
+业务事务可在同一 SQLite transaction 追加 versioned、脱敏、有界的 `application_events`，并按单调 cursor
+查询/重放。Stage 4 不建设 delivery outbox、ack 或 worker。
 
-### 9.3 Event Stream
+现有公开 `turn.started`/`tool.status`/`turn.completed` 生命周期若要改变，必须在 Subplan 43 到达显式 hold
+point 后再次授权，并原子更新全部消费者和测试。
 
-以下是 Stage 4 的候选扩展，不是当前公开事件已经变化的声明；激活本阶段时必须在明确计划中评审并
-获得授权，现有 `turn.started` / `tool.status` / `turn.completed` 等生命周期在此之前保持不变。
+Doctor 只读检查 schema/integrity/foreign key、消息/ToolExecution、Artifact、Grant 和引用一致性；可生成报告、
+建议 quarantine 和识别确定性 orphan 候选，不能修复业务历史。Backup 使用 SQLite online backup 与经 hash
+验证的 Artifact manifest/copy，在独立目标执行恢复验证，且不读取/复制 CredentialStore 密钥。
 
-建议扩展为：
+## 九、CapabilityGrant 与 Full Access Manual
 
-```text
-session.created / resumed / archived
-task.started / status_changed / completed
-agent.started / completed
-tool.status
-approval.requested / resolved
-artifact.created
-context.compacted
-recovery.required / resolved
-error
-```
+CapabilityGrant 是用户显式创建的本地授权记录。模型、Tool、Profile、Preferences、Memory、Skill、项目
+文件、导入历史和恢复流程都不能创建、延长或提升授权。
 
-公开事件仍然有序、版本化、可忽略未知字段，并保持脱敏。
+首版合同：
 
-### 9.4 只读观察器 Spike
+- grant 显式列出 capability/operation 子集，绑定 workspace、TaskRun、AgentRun、原因、策略版本、创建/
+  过期/撤销时间；
+- AgentRun 开始时解析并冻结 PermissionSnapshot；缺失、过期、撤销或无法证明的授权在重启后 fail closed；
+- 默认只对一个前台 AgentRun 生效，不能保存为全局/工作空间默认；
+- grant 不是审批，Full Access Manual 中每个 elevated side effect 仍需 intent-bound Approval；
+- 结构化直接工具继续执行其 protected-resource 规则；
+- approved opaque Host command 明确标记为 `unconfined_host`：它没有 OS 隔离，可能访问用户文件、网络、
+  凭据和 Morrow 状态。命令分类只能帮助预览，不能宣称提供 confinement；
+- Full Access Manual 只激活 ADR 明确枚举且真实实现的 elevated capabilities；
+- `full_access + auto`、raw auto 和任意宿主命令免审批在 Stage 4 返回 unsupported。
 
-在 Query/Event 合同稳定后，可以实现一个开发者只读观察器验证：
+Controlled Full Access Auto 只有在未来存在足够有用、可结构化约束的 elevated tools 时才重新评审；当前不为
+满足路线文字而给不透明 Shell 自动授权。
 
-- TaskRun 状态。
-- 当前 Turn/Tool。
-- Artifact。
-- RecoveryReport。
+## 十、实施顺序与门禁
 
-该 Spike 不直接访问数据库，也不成为 Stage 8 GUI 的第二套业务实现。
+当前执行细节以 `.agent/PLAN.md` 和一个活动 subplan 为准：
 
-## 十、CLI 产品面
+| Subplan | 结果门禁 |
+|---|---|
+| 35 | ADR、来源锁、故障矩阵与计划一致性；无生产行为变化 |
+| 36 | SQLite、迁移、全局 maintenance lock、健康模式与 online backup 基础 |
+| 37 | 无工具多轮 Session 可持久化、幂等提交并无损恢复 |
+| 38 | Tool intent 在副作用前提交，Approval 一次性消费，ToolCycle 可解释 |
+| 39 | 真实 Stage 3 工具在崩溃后分类/对账，不盲目重放 |
+| 40 | TaskRun 继续/纠正/接受与版本化 TaskOutcome 跨重启一致 |
+| 41 | Artifact 原子发布、脱敏、完整性、保留与故障状态可靠 |
+| 42 | 确定性 checkpoint 保留完整 Cycle/来源，Fork 与父历史隔离 |
+| 43 | 统一 API/CLI/REPL、cursor events、只读 doctor 与备份恢复可用 |
+| 44 | CapabilityGrant 与 Full Access Manual 可撤销、可审计、无 Auto 路径 |
+| 45 | 全链路、故障矩阵、迁移、包安装、当前平台安全与文档验收 |
 
-精确命令在实施阶段确认，最低能力包括：
+一次只执行一个 Subplan，下一项不得提前把生产行为混入当前切片。
 
-```text
-morrow session list
-morrow session resume <session-id>
-morrow session archive <session-id>
-morrow session delete <session-id>
-morrow task list
-morrow task show <task-id>
-morrow task accept <task-id>
-morrow task cancel <task-id>
-morrow artifact list --task <task-id>
-morrow recovery show
-```
-
-REPL 至少支持：
-
-```text
-/new
-/sessions
-/tasks
-/resume
-/status
-/accept
-/cancel
-```
-
-命令名称不如语义重要：任何入口都必须调用同一个 Application Service。
-
-## 十一、实施切片
-
-### 4A：Operational Store 与领域模型
-
-交付：
-
-- Session、TaskRun、Turn、AgentRun、Artifact、TaskOutcome 模型。
-- SQLite Port/Adapter Spike 与迁移框架。
-- 事务、sequence、损坏和未来版本测试。
-- 现有 ConversationLog 的 durable 边界设计。
-
-门禁：可以持久保存并无损恢复一个无工具的多轮 Session。
-
-### 4B：持久化 ToolCycle 与副作用前记录
-
-交付：
-
-- Assistant ToolCall 持久化顺序。
-- Approval 与 ToolResult 记录。
-- 未闭合 ToolCycle 分类。
-- 文件写入、命令执行的恢复对账示例。
-
-门禁：在注入的崩溃点重启后，不会盲目重复执行有副作用工具。
-
-### 4C：TaskRun 生命周期与 TaskOutcome
-
-交付：
-
-- Task start/complete/accept/correct/abandon 状态机。
-- 多 Turn 任务归属。
-- 结构化 TaskOutcome。
-- CLI 查询和操作。
-
-门禁：一个需要用户补充和二次修正的任务能保持单一 TaskRun 历史。
-
-### 4D：上下文压缩、Artifact 与 Fork
-
-交付：
-
-- 大输出 Artifact 化。
-- 完整 ToolCycle 感知的裁剪。
-- Context summary/checkpoint。
-- Session Fork。
-
-门禁：长任务在上下文预算内继续，并可追溯到未压缩原记录。
-
-### 4E：恢复、查询与事件合同
-
-交付：
-
-- Session list/resume/archive/delete。
-- RecoveryReport 与用户决策流。
-- Command/Query/Event API。
-- 可选只读观察器 Spike。
-- 备份、迁移与损坏恢复测试。
-
-门禁：杀死进程后可以恢复真实 Stage 3 任务，并准确说明已发生和未知副作用。
-
-### 4F：CapabilityGrant 与 Full Access 激活
-
-交付：
-
-- CapabilityGrant 领域模型、Store、Command/Query API 与审计投影。
-- AgentRun 权限快照、有效期、撤销和 fail-closed 恢复。
-- Full Access Manual 的显式逐次审批。
-- 受控 Full Access Auto：结构化操作可自动，不透明 Shell/脚本继续审批。
-- 权限提升来源、过期、撤销、崩溃点和跨工作空间隔离测试。
-
-门禁：用户可以为一个前台 AgentRun 明确授予并撤销 Full Access；系统重启后不会自动恢复过期或未能
-证明有效的授权，模型和长期状态不能提升权限，所有副作用都能追溯到当时冻结的授权与审批策略。
-
-## 十二、测试与故障注入
+## 十一、测试与故障注入
 
 至少覆盖：
 
-- 每个消息写入点前后崩溃。
-- ToolCall 提交前后崩溃。
-- 审批接受后、handler 前崩溃。
-- 文件已写但 ToolResult 未提交。
-- Shell 已退出但结果未提交。
-- SQLite 锁、磁盘满、只读目录和损坏页面。
-- schema 升级失败。
-- 长对话压缩中断。
-- Artifact 文件丢失或 hash 不匹配。
-- Fork 后父子隔离。
-- Session 删除与仍被引用 Artifact 的保留。
-- Provider 流中断和部分文本。
-- CapabilityGrant 创建、冻结、过期、撤销和恢复。
-- 模型、Skill、Memory、项目配置或历史记录尝试提升权限。
-- Full Access 在工作空间、TaskRun 和 AgentRun 之间错误复用。
-- Full Access Auto 对结构化操作与不透明 Shell 的策略分流。
+- 每个消息、Task/Run 状态和 ToolExecution 事务的提交前后；
+- 审批创建、解决、consume、handler start、handler completed、ToolMessage close 前后；
+- 文件已写但 result 未提交、Host command 结果未知、Sandbox process/promotion 中断；
+- SQLite contention、future schema、迁移失败、只读/写失败和损坏；
+- Artifact publish 各阶段、文件缺失/hash 不匹配、引用与 orphan；
+- checkpoint/fork 中断、预算边界与父子隔离；
+- grant 创建、冻结、过期、撤销、重启和跨 scope 复用；
+- 模型/配置/项目/历史尝试提升权限；
+- backup 时并发有界写入和隔离 restore verification。
 
-测试不得依赖不稳定 wall-clock sleep；使用可控时钟、故障注入点和脚本化 Provider/Runner。
+测试使用注入时钟、barrier、pipe、脚本化 Provider/Runner、逻辑 fault point 和 subprocess `os._exit`。
+不得用 wall-clock sleep 断言时序，不使用真实凭据或默认联网测试。
 
-## 十三、阶段交付物
+## 十二、完成标准
 
-- Task/Session/Run/Artifact 领域模型。
-- 运行状态 Operational Store 与迁移框架。
-- Durable ConversationLog/ToolCycle 适配。
-- 副作用前持久化与恢复对账机制。
-- Session 管理、TaskRun 生命周期和 TaskOutcome。
-- 上下文压缩、checkpoint 和 Fork。
-- Command/Query/Event 接口。
-- RecoveryReport、备份和故障注入测试。
-- CapabilityGrant、AgentRun 权限快照与 Full Access Command/Query API。
-- 更新后的 ARCHITECTURE、README 和数据边界说明。
+1. 重启后可按工作空间列出、恢复、归档和 Fork Session。
+2. 消息顺序、完整 ToolCycle、AgentRun 非敏感快照与幂等 turn submit 完全一致。
+3. 所有 side-effecting ToolCall 在 handler 前已可靠持久化。
+4. 崩溃后不会自动重放 outcome_unknown 的写入、推广或 Host 命令。
+5. Session lifecycle 与 health/quarantine 相互独立；future/corrupt 状态不被静默覆盖。
+6. TaskRun 可跨多个 Turn 继续、纠正、取消和显式接受，并生成不可变版本化 TaskOutcome。
+7. Artifact 有界、脱敏、完整性可验证、来源明确，缺失/损坏可见。
+8. 长上下文通过确定性 checkpoint 继续，所有摘要/引用可追溯到原始记录。
+9. Fork 不修改父历史，也不回退或删除工作空间文件。
+10. Command/Query/CLI/REPL 共享同一业务实现；application events 有序重放且无后台 Outbox。
+11. Doctor、online backup、restore、迁移、contention、损坏和故障矩阵具有可复现证据。
+12. CapabilityGrant 只能由用户显式创建，按 AgentRun 冻结、过期和撤销，重启不静默提权。
+13. Full Access Manual 的所有 elevated effects 都逐次审批，并诚实展示 unconfined Host 风险；
+    Controlled Full Access Auto 仍不可用。
+14. Stage 3 产品故事、安全门禁、完整 offline suite 和安装包恢复验收继续通过。
 
-## 十四、完成标准
+## 十三、进入 Stage 5 前必须确认
 
-1. 程序重启后可以列出并继续指定 Session。
-2. 恢复后的消息顺序、ToolCycle、工作空间和配置快照一致。
-3. 有副作用 ToolCall 在执行前已经可靠持久化。
-4. 崩溃后不会自动重放结果未知的写入或命令。
-5. 一个任务可以跨多轮、暂停、恢复、接受和纠正。
-6. 长上下文达到预算时能压缩或 Artifact 化，而不是直接丢失关键状态。
-7. 所有摘要和 Artifact 都可追溯到原始记录。
-8. A 工作空间 Session 不会默认在 B 工作空间恢复或注入。
-9. 存储损坏、迁移失败和 Artifact 缺失不会静默覆盖原数据。
-10. CapabilityGrant 只能由用户显式创建，按 AgentRun 冻结和失效，且可查询、撤销、审计。
-11. Full Access Manual 与受控 Full Access Auto 不会被模型、配置、Skill、Memory 或恢复流程静默开启。
-12. Stage 3 的真实 Code Agent 任务可以在故障注入后恢复并继续。
-
-## 十五、明确不包含
-
-- 自动生成长期 Preference/Knowledge。
-- 向量数据库和 Embedding 默认依赖。
-- Skill 创建、安装与自动更新。
-- Multi-Agent Workflow。
-- 后台 Worker、定时任务和跨重启自动运行。
-- 多设备同步和团队共享。
-- 完整桌面 GUI。
-- 可持久设为全局默认的 Full Access，以及任意宿主命令永不询问的 raw auto 专家模式。
-
-## 十六、进入 Stage 5 前必须确认
-
-- `TaskOutcome` 是否包含足够且不过度的学习证据。
-- 用户接受、纠正和放弃的信号如何可靠记录。
-- 哪些 Artifact 可被 LearningReview 读取，哪些因敏感性禁止。
-- Profile、Preference、Project Knowledge 和 Episodic Summary 的事实边界。
-- LearningReview 是否需要单独模型调用及其成本预算。
-- 当前确定性检索是否足够，是否有任何真实证据需要语义检索。
+- TaskOutcome 是否提供足够且不过度的学习证据。
+- accepted/corrected/abandoned 等显式信号如何映射为 LearningReview 输入。
+- 哪些 Artifact 可被学习评审读取，哪些因敏感性必须拒绝。
+- Profile、Preference、Project Knowledge、Episodic Summary 与原始运行记录的事实边界。
+- 是否有真实证据需要 LLM 摘要或语义检索；没有证据时继续使用确定性路径。

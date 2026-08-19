@@ -934,3 +934,39 @@
 - Updated the acceptance/evidence reports with final counts and Mimo results, closed Stage 3 on
   macOS, and opened Stage 4 planning without activating persistence, Full Access, or another
   production capability. No push was performed.
+
+## 2026-08-19 — Stage 4 master plan activated; Subplan 35 active
+
+- Reconciled the three Stage 4 research documents against the current Stage 3 code and activated a
+  single implementation route: standard-library SQLite Operational Store, filesystem Artifacts,
+  durable ConversationLog/tool journal boundaries, explicit recovery, foreground TaskOutcome,
+  deterministic checkpoints, conversation-only Fork, auditable grants, and Full Access Manual.
+- Split execution into ordered Subplans 35–45. Subplan 35 is contract/ADR/spike work only; Stage 4
+  production persistence begins no earlier than accepted activation of Subplan 36.
+- Removed completed Stage 3 Subplans 29–34 from the active subplan directory while retaining them in
+  Git history. Updated PLAN, TODO, TRACKER, subplan index, README, ARCHITECTURE, ROADMAP, and the
+  stable Stage 4 contract; the three user-provided research files remain untouched.
+- Explicitly deferred Controlled Full Access Auto, raw auto, event-delivery workers/outbox, run
+  claims, in-flight steering, automatic history repair, full/raw command-output retention, FTS/
+  embeddings, workspace/code rewind, background work, and Stage 5 learning.
+- Documentation consistency checks and `git diff --check` passed. No production source, tests,
+  dependency, schema, public event lifecycle, bundled policy default, or runtime behavior changed.
+
+## 2026-08-19 — S4.35.2 Operational Store ADR and sqlite3 spike
+
+- Inspected current `DataRoot` (`~/.morrow` / `--state-root`), YAML authorities, and
+  workspace-scoped `WorkspaceWriterLock`. The existing lock cannot serialize a shared operational
+  database; a distinct `locks/operational-store.lock` is required.
+- Accepted `docs/decisions/stage-4-operational-store.md`: one data-root
+  `store/operational.sqlite`, reserved `artifacts/` and `backups/operational/`, stdlib `sqlite3`,
+  `BEGIN IMMEDIATE`, WAL, `synchronous=FULL`, 250 ms busy timeout, 8 injected retries,
+  `application_id=0x4D4F5257`, matching `store_identity`, future/foreign/empty refusal, and
+  `Connection.backup()`. Identity is checked before any `journal_mode` change so a foreign file is
+  not rewritten into WAL.
+- Spike `tests/test_stage4_operational_store_spike.py` proved commit-after-`_exit`, uncommitted
+  rollback, WAL reader snapshot, typed contention, bounded retry without sleep, exclusive
+  maintenance lock, dead-owner lock release, future/foreign/empty refusal with intact bytes, and
+  online backup during concurrent writes. Validation: `15 passed`; Ruff format/check; compileall;
+  `git diff --check`. Temporary data roots only.
+- No `src/morrow` production adapter, schema, dependency, public event, or runtime behavior change.
+  Next task is S4.35.3 domain/ownership ADR.

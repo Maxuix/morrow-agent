@@ -1,9 +1,10 @@
 # Morrow 架构基线
 
-> 状态：阶段 2 完成、阶段 3 已完成（当前声明平台为 macOS；Linux 原生运行仍 unsupported）；阶段 4 已进入规划但尚未实现
+> 状态：阶段 2 完成、阶段 3 已完成（当前声明平台为 macOS；Linux 原生运行仍 unsupported）；阶段 4 合同设计已激活但尚未实现
 
 本文锁定当前依赖方向、数据所有权和安全边界。阶段 3 的能力策略、配置工具、工作空间读搜、冲突安全文件变更、审批后 Host 命令、只读 Git 和当前 macOS 原生沙箱
-已经交付；Linux 原生运行尚未声明支持。Stage 4 已进入规划，持久化 Session/Task/Artifact 尚未实现；Stage 5 的可审查学习、Stage 6 的 Skills/MCP，
+已经交付；Linux 原生运行尚未声明支持。Stage 4 已激活 Subplan 35 锁定持久化与恢复合同，
+Session/Task/Artifact 生产实现尚未开始；Stage 5 的可审查学习、Stage 6 的 Skills/MCP，
 以及 Stage 7–10 的 Workflow、GUI、后台自动化和产品化均尚未开始。
 
 ## 分层与依赖方向
@@ -136,8 +137,9 @@ Service 或 Port：
 | Preferences | global、workspace、process-local session | 配置服务 | global → workspace → session 合并 |
 | 工作空间路径索引 | `workspace-index.yaml` | Workspace 服务 | 独立于项目状态 |
 | 工作空间 Profile | `profile.yaml` | Workspace/配置服务 | 按 workspace_id 隔离 |
-| 当前会话消息 | 进程内 ConversationLog | AgentLoop；命令只可 reset | 不持久化、不跨进程恢复 |
+| 当前会话消息 | 进程内 ConversationLog | AgentLoop；命令只可 reset | 不持久化、不跨进程恢复；Stage 4 将写入 Operational Store |
 | Agent 运行策略 | 随包策略 → RunPolicy | composition root | 不属于用户配置 |
+| 运行记录 / Artifact 元数据 | 数据根 `store/operational.sqlite` | 尚未实现 | 合同见 [Operational Store ADR](decisions/stage-4-operational-store.md)；YAML 与凭据权威不变 |
 
 ProjectStateStore 只支持 `profile.yaml` 和 `preferences.yaml`。两者使用版本化文档信封、revision、
 锁、临时文件、文件/目录 `fsync`、原子替换和备份；`state: cleared` 是合法 tombstone。
@@ -159,7 +161,8 @@ workspace Preferences 损坏只隔离该层。旧 `handoff.yaml(.bak)` 不属于
 - 当前系统边界按冻结 ToolSet 动态渲染；未提供的能力、工作空间外访问、网络/loopback、Git 写入和权限提升始终被禁止。
 - 默认测试不联网、不使用真实钥匙串、不依赖用户主目录。
 - Provider 和结构化响应失败必须分类；不静默切换 Provider 或模型。
-- Session 持久化、恢复、Fork 和摘要留到 Stage 4 重新设计；长期偏好/知识学习留到 Stage 5。
+- Session 持久化、恢复、conversation Fork 和确定性 checkpoint 已进入 Stage 4 合同设计，当前仍未实现；
+  工作空间/代码 rewind 不属于 Stage 4，长期偏好/知识学习留到 Stage 5。
   当前不存在过渡兼容写入器。
 
 若未来实现需要突破这些边界，先更新架构与当前阶段计划。
