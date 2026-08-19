@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 
 from pydantic import field_validator
@@ -97,6 +98,17 @@ class ConversationSnapshot(ProtocolModel):
 
 class ConversationLogError(RuntimeError):
     """Raised when history would break the public-turn grammar."""
+
+
+def is_recovery_error_envelope(content: str) -> bool:
+    try:
+        payload = json.loads(content)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return False
+    if not isinstance(payload, dict) or payload.get("ok") is not False:
+        return False
+    error = payload.get("error")
+    return isinstance(error, dict) and isinstance(error.get("message"), str)
 
 
 @dataclass(frozen=True)
@@ -289,6 +301,39 @@ class ConversationLog:
             ),
             require_closed=False,
         )
+
+    def plan_recovery_close(
+        self,
+        envelopes: tuple[tuple[str, str], ...],
+        reason: FinishReason | None = None,
+    ) -> ConversationAppend:
+        """Close an interrupted ToolCycle with error envelopes.
+
+        A non-success ``reason`` also writes the turn terminal (abort). Omitting
+        ``reason`` leaves the turn open so recovery can resume the same Turn.
+        """
+        if reason is FinishReason.STOP:
+            raise ConversationLogError("recovery cannot close with a successful turn")
+        for _call_id, content in envelopes:
+            if not is_recovery_error_envelope(content):
+                raise ConversationLogError(
+                    "recovery may only append interrupted or error envelopes"
+                )
+        scratch = ConversationLog.from_snapshot(self.snapshot())
+        added: list[ConversationRecord] = []
+        for call_id, content in envelopes:
+            planned = scratch.plan_append_tool_result(call_id, content)
+            scratch.apply_committed(planned)
+            added.extend(planned.added)
+        if reason is not None:
+            planned = scratch.plan_finish_turn(
+                reason, interrupted_call_ids=tuple(call_id for call_id, _ in envelopes)
+            )
+            scratch.apply_committed(planned)
+            added.extend(planned.added)
+        snapshot = ConversationSnapshot(records=(*self._records, *added))
+        snapshot.public_turns(require_closed=reason is not None)
+        return ConversationAppend(added=tuple(added), snapshot=snapshot)
 
     def plan_finish_turn(
         self, reason: FinishReason, *, interrupted_call_ids: tuple[str, ...] = ()

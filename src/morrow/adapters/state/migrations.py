@@ -1,6 +1,6 @@
 """Ordered, checksummed Operational Store migrations.
 
-Production currently owns schema v1–v3. Versions 4–9 stay reserved for later
+Production currently owns schema v1–v4. Versions 5–9 stay reserved for later
 subplans and must not be renumbered after they land.
 """
 
@@ -237,6 +237,46 @@ V3_STATEMENTS = (
 
 V3 = SchemaMigration(version=3, name=V3_NAME, statements=V3_STATEMENTS)
 
+V4_NAME = "recovery_reports"
+V4_STATEMENTS = (
+    """
+    CREATE TABLE recovery_reports (
+        report_id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        session_id TEXT NOT NULL REFERENCES sessions(session_id),
+        turn_id TEXT,
+        agent_run_id TEXT,
+        status TEXT NOT NULL
+            CHECK (status IN ('open', 'resolved', 'quarantined')),
+        payload_json TEXT NOT NULL,
+        payload_bytes INTEGER NOT NULL CHECK (payload_bytes >= 0),
+        created_at_unix INTEGER NOT NULL,
+        resolved_at_unix INTEGER
+    )
+    """,
+    """
+    CREATE UNIQUE INDEX recovery_reports_open_session
+        ON recovery_reports(session_id) WHERE status = 'open'
+    """,
+    """
+    CREATE INDEX recovery_reports_workspace
+        ON recovery_reports(workspace_id, session_id)
+    """,
+    """
+    CREATE TABLE recovery_receipts (
+        session_id TEXT NOT NULL REFERENCES sessions(session_id),
+        command_id TEXT NOT NULL,
+        request_digest TEXT NOT NULL,
+        report_id TEXT NOT NULL REFERENCES recovery_reports(report_id),
+        item_id TEXT,
+        resolution TEXT NOT NULL,
+        PRIMARY KEY (session_id, command_id)
+    )
+    """,
+)
+
+V4 = SchemaMigration(version=4, name=V4_NAME, statements=V4_STATEMENTS)
+
 
 class MigrationRegistry:
     def __init__(self, *, supported_version: int = SUPPORTED_SCHEMA_VERSION) -> None:
@@ -294,6 +334,7 @@ def production_registry() -> MigrationRegistry:
     registry.add(V1)
     registry.add(V2)
     registry.add(V3)
+    registry.add(V4)
     return registry
 
 

@@ -32,6 +32,7 @@ from morrow.core.execution import (
     ToolExecutionState,
     intent_hash,
 )
+from morrow.core.recovery import RecoveryReceipt, RecoveryReport, RecoveryResolution
 from morrow.core.store import StorageError, StorageErrorCode
 
 _SESSION_COLUMNS = (
@@ -64,6 +65,11 @@ _APPROVAL_SELECT = (
     "a.preview_digest, a.row_version, a.created_at_unix, a.expires_at_unix, a.resolution, "
     "a.resolved_at_unix, a.consumed_at_unix, a.command_id"
 )
+_REPORT_COLUMNS = (
+    "report_id, workspace_id, session_id, turn_id, agent_run_id, status, "
+    "payload_json, payload_bytes, created_at_unix, resolved_at_unix"
+)
+_RECOVERY_RECEIPT_COLUMNS = "session_id, command_id, request_digest, report_id, item_id, resolution"
 
 
 def _unix(value: datetime) -> int:
@@ -491,6 +497,17 @@ class SqliteOperationalJournal:
         )
         return tuple(_execution_from_row(row) for row in rows)
 
+    def list_session_executions(
+        self, workspace_id: str, session_id: str
+    ) -> tuple[DurableToolExecution, ...]:
+        rows = self._read_all(
+            f"SELECT {_EXECUTION_COLUMNS} FROM tool_executions "
+            "WHERE workspace_id = ? AND session_id = ? "
+            "ORDER BY created_at_unix ASC, ordinal ASC",
+            (workspace_id, session_id),
+        )
+        return tuple(_execution_from_row(row) for row in rows)
+
     def save_execution(
         self,
         workspace_id: str,
@@ -661,6 +678,141 @@ class SqliteOperationalJournal:
             if loaded is None or loaded.row_version != approval.row_version:
                 raise StorageError(
                     StorageErrorCode.UNAVAILABLE, "operational approval row version is stale"
+                )
+            return loaded
+
+        return self.transact(work)
+
+    def put_report(self, workspace_id: str, report: RecoveryReport) -> RecoveryReport:
+        if report.workspace_id != workspace_id:
+            raise StorageError(
+                StorageErrorCode.UNAVAILABLE, "operational recovery report is outside the workspace"
+            )
+
+        def work(journal: SqliteOperationalJournal) -> RecoveryReport:
+            if journal.get_session(workspace_id, report.session_id) is None:
+                raise StorageError(StorageErrorCode.NOT_FOUND, "operational session is missing")
+            payload = canonical_json_bytes(report.model_dump(mode="json"))
+            journal._executor_or_raise().execute(
+                f"INSERT INTO recovery_reports({_REPORT_COLUMNS}) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    report.report_id,
+                    report.workspace_id,
+                    report.session_id,
+                    report.turn_id,
+                    report.agent_run_id,
+                    report.status.value,
+                    payload.decode("utf-8"),
+                    len(payload),
+                    _unix(report.created_at),
+                    _optional_unix(report.resolved_at),
+                ),
+            )
+            loaded = journal.get_open_report(workspace_id, report.session_id)
+            if loaded is None:
+                loaded = journal.get_report(workspace_id, report.report_id)
+            if loaded is None:
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE, "operational recovery report could not be read"
+                )
+            return loaded
+
+        return self.transact(work)
+
+    def get_report(self, workspace_id: str, report_id: str) -> RecoveryReport | None:
+        row = self._read_one(
+            f"SELECT {_REPORT_COLUMNS} FROM recovery_reports "
+            "WHERE report_id = ? AND workspace_id = ?",
+            (report_id, workspace_id),
+        )
+        if row is None:
+            return None
+        return _report_from_row(row)
+
+    def get_open_report(self, workspace_id: str, session_id: str) -> RecoveryReport | None:
+        row = self._read_one(
+            f"SELECT {_REPORT_COLUMNS} FROM recovery_reports "
+            "WHERE workspace_id = ? AND session_id = ? AND status = 'open'",
+            (workspace_id, session_id),
+        )
+        if row is None:
+            return None
+        return _report_from_row(row)
+
+    def save_report(self, workspace_id: str, report: RecoveryReport) -> RecoveryReport:
+        if report.workspace_id != workspace_id:
+            raise StorageError(
+                StorageErrorCode.UNAVAILABLE, "operational recovery report is outside the workspace"
+            )
+
+        def work(journal: SqliteOperationalJournal) -> RecoveryReport:
+            existing = journal.get_report(workspace_id, report.report_id)
+            if existing is None:
+                raise StorageError(
+                    StorageErrorCode.NOT_FOUND, "operational recovery report is missing"
+                )
+            payload = canonical_json_bytes(report.model_dump(mode="json"))
+            journal._executor_or_raise().execute(
+                """
+                UPDATE recovery_reports
+                SET status = ?, payload_json = ?, payload_bytes = ?, resolved_at_unix = ?
+                WHERE report_id = ? AND workspace_id = ?
+                """,
+                (
+                    report.status.value,
+                    payload.decode("utf-8"),
+                    len(payload),
+                    _optional_unix(report.resolved_at),
+                    report.report_id,
+                    workspace_id,
+                ),
+            )
+            loaded = journal.get_report(workspace_id, report.report_id)
+            if loaded is None:
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE, "operational recovery report could not be read"
+                )
+            return loaded
+
+        return self.transact(work)
+
+    def get_recovery_receipt(
+        self, workspace_id: str, session_id: str, command_id: str
+    ) -> RecoveryReceipt | None:
+        if self.get_session(workspace_id, session_id) is None:
+            return None
+        row = self._read_one(
+            f"SELECT {_RECOVERY_RECEIPT_COLUMNS} FROM recovery_receipts "
+            "WHERE session_id = ? AND command_id = ?",
+            (session_id, command_id),
+        )
+        if row is None:
+            return None
+        return _recovery_receipt_from_row(row)
+
+    def put_recovery_receipt(self, workspace_id: str, receipt: RecoveryReceipt) -> RecoveryReceipt:
+        def work(journal: SqliteOperationalJournal) -> RecoveryReceipt:
+            if journal.get_session(workspace_id, receipt.session_id) is None:
+                raise StorageError(StorageErrorCode.NOT_FOUND, "operational session is missing")
+            journal._executor_or_raise().execute(
+                f"INSERT INTO recovery_receipts({_RECOVERY_RECEIPT_COLUMNS}) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    receipt.session_id,
+                    receipt.command_id,
+                    receipt.request_digest,
+                    receipt.report_id,
+                    receipt.item_id,
+                    receipt.resolution.value,
+                ),
+            )
+            loaded = journal.get_recovery_receipt(
+                workspace_id, receipt.session_id, receipt.command_id
+            )
+            if loaded is None:
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE, "operational recovery receipt could not be read"
                 )
             return loaded
 
@@ -919,4 +1071,22 @@ def _approval_from_row(row: tuple[object, ...]) -> DurableApproval:
         resolved_at=_from_unix(row[13]) if row[13] is not None else None,
         consumed_at=_from_unix(row[14]) if row[14] is not None else None,
         command_id=str(row[15]) if row[15] is not None else None,
+    )
+
+
+def _report_from_row(row: tuple[object, ...]) -> RecoveryReport:
+    payload = json.loads(str(row[6]))
+    if not isinstance(payload, dict):
+        raise StorageError(StorageErrorCode.NEEDS_REPAIR, "recovery report is not a mapping")
+    return RecoveryReport.model_validate(payload)
+
+
+def _recovery_receipt_from_row(row: tuple[object, ...]) -> RecoveryReceipt:
+    return RecoveryReceipt(
+        session_id=str(row[0]),
+        command_id=str(row[1]),
+        request_digest=str(row[2]),
+        report_id=str(row[3]),
+        item_id=str(row[4]) if row[4] is not None else None,
+        resolution=RecoveryResolution(str(row[5])),
     )

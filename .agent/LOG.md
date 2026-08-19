@@ -1075,3 +1075,20 @@
 - Validation: Ruff format/check, compileall, `git diff --check`, and offline suite
   `511 passed, 1 deselected`.
 - Activated Subplan 39 for recovery classification and the crash harness.
+
+## 2026-08-19 — Subplan 39 recovery classification and crash harness completed
+
+- Added RecoveryReport/Item/Decision contracts, 64 KiB budget, secret refusal, and legal
+  resolutions. The classifier is pure over durable state plus current hash/revision observations.
+- Schema v4 stores recovery reports and command receipts. Restart discovery marks `needs_recovery`
+  for open Turns or non-closed executions. New input is blocked until recovery is resolved.
+- File reconciliation uses before/expected-after SHA-256 and size, never mtime. Host and native
+  sandbox executions without `handler_completed` are always `outcome_unknown` and cannot retry.
+  Multi-file promotion observations classify independently.
+- ConversationLog recovery-close appends only interrupted/error ToolMessages, optionally a
+  non-success terminal, and never a success envelope. Decisions are idempotent by command receipt.
+- Subprocess `os._exit` fixtures classify prepared, executing-read, executing-host, and
+  handler_completed boundaries without wall-clock sleeps.
+- Validation: Ruff format/check, compileall, `git diff --check`, and offline suite
+  `531 passed, 1 deselected`.
+- Activated Subplan 40 for the TaskRun lifecycle and versioned TaskOutcome.

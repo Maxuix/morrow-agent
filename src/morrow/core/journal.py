@@ -14,6 +14,7 @@ from morrow.core.domain import (
     TurnSubmitReceipt,
 )
 from morrow.core.execution import DurableApproval, DurableToolExecution
+from morrow.core.recovery import RecoveryReceipt, RecoveryReport
 
 
 class SessionLifecyclePort(Protocol):
@@ -73,6 +74,10 @@ class ToolExecutionJournalPort(Protocol):
         self, workspace_id: str, *, agent_run_id: str
     ) -> tuple[DurableToolExecution, ...]: ...
 
+    def list_session_executions(
+        self, workspace_id: str, session_id: str
+    ) -> tuple[DurableToolExecution, ...]: ...
+
     def save_execution(
         self,
         workspace_id: str,
@@ -98,3 +103,19 @@ class ApprovalJournalPort(Protocol):
         *,
         expected_row_version: int,
     ) -> DurableApproval: ...
+
+
+class RecoveryJournalPort(Protocol):
+    def put_report(self, workspace_id: str, report: RecoveryReport) -> RecoveryReport: ...
+
+    def get_open_report(self, workspace_id: str, session_id: str) -> RecoveryReport | None: ...
+
+    def save_report(self, workspace_id: str, report: RecoveryReport) -> RecoveryReport: ...
+
+    def get_recovery_receipt(
+        self, workspace_id: str, session_id: str, command_id: str
+    ) -> RecoveryReceipt | None: ...
+
+    def put_recovery_receipt(
+        self, workspace_id: str, receipt: RecoveryReceipt
+    ) -> RecoveryReceipt: ...

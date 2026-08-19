@@ -1,6 +1,6 @@
 # Subplan 40 — TaskRun Lifecycle and Versioned TaskOutcome
 
-> Status: pending
+> Status: active
 > Prerequisite: Subplan 39 accepted
 > Owns: foreground task semantics, explicit feedback, and deterministic outcome evidence
 > Schema: v5 complete TaskRun state machine and TaskOutcome versions
@@ -30,7 +30,7 @@ without treating summaries as truth.
 
 ## Tasks
 
-- [ ] S4.40.1 Lock and implement legal TaskRun states/transitions, terminality, current-task
+- [>] S4.40.1 Lock and implement legal TaskRun states/transitions, terminality, current-task
   selection, and invariants for one foreground task per Session.
 - [ ] S4.40.2 Route ordinary post-answer follow-up from `ready_for_acceptance` back to `open` in the
   same TaskRun as continuation/correction;

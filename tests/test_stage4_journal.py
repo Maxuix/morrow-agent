@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from morrow.adapters.state.journal import SqliteOperationalJournal
-from morrow.adapters.state.migrations import V1, V2, MigrationRegistry
+from morrow.adapters.state.migrations import V1, V2, V3, MigrationRegistry
 from morrow.adapters.state.operational import BusyRetryPolicy, OperationalStore
 from morrow.core.domain import (
     AgentRunSnapshot,
@@ -104,6 +104,8 @@ def test_initialize_creates_v3_business_tables(tmp_path):
             "turn_submit_receipts",
             "tool_executions",
             "approvals",
+            "recovery_reports",
+            "recovery_receipts",
         }.issubset(names)
         assert journal.list_sessions("ws_a") == ()
     finally:
@@ -143,8 +145,8 @@ def test_v2_store_migrates_to_v3_journal(tmp_path):
     )
     report = upgraded.migrate()
     assert report.from_version == 2
-    assert report.to_version == 3
-    assert report.applied == ("tool_execution_approval",)
+    assert report.to_version == SUPPORTED_SCHEMA_VERSION
+    assert "tool_execution_approval" in report.applied
     with upgraded.open(StoreOpenMode.READ_WRITE) as opened:
         names = {
             row[0]
@@ -154,7 +156,25 @@ def test_v2_store_migrates_to_v3_journal(tmp_path):
                 )
             )
         }
-        assert {"tool_executions", "approvals"}.issubset(names)
+        assert {"tool_executions", "approvals", "recovery_reports"}.issubset(names)
+
+
+def test_v3_store_migrates_to_v4_recovery(tmp_path):
+    v3 = MigrationRegistry(supported_version=3)
+    v3.add(V1)
+    v3.add(V2)
+    v3.add(V3)
+    store, session, _journal = _open_journal(tmp_path, registry=v3)
+    root = store.layout.data_root
+    session.close()
+    assert store.classify().schema_version == 3
+    upgraded = OperationalStore(
+        root, retry_policy=_retry(), clock=FixedClock(), maintenance_timeout=0
+    )
+    report = upgraded.migrate()
+    assert report.from_version == 3
+    assert report.to_version == 4
+    assert report.applied == ("recovery_reports",)
 
 
 def test_sessions_are_workspace_scoped(tmp_path):

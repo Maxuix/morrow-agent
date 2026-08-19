@@ -9,6 +9,7 @@ from typing import Literal
 from morrow.adapters.state.journal import SqliteOperationalJournal
 from morrow.adapters.state.operational import OperationalStoreSession
 from morrow.application.prepared import prepare_cycle_executions
+from morrow.application.recovery import RecoveryService
 from morrow.core.domain import (
     AGENT_RUN_ID_PREFIX,
     COMMAND_ID_PREFIX,
@@ -42,6 +43,7 @@ from morrow.core.execution import (
 from morrow.core.faults import FaultInjector, FaultPoint, NoOpFaultInjector
 from morrow.core.models import AssistantMessage, ModelRef, Preferences, UserMessage, utc_now
 from morrow.core.ports import IdSource
+from morrow.core.recovery import RecoveryReport, RecoveryReportStatus, RecoveryResolution
 from morrow.runtime.conversation import (
     ConversationAppend,
     ConversationLog,
@@ -140,6 +142,7 @@ class SessionPersistence:
         self.current_turn_id: str | None = None
         self.current_task_run_id: str | None = None
         self.current_agent_run_id: str | None = None
+        self.open_report: RecoveryReport | None = None
 
     def attach(self, session: Session) -> None:
         self._session = session
@@ -198,6 +201,8 @@ class SessionPersistence:
                 )
             session.health = SessionHealth.NEEDS_RECOVERY
             return TurnSubmitResult("recovery", existing.turn_id, existing)
+        if session.health is SessionHealth.NEEDS_RECOVERY:
+            return TurnSubmitResult("recovery", self.current_turn_id, None)
 
         planned = session.log.plan_begin_turn(UserMessage(content=user_input))
         snapshot = build_agent_run_snapshot(
@@ -280,6 +285,7 @@ class SessionPersistence:
         self.current_turn_id = None
         self.current_task_run_id = None
         self.current_agent_run_id = None
+        self.open_report = None
         self.attach(session)
 
     def restore_into(self, session: Session) -> None:
@@ -300,7 +306,23 @@ class SessionPersistence:
             session.log = ConversationLog()
             session.health = SessionHealth.QUARANTINED
         else:
-            if session.log.has_active_turn and session.health is SessionHealth.OK:
+            root = None
+            if self.mutation is not None:
+                root = self.mutation.files.resolver.root
+            service = RecoveryService(
+                self.journal,
+                workspace_id=self.workspace_id,
+                id_source=self.id_source,
+                workspace_root=root,
+            )
+            report = service.discover(session.session_id, session.log)
+            self.open_report = report
+            if report is not None:
+                self.current_turn_id = report.turn_id
+                self.current_agent_run_id = report.agent_run_id
+            if report is not None and session.health is not SessionHealth.QUARANTINED:
+                session.health = SessionHealth.NEEDS_RECOVERY
+            elif session.log.has_active_turn and session.health is SessionHealth.OK:
                 session.health = SessionHealth.NEEDS_RECOVERY
         if session.health is SessionHealth.NEEDS_RECOVERY:
             self.journal.save_session(
@@ -373,6 +395,76 @@ class SessionPersistence:
         self._session.log.apply_committed(planned)
         self._session.dirty = self._session.log.has_active_turn
         return committed
+
+    def apply_recovery(
+        self,
+        session,
+        *,
+        command_id: str,
+        resolution: RecoveryResolution,
+        item_id: str | None = None,
+    ) -> RecoveryReport:
+        if self.open_report is None:
+            raise RuntimeError("no open recovery report")
+        root = None
+        if self.mutation is not None:
+            root = self.mutation.files.resolver.root
+        service = RecoveryService(
+            self.journal,
+            workspace_id=self.workspace_id,
+            id_source=self.id_source,
+            workspace_root=root,
+        )
+        updated, receipt, planned = service.decide(
+            self.open_report,
+            command_id=command_id,
+            resolution=resolution,
+            item_id=item_id,
+            log=session.log,
+        )
+        if receipt.kind == "conflict":
+            raise RuntimeError("recovery command conflicts with a previous request")
+        if receipt.kind == "replay":
+            return self.open_report
+        saved = service.commit_decision(
+            updated,
+            receipt,
+            planned=planned,
+            log=session.log,
+            writer=self.writer,
+            close_all=resolution is RecoveryResolution.ABORT,
+        )
+        self.open_report = saved if saved.status is not RecoveryReportStatus.RESOLVED else None
+        if saved.status is RecoveryReportStatus.QUARANTINED:
+            session.health = SessionHealth.QUARANTINED
+        elif saved.status is RecoveryReportStatus.RESOLVED:
+            session.health = SessionHealth.OK
+            if resolution is RecoveryResolution.RESUME and self.current_turn_id is not None:
+                self.current_agent_run_id = self.id_source.new_id(AGENT_RUN_ID_PREFIX)
+                self.journal.create_agent_run(
+                    self.workspace_id,
+                    DurableAgentRun(
+                        agent_run_id=self.current_agent_run_id,
+                        turn_id=self.current_turn_id,
+                        session_id=session.session_id,
+                        resume_of_agent_run_id=saved.agent_run_id,
+                        snapshot=build_agent_run_snapshot(
+                            session,
+                            model=self.model,
+                            run_policy=self.run_policy,
+                            tools=(),
+                            runtime_instance_id=self.runtime_instance_id,
+                        ),
+                    ),
+                )
+        else:
+            session.health = SessionHealth.NEEDS_RECOVERY
+        row = self.journal.get_session(self.workspace_id, session.session_id)
+        if row is not None:
+            self.journal.save_session(
+                self.workspace_id, row.model_copy(update={"health": session.health})
+            )
+        return saved
 
     def execution_is_visible(self, tool_execution_id: str) -> bool:
         return self.journal.get_execution(self.workspace_id, tool_execution_id) is not None

@@ -1,8 +1,8 @@
 # Stage 4 Durable Task, Session, Artifact, and Recovery Plan
 
 > Status: active — production implementation
-> Active subplan: 39 — Recovery, reconciliation, and crash harness
-> Production implementation: authorized; v3 tool/approval journal has landed
+> Active subplan: 40 — TaskRun lifecycle and versioned TaskOutcome
+> Production implementation: authorized; v4 recovery classification has landed
 > Stage 3 production baseline: `003dbdaab652520ca5cadf451ebca7a13bcba36d`
 > Stage 4 accepted contract baseline: `20fb43e`
 > Scope: durable foreground-agent operation, recovery, artifacts, context checkpoints,
@@ -311,7 +311,7 @@ but must preserve accepted public and safety contracts or explicitly reopen the 
 | 36 | Operational Store and migration foundation | completed | safe SQLite foundation, schema/migration/backup primitives |
 | 37 | Durable Session/Task/Turn/AgentRun and no-tool conversation | completed | restart-safe multi-turn Session without tools |
 | 38 | Tool execution journal and durable Approval | completed | intent-before-effect and closed ToolCycle protocol |
-| 39 | Recovery, reconciliation, and crash harness | pending | no blind replay; classified interrupted real tools |
+| 39 | Recovery, reconciliation, and crash harness | completed | no blind replay; classified interrupted real tools |
 | 40 | TaskRun lifecycle and versioned TaskOutcome | pending | continuation/correction/acceptance semantics and evidence |
 | 41 | Artifact Store and durable payload budgets | pending | integrity-checked bounded artifacts and missing-file behavior |
 | 42 | Context checkpoint and conversation fork | pending | budgeted context with immutable provenance and isolated fork |
@@ -423,7 +423,8 @@ Stage 4 is complete only when all of the following are evidenced:
 
 ## Active gate
 
-Subplan 38 landed the v3 tool/approval journal and persist-before-effect protocol on 2026-08-19.
-Subplan 39 is now the only active work and may implement recovery classification, reconciliation,
-and the crash harness (schema v4). Artifacts, grants, public-event changes, and Full Access remain
+Subplan 39 landed recovery classification, hash-based file reconciliation, Host/sandbox
+outcome_unknown, ConversationLog recovery-close, and subprocess crash evidence on 2026-08-19.
+Subplan 40 is now the only active work and may implement the complete TaskRun state machine and
+versioned TaskOutcome (schema v5). Artifacts, grants, public-event changes, and Full Access remain
 inactive until their own subplans and hold points are explicitly activated.
