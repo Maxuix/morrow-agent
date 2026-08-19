@@ -2,24 +2,31 @@
 
 ## Current stage
 
-Stage 4 production implementation is active at the Command/Query/Event, CLI, doctor, and backup
-surface. Deterministic context checkpoints and immutable Session fork have landed; Full Access
-remains inactive.
+Stage 4 production implementation is active at CapabilityGrant and Full Access Manual. The
+Command/Query/Event, CLI, doctor, and backup surface has landed; Stage 5 remains inactive.
 
 ## Active subplan
 
-Subplan 43 — Command/Query/Event, CLI, Doctor, and Backup.
+Subplan 44 — CapabilityGrant and Full Access Manual.
 
 ## Tasks
 
-- [>] S4.43.1 Define stable Command/Query DTOs, error mapping, command receipts, cursor pagination,
-  and workspace isolation for completed domains.
-- [ ] S4.43.2 Implement sanitized versioned application events in the same business transaction.
-- [ ] S4.43.3 Prove the existing public runtime event lifecycle remains unchanged.
-- [ ] S4.43.4 Implement CLI/REPL Session, Task, Artifact, fork, archive, acceptance, and recovery flows.
-- [ ] S4.43.5 Implement read-only doctor and health/quarantine reporting.
-- [ ] S4.43.6 Implement online backup plus Artifact manifest/copy and restore verification.
-- [ ] S4.43.7 Add deterministic dry-run orphan cleanup for exact managed targets.
-- [ ] S4.43.8 Run application/CLI/crash/backup/security regressions and update user/architecture docs.
+- [>] S4.44.1 Implement strict CapabilityGrant/PermissionSnapshot models and schemas with explicit
+  capability subsets, subject IDs, source/user evidence, expiry, revocation, and policy version.
+- [ ] S4.44.2 Implement user-interface-only grant create/query/revoke commands with command receipts,
+  optimistic concurrency, and no Tool/model-callable elevation path.
+- [ ] S4.44.3 Resolve and freeze the effective PermissionSnapshot at AgentRun start; link every
+  elevated ToolExecution/Approval and fail closed on missing, stale, expired, revoked, mismatched,
+  or unprovable evidence after restart.
+- [ ] S4.44.4 Implement only `unconfined_host_process` for Full Access Manual, without adding
+  outside-file/network/browser/MCP/Git-write tool families or weakening ordinary workspace modes.
+- [ ] S4.44.5 Add the mandatory `unconfined_host` preview and explicit approval language for opaque
+  Host commands, including reachability of user files, network, credentials, and Morrow state.
+- [ ] S4.44.6 Implement revocation: block new effects, request cancellation of active relevant tools,
+  preserve completed/unknown facts, and never pretend to roll back.
+- [ ] S4.44.7 Add threat-model and boundary tests for every possible elevation source and every
+  cross-scope reuse, including crash-created AgentRuns; extend doctor/application-event coverage for
+  grants and keep Controlled Auto explicitly unsupported.
+- [ ] S4.44.8 Run product/security/crash/package regressions and update public permission docs.
 
-Only Subplan 43 may be executed. Grants and Full Access remain inactive.
+Only Subplan 44 may be executed. Stage 5 remains inactive.

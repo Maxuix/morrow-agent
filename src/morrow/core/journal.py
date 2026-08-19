@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Protocol
 
+from morrow.core.application import ApplicationCommandReceipt, ApplicationEvent
 from morrow.core.artifacts import ArtifactMetadata
 from morrow.core.context import ContextCheckpoint, SessionLineage
 from morrow.core.domain import (
@@ -107,6 +108,36 @@ class ConversationJournalPort(Protocol):
     ) -> tuple[ContextCheckpoint, ...]: ...
 
 
+class ApplicationEventPort(Protocol):
+    def get_application_event(
+        self, workspace_id: str, event_id: str
+    ) -> ApplicationEvent | None: ...
+
+    def list_application_events(
+        self, workspace_id: str, *, after_cursor: int = 0, limit: int = 100
+    ) -> tuple[ApplicationEvent, ...]: ...
+
+    def put_application_event(
+        self, workspace_id: str, event: ApplicationEvent
+    ) -> ApplicationEvent: ...
+
+    def put_application_event_in_txn(
+        self, workspace_id: str, event: ApplicationEvent
+    ) -> ApplicationEvent: ...
+
+    def get_application_command_receipt(
+        self, workspace_id: str, command_id: str
+    ) -> ApplicationCommandReceipt | None: ...
+
+    def put_application_command_receipt(
+        self, workspace_id: str, receipt: ApplicationCommandReceipt
+    ) -> ApplicationCommandReceipt: ...
+
+    def put_application_command_receipt_in_txn(
+        self, workspace_id: str, receipt: ApplicationCommandReceipt
+    ) -> ApplicationCommandReceipt: ...
+
+
 class AgentRunPort(Protocol):
     def create_turn(self, workspace_id: str, turn: DurableTurn) -> DurableTurn: ...
 
@@ -187,6 +218,12 @@ class RecoveryJournalPort(Protocol):
     def put_recovery_receipt(
         self, workspace_id: str, receipt: RecoveryReceipt
     ) -> RecoveryReceipt: ...
+
+    def get_report(self, workspace_id: str, report_id: str) -> RecoveryReport | None: ...
+
+    def list_recovery_reports(
+        self, workspace_id: str, session_id: str
+    ) -> tuple[RecoveryReport, ...]: ...
 
 
 class ArtifactMetadataJournalPort(Protocol):

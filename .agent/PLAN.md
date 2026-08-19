@@ -1,8 +1,8 @@
 # Stage 4 Durable Task, Session, Artifact, and Recovery Plan
 
 > Status: active — production implementation
-> Active subplan: 43 — Command/Query/Event, CLI, doctor, and backup
-> Production implementation: authorized; v7 deterministic checkpoints and immutable Session fork have landed
+> Active subplan: 44 — CapabilityGrant and Full Access Manual
+> Production implementation: authorized; v8 application API, events, doctor, backup, and cleanup have landed
 > Stage 3 production baseline: `003dbdaab652520ca5cadf451ebca7a13bcba36d`
 > Stage 4 accepted contract baseline: `20fb43e`
 > Scope: durable foreground-agent operation, recovery, artifacts, context checkpoints,
@@ -315,8 +315,8 @@ but must preserve accepted public and safety contracts or explicitly reopen the 
 | 40 | TaskRun lifecycle and versioned TaskOutcome | completed | continuation/correction/acceptance semantics and evidence |
 | 41 | Artifact Store and durable payload budgets | completed | integrity-checked bounded artifacts and missing-file behavior |
 | 42 | Context checkpoint and conversation fork | completed | budgeted context with immutable provenance and isolated fork |
-| 43 | Command/Query/Event, CLI, doctor, and backup | active | one application API and operable recovery UX |
-| 44 | CapabilityGrant and Full Access Manual | pending | auditable run-bound manual elevation; no Full Access Auto |
+| 43 | Command/Query/Event, CLI, doctor, and backup | completed | one application API and operable recovery UX |
+| 44 | CapabilityGrant and Full Access Manual | active | auditable run-bound manual elevation; no Full Access Auto |
 | 45 | End-to-end acceptance and Stage 4 closeout | pending | crash-tested packaged durable personal agent |
 
 Detailed executable tasks and gates are in `.agent/subplans/36-*.md` through

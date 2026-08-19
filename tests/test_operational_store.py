@@ -22,6 +22,7 @@ from morrow.adapters.state.migrations import (
     V5,
     V6,
     V7,
+    V8,
     MigrationRegistry,
     SchemaMigration,
 )
@@ -570,21 +571,23 @@ def test_ordered_checksummed_migration_rolls_back_a_failed_step(tmp_path):
         "task_run_lifecycle_and_outcomes",
         "artifact_store_and_references",
         "context_checkpoints_and_session_lineage",
+        "application_events_and_command_receipts",
     )
     assert report.backup_name
     assert (store.layout.backups_dir / report.backup_name).is_file()
 
     broken = SchemaMigration(
-        version=8,
+        version=9,
         name="broken_step",
         statements=("THIS IS NOT SQL",),
     )
-    broken_registry = MigrationRegistry(supported_version=8)
+    broken_registry = MigrationRegistry(supported_version=9)
     for migration in (V1, V2, V3, V4):
         broken_registry.add(migration)
     broken_registry.add(V5)
     broken_registry.add(V6)
     broken_registry.add(V7)
+    broken_registry.add(V8)
     broken_registry.add(broken)
     with pytest.raises(StorageError) as error:
         _store(root, registry=broken_registry).migrate()

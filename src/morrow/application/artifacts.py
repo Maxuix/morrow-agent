@@ -272,7 +272,7 @@ class ArtifactService:
                 missing_or_corrupt.append(
                     ArtifactOrphanCandidate(
                         item.artifact_id,
-                        self.filesystem.final_path(item.artifact_id),
+                        self.filesystem.existing_final_path(item.artifact_id),
                         exc.code.value,
                     )
                 )

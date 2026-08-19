@@ -1156,3 +1156,27 @@
   drift, unavailable Artifact handling, child position invariants, effective-record sequence checks,
   and added lineage/query and production checkpoint wiring.
 - Activated Subplan 43 for the Command/Query/Event, CLI, doctor, and backup surface.
+
+## 2026-08-19 — Subplan 43 Command/Query/Event, CLI, doctor, and backup completed
+
+- Bumped the production Operational Store to v8 with bounded versioned `application_events` and
+  generic application command receipts. Added typed Core DTOs, stable application errors, cursor
+  queries, optimistic row versions, workspace isolation, and same-transaction event/receipt writes
+  over the existing Session, Task, Turn, Approval, Recovery, Artifact, Checkpoint, and Fork services.
+- Kept the public runtime event lifecycle and ConversationLog ownership unchanged. The REPL slash
+  parser remains a thin adapter; CLI Session/Task/Artifact/Recovery/state commands use the unified
+  application boundary. Added read-only doctor checks for store, history, tasks/executions,
+  checkpoints/forks, Artifacts, references, and event cursors with bounded sanitized reports.
+- Added online SQLite backup bundles with Artifact manifest/copy, manifest digest sidecar, restore
+  verification, explicit missing/corrupt/changed/unexpected states, credential exclusion checks,
+  and a default dry-run cleanup that refuses unsafe or metadata-owned targets and read-only stores.
+  Read-only Artifact inspection no longer creates or chmods managed directories.
+- Independent review after two Grok `/review` attempts found no remaining blocker. Grok's first
+  attempt timed out on proxy/network export; the final attempt read the local 25-file diff and
+  started the reviewer but timed out without a findings report, so there were no Grok findings to
+  adopt. Independent fixes covered stable invalid-input mapping, Recovery receipt replay handling,
+  post-rollback in-memory projection refresh, doctor issue aggregation/path redaction, backup
+  manifest tamper/extra-file detection, missing-store doctor CLI behavior, and exact cleanup scope.
+- Validation: offline suite `570 passed, 2 skipped, 1 deselected`; focused application/backup/
+  cleanup/CLI suite `9 passed`; Ruff format/check, compileall, `morrow --help`, and `git diff --check`
+  passed. Activated Subplan 44 for CapabilityGrant and Full Access Manual.

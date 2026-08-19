@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import getpass
+import json
 from pathlib import Path
 
 import typer
@@ -12,18 +13,43 @@ from prompt_toolkit import PromptSession
 from morrow.adapters.credentials.keyring import CredentialAccessError, environment_credential
 from morrow.adapters.local.sandbox import default_sandbox_backend
 from morrow.adapters.registry import PRESETS
+from morrow.adapters.state.artifacts import FilesystemArtifactStore
+from morrow.adapters.state.journal import SqliteOperationalJournal
+from morrow.adapters.state.operational import OperationalStore
+from morrow.application.api import OperationalApplicationService
+from morrow.application.artifacts import ArtifactService
+from morrow.application.backup import BackupBundleError, OperationalBackupService
+from morrow.application.checkpoints import ContextCheckpointService, SessionForkService
+from morrow.application.doctor import OperationalDoctor
+from morrow.application.recovery import RecoveryService
+from morrow.application.tasks import TaskService
 from morrow.bootstrap import build_application, build_session_application
+from morrow.core.application import ApplicationError, ApplicationErrorCode
 from morrow.core.capabilities import PermissionPreset, PermissionProfile
+from morrow.core.recovery import RecoveryResolution
+from morrow.core.store import StorageError, StorageErrorCode, StoreOpenMode
 from morrow.interfaces.terminal import Terminal, TerminalApprovalPort, run_repl
+from morrow.runtime.durable_log import DurableConversationWriter, restore_conversation_log
+from morrow.runtime.ids import RandomIdSource
 from morrow.services.workspace import WorkspaceError, WorkspaceWriterLock
 
 app = typer.Typer(help="Morrow（承序）工作空间终端 Agent。")
 provider_app = typer.Typer(help="Provider 管理。")
 model_app = typer.Typer(help="模型查看。")
 workspace_app = typer.Typer(help="工作空间管理。")
+session_app = typer.Typer(help="Session 生命周期与历史。")
+task_app = typer.Typer(help="TaskRun 操作。")
+artifact_app = typer.Typer(help="Artifact 查看与保留。")
+recovery_app = typer.Typer(help="恢复报告与决策。")
+state_app = typer.Typer(help="Operational Store 诊断、事件与备份。")
 app.add_typer(provider_app, name="provider")
 app.add_typer(model_app, name="model")
 app.add_typer(workspace_app, name="workspace")
+app.add_typer(session_app, name="session")
+app.add_typer(task_app, name="task")
+app.add_typer(artifact_app, name="artifact")
+app.add_typer(recovery_app, name="recovery")
+app.add_typer(state_app, name="state")
 
 
 def _secret(provider_id: str = "opencode-go") -> str:
@@ -309,6 +335,639 @@ def workspace_relink(
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=2) from exc
     typer.echo(f"已重连：{identity.path}")
+
+
+def _state_services(
+    *,
+    state_root: Path | None,
+    workspace_id: str | None,
+    directory: Path,
+    write: bool,
+):
+    """Build the same application boundary used by the REPL without providers."""
+
+    application = build_application(state_root=state_root)
+    if workspace_id is None:
+        resolution = application.workspace_service.resolve(directory)
+        if resolution.status == "candidate":
+            raise WorkspaceError("工作空间尚未登记；请先用主命令确认，或提供 --workspace-id。")
+        workspace_id = resolution.identity.workspace_id
+    store = OperationalStore(application.data_root.root)
+    mode = StoreOpenMode.READ_WRITE if write else StoreOpenMode.READ_ONLY
+    try:
+        handle = store.open(mode)
+    except StorageError as exc:
+        if write and exc.code is StorageErrorCode.NOT_FOUND:
+            handle = store.initialize()
+        else:
+            raise
+    journal = SqliteOperationalJournal(handle)
+    files = FilesystemArtifactStore(store.layout)
+    if write:
+        files.ensure_layout()
+    artifacts = ArtifactService(
+        journal=journal,
+        filesystem=files,
+        workspace_id=workspace_id,
+        id_source=application.id_source,
+    )
+    checkpoints = ContextCheckpointService(
+        journal, workspace_id=workspace_id, id_source=application.id_source
+    )
+    forks = SessionForkService(journal, workspace_id=workspace_id, id_source=application.id_source)
+    tasks = TaskService(journal=journal, workspace_id=workspace_id, id_source=application.id_source)
+    recovery = RecoveryService(
+        journal,
+        workspace_id=workspace_id,
+        id_source=application.id_source,
+    )
+    api = OperationalApplicationService(
+        journal=journal,
+        workspace_id=workspace_id,
+        id_source=application.id_source,
+        tasks=tasks,
+        artifacts=artifacts,
+        recovery=recovery,
+        checkpoints=checkpoints,
+        forks=forks,
+    )
+    return (
+        application,
+        handle,
+        api,
+        OperationalDoctor(store),
+        OperationalBackupService(store, journal=journal),
+    )
+
+
+def _close_state(handle) -> None:
+    if handle is not None:
+        handle.close()
+
+
+def _emit_model(value, *, as_json: bool = False) -> None:
+    payload = value.model_dump(mode="json") if hasattr(value, "model_dump") else value
+    if as_json:
+        typer.echo(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+        return
+    if isinstance(payload, dict):
+        for key, item in payload.items():
+            if isinstance(item, (dict, list, tuple)):
+                item = json.dumps(item, ensure_ascii=False, sort_keys=True)
+            typer.echo(f"{key}: {item}")
+    else:
+        typer.echo(str(payload))
+
+
+def _cli_error(exc: Exception) -> None:
+    if isinstance(exc, ApplicationError):
+        typer.echo(f"{exc.code.value}: {exc.message}", err=True)
+    elif isinstance(exc, (WorkspaceError, StorageError, BackupBundleError, ValueError)):
+        typer.echo(str(exc), err=True)
+    else:
+        typer.echo("application command failed", err=True)
+
+
+@session_app.command("list")
+def session_list(
+    workspace_id: str | None = typer.Option(None, "--workspace-id"),
+    directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
+    cursor: str | None = typer.Option(None, "--cursor"),
+    limit: int = typer.Option(50, "--limit", min=1, max=100),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+) -> None:
+    handle = None
+    try:
+        _application, handle, api, _doctor, _backup = _state_services(
+            state_root=state_root, workspace_id=workspace_id, directory=directory, write=False
+        )
+        for session in api.list_sessions(cursor=cursor, limit=limit).items:
+            typer.echo(
+                f"{session.session_id}\t{session.lifecycle.value}\t{session.health.value}\t"
+                f"position={session.conversation_position}"
+            )
+    except Exception as exc:
+        _cli_error(exc)
+        raise typer.Exit(code=2) from None
+    finally:
+        _close_state(handle)
+
+
+@session_app.command("create")
+def session_create(
+    session_id: str | None = typer.Option(None, "--session-id"),
+    command_id: str | None = typer.Option(None, "--command-id"),
+    workspace_id: str | None = typer.Option(None, "--workspace-id"),
+    directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+) -> None:
+    handle = None
+    try:
+        _application, handle, api, _doctor, _backup = _state_services(
+            state_root=state_root, workspace_id=workspace_id, directory=directory, write=True
+        )
+        result = api.create_session(session_id=session_id, command_id=command_id)
+        _emit_model(result.value)
+    except Exception as exc:
+        _cli_error(exc)
+        raise typer.Exit(code=2) from None
+    finally:
+        _close_state(handle)
+
+
+@session_app.command("status")
+@session_app.command("resume")
+def session_resume(
+    session_id: str,
+    workspace_id: str | None = typer.Option(None, "--workspace-id"),
+    directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+) -> None:
+    handle = None
+    try:
+        _application, handle, api, _doctor, _backup = _state_services(
+            state_root=state_root, workspace_id=workspace_id, directory=directory, write=False
+        )
+        value = api.get_session(session_id)
+        if value is None:
+            raise ApplicationError(ApplicationErrorCode.NOT_FOUND, "Session is missing")
+        _emit_model(value)
+    except Exception as exc:
+        _cli_error(exc)
+        raise typer.Exit(code=2) from None
+    finally:
+        _close_state(handle)
+
+
+@session_app.command("archive")
+def session_archive(
+    session_id: str,
+    command_id: str | None = typer.Option(None, "--command-id"),
+    workspace_id: str | None = typer.Option(None, "--workspace-id"),
+    directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+) -> None:
+    handle = None
+    try:
+        _application, handle, api, _doctor, _backup = _state_services(
+            state_root=state_root, workspace_id=workspace_id, directory=directory, write=True
+        )
+        _emit_model(api.archive_session(session_id, command_id=command_id).value)
+    except Exception as exc:
+        _cli_error(exc)
+        raise typer.Exit(code=2) from None
+    finally:
+        _close_state(handle)
+
+
+@session_app.command("fork")
+def session_fork(
+    parent_session_id: str,
+    checkpoint_id: str | None = typer.Option(None, "--checkpoint-id"),
+    cut_position: int | None = typer.Option(None, "--cut-position", min=1),
+    reason: str = typer.Option("context fork", "--reason"),
+    command_id: str | None = typer.Option(None, "--command-id"),
+    workspace_id: str | None = typer.Option(None, "--workspace-id"),
+    directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+) -> None:
+    handle = None
+    try:
+        _application, handle, api, _doctor, _backup = _state_services(
+            state_root=state_root, workspace_id=workspace_id, directory=directory, write=True
+        )
+        _emit_model(
+            api.fork_session(
+                parent_session_id,
+                checkpoint_id=checkpoint_id,
+                cut_position=cut_position,
+                reason=reason,
+                command_id=command_id,
+            ).value
+        )
+    except Exception as exc:
+        _cli_error(exc)
+        raise typer.Exit(code=2) from None
+    finally:
+        _close_state(handle)
+
+
+@task_app.command("show")
+def task_show(
+    task_run_id: str,
+    workspace_id: str | None = typer.Option(None, "--workspace-id"),
+    directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+) -> None:
+    handle = None
+    try:
+        _application, handle, api, _doctor, _backup = _state_services(
+            state_root=state_root, workspace_id=workspace_id, directory=directory, write=False
+        )
+        task = api.get_task(task_run_id)
+        if task is None:
+            raise ApplicationError(ApplicationErrorCode.NOT_FOUND, "TaskRun is missing")
+        _emit_model(task)
+    except Exception as exc:
+        _cli_error(exc)
+        raise typer.Exit(code=2) from None
+    finally:
+        _close_state(handle)
+
+
+@task_app.command("list")
+def task_list(
+    session_id: str,
+    workspace_id: str | None = typer.Option(None, "--workspace-id"),
+    cursor: str | None = typer.Option(None, "--cursor"),
+    limit: int = typer.Option(50, "--limit", min=1, max=100),
+    directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+) -> None:
+    handle = None
+    try:
+        _application, handle, api, _doctor, _backup = _state_services(
+            state_root=state_root, workspace_id=workspace_id, directory=directory, write=False
+        )
+        for task in api.list_tasks(session_id, cursor=cursor, limit=limit).items:
+            typer.echo(
+                f"{task.task_run_id}\t{task.status.value}\t{task.row_version}\t"
+                f"attempt={task.attempt}"
+            )
+    except Exception as exc:
+        _cli_error(exc)
+        raise typer.Exit(code=2) from None
+    finally:
+        _close_state(handle)
+
+
+def _task_command(
+    command, task_run_id, command_id, workspace_id, directory, state_root, expected_row_version
+):
+    handle = None
+    try:
+        _application, handle, api, _doctor, _backup = _state_services(
+            state_root=state_root, workspace_id=workspace_id, directory=directory, write=True
+        )
+        _emit_model(command(api, task_run_id, command_id, expected_row_version).value)
+    except Exception as exc:
+        _cli_error(exc)
+        raise typer.Exit(code=2) from None
+    finally:
+        _close_state(handle)
+
+
+@task_app.command("new")
+def task_new(
+    session_id: str,
+    command_id: str | None = typer.Option(None, "--command-id"),
+    expected_row_version: int | None = typer.Option(None, "--expected-row-version", min=1),
+    workspace_id: str | None = typer.Option(None, "--workspace-id"),
+    directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+) -> None:
+    handle = None
+    try:
+        _application, handle, api, _doctor, _backup = _state_services(
+            state_root=state_root, workspace_id=workspace_id, directory=directory, write=True
+        )
+        _emit_model(
+            api.task_new(
+                session_id, command_id=command_id, expected_row_version=expected_row_version
+            ).value
+        )
+    except Exception as exc:
+        _cli_error(exc)
+        raise typer.Exit(code=2) from None
+    finally:
+        _close_state(handle)
+
+
+@task_app.command("accept")
+def task_accept(
+    task_run_id: str,
+    command_id: str | None = typer.Option(None, "--command-id"),
+    expected_row_version: int | None = typer.Option(None, "--expected-row-version", min=1),
+    workspace_id: str | None = typer.Option(None, "--workspace-id"),
+    directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+) -> None:
+    _task_command(
+        lambda api, task, cmd, ver: api.task_accept(task, command_id=cmd, expected_row_version=ver),
+        task_run_id,
+        command_id,
+        workspace_id,
+        directory,
+        state_root,
+        expected_row_version,
+    )
+
+
+@task_app.command("cancel")
+def task_cancel(
+    task_run_id: str,
+    command_id: str | None = typer.Option(None, "--command-id"),
+    expected_row_version: int | None = typer.Option(None, "--expected-row-version", min=1),
+    workspace_id: str | None = typer.Option(None, "--workspace-id"),
+    directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+) -> None:
+    _task_command(
+        lambda api, task, cmd, ver: api.task_cancel(task, command_id=cmd, expected_row_version=ver),
+        task_run_id,
+        command_id,
+        workspace_id,
+        directory,
+        state_root,
+        expected_row_version,
+    )
+
+
+@task_app.command("resume")
+def task_resume(
+    task_run_id: str,
+    command_id: str | None = typer.Option(None, "--command-id"),
+    expected_row_version: int | None = typer.Option(None, "--expected-row-version", min=1),
+    workspace_id: str | None = typer.Option(None, "--workspace-id"),
+    directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+) -> None:
+    _task_command(
+        lambda api, task, cmd, ver: api.task_resume(task, command_id=cmd, expected_row_version=ver),
+        task_run_id,
+        command_id,
+        workspace_id,
+        directory,
+        state_root,
+        expected_row_version,
+    )
+
+
+@artifact_app.command("list")
+def artifact_list(
+    session_id: str | None = typer.Option(None, "--session-id"),
+    task_run_id: str | None = typer.Option(None, "--task-run-id"),
+    workspace_id: str | None = typer.Option(None, "--workspace-id"),
+    directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+) -> None:
+    handle = None
+    try:
+        _application, handle, api, _doctor, _backup = _state_services(
+            state_root=state_root, workspace_id=workspace_id, directory=directory, write=False
+        )
+        for item in api.list_artifacts(session_id=session_id, task_run_id=task_run_id).items:
+            typer.echo(
+                f"{item.artifact_id}\t{item.state.value}\t{item.byte_size} bytes\t{item.retention.value}"
+            )
+    except Exception as exc:
+        _cli_error(exc)
+        raise typer.Exit(code=2) from None
+    finally:
+        _close_state(handle)
+
+
+@artifact_app.command("show")
+def artifact_show(
+    artifact_id: str,
+    workspace_id: str | None = typer.Option(None, "--workspace-id"),
+    directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+) -> None:
+    handle = None
+    try:
+        _application, handle, api, _doctor, _backup = _state_services(
+            state_root=state_root, workspace_id=workspace_id, directory=directory, write=False
+        )
+        item = api.get_artifact(artifact_id)
+        if item is None:
+            raise ApplicationError(ApplicationErrorCode.NOT_FOUND, "Artifact is missing")
+        _emit_model(item)
+    except Exception as exc:
+        _cli_error(exc)
+        raise typer.Exit(code=2) from None
+    finally:
+        _close_state(handle)
+
+
+@artifact_app.command("pin")
+def artifact_pin(
+    artifact_id: str,
+    command_id: str | None = typer.Option(None, "--command-id"),
+    expected_row_version: int | None = typer.Option(None, "--expected-row-version", min=1),
+    workspace_id: str | None = typer.Option(None, "--workspace-id"),
+    directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+) -> None:
+    handle = None
+    try:
+        _application, handle, api, _doctor, _backup = _state_services(
+            state_root=state_root, workspace_id=workspace_id, directory=directory, write=True
+        )
+        _emit_model(
+            api.pin_artifact(
+                artifact_id, command_id=command_id, expected_row_version=expected_row_version
+            ).value
+        )
+    except Exception as exc:
+        _cli_error(exc)
+        raise typer.Exit(code=2) from None
+    finally:
+        _close_state(handle)
+
+
+@artifact_app.command("release")
+def artifact_release(
+    artifact_id: str,
+    command_id: str | None = typer.Option(None, "--command-id"),
+    expected_row_version: int | None = typer.Option(None, "--expected-row-version", min=1),
+    workspace_id: str | None = typer.Option(None, "--workspace-id"),
+    directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+) -> None:
+    handle = None
+    try:
+        _application, handle, api, _doctor, _backup = _state_services(
+            state_root=state_root, workspace_id=workspace_id, directory=directory, write=True
+        )
+        _emit_model(
+            api.release_artifact(
+                artifact_id, command_id=command_id, expected_row_version=expected_row_version
+            ).value
+        )
+    except Exception as exc:
+        _cli_error(exc)
+        raise typer.Exit(code=2) from None
+    finally:
+        _close_state(handle)
+
+
+@recovery_app.command("show")
+def recovery_show(
+    session_id: str,
+    workspace_id: str | None = typer.Option(None, "--workspace-id"),
+    directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+) -> None:
+    handle = None
+    try:
+        _application, handle, api, _doctor, _backup = _state_services(
+            state_root=state_root, workspace_id=workspace_id, directory=directory, write=False
+        )
+        for report in api.list_recovery(session_id):
+            _emit_model(report)
+    except Exception as exc:
+        _cli_error(exc)
+        raise typer.Exit(code=2) from None
+    finally:
+        _close_state(handle)
+
+
+@recovery_app.command("resolve")
+def recovery_resolve(
+    report_id: str,
+    resolution: RecoveryResolution,
+    command_id: str = typer.Option(..., "--command-id"),
+    item_id: str | None = typer.Option(None, "--item-id"),
+    workspace_id: str | None = typer.Option(None, "--workspace-id"),
+    directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+) -> None:
+    handle = None
+    try:
+        _application, handle, api, _doctor, _backup = _state_services(
+            state_root=state_root, workspace_id=workspace_id, directory=directory, write=True
+        )
+        report = api.get_recovery(report_id)
+        if report is None:
+            raise ApplicationError(ApplicationErrorCode.NOT_FOUND, "Recovery report is missing")
+        log = restore_conversation_log(api.journal, api.workspace_id, report.session_id)
+        writer = DurableConversationWriter(
+            log,
+            api.journal,
+            workspace_id=api.workspace_id,
+            session_id=report.session_id,
+            id_source=RandomIdSource(),
+        )
+        result = api.resolve_recovery(
+            report,
+            command_id=command_id,
+            resolution=resolution,
+            item_id=item_id,
+            log=log,
+            writer=writer,
+        )
+        _emit_model(result.value)
+    except Exception as exc:
+        _cli_error(exc)
+        raise typer.Exit(code=2) from None
+    finally:
+        _close_state(handle)
+
+
+@state_app.command("doctor")
+def state_doctor(
+    workspace_id: str = typer.Option(..., "--workspace-id"),
+    as_json: bool = typer.Option(False, "--json"),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+) -> None:
+    try:
+        application = build_application(state_root=state_root)
+        doctor = OperationalDoctor(OperationalStore(application.data_root.root))
+        report = doctor.inspect(workspace_id)
+        if as_json:
+            typer.echo(report.json_bytes().decode("utf-8"))
+        else:
+            typer.echo(f"health: {report.health.value}")
+            typer.echo(f"schema_version: {report.schema_version}")
+            for issue in report.issues:
+                typer.echo(f"{issue.severity.value}: {issue.code} ({issue.count}) {issue.summary}")
+    except Exception as exc:
+        _cli_error(exc)
+        raise typer.Exit(code=2) from None
+
+
+@state_app.command("events")
+def state_events(
+    workspace_id: str = typer.Option(..., "--workspace-id"),
+    after_cursor: int = typer.Option(0, "--after", min=0),
+    limit: int = typer.Option(100, "--limit", min=1, max=100),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+) -> None:
+    handle = None
+    try:
+        _application, handle, api, _doctor, _backup = _state_services(
+            state_root=state_root, workspace_id=workspace_id, directory=Path("."), write=False
+        )
+        for event in api.list_events(after_cursor=after_cursor, limit=limit).items:
+            typer.echo(
+                f"{event.cursor}\t{event.event_type}\t{event.aggregate_kind}\t{event.aggregate_id}"
+            )
+    except Exception as exc:
+        _cli_error(exc)
+        raise typer.Exit(code=2) from None
+    finally:
+        _close_state(handle)
+
+
+@state_app.command("backup")
+def state_backup(
+    name: str | None = typer.Option(None, "--name"),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+) -> None:
+    handle = None
+    try:
+        _application, handle, _api, _doctor, backup = _state_services(
+            state_root=state_root, workspace_id="ws_cli", directory=Path("."), write=True
+        )
+        _emit_model(backup.create(name))
+    except Exception as exc:
+        _cli_error(exc)
+        raise typer.Exit(code=2) from None
+    finally:
+        _close_state(handle)
+
+
+@state_app.command("verify-backup")
+def state_verify_backup(
+    bundle: Path,
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+) -> None:
+    handle = None
+    try:
+        _application, handle, _api, _doctor, backup = _state_services(
+            state_root=state_root, workspace_id="ws_cli", directory=Path("."), write=False
+        )
+        report = backup.verify(bundle)
+        _emit_model(report)
+        if not report.ok:
+            raise typer.Exit(code=2)
+    except typer.Exit:
+        raise
+    except Exception as exc:
+        _cli_error(exc)
+        raise typer.Exit(code=2) from None
+    finally:
+        _close_state(handle)
+
+
+@state_app.command("cleanup")
+def state_cleanup(
+    workspace_id: str = typer.Option(..., "--workspace-id"),
+    apply: bool = typer.Option(False, "--apply", help="实际删除已验证的非托管孤儿文件。"),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+) -> None:
+    handle = None
+    try:
+        _application, handle, api, _doctor, _backup = _state_services(
+            state_root=state_root, workspace_id=workspace_id, directory=Path("."), write=apply
+        )
+        _emit_model(api.cleanup_orphans(dry_run=not apply))
+    except Exception as exc:
+        _cli_error(exc)
+        raise typer.Exit(code=2) from None
+    finally:
+        _close_state(handle)
 
 
 def main() -> None:

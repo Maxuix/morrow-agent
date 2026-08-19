@@ -1,8 +1,9 @@
 # Subplans
 
-Stage 4 Durable Task, Session, Artifact, and Recovery is the active master plan. Subplan 43 is the
-only active subplan and owns the Command/Query/Event, CLI, doctor, and backup surface. Later subplans
-remain inactive until the preceding gate passes and execution state is updated.
+Stage 4 Durable Task, Session, Artifact, and Recovery is the active master plan. Subplan 44 is the
+only active subplan and owns CapabilityGrant and Full Access Manual. Subplan 43 completed its
+Command/Query/Event, CLI, doctor, and backup gate; later subplans remain inactive until the
+preceding gate passes and execution state is updated.
 
 Subplan 35 and the conditional review remediation were accepted on 2026-08-19 and preserved in Git
 history at `20fb43e`; its retired task file is no longer kept in the active subplan directory.
@@ -16,8 +17,8 @@ history at `20fb43e`; its retired task file is no longer kept in the active subp
 | 40 | `40-stage4-task-outcome.md` | completed |
 | 41 | `41-stage4-artifact-store.md` | completed |
 | 42 | `42-stage4-context-fork.md` | completed |
-| 43 | `43-stage4-api-cli-doctor-backup.md` | active |
-| 44 | `44-stage4-full-access-manual.md` | pending |
+| 43 | `43-stage4-api-cli-doctor-backup.md` | completed |
+| 44 | `44-stage4-full-access-manual.md` | active |
 | 45 | `45-stage4-acceptance.md` | pending |
 
 Completed Stage 3 Subplans 29–34 were removed from the active directory when this master plan was

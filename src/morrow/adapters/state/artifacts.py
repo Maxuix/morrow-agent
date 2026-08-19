@@ -54,6 +54,14 @@ class FilesystemArtifactStore:
         validate_prefixed_id(artifact_id, ARTIFACT_ID_PREFIX)
         return self._managed_path(self.artifacts_dir, f"{artifact_id}{ARTIFACT_FILE_SUFFIX}")
 
+    def existing_final_path(self, artifact_id: str) -> Path:
+        """Return a managed path without creating or chmod-ing directories."""
+
+        validate_prefixed_id(artifact_id, ARTIFACT_ID_PREFIX)
+        return self._managed_path_without_prepare(
+            self.artifacts_dir, f"{artifact_id}{ARTIFACT_FILE_SUFFIX}"
+        )
+
     def temp_path(self, artifact_id: str) -> Path:
         validate_prefixed_id(artifact_id, ARTIFACT_ID_PREFIX)
         return self._managed_path(self.artifacts_tmp, f"{artifact_id}{ARTIFACT_TEMP_SUFFIX}")
@@ -128,14 +136,16 @@ class FilesystemArtifactStore:
                 os.close(descriptor)
 
     def verify(self, metadata: ArtifactMetadata) -> None:
-        self._verify_path(self.final_path(metadata.artifact_id), metadata)
+        self._verify_path(self.existing_final_path(metadata.artifact_id), metadata)
 
     def read(self, metadata: ArtifactMetadata, *, max_bytes: int) -> bytes:
         if max_bytes > ARTIFACT_MAX_BYTES:
             raise ArtifactBudgetError("artifact read budget exceeded")
         if max_bytes < 0:
             raise ArtifactIntegrityError(message="artifact read limit is invalid")
-        return self._read_verified(self.final_path(metadata.artifact_id), metadata, max_bytes)
+        return self._read_verified(
+            self.existing_final_path(metadata.artifact_id), metadata, max_bytes
+        )
 
     def orphan_report(
         self, metadata: Iterable[ArtifactMetadata], *, referenced_ids: frozenset[str] = frozenset()
@@ -164,7 +174,7 @@ class FilesystemArtifactStore:
             if item.state.value != "available":
                 candidates.append(
                     ArtifactOrphanCandidate(
-                        item.artifact_id, self.final_path(item.artifact_id), item.state
+                        item.artifact_id, self.existing_final_path(item.artifact_id), item.state
                     )
                 )
         return ArtifactOrphanReport(tuple(candidates))
@@ -251,6 +261,16 @@ class FilesystemArtifactStore:
 
     def _managed_path(self, directory: Path, filename: str) -> Path:
         self._ensure_directory(directory)
+        path = directory / filename
+        try:
+            path.parent.resolve().relative_to(self.root.resolve())
+        except ValueError as exc:
+            raise ArtifactPathError() from exc
+        return path
+
+    def _managed_path_without_prepare(self, directory: Path, filename: str) -> Path:
+        if directory.is_symlink():
+            raise ArtifactPathError()
         path = directory / filename
         try:
             path.parent.resolve().relative_to(self.root.resolve())

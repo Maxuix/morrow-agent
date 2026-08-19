@@ -1,6 +1,6 @@
 # Subplan 43 — Command/Query/Event, CLI, Doctor, and Backup
 
-> Status: pending
+> Status: completed — committed after offline validation and final review attempt
 > Prerequisite: Subplan 42 accepted
 > Owns: one client boundary and daily-operability surfaces
 > Hold point: any change to the existing public event lifecycle requires explicit authorization
@@ -37,23 +37,23 @@ backup—without adding a worker or second business implementation.
 
 ## Tasks
 
-- [ ] S4.43.1 Define stable Command/Query DTOs, error mapping, command receipts, cursor pagination,
+- [x] S4.43.1 Define stable Command/Query DTOs, error mapping, command receipts, cursor pagination,
   and workspace isolation for completed domains; add cohesive application services instead of
   putting SQL/lifecycle rules in the slash parser or CLI.
-- [ ] S4.43.2 Implement application events in the same business transaction with schema version,
+- [x] S4.43.2 Implement application events in the same business transaction with schema version,
   sanitized bounded payload, ordering, and cursor replay.
-- [ ] S4.43.3 Reach the public-event hold point: prove whether existing runtime events can remain
+- [x] S4.43.3 Reach the public-event hold point: prove whether existing runtime events can remain
   unchanged, with persisted Turn/User preceding `turn.started`; request explicit authorization
   before changing lifecycle/cardinality/payload.
-- [ ] S4.43.4 Implement CLI/REPL create/list/resume/status/archive/fork, Task show/new/accept/cancel,
+- [x] S4.43.4 Implement CLI/REPL create/list/resume/status/archive/fork, Task show/new/accept/cancel,
   Artifact list/show, and recovery show/resolve through the same services.
-- [ ] S4.43.5 Implement read-only doctor and health/quarantine reporting for database, conversation,
+- [x] S4.43.5 Implement read-only doctor and health/quarantine reporting for database, conversation,
   execution, Task, checkpoint/fork, and Artifact invariants; leave grant invariants to 44.
-- [ ] S4.43.6 Implement online backup plus Artifact manifest/copy and isolated restore verification;
+- [x] S4.43.6 Implement online backup plus Artifact manifest/copy and isolated restore verification;
   guarantee credentials are excluded.
-- [ ] S4.43.7 Add deterministic orphan-cleanup only for proven unreferenced managed temp/orphan files,
+- [x] S4.43.7 Add deterministic orphan-cleanup only for proven unreferenced managed temp/orphan files,
   with inspected targets and dry-run; never repair business history.
-- [ ] S4.43.8 Run application/CLI/crash/backup/security regressions and update user/architecture docs.
+- [x] S4.43.8 Run application/CLI/crash/backup/security regressions and update user/architecture docs.
 
 ## Minimum application surface
 

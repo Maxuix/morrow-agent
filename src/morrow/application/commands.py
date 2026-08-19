@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from morrow.application.configuration import ConfigurationCommand, render_configuration_preview
-from morrow.application.tasks import TaskCommandError
+from morrow.application.tasks import TaskCommandError, TaskCommandResult
 from morrow.core.domain import SessionHealth, TaskRunStatus
 from morrow.core.preferences import merge_preferences
 
@@ -26,6 +26,7 @@ class CommandService:
         project_store,
         config_service=None,
         task_service=None,
+        api=None,
         id_source=None,
     ) -> None:
         self.session = session
@@ -33,6 +34,7 @@ class CommandService:
         self.project_store = project_store
         self.config_service = config_service
         self.task_service = task_service
+        self.api = api
         self.id_source = id_source
 
     def _ensure_workspace_writable(self, *, preferences: bool = False) -> None:
@@ -203,33 +205,48 @@ class CommandService:
                     value=current,
                 )
             if operation == "new":
-                result = self.task_service.new_task(self.session.session_id, command_id=command_id)
+                result = (
+                    self.api.task_new(self.session.session_id, command_id=command_id)
+                    if self.api is not None
+                    else self.task_service.new_task(self.session.session_id, command_id=command_id)
+                )
+                task = result.value if self.api is not None else result.task
                 if self.session.committer is not None:
-                    self.session.committer.current_task_run_id = result.task.task_run_id
-                return CommandResult([f"已创建 TaskRun：{result.task.task_run_id}"], value=result)
+                    self.session.committer.current_task_run_id = task.task_run_id
+                ui_result = TaskCommandResult("accepted", task) if self.api is not None else result
+                return CommandResult([f"已创建 TaskRun：{task.task_run_id}"], value=ui_result)
             if current is None:
                 return CommandResult(["当前没有可操作的前台 TaskRun。"])
             if operation in {"accept", "cancel", "abandon", "resume", "retry"}:
-                action = getattr(self.task_service, "resume" if operation == "retry" else operation)
-                result = action(
-                    current.task_run_id,
-                    command_id=command_id,
-                    expected_row_version=current.row_version,
-                )
+                action_name = "resume" if operation == "retry" else operation
+                if self.api is not None:
+                    action = getattr(self.api, f"task_{action_name}")
+                    result = action(
+                        current.task_run_id,
+                        command_id=command_id,
+                        expected_row_version=current.row_version,
+                    )
+                    task = result.value
+                else:
+                    action = getattr(self.task_service, action_name)
+                    result = action(
+                        current.task_run_id,
+                        command_id=command_id,
+                        expected_row_version=current.row_version,
+                    )
+                    task = result.task
                 if self.session.committer is not None:
                     self.session.committer.current_task_run_id = (
-                        result.task.task_run_id
-                        if result.task.status is not TaskRunStatus.CANCELLED
-                        else None
+                        task.task_run_id if task.status is not TaskRunStatus.CANCELLED else None
                     )
-                    if result.task.status in {
+                    if task.status in {
                         TaskRunStatus.ACCEPTED,
                         TaskRunStatus.ABANDONED,
                     }:
                         self.session.committer.current_task_run_id = None
                 return CommandResult(
-                    [f"TaskRun {result.task.task_run_id}：{result.task.status.value}"],
-                    value=result,
+                    [f"TaskRun {task.task_run_id}：{task.status.value}"],
+                    value=(TaskCommandResult("accepted", task) if self.api is not None else result),
                 )
             return CommandResult([f"未知 Task 操作：{operation}"])
         except (TaskCommandError, ValueError, RuntimeError) as exc:

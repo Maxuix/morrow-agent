@@ -21,11 +21,14 @@ from morrow.adapters.state.yaml import (
     ProjectStateYamlStore,
     WorkspaceIndexYamlStore,
 )
+from morrow.application.api import OperationalApplicationService
 from morrow.application.artifacts import ArtifactService
+from morrow.application.backup import OperationalBackupService
 from morrow.application.checkpoints import ContextCheckpointService, SessionForkService
 from morrow.application.commands import CommandService
 from morrow.application.configuration import make_configuration_tool
 from morrow.application.context import ContextBuilder
+from morrow.application.doctor import OperationalDoctor
 from morrow.application.local_tools import (
     make_apply_patch_tool,
     make_git_diff_tool,
@@ -102,6 +105,9 @@ class SessionApplication:
     artifacts: ArtifactService | None = None
     checkpoints: ContextCheckpointService | None = None
     forks: SessionForkService | None = None
+    api: OperationalApplicationService | None = None
+    doctor: OperationalDoctor | None = None
+    backup: OperationalBackupService | None = None
 
 
 def _default_tool_executor(
@@ -355,12 +361,26 @@ def build_session_application(
                 DurableSession(session_id=session.session_id, workspace_id=identity.workspace_id)
             )
         persistence.attach(session)
+    api = OperationalApplicationService(
+        journal=journal,
+        workspace_id=identity.workspace_id,
+        id_source=app.id_source,
+        tasks=persistence.tasks,
+        artifacts=artifacts,
+        checkpoints=checkpoints,
+        forks=forks,
+        persistence=persistence,
+    )
+    operational_store = OperationalStore(app.data_root.root)
+    doctor = OperationalDoctor(operational_store)
+    backup = OperationalBackupService(operational_store, journal=journal)
     commands = CommandService(
         session=session,
         identity=identity,
         project_store=app.project_store,
         config_service=config_service,
         task_service=persistence.tasks,
+        api=api,
         id_source=app.id_source,
     )
     orchestrator = SessionOrchestrator(
@@ -387,4 +407,7 @@ def build_session_application(
         artifacts=artifacts,
         checkpoints=checkpoints,
         forks=forks,
+        api=api,
+        doctor=doctor,
+        backup=backup,
     )

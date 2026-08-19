@@ -1,7 +1,7 @@
 """Ordered, checksummed Operational Store migrations.
 
-Production currently owns schema v1–v7. Versions 8–9 stay reserved for later
-subplans and must not be renumbered after they land.
+Production currently owns schema v1–v8. Version 9 stays reserved for later
+subplans and must not be renumbered after it lands.
 """
 
 from __future__ import annotations
@@ -525,6 +525,50 @@ V7_STATEMENTS = (
 
 V7 = SchemaMigration(version=7, name=V7_NAME, statements=V7_STATEMENTS)
 
+V8_NAME = "application_events_and_command_receipts"
+V8_STATEMENTS = (
+    """
+    CREATE TABLE application_events (
+        event_id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        cursor INTEGER NOT NULL CHECK (cursor >= 1),
+        schema_version INTEGER NOT NULL CHECK (schema_version >= 1),
+        event_type TEXT NOT NULL CHECK (length(event_type) BETWEEN 1 AND 128),
+        aggregate_kind TEXT NOT NULL CHECK (length(aggregate_kind) BETWEEN 1 AND 64),
+        aggregate_id TEXT NOT NULL CHECK (length(aggregate_id) BETWEEN 1 AND 128),
+        payload_json TEXT NOT NULL,
+        payload_bytes INTEGER NOT NULL CHECK (payload_bytes >= 0 AND payload_bytes <= 32768),
+        created_at_unix INTEGER NOT NULL,
+        UNIQUE (workspace_id, cursor)
+    )
+    """,
+    """
+    CREATE INDEX application_events_workspace_cursor
+        ON application_events(workspace_id, cursor)
+    """,
+    """
+    CREATE TABLE application_command_receipts (
+        command_id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        session_id TEXT,
+        operation TEXT NOT NULL CHECK (length(operation) BETWEEN 1 AND 128),
+        request_digest TEXT NOT NULL CHECK (length(request_digest) = 64),
+        disposition TEXT NOT NULL CHECK (disposition IN ('accepted', 'replay', 'conflict')),
+        result_kind TEXT,
+        result_id TEXT,
+        event_cursor INTEGER,
+        row_version INTEGER CHECK (row_version IS NULL OR row_version >= 1),
+        created_at_unix INTEGER NOT NULL
+    )
+    """,
+    """
+    CREATE INDEX application_command_receipts_workspace
+        ON application_command_receipts(workspace_id, created_at_unix, command_id)
+    """,
+)
+
+V8 = SchemaMigration(version=8, name=V8_NAME, statements=V8_STATEMENTS)
+
 
 class MigrationRegistry:
     def __init__(self, *, supported_version: int = SUPPORTED_SCHEMA_VERSION) -> None:
@@ -586,6 +630,7 @@ def production_registry() -> MigrationRegistry:
     registry.add(V5)
     registry.add(V6)
     registry.add(V7)
+    registry.add(V8)
     return registry
 
 
