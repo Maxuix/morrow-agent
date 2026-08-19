@@ -213,7 +213,14 @@ class AgentLoop:
     def _id(self, prefix: str) -> str:
         return self.id_source.new_id(prefix)
 
-    async def run_task(self, session: Session, user_input: str) -> AsyncIterator[AgentEvent]:
+    async def run_task(
+        self,
+        session: Session,
+        user_input: str,
+        *,
+        client_message_id: str | None = None,
+    ) -> AsyncIterator[AgentEvent]:
+        client_message_id = client_message_id or self._id("cmsg")
         turn_id = self._id("turn")
         run_context = ToolRunContext(run_id=turn_id, session_id=session.session_id)
         sequence = 0
@@ -290,7 +297,7 @@ class AgentLoop:
             *,
             interrupted: tuple[str, ...] = (),
         ) -> tuple[AgentEvent, AgentEvent]:
-            session.log.finish_turn(FinishReason.ERROR, interrupted_call_ids=interrupted)
+            session.finish_turn(FinishReason.ERROR, interrupted_call_ids=interrupted)
             retain_facts(FinishReason.ERROR.value)
             return fatal(message, stop_code)
 
@@ -313,10 +320,55 @@ class AgentLoop:
                 )
             return statuses
 
-        yield event("turn.started", {})
+        started = False
+        settled = False
         try:
-            session.log.begin_turn(UserMessage(content=user_input))
-            session.dirty = True
+            submit = getattr(session.committer, "submit_user", None)
+            if submit is not None:
+                submit_outcome = submit(
+                    session,
+                    user_input,
+                    client_message_id,
+                    turn_id=turn_id,
+                    agent_run_id=self._id("arun"),
+                    tools=self.tool_executor.definitions if self.tool_executor else (),
+                )
+                if submit_outcome.turn_id:
+                    turn_id = submit_outcome.turn_id
+                    run_context = ToolRunContext(run_id=turn_id, session_id=session.session_id)
+                if submit_outcome.kind != "accepted":
+                    yield event("turn.started", {})
+                    started = True
+                    settled = True
+                    if submit_outcome.kind == "closed_replay":
+                        text = submit_outcome.assistant_text or ""
+                        if text:
+                            yield event("text.delta", {"text": text})
+                        retain_facts(FinishReason.STOP.value)
+                        yield event("turn.completed", completion_payload(FinishReason.STOP, text))
+                        return
+                    message = (
+                        "当前回合需要恢复后才能继续"
+                        if submit_outcome.kind == "recovery"
+                        else "client_message_id 与已有请求冲突"
+                    )
+                    yield event(
+                        "error",
+                        {"message": message, "stop_code": AgentStopCode.INTERNAL.value},
+                    )
+                    retain_facts(FinishReason.ERROR.value)
+                    yield event(
+                        "turn.completed",
+                        completion_payload(
+                            FinishReason.ERROR, "", stop_code=AgentStopCode.INTERNAL
+                        ),
+                    )
+                    return
+            else:
+                session.begin_user_turn(UserMessage(content=user_input))
+
+            yield event("turn.started", {})
+            started = True
             tools = self.tool_executor.definitions if self.tool_executor else ()
 
             while True:
@@ -411,7 +463,7 @@ class AgentLoop:
                 )
                 if is_final_text:
                     try:
-                        session.log.append_assistant(message)
+                        session.append_assistant(message)
                     except ConversationLogError:
                         for item in terminal_error(
                             "模型响应未正常结束", AgentStopCode.INVALID_RESPONSE
@@ -423,7 +475,7 @@ class AgentLoop:
                     if current is not None:
                         while current.cancelling():
                             current.uncancel()
-                    session.log.finish_turn(FinishReason.STOP)
+                    session.finish_turn(FinishReason.STOP)
                     retain_facts(FinishReason.STOP.value)
                     yield event(
                         "turn.completed",
@@ -460,7 +512,7 @@ class AgentLoop:
                     return
 
                 try:
-                    session.log.append_assistant(message)
+                    session.append_assistant(message)
                 except ConversationLogError:
                     for item in terminal_error(
                         "模型响应未正常结束", AgentStopCode.INVALID_RESPONSE
@@ -479,7 +531,7 @@ class AgentLoop:
                             "工具调用总数已达上限",
                             result_limit=per_call_result_limit,
                         )
-                        session.log.append_tool_result(call.id, outcome.envelope)
+                        session.append_tool_result(call.id, outcome.envelope)
                         yield tool_status(
                             call,
                             "skipped",
@@ -555,7 +607,7 @@ class AgentLoop:
                             "工具执行超时",
                             result_limit=per_call_result_limit,
                         )
-                    session.log.append_tool_result(call.id, result.envelope)
+                    session.append_tool_result(call.id, result.envelope)
                     cycle_outcomes.append(result)
                     run_context.note_tool_outcome(ok=result.ok, error_code=result.error_code)
                     active_running_id = None
@@ -582,6 +634,8 @@ class AgentLoop:
         except asyncio.CancelledError:
             if final_committed:
                 return
+            if not started:
+                yield event("turn.started", {})
             _consume_cancellation_request()
             unresolved = session.log.unresolved_call_ids
             interrupted = self._close_unresolved(
@@ -599,9 +653,7 @@ class AgentLoop:
                 yield status_event
             if session.log.has_active_turn:
                 try:
-                    session.log.finish_turn(
-                        FinishReason.CANCELLED, interrupted_call_ids=interrupted
-                    )
+                    session.finish_turn(FinishReason.CANCELLED, interrupted_call_ids=interrupted)
                 except ConversationLogError:
                     pass
             retain_facts(FinishReason.CANCELLED.value)
@@ -627,7 +679,7 @@ class AgentLoop:
                 yield status_event
             if session.log.has_active_turn:
                 try:
-                    session.log.finish_turn(FinishReason.ERROR, interrupted_call_ids=interrupted)
+                    session.finish_turn(FinishReason.ERROR, interrupted_call_ids=interrupted)
                 except ConversationLogError:
                     pass
             retain_facts(FinishReason.ERROR.value)
@@ -636,7 +688,7 @@ class AgentLoop:
             return
         finally:
             retain_facts()
-            if session.log.has_active_turn:
+            if not settled and session.log.has_active_turn:
                 try:
                     interrupted = self._close_unresolved(
                         session,
@@ -645,9 +697,7 @@ class AgentLoop:
                         "任务已取消，工具调用未完成",
                         result_limit=active_result_limit,
                     )
-                    session.log.finish_turn(
-                        FinishReason.CANCELLED, interrupted_call_ids=interrupted
-                    )
+                    session.finish_turn(FinishReason.CANCELLED, interrupted_call_ids=interrupted)
                 except Exception:
                     pass
 
@@ -698,7 +748,7 @@ class AgentLoop:
                 message,
                 result_limit=result_limit,
             )
-            session.log.append_tool_result(call_id, outcome.envelope)
+            session.append_tool_result(call_id, outcome.envelope)
         return interrupted
 
 
@@ -728,5 +778,11 @@ class AgentRuntime:
     def loop(self) -> AgentLoop:
         return self._loop
 
-    def run_turn(self, session: Session, user_input: str) -> AsyncIterator[AgentEvent]:
-        return self._loop.run_task(session, user_input)
+    def run_turn(
+        self,
+        session: Session,
+        user_input: str,
+        *,
+        client_message_id: str | None = None,
+    ) -> AsyncIterator[AgentEvent]:
+        return self._loop.run_task(session, user_input, client_message_id=client_message_id)

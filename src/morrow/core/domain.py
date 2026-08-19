@@ -104,7 +104,7 @@ def validate_prefixed_id(value: str, prefix: str) -> str:
     if not value.startswith(expected):
         raise ValueError("identifier prefix does not match its owner")
     remainder = value[len(expected) :]
-    if not remainder or remainder.startswith("_"):
+    if not remainder:
         raise ValueError("identifier must include an opaque suffix")
     return value
 

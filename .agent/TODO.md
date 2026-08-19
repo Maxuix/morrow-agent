@@ -2,32 +2,32 @@
 
 ## Current stage
 
-Stage 4 production implementation is active at durable no-tool Session history. The v1 Operational
-Store foundation has landed; Full Access remains inactive.
+Stage 4 production implementation is active at the tool execution journal. Durable no-tool Session
+history has landed; Full Access remains inactive.
 
 ## Active subplan
 
-Subplan 37 — Durable Session, Task, Turn, AgentRun, and No-Tool Conversation.
+Subplan 38 — Tool Execution Journal and Durable Approval.
 
 ## Tasks
 
-- [x] S4.37.1 Add typed domain models, separate lifecycle/health axes, immutable IDs, the three
-  order namespaces, base AgentRun source snapshots, and payload validators.
-- [x] S4.37.2 Add lifecycle and conversation-journal schemas/ports with workspace-scoped queries,
-  foreign keys, uniqueness, and sequence constraints.
-- [x] S4.37.3 Refactor ConversationLog behind a durable append boundary that validates first, commits
-  atomically, and updates its in-memory projection only from the committed record.
-- [>] S4.37.4 Integrate Session construction and AgentLoop no-tool begin/assistant/finish writes so
-  Turn/User commit precedes `turn.started` and Provider invocation, without adding a second
-  ordinary-chat path.
-- [ ] S4.37.5 Implement command-level `client_message_id` receipts: replay closed results, return an
-  open/interrupted recovery disposition without duplicating Turn/User, and reject the same key with
-  a different payload.
-- [ ] S4.37.6 Restore legal snapshots after clean exit, reject orphan/invalid sequences, and keep
-  lifecycle separate from health quarantine; create the v2 fixture for later migration acceptance.
-- [ ] S4.37.7 Replace process-local-only system prompt, `/new`, `/exit`, dirty, and persistence tests;
-  prove workspace isolation, snapshot redaction/budgets, rollback behavior, and Stage 3
-  conversation regressions; update architecture data ownership.
+- [>] S4.38.1 Define ToolExecution, Approval, EffectClass, recovery declaration, structured tool
+  facts, transition models, and the named test-only fault-injector port with the ADR's exact
+  payload/redaction budgets.
+- [ ] S4.38.2 Add journal/approval schemas and constraints for ordered calls, intent hashes, schema/
+  permission digests, result evidence, row versions, expiry, resolution, and consumption.
+- [ ] S4.38.3 Persist Assistant tool call plus all ordered execution intents atomically through the
+  durable ConversationLog boundary before dispatch, including pre-effect file/config evidence such
+  as before hash, expected-after hash, expected size, target/parent conditions, and truncation facts.
+- [ ] S4.38.4 Integrate approval creation/resolution so consume and `executing` transition are one
+  transaction, expiry uses the injected production Clock, Terminal resolution delegates through the
+  same application path, and duplicate/stale decisions are deterministic.
+- [ ] S4.38.5 Persist handler success/failure/cancellation as `handler_completed`, then append
+  ToolMessage and close each ordered execution through ConversationLog.
+- [ ] S4.38.6 Hand-classify every current production tool independently of `ToolEffect`; Host and
+  native sandbox default to externally effectful/unknown, and composition fails if any registered
+  tool lacks a durable declaration.
+- [ ] S4.38.7 Add fault-point, redaction, payload-boundary, transition, and Stage 3 regression tests;
+  document the protocol.
 
-Only Subplan 37 may be executed. Tool journals, recovery, artifacts, grants, and Full Access remain
-inactive.
+Only Subplan 38 may be executed. Recovery, artifacts, grants, and Full Access remain inactive.

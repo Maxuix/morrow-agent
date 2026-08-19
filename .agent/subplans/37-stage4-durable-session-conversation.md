@@ -1,6 +1,6 @@
 # Subplan 37 — Durable Session, Task, Turn, AgentRun, and No-Tool Conversation
 
-> Status: active
+> Status: completed
 > Prerequisite: Subplan 36 accepted
 > Owns: durable foreground identities and legal no-tool conversation history
 > Schema: v2 Session, minimal open TaskRun pointer, Turn, base AgentRun, conversation, and receipt
@@ -42,15 +42,15 @@ evidence.
   foreign keys, uniqueness, and sequence constraints.
 - [x] S4.37.3 Refactor ConversationLog behind a durable append boundary that validates first, commits
   atomically, and updates its in-memory projection only from the committed record.
-- [>] S4.37.4 Integrate Session construction and AgentLoop no-tool begin/assistant/finish writes so
+- [x] S4.37.4 Integrate Session construction and AgentLoop no-tool begin/assistant/finish writes so
   Turn/User commit precedes `turn.started` and Provider invocation, without adding a second
   ordinary-chat path.
-- [ ] S4.37.5 Implement command-level `client_message_id` receipts: replay closed results, return an
+- [x] S4.37.5 Implement command-level `client_message_id` receipts: replay closed results, return an
   open/interrupted recovery disposition without duplicating Turn/User, and reject the same key with
   a different payload.
-- [ ] S4.37.6 Restore legal snapshots after clean exit, reject orphan/invalid sequences, and keep
+- [x] S4.37.6 Restore legal snapshots after clean exit, reject orphan/invalid sequences, and keep
   lifecycle separate from health quarantine; create the v2 fixture for later migration acceptance.
-- [ ] S4.37.7 Replace process-local-only system prompt, `/new`, `/exit`, dirty, and persistence tests;
+- [x] S4.37.7 Replace process-local-only system prompt, `/new`, `/exit`, dirty, and persistence tests;
   prove workspace isolation, snapshot redaction/budgets, rollback behavior, and Stage 3
   conversation regressions; update architecture data ownership.
 

@@ -1,6 +1,6 @@
 # Subplan 38 — Tool Execution Journal and Durable Approval
 
-> Status: pending
+> Status: active
 > Prerequisite: Subplan 37 accepted
 > Owns: persist-before-effect protocol, durable tool states, and one-shot approval consumption
 > Schema: v3 tool execution, approval, and structured fact journal
@@ -33,7 +33,7 @@ through ConversationLog.
 
 ## Tasks
 
-- [ ] S4.38.1 Define ToolExecution, Approval, EffectClass, recovery declaration, structured tool
+- [>] S4.38.1 Define ToolExecution, Approval, EffectClass, recovery declaration, structured tool
   facts, transition models, and the named test-only fault-injector port with the ADR's exact
   payload/redaction budgets.
 - [ ] S4.38.2 Add journal/approval schemas and constraints for ordered calls, intent hashes, schema/

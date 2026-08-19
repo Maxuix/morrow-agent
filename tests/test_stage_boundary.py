@@ -197,35 +197,41 @@ async def test_plain_chat_turn_persists_no_state_document(tmp_path):
             if path.is_file()
         }
 
-    # Identity confirmation legitimately persists workspace-index.yaml and its
-    # lock; the chat turn itself must add, remove or rewrite no state file.
-    before = state_files()
+    before = {
+        path
+        for path in state_files()
+        if not path.startswith("store/") and not path.startswith("locks/operational")
+    }
     assert before
     consumed = [item async for item in products.orchestrator.stream("普通对话输入")]
     assert consumed
-    assert state_files() == before
-
-
-def test_session_construction_and_restart_do_not_restore_conversation_log(tmp_path):
-    app, products = _build_session_products(tmp_path)
-    session = products.session
-    assert session.log.snapshot().records == ()
-    from morrow.core.models import UserMessage
-
-    session.log.begin_turn(UserMessage(content="ephemeral"))
-    state_files = {
-        str(path.relative_to(app.data_root.root))
-        for path in app.data_root.root.rglob("*")
-        if path.is_file()
+    after = {
+        path
+        for path in state_files()
+        if not path.startswith("store/") and not path.startswith("locks/operational")
     }
-    session.reset("ses_restart")
-    assert session.log.snapshot().records == ()
-    assert session.messages == ()
-    assert {
-        str(path.relative_to(app.data_root.root))
-        for path in app.data_root.root.rglob("*")
-        if path.is_file()
-    } == state_files
+    assert after == before
+    assert (app.data_root.root / "store" / "operational.sqlite").is_file()
+
+
+@pytest.mark.asyncio
+async def test_session_restart_restores_persisted_conversation(tmp_path):
+    app, products = _build_session_products(tmp_path)
+    session_id = products.session.session_id
+    consumed = [item async for item in products.orchestrator.stream("ephemeral")]
+    assert consumed
+    assert products.session.messages
+    resumed = build_session_application(
+        app,
+        app.workspace_service.resolve(tmp_path / "project").identity,
+        provider=ScriptedModelProvider(["stage guard reply"]),
+        model=ModelRef(provider_id="p", model_id="m"),
+        resume_session_id=session_id,
+    )
+    assert [message.content for message in resumed.session.messages] == [
+        "ephemeral",
+        "stage guard reply",
+    ]
 
 
 def test_unsupported_adapter_capability_preserves_plain_chat_without_tools(tmp_path):

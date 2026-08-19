@@ -123,7 +123,8 @@ Service 或 Port：
   → Adapter 流式返回文本或 tool calls
   → ToolExecutor 校验、预检、审批并串行执行受限工具，闭合 ToolCycle
   → 最终回答、取消或确定性 stop_code
-  → /new 或 /exit 对脏 Session 要求显式丢弃确认
+  → 先提交 Turn/User，再发出 turn.started
+  → /new 创建新 Session 而不删除旧会话；已持久化对话的 /exit 不再要求丢弃
 ```
 
 任何启动、聊天、配置、重置或退出路径都不会生成模型摘要或写入对话延续状态。
@@ -137,7 +138,7 @@ Service 或 Port：
 | Preferences | global、workspace、process-local session | 配置服务 | global → workspace → session 合并 |
 | 工作空间路径索引 | `workspace-index.yaml` | Workspace 服务 | 独立于项目状态 |
 | 工作空间 Profile | `profile.yaml` | Workspace/配置服务 | 按 workspace_id 隔离 |
-| 当前会话消息 | 进程内 ConversationLog | AgentLoop；命令只可 reset | 不持久化、不跨进程恢复；Stage 4 将写入 Operational Store |
+| 当前会话消息 | 进程内 ConversationLog 投影；权威在 Operational Store v2 | AgentLoop 经 ConversationLog 提交 | 无工具多轮对话可在重启后按 Session 恢复 |
 | Agent 运行策略 | 随包策略 → RunPolicy | composition root | 不属于用户配置 |
 | 运行记录 / Artifact 元数据 | 数据根 `store/operational.sqlite` | v1 仅身份与迁移账本 | 合同见 [Operational Store ADR](decisions/stage-4-operational-store.md)；YAML 与凭据权威不变 |
 
@@ -164,9 +165,9 @@ workspace Preferences 损坏只隔离该层。旧 `handoff.yaml(.bak)` 不属于
 ```
 
 `DataRoot` 暴露 `store_path`、`artifacts_path`、`backups_path` 与 `operational_lock_path`。
-生产启动不会自动创建或打开该库。v2 增加了 Session / 打开的 TaskRun 指针 / Turn / AgentRun /
-conversation records / turn-submit receipt 表。AgentLoop 仍写入进程内 ConversationLog，尚未接到
-这些表。损坏、外源或未来版本文件保持原字节并失败关闭。
+`build_session_application()` 会打开或创建 v2 Operational Store，并把无工具对话经 ConversationLog
+提交到 Session / TaskRun / Turn / AgentRun / conversation / receipt 表。YAML 与凭据权威不变。
+损坏、外源或未来版本文件保持原字节并失败关闭。
 
 ## 事件与安全边界
 
@@ -178,7 +179,7 @@ conversation records / turn-submit receipt 表。AgentLoop 仍写入进程内 Co
 - 当前系统边界按冻结 ToolSet 动态渲染；未提供的能力、工作空间外访问、网络/loopback、Git 写入和权限提升始终被禁止。
 - 默认测试不联网、不使用真实钥匙串、不依赖用户主目录。
 - Provider 和结构化响应失败必须分类；不静默切换 Provider 或模型。
-- Session 持久化、恢复、conversation Fork 和确定性 checkpoint 的存储基础已落地，业务写入仍未实现；
+- 无工具 Session 对话可持久化并在重启后恢复；conversation Fork、工具恢复和确定性 checkpoint 仍未实现；
   工作空间/代码 rewind 不属于 Stage 4，长期偏好/知识学习留到 Stage 5。
   当前不存在过渡兼容写入器。
 

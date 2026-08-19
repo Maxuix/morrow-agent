@@ -303,7 +303,7 @@ async def test_cancelled_turn_records_cancelled_terminal_and_next_turn_succeeds(
 @pytest.mark.asyncio
 async def test_history_admission_failure_is_invalid_response_not_internal():
     class RejectingLog(ConversationLog):
-        def append_assistant(self, message):
+        def plan_append_assistant(self, message):
             raise ConversationLogError("tool call IDs must be unique within one ToolCycle")
 
     session = Session(session_id="s", log=RejectingLog())

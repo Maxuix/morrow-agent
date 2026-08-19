@@ -791,7 +791,8 @@ async def test_production_composition_uses_one_agent_loop_and_refreshes_state_pr
 
     assert events[-1].payload["finish_reason"] == FinishReason.STOP.value
     assert session_app.session.preferences.language == "中文"
-    assert session_app.session.dirty is True
+    assert session_app.session.dirty is False
+    assert session_app.session.persisted is True
     assert [message.role for message in session_app.session.messages] == [
         "user",
         "assistant",

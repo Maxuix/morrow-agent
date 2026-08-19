@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from morrow.application.configuration import ConfigurationCommand, render_configuration_preview
+from morrow.core.domain import SessionHealth
 from morrow.core.preferences import merge_preferences
 
 
@@ -63,18 +64,35 @@ class CommandService:
             return CommandResult([])
         command = parts[0]
         if command == "/exit":
+            if self.session.persisted:
+                return CommandResult(["正在退出。已保存的对话会保留。"], action="exit")
             return CommandResult(["正在退出。"], action="exit")
         if command == "/new":
+            if self.session.persisted:
+                if self.session.health is SessionHealth.NEEDS_RECOVERY:
+                    return CommandResult(
+                        ["当前会话有未结束的工作，需要先恢复或如实关闭后才能新建会话。"]
+                    )
+                return CommandResult(["已准备新的独立会话。"], action="new")
             if self.session.dirty:
                 return CommandResult(
                     ["当前会话有未保存的进程内对话，需要明确确认丢弃。"], action="discard_new"
                 )
             return CommandResult(["已准备新的独立会话。"], action="new")
         if command == "/status":
+            if self.session.persisted:
+                if self.session.health is SessionHealth.NEEDS_RECOVERY:
+                    current = "需要恢复"
+                elif self.session.health is SessionHealth.QUARANTINED:
+                    current = "已隔离"
+                else:
+                    current = "已保存"
+            else:
+                current = "有未保存的进程内对话" if self.session.dirty else "干净"
             return CommandResult(
                 [
                     f"工作空间：{self.identity.display_name}",
-                    f"当前会话：{'有未保存的进程内对话' if self.session.dirty else '干净'}",
+                    f"当前会话：{current}",
                 ]
             )
         if command == "/workspace" and len(parts) > 1 and parts[1] == "reset":

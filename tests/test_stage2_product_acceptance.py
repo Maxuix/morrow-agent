@@ -78,7 +78,7 @@ async def test_real_terminal_product_flow_is_ordered_recoverable_and_secret_safe
     recording = _RecordingOrchestrator(session_app.orchestrator)
     output = StringIO()
     terminal = _PromptingTerminal(
-        ["请查询不存在的套餐", "继续聊天", "/handoff", "/continue", "/new", "y", "/exit"],
+        ["请查询不存在的套餐", "继续聊天", "/handoff", "/continue", "/new", "/exit"],
         Console(file=output, force_terminal=False, color_system=None, width=120),
     )
     monkeypatch.setattr(terminal_module, "Terminal", lambda: terminal)
@@ -104,7 +104,7 @@ async def test_real_terminal_product_flow_is_ordered_recoverable_and_secret_safe
 
     public_surface = rendered + str([event.payload for event in recording.events])
     persisted_surface = "\n".join(
-        path.read_text(encoding="utf-8")
+        path.read_text(encoding="utf-8", errors="replace")
         for path in (tmp_path / "state").rglob("*")
         if path.is_file()
     )
@@ -168,9 +168,10 @@ async def test_real_repl_configuration_uses_shared_terminal_approval_and_dirty_h
 
     assert exit_code == 0
     assert session_app.session.preferences.language == "中文"
-    assert session_app.session.dirty is True
+    assert session_app.session.dirty is False
+    assert session_app.session.persisted is True
     assert session_app.session.log.snapshot().records
     assert "配置预览：" in output.getvalue()
     assert "确认执行？ [y/N] " in terminal.prompt_messages
-    assert "确认退出并丢弃当前内存内容？ [y/N] " in terminal.prompt_messages
+    assert "确认退出并丢弃当前内存内容？ [y/N] " not in terminal.prompt_messages
     assert all(item is prompt_session for item in terminal.prompt_sessions)

@@ -392,6 +392,39 @@ class SqliteOperationalJournal:
 
         return self.transact(work)
 
+    def update_receipt(self, workspace_id: str, receipt: TurnSubmitReceipt) -> TurnSubmitReceipt:
+        def work(journal: SqliteOperationalJournal) -> TurnSubmitReceipt:
+            existing = journal.get_receipt(
+                workspace_id, receipt.session_id, receipt.client_message_id
+            )
+            if existing is None:
+                raise StorageError(StorageErrorCode.NOT_FOUND, "operational receipt is missing")
+            journal._executor_or_raise().execute(
+                """
+                UPDATE turn_submit_receipts
+                SET request_digest = ?, disposition = ?, turn_id = ?, command_id = ?
+                WHERE session_id = ? AND client_message_id = ?
+                """,
+                (
+                    receipt.request_digest,
+                    receipt.disposition.value,
+                    receipt.turn_id,
+                    receipt.command_id,
+                    receipt.session_id,
+                    receipt.client_message_id,
+                ),
+            )
+            loaded = journal.get_receipt(
+                workspace_id, receipt.session_id, receipt.client_message_id
+            )
+            if loaded is None:
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE, "operational receipt could not be read"
+                )
+            return loaded
+
+        return self.transact(work)
+
     def _insert_session(self, session: DurableSession) -> None:
         self._executor_or_raise().execute(
             f"INSERT INTO sessions({_SESSION_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",

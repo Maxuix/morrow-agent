@@ -269,11 +269,14 @@ async def _exit(
     terminal,
     prompt_session,
 ) -> int | None:
-    if session and session.dirty:
+    if session and session.dirty and not getattr(session, "persisted", False):
         confirmation = await _confirm(terminal, prompt_session, "确认退出并丢弃当前内存内容？")
         if confirmation == "closed":
             return _closed_input(terminal)
         if confirmation != "yes":
             return None
+    closer = getattr(getattr(session, "committer", None), "close", None)
+    if closer is not None:
+        closer()
     terminal.console.print("再见。")
     return 0

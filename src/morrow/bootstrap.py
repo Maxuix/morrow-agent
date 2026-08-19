@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -12,6 +13,8 @@ from morrow.adapters.local.sandbox import (
 )
 from morrow.adapters.models.openai_compatible import estimate_request_chars, make_openai_compatible
 from morrow.adapters.registry import AdapterRegistry
+from morrow.adapters.state.journal import SqliteOperationalJournal
+from morrow.adapters.state.operational import OperationalStore
 from morrow.adapters.state.yaml import (
     GlobalConfigYamlStore,
     ProjectStateYamlStore,
@@ -31,8 +34,11 @@ from morrow.application.local_tools import (
     make_write_file_tool,
 )
 from morrow.application.orchestrator import SessionOrchestrator
+from morrow.application.turns import SessionPersistence
 from morrow.core.capabilities import PermissionProfile, ProcessIsolation, WorkspaceCapability
+from morrow.core.domain import DurableSession
 from morrow.core.models import Preferences
+from morrow.core.store import StorageError, StorageErrorCode, StoreOpenMode
 from morrow.runtime.agent import AgentRuntime
 from morrow.runtime.capabilities import CapabilityPolicy
 from morrow.runtime.ids import RandomIdSource
@@ -82,6 +88,7 @@ class SessionApplication:
     process: ProcessExecutionService
     git: GitInspectionService
     sandbox_capability: object
+    persistence: object | None = None
 
 
 def _default_tool_executor(
@@ -158,6 +165,16 @@ def build_application(
     )
 
 
+def _open_operational_store(app: Application):
+    store = OperationalStore(app.data_root.root)
+    try:
+        return store.open(StoreOpenMode.READ_WRITE)
+    except StorageError as exc:
+        if exc.code is StorageErrorCode.NOT_FOUND:
+            return store.initialize()
+        raise
+
+
 def build_session_application(
     app: Application,
     identity,
@@ -167,6 +184,7 @@ def build_session_application(
     approval_port=None,
     permission_profile: PermissionProfile | None = None,
     metrics_enabled: bool = True,
+    resume_session_id: str | None = None,
 ):
     inspection = app.workspace_state_service.inspect(identity.workspace_id)
     profile_result = inspection.profile
@@ -179,7 +197,7 @@ def build_session_application(
         read_only=inspection.read_only,
     )
     session = Session(
-        session_id=app.id_source.new_id("ses"),
+        session_id=resume_session_id or app.id_source.new_id("ses"),
         profile=(
             profile_result.value.profile
             if profile_result.value and not inspection.read_only
@@ -194,6 +212,8 @@ def build_session_application(
         permission_profile=permission_profile,
         workspace_capability=workspace_capability,
         metrics_enabled=metrics_enabled,
+        profile_revision=profile_result.revision or 0,
+        preferences_revision=preferences_result.revision or 0,
     )
     files = WorkspaceFileService(WorkspacePathResolver(workspace_capability.root))
     search = WorkspaceSearchService(files)
@@ -277,6 +297,25 @@ def build_session_application(
         id_source=app.id_source,
         tool_executor=tool_executor,
     )
+    handle = _open_operational_store(app)
+    journal = SqliteOperationalJournal(handle)
+    persistence = SessionPersistence(
+        workspace_id=identity.workspace_id,
+        journal=journal,
+        store_session=handle,
+        id_source=app.id_source,
+        model=model,
+        run_policy=run_policy,
+        runtime_instance_id=f"inst-{os.getpid()}",
+    )
+    if resume_session_id:
+        persistence.restore_into(session)
+    else:
+        if journal.get_session(identity.workspace_id, session.session_id) is None:
+            journal.create_session(
+                DurableSession(session_id=session.session_id, workspace_id=identity.workspace_id)
+            )
+        persistence.attach(session)
     commands = CommandService(
         session=session,
         identity=identity,
@@ -302,4 +341,5 @@ def build_session_application(
         process=process,
         git=git,
         sandbox_capability=sandbox_capability,
+        persistence=persistence,
     )

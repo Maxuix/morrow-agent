@@ -2,38 +2,34 @@
 
 ## Current status
 
-Stage 4 Durable Task, Session, Artifact, and Recovery implementation is active at Subplan 37. The
-v1 Operational Store foundation can create, reopen, migrate, classify, lock, and online-back up a
-data-root SQLite file. Conversation, Task, tool, Artifact, event, grant, and Full Access schemas
-remain inactive.
+Stage 4 Durable Task, Session, Artifact, and Recovery implementation is active at Subplan 38. A
+bounded no-tool Session now survives restart with one Turn/UserMessage per `client_message_id`.
+Tool journals, recovery, artifacts, grants, and Full Access remain inactive.
 
 ## Last completed task
 
-S4.37.3 moved ConversationLog onto a plan/validate/apply append boundary. A journal-backed writer
-persists first and replaces the live projection only from committed rows. AgentLoop still uses the
-in-memory begin/append/finish helpers.
+Subplan 37 closed after S4.37.4–S4.37.7: AgentLoop commits Turn/User before `turn.started`,
+receipts replay/conflict/recover, restart restore and quarantine work, and `/new`/`/exit` no longer
+ask to discard persisted history. Offline suite: 489 passed, 1 deselected.
 
 ## Active task
 
-S4.37.4 — integrate Session construction and AgentLoop no-tool begin/assistant/finish writes so
-Turn/User commit precedes `turn.started` and Provider invocation.
+S4.38.1 — define ToolExecution, Approval, EffectClass, recovery declaration, structured tool facts,
+and the named test-only fault-injector port.
 
 ## Next action
 
-Give Session one append path that uses the durable writer when a journal is present, and change
-AgentLoop so the Turn/User commit happens before `turn.started`.
+Read the durable-execution ADR and current ToolExecutor/ConversationLog write path, then implement
+only S4.38.1 with focused tests.
 
 ## Blockers
 
-None. Tool journals and later persistence remain gated by Subplans 38–45.
+None. Recovery and later persistence remain gated by Subplans 39–45.
 
 ## Active boundary
 
-- Only the v2 durable no-tool Session/Task/Turn/AgentRun/conversation work in Subplan 37 is active.
+- Only the v3 tool/approval journal in Subplan 38 is active.
 - ConversationLog remains the sole chat-history authority; ordinary chat stays on
   `AgentLoop.run_task()`.
 - Current YAML/CredentialStore authorities and Stage 3 runtime/security behavior remain unchanged.
-- Full Access Manual is planned; Controlled Full Access Auto, raw auto, code rewind, background
-  work, outbox workers, automatic repair, in-flight steering, FTS/embeddings, and Stage 5 learning
-  are deferred.
 - Public event lifecycle and bundled policy-default changes remain explicit hold points.

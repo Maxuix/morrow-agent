@@ -301,7 +301,7 @@ async def test_cancellation_after_text_progress_discards_partial_assistant_and_r
 @pytest.mark.asyncio
 async def test_cancellation_before_user_commit_emits_completion_without_history_record():
     class CancellingBeforeBeginLog(ConversationLog):
-        def begin_turn(self, user):
+        def plan_begin_turn(self, user):
             del user
             raise asyncio.CancelledError
 
@@ -340,9 +340,11 @@ async def test_cancellation_after_complete_before_acceptance_discards_assistant(
 @pytest.mark.asyncio
 async def test_cancellation_before_first_tool_marks_every_call_skipped():
     class CancellingLog(ConversationLog):
-        def append_assistant(self, message):
-            super().append_assistant(message)
-            if message.tool_calls:
+        def apply_committed(self, planned):
+            super().apply_committed(planned)
+            added = planned.added[0]
+            message = getattr(added, "message", None)
+            if getattr(message, "tool_calls", ()):
                 asyncio.current_task().cancel()
 
     provider = ScriptedModelProvider(
@@ -373,9 +375,11 @@ async def test_cancellation_after_a_tool_result_preserves_it_and_closes_remainin
     executor = _executor(builder=builder)
 
     class CancellingLog(ConversationLog):
-        def append_tool_result(self, tool_call_id, content):
-            super().append_tool_result(tool_call_id, content)
-            if tool_call_id == "c1":
+        def apply_committed(self, planned):
+            super().apply_committed(planned)
+            added = planned.added[0]
+            message = getattr(added, "message", None)
+            if getattr(message, "tool_call_id", None) == "c1":
                 asyncio.current_task().cancel()
 
     calls = tuple(_call(f"c{index}", str(index)) for index in range(1, call_count + 1))

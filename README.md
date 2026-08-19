@@ -74,17 +74,18 @@ REPL 常用命令包括 `/workspace`、`/workspace edit summary ...`、`/workspa
 Host 命令审批会展示有界且脱敏的 argv/shell、工作目录、类别和超时；shell 包装的 Git 命令仍按
 Git 写入风险在审批前拒绝。命令文本只用于本地审批，不进入 `CommandResult`、Provider、公开事件或持久状态。
 
-`Ctrl+C` 在模型或工具活动期间取消当前任务，之后可以直接继续对话。`/new` 在会话干净时立即重置；
-有进程内对话时必须明确确认丢弃。`/exit` 和输入 EOF 在会话干净时返回 0；有进程内对话时必须确认
-丢弃，取消则留在 REPL，确认提示期间 EOF 返回 2 且不重置会话。
+`Ctrl+C` 在模型或工具活动期间取消当前任务，之后可以直接继续对话。`/new` 创建并切换到新的
+Session，不删除或归档旧会话；仅当对话仍只存在于进程内时才要求确认丢弃。`/exit` 和输入 EOF 在
+已持久化会话上直接退出并保留历史；仅进程内未保存对话仍需确认丢弃，取消则留在 REPL，确认提示
+期间 EOF 返回 2 且不重置会话。
 
 ## 状态与恢复边界
 
-当前持久化内容只有工作空间身份、Profile、全局/工作空间 Preferences、Provider 配置和凭据引用。
-Session 持有的 ConversationLog 只存在于当前进程；退出或重启后不能恢复、列出、归档或继续旧会话。
-Stage 4 已进入 Operational Store 基础实施，但持久化 Session、conversation Fork 和确定性上下文
-checkpoint 尚未实现；
-工作空间/代码回退不属于 Stage 4，任务后可审查的长期偏好与项目知识学习留到 Stage 5。
+当前持久化内容包括工作空间身份、Profile、全局/工作空间 Preferences、Provider 配置、凭据引用，
+以及数据根 Operational Store 中的 Session / 打开的 TaskRun / Turn / 无工具对话记录。
+可用同一 `session_id` 在重启后恢复合法对话；conversation Fork、工具恢复和确定性上下文
+checkpoint 仍未实现。工作空间/代码回退不属于 Stage 4，任务后可审查的长期偏好与项目知识学习留到
+Stage 5。
 
 旧版本可能留下 `handoff.yaml` 或 `handoff.yaml.bak`。当前版本不读取、校验、迁移、覆盖或自动删除
 这些遗留文件；是否导入或清理需要未来单独的产品与数据决策。

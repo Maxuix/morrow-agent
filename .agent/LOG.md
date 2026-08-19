@@ -1048,3 +1048,14 @@
 - `DurableConversationWriter.commit()` persists planned records and installs the projection from
   the committed journal. A failed persist leaves memory and `conversation_position` unchanged.
 - Conversation/agent regression tests and the new durable-log tests passed.
+
+## 2026-08-19 — Subplan 37 durable no-tool Session completed
+
+- AgentLoop commits Turn/User before `turn.started`. `client_message_id` receipts replay closed
+  turns, return recovery for open/interrupted duplicates, and conflict on a different payload.
+  Restart restores legal snapshots; invalid sequences quarantine Session health without rewriting
+  lifecycle. `/new` creates a new Session without deleting the old one; persisted `/exit` does not
+  ask to discard history. Tool-cycle payloads are redacted at rest.
+- Validation: Ruff format/check, compileall, `git diff --check`, and offline suite
+  `489 passed, 1 deselected`.
+- Activated Subplan 38 for the tool execution journal and durable Approval.

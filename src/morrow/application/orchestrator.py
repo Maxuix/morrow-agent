@@ -35,7 +35,12 @@ class SessionOrchestrator:
     def reset_session(self) -> None:
         if self.id_source is None:
             raise RuntimeError("session ID source is unavailable")
-        self.command_service.reset_session(self.id_source.new_id("ses"))
+        new_id = self.id_source.new_id("ses")
+        starter = getattr(self.session.committer, "start_new_session", None)
+        if starter is not None:
+            starter(self.session, new_id)
+            return
+        self.command_service.reset_session(new_id)
 
     async def stream(self, text: str):
         """Yield model events as they arrive, then a terminal dispatch result."""
@@ -47,7 +52,12 @@ class SessionOrchestrator:
                 value=getattr(result, "value", None),
             )
             return
-        async for event in self.runtime.run_turn(self.session, text):
+        client_message_id = None
+        if self.id_source is not None:
+            client_message_id = self.id_source.new_id("cmsg")
+        async for event in self.runtime.run_turn(
+            self.session, text, client_message_id=client_message_id
+        ):
             yield event
         yield DispatchResult()
 
