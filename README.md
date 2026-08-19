@@ -82,7 +82,9 @@ Session，不删除或归档旧会话；仅当对话仍只存在于进程内时�
 ## 状态与恢复边界
 
 当前持久化内容包括工作空间身份、Profile、全局/工作空间 Preferences、Provider 配置、凭据引用，
-以及数据根 Operational Store 中的 Session / 打开的 TaskRun / Turn / 无工具对话记录。
+以及数据根 Operational Store 中的 Session / TaskRun 状态与版本化 TaskOutcome / Turn / ConversationLog
+和 ToolExecution 恢复证据。最终回答只把 TaskRun 置为待接受；普通追问继续同一 TaskRun，只有显式
+`/accept`、`/task new`、取消、放弃或恢复命令才改变任务语义。
 可用同一 `session_id` 在重启后恢复合法对话；conversation Fork、工具恢复和确定性上下文
 checkpoint 仍未实现。工作空间/代码回退不属于 Stage 4，任务后可审查的长期偏好与项目知识学习留到
 Stage 5。

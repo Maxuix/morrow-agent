@@ -326,7 +326,7 @@ def test_future_schema_is_refused_and_left_intact(tmp_path):
 def test_identity_and_user_version_mismatch_is_repair(tmp_path):
     root, store = _initialized(tmp_path)
     raw = sqlite3.connect(store.layout.database)
-    raw.execute("PRAGMA user_version = 5")
+    raw.execute("PRAGMA user_version = 6")
     raw.commit()
     raw.close()
     before = store.layout.database.read_bytes()
@@ -552,25 +552,26 @@ def test_ordered_checksummed_migration_rolls_back_a_failed_step(tmp_path):
     good = _store(root)
     report = good.migrate()
     assert report.from_version == 1
-    assert report.to_version == 4
+    assert report.to_version == SUPPORTED_SCHEMA_VERSION
     assert report.applied == (
         "durable_session_conversation",
         "tool_execution_approval",
         "recovery_reports",
+        "task_run_lifecycle_and_outcomes",
     )
     assert report.backup_name
     assert (store.layout.backups_dir / report.backup_name).is_file()
 
     broken = SchemaMigration(
-        version=5,
+        version=6,
         name="broken_step",
         statements=("THIS IS NOT SQL",),
     )
     with pytest.raises(StorageError) as error:
-        _store(root, registry=_registry(broken, supported=5)).migrate()
+        _store(root, registry=_registry(broken, supported=6)).migrate()
     assert error.value.code is StorageErrorCode.UNAVAILABLE
     reopened = _store(root)
-    assert reopened.classify().schema_version == 4
+    assert reopened.classify().schema_version == SUPPORTED_SCHEMA_VERSION
 
 
 def test_interrupted_migration_before_commit_leaves_previous_version(tmp_path):

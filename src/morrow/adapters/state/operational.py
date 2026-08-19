@@ -601,7 +601,14 @@ class OperationalStore:
 
     def _apply_migration(self, connection: sqlite3.Connection, migration: SchemaMigration) -> None:
         applied_at = int(self.clock.now().timestamp())
+        rebuilds_task_runs = migration.version == 5
         try:
+            if rebuilds_task_runs:
+                # SQLite cannot alter the v2 CHECK constraint in place.  The v5 migration
+                # rebuilds the parent table while preserving child FK SQL with legacy rename
+                # behavior; this pragma must be set before the transaction begins.
+                connection.execute("PRAGMA legacy_alter_table = ON")
+                connection.execute("PRAGMA foreign_keys = OFF")
             connection.execute("BEGIN IMMEDIATE")
             self._fail("begin")
             for statement in migration.statements:
@@ -621,11 +628,26 @@ class OperationalStore:
             )
             self._fail("before_migration_commit")
             connection.execute("COMMIT")
+            if rebuilds_task_runs:
+                connection.execute("PRAGMA foreign_keys = ON")
+                connection.execute("PRAGMA legacy_alter_table = OFF")
         except sqlite3.Error as exc:
             rollback_quietly(connection)
+            if rebuilds_task_runs:
+                try:
+                    connection.execute("PRAGMA foreign_keys = ON")
+                    connection.execute("PRAGMA legacy_alter_table = OFF")
+                except sqlite3.Error:
+                    pass
             raise translate_sqlite_error(exc) from exc
         except Exception:
             rollback_quietly(connection)
+            if rebuilds_task_runs:
+                try:
+                    connection.execute("PRAGMA foreign_keys = ON")
+                    connection.execute("PRAGMA legacy_alter_table = OFF")
+                except sqlite3.Error:
+                    pass
             raise
 
     def _backup_locked(self, destination_name: str | None = None) -> BackupReport:

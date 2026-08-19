@@ -1,7 +1,7 @@
 # Subplans
 
-Stage 4 Durable Task, Session, Artifact, and Recovery is the active master plan. Subplan 40 is the
-only active subplan and owns the TaskRun lifecycle and versioned TaskOutcome. Later subplans remain
+Stage 4 Durable Task, Session, Artifact, and Recovery is the active master plan. Subplan 41 is the
+only active subplan and owns the Artifact Store and durable payload budgets. Later subplans remain
 inactive until the preceding gate passes and execution state is updated.
 
 Subplan 35 and the conditional review remediation were accepted on 2026-08-19 and preserved in Git
@@ -13,8 +13,8 @@ history at `20fb43e`; its retired task file is no longer kept in the active subp
 | 37 | `37-stage4-durable-session-conversation.md` | completed |
 | 38 | `38-stage4-tool-journal-approval.md` | completed |
 | 39 | `39-stage4-recovery-crash.md` | completed |
-| 40 | `40-stage4-task-outcome.md` | active |
-| 41 | `41-stage4-artifact-store.md` | pending |
+| 40 | `40-stage4-task-outcome.md` | completed |
+| 41 | `41-stage4-artifact-store.md` | active |
 | 42 | `42-stage4-context-fork.md` | pending |
 | 43 | `43-stage4-api-cli-doctor-backup.md` | pending |
 | 44 | `44-stage4-full-access-manual.md` | pending |

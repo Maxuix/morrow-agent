@@ -90,6 +90,7 @@ class SessionApplication:
     git: GitInspectionService
     sandbox_capability: object
     persistence: object | None = None
+    tasks: object | None = None
 
 
 def _default_tool_executor(
@@ -329,6 +330,8 @@ def build_session_application(
         identity=identity,
         project_store=app.project_store,
         config_service=config_service,
+        task_service=persistence.tasks,
+        id_source=app.id_source,
     )
     orchestrator = SessionOrchestrator(
         session=session,
@@ -350,4 +353,5 @@ def build_session_application(
         git=git,
         sandbox_capability=sandbox_capability,
         persistence=persistence,
+        tasks=persistence.tasks,
     )

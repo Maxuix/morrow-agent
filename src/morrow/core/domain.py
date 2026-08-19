@@ -26,6 +26,8 @@ from morrow.core.models import (
 WORKSPACE_ID_PREFIX = "ws"
 SESSION_ID_PREFIX = "ses"
 TASK_RUN_ID_PREFIX = "task"
+TASK_TRANSITION_ID_PREFIX = "ttr"
+TASK_OUTCOME_ID_PREFIX = "out"
 TURN_ID_PREFIX = "turn"
 AGENT_RUN_ID_PREFIX = "arun"
 CONVERSATION_RECORD_ID_PREFIX = "rec"
@@ -38,6 +40,7 @@ DIGEST_PATTERN = re.compile(r"^[a-f0-9]{64}$")
 CONVERSATION_RECORD_MAX_BYTES = 256 * 1024
 AGENT_RUN_SNAPSHOT_MAX_BYTES = 64 * 1024
 ERROR_DETAIL_MAX_BYTES = 4 * 1024
+TASK_OUTCOME_MAX_BYTES = 64 * 1024
 SECRET_NEEDLES = ("api_key", "authorization", "password", "credential", "sk-")
 
 
@@ -55,9 +58,273 @@ class SessionHealth(StrEnum):
 
 
 class TaskRunStatus(StrEnum):
-    """Subplan 37 persists only an open current TaskRun pointer."""
+    """Durable foreground TaskRun states owned by Subplan 40."""
 
     OPEN = "open"
+    READY_FOR_ACCEPTANCE = "ready_for_acceptance"
+    ACCEPTED = "accepted"
+    CANCELLED = "cancelled"
+    FAILED = "failed"
+    ABANDONED = "abandoned"
+
+    @property
+    def is_terminal(self) -> bool:
+        return self in {
+            TaskRunStatus.ACCEPTED,
+            TaskRunStatus.CANCELLED,
+            TaskRunStatus.ABANDONED,
+        }
+
+
+TASK_TERMINAL_STATUSES = frozenset(
+    {
+        TaskRunStatus.ACCEPTED,
+        TaskRunStatus.CANCELLED,
+        TaskRunStatus.ABANDONED,
+    }
+)
+
+LEGAL_TASK_TRANSITIONS: frozenset[tuple[TaskRunStatus, TaskRunStatus]] = frozenset(
+    {
+        (TaskRunStatus.OPEN, TaskRunStatus.READY_FOR_ACCEPTANCE),
+        (TaskRunStatus.READY_FOR_ACCEPTANCE, TaskRunStatus.OPEN),
+        (TaskRunStatus.READY_FOR_ACCEPTANCE, TaskRunStatus.ACCEPTED),
+        (TaskRunStatus.OPEN, TaskRunStatus.CANCELLED),
+        (TaskRunStatus.OPEN, TaskRunStatus.FAILED),
+        (TaskRunStatus.OPEN, TaskRunStatus.ABANDONED),
+        (TaskRunStatus.READY_FOR_ACCEPTANCE, TaskRunStatus.CANCELLED),
+        (TaskRunStatus.READY_FOR_ACCEPTANCE, TaskRunStatus.ABANDONED),
+        (TaskRunStatus.FAILED, TaskRunStatus.OPEN),
+    }
+)
+
+
+class TaskRunTransitionError(ValueError):
+    """Raised when a TaskRun state transition is not part of the contract."""
+
+
+def validate_task_transition(
+    current: TaskRunStatus, target: TaskRunStatus
+) -> tuple[TaskRunStatus, TaskRunStatus]:
+    if (current, target) not in LEGAL_TASK_TRANSITIONS:
+        raise TaskRunTransitionError(
+            f"illegal TaskRun transition: {current.value} -> {target.value}"
+        )
+    return current, target
+
+
+class TaskOutcomeTrigger(StrEnum):
+    ACCEPTANCE = "acceptance"
+    SNAPSHOT = "snapshot"
+    TERMINAL_CLOSE = "terminal_close"
+
+
+class TaskOutcomeEvidenceKind(StrEnum):
+    TURN = "turn"
+    CONVERSATION_RECORD = "conversation_record"
+    AGENT_RUN = "agent_run"
+    TOOL_EXECUTION = "tool_execution"
+    TASK_TRANSITION = "task_transition"
+    ARTIFACT = "artifact"
+    CHECKPOINT = "checkpoint"
+
+
+_OUTCOME_REFERENCE_PREFIXES = {
+    TaskOutcomeEvidenceKind.TURN: TURN_ID_PREFIX,
+    TaskOutcomeEvidenceKind.CONVERSATION_RECORD: CONVERSATION_RECORD_ID_PREFIX,
+    TaskOutcomeEvidenceKind.AGENT_RUN: AGENT_RUN_ID_PREFIX,
+    TaskOutcomeEvidenceKind.TOOL_EXECUTION: "tex",
+    TaskOutcomeEvidenceKind.TASK_TRANSITION: TASK_TRANSITION_ID_PREFIX,
+    TaskOutcomeEvidenceKind.ARTIFACT: "art",
+    TaskOutcomeEvidenceKind.CHECKPOINT: "chk",
+}
+
+
+class TaskOutcomeEvidenceRef(ProtocolModel):
+    """A typed, opaque link to an already durable Stage 4 record."""
+
+    kind: TaskOutcomeEvidenceKind
+    reference_id: str
+    role: str = Field(default="evidence", min_length=1, max_length=64)
+
+    @field_validator("reference_id")
+    @classmethod
+    def valid_reference_id(cls, value: str) -> str:
+        if not ID_PATTERN.match(value):
+            raise ValueError("outcome evidence reference must be a bounded opaque token")
+        return value
+
+    @model_validator(mode="after")
+    def matches_kind(self) -> TaskOutcomeEvidenceRef:
+        expected = _OUTCOME_REFERENCE_PREFIXES[self.kind]
+        validate_prefixed_id(self.reference_id, expected)
+        return self
+
+    @property
+    def id(self) -> str:
+        return self.reference_id
+
+
+def _bounded_outcome_lines(
+    values: tuple[str, ...], *, label: str, maximum: int = 64, line_limit: int = 512
+) -> tuple[str, ...]:
+    if len(values) > maximum:
+        raise ValueError(f"{label} contains too many items")
+    cleaned: list[str] = []
+    for value in values:
+        if not isinstance(value, str):
+            raise ValueError(f"{label} items must be strings")
+        line = " ".join(value.split())
+        if line:
+            cleaned.append(line[:line_limit])
+    return tuple(cleaned)
+
+
+class TaskOutcome(ProtocolModel):
+    """Immutable, deterministic evidence emitted at an explicit milestone."""
+
+    outcome_id: str
+    workspace_id: str
+    session_id: str
+    task_run_id: str
+    version: int = Field(ge=1)
+    trigger: TaskOutcomeTrigger
+    task_status: TaskRunStatus
+    summary: str = Field(min_length=1, max_length=2_000)
+    goal_reference: TaskOutcomeEvidenceRef | None = None
+    changed_paths: tuple[str, ...] = ()
+    validation_facts: tuple[str, ...] = ()
+    side_effects: tuple[str, ...] = ()
+    unresolved_items: tuple[str, ...] = ()
+    completion_basis: tuple[str, ...] = ()
+    feedback: tuple[str, ...] = ()
+    evidence_refs: tuple[TaskOutcomeEvidenceRef, ...] = ()
+    created_at: datetime = Field(default_factory=utc_now)
+
+    @field_validator("outcome_id")
+    @classmethod
+    def valid_outcome_id(cls, value: str) -> str:
+        return validate_prefixed_id(value, TASK_OUTCOME_ID_PREFIX)
+
+    @field_validator("workspace_id")
+    @classmethod
+    def valid_workspace_id(cls, value: str) -> str:
+        return validate_prefixed_id(value, WORKSPACE_ID_PREFIX)
+
+    @field_validator("session_id")
+    @classmethod
+    def valid_session_id(cls, value: str) -> str:
+        return validate_prefixed_id(value, SESSION_ID_PREFIX)
+
+    @field_validator("task_run_id")
+    @classmethod
+    def valid_task_run_id(cls, value: str) -> str:
+        return validate_prefixed_id(value, TASK_RUN_ID_PREFIX)
+
+    @field_validator("summary")
+    @classmethod
+    def clean_summary(cls, value: str) -> str:
+        cleaned = " ".join(value.split())
+        if not cleaned:
+            raise ValueError("outcome summary must not be empty")
+        return cleaned
+
+    @field_validator("changed_paths")
+    @classmethod
+    def clean_paths(cls, values: tuple[str, ...]) -> tuple[str, ...]:
+        if len(values) > 128:
+            raise ValueError("outcome contains too many changed paths")
+        cleaned: list[str] = []
+        for value in values:
+            parts = value.split("/")
+            if (
+                not value
+                or len(value) > 512
+                or value.startswith(("/", "\\"))
+                or "\\" in value
+                or "\x00" in value
+                or any(not part or part in {".", ".."} for part in parts)
+            ):
+                raise ValueError("outcome paths must be bounded workspace-relative paths")
+            cleaned.append(value)
+        return tuple(cleaned)
+
+    @field_validator(
+        "validation_facts", "side_effects", "unresolved_items", "completion_basis", "feedback"
+    )
+    @classmethod
+    def clean_evidence_lines(cls, values: tuple[str, ...], info) -> tuple[str, ...]:
+        return _bounded_outcome_lines(values, label=info.field_name)
+
+    @model_validator(mode="after")
+    def enforce_budget_and_redaction(self) -> TaskOutcome:
+        payload = canonical_json_bytes(self.model_dump(mode="json"))
+        require_payload_budget(payload, TASK_OUTCOME_MAX_BYTES, label="TaskOutcome")
+        refuse_secret_material(payload, label="TaskOutcome")
+        return self
+
+
+# The durable name is useful at adapter boundaries while keeping the public domain name concise.
+DurableTaskOutcome = TaskOutcome
+
+
+class TaskCommandDisposition(StrEnum):
+    ACCEPTED = "accepted"
+    REPLAY = "replay"
+    CONFLICT = "conflict"
+
+
+class TaskCommandReceipt(ProtocolModel):
+    """Idempotency evidence for retry-sensitive foreground Task commands."""
+
+    command_id: str
+    workspace_id: str
+    session_id: str
+    task_run_id: str | None = None
+    operation: str = Field(min_length=1, max_length=64)
+    request_digest: str
+    disposition: TaskCommandDisposition = TaskCommandDisposition.ACCEPTED
+    result_task_run_id: str | None = None
+    outcome_id: str | None = None
+    task_status: TaskRunStatus | None = None
+    row_version: int | None = Field(default=None, ge=1)
+    created_at: datetime = Field(default_factory=utc_now)
+
+    @field_validator("command_id")
+    @classmethod
+    def valid_command_id(cls, value: str) -> str:
+        return validate_prefixed_id(value, COMMAND_ID_PREFIX)
+
+    @field_validator("workspace_id")
+    @classmethod
+    def valid_workspace_id(cls, value: str) -> str:
+        return validate_prefixed_id(value, WORKSPACE_ID_PREFIX)
+
+    @field_validator("session_id")
+    @classmethod
+    def valid_session_id(cls, value: str) -> str:
+        return validate_prefixed_id(value, SESSION_ID_PREFIX)
+
+    @field_validator("task_run_id", "result_task_run_id")
+    @classmethod
+    def valid_optional_task_id(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return validate_prefixed_id(value, TASK_RUN_ID_PREFIX)
+
+    @field_validator("outcome_id")
+    @classmethod
+    def valid_optional_outcome_id(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return validate_prefixed_id(value, TASK_OUTCOME_ID_PREFIX)
+
+    @field_validator("request_digest")
+    @classmethod
+    def valid_request_digest(cls, value: str) -> str:
+        if not DIGEST_PATTERN.match(value):
+            raise ValueError("request digest must be a SHA-256 hex digest")
+        return value
 
 
 class TurnSubmitDisposition(StrEnum):
@@ -239,7 +506,12 @@ class DurableTaskRun(ProtocolModel):
     session_id: str
     workspace_id: str
     status: TaskRunStatus = TaskRunStatus.OPEN
+    row_version: int = Field(default=1, ge=1)
+    attempt: int = Field(default=1, ge=1)
     created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+    accepted_at: datetime | None = None
+    closed_at: datetime | None = None
 
     @field_validator("task_run_id")
     @classmethod
@@ -255,6 +527,64 @@ class DurableTaskRun(ProtocolModel):
     @classmethod
     def valid_workspace_id(cls, value: str) -> str:
         return validate_prefixed_id(value, WORKSPACE_ID_PREFIX)
+
+
+class DurableTaskRunTransition(ProtocolModel):
+    """Immutable audit row for one legal TaskRun transition."""
+
+    transition_id: str
+    workspace_id: str
+    session_id: str
+    task_run_id: str
+    from_status: TaskRunStatus | None = None
+    to_status: TaskRunStatus
+    reason: str = Field(min_length=1, max_length=256)
+    turn_id: str | None = None
+    command_id: str | None = None
+    attempt: int = Field(default=1, ge=1)
+    created_at: datetime = Field(default_factory=utc_now)
+
+    @field_validator("transition_id")
+    @classmethod
+    def valid_transition_id(cls, value: str) -> str:
+        return validate_prefixed_id(value, TASK_TRANSITION_ID_PREFIX)
+
+    @field_validator("workspace_id")
+    @classmethod
+    def valid_workspace_id(cls, value: str) -> str:
+        return validate_prefixed_id(value, WORKSPACE_ID_PREFIX)
+
+    @field_validator("session_id")
+    @classmethod
+    def valid_session_id(cls, value: str) -> str:
+        return validate_prefixed_id(value, SESSION_ID_PREFIX)
+
+    @field_validator("task_run_id")
+    @classmethod
+    def valid_task_run_id(cls, value: str) -> str:
+        return validate_prefixed_id(value, TASK_RUN_ID_PREFIX)
+
+    @field_validator("turn_id")
+    @classmethod
+    def valid_turn_id(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return validate_prefixed_id(value, TURN_ID_PREFIX)
+
+    @field_validator("command_id")
+    @classmethod
+    def valid_command_id(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return validate_prefixed_id(value, COMMAND_ID_PREFIX)
+
+    @model_validator(mode="after")
+    def legal_pair(self) -> DurableTaskRunTransition:
+        if self.from_status is not None:
+            validate_task_transition(self.from_status, self.to_status)
+        elif self.to_status is not TaskRunStatus.OPEN:
+            raise TaskRunTransitionError("a new TaskRun must start in open state")
+        return self
 
 
 class DurableTurn(ProtocolModel):

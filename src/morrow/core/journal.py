@@ -9,8 +9,12 @@ from morrow.core.domain import (
     DurableAgentRun,
     DurableConversationRecord,
     DurableSession,
+    DurableTaskOutcome,
     DurableTaskRun,
+    DurableTaskRunTransition,
     DurableTurn,
+    TaskCommandReceipt,
+    TaskRunStatus,
     TurnSubmitReceipt,
 )
 from morrow.core.execution import DurableApproval, DurableToolExecution
@@ -31,6 +35,42 @@ class SessionLifecyclePort(Protocol):
     def get_task_run(self, workspace_id: str, task_run_id: str) -> DurableTaskRun | None: ...
 
     def create_task_run(self, workspace_id: str, task: DurableTaskRun) -> DurableTaskRun: ...
+
+    def list_task_runs(self, workspace_id: str, session_id: str) -> tuple[DurableTaskRun, ...]: ...
+
+    def list_task_turns(self, workspace_id: str, task_run_id: str) -> tuple[DurableTurn, ...]: ...
+
+    def transition_task_run(
+        self,
+        workspace_id: str,
+        task_run_id: str,
+        *,
+        target: TaskRunStatus,
+        transition: DurableTaskRunTransition,
+        expected_row_version: int,
+    ) -> DurableTaskRun: ...
+
+    def list_task_transitions(
+        self, workspace_id: str, task_run_id: str
+    ) -> tuple[DurableTaskRunTransition, ...]: ...
+
+    def put_task_outcome(
+        self, workspace_id: str, outcome: DurableTaskOutcome
+    ) -> DurableTaskOutcome: ...
+
+    def get_task_outcome(self, workspace_id: str, outcome_id: str) -> DurableTaskOutcome | None: ...
+
+    def list_task_outcomes(
+        self, workspace_id: str, task_run_id: str
+    ) -> tuple[DurableTaskOutcome, ...]: ...
+
+    def get_task_command_receipt(
+        self, workspace_id: str, command_id: str
+    ) -> TaskCommandReceipt | None: ...
+
+    def put_task_command_receipt(
+        self, workspace_id: str, receipt: TaskCommandReceipt
+    ) -> TaskCommandReceipt: ...
 
 
 class ConversationJournalPort(Protocol):
@@ -76,6 +116,10 @@ class ToolExecutionJournalPort(Protocol):
 
     def list_session_executions(
         self, workspace_id: str, session_id: str
+    ) -> tuple[DurableToolExecution, ...]: ...
+
+    def list_task_executions(
+        self, workspace_id: str, task_run_id: str
     ) -> tuple[DurableToolExecution, ...]: ...
 
     def save_execution(

@@ -1092,3 +1092,23 @@
 - Validation: Ruff format/check, compileall, `git diff --check`, and offline suite
   `531 passed, 1 deselected`.
 - Activated Subplan 40 for the TaskRun lifecycle and versioned TaskOutcome.
+
+## 2026-08-19 — Subplan 40 TaskRun lifecycle and TaskOutcome completed
+
+- Added v5 TaskRun states/transitions, optimistic row versions, attempts, transition audit, current
+  pointer atomicity, command receipts, and the application TaskService. Ordinary final answers move
+  to `ready_for_acceptance`; explicit acceptance/terminal close/snapshot are the only Outcome triggers.
+- Added immutable bounded TaskOutcome evidence with a typed first-Turn user-goal reference, changed
+  paths, validation/side-effect facts, unresolved items, feedback, and durable Turn/ToolExecution/
+  transition references. No raw arguments, results, reasoning, credentials, or automatic final-answer
+  Outcome rows are persisted.
+- Rebuilt `task_runs` safely in v5 while preserving v4 child foreign keys and added migration coverage;
+  terminal-task follow-up creates and persists a new current TaskRun across restart.
+- Requested Grok `/review` twice as required. The first attempt was blocked by proxy DNS/filesystem
+  permission errors; the controlled retry read the full local diff but the reviewer request failed on
+  the Grok proxy before returning findings. Independent review found and fixed the terminal follow-up
+  current-pointer bug, incomplete command digests, missing Outcome/receipt metadata checks, migration
+  pragma leakage, active-task replacement/transition contract gaps, and stale architecture wording.
+- Validation: focused TaskRun/journal/domain tests 24 passed; offline suite `536 passed, 2 skipped,
+  1 deselected`; Ruff format/check, compileall, and `git diff --check` passed.
+- Activated Subplan 41 for the Artifact Store and durable payload budgets.

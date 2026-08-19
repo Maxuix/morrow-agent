@@ -10,6 +10,7 @@ from morrow.adapters.state.journal import SqliteOperationalJournal
 from morrow.adapters.state.operational import OperationalStoreSession
 from morrow.application.prepared import prepare_cycle_executions
 from morrow.application.recovery import RecoveryService
+from morrow.application.tasks import TaskOutcomeAssembler, TaskService
 from morrow.core.domain import (
     AGENT_RUN_ID_PREFIX,
     COMMAND_ID_PREFIX,
@@ -21,6 +22,8 @@ from morrow.core.domain import (
     DurableTurn,
     SessionHealth,
     SourceRevisionRef,
+    TaskOutcomeTrigger,
+    TaskRunStatus,
     TurnSubmitDisposition,
     TurnSubmitReceipt,
     canonical_json_bytes,
@@ -41,7 +44,14 @@ from morrow.core.execution import (
     transition_execution,
 )
 from morrow.core.faults import FaultInjector, FaultPoint, NoOpFaultInjector
-from morrow.core.models import AssistantMessage, ModelRef, Preferences, UserMessage, utc_now
+from morrow.core.models import (
+    AssistantMessage,
+    FinishReason,
+    ModelRef,
+    Preferences,
+    UserMessage,
+    utc_now,
+)
 from morrow.core.ports import IdSource
 from morrow.core.recovery import RecoveryReport, RecoveryReportStatus, RecoveryResolution
 from morrow.runtime.conversation import (
@@ -136,6 +146,16 @@ class SessionPersistence:
         self.runtime_instance_id = runtime_instance_id
         self.mutation = mutation
         self.faults = faults or NoOpFaultInjector()
+        self.tasks = TaskService(
+            journal=journal,
+            workspace_id=workspace_id,
+            id_source=id_source,
+        )
+        self.outcomes = TaskOutcomeAssembler(
+            journal,
+            workspace_id=workspace_id,
+            id_source=id_source,
+        )
         self.writer: DurableConversationWriter | None = None
         self._session: Session | None = None
         self._last_client_message_id: str | None = None
@@ -158,9 +178,75 @@ class SessionPersistence:
     def commit(self, planned: ConversationAppend) -> None:
         if self.writer is None:
             raise RuntimeError("session persistence is not attached")
-        self.writer.commit(planned)
-        if planned.added and isinstance(planned.added[-1], TurnTerminalRecord):
-            self.close_open_receipt()
+        terminal = planned.added[-1] if planned.added else None
+        if not isinstance(terminal, TurnTerminalRecord):
+            self.writer.commit(planned)
+            return
+
+        def work(txn: SqliteOperationalJournal) -> None:
+            self.writer.persist_with_records(planned)
+            self._apply_task_terminal_in_txn(txn, terminal)
+            self._close_open_receipt_in_txn(txn)
+
+        self.journal.transact(work)
+        self._session_log_apply(planned)
+
+    def _session_log_apply(self, planned: ConversationAppend) -> None:
+        if self._session is None:
+            raise RuntimeError("session persistence is not attached")
+        self._session.log.apply_committed(planned)
+        self._session.dirty = self._session.log.has_active_turn
+
+    def _apply_task_terminal_in_txn(
+        self, txn: SqliteOperationalJournal, terminal: TurnTerminalRecord
+    ) -> None:
+        if self._session is None or self.current_task_run_id is None:
+            return
+        task = txn.get_task_run(self.workspace_id, self.current_task_run_id)
+        if task is None:
+            raise RuntimeError("durable TaskRun is missing for the active turn")
+        if terminal.finish_reason is FinishReason.STOP:
+            target = TaskRunStatus.READY_FOR_ACCEPTANCE
+            trigger = None
+            reason = "assistant_answer_presented"
+        elif terminal.finish_reason is FinishReason.CANCELLED:
+            target = TaskRunStatus.CANCELLED
+            trigger = TaskOutcomeTrigger.TERMINAL_CLOSE
+            reason = "turn_cancelled"
+        else:
+            target = TaskRunStatus.FAILED
+            trigger = TaskOutcomeTrigger.TERMINAL_CLOSE
+            reason = "turn_failed"
+        updated = self.tasks._transition_in_txn(
+            txn,
+            task,
+            target,
+            reason=reason,
+            turn_id=self.current_turn_id,
+        )
+        if trigger is not None:
+            self.outcomes = TaskOutcomeAssembler(
+                txn,
+                workspace_id=self.workspace_id,
+                id_source=self.id_source,
+            )
+            outcome = self.outcomes.build(updated, trigger=trigger)
+            txn.put_task_outcome(self.workspace_id, outcome)
+        if target.is_terminal:
+            self.current_task_run_id = None
+
+    def _close_open_receipt_in_txn(self, txn: SqliteOperationalJournal) -> None:
+        if self._session is None or self._last_client_message_id is None:
+            return
+        receipt = txn.get_receipt(
+            self.workspace_id, self._session.session_id, self._last_client_message_id
+        )
+        if receipt is None or receipt.disposition is TurnSubmitDisposition.ACCEPTED_CLOSED:
+            return
+        txn.update_receipt(
+            self.workspace_id,
+            receipt.model_copy(update={"disposition": TurnSubmitDisposition.ACCEPTED_CLOSED}),
+        )
 
     def close_open_receipt(self) -> None:
         if self._session is None or self._last_client_message_id is None:
@@ -224,6 +310,17 @@ class SessionPersistence:
                     DurableSession(session_id=session.session_id, workspace_id=self.workspace_id)
                 )
             task_id = row.current_task_run_id
+            follow_up_task = None
+            if task_id is not None:
+                current_task = txn.get_task_run(self.workspace_id, task_id)
+                if current_task is None:
+                    raise RuntimeError("current durable TaskRun is missing")
+                if current_task.status is TaskRunStatus.READY_FOR_ACCEPTANCE:
+                    follow_up_task = current_task
+                elif current_task.status is TaskRunStatus.FAILED:
+                    raise RuntimeError("failed TaskRun requires explicit resume")
+                elif current_task.status.is_terminal:
+                    task_id = None
             if task_id is None:
                 task = txn.create_task_run(
                     self.workspace_id,
@@ -232,6 +329,7 @@ class SessionPersistence:
                         session_id=session.session_id,
                         workspace_id=self.workspace_id,
                     ),
+                    make_current=True,
                 )
                 task_id = task.task_run_id
             txn.create_turn(
@@ -243,10 +341,19 @@ class SessionPersistence:
                     client_message_id=client_message_id,
                 ),
             )
+            if follow_up_task is not None:
+                self.tasks._transition_in_txn(
+                    txn,
+                    follow_up_task,
+                    TaskRunStatus.OPEN,
+                    reason="ordinary_follow_up",
+                    turn_id=turn_id,
+                )
+            stored_agent_run_id = agent_run_id or self.id_source.new_id(AGENT_RUN_ID_PREFIX)
             txn.create_agent_run(
                 self.workspace_id,
                 DurableAgentRun(
-                    agent_run_id=agent_run_id or self.id_source.new_id(AGENT_RUN_ID_PREFIX),
+                    agent_run_id=stored_agent_run_id,
                     turn_id=turn_id,
                     session_id=session.session_id,
                     snapshot=snapshot,
@@ -266,7 +373,7 @@ class SessionPersistence:
             writer.persist(planned)
             self.current_turn_id = turn_id
             self.current_task_run_id = task_id
-            self.current_agent_run_id = agent_run_id
+            self.current_agent_run_id = stored_agent_run_id
             return turn_id
 
         accepted_turn = self.journal.transact(work)
@@ -298,6 +405,7 @@ class SessionPersistence:
             return
         session.lifecycle = row.lifecycle
         session.health = row.health
+        self.current_task_run_id = row.current_task_run_id
         try:
             session.log = restore_conversation_log(
                 self.journal, self.workspace_id, session.session_id

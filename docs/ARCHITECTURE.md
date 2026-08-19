@@ -1,11 +1,11 @@
 # Morrow 架构基线
 
-> 状态：阶段 2、阶段 3 已完成（当前声明平台为 macOS；Linux 原生运行仍 unsupported）；阶段 4 已落地 Operational Store v4 的 Session 历史、工具/审批日志与恢复分类
+> 状态：阶段 2、阶段 3 已完成（当前声明平台为 macOS；Linux 原生运行仍 unsupported）；阶段 4 已落地 Operational Store v5 的 Session/Task 历史、工具/审批日志、恢复分类与 TaskOutcome
 
 本文锁定当前依赖方向、数据所有权和安全边界。阶段 3 的能力策略、配置工具、工作空间读搜、冲突安全文件变更、审批后 Host 命令、只读 Git 和当前 macOS 原生沙箱
 已经交付；Linux 原生运行尚未声明支持。Stage 4 已落地数据根 SQLite Operational Store 的
-身份/迁移/备份基础、v2 无工具 Session 历史、v3 工具执行/审批日志，以及 v4 恢复分类与
-崩溃对账。Artifact 与 Full Access 仍未开始。Stage 5 的可审查学习、Stage 6 的 Skills/MCP，
+身份/迁移/备份基础、v2 无工具 Session 历史、v3 工具执行/审批日志、v4 恢复分类与
+崩溃对账，以及 v5 TaskRun 生命周期、转移审计和版本化 TaskOutcome。Artifact 与 Full Access 仍未开始。Stage 5 的可审查学习、Stage 6 的 Skills/MCP，
 以及 Stage 7–10 的 Workflow、GUI、后台自动化和产品化均尚未开始。
 
 ## 分层与依赖方向
@@ -158,7 +158,7 @@ workspace Preferences 损坏只隔离该层。旧 `handoff.yaml(.bak)` 不属于
 `config.yaml` 是聚合文档，Provider 与全局 Preferences 的写入必须在同一事务锁内保留对方字段。
 `workspace-index.yaml` 由独立 WorkspaceIndexStore 管理。
 
-### Operational Store 布局（v4）
+### Operational Store 布局（v5）
 
 数据根（`--state-root` 或 `~/.morrow`）下的保留路径：
 
@@ -171,9 +171,10 @@ workspace Preferences 损坏只隔离该层。旧 `handoff.yaml(.bak)` 不属于
 ```
 
 `DataRoot` 暴露 `store_path`、`artifacts_path`、`backups_path` 与 `operational_lock_path`。
-`build_session_application()` 会打开或创建 v4 Operational Store，并把对话经 ConversationLog
+`build_session_application()` 会打开或创建 v5 Operational Store，并把对话经 ConversationLog
 提交到 Session / TaskRun / Turn / AgentRun / conversation / receipt 表。v3 起有 tool_executions
-与 approvals；v4 增加 recovery_reports / recovery_receipts。重启时扫描未闭合执行并分类，
+与 approvals；v4 增加 recovery_reports / recovery_receipts；v5 增加完整 TaskRun 状态、转移审计、
+TaskOutcome 版本和 Task 命令回执。重启时扫描未闭合执行并分类，
 Host/sandbox 缺 `handler_completed` 一律 `outcome_unknown`。YAML 与凭据权威不变。
 损坏、外源或未来版本文件保持原字节并失败关闭。
 

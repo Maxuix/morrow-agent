@@ -1,6 +1,6 @@
 """Ordered, checksummed Operational Store migrations.
 
-Production currently owns schema v1–v4. Versions 5–9 stay reserved for later
+Production currently owns schema v1–v5. Versions 6–9 stay reserved for later
 subplans and must not be renumbered after they land.
 """
 
@@ -277,6 +277,131 @@ V4_STATEMENTS = (
 
 V4 = SchemaMigration(version=4, name=V4_NAME, statements=V4_STATEMENTS)
 
+V5_NAME = "task_run_lifecycle_and_outcomes"
+V5_STATEMENTS = (
+    """
+    PRAGMA legacy_alter_table = ON
+    """,
+    """
+    ALTER TABLE task_runs RENAME TO task_runs_v4
+    """,
+    """
+    CREATE TABLE task_runs (
+        task_run_id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL REFERENCES sessions(session_id),
+        workspace_id TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (
+            status IN (
+                'open', 'ready_for_acceptance', 'accepted', 'cancelled',
+                'failed', 'abandoned'
+            )
+        ),
+        row_version INTEGER NOT NULL CHECK (row_version >= 1),
+        attempt INTEGER NOT NULL CHECK (attempt >= 1),
+        created_at_unix INTEGER NOT NULL,
+        updated_at_unix INTEGER NOT NULL,
+        accepted_at_unix INTEGER,
+        closed_at_unix INTEGER
+    )
+    """,
+    """
+    INSERT INTO task_runs(
+        task_run_id, session_id, workspace_id, status, row_version, attempt,
+        created_at_unix, updated_at_unix, accepted_at_unix, closed_at_unix
+    )
+    SELECT task_run_id, session_id, workspace_id, 'open', 1, 1,
+           created_at_unix, created_at_unix, NULL, NULL
+    FROM task_runs_v4
+    """,
+    """
+    DROP TABLE task_runs_v4
+    """,
+    """
+    CREATE INDEX task_runs_session ON task_runs(session_id)
+    """,
+    """
+    CREATE INDEX task_runs_workspace_status
+        ON task_runs(workspace_id, status)
+    """,
+    """
+    CREATE TABLE task_run_transitions (
+        transition_id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        session_id TEXT NOT NULL REFERENCES sessions(session_id),
+        task_run_id TEXT NOT NULL REFERENCES task_runs(task_run_id),
+        from_status TEXT CHECK (
+            from_status IS NULL OR from_status IN (
+                'open', 'ready_for_acceptance', 'accepted', 'cancelled',
+                'failed', 'abandoned'
+            )
+        ),
+        to_status TEXT NOT NULL CHECK (
+            to_status IN (
+                'open', 'ready_for_acceptance', 'accepted', 'cancelled',
+                'failed', 'abandoned'
+            )
+        ),
+        reason TEXT NOT NULL,
+        turn_id TEXT REFERENCES turns(turn_id),
+        command_id TEXT,
+        attempt INTEGER NOT NULL CHECK (attempt >= 1),
+        created_at_unix INTEGER NOT NULL
+    )
+    """,
+    """
+    CREATE INDEX task_run_transitions_task
+        ON task_run_transitions(workspace_id, task_run_id, created_at_unix, transition_id)
+    """,
+    """
+    CREATE TABLE task_outcomes (
+        outcome_id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        session_id TEXT NOT NULL REFERENCES sessions(session_id),
+        task_run_id TEXT NOT NULL REFERENCES task_runs(task_run_id),
+        version INTEGER NOT NULL CHECK (version >= 1),
+        trigger TEXT NOT NULL CHECK (
+            trigger IN ('acceptance', 'snapshot', 'terminal_close')
+        ),
+        task_status TEXT NOT NULL CHECK (
+            task_status IN (
+                'open', 'ready_for_acceptance', 'accepted', 'cancelled',
+                'failed', 'abandoned'
+            )
+        ),
+        payload_json TEXT NOT NULL,
+        payload_bytes INTEGER NOT NULL CHECK (payload_bytes >= 0),
+        created_at_unix INTEGER NOT NULL,
+        UNIQUE (task_run_id, version)
+    )
+    """,
+    """
+    CREATE INDEX task_outcomes_workspace_task
+        ON task_outcomes(workspace_id, task_run_id, version)
+    """,
+    """
+    CREATE TABLE task_command_receipts (
+        command_id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        session_id TEXT NOT NULL REFERENCES sessions(session_id),
+        task_run_id TEXT REFERENCES task_runs(task_run_id),
+        operation TEXT NOT NULL,
+        request_digest TEXT NOT NULL CHECK (length(request_digest) = 64),
+        disposition TEXT NOT NULL CHECK (disposition IN ('accepted', 'replay', 'conflict')),
+        result_task_run_id TEXT REFERENCES task_runs(task_run_id),
+        outcome_id TEXT REFERENCES task_outcomes(outcome_id),
+        task_status TEXT,
+        row_version INTEGER,
+        created_at_unix INTEGER NOT NULL
+    )
+    """,
+    """
+    CREATE INDEX task_command_receipts_session
+        ON task_command_receipts(workspace_id, session_id, created_at_unix)
+    """,
+)
+
+V5 = SchemaMigration(version=5, name=V5_NAME, statements=V5_STATEMENTS)
+
 
 class MigrationRegistry:
     def __init__(self, *, supported_version: int = SUPPORTED_SCHEMA_VERSION) -> None:
@@ -335,6 +460,7 @@ def production_registry() -> MigrationRegistry:
     registry.add(V2)
     registry.add(V3)
     registry.add(V4)
+    registry.add(V5)
     return registry
 
 

@@ -5,7 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from morrow.application.configuration import ConfigurationCommand, render_configuration_preview
-from morrow.core.domain import SessionHealth
+from morrow.application.tasks import TaskCommandError
+from morrow.core.domain import SessionHealth, TaskRunStatus
 from morrow.core.preferences import merge_preferences
 
 
@@ -24,11 +25,15 @@ class CommandService:
         identity,
         project_store,
         config_service=None,
+        task_service=None,
+        id_source=None,
     ) -> None:
         self.session = session
         self.identity = identity
         self.project_store = project_store
         self.config_service = config_service
+        self.task_service = task_service
+        self.id_source = id_source
 
     def _ensure_workspace_writable(self, *, preferences: bool = False) -> None:
         if self.session.read_only:
@@ -95,6 +100,10 @@ class CommandService:
                     f"当前会话：{current}",
                 ]
             )
+        if command == "/task":
+            return self._task_command(parts)
+        if command == "/accept":
+            return self._task_command(["/task", "accept"])
         if command == "/workspace" and len(parts) > 1 and parts[1] == "reset":
             if self.session.read_only:
                 return CommandResult(["当前工作空间状态不可安全加载，无法重置 Profile。"])
@@ -173,3 +182,63 @@ class CommandService:
                 ]
             )
         return CommandResult([f"未知命令：{command}"])
+
+    def _task_command(self, parts: list[str]) -> CommandResult:
+        if self.task_service is None:
+            return CommandResult(["Task 服务尚未就绪。"])
+        operation = parts[1] if len(parts) > 1 else "show"
+        current = self._current_task()
+        try:
+            command_id = self.id_source.new_id("cmd") if self.id_source is not None else None
+            if operation == "show":
+                if current is None:
+                    return CommandResult(["当前没有前台 TaskRun。"])
+                return CommandResult(
+                    [
+                        f"TaskRun：{current.task_run_id}",
+                        f"状态：{current.status.value}",
+                        f"版本：{current.row_version}",
+                        f"尝试：{current.attempt}",
+                    ],
+                    value=current,
+                )
+            if operation == "new":
+                result = self.task_service.new_task(self.session.session_id, command_id=command_id)
+                if self.session.committer is not None:
+                    self.session.committer.current_task_run_id = result.task.task_run_id
+                return CommandResult([f"已创建 TaskRun：{result.task.task_run_id}"], value=result)
+            if current is None:
+                return CommandResult(["当前没有可操作的前台 TaskRun。"])
+            if operation in {"accept", "cancel", "abandon", "resume", "retry"}:
+                action = getattr(self.task_service, "resume" if operation == "retry" else operation)
+                result = action(
+                    current.task_run_id,
+                    command_id=command_id,
+                    expected_row_version=current.row_version,
+                )
+                if self.session.committer is not None:
+                    self.session.committer.current_task_run_id = (
+                        result.task.task_run_id
+                        if result.task.status is not TaskRunStatus.CANCELLED
+                        else None
+                    )
+                    if result.task.status in {
+                        TaskRunStatus.ACCEPTED,
+                        TaskRunStatus.ABANDONED,
+                    }:
+                        self.session.committer.current_task_run_id = None
+                return CommandResult(
+                    [f"TaskRun {result.task.task_run_id}：{result.task.status.value}"],
+                    value=result,
+                )
+            return CommandResult([f"未知 Task 操作：{operation}"])
+        except (TaskCommandError, ValueError, RuntimeError) as exc:
+            return CommandResult([f"Task 操作失败：{exc}"])
+
+    def _current_task(self):
+        if self.task_service is None:
+            return None
+        task_id = getattr(self.session.committer, "current_task_run_id", None)
+        if task_id is None:
+            return None
+        return self.task_service.get(task_id)

@@ -12,14 +12,19 @@ from morrow.core.domain import (
     DurableAgentRun,
     DurableConversationRecord,
     DurableSession,
+    DurableTaskOutcome,
     DurableTaskRun,
+    DurableTaskRunTransition,
     DurableTurn,
     SessionHealth,
     SessionLifecycle,
+    TaskCommandDisposition,
+    TaskCommandReceipt,
     TaskRunStatus,
     TurnSubmitDisposition,
     TurnSubmitReceipt,
     canonical_json_bytes,
+    validate_task_transition,
 )
 from morrow.core.execution import (
     ApprovalResolution,
@@ -39,7 +44,14 @@ _SESSION_COLUMNS = (
     "session_id, workspace_id, lifecycle, health, current_task_run_id, "
     "conversation_position, created_at_unix, updated_at_unix"
 )
-_TASK_COLUMNS = "task_run_id, session_id, workspace_id, status, created_at_unix"
+_TASK_INSERT_COLUMNS = (
+    "task_run_id, session_id, workspace_id, status, row_version, attempt, "
+    "created_at_unix, updated_at_unix, accepted_at_unix, closed_at_unix"
+)
+_TASK_SELECT = (
+    "t.task_run_id, t.session_id, t.workspace_id, t.status, t.row_version, t.attempt, "
+    "t.created_at_unix, t.updated_at_unix, t.accepted_at_unix, t.closed_at_unix"
+)
 _TURN_COLUMNS = "turn_id, session_id, task_run_id, client_message_id, created_at_unix"
 _AGENT_COLUMNS = (
     "agent_run_id, turn_id, session_id, resume_of_agent_run_id, snapshot_json, created_at_unix"
@@ -70,6 +82,18 @@ _REPORT_COLUMNS = (
     "payload_json, payload_bytes, created_at_unix, resolved_at_unix"
 )
 _RECOVERY_RECEIPT_COLUMNS = "session_id, command_id, request_digest, report_id, item_id, resolution"
+_TRANSITION_COLUMNS = (
+    "transition_id, workspace_id, session_id, task_run_id, from_status, to_status, "
+    "reason, turn_id, command_id, attempt, created_at_unix"
+)
+_OUTCOME_COLUMNS = (
+    "outcome_id, workspace_id, session_id, task_run_id, version, trigger, task_status, "
+    "payload_json, payload_bytes, created_at_unix"
+)
+_TASK_RECEIPT_COLUMNS = (
+    "command_id, workspace_id, session_id, task_run_id, operation, request_digest, "
+    "disposition, result_task_run_id, outcome_id, task_status, row_version, created_at_unix"
+)
 
 
 def _unix(value: datetime) -> int:
@@ -104,6 +128,10 @@ class SqliteOperationalJournal:
         self, session: DurableSession, *, task: DurableTaskRun | None = None
     ) -> DurableSession:
         if task is not None:
+            if task.status is not TaskRunStatus.OPEN:
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE, "new operational task must start open"
+                )
             if task.session_id != session.session_id or task.workspace_id != session.workspace_id:
                 raise StorageError(
                     StorageErrorCode.UNAVAILABLE, "operational task does not belong to the session"
@@ -190,25 +218,53 @@ class SqliteOperationalJournal:
 
     def get_task_run(self, workspace_id: str, task_run_id: str) -> DurableTaskRun | None:
         row = self._read_one(
-            f"SELECT {_TASK_COLUMNS} FROM task_runs WHERE task_run_id = ? AND workspace_id = ?",
+            f"SELECT {_TASK_SELECT} FROM task_runs t "
+            "WHERE t.task_run_id = ? AND t.workspace_id = ?",
             (task_run_id, workspace_id),
         )
         if row is None:
             return None
         return _task_from_row(row)
 
-    def create_task_run(self, workspace_id: str, task: DurableTaskRun) -> DurableTaskRun:
+    def list_task_runs(self, workspace_id: str, session_id: str) -> tuple[DurableTaskRun, ...]:
+        rows = self._read_all(
+            f"SELECT {_TASK_SELECT} FROM task_runs t "
+            "WHERE t.workspace_id = ? AND t.session_id = ? "
+            "ORDER BY t.created_at_unix ASC, t.task_run_id ASC",
+            (workspace_id, session_id),
+        )
+        return tuple(_task_from_row(row) for row in rows)
+
+    def create_task_run(
+        self, workspace_id: str, task: DurableTaskRun, *, make_current: bool = False
+    ) -> DurableTaskRun:
         if task.workspace_id != workspace_id:
             raise StorageError(
                 StorageErrorCode.UNAVAILABLE, "operational task is outside the workspace"
             )
+        if task.status is not TaskRunStatus.OPEN:
+            raise StorageError(StorageErrorCode.UNAVAILABLE, "new operational task must start open")
 
         def work(journal: SqliteOperationalJournal) -> DurableTaskRun:
             session = journal.get_session(workspace_id, task.session_id)
             if session is None:
                 raise StorageError(StorageErrorCode.NOT_FOUND, "operational session is missing")
+            if session.lifecycle is SessionLifecycle.DELETED:
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE, "deleted session cannot start a task"
+                )
+            if make_current and session.current_task_run_id not in {None, task.task_run_id}:
+                current = journal.get_task_run(workspace_id, session.current_task_run_id)
+                if current is not None and current.status in {
+                    TaskRunStatus.OPEN,
+                    TaskRunStatus.READY_FOR_ACCEPTANCE,
+                }:
+                    raise StorageError(
+                        StorageErrorCode.UNAVAILABLE,
+                        "an active operational task must be closed before replacement",
+                    )
             journal._insert_task(task)
-            if session.current_task_run_id is None:
+            if make_current or session.current_task_run_id is None:
                 journal._executor_or_raise().execute(
                     """
                     UPDATE sessions
@@ -221,6 +277,304 @@ class SqliteOperationalJournal:
             if loaded is None:
                 raise StorageError(
                     StorageErrorCode.UNAVAILABLE, "operational task could not be read"
+                )
+            return loaded
+
+        return self.transact(work)
+
+    def transition_task_run(
+        self,
+        workspace_id: str,
+        task_run_id: str,
+        *,
+        target: TaskRunStatus,
+        transition: DurableTaskRunTransition,
+        expected_row_version: int,
+    ) -> DurableTaskRun:
+        """Apply one optimistic, audited TaskRun transition."""
+
+        if transition.workspace_id != workspace_id or transition.task_run_id != task_run_id:
+            raise StorageError(
+                StorageErrorCode.UNAVAILABLE, "operational task transition is outside the workspace"
+            )
+
+        def work(journal: SqliteOperationalJournal) -> DurableTaskRun:
+            current = journal.get_task_run(workspace_id, task_run_id)
+            if current is None:
+                raise StorageError(StorageErrorCode.NOT_FOUND, "operational task is missing")
+            if current.row_version != expected_row_version:
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE, "operational task row version is stale"
+                )
+            if transition.to_status is not target:
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE, "operational task transition target is invalid"
+                )
+            if transition.from_status is not current.status:
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE, "operational task transition source is stale"
+                )
+            try:
+                validate_task_transition(current.status, target)
+            except ValueError as exc:
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE, "operational task transition is not allowed"
+                ) from exc
+            if transition.session_id != current.session_id:
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE, "operational task transition session is invalid"
+                )
+            if transition.turn_id is not None:
+                turn = journal.get_turn(workspace_id, transition.turn_id)
+                if turn is None or turn.task_run_id != task_run_id:
+                    raise StorageError(
+                        StorageErrorCode.UNAVAILABLE, "operational task transition turn is invalid"
+                    )
+            next_attempt = current.attempt + (
+                1 if current.status is TaskRunStatus.FAILED and target is TaskRunStatus.OPEN else 0
+            )
+            session = journal.get_session(workspace_id, current.session_id)
+            if session is None:
+                raise StorageError(StorageErrorCode.NOT_FOUND, "operational session is missing")
+            if target is TaskRunStatus.OPEN and session.current_task_run_id not in {
+                None,
+                task_run_id,
+            }:
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE,
+                    "another operational task is already current",
+                )
+            if transition.attempt != next_attempt:
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE, "operational task transition attempt is invalid"
+                )
+            now = transition.created_at
+            accepted_at = now if target is TaskRunStatus.ACCEPTED else current.accepted_at
+            closed_at = now if target.is_terminal else None
+            executor = journal._executor_or_raise()
+            executor.execute(
+                """
+                UPDATE task_runs
+                SET status = ?, row_version = ?, attempt = ?, updated_at_unix = ?,
+                    accepted_at_unix = ?, closed_at_unix = ?
+                WHERE task_run_id = ? AND row_version = ?
+                """,
+                (
+                    target.value,
+                    current.row_version + 1,
+                    next_attempt,
+                    _unix(now),
+                    _optional_unix(accepted_at),
+                    _optional_unix(closed_at),
+                    task_run_id,
+                    expected_row_version,
+                ),
+            )
+            executor.execute(
+                f"INSERT INTO task_run_transitions({_TRANSITION_COLUMNS}) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    transition.transition_id,
+                    transition.workspace_id,
+                    transition.session_id,
+                    transition.task_run_id,
+                    current.status.value,
+                    target.value,
+                    transition.reason,
+                    transition.turn_id,
+                    transition.command_id,
+                    next_attempt,
+                    _unix(now),
+                ),
+            )
+            if target.is_terminal:
+                executor.execute(
+                    """
+                    UPDATE sessions
+                    SET current_task_run_id = NULL, updated_at_unix = ?
+                    WHERE session_id = ? AND workspace_id = ? AND current_task_run_id = ?
+                    """,
+                    (_unix(now), current.session_id, workspace_id, task_run_id),
+                )
+            elif target is TaskRunStatus.OPEN:
+                executor.execute(
+                    """
+                    UPDATE sessions
+                    SET current_task_run_id = ?, updated_at_unix = ?
+                    WHERE session_id = ? AND workspace_id = ?
+                    """,
+                    (task_run_id, _unix(now), current.session_id, workspace_id),
+                )
+            loaded = journal.get_task_run(workspace_id, task_run_id)
+            if loaded is None:
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE, "operational task could not be read"
+                )
+            return loaded
+
+        return self.transact(work)
+
+    def list_task_transitions(
+        self, workspace_id: str, task_run_id: str
+    ) -> tuple[DurableTaskRunTransition, ...]:
+        rows = self._read_all(
+            f"SELECT {_TRANSITION_COLUMNS} FROM task_run_transitions "
+            "WHERE workspace_id = ? AND task_run_id = ? "
+            "ORDER BY created_at_unix ASC, transition_id ASC",
+            (workspace_id, task_run_id),
+        )
+        return tuple(_transition_from_row(row) for row in rows)
+
+    def put_task_outcome(
+        self, workspace_id: str, outcome: DurableTaskOutcome
+    ) -> DurableTaskOutcome:
+        if outcome.workspace_id != workspace_id:
+            raise StorageError(
+                StorageErrorCode.UNAVAILABLE, "operational outcome is outside the workspace"
+            )
+
+        def work(journal: SqliteOperationalJournal) -> DurableTaskOutcome:
+            task = journal.get_task_run(workspace_id, outcome.task_run_id)
+            if task is None or task.session_id != outcome.session_id:
+                raise StorageError(StorageErrorCode.NOT_FOUND, "operational task is missing")
+            if task.status is not outcome.task_status:
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE, "operational outcome status is stale"
+                )
+            previous = journal._read_one(
+                "SELECT MAX(version) FROM task_outcomes WHERE task_run_id = ?",
+                (outcome.task_run_id,),
+            )
+            next_version = (int(previous[0]) if previous and previous[0] is not None else 0) + 1
+            if outcome.version != next_version:
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE, "operational outcome version is stale"
+                )
+            payload = canonical_json_bytes(outcome.model_dump(mode="json"))
+            journal._executor_or_raise().execute(
+                f"INSERT INTO task_outcomes({_OUTCOME_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    outcome.outcome_id,
+                    outcome.workspace_id,
+                    outcome.session_id,
+                    outcome.task_run_id,
+                    outcome.version,
+                    outcome.trigger.value,
+                    outcome.task_status.value,
+                    payload.decode("utf-8"),
+                    len(payload),
+                    _unix(outcome.created_at),
+                ),
+            )
+            loaded = journal.get_task_outcome(workspace_id, outcome.outcome_id)
+            if loaded is None:
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE, "operational outcome could not be read"
+                )
+            return loaded
+
+        return self.transact(work)
+
+    def get_task_outcome(self, workspace_id: str, outcome_id: str) -> DurableTaskOutcome | None:
+        row = self._read_one(
+            f"SELECT {_OUTCOME_COLUMNS} FROM task_outcomes "
+            "WHERE outcome_id = ? AND workspace_id = ?",
+            (outcome_id, workspace_id),
+        )
+        if row is None:
+            return None
+        return _outcome_from_row(row)
+
+    def list_task_outcomes(
+        self, workspace_id: str, task_run_id: str
+    ) -> tuple[DurableTaskOutcome, ...]:
+        rows = self._read_all(
+            f"SELECT {_OUTCOME_COLUMNS} FROM task_outcomes "
+            "WHERE workspace_id = ? AND task_run_id = ? ORDER BY version ASC",
+            (workspace_id, task_run_id),
+        )
+        return tuple(_outcome_from_row(row) for row in rows)
+
+    def get_task_command_receipt(
+        self, workspace_id: str, command_id: str
+    ) -> TaskCommandReceipt | None:
+        row = self._read_one(
+            f"SELECT {_TASK_RECEIPT_COLUMNS} FROM task_command_receipts WHERE command_id = ?",
+            (command_id,),
+        )
+        if row is None:
+            return None
+        receipt = _task_receipt_from_row(row)
+        if receipt.workspace_id != workspace_id:
+            raise StorageError(
+                StorageErrorCode.UNAVAILABLE, "operational task command is outside the workspace"
+            )
+        return receipt
+
+    def put_task_command_receipt(
+        self, workspace_id: str, receipt: TaskCommandReceipt
+    ) -> TaskCommandReceipt:
+        if receipt.workspace_id != workspace_id:
+            raise StorageError(
+                StorageErrorCode.UNAVAILABLE, "operational task command is outside the workspace"
+            )
+
+        def work(journal: SqliteOperationalJournal) -> TaskCommandReceipt:
+            if journal.get_session(workspace_id, receipt.session_id) is None:
+                raise StorageError(StorageErrorCode.NOT_FOUND, "operational session is missing")
+            if receipt.task_run_id is not None:
+                task = journal.get_task_run(workspace_id, receipt.task_run_id)
+                if task is None or task.session_id != receipt.session_id:
+                    raise StorageError(
+                        StorageErrorCode.UNAVAILABLE, "operational task command target is invalid"
+                    )
+                if receipt.task_status is not None and receipt.task_status is not task.status:
+                    raise StorageError(
+                        StorageErrorCode.UNAVAILABLE,
+                        "operational task command status is inconsistent",
+                    )
+                if receipt.row_version is not None and receipt.row_version != task.row_version:
+                    raise StorageError(
+                        StorageErrorCode.UNAVAILABLE,
+                        "operational task command version is inconsistent",
+                    )
+            if receipt.result_task_run_id is not None:
+                result_task = journal.get_task_run(workspace_id, receipt.result_task_run_id)
+                if result_task is None or result_task.session_id != receipt.session_id:
+                    raise StorageError(
+                        StorageErrorCode.UNAVAILABLE,
+                        "operational task command result is invalid",
+                    )
+            if receipt.outcome_id is not None:
+                outcome = journal.get_task_outcome(workspace_id, receipt.outcome_id)
+                if outcome is None or outcome.session_id != receipt.session_id:
+                    raise StorageError(
+                        StorageErrorCode.UNAVAILABLE,
+                        "operational task command outcome is invalid",
+                    )
+            journal._executor_or_raise().execute(
+                f"INSERT INTO task_command_receipts({_TASK_RECEIPT_COLUMNS}) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    receipt.command_id,
+                    receipt.workspace_id,
+                    receipt.session_id,
+                    receipt.task_run_id,
+                    receipt.operation,
+                    receipt.request_digest,
+                    receipt.disposition.value,
+                    receipt.result_task_run_id,
+                    receipt.outcome_id,
+                    receipt.task_status.value if receipt.task_status is not None else None,
+                    receipt.row_version,
+                    _unix(receipt.created_at),
+                ),
+            )
+            loaded = journal.get_task_command_receipt(workspace_id, receipt.command_id)
+            if loaded is None:
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE,
+                    "operational task command receipt could not be read",
                 )
             return loaded
 
@@ -265,6 +619,17 @@ class SqliteOperationalJournal:
         if row is None:
             return None
         return _turn_from_row(row)
+
+    def list_task_turns(self, workspace_id: str, task_run_id: str) -> tuple[DurableTurn, ...]:
+        rows = self._read_all(
+            "SELECT t.turn_id, t.session_id, t.task_run_id, t.client_message_id, "
+            "t.created_at_unix FROM turns t "
+            "JOIN sessions s ON s.session_id = t.session_id "
+            "WHERE t.task_run_id = ? AND s.workspace_id = ? "
+            "ORDER BY t.created_at_unix ASC, t.turn_id ASC",
+            (task_run_id, workspace_id),
+        )
+        return tuple(_turn_from_row(row) for row in rows)
 
     def create_agent_run(self, workspace_id: str, run: DurableAgentRun) -> DurableAgentRun:
         def work(journal: SqliteOperationalJournal) -> DurableAgentRun:
@@ -505,6 +870,17 @@ class SqliteOperationalJournal:
             "WHERE workspace_id = ? AND session_id = ? "
             "ORDER BY created_at_unix ASC, ordinal ASC",
             (workspace_id, session_id),
+        )
+        return tuple(_execution_from_row(row) for row in rows)
+
+    def list_task_executions(
+        self, workspace_id: str, task_run_id: str
+    ) -> tuple[DurableToolExecution, ...]:
+        rows = self._read_all(
+            f"SELECT {_EXECUTION_COLUMNS} FROM tool_executions "
+            "WHERE workspace_id = ? AND task_run_id = ? "
+            "ORDER BY created_at_unix ASC, ordinal ASC, tool_execution_id ASC",
+            (workspace_id, task_run_id),
         )
         return tuple(_execution_from_row(row) for row in rows)
 
@@ -888,13 +1264,18 @@ class SqliteOperationalJournal:
 
     def _insert_task(self, task: DurableTaskRun) -> None:
         self._executor_or_raise().execute(
-            f"INSERT INTO task_runs({_TASK_COLUMNS}) VALUES (?, ?, ?, ?, ?)",
+            f"INSERT INTO task_runs({_TASK_INSERT_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 task.task_run_id,
                 task.session_id,
                 task.workspace_id,
                 task.status.value,
+                task.row_version,
+                task.attempt,
                 _unix(task.created_at),
+                _unix(task.updated_at),
+                _optional_unix(task.accepted_at),
+                _optional_unix(task.closed_at),
             ),
         )
 
@@ -938,7 +1319,70 @@ def _task_from_row(row: tuple[object, ...]) -> DurableTaskRun:
         session_id=str(row[1]),
         workspace_id=str(row[2]),
         status=TaskRunStatus(str(row[3])),
-        created_at=_from_unix(row[4]),
+        row_version=int(row[4]),
+        attempt=int(row[5]),
+        created_at=_from_unix(row[6]),
+        updated_at=_from_unix(row[7]),
+        accepted_at=_from_unix(row[8]) if row[8] is not None else None,
+        closed_at=_from_unix(row[9]) if row[9] is not None else None,
+    )
+
+
+def _transition_from_row(row: tuple[object, ...]) -> DurableTaskRunTransition:
+    return DurableTaskRunTransition(
+        transition_id=str(row[0]),
+        workspace_id=str(row[1]),
+        session_id=str(row[2]),
+        task_run_id=str(row[3]),
+        from_status=TaskRunStatus(str(row[4])) if row[4] is not None else None,
+        to_status=TaskRunStatus(str(row[5])),
+        reason=str(row[6]),
+        turn_id=str(row[7]) if row[7] is not None else None,
+        command_id=str(row[8]) if row[8] is not None else None,
+        attempt=int(row[9]),
+        created_at=_from_unix(row[10]),
+    )
+
+
+def _outcome_from_row(row: tuple[object, ...]) -> DurableTaskOutcome:
+    try:
+        payload = json.loads(str(row[7]))
+        if not isinstance(payload, dict):
+            raise ValueError("operational outcome is not a mapping")
+        outcome = DurableTaskOutcome.model_validate(payload)
+        if (
+            outcome.outcome_id != str(row[0])
+            or outcome.workspace_id != str(row[1])
+            or outcome.session_id != str(row[2])
+            or outcome.task_run_id != str(row[3])
+            or outcome.version != int(row[4])
+            or outcome.trigger.value != str(row[5])
+            or outcome.task_status.value != str(row[6])
+            or len(canonical_json_bytes(payload)) != int(row[8])
+            or _unix(outcome.created_at) != int(row[9])
+        ):
+            raise ValueError("operational outcome metadata does not match its payload")
+        return outcome
+    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise StorageError(
+            StorageErrorCode.NEEDS_REPAIR, "operational outcome payload is invalid"
+        ) from exc
+
+
+def _task_receipt_from_row(row: tuple[object, ...]) -> TaskCommandReceipt:
+    return TaskCommandReceipt(
+        command_id=str(row[0]),
+        workspace_id=str(row[1]),
+        session_id=str(row[2]),
+        task_run_id=str(row[3]) if row[3] is not None else None,
+        operation=str(row[4]),
+        request_digest=str(row[5]),
+        disposition=TaskCommandDisposition(str(row[6])),
+        result_task_run_id=str(row[7]) if row[7] is not None else None,
+        outcome_id=str(row[8]) if row[8] is not None else None,
+        task_status=TaskRunStatus(str(row[9])) if row[9] is not None else None,
+        row_version=int(row[10]) if row[10] is not None else None,
+        created_at=_from_unix(row[11]),
     )
 
 

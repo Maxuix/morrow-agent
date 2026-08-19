@@ -109,6 +109,13 @@ TaskRun 表示一个用户目标，不等于一次模型请求。锁定的首版
 - `/accept` 记录显式接受；`/task new` 创建新 TaskRun；`/new` 创建新 Session。
 - failed/cancelled/interrupted 保留已发生副作用，显式 resume/retry 创建可关联的新尝试，不能伪装回滚。
 
+Subplan 40 的持久化状态为 `open`、`ready_for_acceptance`、`accepted`、`cancelled`、`failed`、
+`abandoned`。合法转移是：`open → ready_for_acceptance`、`ready_for_acceptance → open | accepted |
+cancelled | abandoned`、`open → cancelled | failed | abandoned` 和 `failed → open`。其中
+`accepted/cancelled/abandoned` 是终态；`ready_for_acceptance` 不是接受，`failed` 允许显式 resume/retry
+进入下一次尝试。状态转移、乐观 `row_version`、转移审计和 Session 的 current 指针在同一个 SQLite
+事务内提交；终态会清除 current 指针。
+
 持久化启用后，`/new` 创建并选择新 Session，不 reset/delete/自动 archive 旧 Session；旧 Session 可恢复，
 session-scoped Preferences 不继承。存在 needs_recovery 的工作时先要求用户解决或真实关闭。`/exit` 不再询问
 “丢弃已保存对话”，无法证明的进行中效果被记录为 needs_recovery。
@@ -166,6 +173,11 @@ TaskOutcome 是从持久事实确定性生成、不可变且可版本化的任�
 Outcome 不因每次最终 Assistant 自动生成；只在显式接受、显式 outcome snapshot 或终止性关闭时生成。
 纠正不会改写旧 Outcome，而是生成新的 superseding version。Stage 5 可以读取 Outcome 作为学习证据，
 但不能借此获得 Stage 4 历史写权限。
+
+Subplan 40 的 v5 `TaskOutcome` 只保存有界的 summary、首个 Turn 的 user-goal 引用、changed paths、
+validation facts、side effects、unresolved items、completion basis、显式 feedback，以及对 Turn、
+ToolExecution 和 TaskRun transition 的类型化引用；不会保存 Provider reasoning、完整参数/结果或秘密。普通最终回答只推进到
+`ready_for_acceptance`，不自动创建 Outcome；重复命令通过命令回执返回原结果，冲突请求不会改写历史。
 
 ## 五、存储架构
 

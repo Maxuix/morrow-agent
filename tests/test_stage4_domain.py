@@ -78,8 +78,17 @@ def test_session_lifecycle_and_health_are_independent():
     assert tombstone.health is SessionHealth.QUARANTINED
 
 
-def test_task_run_status_is_open_only_in_this_slice():
-    assert list(TaskRunStatus) == [TaskRunStatus.OPEN]
+def test_task_run_status_has_the_complete_foreground_state_machine():
+    assert list(TaskRunStatus) == [
+        TaskRunStatus.OPEN,
+        TaskRunStatus.READY_FOR_ACCEPTANCE,
+        TaskRunStatus.ACCEPTED,
+        TaskRunStatus.CANCELLED,
+        TaskRunStatus.FAILED,
+        TaskRunStatus.ABANDONED,
+    ]
+    assert TaskRunStatus.ACCEPTED.is_terminal is True
+    assert TaskRunStatus.FAILED.is_terminal is False
 
 
 def test_sequence_namespaces_do_not_alias():

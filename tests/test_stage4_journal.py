@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from morrow.adapters.state.journal import SqliteOperationalJournal
-from morrow.adapters.state.migrations import V1, V2, V3, MigrationRegistry
+from morrow.adapters.state.migrations import V1, V2, V3, V4, MigrationRegistry
 from morrow.adapters.state.operational import BusyRetryPolicy, OperationalStore
 from morrow.core.domain import (
     AgentRunSnapshot,
@@ -173,8 +173,49 @@ def test_v3_store_migrates_to_v4_recovery(tmp_path):
     )
     report = upgraded.migrate()
     assert report.from_version == 3
-    assert report.to_version == 4
-    assert report.applied == ("recovery_reports",)
+    assert report.to_version == SUPPORTED_SCHEMA_VERSION
+    assert report.applied == ("recovery_reports", "task_run_lifecycle_and_outcomes")
+
+
+def test_v4_task_children_survive_task_run_rebuild_to_v5(tmp_path):
+    v4 = MigrationRegistry(supported_version=4)
+    v4.add(V1)
+    v4.add(V2)
+    v4.add(V3)
+    v4.add(V4)
+    store, session, _journal = _open_journal(tmp_path, registry=v4)
+    root = store.layout.data_root
+
+    def seed(executor):
+        executor.execute(
+            "INSERT INTO sessions(session_id, workspace_id, lifecycle, health, "
+            "current_task_run_id, conversation_position, created_at_unix, updated_at_unix) "
+            "VALUES ('ses_1', 'ws_a', 'active', 'ok', 'task_1', 0, 1, 1)"
+        )
+        executor.execute(
+            "INSERT INTO task_runs(task_run_id, session_id, workspace_id, status, created_at_unix) "
+            "VALUES ('task_1', 'ses_1', 'ws_a', 'open', 1)"
+        )
+        executor.execute(
+            "INSERT INTO turns(turn_id, session_id, task_run_id, client_message_id, created_at_unix) "
+            "VALUES ('turn_1', 'ses_1', 'task_1', 'client-1', 1)"
+        )
+
+    session.run_write(seed)
+    session.close()
+
+    upgraded = OperationalStore(
+        root, retry_policy=_retry(), clock=FixedClock(), maintenance_timeout=0
+    )
+    report = upgraded.migrate()
+    assert report.applied == ("task_run_lifecycle_and_outcomes",)
+    with upgraded.open(StoreOpenMode.READ_WRITE) as opened:
+        journal = SqliteOperationalJournal(opened)
+        task = journal.get_task_run("ws_a", "task_1")
+        assert task is not None
+        assert task.status.value == "open"
+        assert journal.get_turn("ws_a", "turn_1") is not None
+        assert opened.run_read(lambda executor: executor.execute("PRAGMA foreign_key_check")) == ()
 
 
 def test_sessions_are_workspace_scoped(tmp_path):
