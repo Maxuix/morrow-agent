@@ -9,19 +9,19 @@ remain inactive.
 
 ## Last completed task
 
-S4.37.2 added schema v2 and a SQLite journal adapter: workspace-scoped Session/Task/Turn/AgentRun
-rows, monotonic conversation positions, turn-submit receipts, and foreign-key/uniqueness checks.
-AgentLoop is still process-local.
+S4.37.3 moved ConversationLog onto a plan/validate/apply append boundary. A journal-backed writer
+persists first and replaces the live projection only from committed rows. AgentLoop still uses the
+in-memory begin/append/finish helpers.
 
 ## Active task
 
-S4.37.3 — refactor ConversationLog behind a durable append boundary that validates first, commits
-atomically, and updates its in-memory projection only from the committed record.
+S4.37.4 — integrate Session construction and AgentLoop no-tool begin/assistant/finish writes so
+Turn/User commit precedes `turn.started` and Provider invocation.
 
 ## Next action
 
-Add a ConversationLog candidate/validate/apply API so a failed persist cannot leave a memory-only
-record, then wire a journal-backed append helper without changing AgentLoop production paths yet.
+Give Session one append path that uses the durable writer when a journal is present, and change
+AgentLoop so the Turn/User commit happens before `turn.started`.
 
 ## Blockers
 

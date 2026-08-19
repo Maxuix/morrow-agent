@@ -15,9 +15,9 @@ Subplan 37 — Durable Session, Task, Turn, AgentRun, and No-Tool Conversation.
   order namespaces, base AgentRun source snapshots, and payload validators.
 - [x] S4.37.2 Add lifecycle and conversation-journal schemas/ports with workspace-scoped queries,
   foreign keys, uniqueness, and sequence constraints.
-- [>] S4.37.3 Refactor ConversationLog behind a durable append boundary that validates first, commits
+- [x] S4.37.3 Refactor ConversationLog behind a durable append boundary that validates first, commits
   atomically, and updates its in-memory projection only from the committed record.
-- [ ] S4.37.4 Integrate Session construction and AgentLoop no-tool begin/assistant/finish writes so
+- [>] S4.37.4 Integrate Session construction and AgentLoop no-tool begin/assistant/finish writes so
   Turn/User commit precedes `turn.started` and Provider invocation, without adding a second
   ordinary-chat path.
 - [ ] S4.37.5 Implement command-level `client_message_id` receipts: replay closed results, return an

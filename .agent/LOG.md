@@ -1039,3 +1039,12 @@
   v1-only registry for migration faults.
 - Focused journal/store/domain tests passed (45) along with conversation and core contract
   regressions. AgentLoop is not wired yet.
+
+## 2026-08-19 — S4.37.3 durable ConversationLog append boundary
+
+- `ConversationLog` now plans a candidate, validates it against the immutable snapshot, and applies
+  only through `apply_committed`. Existing `begin_turn`/`append_*`/`finish_turn` helpers still use
+  that path for process-local tests.
+- `DurableConversationWriter.commit()` persists planned records and installs the projection from
+  the committed journal. A failed persist leaves memory and `conversation_position` unchanged.
+- Conversation/agent regression tests and the new durable-log tests passed.

@@ -1,6 +1,8 @@
-"""Process-local conversation log; the single chat history authority."""
+"""Conversation log; the single chat-history grammar authority."""
 
 from __future__ import annotations
+
+from dataclasses import dataclass
 
 from pydantic import field_validator
 
@@ -95,6 +97,14 @@ class ConversationSnapshot(ProtocolModel):
 
 class ConversationLogError(RuntimeError):
     """Raised when history would break the public-turn grammar."""
+
+
+@dataclass(frozen=True)
+class ConversationAppend:
+    """A validated candidate that has not yet replaced the live projection."""
+
+    added: tuple[ConversationRecord, ...]
+    snapshot: ConversationSnapshot
 
 
 def _derive_public_turns(
@@ -228,6 +238,12 @@ class ConversationLog:
         self._turn_call_ids: set[str] = set()
         self._has_final_assistant = False
 
+    @classmethod
+    def from_snapshot(cls, snapshot: ConversationSnapshot) -> ConversationLog:
+        log = cls()
+        log.install_snapshot(snapshot)
+        return log
+
     @property
     def has_active_turn(self) -> bool:
         return self._active
@@ -236,20 +252,15 @@ class ConversationLog:
     def unresolved_call_ids(self) -> tuple[str, ...]:
         return tuple(self._pending_call_ids)
 
-    def _next_sequence(self) -> int:
-        self._sequence += 1
-        return self._sequence
-
-    def begin_turn(self, user: UserMessage) -> None:
+    def plan_begin_turn(self, user: UserMessage) -> ConversationAppend:
         if self._active:
             raise ConversationLogError("a turn is already active")
-        self._active = True
-        self._pending_call_ids = []
-        self._turn_call_ids = set()
-        self._has_final_assistant = False
-        self._records.append(MessageRecord(sequence=self._next_sequence(), message=user))
+        return self._plan(
+            MessageRecord(sequence=self._sequence + 1, message=user),
+            require_closed=False,
+        )
 
-    def append_assistant(self, message: AssistantMessage) -> None:
+    def plan_append_assistant(self, message: AssistantMessage) -> ConversationAppend:
         if not self._active:
             raise ConversationLogError("no active turn")
         if self._pending_call_ids:
@@ -259,30 +270,29 @@ class ConversationLog:
         ids = [call.id for call in message.tool_calls]
         if len(ids) != len(set(ids)):
             raise ConversationLogError("tool call IDs must be unique within one ToolCycle")
-        self._turn_call_ids.update(ids)
-        self._records.append(MessageRecord(sequence=self._next_sequence(), message=message))
-        self._pending_call_ids = ids
-        if not ids:
-            self._has_final_assistant = True
+        return self._plan(
+            MessageRecord(sequence=self._sequence + 1, message=message),
+            require_closed=False,
+        )
 
-    def append_tool_result(self, tool_call_id: str, content: str) -> None:
+    def plan_append_tool_result(self, tool_call_id: str, content: str) -> ConversationAppend:
         if not self._active:
             raise ConversationLogError("no active turn")
         if not self._pending_call_ids:
             raise ConversationLogError("no unresolved tool call for this result")
         if tool_call_id != self._pending_call_ids[0]:
             raise ConversationLogError("tool results must arrive in original call order")
-        self._pending_call_ids.pop(0)
-        self._records.append(
+        return self._plan(
             MessageRecord(
-                sequence=self._next_sequence(),
+                sequence=self._sequence + 1,
                 message=ToolMessage(tool_call_id=tool_call_id, content=content),
-            )
+            ),
+            require_closed=False,
         )
 
-    def finish_turn(
+    def plan_finish_turn(
         self, reason: FinishReason, *, interrupted_call_ids: tuple[str, ...] = ()
-    ) -> None:
+    ) -> ConversationAppend:
         if not self._active:
             raise ConversationLogError("no active turn")
         if self._pending_call_ids:
@@ -295,13 +305,57 @@ class ConversationLog:
             raise ConversationLogError("interrupted call IDs must be unique")
         if any(call_id not in self._turn_call_ids for call_id in interrupted_call_ids):
             raise ConversationLogError("interrupted call IDs must belong to the active turn")
-        self._active = False
-        self._records.append(
+        return self._plan(
             TurnTerminalRecord(
-                sequence=self._next_sequence(),
+                sequence=self._sequence + 1,
                 finish_reason=reason,
                 interrupted_call_ids=interrupted_call_ids,
-            )
+            ),
+            require_closed=True,
+        )
+
+    def apply_committed(self, planned: ConversationAppend) -> None:
+        current = tuple(self._records)
+        if planned.snapshot.records[: len(current)] != current:
+            raise ConversationLogError("committed snapshot does not extend the live projection")
+        if planned.snapshot.records[len(current) :] != planned.added:
+            raise ConversationLogError("committed snapshot does not match the planned records")
+        self.install_snapshot(planned.snapshot)
+
+    def install_snapshot(self, snapshot: ConversationSnapshot) -> None:
+        turns = snapshot.public_turns(require_closed=False)
+        self._records = list(snapshot.records)
+        self._sequence = snapshot.records[-1].sequence if snapshot.records else 0
+        if turns and not turns[-1].is_closed:
+            last = turns[-1]
+            self._active = True
+            self._has_final_assistant = last.final_assistant is not None
+            self._pending_call_ids = list(last.unresolved_call_ids)
+            self._turn_call_ids = set()
+            for cycle in last.cycles:
+                message = cycle.assistant.message
+                if isinstance(message, AssistantMessage):
+                    self._turn_call_ids.update(call.id for call in message.tool_calls)
+        else:
+            self._active = False
+            self._pending_call_ids = []
+            self._turn_call_ids = set()
+            self._has_final_assistant = False
+
+    def begin_turn(self, user: UserMessage) -> None:
+        self.apply_committed(self.plan_begin_turn(user))
+
+    def append_assistant(self, message: AssistantMessage) -> None:
+        self.apply_committed(self.plan_append_assistant(message))
+
+    def append_tool_result(self, tool_call_id: str, content: str) -> None:
+        self.apply_committed(self.plan_append_tool_result(tool_call_id, content))
+
+    def finish_turn(
+        self, reason: FinishReason, *, interrupted_call_ids: tuple[str, ...] = ()
+    ) -> None:
+        self.apply_committed(
+            self.plan_finish_turn(reason, interrupted_call_ids=interrupted_call_ids)
         )
 
     def snapshot(self) -> ConversationSnapshot:
@@ -313,9 +367,9 @@ class ConversationLog:
         return self.snapshot().messages()
 
     def reset(self) -> None:
-        self._records = []
-        self._sequence = 0
-        self._active = False
-        self._pending_call_ids = []
-        self._turn_call_ids = set()
-        self._has_final_assistant = False
+        self.install_snapshot(ConversationSnapshot(records=()))
+
+    def _plan(self, record: ConversationRecord, *, require_closed: bool) -> ConversationAppend:
+        snapshot = ConversationSnapshot(records=(*self._records, record))
+        snapshot.public_turns(require_closed=require_closed)
+        return ConversationAppend(added=(record,), snapshot=snapshot)
