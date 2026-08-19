@@ -14,7 +14,16 @@ from pathlib import Path
 import pytest
 
 from morrow.adapters.credentials.keyring import MemoryCredentialStore
-from morrow.adapters.state.migrations import V1, V2, V3, V4, MigrationRegistry, SchemaMigration
+from morrow.adapters.state.migrations import (
+    V1,
+    V2,
+    V3,
+    V4,
+    V5,
+    V6,
+    MigrationRegistry,
+    SchemaMigration,
+)
 from morrow.adapters.state.operational import (
     SQLITE_HEADER,
     BusyRetryPolicy,
@@ -326,7 +335,7 @@ def test_future_schema_is_refused_and_left_intact(tmp_path):
 def test_identity_and_user_version_mismatch_is_repair(tmp_path):
     root, store = _initialized(tmp_path)
     raw = sqlite3.connect(store.layout.database)
-    raw.execute("PRAGMA user_version = 6")
+    raw.execute("PRAGMA user_version = 7")
     raw.commit()
     raw.close()
     before = store.layout.database.read_bytes()
@@ -558,17 +567,24 @@ def test_ordered_checksummed_migration_rolls_back_a_failed_step(tmp_path):
         "tool_execution_approval",
         "recovery_reports",
         "task_run_lifecycle_and_outcomes",
+        "artifact_store_and_references",
     )
     assert report.backup_name
     assert (store.layout.backups_dir / report.backup_name).is_file()
 
     broken = SchemaMigration(
-        version=6,
+        version=7,
         name="broken_step",
         statements=("THIS IS NOT SQL",),
     )
+    broken_registry = MigrationRegistry(supported_version=7)
+    for migration in (V1, V2, V3, V4):
+        broken_registry.add(migration)
+    broken_registry.add(V5)
+    broken_registry.add(V6)
+    broken_registry.add(broken)
     with pytest.raises(StorageError) as error:
-        _store(root, registry=_registry(broken, supported=6)).migrate()
+        _store(root, registry=broken_registry).migrate()
     assert error.value.code is StorageErrorCode.UNAVAILABLE
     reopened = _store(root)
     assert reopened.classify().schema_version == SUPPORTED_SCHEMA_VERSION

@@ -25,6 +25,7 @@ from morrow.core.domain import (
     TASK_RUN_ID_PREFIX,
     TURN_ID_PREFIX,
     WORKSPACE_ID_PREFIX,
+    ArtifactReference,
     canonical_json_bytes,
     refuse_secret_material,
     require_payload_budget,
@@ -389,6 +390,7 @@ class DurableToolExecution(ProtocolModel):
     approval_id: str | None = None
     result_envelope: HandlerResultEnvelope | None = None
     facts: DurableToolFacts | None = None
+    artifact_refs: tuple[ArtifactReference, ...] = ()
     error_code: str | None = Field(default=None, max_length=64)
     error_detail: str | None = None
     created_at: datetime = Field(default_factory=utc_now)
@@ -465,6 +467,17 @@ class DurableToolExecution(ProtocolModel):
         require_payload_budget(value.encode("utf-8"), ERROR_DETAIL_MAX_BYTES, label="error detail")
         refuse_secret_material(value, label="error detail")
         return value
+
+    @field_validator("artifact_refs")
+    @classmethod
+    def bounded_artifact_refs(
+        cls, values: tuple[ArtifactReference, ...]
+    ) -> tuple[ArtifactReference, ...]:
+        if len(values) > 64:
+            raise ValueError("execution contains too many artifact references")
+        if len(set(values)) != len(values):
+            raise ValueError("execution artifact references must be unique")
+        return values
 
     @model_validator(mode="after")
     def intent_matches_call(self) -> DurableToolExecution:

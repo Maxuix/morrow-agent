@@ -16,6 +16,7 @@ from morrow.core.domain import (
     TASK_OUTCOME_ID_PREFIX,
     TASK_RUN_ID_PREFIX,
     TASK_TRANSITION_ID_PREFIX,
+    ArtifactReference,
     DurableTaskOutcome,
     DurableTaskRun,
     DurableTaskRunTransition,
@@ -72,6 +73,7 @@ class TaskOutcomeAssembler:
         trigger: TaskOutcomeTrigger,
         summary: str | None = None,
         feedback: tuple[str, ...] = (),
+        artifact_refs: tuple[ArtifactReference, ...] = (),
     ) -> DurableTaskOutcome:
         turns = self.journal.list_task_turns(self.workspace_id, task.task_run_id)
         executions = self.journal.list_task_executions(self.workspace_id, task.task_run_id)
@@ -148,6 +150,25 @@ class TaskOutcomeAssembler:
                 ),
             ]
         )
+        linked_artifacts = tuple(
+            sorted(
+                {
+                    (reference.artifact_id, reference.role): reference
+                    for execution in executions
+                    for reference in execution.artifact_refs
+                }.values(),
+                key=lambda reference: (reference.artifact_id, reference.role),
+            )
+        )
+        all_artifact_refs = tuple(
+            sorted(
+                {
+                    (reference.artifact_id, reference.role): reference
+                    for reference in (*linked_artifacts, *artifact_refs)
+                }.values(),
+                key=lambda reference: (reference.artifact_id, reference.role),
+            )
+        )
         return DurableTaskOutcome(
             outcome_id=self.id_source.new_id(TASK_OUTCOME_ID_PREFIX),
             workspace_id=self.workspace_id,
@@ -173,6 +194,7 @@ class TaskOutcomeAssembler:
             completion_basis=completion_basis,
             feedback=feedback,
             evidence_refs=evidence_refs,
+            artifact_refs=all_artifact_refs,
         )
 
 

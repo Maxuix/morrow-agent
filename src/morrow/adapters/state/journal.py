@@ -7,8 +7,19 @@ from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 
 from morrow.adapters.state.operational import OperationalStoreSession, SqliteExecutor
+from morrow.core.artifacts import (
+    TASK_ARTIFACT_MAX_BYTES,
+    ArtifactBudgetError,
+    ArtifactKind,
+    ArtifactMetadata,
+    ArtifactProvenanceRef,
+    ArtifactRetention,
+    ArtifactSensitivity,
+    ArtifactState,
+)
 from morrow.core.domain import (
     AgentRunSnapshot,
+    ArtifactReference,
     DurableAgentRun,
     DurableConversationRecord,
     DurableSession,
@@ -63,7 +74,8 @@ _EXECUTION_COLUMNS = (
     "assistant_record_id, call_id, ordinal, tool_name, state, disposition, row_version, "
     "retry_of_execution_id, approval_id, intent_json, intent_hash, schema_digest, "
     "permission_context_digest, result_envelope_json, facts_json, error_code, error_detail, "
-    "created_at_unix, executing_at_unix, handler_completed_at_unix, closed_at_unix"
+    "created_at_unix, executing_at_unix, handler_completed_at_unix, closed_at_unix, "
+    "artifact_refs_json"
 )
 _APPROVAL_COLUMNS = (
     "approval_id, tool_execution_id, intent_hash, tool_schema_digest, "
@@ -88,7 +100,14 @@ _TRANSITION_COLUMNS = (
 )
 _OUTCOME_COLUMNS = (
     "outcome_id, workspace_id, session_id, task_run_id, version, trigger, task_status, "
-    "payload_json, payload_bytes, created_at_unix"
+    "payload_json, payload_bytes, created_at_unix, artifact_refs_json"
+)
+_ARTIFACT_COLUMNS = (
+    "artifact_id, workspace_id, session_id, task_run_id, kind, sensitivity, state, retention, "
+    "sha256, byte_size, excerpt, provenance_json, row_version, created_at_unix, updated_at_unix"
+)
+_ARTIFACT_REFERENCE_COLUMNS = (
+    "artifact_id, workspace_id, owner_kind, owner_id, role, created_at_unix"
 )
 _TASK_RECEIPT_COLUMNS = (
     "command_id, workspace_id, session_id, task_run_id, operation, request_digest, "
@@ -450,9 +469,16 @@ class SqliteOperationalJournal:
                 raise StorageError(
                     StorageErrorCode.UNAVAILABLE, "operational outcome version is stale"
                 )
+            journal._validate_artifact_refs(
+                workspace_id,
+                outcome.artifact_refs,
+                session_id=outcome.session_id,
+                task_run_id=outcome.task_run_id,
+            )
             payload = canonical_json_bytes(outcome.model_dump(mode="json"))
             journal._executor_or_raise().execute(
-                f"INSERT INTO task_outcomes({_OUTCOME_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                f"INSERT INTO task_outcomes({_OUTCOME_COLUMNS}) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     outcome.outcome_id,
                     outcome.workspace_id,
@@ -464,7 +490,15 @@ class SqliteOperationalJournal:
                     payload.decode("utf-8"),
                     len(payload),
                     _unix(outcome.created_at),
+                    _optional_json(outcome.artifact_refs),
                 ),
+            )
+            journal._replace_artifact_references(
+                workspace_id,
+                owner_kind="task_outcome",
+                owner_id=outcome.outcome_id,
+                references=outcome.artifact_refs,
+                created_at=outcome.created_at,
             )
             loaded = journal.get_task_outcome(workspace_id, outcome.outcome_id)
             if loaded is None:
@@ -494,6 +528,244 @@ class SqliteOperationalJournal:
             (workspace_id, task_run_id),
         )
         return tuple(_outcome_from_row(row) for row in rows)
+
+    def reserve_artifact(self, workspace_id: str, metadata: ArtifactMetadata) -> ArtifactMetadata:
+        """Reserve metadata before any managed file is published."""
+
+        if metadata.workspace_id != workspace_id:
+            raise StorageError(
+                StorageErrorCode.UNAVAILABLE, "operational artifact is outside the workspace"
+            )
+        if metadata.state is not ArtifactState.STAGING:
+            raise StorageError(
+                StorageErrorCode.UNAVAILABLE, "new operational artifact must start staging"
+            )
+
+        def work(journal: SqliteOperationalJournal) -> ArtifactMetadata:
+            journal._validate_artifact_scope(workspace_id, metadata)
+            if metadata.task_run_id is not None:
+                used = journal.artifact_bytes_for_task(workspace_id, metadata.task_run_id)
+                if used + metadata.byte_size > TASK_ARTIFACT_MAX_BYTES:
+                    raise ArtifactBudgetError("TaskRun artifact byte budget exceeded")
+            journal._executor_or_raise().execute(
+                f"INSERT INTO artifacts({_ARTIFACT_COLUMNS}) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    metadata.artifact_id,
+                    metadata.workspace_id,
+                    metadata.session_id,
+                    metadata.task_run_id,
+                    metadata.kind.value,
+                    metadata.sensitivity.value,
+                    metadata.state.value,
+                    metadata.retention.value,
+                    metadata.sha256,
+                    metadata.byte_size,
+                    metadata.excerpt,
+                    _optional_json(metadata.provenance_refs),
+                    metadata.row_version,
+                    _unix(metadata.created_at),
+                    _unix(metadata.updated_at),
+                ),
+            )
+            loaded = journal.get_artifact(workspace_id, metadata.artifact_id)
+            if loaded is None:
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE, "operational artifact could not be read"
+                )
+            return loaded
+
+        return self.transact(work)
+
+    def get_artifact(self, workspace_id: str, artifact_id: str) -> ArtifactMetadata | None:
+        row = self._read_one(
+            f"SELECT {_ARTIFACT_COLUMNS} FROM artifacts WHERE artifact_id = ? AND workspace_id = ?",
+            (artifact_id, workspace_id),
+        )
+        if row is None:
+            return None
+        return _artifact_from_row(row)
+
+    def list_artifacts(
+        self,
+        workspace_id: str,
+        *,
+        session_id: str | None = None,
+        task_run_id: str | None = None,
+    ) -> tuple[ArtifactMetadata, ...]:
+        sql = f"SELECT {_ARTIFACT_COLUMNS} FROM artifacts WHERE workspace_id = ?"
+        parameters: list[object] = [workspace_id]
+        if session_id is not None:
+            sql += " AND session_id = ?"
+            parameters.append(session_id)
+        if task_run_id is not None:
+            sql += " AND task_run_id = ?"
+            parameters.append(task_run_id)
+        sql += " ORDER BY created_at_unix ASC, artifact_id ASC"
+        rows = self._read_all(sql, tuple(parameters))
+        return tuple(_artifact_from_row(row) for row in rows)
+
+    def save_artifact(
+        self,
+        workspace_id: str,
+        metadata: ArtifactMetadata,
+        *,
+        expected_row_version: int,
+    ) -> ArtifactMetadata:
+        if metadata.workspace_id != workspace_id:
+            raise StorageError(
+                StorageErrorCode.UNAVAILABLE, "operational artifact is outside the workspace"
+            )
+
+        def work(journal: SqliteOperationalJournal) -> ArtifactMetadata:
+            existing = journal.get_artifact(workspace_id, metadata.artifact_id)
+            if existing is None:
+                raise StorageError(StorageErrorCode.NOT_FOUND, "operational artifact is missing")
+            if existing.row_version != expected_row_version:
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE, "operational artifact row version is stale"
+                )
+            if metadata.row_version != expected_row_version + 1:
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE, "operational artifact row version is stale"
+                )
+            immutable_fields = (
+                "workspace_id",
+                "session_id",
+                "task_run_id",
+                "kind",
+                "sensitivity",
+                "sha256",
+                "byte_size",
+                "provenance_refs",
+                "created_at",
+            )
+            if any(
+                getattr(existing, field) != getattr(metadata, field) for field in immutable_fields
+            ):
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE, "operational artifact identity is immutable"
+                )
+            _validate_artifact_state(existing.state, metadata.state)
+            journal._executor_or_raise().execute(
+                """
+                UPDATE artifacts
+                SET state = ?, retention = ?, excerpt = ?, row_version = ?, updated_at_unix = ?
+                WHERE artifact_id = ? AND workspace_id = ? AND row_version = ?
+                """,
+                (
+                    metadata.state.value,
+                    metadata.retention.value,
+                    metadata.excerpt,
+                    metadata.row_version,
+                    _unix(metadata.updated_at),
+                    metadata.artifact_id,
+                    workspace_id,
+                    expected_row_version,
+                ),
+            )
+            loaded = journal.get_artifact(workspace_id, metadata.artifact_id)
+            if loaded is None or loaded.row_version != metadata.row_version:
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE, "operational artifact row version is stale"
+                )
+            return loaded
+
+        return self.transact(work)
+
+    def artifact_bytes_for_task(self, workspace_id: str, task_run_id: str) -> int:
+        row = self._read_one(
+            "SELECT COALESCE(SUM(byte_size), 0) FROM artifacts "
+            "WHERE workspace_id = ? AND task_run_id = ?",
+            (workspace_id, task_run_id),
+        )
+        return int(row[0]) if row is not None else 0
+
+    def list_artifact_references(
+        self, workspace_id: str, artifact_id: str | None = None
+    ) -> tuple[tuple[str, str, str, str], ...]:
+        sql = (
+            f"SELECT {_ARTIFACT_REFERENCE_COLUMNS} FROM artifact_references WHERE workspace_id = ?"
+        )
+        parameters: list[object] = [workspace_id]
+        if artifact_id is not None:
+            sql += " AND artifact_id = ?"
+            parameters.append(artifact_id)
+        sql += " ORDER BY artifact_id ASC, owner_kind ASC, owner_id ASC, role ASC"
+        rows = self._read_all(sql, tuple(parameters))
+        return tuple((str(row[0]), str(row[2]), str(row[3]), str(row[4])) for row in rows)
+
+    def _validate_artifact_scope(self, workspace_id: str, metadata: ArtifactMetadata) -> None:
+        if metadata.session_id is None:
+            if metadata.task_run_id is not None:
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE, "operational artifact scope is inconsistent"
+                )
+            return
+        session = self.get_session(workspace_id, metadata.session_id)
+        if session is None:
+            raise StorageError(
+                StorageErrorCode.NOT_FOUND, "operational artifact session is missing"
+            )
+        if metadata.task_run_id is not None:
+            task = self.get_task_run(workspace_id, metadata.task_run_id)
+            if task is None or task.session_id != metadata.session_id:
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE, "operational artifact task scope is invalid"
+                )
+
+    def _validate_artifact_refs(
+        self,
+        workspace_id: str,
+        references: tuple[ArtifactReference, ...],
+        *,
+        session_id: str,
+        task_run_id: str,
+    ) -> None:
+        for reference in references:
+            artifact = self.get_artifact(workspace_id, reference.artifact_id)
+            if artifact is None:
+                raise StorageError(StorageErrorCode.NOT_FOUND, "operational artifact is missing")
+            if artifact.session_id not in {None, session_id} or artifact.task_run_id not in {
+                None,
+                task_run_id,
+            }:
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE, "operational artifact reference scope is invalid"
+                )
+            if artifact.state is not ArtifactState.AVAILABLE:
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE, "only available artifacts may be referenced"
+                )
+
+    def _replace_artifact_references(
+        self,
+        workspace_id: str,
+        *,
+        owner_kind: str,
+        owner_id: str,
+        references: tuple[ArtifactReference, ...],
+        created_at: datetime,
+    ) -> None:
+        executor = self._executor_or_raise()
+        executor.execute(
+            "DELETE FROM artifact_references WHERE workspace_id = ? AND owner_kind = ? "
+            "AND owner_id = ?",
+            (workspace_id, owner_kind, owner_id),
+        )
+        for reference in references:
+            executor.execute(
+                f"INSERT INTO artifact_references({_ARTIFACT_REFERENCE_COLUMNS}) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    reference.artifact_id,
+                    workspace_id,
+                    owner_kind,
+                    owner_id,
+                    reference.role,
+                    _unix(created_at),
+                ),
+            )
 
     def get_task_command_receipt(
         self, workspace_id: str, command_id: str
@@ -908,13 +1180,19 @@ class SqliteOperationalJournal:
                 raise StorageError(
                     StorageErrorCode.UNAVAILABLE, "operational execution row version is stale"
                 )
+            journal._validate_artifact_refs(
+                workspace_id,
+                execution.artifact_refs,
+                session_id=execution.session_id,
+                task_run_id=execution.task_run_id,
+            )
             journal._executor_or_raise().execute(
                 """
                 UPDATE tool_executions
                 SET state = ?, disposition = ?, row_version = ?, approval_id = ?,
                     result_envelope_json = ?, facts_json = ?, error_code = ?,
                     error_detail = ?, executing_at_unix = ?,
-                    handler_completed_at_unix = ?, closed_at_unix = ?
+                    handler_completed_at_unix = ?, closed_at_unix = ?, artifact_refs_json = ?
                 WHERE tool_execution_id = ? AND workspace_id = ? AND row_version = ?
                 """,
                 (
@@ -929,10 +1207,18 @@ class SqliteOperationalJournal:
                     _optional_unix(execution.executing_at),
                     _optional_unix(execution.handler_completed_at),
                     _optional_unix(execution.closed_at),
+                    _optional_json(execution.artifact_refs),
                     execution.tool_execution_id,
                     workspace_id,
                     expected_row_version,
                 ),
+            )
+            journal._replace_artifact_references(
+                workspace_id,
+                owner_kind="tool_execution",
+                owner_id=execution.tool_execution_id,
+                references=execution.artifact_refs,
+                created_at=execution.created_at,
             )
             loaded = journal.get_execution(workspace_id, execution.tool_execution_id)
             if loaded is None or loaded.row_version != execution.row_version:
@@ -1213,9 +1499,15 @@ class SqliteOperationalJournal:
             raise StorageError(
                 StorageErrorCode.UNAVAILABLE, "operational execution does not belong to the task"
             )
+        self._validate_artifact_refs(
+            workspace_id,
+            execution.artifact_refs,
+            session_id=execution.session_id,
+            task_run_id=execution.task_run_id,
+        )
         self._executor_or_raise().execute(
             f"INSERT INTO tool_executions({_EXECUTION_COLUMNS}) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            f"VALUES ({', '.join('?' for _ in range(28))})",
             (
                 execution.tool_execution_id,
                 execution.workspace_id,
@@ -1244,7 +1536,15 @@ class SqliteOperationalJournal:
                 _optional_unix(execution.executing_at),
                 _optional_unix(execution.handler_completed_at),
                 _optional_unix(execution.closed_at),
+                _optional_json(execution.artifact_refs),
             ),
+        )
+        self._replace_artifact_references(
+            workspace_id,
+            owner_kind="tool_execution",
+            owner_id=execution.tool_execution_id,
+            references=execution.artifact_refs,
+            created_at=execution.created_at,
         )
 
     def _insert_session(self, session: DurableSession) -> None:
@@ -1350,6 +1650,7 @@ def _outcome_from_row(row: tuple[object, ...]) -> DurableTaskOutcome:
         if not isinstance(payload, dict):
             raise ValueError("operational outcome is not a mapping")
         outcome = DurableTaskOutcome.model_validate(payload)
+        artifact_refs = _artifact_refs_from_raw(row[10])
         if (
             outcome.outcome_id != str(row[0])
             or outcome.workspace_id != str(row[1])
@@ -1360,6 +1661,7 @@ def _outcome_from_row(row: tuple[object, ...]) -> DurableTaskOutcome:
             or outcome.task_status.value != str(row[6])
             or len(canonical_json_bytes(payload)) != int(row[8])
             or _unix(outcome.created_at) != int(row[9])
+            or tuple(outcome.artifact_refs) != artifact_refs
         ):
             raise ValueError("operational outcome metadata does not match its payload")
         return outcome
@@ -1443,8 +1745,54 @@ def _optional_unix(value: datetime | None) -> int | None:
 def _optional_json(value: object | None) -> str | None:
     if value is None:
         return None
-    dumped = value.model_dump(mode="json") if hasattr(value, "model_dump") else value
+    if hasattr(value, "model_dump"):
+        dumped = value.model_dump(mode="json")
+    elif isinstance(value, (tuple, list)):
+        dumped = [
+            item.model_dump(mode="json") if hasattr(item, "model_dump") else item for item in value
+        ]
+    else:
+        dumped = value
     return canonical_json_bytes(dumped).decode("utf-8")
+
+
+def _artifact_refs_from_raw(raw: object) -> tuple[ArtifactReference, ...]:
+    try:
+        payload = json.loads(str(raw))
+    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise StorageError(
+            StorageErrorCode.NEEDS_REPAIR, "operational artifact references are invalid"
+        ) from exc
+    if not isinstance(payload, list):
+        raise StorageError(
+            StorageErrorCode.NEEDS_REPAIR, "operational artifact references are invalid"
+        )
+    try:
+        return tuple(ArtifactReference.model_validate(item) for item in payload)
+    except (TypeError, ValueError) as exc:
+        raise StorageError(
+            StorageErrorCode.NEEDS_REPAIR, "operational artifact references are invalid"
+        ) from exc
+
+
+def _validate_artifact_state(current: ArtifactState, target: ArtifactState) -> None:
+    if current is target:
+        return
+    allowed = {
+        ArtifactState.STAGING: {
+            ArtifactState.AVAILABLE,
+            ArtifactState.MISSING,
+            ArtifactState.CORRUPT,
+        },
+        ArtifactState.AVAILABLE: {ArtifactState.MISSING, ArtifactState.CORRUPT},
+        ArtifactState.MISSING: set(),
+        ArtifactState.CORRUPT: set(),
+    }
+    if target not in allowed[current]:
+        raise StorageError(
+            StorageErrorCode.UNAVAILABLE,
+            "operational artifact state transition is invalid",
+        )
 
 
 def _load_mapping(raw: object, *, label: str) -> dict:
@@ -1466,6 +1814,7 @@ def _execution_from_row(row: tuple[object, ...]) -> DurableToolExecution:
         facts = DurableToolFacts.model_validate(
             _load_mapping(row[20], label="structured tool facts")
         )
+    artifact_refs = _artifact_refs_from_raw(row[27])
     return DurableToolExecution(
         tool_execution_id=str(row[0]),
         workspace_id=str(row[1]),
@@ -1485,6 +1834,7 @@ def _execution_from_row(row: tuple[object, ...]) -> DurableToolExecution:
         intent=intent,
         result_envelope=envelope,
         facts=facts,
+        artifact_refs=artifact_refs,
         error_code=str(row[21]) if row[21] is not None else None,
         error_detail=str(row[22]) if row[22] is not None else None,
         created_at=_from_unix(row[23]),
@@ -1492,6 +1842,37 @@ def _execution_from_row(row: tuple[object, ...]) -> DurableToolExecution:
         handler_completed_at=_from_unix(row[25]) if row[25] is not None else None,
         closed_at=_from_unix(row[26]) if row[26] is not None else None,
     )
+
+
+def _artifact_from_row(row: tuple[object, ...]) -> ArtifactMetadata:
+    try:
+        provenance_raw = json.loads(str(row[11]))
+        if not isinstance(provenance_raw, list):
+            raise ValueError("artifact provenance is not a list")
+        metadata = ArtifactMetadata(
+            artifact_id=str(row[0]),
+            workspace_id=str(row[1]),
+            session_id=str(row[2]) if row[2] is not None else None,
+            task_run_id=str(row[3]) if row[3] is not None else None,
+            kind=ArtifactKind(str(row[4])),
+            sensitivity=ArtifactSensitivity(str(row[5])),
+            state=ArtifactState(str(row[6])),
+            retention=ArtifactRetention(str(row[7])),
+            sha256=str(row[8]),
+            byte_size=int(row[9]),
+            excerpt=str(row[10]),
+            provenance_refs=tuple(
+                ArtifactProvenanceRef.model_validate(item) for item in provenance_raw
+            ),
+            row_version=int(row[12]),
+            created_at=_from_unix(row[13]),
+            updated_at=_from_unix(row[14]),
+        )
+        return metadata
+    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise StorageError(
+            StorageErrorCode.NEEDS_REPAIR, "operational artifact metadata is invalid"
+        ) from exc
 
 
 def _approval_from_row(row: tuple[object, ...]) -> DurableApproval:

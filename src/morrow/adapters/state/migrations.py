@@ -1,6 +1,6 @@
 """Ordered, checksummed Operational Store migrations.
 
-Production currently owns schema v1–v5. Versions 6–9 stay reserved for later
+Production currently owns schema v1–v6. Versions 7–9 stay reserved for later
 subplans and must not be renumbered after they land.
 """
 
@@ -402,6 +402,64 @@ V5_STATEMENTS = (
 
 V5 = SchemaMigration(version=5, name=V5_NAME, statements=V5_STATEMENTS)
 
+V6_NAME = "artifact_store_and_references"
+V6_STATEMENTS = (
+    """
+    ALTER TABLE tool_executions
+        ADD COLUMN artifact_refs_json TEXT NOT NULL DEFAULT '[]'
+    """,
+    """
+    ALTER TABLE task_outcomes
+        ADD COLUMN artifact_refs_json TEXT NOT NULL DEFAULT '[]'
+    """,
+    """
+    CREATE TABLE artifacts (
+        artifact_id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        session_id TEXT REFERENCES sessions(session_id),
+        task_run_id TEXT REFERENCES task_runs(task_run_id),
+        kind TEXT NOT NULL CHECK (
+            kind IN (
+                'command_output', 'patch', 'diff', 'test_report',
+                'diagnostic_report', 'task_summary', 'context_summary'
+            )
+        ),
+        sensitivity TEXT NOT NULL CHECK (sensitivity IN ('non_sensitive', 'redacted')),
+        state TEXT NOT NULL CHECK (state IN ('staging', 'available', 'missing', 'corrupt')),
+        retention TEXT NOT NULL CHECK (retention IN ('standard', 'pinned')),
+        sha256 TEXT NOT NULL CHECK (length(sha256) = 64),
+        byte_size INTEGER NOT NULL CHECK (byte_size >= 0 AND byte_size <= 67108864),
+        excerpt TEXT NOT NULL DEFAULT '',
+        provenance_json TEXT NOT NULL,
+        row_version INTEGER NOT NULL CHECK (row_version >= 1),
+        created_at_unix INTEGER NOT NULL,
+        updated_at_unix INTEGER NOT NULL,
+        CHECK (task_run_id IS NULL OR session_id IS NOT NULL)
+    )
+    """,
+    """
+    CREATE INDEX artifacts_workspace_scope
+        ON artifacts(workspace_id, session_id, task_run_id, state)
+    """,
+    """
+    CREATE TABLE artifact_references (
+        artifact_id TEXT NOT NULL REFERENCES artifacts(artifact_id),
+        workspace_id TEXT NOT NULL,
+        owner_kind TEXT NOT NULL CHECK (owner_kind IN ('tool_execution', 'task_outcome')),
+        owner_id TEXT NOT NULL,
+        role TEXT NOT NULL CHECK (length(role) BETWEEN 1 AND 64),
+        created_at_unix INTEGER NOT NULL,
+        PRIMARY KEY (artifact_id, owner_kind, owner_id, role)
+    )
+    """,
+    """
+    CREATE INDEX artifact_references_owner
+        ON artifact_references(workspace_id, owner_kind, owner_id)
+    """,
+)
+
+V6 = SchemaMigration(version=6, name=V6_NAME, statements=V6_STATEMENTS)
+
 
 class MigrationRegistry:
     def __init__(self, *, supported_version: int = SUPPORTED_SCHEMA_VERSION) -> None:
@@ -461,6 +519,7 @@ def production_registry() -> MigrationRegistry:
     registry.add(V3)
     registry.add(V4)
     registry.add(V5)
+    registry.add(V6)
     return registry
 
 

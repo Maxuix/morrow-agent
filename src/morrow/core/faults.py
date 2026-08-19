@@ -25,6 +25,14 @@ class FaultPoint(StrEnum):
     CONVERSATION_AFTER_TOOL_MESSAGE_COMMIT = "conversation.after_tool_message_commit"
     TURN_BEFORE_TERMINAL_COMMIT = "turn.before_terminal_commit"
     TURN_AFTER_TERMINAL_COMMIT = "turn.after_terminal_commit"
+    ARTIFACT_AFTER_RESERVE = "artifact.after_reserve"
+    ARTIFACT_AFTER_TEMP_CREATE = "artifact.after_temp_create"
+    ARTIFACT_FILE_FSYNC = "artifact.file_fsync"
+    ARTIFACT_BEFORE_RENAME = "artifact.before_rename"
+    ARTIFACT_AFTER_RENAME = "artifact.after_rename"
+    ARTIFACT_AFTER_PARENT_FSYNC = "artifact.after_parent_fsync"
+    ARTIFACT_BEFORE_MARK_AVAILABLE = "artifact.before_mark_available"
+    ARTIFACT_AFTER_MARK_AVAILABLE = "artifact.after_mark_available"
 
 
 REQUIRED_FAULT_POINTS = frozenset(FaultPoint)

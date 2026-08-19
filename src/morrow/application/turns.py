@@ -11,11 +11,13 @@ from morrow.adapters.state.operational import OperationalStoreSession
 from morrow.application.prepared import prepare_cycle_executions
 from morrow.application.recovery import RecoveryService
 from morrow.application.tasks import TaskOutcomeAssembler, TaskService
+from morrow.core.artifacts import ArtifactError
 from morrow.core.domain import (
     AGENT_RUN_ID_PREFIX,
     COMMAND_ID_PREFIX,
     TASK_RUN_ID_PREFIX,
     AgentRunSnapshot,
+    ArtifactReference,
     DurableAgentRun,
     DurableSession,
     DurableTaskRun,
@@ -54,6 +56,7 @@ from morrow.core.models import (
 )
 from morrow.core.ports import IdSource
 from morrow.core.recovery import RecoveryReport, RecoveryReportStatus, RecoveryResolution
+from morrow.core.store import StorageError
 from morrow.runtime.conversation import (
     ConversationAppend,
     ConversationLog,
@@ -135,6 +138,7 @@ class SessionPersistence:
         run_policy,
         runtime_instance_id: str,
         mutation=None,
+        artifacts=None,
         faults: FaultInjector | None = None,
     ) -> None:
         self.workspace_id = workspace_id
@@ -145,6 +149,7 @@ class SessionPersistence:
         self.run_policy = run_policy
         self.runtime_instance_id = runtime_instance_id
         self.mutation = mutation
+        self.artifacts = artifacts
         self.faults = faults or NoOpFaultInjector()
         self.tasks = TaskService(
             journal=journal,
@@ -684,6 +689,22 @@ class SessionPersistence:
         disposition = (
             ToolExecutionDisposition.SUCCEEDED if result.ok else ToolExecutionDisposition.FAILED
         )
+        artifact_refs: tuple[ArtifactReference, ...] = ()
+        if self.artifacts is not None and execution.tool_name == "run_command":
+            try:
+                artifact = self.artifacts.publish_command_output(
+                    result.envelope,
+                    session_id=execution.session_id,
+                    task_run_id=execution.task_run_id,
+                    tool_execution_id=execution.tool_execution_id,
+                )
+                artifact_refs = (
+                    ArtifactReference(artifact_id=artifact.artifact_id, role="tool_output"),
+                )
+            except (ArtifactError, StorageError):
+                # The bounded inline execution envelope remains the truthful fallback;
+                # publication failures leave explicit Artifact metadata for diagnosis.
+                artifact_refs = ()
         completed = transition_execution(
             execution,
             ToolExecutionState.HANDLER_COMPLETED,
@@ -693,6 +714,8 @@ class SessionPersistence:
             result_envelope=_envelope_from_outcome(result),
             error_code=result.error_code.value if result.error_code is not None else None,
         )
+        if artifact_refs:
+            completed = completed.model_copy(update={"artifact_refs": artifact_refs})
         stored = self.journal.save_execution(
             self.workspace_id, completed, expected_row_version=execution.row_version
         )

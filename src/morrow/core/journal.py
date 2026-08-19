@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Protocol
 
+from morrow.core.artifacts import ArtifactMetadata
 from morrow.core.domain import (
     DurableAgentRun,
     DurableConversationRecord,
@@ -163,3 +164,29 @@ class RecoveryJournalPort(Protocol):
     def put_recovery_receipt(
         self, workspace_id: str, receipt: RecoveryReceipt
     ) -> RecoveryReceipt: ...
+
+
+class ArtifactMetadataJournalPort(Protocol):
+    """SQLite-side authority for Artifact identity, state, and references."""
+
+    def reserve_artifact(
+        self, workspace_id: str, metadata: ArtifactMetadata
+    ) -> ArtifactMetadata: ...
+
+    def get_artifact(self, workspace_id: str, artifact_id: str) -> ArtifactMetadata | None: ...
+
+    def list_artifacts(
+        self,
+        workspace_id: str,
+        *,
+        session_id: str | None = None,
+        task_run_id: str | None = None,
+    ) -> tuple[ArtifactMetadata, ...]: ...
+
+    def save_artifact(
+        self,
+        workspace_id: str,
+        metadata: ArtifactMetadata,
+        *,
+        expected_row_version: int,
+    ) -> ArtifactMetadata: ...

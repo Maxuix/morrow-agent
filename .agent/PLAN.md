@@ -1,8 +1,8 @@
 # Stage 4 Durable Task, Session, Artifact, and Recovery Plan
 
 > Status: active — production implementation
-> Active subplan: 41 — Artifact Store and durable payload budgets
-> Production implementation: authorized; v5 TaskRun/TaskOutcome has landed
+> Active subplan: 42 — Context checkpoints and conversation fork
+> Production implementation: authorized; v6 Artifact Store and durable payload budgets have landed
 > Stage 3 production baseline: `003dbdaab652520ca5cadf451ebca7a13bcba36d`
 > Stage 4 accepted contract baseline: `20fb43e`
 > Scope: durable foreground-agent operation, recovery, artifacts, context checkpoints,
@@ -313,8 +313,8 @@ but must preserve accepted public and safety contracts or explicitly reopen the 
 | 38 | Tool execution journal and durable Approval | completed | intent-before-effect and closed ToolCycle protocol |
 | 39 | Recovery, reconciliation, and crash harness | completed | no blind replay; classified interrupted real tools |
 | 40 | TaskRun lifecycle and versioned TaskOutcome | completed | continuation/correction/acceptance semantics and evidence |
-| 41 | Artifact Store and durable payload budgets | active | integrity-checked bounded artifacts and missing-file behavior |
-| 42 | Context checkpoint and conversation fork | pending | budgeted context with immutable provenance and isolated fork |
+| 41 | Artifact Store and durable payload budgets | completed | integrity-checked bounded artifacts and missing-file behavior |
+| 42 | Context checkpoint and conversation fork | active | budgeted context with immutable provenance and isolated fork |
 | 43 | Command/Query/Event, CLI, doctor, and backup | pending | one application API and operable recovery UX |
 | 44 | CapabilityGrant and Full Access Manual | pending | auditable run-bound manual elevation; no Full Access Auto |
 | 45 | End-to-end acceptance and Stage 4 closeout | pending | crash-tested packaged durable personal agent |
@@ -426,6 +426,8 @@ Stage 4 is complete only when all of the following are evidenced:
 Subplan 39 landed recovery classification, hash-based file reconciliation, Host/sandbox
 outcome_unknown, ConversationLog recovery-close, and subprocess crash evidence on 2026-08-19.
 Subplan 40 landed the complete TaskRun state machine and versioned TaskOutcome (schema v5), including
-independent review remediation and offline validation. Subplan 41 is now the only active work and may
-implement the Artifact Store and v6 metadata migration. Checkpoints, grants, public-event changes,
-and Full Access remain inactive until their own subplans and hold points are explicitly activated.
+independent review remediation and offline validation. Subplan 41 landed the Artifact Store and v6
+metadata migration with bounded, redacted, integrity-checked payloads. Subplan 42 is now the only
+active work and may implement deterministic checkpoints and conversation fork. Grants, public-event
+changes, and Full Access remain inactive until their own subplans and hold points are explicitly
+activated.

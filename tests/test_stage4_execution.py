@@ -369,6 +369,14 @@ def test_fault_injector_inventory_and_one_shot_behavior():
         "conversation.after_tool_message_commit",
         "turn.before_terminal_commit",
         "turn.after_terminal_commit",
+        "artifact.after_reserve",
+        "artifact.after_temp_create",
+        "artifact.file_fsync",
+        "artifact.before_rename",
+        "artifact.after_rename",
+        "artifact.after_parent_fsync",
+        "artifact.before_mark_available",
+        "artifact.after_mark_available",
     }
     NoOpFaultInjector().check(FaultPoint.HANDLER_BEFORE_ENTER)
     injector = OnceFaultInjector(FaultPoint.HANDLER_BEFORE_ENTER)

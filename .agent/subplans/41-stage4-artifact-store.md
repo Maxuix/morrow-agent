@@ -1,6 +1,6 @@
 # Subplan 41 — Artifact Store and Durable Payload Budgets
 
-> Status: pending
+> Status: completed
 > Prerequisite: Subplan 40 accepted
 > Owns: large durable payload publication, integrity, provenance, and retention safety
 > Schema: v6 Artifact metadata and references
@@ -34,19 +34,19 @@ without creating a secret archive, a second message authority, or an enterprise 
 
 ## Tasks
 
-- [ ] S4.41.1 Define Artifact/budget models, allowed kinds, sensitivity/retention states, and
+- [x] S4.41.1 Define Artifact/budget models, allowed kinds, sensitivity/retention states, and
   canonical metadata with strict validation.
-- [ ] S4.41.2 Implement Artifact metadata storage and opaque path layout confined under the validated
+- [x] S4.41.2 Implement Artifact metadata storage and opaque path layout confined under the validated
   state root.
-- [ ] S4.41.3 Implement temp-write/fsync/atomic-rename/parent-fsync/metadata publication and safe
+- [x] S4.41.3 Implement temp-write/fsync/atomic-rename/parent-fsync/metadata publication and safe
   rollback/orphan discovery at every fault point.
-- [ ] S4.41.4 Add hash/size verification, bounded streaming reads, excerpt generation, and visible
+- [x] S4.41.4 Add hash/size verification, bounded streaming reads, excerpt generation, and visible
   missing/corrupt states.
-- [ ] S4.41.5 Integrate bounded redacted command output, diff/report production, ToolExecution links,
+- [x] S4.41.5 Integrate bounded redacted command output, diff/report production, ToolExecution links,
   and TaskOutcome references without duplicating complete bytes in conversation rows.
-- [ ] S4.41.6 Implement pin/reference-aware retention checks and read-only orphan candidate reports;
+- [x] S4.41.6 Implement pin/reference-aware retention checks and read-only orphan candidate reports;
   do not implement automatic deletion or heuristic retention.
-- [ ] S4.41.7 Add redaction, symlink/path-escape, permission, disk failure, crash, and payload exact-
+- [x] S4.41.7 Add redaction, symlink/path-escape, permission, disk failure, crash, and payload exact-
   boundary tests; update storage/security docs.
 
 ## Locked contracts

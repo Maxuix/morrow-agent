@@ -1112,3 +1112,26 @@
 - Validation: focused TaskRun/journal/domain tests 24 passed; offline suite `536 passed, 2 skipped,
   1 deselected`; Ruff format/check, compileall, and `git diff --check` passed.
 - Activated Subplan 41 for the Artifact Store and durable payload budgets.
+
+## 2026-08-19 — Subplan 41 Artifact Store and durable payload budgets completed
+
+- Added strict Artifact kinds, sensitivity/retention/state/provenance models and locked metadata,
+  excerpt, per-Artifact, and per-TaskRun byte ceilings. Schema v6 stores Artifact metadata plus
+  ToolExecution/TaskOutcome references while preserving prior v5 payloads.
+- Added the managed `artifacts/` and `artifacts/tmp/` filesystem adapter with opaque ID paths,
+  0700/0600 permissions, private temp writes, file and parent fsync, atomic publication, hash/size
+  verification, `O_NOFOLLOW` same-descriptor reads, visible staging/missing/corrupt states, and
+  read-only orphan/retention reports. No automatic deletion was added.
+- Integrated bounded redacted `run_command` output as a command-output Artifact without copying the
+  complete result into durable ConversationLog rows. Safe `<redacted>` JSON fields remain publishable;
+  raw secret assignments are rejected before metadata reserve. Tool and TaskOutcome references are
+  scope-checked and persisted atomically.
+- Added exact UTF-8, permission, symlink/hardlink, disk-failure, crash/fault-point, aggregate-budget,
+  restart, reference, and retention tests. Final offline validation: `544 passed, 2 skipped,
+  1 deselected`; Ruff format/check, compileall, and `git diff --check` passed.
+- Requested Grok `/review` twice as required. Both runs collected the local diff and began review, but
+  the Grok proxy repeatedly failed settings/telemetry requests and never returned a final report;
+  no Grok files changed. Independent review fixed the safe-redacted-command-output rejection and
+  same-path verification race. A preliminary concern about closed execution dropping refs was checked
+  against `transition_execution`'s preserving `model_copy` behavior and was not applicable.
+- Activated Subplan 42 for deterministic context checkpoints and conversation fork.

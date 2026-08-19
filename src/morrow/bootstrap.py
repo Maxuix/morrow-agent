@@ -13,6 +13,7 @@ from morrow.adapters.local.sandbox import (
 )
 from morrow.adapters.models.openai_compatible import estimate_request_chars, make_openai_compatible
 from morrow.adapters.registry import AdapterRegistry
+from morrow.adapters.state.artifacts import FilesystemArtifactStore
 from morrow.adapters.state.journal import SqliteOperationalJournal
 from morrow.adapters.state.operational import OperationalStore
 from morrow.adapters.state.yaml import (
@@ -20,6 +21,7 @@ from morrow.adapters.state.yaml import (
     ProjectStateYamlStore,
     WorkspaceIndexYamlStore,
 )
+from morrow.application.artifacts import ArtifactService
 from morrow.application.commands import CommandService
 from morrow.application.configuration import make_configuration_tool
 from morrow.application.context import ContextBuilder
@@ -39,7 +41,12 @@ from morrow.core.capabilities import PermissionProfile, ProcessIsolation, Worksp
 from morrow.core.domain import DurableSession
 from morrow.core.execution import missing_declarations
 from morrow.core.models import Preferences
-from morrow.core.store import StorageError, StorageErrorCode, StoreOpenMode
+from morrow.core.store import (
+    OperationalStoreLayout,
+    StorageError,
+    StorageErrorCode,
+    StoreOpenMode,
+)
 from morrow.runtime.agent import AgentRuntime
 from morrow.runtime.capabilities import CapabilityPolicy
 from morrow.runtime.ids import RandomIdSource
@@ -91,6 +98,7 @@ class SessionApplication:
     sandbox_capability: object
     persistence: object | None = None
     tasks: object | None = None
+    artifacts: ArtifactService | None = None
 
 
 def _default_tool_executor(
@@ -307,6 +315,14 @@ def build_session_application(
     )
     handle = _open_operational_store(app)
     journal = SqliteOperationalJournal(handle)
+    artifact_files = FilesystemArtifactStore(OperationalStoreLayout.from_root(app.data_root.root))
+    artifact_files.ensure_layout()
+    artifacts = ArtifactService(
+        journal=journal,
+        filesystem=artifact_files,
+        workspace_id=identity.workspace_id,
+        id_source=app.id_source,
+    )
     persistence = SessionPersistence(
         workspace_id=identity.workspace_id,
         journal=journal,
@@ -316,6 +332,7 @@ def build_session_application(
         run_policy=run_policy,
         runtime_instance_id=f"inst-{os.getpid()}",
         mutation=mutation,
+        artifacts=artifacts,
     )
     if resume_session_id:
         persistence.restore_into(session)
@@ -354,4 +371,5 @@ def build_session_application(
         sandbox_capability=sandbox_capability,
         persistence=persistence,
         tasks=persistence.tasks,
+        artifacts=artifacts,
     )

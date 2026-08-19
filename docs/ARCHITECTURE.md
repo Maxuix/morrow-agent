@@ -1,11 +1,11 @@
 # Morrow 架构基线
 
-> 状态：阶段 2、阶段 3 已完成（当前声明平台为 macOS；Linux 原生运行仍 unsupported）；阶段 4 已落地 Operational Store v5 的 Session/Task 历史、工具/审批日志、恢复分类与 TaskOutcome
+> 状态：阶段 2、阶段 3 已完成（当前声明平台为 macOS；Linux 原生运行仍 unsupported）；阶段 4 已落地 Operational Store v6 的 Session/Task 历史、工具/审批日志、恢复分类、TaskOutcome 与 Artifact Store
 
 本文锁定当前依赖方向、数据所有权和安全边界。阶段 3 的能力策略、配置工具、工作空间读搜、冲突安全文件变更、审批后 Host 命令、只读 Git 和当前 macOS 原生沙箱
 已经交付；Linux 原生运行尚未声明支持。Stage 4 已落地数据根 SQLite Operational Store 的
 身份/迁移/备份基础、v2 无工具 Session 历史、v3 工具执行/审批日志、v4 恢复分类与
-崩溃对账，以及 v5 TaskRun 生命周期、转移审计和版本化 TaskOutcome。Artifact 与 Full Access 仍未开始。Stage 5 的可审查学习、Stage 6 的 Skills/MCP，
+崩溃对账，以及 v5 TaskRun 生命周期、转移审计、版本化 TaskOutcome 与 v6 Artifact 元数据/引用、受控字节发布。Full Access 仍未开始。Stage 5 的可审查学习、Stage 6 的 Skills/MCP，
 以及 Stage 7–10 的 Workflow、GUI、后台自动化和产品化均尚未开始。
 
 ## 分层与依赖方向
@@ -124,7 +124,7 @@ Service 或 Port：
   → Adapter 流式返回文本或 tool calls
   → ConversationLog 校验 Assistant ToolCall 后，同一事务提交有序 ToolExecution 意图
   → 审批 consume 与 executing 同一事务；handler 只在已提交意图可见后运行
-  → handler_completed 与 ToolMessage/closed 分开记录
+  → bounded、redacted run_command 结果先发布为 Artifact，再记录 handler_completed 与 ToolMessage/closed
   → ToolExecutor 校验、预检、审批并串行执行受限工具，闭合 ToolCycle
   → 最终回答、取消或确定性 stop_code
   → 先提交 Turn/User，再发出 turn.started
@@ -144,9 +144,9 @@ Service 或 Port：
 | Preferences | global、workspace、process-local session | 配置服务 | global → workspace → session 合并 |
 | 工作空间路径索引 | `workspace-index.yaml` | Workspace 服务 | 独立于项目状态 |
 | 工作空间 Profile | `profile.yaml` | Workspace/配置服务 | 按 workspace_id 隔离 |
-| 当前会话消息 | 进程内 ConversationLog 投影；权威在 Operational Store v4 | AgentLoop 经 ConversationLog 提交 | 未闭合工具在重启后进入 needs_recovery，不自动重放 |
+| 当前会话消息 | 进程内 ConversationLog 投影；权威在 Operational Store v6 | AgentLoop 经 ConversationLog 提交 | 未闭合工具在重启后进入 needs_recovery，不自动重放 |
 | Agent 运行策略 | 随包策略 → RunPolicy | composition root | 不属于用户配置 |
-| 运行记录 / Artifact 元数据 | 数据根 `store/operational.sqlite` | v4 Session/对话/工具执行/审批/恢复报告；Artifact 仍未落地 | 合同见 [Operational Store ADR](decisions/stage-4-operational-store.md)；YAML 与凭据权威不变 |
+| 运行记录 / Artifact 元数据 | 数据根 `store/operational.sqlite`；Artifact 字节在 `artifacts/` | v6 Session/Task/对话/工具执行/审批/恢复报告/Outcome/Artifact 元数据与引用 | 字节只经有界脱敏、hash/size 校验、fsync 和原子发布；YAML 与凭据权威不变 |
 
 ProjectStateStore 只支持 `profile.yaml` 和 `preferences.yaml`。两者使用版本化文档信封、revision、
 锁、临时文件、文件/目录 `fsync`、原子替换和备份；`state: cleared` 是合法 tombstone。
@@ -158,23 +158,28 @@ workspace Preferences 损坏只隔离该层。旧 `handoff.yaml(.bak)` 不属于
 `config.yaml` 是聚合文档，Provider 与全局 Preferences 的写入必须在同一事务锁内保留对方字段。
 `workspace-index.yaml` 由独立 WorkspaceIndexStore 管理。
 
-### Operational Store 布局（v5）
+### Operational Store 与 Artifact 布局（v6）
 
 数据根（`--state-root` 或 `~/.morrow`）下的保留路径：
 
 ```text
 {data_root}/
   store/operational.sqlite          # POSIX 0600；WAL/SHM sidecar 同为 0600
-  artifacts/tmp/                    # 0700；字节发布规则属于后续 Artifact ADR
+  artifacts/                        # 0700；Artifact 文件为 0600、ID 派生路径
+    tmp/                            # 0700；staging 临时字节
   backups/operational/              # 0700；仅在线 backup 目标
   locks/operational-store.lock      # 全局维护锁，不是 WorkspaceWriterLock
 ```
 
 `DataRoot` 暴露 `store_path`、`artifacts_path`、`backups_path` 与 `operational_lock_path`。
-`build_session_application()` 会打开或创建 v5 Operational Store，并把对话经 ConversationLog
+`build_session_application()` 会打开或创建 v6 Operational Store，并把对话经 ConversationLog
 提交到 Session / TaskRun / Turn / AgentRun / conversation / receipt 表。v3 起有 tool_executions
 与 approvals；v4 增加 recovery_reports / recovery_receipts；v5 增加完整 TaskRun 状态、转移审计、
-TaskOutcome 版本和 Task 命令回执。重启时扫描未闭合执行并分类，
+TaskOutcome 版本和 Task 命令回执；v6 增加 Artifact 元数据、引用、pin 状态和 `artifact_refs_json`。
+命令输出 Artifact 只接收既有有界脱敏结果，不保存 raw stream；单个 Artifact 上限 64 MiB，单个
+TaskRun 预留字节上限 256 MiB，元数据/Excerpt 上限分别为 32 KiB/8 KiB。发布顺序是 staging 元数据、
+用户私有临时文件写入与 fsync、hash/size 校验、原子 rename、父目录 fsync、available 元数据事务。
+重启时扫描未闭合执行并分类，
 Host/sandbox 缺 `handler_completed` 一律 `outcome_unknown`。YAML 与凭据权威不变。
 损坏、外源或未来版本文件保持原字节并失败关闭。
 
@@ -188,7 +193,8 @@ Host/sandbox 缺 `handler_completed` 一律 `outcome_unknown`。YAML 与凭据�
 - 当前系统边界按冻结 ToolSet 动态渲染；未提供的能力、工作空间外访问、网络/loopback、Git 写入和权限提升始终被禁止。
 - 默认测试不联网、不使用真实钥匙串、不依赖用户主目录。
 - Provider 和结构化响应失败必须分类；不静默切换 Provider 或模型。
-- 无工具 Session 对话可持久化并在重启后恢复；conversation Fork、工具恢复和确定性 checkpoint 仍未实现；
+- 无工具 Session 对话可持久化并在重启后恢复；Artifact 的 missing/corrupt/staging/orphan 状态保持可见，
+  只产生 retention/orphan 报告，不自动删除；conversation Fork、工具恢复和确定性 checkpoint 仍未实现；
   工作空间/代码 rewind 不属于 Stage 4，长期偏好/知识学习留到 Stage 5。
   当前不存在过渡兼容写入器。
 

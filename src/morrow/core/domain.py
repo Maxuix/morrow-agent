@@ -28,6 +28,7 @@ SESSION_ID_PREFIX = "ses"
 TASK_RUN_ID_PREFIX = "task"
 TASK_TRANSITION_ID_PREFIX = "ttr"
 TASK_OUTCOME_ID_PREFIX = "out"
+ARTIFACT_ID_PREFIX = "art"
 TURN_ID_PREFIX = "turn"
 AGENT_RUN_ID_PREFIX = "arun"
 CONVERSATION_RECORD_ID_PREFIX = "rec"
@@ -165,6 +166,26 @@ class TaskOutcomeEvidenceRef(ProtocolModel):
         return self.reference_id
 
 
+class ArtifactReference(ProtocolModel):
+    """A bounded link to immutable bytes managed by the Artifact Store."""
+
+    artifact_id: str
+    role: str = Field(default="evidence", min_length=1, max_length=64)
+
+    @field_validator("artifact_id")
+    @classmethod
+    def valid_artifact_id(cls, value: str) -> str:
+        return validate_prefixed_id(value, ARTIFACT_ID_PREFIX)
+
+    @field_validator("role")
+    @classmethod
+    def valid_role(cls, value: str) -> str:
+        cleaned = " ".join(value.split())
+        if not cleaned or len(cleaned) > 64:
+            raise ValueError("artifact reference role must be bounded and non-empty")
+        return cleaned
+
+
 def _bounded_outcome_lines(
     values: tuple[str, ...], *, label: str, maximum: int = 64, line_limit: int = 512
 ) -> tuple[str, ...]:
@@ -199,6 +220,7 @@ class TaskOutcome(ProtocolModel):
     completion_basis: tuple[str, ...] = ()
     feedback: tuple[str, ...] = ()
     evidence_refs: tuple[TaskOutcomeEvidenceRef, ...] = ()
+    artifact_refs: tuple[ArtifactReference, ...] = ()
     created_at: datetime = Field(default_factory=utc_now)
 
     @field_validator("outcome_id")
@@ -255,6 +277,21 @@ class TaskOutcome(ProtocolModel):
     @classmethod
     def clean_evidence_lines(cls, values: tuple[str, ...], info) -> tuple[str, ...]:
         return _bounded_outcome_lines(values, label=info.field_name)
+
+    @field_validator("artifact_refs")
+    @classmethod
+    def bounded_artifact_refs(
+        cls, values: tuple[ArtifactReference, ...]
+    ) -> tuple[ArtifactReference, ...]:
+        if len(values) > 64:
+            raise ValueError("outcome contains too many artifact references")
+        seen: set[tuple[str, str]] = set()
+        for value in values:
+            key = (value.artifact_id, value.role)
+            if key in seen:
+                raise ValueError("outcome artifact references must be unique")
+            seen.add(key)
+        return values
 
     @model_validator(mode="after")
     def enforce_budget_and_redaction(self) -> TaskOutcome:

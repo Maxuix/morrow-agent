@@ -174,7 +174,11 @@ def test_v3_store_migrates_to_v4_recovery(tmp_path):
     report = upgraded.migrate()
     assert report.from_version == 3
     assert report.to_version == SUPPORTED_SCHEMA_VERSION
-    assert report.applied == ("recovery_reports", "task_run_lifecycle_and_outcomes")
+    assert report.applied == (
+        "recovery_reports",
+        "task_run_lifecycle_and_outcomes",
+        "artifact_store_and_references",
+    )
 
 
 def test_v4_task_children_survive_task_run_rebuild_to_v5(tmp_path):
@@ -208,7 +212,10 @@ def test_v4_task_children_survive_task_run_rebuild_to_v5(tmp_path):
         root, retry_policy=_retry(), clock=FixedClock(), maintenance_timeout=0
     )
     report = upgraded.migrate()
-    assert report.applied == ("task_run_lifecycle_and_outcomes",)
+    assert report.applied == (
+        "task_run_lifecycle_and_outcomes",
+        "artifact_store_and_references",
+    )
     with upgraded.open(StoreOpenMode.READ_WRITE) as opened:
         journal = SqliteOperationalJournal(opened)
         task = journal.get_task_run("ws_a", "task_1")

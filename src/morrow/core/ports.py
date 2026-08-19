@@ -7,6 +7,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Protocol
 
+from morrow.core.artifacts import ArtifactMetadata
 from morrow.core.models import (
     GlobalConfig,
     Message,
@@ -113,6 +114,16 @@ class Clock(Protocol):
 
 class IdSource(Protocol):
     def new_id(self, prefix: str) -> str: ...
+
+
+class ArtifactByteStorePort(Protocol):
+    """Managed byte publication; callers never provide a filesystem path."""
+
+    def publish(self, metadata: ArtifactMetadata, content: bytes, *, faults=None) -> Path: ...
+
+    def verify(self, metadata: ArtifactMetadata) -> None: ...
+
+    def read(self, metadata: ArtifactMetadata, *, max_bytes: int) -> bytes: ...
 
 
 class Adapter(Protocol):
