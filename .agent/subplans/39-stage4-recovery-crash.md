@@ -1,6 +1,6 @@
 # Subplan 39 — Recovery, Reconciliation, and Crash Harness
 
-> Status: pending
+> Status: active
 > Prerequisite: Subplan 38 accepted
 > Owns: interrupted-state classification, recovery decisions, and real crash evidence
 > Schema: v4 recovery report and decision records
@@ -32,7 +32,7 @@ action.
 
 ## Tasks
 
-- [ ] S4.39.1 Define RecoveryReport/items/decisions and legal resolution transitions with sanitized
+- [>] S4.39.1 Define RecoveryReport/items/decisions and legal resolution transitions with sanitized
   user-facing evidence.
 - [ ] S4.39.2 Implement startup discovery and a pure classifier for `never_started`,
   `safe_to_retry`, `requires_reconciliation`, `outcome_unknown`, and `completed`.

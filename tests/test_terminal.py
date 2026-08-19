@@ -74,6 +74,24 @@ async def test_terminal_approval_renders_only_sanitized_preview_and_accepts_yes(
 
 
 @pytest.mark.asyncio
+async def test_terminal_approval_shows_durable_approval_id():
+    terminal = ScriptedTerminal(["y"])
+    port = terminal_module.TerminalApprovalPort(terminal, object())
+
+    decision = await port.request(
+        ToolApprovalRequest(
+            call_id="c1",
+            effect=ToolEffect.PERSISTENT_WRITE,
+            preview=("配置预览：",),
+            approval_id="apr_1",
+        )
+    )
+
+    assert decision.approved is True
+    assert any("apr_1" in line for line in terminal.console.lines)
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("input_value", [EOFError(), KeyboardInterrupt()])
 async def test_terminal_approval_eof_or_ctrl_c_cancels_active_turn(input_value):
     terminal = ScriptedTerminal([input_value])

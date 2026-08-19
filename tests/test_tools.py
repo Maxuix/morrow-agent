@@ -215,6 +215,7 @@ async def test_required_approval_receives_only_sanitized_local_preview():
         "preview",
         "policy_verdict",
         "reason_codes",
+        "approval_id",
     }
     assert request.call_id == "call_1"
     assert request.effect == ToolEffect.SESSION_WRITE

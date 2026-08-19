@@ -38,6 +38,7 @@ DIGEST_PATTERN = re.compile(r"^[a-f0-9]{64}$")
 CONVERSATION_RECORD_MAX_BYTES = 256 * 1024
 AGENT_RUN_SNAPSHOT_MAX_BYTES = 64 * 1024
 ERROR_DETAIL_MAX_BYTES = 4 * 1024
+SECRET_NEEDLES = ("api_key", "authorization", "password", "credential", "sk-")
 
 
 class SessionLifecycle(StrEnum):
@@ -93,6 +94,14 @@ def require_payload_budget(payload: bytes, maximum: int, *, label: str) -> bytes
     if len(payload) > maximum:
         raise ValueError(f"{label} exceeds the durable payload budget")
     return payload
+
+
+def refuse_secret_material(payload: str | bytes, *, label: str) -> None:
+    text = payload if isinstance(payload, str) else payload.decode("utf-8")
+    serialized = text.casefold()
+    for needle in SECRET_NEEDLES:
+        if needle in serialized:
+            raise ValueError(f"{label} cannot contain secret material")
 
 
 def validate_prefixed_id(value: str, prefix: str) -> str:
@@ -187,10 +196,7 @@ class AgentRunSnapshot(ProtocolModel):
         dumped = self.model_dump(mode="json")
         payload = canonical_json_bytes(dumped)
         require_payload_budget(payload, AGENT_RUN_SNAPSHOT_MAX_BYTES, label="AgentRun snapshot")
-        serialized = payload.decode("utf-8").casefold()
-        for needle in ("api_key", "authorization", "password", "credential", "sk-"):
-            if needle in serialized:
-                raise ValueError("AgentRun snapshot cannot contain secret material")
+        refuse_secret_material(payload, label="AgentRun snapshot")
         return self
 
 

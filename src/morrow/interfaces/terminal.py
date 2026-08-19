@@ -122,6 +122,8 @@ class TerminalApprovalPort:
         lines = request.preview or ("未提供额外预览。",)
         self.terminal.console.print("\n".join(lines))
         self.terminal.console.print(f"副作用级别：{request.effect.value}")
+        if request.approval_id:
+            self.terminal.console.print(f"审批编号：{request.approval_id}")
         try:
             answer = await self.terminal.prompt(self.prompt_session, "确认执行？ [y/N] ")
         except (EOFError, KeyboardInterrupt):

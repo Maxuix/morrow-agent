@@ -164,6 +164,7 @@ class ToolApprovalRequest(ProtocolModel):
     preview: tuple[str, ...] = ()
     policy_verdict: Literal["require_approval"] = "require_approval"
     reason_codes: tuple[str, ...] = ()
+    approval_id: str | None = None
 
     @field_validator("call_id")
     @classmethod

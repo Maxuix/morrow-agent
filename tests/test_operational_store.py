@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 from morrow.adapters.credentials.keyring import MemoryCredentialStore
-from morrow.adapters.state.migrations import V1, V2, MigrationRegistry, SchemaMigration
+from morrow.adapters.state.migrations import V1, V2, V3, MigrationRegistry, SchemaMigration
 from morrow.adapters.state.operational import (
     SQLITE_HEADER,
     BusyRetryPolicy,
@@ -53,8 +53,8 @@ from morrow.services.workspace import DataRoot
 from morrow.testing import FixedClock
 
 STAGE3_FIXTURE = Path(__file__).parent / "fixtures" / "stage3_data_root"
-V3_PROBE = SchemaMigration(
-    version=3,
+V4_PROBE = SchemaMigration(
+    version=4,
     name="test_probe_records",
     statements=(
         """
@@ -89,8 +89,11 @@ def _retry(busy_timeout_ms: int = 0) -> BusyRetryPolicy:
 def _registry(*extra: SchemaMigration, supported: int | None = None) -> MigrationRegistry:
     registry = MigrationRegistry(supported_version=supported or (extra[-1].version if extra else 1))
     registry.add(V1)
-    if registry.supported_version >= 2 and all(item.version != 2 for item in extra):
+    extra_versions = {item.version for item in extra}
+    if registry.supported_version >= 2 and 2 not in extra_versions:
         registry.add(V2)
+    if registry.supported_version >= 3 and 3 not in extra_versions:
+        registry.add(V3)
     for migration in extra:
         registry.add(migration)
     return registry
@@ -321,7 +324,7 @@ def test_future_schema_is_refused_and_left_intact(tmp_path):
 def test_identity_and_user_version_mismatch_is_repair(tmp_path):
     root, store = _initialized(tmp_path)
     raw = sqlite3.connect(store.layout.database)
-    raw.execute("PRAGMA user_version = 3")
+    raw.execute("PRAGMA user_version = 4")
     raw.commit()
     raw.close()
     before = store.layout.database.read_bytes()
@@ -518,7 +521,7 @@ def test_maintenance_lock_excludes_a_second_process(tmp_path):
         assert error.value.code is StorageErrorCode.BUSY
         _assert_sanitized(error.value, str(root))
         with pytest.raises(StorageError) as migrate_error:
-            _store(root, registry=_registry(V3_PROBE, supported=3)).migrate()
+            _store(root, registry=_registry(V4_PROBE, supported=4)).migrate()
         assert migrate_error.value.code is StorageErrorCode.BUSY
         with pytest.raises(StorageError) as backup_error:
             store.backup()
@@ -547,21 +550,21 @@ def test_ordered_checksummed_migration_rolls_back_a_failed_step(tmp_path):
     good = _store(root)
     report = good.migrate()
     assert report.from_version == 1
-    assert report.to_version == 2
-    assert report.applied == ("durable_session_conversation",)
+    assert report.to_version == 3
+    assert report.applied == ("durable_session_conversation", "tool_execution_approval")
     assert report.backup_name
     assert (store.layout.backups_dir / report.backup_name).is_file()
 
     broken = SchemaMigration(
-        version=3,
+        version=4,
         name="broken_step",
         statements=("THIS IS NOT SQL",),
     )
     with pytest.raises(StorageError) as error:
-        _store(root, registry=_registry(broken, supported=3)).migrate()
+        _store(root, registry=_registry(broken, supported=4)).migrate()
     assert error.value.code is StorageErrorCode.UNAVAILABLE
     reopened = _store(root)
-    assert reopened.classify().schema_version == 2
+    assert reopened.classify().schema_version == 3
 
 
 def test_interrupted_migration_before_commit_leaves_previous_version(tmp_path):

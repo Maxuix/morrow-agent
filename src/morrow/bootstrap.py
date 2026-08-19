@@ -37,6 +37,7 @@ from morrow.application.orchestrator import SessionOrchestrator
 from morrow.application.turns import SessionPersistence
 from morrow.core.capabilities import PermissionProfile, ProcessIsolation, WorkspaceCapability
 from morrow.core.domain import DurableSession
+from morrow.core.execution import missing_declarations
 from morrow.core.models import Preferences
 from morrow.core.store import StorageError, StorageErrorCode, StoreOpenMode
 from morrow.runtime.agent import AgentRuntime
@@ -105,6 +106,7 @@ def _default_tool_executor(
     git: GitInspectionService,
     sandbox: SandboxSnapshotService | None = None,
     sandbox_enabled: bool = False,
+    process_isolation: ProcessIsolation = ProcessIsolation.HOST,
 ) -> ToolExecutor:
     registry = ToolRegistry()
     if config_service is not None:
@@ -119,6 +121,10 @@ def _default_tool_executor(
         registry.register(tool)
     if sandbox is not None and process.requires_sandbox and sandbox_enabled:
         registry.register(make_promote_sandbox_tool(sandbox, mutation, changes))
+    names = tuple(tool.function.name for tool in registry.definitions())
+    missing = missing_declarations(names, process_isolation=process_isolation)
+    if missing:
+        raise RuntimeError("registered tools lack durable declarations: " + ", ".join(missing))
     return ToolExecutor(
         registry.snapshot(),
         run_policy,
@@ -286,6 +292,7 @@ def build_session_application(
             git=git,
             sandbox=sandbox,
             sandbox_enabled=sandbox_capability.supported,
+            process_isolation=permission_profile.process_isolation,
         )
         if adapter_support.tool_protocol == "openai_function"
         else None
@@ -307,6 +314,7 @@ def build_session_application(
         model=model,
         run_policy=run_policy,
         runtime_instance_id=f"inst-{os.getpid()}",
+        mutation=mutation,
     )
     if resume_session_id:
         persistence.restore_into(session)

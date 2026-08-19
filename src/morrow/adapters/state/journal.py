@@ -21,6 +21,17 @@ from morrow.core.domain import (
     TurnSubmitReceipt,
     canonical_json_bytes,
 )
+from morrow.core.execution import (
+    ApprovalResolution,
+    DurableApproval,
+    DurableToolExecution,
+    DurableToolFacts,
+    HandlerResultEnvelope,
+    PreparedIntent,
+    ToolExecutionDisposition,
+    ToolExecutionState,
+    intent_hash,
+)
 from morrow.core.store import StorageError, StorageErrorCode
 
 _SESSION_COLUMNS = (
@@ -34,6 +45,25 @@ _AGENT_COLUMNS = (
 )
 _RECORD_COLUMNS = "record_id, session_id, conversation_position, kind, payload_json, payload_bytes"
 _RECEIPT_COLUMNS = "session_id, client_message_id, request_digest, disposition, turn_id, command_id"
+_EXECUTION_COLUMNS = (
+    "tool_execution_id, workspace_id, session_id, task_run_id, turn_id, agent_run_id, "
+    "assistant_record_id, call_id, ordinal, tool_name, state, disposition, row_version, "
+    "retry_of_execution_id, approval_id, intent_json, intent_hash, schema_digest, "
+    "permission_context_digest, result_envelope_json, facts_json, error_code, error_detail, "
+    "created_at_unix, executing_at_unix, handler_completed_at_unix, closed_at_unix"
+)
+_APPROVAL_COLUMNS = (
+    "approval_id, tool_execution_id, intent_hash, tool_schema_digest, "
+    "permission_context_digest, requested_scope, granted_scope, preview_json, preview_digest, "
+    "row_version, created_at_unix, expires_at_unix, resolution, resolved_at_unix, "
+    "consumed_at_unix, command_id"
+)
+_APPROVAL_SELECT = (
+    "a.approval_id, a.tool_execution_id, a.intent_hash, a.tool_schema_digest, "
+    "a.permission_context_digest, a.requested_scope, a.granted_scope, a.preview_json, "
+    "a.preview_digest, a.row_version, a.created_at_unix, a.expires_at_unix, a.resolution, "
+    "a.resolved_at_unix, a.consumed_at_unix, a.command_id"
+)
 
 
 def _unix(value: datetime) -> int:
@@ -425,6 +455,270 @@ class SqliteOperationalJournal:
 
         return self.transact(work)
 
+    def put_execution(
+        self, workspace_id: str, execution: DurableToolExecution
+    ) -> DurableToolExecution:
+        def work(journal: SqliteOperationalJournal) -> DurableToolExecution:
+            journal._insert_execution(workspace_id, execution)
+            loaded = journal.get_execution(workspace_id, execution.tool_execution_id)
+            if loaded is None:
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE, "operational execution could not be read"
+                )
+            return loaded
+
+        return self.transact(work)
+
+    def get_execution(
+        self, workspace_id: str, tool_execution_id: str
+    ) -> DurableToolExecution | None:
+        row = self._read_one(
+            f"SELECT {_EXECUTION_COLUMNS} FROM tool_executions "
+            "WHERE tool_execution_id = ? AND workspace_id = ?",
+            (tool_execution_id, workspace_id),
+        )
+        if row is None:
+            return None
+        return _execution_from_row(row)
+
+    def list_executions(
+        self, workspace_id: str, *, agent_run_id: str
+    ) -> tuple[DurableToolExecution, ...]:
+        rows = self._read_all(
+            f"SELECT {_EXECUTION_COLUMNS} FROM tool_executions "
+            "WHERE workspace_id = ? AND agent_run_id = ? ORDER BY ordinal ASC",
+            (workspace_id, agent_run_id),
+        )
+        return tuple(_execution_from_row(row) for row in rows)
+
+    def save_execution(
+        self,
+        workspace_id: str,
+        execution: DurableToolExecution,
+        *,
+        expected_row_version: int,
+    ) -> DurableToolExecution:
+        if execution.workspace_id != workspace_id:
+            raise StorageError(
+                StorageErrorCode.UNAVAILABLE, "operational execution is outside the workspace"
+            )
+
+        def work(journal: SqliteOperationalJournal) -> DurableToolExecution:
+            existing = journal.get_execution(workspace_id, execution.tool_execution_id)
+            if existing is None:
+                raise StorageError(StorageErrorCode.NOT_FOUND, "operational execution is missing")
+            if existing.row_version != expected_row_version:
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE, "operational execution row version is stale"
+                )
+            if execution.row_version != expected_row_version + 1:
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE, "operational execution row version is stale"
+                )
+            journal._executor_or_raise().execute(
+                """
+                UPDATE tool_executions
+                SET state = ?, disposition = ?, row_version = ?, approval_id = ?,
+                    result_envelope_json = ?, facts_json = ?, error_code = ?,
+                    error_detail = ?, executing_at_unix = ?,
+                    handler_completed_at_unix = ?, closed_at_unix = ?
+                WHERE tool_execution_id = ? AND workspace_id = ? AND row_version = ?
+                """,
+                (
+                    execution.state.value,
+                    execution.disposition.value,
+                    execution.row_version,
+                    execution.approval_id,
+                    _optional_json(execution.result_envelope),
+                    _optional_json(execution.facts),
+                    execution.error_code,
+                    execution.error_detail,
+                    _optional_unix(execution.executing_at),
+                    _optional_unix(execution.handler_completed_at),
+                    _optional_unix(execution.closed_at),
+                    execution.tool_execution_id,
+                    workspace_id,
+                    expected_row_version,
+                ),
+            )
+            loaded = journal.get_execution(workspace_id, execution.tool_execution_id)
+            if loaded is None or loaded.row_version != execution.row_version:
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE, "operational execution row version is stale"
+                )
+            return loaded
+
+        return self.transact(work)
+
+    def put_approval(self, workspace_id: str, approval: DurableApproval) -> DurableApproval:
+        def work(journal: SqliteOperationalJournal) -> DurableApproval:
+            execution = journal.get_execution(workspace_id, approval.tool_execution_id)
+            if execution is None:
+                raise StorageError(StorageErrorCode.NOT_FOUND, "operational execution is missing")
+            stored_hash = intent_hash(execution.intent)
+            if (
+                approval.intent_hash != stored_hash
+                or approval.tool_schema_digest != execution.intent.schema_digest
+                or approval.permission_context_digest != execution.intent.permission_context_digest
+            ):
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE,
+                    "operational approval does not match the execution",
+                )
+            journal._executor_or_raise().execute(
+                f"INSERT INTO approvals({_APPROVAL_COLUMNS}) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    approval.approval_id,
+                    approval.tool_execution_id,
+                    approval.intent_hash,
+                    approval.tool_schema_digest,
+                    approval.permission_context_digest,
+                    approval.requested_scope,
+                    approval.granted_scope,
+                    canonical_json_bytes(list(approval.preview)).decode("utf-8"),
+                    approval.preview_digest,
+                    approval.row_version,
+                    _unix(approval.created_at),
+                    _unix(approval.expires_at),
+                    approval.resolution.value,
+                    _optional_unix(approval.resolved_at),
+                    _optional_unix(approval.consumed_at),
+                    approval.command_id,
+                ),
+            )
+            loaded = journal.get_approval(workspace_id, approval.approval_id)
+            if loaded is None:
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE, "operational approval could not be read"
+                )
+            return loaded
+
+        return self.transact(work)
+
+    def get_approval(self, workspace_id: str, approval_id: str) -> DurableApproval | None:
+        row = self._read_one(
+            f"SELECT {_APPROVAL_SELECT} FROM approvals a "
+            "JOIN tool_executions e ON e.tool_execution_id = a.tool_execution_id "
+            "WHERE a.approval_id = ? AND e.workspace_id = ?",
+            (approval_id, workspace_id),
+        )
+        if row is None:
+            return None
+        return _approval_from_row(row)
+
+    def get_approval_for_execution(
+        self, workspace_id: str, tool_execution_id: str
+    ) -> DurableApproval | None:
+        row = self._read_one(
+            f"SELECT {_APPROVAL_SELECT} FROM approvals a "
+            "JOIN tool_executions e ON e.tool_execution_id = a.tool_execution_id "
+            "WHERE a.tool_execution_id = ? AND e.workspace_id = ?",
+            (tool_execution_id, workspace_id),
+        )
+        if row is None:
+            return None
+        return _approval_from_row(row)
+
+    def save_approval(
+        self,
+        workspace_id: str,
+        approval: DurableApproval,
+        *,
+        expected_row_version: int,
+    ) -> DurableApproval:
+        def work(journal: SqliteOperationalJournal) -> DurableApproval:
+            existing = journal.get_approval(workspace_id, approval.approval_id)
+            if existing is None:
+                raise StorageError(StorageErrorCode.NOT_FOUND, "operational approval is missing")
+            if existing.row_version != expected_row_version:
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE, "operational approval row version is stale"
+                )
+            if approval.row_version != expected_row_version + 1:
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE, "operational approval row version is stale"
+                )
+            journal._executor_or_raise().execute(
+                """
+                UPDATE approvals
+                SET granted_scope = ?, row_version = ?, resolution = ?,
+                    resolved_at_unix = ?, consumed_at_unix = ?, command_id = ?
+                WHERE approval_id = ? AND row_version = ?
+                """,
+                (
+                    approval.granted_scope,
+                    approval.row_version,
+                    approval.resolution.value,
+                    _optional_unix(approval.resolved_at),
+                    _optional_unix(approval.consumed_at),
+                    approval.command_id,
+                    approval.approval_id,
+                    expected_row_version,
+                ),
+            )
+            loaded = journal.get_approval(workspace_id, approval.approval_id)
+            if loaded is None or loaded.row_version != approval.row_version:
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE, "operational approval row version is stale"
+                )
+            return loaded
+
+        return self.transact(work)
+
+    def _insert_execution(self, workspace_id: str, execution: DurableToolExecution) -> None:
+        if execution.workspace_id != workspace_id:
+            raise StorageError(
+                StorageErrorCode.UNAVAILABLE, "operational execution is outside the workspace"
+            )
+        run = self.get_agent_run(workspace_id, execution.agent_run_id)
+        if (
+            run is None
+            or run.session_id != execution.session_id
+            or run.turn_id != execution.turn_id
+        ):
+            raise StorageError(
+                StorageErrorCode.UNAVAILABLE, "operational execution does not belong to the run"
+            )
+        task = self.get_task_run(workspace_id, execution.task_run_id)
+        if task is None or task.session_id != execution.session_id:
+            raise StorageError(
+                StorageErrorCode.UNAVAILABLE, "operational execution does not belong to the task"
+            )
+        self._executor_or_raise().execute(
+            f"INSERT INTO tool_executions({_EXECUTION_COLUMNS}) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                execution.tool_execution_id,
+                execution.workspace_id,
+                execution.session_id,
+                execution.task_run_id,
+                execution.turn_id,
+                execution.agent_run_id,
+                execution.assistant_record_id,
+                execution.call_id,
+                execution.ordinal,
+                execution.tool_name,
+                execution.state.value,
+                execution.disposition.value,
+                execution.row_version,
+                execution.retry_of_execution_id,
+                execution.approval_id,
+                canonical_json_bytes(execution.intent.model_dump(mode="json")).decode("utf-8"),
+                intent_hash(execution.intent),
+                execution.intent.schema_digest,
+                execution.intent.permission_context_digest,
+                _optional_json(execution.result_envelope),
+                _optional_json(execution.facts),
+                execution.error_code,
+                execution.error_detail,
+                _unix(execution.created_at),
+                _optional_unix(execution.executing_at),
+                _optional_unix(execution.handler_completed_at),
+                _optional_unix(execution.closed_at),
+            ),
+        )
+
     def _insert_session(self, session: DurableSession) -> None:
         self._executor_or_raise().execute(
             f"INSERT INTO sessions({_SESSION_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
@@ -541,4 +835,88 @@ def _receipt_from_row(row: tuple[object, ...]) -> TurnSubmitReceipt:
         disposition=TurnSubmitDisposition(str(row[3])),
         turn_id=str(row[4]) if row[4] is not None else None,
         command_id=str(row[5]) if row[5] is not None else None,
+    )
+
+
+def _optional_unix(value: datetime | None) -> int | None:
+    if value is None:
+        return None
+    return _unix(value)
+
+
+def _optional_json(value: object | None) -> str | None:
+    if value is None:
+        return None
+    dumped = value.model_dump(mode="json") if hasattr(value, "model_dump") else value
+    return canonical_json_bytes(dumped).decode("utf-8")
+
+
+def _load_mapping(raw: object, *, label: str) -> dict:
+    payload = json.loads(str(raw))
+    if not isinstance(payload, dict):
+        raise StorageError(StorageErrorCode.NEEDS_REPAIR, f"{label} is not a mapping")
+    return payload
+
+
+def _execution_from_row(row: tuple[object, ...]) -> DurableToolExecution:
+    intent = PreparedIntent.model_validate(_load_mapping(row[15], label="prepared intent"))
+    envelope = None
+    if row[19] is not None:
+        envelope = HandlerResultEnvelope.model_validate(
+            _load_mapping(row[19], label="tool result envelope")
+        )
+    facts = None
+    if row[20] is not None:
+        facts = DurableToolFacts.model_validate(
+            _load_mapping(row[20], label="structured tool facts")
+        )
+    return DurableToolExecution(
+        tool_execution_id=str(row[0]),
+        workspace_id=str(row[1]),
+        session_id=str(row[2]),
+        task_run_id=str(row[3]),
+        turn_id=str(row[4]),
+        agent_run_id=str(row[5]),
+        assistant_record_id=str(row[6]) if row[6] is not None else None,
+        call_id=str(row[7]),
+        ordinal=int(row[8]),
+        tool_name=str(row[9]),
+        state=ToolExecutionState(str(row[10])),
+        disposition=ToolExecutionDisposition(str(row[11])),
+        row_version=int(row[12]),
+        retry_of_execution_id=str(row[13]) if row[13] is not None else None,
+        approval_id=str(row[14]) if row[14] is not None else None,
+        intent=intent,
+        result_envelope=envelope,
+        facts=facts,
+        error_code=str(row[21]) if row[21] is not None else None,
+        error_detail=str(row[22]) if row[22] is not None else None,
+        created_at=_from_unix(row[23]),
+        executing_at=_from_unix(row[24]) if row[24] is not None else None,
+        handler_completed_at=_from_unix(row[25]) if row[25] is not None else None,
+        closed_at=_from_unix(row[26]) if row[26] is not None else None,
+    )
+
+
+def _approval_from_row(row: tuple[object, ...]) -> DurableApproval:
+    preview_raw = json.loads(str(row[7]))
+    if not isinstance(preview_raw, list) or any(not isinstance(item, str) for item in preview_raw):
+        raise StorageError(StorageErrorCode.NEEDS_REPAIR, "approval preview is not a string list")
+    return DurableApproval(
+        approval_id=str(row[0]),
+        tool_execution_id=str(row[1]),
+        intent_hash=str(row[2]),
+        tool_schema_digest=str(row[3]),
+        permission_context_digest=str(row[4]),
+        requested_scope=str(row[5]),
+        granted_scope=str(row[6]) if row[6] is not None else None,
+        preview=tuple(str(item) for item in preview_raw),
+        preview_digest=str(row[8]),
+        row_version=int(row[9]),
+        created_at=_from_unix(row[10]),
+        expires_at=_from_unix(row[11]),
+        resolution=ApprovalResolution(str(row[12])),
+        resolved_at=_from_unix(row[13]) if row[13] is not None else None,
+        consumed_at=_from_unix(row[14]) if row[14] is not None else None,
+        command_id=str(row[15]) if row[15] is not None else None,
     )

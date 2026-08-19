@@ -1,10 +1,11 @@
 # Morrow 架构基线
 
-> 状态：阶段 2、阶段 3 已完成（当前声明平台为 macOS；Linux 原生运行仍 unsupported）；阶段 4 已落地 Subplan 36 的 v1 Operational Store 基础，尚无业务表
+> 状态：阶段 2、阶段 3 已完成（当前声明平台为 macOS；Linux 原生运行仍 unsupported）；阶段 4 已落地 Operational Store v3 的 Session 历史与工具/审批日志合同
 
 本文锁定当前依赖方向、数据所有权和安全边界。阶段 3 的能力策略、配置工具、工作空间读搜、冲突安全文件变更、审批后 Host 命令、只读 Git 和当前 macOS 原生沙箱
-已经交付；Linux 原生运行尚未声明支持。Stage 4 已落地数据根 SQLite Operational Store 的 v1
-身份/迁移/备份基础，业务持久化仍未开始；Stage 5 的可审查学习、Stage 6 的 Skills/MCP，
+已经交付；Linux 原生运行尚未声明支持。Stage 4 已落地数据根 SQLite Operational Store 的
+身份/迁移/备份基础、v2 无工具 Session 历史，以及 v3 工具执行/审批日志合同；恢复分类与
+Artifact 仍未开始。Stage 5 的可审查学习、Stage 6 的 Skills/MCP，
 以及 Stage 7–10 的 Workflow、GUI、后台自动化和产品化均尚未开始。
 
 ## 分层与依赖方向
@@ -121,6 +122,9 @@ Service 或 Port：
   → 构造进程内 SessionApplication
   → AgentLoop 接纳 User，ContextBuilder 组装合法历史和工具
   → Adapter 流式返回文本或 tool calls
+  → ConversationLog 校验 Assistant ToolCall 后，同一事务提交有序 ToolExecution 意图
+  → 审批 consume 与 executing 同一事务；handler 只在已提交意图可见后运行
+  → handler_completed 与 ToolMessage/closed 分开记录
   → ToolExecutor 校验、预检、审批并串行执行受限工具，闭合 ToolCycle
   → 最终回答、取消或确定性 stop_code
   → 先提交 Turn/User，再发出 turn.started
@@ -138,9 +142,9 @@ Service 或 Port：
 | Preferences | global、workspace、process-local session | 配置服务 | global → workspace → session 合并 |
 | 工作空间路径索引 | `workspace-index.yaml` | Workspace 服务 | 独立于项目状态 |
 | 工作空间 Profile | `profile.yaml` | Workspace/配置服务 | 按 workspace_id 隔离 |
-| 当前会话消息 | 进程内 ConversationLog 投影；权威在 Operational Store v2 | AgentLoop 经 ConversationLog 提交 | 无工具多轮对话可在重启后按 Session 恢复 |
+| 当前会话消息 | 进程内 ConversationLog 投影；权威在 Operational Store v3 | AgentLoop 经 ConversationLog 提交 | 无工具多轮对话可在重启后按 Session 恢复；工具意图合同已定义 |
 | Agent 运行策略 | 随包策略 → RunPolicy | composition root | 不属于用户配置 |
-| 运行记录 / Artifact 元数据 | 数据根 `store/operational.sqlite` | v1 仅身份与迁移账本 | 合同见 [Operational Store ADR](decisions/stage-4-operational-store.md)；YAML 与凭据权威不变 |
+| 运行记录 / Artifact 元数据 | 数据根 `store/operational.sqlite` | v3 Session/对话/工具执行/审批；Artifact 仍未落地 | 合同见 [Operational Store ADR](decisions/stage-4-operational-store.md)；YAML 与凭据权威不变 |
 
 ProjectStateStore 只支持 `profile.yaml` 和 `preferences.yaml`。两者使用版本化文档信封、revision、
 锁、临时文件、文件/目录 `fsync`、原子替换和备份；`state: cleared` 是合法 tombstone。
@@ -152,7 +156,7 @@ workspace Preferences 损坏只隔离该层。旧 `handoff.yaml(.bak)` 不属于
 `config.yaml` 是聚合文档，Provider 与全局 Preferences 的写入必须在同一事务锁内保留对方字段。
 `workspace-index.yaml` 由独立 WorkspaceIndexStore 管理。
 
-### Operational Store 布局（v1）
+### Operational Store 布局（v3）
 
 数据根（`--state-root` 或 `~/.morrow`）下的保留路径：
 
@@ -165,8 +169,9 @@ workspace Preferences 损坏只隔离该层。旧 `handoff.yaml(.bak)` 不属于
 ```
 
 `DataRoot` 暴露 `store_path`、`artifacts_path`、`backups_path` 与 `operational_lock_path`。
-`build_session_application()` 会打开或创建 v2 Operational Store，并把无工具对话经 ConversationLog
-提交到 Session / TaskRun / Turn / AgentRun / conversation / receipt 表。YAML 与凭据权威不变。
+`build_session_application()` 会打开或创建 v3 Operational Store，并把无工具对话经 ConversationLog
+提交到 Session / TaskRun / Turn / AgentRun / conversation / receipt 表。v3 另有 tool_executions
+与 approvals 表；生产工具路径尚未写入这些表。YAML 与凭据权威不变。
 损坏、外源或未来版本文件保持原字节并失败关闭。
 
 ## 事件与安全边界

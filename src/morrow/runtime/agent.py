@@ -10,6 +10,8 @@ from collections.abc import AsyncIterator
 from morrow.application.context import ContextBudgetError
 from morrow.core.capabilities import ToolRunContext
 from morrow.core.events import completion_payload, make_event
+from morrow.core.execution import ToolExecutionState
+from morrow.core.faults import FaultPoint, InjectedFault
 from morrow.core.models import (
     AgentEvent,
     AgentStopCode,
@@ -21,10 +23,13 @@ from morrow.core.models import (
     ModelFinishReason,
     ModelRef,
     ProtocolModel,
+    ToolApprovalRequest,
     ToolDefinition,
+    ToolEffect,
     ToolMessage,
     UserMessage,
     sanitize_text,
+    utc_now,
 )
 from morrow.core.ports import Clock, IdSource, ModelProvider
 from morrow.runtime.conversation import ConversationLogError
@@ -511,8 +516,26 @@ class AgentLoop:
                         yield item
                     return
 
+                durable_executions = ()
                 try:
-                    session.append_assistant(message)
+                    planned = session.log.plan_append_assistant(message)
+                    prepare = getattr(session.committer, "prepare_and_commit_assistant", None)
+                    if prepare is not None:
+                        durable_executions = prepare(
+                            planned,
+                            message,
+                            run_context=run_context,
+                            tool_executor=self.tool_executor,
+                        )
+                        missing = [
+                            item.tool_execution_id
+                            for item in durable_executions
+                            if not session.committer.execution_is_visible(item.tool_execution_id)
+                        ]
+                        if missing:
+                            raise ConversationLogError("committed tool intent is not observable")
+                    else:
+                        session.commit_append(planned)
                 except ConversationLogError:
                     for item in terminal_error(
                         "模型响应未正常结束", AgentStopCode.INVALID_RESPONSE
@@ -580,26 +603,49 @@ class AgentLoop:
                         return
                     active_running_id = call.id
                     yield tool_status(call, "running", index, len(calls))
+                    durable = durable_executions[index - 1] if durable_executions else None
+                    skip_approval = durable is not None
+                    wall = self.clock.now() if self.clock is not None else utc_now()
+                    denied_result = None
+                    if durable is not None:
+                        durable, run_handler, denied_result = await self._gate_durable(
+                            session,
+                            durable,
+                            call,
+                            now=wall,
+                            result_limit=per_call_result_limit,
+                        )
                     try:
-                        execute_with_context = getattr(
-                            self.tool_executor, "execute_with_context", None
-                        )
-                        if execute_with_context is not None:
-                            execution = execute_with_context(
-                                call,
-                                result_limit=per_call_result_limit,
-                                run_context=run_context,
-                                ordinal=index,
-                                total=len(calls),
-                            )
+                        if denied_result is not None:
+                            result = denied_result
                         else:
-                            execution = self.tool_executor.execute(
-                                call, result_limit=per_call_result_limit
+                            if durable is not None:
+                                session.committer.faults.check(FaultPoint.HANDLER_BEFORE_ENTER)
+                            execute_with_context = getattr(
+                                self.tool_executor, "execute_with_context", None
                             )
-                        result = await asyncio.wait_for(
-                            execution,
-                            timeout=min(policy.tool_timeout_seconds, deadline - now),
-                        )
+                            extra = {"skip_approval": True} if skip_approval else {}
+                            if execute_with_context is not None:
+                                execution = execute_with_context(
+                                    call,
+                                    result_limit=per_call_result_limit,
+                                    run_context=run_context,
+                                    ordinal=index,
+                                    total=len(calls),
+                                    **extra,
+                                )
+                            else:
+                                execution = self.tool_executor.execute(
+                                    call,
+                                    result_limit=per_call_result_limit,
+                                    **extra,
+                                )
+                            result = await asyncio.wait_for(
+                                execution,
+                                timeout=min(policy.tool_timeout_seconds, deadline - now),
+                            )
+                            if durable is not None:
+                                session.committer.faults.check(FaultPoint.HANDLER_AFTER_RETURN)
                     except TimeoutError:
                         result = self.tool_executor.error_outcome(
                             call,
@@ -607,7 +653,15 @@ class AgentLoop:
                             "工具执行超时",
                             result_limit=per_call_result_limit,
                         )
-                    session.append_tool_result(call.id, result.envelope)
+                    if durable is not None:
+                        if durable.state is not ToolExecutionState.CLOSED:
+                            durable = session.committer.record_handler_completed(
+                                durable, result, now=wall
+                            )
+                        planned_tool = session.log.plan_append_tool_result(call.id, result.envelope)
+                        session.committer.commit_tool_message(planned_tool, durable, now=wall)
+                    else:
+                        session.append_tool_result(call.id, result.envelope)
                     cycle_outcomes.append(result)
                     run_context.note_tool_outcome(ok=result.ok, error_code=result.error_code)
                     active_running_id = None
@@ -631,6 +685,9 @@ class AgentLoop:
                     for item in terminal_error("检测到重复工具循环", AgentStopCode.LOOP_DETECTED):
                         yield item
                     return
+        except InjectedFault:
+            settled = True
+            raise
         except asyncio.CancelledError:
             if final_committed:
                 return
@@ -700,6 +757,42 @@ class AgentLoop:
                     session.finish_turn(FinishReason.CANCELLED, interrupted_call_ids=interrupted)
                 except Exception:
                     pass
+
+    async def _gate_durable(self, session, execution, call, *, now, result_limit):
+        committer = session.committer
+        if execution.intent.requires_approval:
+            approval = committer.create_pending_approval(execution, now=now)
+            registered = (
+                self.tool_executor.tool_set.tools.get(call.name)
+                if self.tool_executor is not None
+                else None
+            )
+            request = ToolApprovalRequest(
+                call_id=call.id,
+                effect=(
+                    registered.execution_policy.effect
+                    if registered is not None
+                    else ToolEffect.NONE
+                ),
+                preview=execution.intent.preview,
+                approval_id=approval.approval_id,
+            )
+            decision = await self.tool_executor._request_approval(request)
+            approved = bool(decision is not None and decision.approved)
+            execution, _approval, run_handler = committer.consume_and_mark_executing(
+                execution, approval, approved=approved, now=now
+            )
+            if run_handler:
+                return execution, True, None
+            denied = self.tool_executor.error_outcome(
+                call,
+                ToolErrorCode.APPROVAL_REJECTED,
+                "工具操作未获批准",
+                result_limit=result_limit,
+            )
+            return execution, False, denied
+        execution = committer.mark_executing(execution, now=now)
+        return execution, True, None
 
     def _cycle_result_limit(self, message: AssistantMessage) -> int | None:
         """Largest equal raw envelope cap safe under worst-case JSON escaping."""

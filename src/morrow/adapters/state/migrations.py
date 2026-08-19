@@ -1,6 +1,6 @@
 """Ordered, checksummed Operational Store migrations.
 
-Production currently owns schema v1–v2. Versions 3–9 stay reserved for later
+Production currently owns schema v1–v3. Versions 4–9 stay reserved for later
 subplans and must not be renumbered after they land.
 """
 
@@ -145,6 +145,98 @@ V2_STATEMENTS = (
 
 V2 = SchemaMigration(version=2, name=V2_NAME, statements=V2_STATEMENTS)
 
+V3_NAME = "tool_execution_approval"
+V3_STATEMENTS = (
+    """
+    CREATE TABLE tool_executions (
+        tool_execution_id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        session_id TEXT NOT NULL REFERENCES sessions(session_id),
+        task_run_id TEXT NOT NULL REFERENCES task_runs(task_run_id),
+        turn_id TEXT NOT NULL REFERENCES turns(turn_id),
+        agent_run_id TEXT NOT NULL REFERENCES agent_runs(agent_run_id),
+        assistant_record_id TEXT REFERENCES conversation_records(record_id),
+        call_id TEXT NOT NULL,
+        ordinal INTEGER NOT NULL CHECK (ordinal >= 1),
+        tool_name TEXT NOT NULL,
+        state TEXT NOT NULL
+            CHECK (state IN (
+                'prepared', 'awaiting_approval', 'executing',
+                'handler_completed', 'closed'
+            )),
+        disposition TEXT NOT NULL
+            CHECK (disposition IN (
+                'pending', 'denied', 'succeeded', 'failed',
+                'cancelled', 'interrupted', 'unknown'
+            )),
+        row_version INTEGER NOT NULL CHECK (row_version >= 1),
+        retry_of_execution_id TEXT REFERENCES tool_executions(tool_execution_id),
+        approval_id TEXT,
+        intent_json TEXT NOT NULL,
+        intent_hash TEXT NOT NULL CHECK (length(intent_hash) = 64),
+        schema_digest TEXT NOT NULL CHECK (length(schema_digest) = 64),
+        permission_context_digest TEXT NOT NULL
+            CHECK (length(permission_context_digest) = 64),
+        result_envelope_json TEXT,
+        facts_json TEXT,
+        error_code TEXT,
+        error_detail TEXT,
+        created_at_unix INTEGER NOT NULL,
+        executing_at_unix INTEGER,
+        handler_completed_at_unix INTEGER,
+        closed_at_unix INTEGER,
+        UNIQUE (assistant_record_id, ordinal),
+        CHECK (
+            state != 'closed'
+            OR disposition IN (
+                'denied', 'succeeded', 'failed', 'cancelled',
+                'interrupted', 'unknown'
+            )
+        ),
+        CHECK (state != 'handler_completed' OR disposition != 'pending')
+    )
+    """,
+    """
+    CREATE INDEX tool_executions_session
+        ON tool_executions(workspace_id, session_id)
+    """,
+    """
+    CREATE INDEX tool_executions_turn_ordinal
+        ON tool_executions(turn_id, ordinal)
+    """,
+    """
+    CREATE INDEX tool_executions_call
+        ON tool_executions(agent_run_id, call_id)
+    """,
+    """
+    CREATE TABLE approvals (
+        approval_id TEXT PRIMARY KEY,
+        tool_execution_id TEXT NOT NULL UNIQUE
+            REFERENCES tool_executions(tool_execution_id),
+        intent_hash TEXT NOT NULL CHECK (length(intent_hash) = 64),
+        tool_schema_digest TEXT NOT NULL CHECK (length(tool_schema_digest) = 64),
+        permission_context_digest TEXT NOT NULL
+            CHECK (length(permission_context_digest) = 64),
+        requested_scope TEXT NOT NULL,
+        granted_scope TEXT,
+        preview_json TEXT NOT NULL,
+        preview_digest TEXT NOT NULL CHECK (length(preview_digest) = 64),
+        row_version INTEGER NOT NULL CHECK (row_version >= 1),
+        created_at_unix INTEGER NOT NULL,
+        expires_at_unix INTEGER NOT NULL,
+        resolution TEXT NOT NULL
+            CHECK (resolution IN ('pending', 'approved', 'denied', 'expired')),
+        resolved_at_unix INTEGER,
+        consumed_at_unix INTEGER,
+        command_id TEXT,
+        CHECK (expires_at_unix > created_at_unix),
+        CHECK (consumed_at_unix IS NULL OR resolution = 'approved')
+    )
+    """,
+)
+
+V3 = SchemaMigration(version=3, name=V3_NAME, statements=V3_STATEMENTS)
+
 
 class MigrationRegistry:
     def __init__(self, *, supported_version: int = SUPPORTED_SCHEMA_VERSION) -> None:
@@ -201,6 +293,7 @@ def production_registry() -> MigrationRegistry:
     registry = MigrationRegistry(supported_version=SUPPORTED_SCHEMA_VERSION)
     registry.add(V1)
     registry.add(V2)
+    registry.add(V3)
     return registry
 
 

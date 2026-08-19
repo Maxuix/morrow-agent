@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from morrow.adapters.state.journal import SqliteOperationalJournal
-from morrow.adapters.state.migrations import V1, MigrationRegistry
+from morrow.adapters.state.migrations import V1, V2, MigrationRegistry
 from morrow.adapters.state.operational import BusyRetryPolicy, OperationalStore
 from morrow.core.domain import (
     AgentRunSnapshot,
@@ -83,7 +83,7 @@ def _task(
     return DurableTaskRun(task_run_id=task_run_id, session_id=session_id, workspace_id=workspace_id)
 
 
-def test_initialize_creates_v2_business_tables(tmp_path):
+def test_initialize_creates_v3_business_tables(tmp_path):
     _store, session, journal = _open_journal(tmp_path)
     try:
         assert session.schema_version == SUPPORTED_SCHEMA_VERSION
@@ -102,13 +102,15 @@ def test_initialize_creates_v2_business_tables(tmp_path):
             "agent_runs",
             "conversation_records",
             "turn_submit_receipts",
+            "tool_executions",
+            "approvals",
         }.issubset(names)
         assert journal.list_sessions("ws_a") == ()
     finally:
         session.close()
 
 
-def test_v1_store_migrates_to_v2_journal(tmp_path):
+def test_v1_store_migrates_to_supported_journal(tmp_path):
     v1 = MigrationRegistry(supported_version=1)
     v1.add(V1)
     store, session, _journal = _open_journal(tmp_path, registry=v1)
@@ -120,12 +122,39 @@ def test_v1_store_migrates_to_v2_journal(tmp_path):
     )
     report = upgraded.migrate()
     assert report.from_version == 1
-    assert report.to_version == 2
+    assert report.to_version == SUPPORTED_SCHEMA_VERSION
     with upgraded.open(StoreOpenMode.READ_WRITE) as opened:
         journal = SqliteOperationalJournal(opened)
         created = journal.create_session(_session(), task=_task())
         assert created.current_task_run_id == "task_1"
         assert journal.get_task_run("ws_a", "task_1") is not None
+
+
+def test_v2_store_migrates_to_v3_journal(tmp_path):
+    v2 = MigrationRegistry(supported_version=2)
+    v2.add(V1)
+    v2.add(V2)
+    store, session, _journal = _open_journal(tmp_path, registry=v2)
+    root = store.layout.data_root
+    session.close()
+    assert store.classify().schema_version == 2
+    upgraded = OperationalStore(
+        root, retry_policy=_retry(), clock=FixedClock(), maintenance_timeout=0
+    )
+    report = upgraded.migrate()
+    assert report.from_version == 2
+    assert report.to_version == 3
+    assert report.applied == ("tool_execution_approval",)
+    with upgraded.open(StoreOpenMode.READ_WRITE) as opened:
+        names = {
+            row[0]
+            for row in opened.run_read(
+                lambda executor: executor.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'table'"
+                )
+            )
+        }
+        assert {"tool_executions", "approvals"}.issubset(names)
 
 
 def test_sessions_are_workspace_scoped(tmp_path):

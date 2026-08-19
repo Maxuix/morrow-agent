@@ -1059,3 +1059,19 @@
 - Validation: Ruff format/check, compileall, `git diff --check`, and offline suite
   `489 passed, 1 deselected`.
 - Activated Subplan 38 for the tool execution journal and durable Approval.
+
+## 2026-08-19 — Subplan 38 tool journal and durable Approval completed
+
+- Added EffectClass, recovery declarations, ToolExecution/Approval transition models, payload
+  budgets, and the named one-shot FaultInjector. `ToolEffect` is not used for crash safety;
+  `run_command` Host/sandbox default to outcome_unknown.
+- Schema v3 adds `tool_executions` and `approvals` with intent hashes, row versions, expiry, and
+  consume-only-when-approved checks. v1 and v2 stores migrate forward.
+- AgentLoop persists the Assistant ToolCall plus ordered intents before dispatch. File intents store
+  before/expected-after hashes. Approval consume and `executing` are one transaction. Handler
+  completion and ToolCycle close are separate. Terminal shows the durable `approval_id`.
+- Production composition fails if a registered tool lacks a declaration. Provider call IDs are
+  aliased at rest; handler is not called when intent commit fails.
+- Validation: Ruff format/check, compileall, `git diff --check`, and offline suite
+  `511 passed, 1 deselected`.
+- Activated Subplan 39 for recovery classification and the crash harness.

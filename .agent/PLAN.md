@@ -1,8 +1,8 @@
 # Stage 4 Durable Task, Session, Artifact, and Recovery Plan
 
 > Status: active — production implementation
-> Active subplan: 38 — Tool execution journal and durable Approval
-> Production implementation: authorized; v2 no-tool Session history has landed
+> Active subplan: 39 — Recovery, reconciliation, and crash harness
+> Production implementation: authorized; v3 tool/approval journal has landed
 > Stage 3 production baseline: `003dbdaab652520ca5cadf451ebca7a13bcba36d`
 > Stage 4 accepted contract baseline: `20fb43e`
 > Scope: durable foreground-agent operation, recovery, artifacts, context checkpoints,
@@ -310,7 +310,7 @@ but must preserve accepted public and safety contracts or explicitly reopen the 
 | 35 | Contract activation and design spikes | completed | ADRs, source lock, fault matrix, executable contracts |
 | 36 | Operational Store and migration foundation | completed | safe SQLite foundation, schema/migration/backup primitives |
 | 37 | Durable Session/Task/Turn/AgentRun and no-tool conversation | completed | restart-safe multi-turn Session without tools |
-| 38 | Tool execution journal and durable Approval | pending | intent-before-effect and closed ToolCycle protocol |
+| 38 | Tool execution journal and durable Approval | completed | intent-before-effect and closed ToolCycle protocol |
 | 39 | Recovery, reconciliation, and crash harness | pending | no blind replay; classified interrupted real tools |
 | 40 | TaskRun lifecycle and versioned TaskOutcome | pending | continuation/correction/acceptance semantics and evidence |
 | 41 | Artifact Store and durable payload budgets | pending | integrity-checked bounded artifacts and missing-file behavior |
@@ -423,7 +423,7 @@ Stage 4 is complete only when all of the following are evidenced:
 
 ## Active gate
 
-Subplan 37 landed restart-safe no-tool Session history on 2026-08-19. Subplan 38 is now the only
-active work and may implement the tool execution journal and durable Approval (schema v3). Recovery,
-artifacts, grants, public-event changes, and Full Access remain inactive until their own subplans
-and hold points are explicitly activated.
+Subplan 38 landed the v3 tool/approval journal and persist-before-effect protocol on 2026-08-19.
+Subplan 39 is now the only active work and may implement recovery classification, reconciliation,
+and the crash harness (schema v4). Artifacts, grants, public-event changes, and Full Access remain
+inactive until their own subplans and hold points are explicitly activated.

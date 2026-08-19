@@ -108,7 +108,13 @@ class DurableConversationWriter:
         self.id_source = id_source
         self._call_aliases: dict[str, str] = {}
 
-    def persist(self, planned: ConversationAppend) -> ConversationSnapshot:
+    @property
+    def call_aliases(self) -> dict[str, str]:
+        return self._call_aliases
+
+    def persist_with_records(
+        self, planned: ConversationAppend
+    ) -> tuple[tuple[DurableConversationRecord, ...], ConversationSnapshot]:
         durables = tuple(
             durable_from_conversation_record(
                 record,
@@ -119,7 +125,14 @@ class DurableConversationWriter:
             for record in planned.added
         )
         self.journal.append_records(self.workspace_id, durables)
-        return restore_conversation_log(self.journal, self.workspace_id, self.session_id).snapshot()
+        snapshot = restore_conversation_log(
+            self.journal, self.workspace_id, self.session_id
+        ).snapshot()
+        return durables, snapshot
+
+    def persist(self, planned: ConversationAppend) -> ConversationSnapshot:
+        _durables, snapshot = self.persist_with_records(planned)
+        return snapshot
 
     def apply_persisted(self, committed: ConversationSnapshot) -> None:
         current = self.log.snapshot().records

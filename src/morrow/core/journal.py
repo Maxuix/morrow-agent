@@ -13,6 +13,7 @@ from morrow.core.domain import (
     DurableTurn,
     TurnSubmitReceipt,
 )
+from morrow.core.execution import DurableApproval, DurableToolExecution
 
 
 class SessionLifecyclePort(Protocol):
@@ -57,3 +58,43 @@ class TurnSubmitReceiptPort(Protocol):
     ) -> TurnSubmitReceipt | None: ...
 
     def put_receipt(self, workspace_id: str, receipt: TurnSubmitReceipt) -> TurnSubmitReceipt: ...
+
+
+class ToolExecutionJournalPort(Protocol):
+    def put_execution(
+        self, workspace_id: str, execution: DurableToolExecution
+    ) -> DurableToolExecution: ...
+
+    def get_execution(
+        self, workspace_id: str, tool_execution_id: str
+    ) -> DurableToolExecution | None: ...
+
+    def list_executions(
+        self, workspace_id: str, *, agent_run_id: str
+    ) -> tuple[DurableToolExecution, ...]: ...
+
+    def save_execution(
+        self,
+        workspace_id: str,
+        execution: DurableToolExecution,
+        *,
+        expected_row_version: int,
+    ) -> DurableToolExecution: ...
+
+
+class ApprovalJournalPort(Protocol):
+    def put_approval(self, workspace_id: str, approval: DurableApproval) -> DurableApproval: ...
+
+    def get_approval(self, workspace_id: str, approval_id: str) -> DurableApproval | None: ...
+
+    def get_approval_for_execution(
+        self, workspace_id: str, tool_execution_id: str
+    ) -> DurableApproval | None: ...
+
+    def save_approval(
+        self,
+        workspace_id: str,
+        approval: DurableApproval,
+        *,
+        expected_row_version: int,
+    ) -> DurableApproval: ...

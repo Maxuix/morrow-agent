@@ -17,6 +17,7 @@ import morrow.core.models as core_models
 from morrow.adapters.credentials.keyring import MemoryCredentialStore
 from morrow.adapters.state.yaml import ProjectStateYamlStore
 from morrow.bootstrap import build_application, build_session_application
+from morrow.core.execution import missing_declarations
 from morrow.core.models import FunctionToolCall, ModelRef
 from morrow.testing import FixedIdSource, ScriptedModelProvider, make_run_policy
 
@@ -155,6 +156,7 @@ def test_no_forbidden_tool_capability_is_registered_or_exposed(tmp_path):
     for name in names:
         casefolded = name.casefold()
         assert not any(keyword in casefolded for keyword in FORBIDDEN_TOOL_KEYWORDS), name
+    assert missing_declarations(tuple(sorted(names))) == ()
 
 
 def test_workspace_state_documents_are_exactly_preferences_and_profile():
