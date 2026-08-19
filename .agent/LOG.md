@@ -1021,3 +1021,10 @@
   compileall, and `git diff --check` passed; offline suite `465 passed, 1 deselected`.
 - Activated Subplan 37 for durable no-tool Session/Task/Turn/AgentRun history. Business schemas
   v2–v9 and later runtime behavior remain inactive.
+
+## 2026-08-19 — S4.37.1 domain contracts
+
+- Added `src/morrow/core/domain.py` with independent Session lifecycle/health, open-only TaskRun
+  status, prefixed opaque IDs, three sequence namespaces, budgeted AgentRun snapshots, and
+  turn-submit receipts. `client_message_id` is a command field, not UserMessage content.
+- Focused tests in `tests/test_stage4_domain.py` passed with Ruff check on the new files.

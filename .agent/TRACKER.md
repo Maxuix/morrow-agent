@@ -9,19 +9,18 @@ remain inactive.
 
 ## Last completed task
 
-S4.36.7 closed Subplan 36. Focused operational-store tests, Ruff format/check, compileall,
-`git diff --check`, and the offline suite (`465 passed, 1 deselected`) all passed. Stage 3 YAML and
-CredentialStore authorities are unchanged; production startup still does not open the store.
+S4.37.1 added typed Session/Task/Turn/AgentRun domain models, independent lifecycle/health axes,
+prefixed opaque IDs, three sequence namespaces, and a budgeted non-secret AgentRun snapshot.
 
 ## Active task
 
-S4.37.1 — add typed domain models, separate lifecycle/health axes, immutable IDs, the three order
-namespaces, base AgentRun source snapshots, and payload validators.
+S4.37.2 — add lifecycle and conversation-journal schemas/ports with workspace-scoped queries,
+foreign keys, uniqueness, and sequence constraints.
 
 ## Next action
 
-Read the domain/conversation ADR and current Session/ConversationLog/AgentLoop types, then implement
-only S4.37.1 with focused tests before adding the v2 schema.
+Implement schema v2 and narrow lifecycle/conversation journal ports on the Operational Store
+adapter, with focused tests, without wiring AgentLoop yet.
 
 ## Blockers
 
