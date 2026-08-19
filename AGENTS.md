@@ -33,6 +33,39 @@ Iterate on the tests you touched; finish implementation work only after those te
 Do not run Live / real-network tests unless the user asks and an explicit compatible credential is present.
 Use fake SDK chunks or scripted Providers. Do not assert timing with wall-clock sleeps.
 
+## Git
+
+Use Git as the source of truth for code history and recovery.
+
+For larger work:
+
+- Use a dedicated branch for each active subplan.
+- Keep commits small, coherent, and recoverable.
+- Commit meaningful verified progress.
+- Create a checkpoint before risky changes or switching work contexts.
+
+Use simple branch names: `feat/<name>`, `fix/<name>`, `refactor/<name>`, `docs/<name>`,
+or `chore/<name>`.
+
+Use conventional commit messages such as:
+
+- `feat(scope): description`
+- `fix(scope): description`
+- `refactor(scope): description`
+- `test(scope): description`
+- `docs(scope): description`
+- `chore(scope): description`
+
+`wip:` commits may be used as temporary checkpoints on working branches, but must not remain
+in the final merged history. Do not commit a known broken state as completed work.
+
+Before completing a subplan:
+
+1. Ensure the relevant changes are committed.
+2. Run the required validation.
+3. Update the execution state.
+4. Merge only verified work.
+
 ## Boundaries
 
 **Always**
