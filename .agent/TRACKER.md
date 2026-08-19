@@ -2,45 +2,34 @@
 
 ## Current status
 
-Stage 4 Durable Task, Session, Artifact, and Recovery implementation is active at Subplan 36. The
-three research documents have been demoted to superseded decision input and reconciled against the
-Stage 3 code baseline. The accepted route is one
-data-root SQLite operational database plus filesystem Artifacts, durable ConversationLog and tool
-journal boundaries, deterministic recovery, foreground TaskRun outcomes, context checkpoints,
-conversation-only fork, auditable grants, and Full Access Manual.
-
-The conditional plan review was confirmed against current code. Its five P0 findings and associated
-P1 ownership/evidence findings are real; accepted ADRs now close them, and Subplans 36–45 have been
-rewritten to consume those contracts without moving ownership forward or backward.
-
-No Stage 4 production adapter/schema has landed at activation, and no public event or Full Access
-behavior has changed.
+Stage 4 Durable Task, Session, Artifact, and Recovery implementation is active at Subplan 37. The
+v1 Operational Store foundation can create, reopen, migrate, classify, lock, and online-back up a
+data-root SQLite file. Conversation, Task, tool, Artifact, event, grant, and Full Access schemas
+remain inactive.
 
 ## Last completed task
 
-S4.35.8 closed the conditional plan review. All five P0 findings and material P1/P2 corrections are
-represented in accepted ADRs, the v1–v9 schema map, the fault matrix, and revised Subplans 36–45.
-Planning validation passed, the user accepted the remediation, and commit `20fb43e` preserves the
-complete contract-review change.
+S4.36.7 closed Subplan 36. Focused operational-store tests, Ruff format/check, compileall,
+`git diff --check`, and the offline suite (`465 passed, 1 deselected`) all passed. Stage 3 YAML and
+CredentialStore authorities are unchanged; production startup still does not open the store.
 
 ## Active task
 
-S4.36.1 — add typed Operational Store paths, open modes, health classifications, and sanitized
-storage errors.
+S4.37.1 — add typed domain models, separate lifecycle/health axes, immutable IDs, the three order
+namespaces, base AgentRun source snapshots, and payload validators.
 
 ## Next action
 
-Inspect current DataRoot/bootstrap/error/port ownership, then implement only S4.36.1 with focused
-tests before moving to connection behavior.
+Read the domain/conversation ADR and current Session/ConversationLog/AgentLoop types, then implement
+only S4.37.1 with focused tests before adding the v2 schema.
 
 ## Blockers
 
-None. Later business persistence remains gated by Subplans 37–45.
+None. Tool journals and later persistence remain gated by Subplans 38–45.
 
 ## Active boundary
 
-- Only the v1 Operational Store foundation in Subplan 36 is active. Conversation, Task, tool,
-  Artifact, event, grant, and Full Access schemas/behavior remain inactive.
+- Only the v2 durable no-tool Session/Task/Turn/AgentRun/conversation work in Subplan 37 is active.
 - ConversationLog remains the sole chat-history authority; ordinary chat stays on
   `AgentLoop.run_task()`.
 - Current YAML/CredentialStore authorities and Stage 3 runtime/security behavior remain unchanged.

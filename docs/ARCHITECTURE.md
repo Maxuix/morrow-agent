@@ -1,10 +1,10 @@
 # Morrow 架构基线
 
-> 状态：阶段 2、阶段 3 已完成（当前声明平台为 macOS；Linux 原生运行仍 unsupported）；阶段 4 已激活 Subplan 36，但尚无生产持久化实现
+> 状态：阶段 2、阶段 3 已完成（当前声明平台为 macOS；Linux 原生运行仍 unsupported）；阶段 4 已落地 Subplan 36 的 v1 Operational Store 基础，尚无业务表
 
 本文锁定当前依赖方向、数据所有权和安全边界。阶段 3 的能力策略、配置工具、工作空间读搜、冲突安全文件变更、审批后 Host 命令、只读 Git 和当前 macOS 原生沙箱
-已经交付；Linux 原生运行尚未声明支持。Stage 4 合同已经锁定并激活 Subplan 36 的 Operational Store
-基础，生产适配器尚未落地；Stage 5 的可审查学习、Stage 6 的 Skills/MCP，
+已经交付；Linux 原生运行尚未声明支持。Stage 4 已落地数据根 SQLite Operational Store 的 v1
+身份/迁移/备份基础，业务持久化仍未开始；Stage 5 的可审查学习、Stage 6 的 Skills/MCP，
 以及 Stage 7–10 的 Workflow、GUI、后台自动化和产品化均尚未开始。
 
 ## 分层与依赖方向
@@ -139,7 +139,7 @@ Service 或 Port：
 | 工作空间 Profile | `profile.yaml` | Workspace/配置服务 | 按 workspace_id 隔离 |
 | 当前会话消息 | 进程内 ConversationLog | AgentLoop；命令只可 reset | 不持久化、不跨进程恢复；Stage 4 将写入 Operational Store |
 | Agent 运行策略 | 随包策略 → RunPolicy | composition root | 不属于用户配置 |
-| 运行记录 / Artifact 元数据 | 数据根 `store/operational.sqlite` | 尚未实现 | 合同见 [Operational Store ADR](decisions/stage-4-operational-store.md)；YAML 与凭据权威不变 |
+| 运行记录 / Artifact 元数据 | 数据根 `store/operational.sqlite` | v1 仅身份与迁移账本 | 合同见 [Operational Store ADR](decisions/stage-4-operational-store.md)；YAML 与凭据权威不变 |
 
 ProjectStateStore 只支持 `profile.yaml` 和 `preferences.yaml`。两者使用版本化文档信封、revision、
 锁、临时文件、文件/目录 `fsync`、原子替换和备份；`state: cleared` 是合法 tombstone。
@@ -151,6 +151,22 @@ workspace Preferences 损坏只隔离该层。旧 `handoff.yaml(.bak)` 不属于
 `config.yaml` 是聚合文档，Provider 与全局 Preferences 的写入必须在同一事务锁内保留对方字段。
 `workspace-index.yaml` 由独立 WorkspaceIndexStore 管理。
 
+### Operational Store 布局（v1）
+
+数据根（`--state-root` 或 `~/.morrow`）下的保留路径：
+
+```text
+{data_root}/
+  store/operational.sqlite          # POSIX 0600；WAL/SHM sidecar 同为 0600
+  artifacts/tmp/                    # 0700；字节发布规则属于后续 Artifact ADR
+  backups/operational/              # 0700；仅在线 backup 目标
+  locks/operational-store.lock      # 全局维护锁，不是 WorkspaceWriterLock
+```
+
+`DataRoot` 暴露 `store_path`、`artifacts_path`、`backups_path` 与 `operational_lock_path`。
+生产启动不会自动创建或打开该库。v1 只有 `store_identity` 与 `schema_migrations`；Session、对话、
+工具和 Artifact 业务表仍未创建。损坏、外源或未来版本文件保持原字节并失败关闭。
+
 ## 事件与安全边界
 
 每个任务恰好一次 `turn.started`/`turn.completed`。事件以 sequence 为顺序权威；取消是正常完成的
@@ -161,7 +177,7 @@ workspace Preferences 损坏只隔离该层。旧 `handoff.yaml(.bak)` 不属于
 - 当前系统边界按冻结 ToolSet 动态渲染；未提供的能力、工作空间外访问、网络/loopback、Git 写入和权限提升始终被禁止。
 - 默认测试不联网、不使用真实钥匙串、不依赖用户主目录。
 - Provider 和结构化响应失败必须分类；不静默切换 Provider 或模型。
-- Session 持久化、恢复、conversation Fork 和确定性 checkpoint 已进入 Stage 4 合同设计，当前仍未实现；
+- Session 持久化、恢复、conversation Fork 和确定性 checkpoint 的存储基础已落地，业务写入仍未实现；
   工作空间/代码 rewind 不属于 Stage 4，长期偏好/知识学习留到 Stage 5。
   当前不存在过渡兼容写入器。
 

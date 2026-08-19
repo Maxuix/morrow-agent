@@ -70,7 +70,16 @@ def test_second_adapter_is_dynamic_and_does_not_change_core():
 
 
 def test_core_has_no_infrastructure_imports():
-    forbidden = {"openai", "typer", "rich", "yaml", "keyring", "filelock", "prompt_toolkit"}
+    forbidden = {
+        "openai",
+        "typer",
+        "rich",
+        "yaml",
+        "keyring",
+        "filelock",
+        "prompt_toolkit",
+        "sqlite3",
+    }
     core_root = Path(__file__).parents[1] / "src" / "morrow" / "core"
     for path in core_root.glob("*.py"):
         tree = ast.parse(path.read_text(encoding="utf-8"))

@@ -1,6 +1,6 @@
 # Subplan 36 — Operational Store and Migration Foundation
 
-> Status: active
+> Status: completed
 > Prerequisite: Subplan 35 accepted
 > Owns: SQLite foundation, schema lifecycle, shared transaction primitives, maintenance/backup base
 > Contract: `docs/decisions/stage-4-operational-store.md`
@@ -34,22 +34,22 @@ is future-versioned, corrupt, or not writable.
 
 ## Tasks
 
-- [>] S4.36.1 Add typed operational-store paths, open modes, health classifications, and sanitized
+- [x] S4.36.1 Add typed operational-store paths, open modes, health classifications, and sanitized
   storage errors without leaking absolute sensitive paths or raw SQL internals.
-- [ ] S4.36.2 Implement fixed connection initialization on the event-loop owner thread,
+- [x] S4.36.2 Implement fixed connection initialization on the event-loop owner thread,
   `check_same_thread=True`, foreign-key enforcement, transaction helpers, BUSY/LOCKED-only bounded
   retry, and deterministic rollback/close behavior.
-- [ ] S4.36.3 Implement the validated global maintenance lock and prove two workspace processes
+- [x] S4.36.3 Implement the validated global maintenance lock and prove two workspace processes
   cannot migrate or back up the shared store concurrently.
-- [ ] S4.36.4 Implement schema v1 identity/version metadata and the reserved v1-v9 ordered migration
+- [x] S4.36.4 Implement schema v1 identity/version metadata and the reserved v1-v9 ordered migration
   registry with checksums, preflight, backup, transactional application, post-check, and
   future-version refusal; create the Stage 3-to-v1 upgrade fixture for Subplan 45.
-- [ ] S4.36.5 Add identity/`user_version` mismatch, valid-header corruption, sidecar permission,
+- [x] S4.36.5 Add identity/`user_version` mismatch, valid-header corruption, sidecar permission,
   read-only filesystem, disk/write failure, interrupted migration, concurrent ordinary writers,
   migration-versus-writer, and stale-lock-owner tests with deterministic fault injection.
-- [ ] S4.36.6 Implement the online SQLite backup primitive and integrity metadata without artifacts
+- [x] S4.36.6 Implement the online SQLite backup primitive and integrity metadata without artifacts
   or credentials.
-- [ ] S4.36.7 Document the storage layout and run focused, quality, and Stage 3 regression gates.
+- [x] S4.36.7 Document the storage layout and run focused, quality, and Stage 3 regression gates.
 
 ## Locked contracts
 

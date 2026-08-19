@@ -1007,3 +1007,17 @@
 - No production adapter/schema or runtime behavior changed during activation. Conversation, Task,
   tool, Artifact, application-event, grant, Full Access, public-event, and bundled-policy work
   remain gated by their later subplans or hold points.
+
+## 2026-08-19 — Subplan 36 Operational Store foundation completed
+
+- Implemented typed Operational Store paths on `DataRoot`, Core open/health/error contracts, and a
+  stdlib `sqlite3` adapter: owner-thread connections, required pragmas, `BEGIN IMMEDIATE` writes,
+  BUSY/LOCKED-only bounded retry, global maintenance lock, checksummed v1–v9 migration registry,
+  future/corrupt/foreign refusal, and online `Connection.backup()` without credentials or Artifacts.
+- Public `StorageError` codes stay free of SQL and sensitive paths. Daily `read_write` open does not
+  full-scan; create/migrate/backup/diagnose run integrity checks. YAML bootstrap still does not open
+  the store. Added the Stage 3-to-v1 fixture under `tests/fixtures/stage3_data_root/`.
+- Validation: `tests/test_operational_store.py` 30 passed; spike 15 passed; Ruff format/check,
+  compileall, and `git diff --check` passed; offline suite `465 passed, 1 deselected`.
+- Activated Subplan 37 for durable no-tool Session/Task/Turn/AgentRun history. Business schemas
+  v2–v9 and later runtime behavior remain inactive.

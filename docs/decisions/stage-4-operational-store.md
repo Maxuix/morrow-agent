@@ -3,7 +3,7 @@
 ## Status
 
 Accepted by S4.35.2, narrowed after the Stage 4 plan review, and confirmed with Subplan 35 on
-2026-08-19. Subplan 36 is active for the production v1 foundation.
+2026-08-19. Subplan 36 implemented the production v1 foundation.
 
 Executable evidence for the chosen SQLite settings lives in
 `tests/test_stage4_operational_store_spike.py`. That file is a disposable design spike, not a
@@ -68,8 +68,9 @@ Rules:
   must apply `0600` to those files as well.
 - Existing YAML directories keep their current creation behavior until a later task explicitly
   tightens them. This ADR does not authorize changing YAML or CredentialStore writes.
-- Production `DataRoot` gains `store_path`, `artifacts_path`, `backups_path`, and
-  `operational_lock_path` in Subplan 36. Until then the paths above are reserved names.
+- Production `DataRoot` exposes `store_path`, `artifacts_path`, `backups_path`, and
+  `operational_lock_path`. The SQLite adapter creates those directories with user-only
+  permissions; ordinary YAML bootstrap does not open the database.
 
 ## Identity and schema version
 

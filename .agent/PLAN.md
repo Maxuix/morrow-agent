@@ -1,8 +1,8 @@
 # Stage 4 Durable Task, Session, Artifact, and Recovery Plan
 
 > Status: active — production implementation
-> Active subplan: 36 — Operational Store and migration foundation
-> Production implementation: authorized; no production adapter has landed at activation
+> Active subplan: 37 — Durable Session/Task/Turn/AgentRun and no-tool conversation
+> Production implementation: authorized; v1 Operational Store foundation has landed
 > Stage 3 production baseline: `003dbdaab652520ca5cadf451ebca7a13bcba36d`
 > Stage 4 accepted contract baseline: `20fb43e`
 > Scope: durable foreground-agent operation, recovery, artifacts, context checkpoints,
@@ -308,7 +308,7 @@ but must preserve accepted public and safety contracts or explicitly reopen the 
 | Order | Subplan | Status | Exit result |
 |---|---|---|---|
 | 35 | Contract activation and design spikes | completed | ADRs, source lock, fault matrix, executable contracts |
-| 36 | Operational Store and migration foundation | active | safe SQLite foundation, schema/migration/backup primitives |
+| 36 | Operational Store and migration foundation | completed | safe SQLite foundation, schema/migration/backup primitives |
 | 37 | Durable Session/Task/Turn/AgentRun and no-tool conversation | pending | restart-safe multi-turn Session without tools |
 | 38 | Tool execution journal and durable Approval | pending | intent-before-effect and closed ToolCycle protocol |
 | 39 | Recovery, reconciliation, and crash harness | pending | no blind replay; classified interrupted real tools |
@@ -423,8 +423,7 @@ Stage 4 is complete only when all of the following are evidenced:
 
 ## Active gate
 
-Subplan 35 was accepted on 2026-08-19 after the review remediation and planning/spike gates passed.
-Subplan 36 is now the only active work and may implement only the v1 Operational Store foundation
-defined by its subplan and ADR. Conversation/business schemas v2–v9, public-event changes, Full
-Access, and all later Stage 4 runtime behavior remain inactive until their own subplans and hold
-points are explicitly activated.
+Subplan 36 landed the v1 Operational Store foundation on 2026-08-19. Subplan 37 is now the only
+active work and may implement durable no-tool Session/Task/Turn/AgentRun history and the v2 schema.
+Tool journals, recovery, artifacts, grants, public-event changes, and Full Access remain inactive
+until their own subplans and hold points are explicitly activated.

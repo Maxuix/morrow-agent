@@ -1,0 +1,9 @@
+schema_version: 1
+revision: 1
+updated_at: 2026-01-01T00:00:00+00:00
+workspaces:
+  ws_stage3:
+    workspace_id: ws_stage3
+    path: /tmp/morrow-stage3-fixture-workspace
+    display_name: stage3-fixture
+    git_root: null

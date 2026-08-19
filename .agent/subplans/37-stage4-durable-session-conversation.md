@@ -1,6 +1,6 @@
 # Subplan 37 — Durable Session, Task, Turn, AgentRun, and No-Tool Conversation
 
-> Status: pending
+> Status: active
 > Prerequisite: Subplan 36 accepted
 > Owns: durable foreground identities and legal no-tool conversation history
 > Schema: v2 Session, minimal open TaskRun pointer, Turn, base AgentRun, conversation, and receipt
@@ -36,7 +36,7 @@ evidence.
 
 ## Tasks
 
-- [ ] S4.37.1 Add typed domain models, separate lifecycle/health axes, immutable IDs, the three
+- [>] S4.37.1 Add typed domain models, separate lifecycle/health axes, immutable IDs, the three
   order namespaces, base AgentRun source snapshots, and payload validators.
 - [ ] S4.37.2 Add lifecycle and conversation-journal schemas/ports with workspace-scoped queries,
   foreign keys, uniqueness, and sequence constraints.

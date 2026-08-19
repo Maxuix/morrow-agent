@@ -17,6 +17,14 @@ from morrow.core.models import (
     WorkspaceResolution,
 )
 from morrow.core.ports import IdSource, WorkspaceIndexStore
+from morrow.core.store import (
+    ARTIFACTS_DIRNAME,
+    BACKUPS_DIRNAME,
+    DATABASE_NAME,
+    MAINTENANCE_LOCK_NAME,
+    OPERATIONAL_BACKUPS_DIRNAME,
+    STORE_DIRNAME,
+)
 from morrow.runtime.ids import RandomIdSource
 
 
@@ -70,6 +78,22 @@ class DataRoot:
     @property
     def workspaces_path(self) -> Path:
         return self.root / "workspaces"
+
+    @property
+    def store_path(self) -> Path:
+        return self.root / STORE_DIRNAME / DATABASE_NAME
+
+    @property
+    def artifacts_path(self) -> Path:
+        return self.root / ARTIFACTS_DIRNAME
+
+    @property
+    def backups_path(self) -> Path:
+        return self.root / BACKUPS_DIRNAME / OPERATIONAL_BACKUPS_DIRNAME
+
+    @property
+    def operational_lock_path(self) -> Path:
+        return self.locks_path / MAINTENANCE_LOCK_NAME
 
     def ensure(self) -> None:
         try:

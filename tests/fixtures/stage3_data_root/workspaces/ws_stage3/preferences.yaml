@@ -1,0 +1,8 @@
+schema_version: 2
+revision: 1
+updated_at: 2026-01-01T00:00:00+00:00
+state: present
+preferences:
+  language: 中文
+  response_detail: null
+  instructions: []
