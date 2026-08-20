@@ -14,6 +14,14 @@ MEMORY_RECORD_TOKEN_LIMIT = 96
 MEMORY_QUERY_TOKEN_LIMIT = 64
 MEMORY_TOKEN_INPUT_MAX_CHARS = 8_192
 
+_QUERY_KIND_RANK = {
+    MemorySearchTokenKind.IDENTIFIER: 0,
+    MemorySearchTokenKind.PATH: 1,
+    MemorySearchTokenKind.WORD: 2,
+    MemorySearchTokenKind.NUMBER: 3,
+    MemorySearchTokenKind.CJK_BIGRAM: 4,
+}
+
 _STOP_TOKENS = frozenset(
     {
         "a",
@@ -120,12 +128,14 @@ class _TokenCollector:
         if existing is None or _WEIGHT_RANK[token.weight_band] > _WEIGHT_RANK[existing.weight_band]:
             self.tokens[key] = token
 
-    def finish(self) -> tuple[MemoryToken, ...]:
+    def finish(self, *, prioritize_non_cjk: bool = False) -> tuple[MemoryToken, ...]:
+        kind_rank = _QUERY_KIND_RANK if prioritize_non_cjk else None
         return tuple(
             sorted(
                 self.tokens.values(),
                 key=lambda token: (
                     -_WEIGHT_RANK[token.weight_band],
+                    kind_rank.get(token.token_kind, 99) if kind_rank else token.token_kind.value,
                     token.token_kind.value,
                     token.token,
                 ),
@@ -176,7 +186,13 @@ def tokenize_memory_query(
 ) -> tuple[MemoryToken, ...]:
     """Tokenize a bounded foreground query using only stable lexical rules."""
 
-    return tokenize_memory_text(value, weight_band=MemorySearchWeightBand.MEDIUM, limit=limit)
+    if not isinstance(value, str):
+        raise TypeError("memory token input must be text")
+    if len(value) > MEMORY_TOKEN_INPUT_MAX_CHARS:
+        raise ValueError("memory token input exceeds its bounded text budget")
+    collector = _TokenCollector(limit)
+    _add_text(collector, value, MemorySearchWeightBand.MEDIUM)
+    return collector.finish(prioritize_non_cjk=True)
 
 
 def _add_text(collector: _TokenCollector, value: str, weight_band: MemorySearchWeightBand) -> None:

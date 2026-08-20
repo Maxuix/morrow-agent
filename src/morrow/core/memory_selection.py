@@ -36,6 +36,23 @@ MEMORY_SEARCH_TERM_KINDS = frozenset({"word", "identifier", "cjk_bigram", "numbe
 MEMORY_WEIGHT_BANDS = frozenset({"high", "medium", "low"})
 
 _SEMANTIC_KEY_PATTERN = re.compile(r"^[a-z][a-z0-9]*(?:[._-][a-z0-9]+){0,31}$")
+_MEMORY_QUERY_HIDDEN_CONTROLS = str.maketrans(
+    "",
+    "",
+    "\u061c\u200b\u200c\u200d\u200e\u200f\u202a\u202b\u202c\u202d\u202e"
+    "\u2060\u2061\u2062\u2063\u2064\u2066\u2067\u2068\u2069\ufeff",
+)
+
+
+def _normalize_memory_query_goal(value: str) -> str:
+    """Bound retrieval input without applying Learning-statement safety rules."""
+
+    if not isinstance(value, str):
+        raise TypeError("memory query goal must be a string")
+    normalized = " ".join(value.translate(_MEMORY_QUERY_HIDDEN_CONTROLS).split())
+    if not normalized:
+        raise ValueError("memory query goal must not be empty")
+    return normalized[:MEMORY_QUERY_MAX_CHARS]
 
 
 class MemorySelectionReasonCode(StrEnum):
@@ -89,11 +106,7 @@ class MemoryQuery(ProtocolModel):
     _valid_turn = field_validator("turn_id")(
         lambda value: None if value is None else validate_prefixed_id(value, "turn")
     )
-    _normalize_goal = field_validator("task_goal")(
-        lambda value: normalize_learning_text(
-            value, label="memory query goal", maximum=MEMORY_QUERY_MAX_CHARS
-        )
-    )
+    _normalize_goal = field_validator("task_goal", mode="before")(_normalize_memory_query_goal)
 
     @field_validator("explicit_semantic_keys")
     @classmethod

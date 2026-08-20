@@ -206,3 +206,26 @@ def test_process_local_context_fallback_remains_live():
     second = builder.build(session)
     assert '"language": "zh"' in _system_message(first, "用户状态数据").content
     assert '"language": "fr"' in _system_message(second, "用户状态数据").content
+
+
+def test_persisted_session_without_projection_does_not_use_live_state(tmp_path):
+    handle, journal, clock = _open(tmp_path)
+    try:
+        session = _session()
+        seed_user_turn(session, "hello")
+        ids = FixedIdSource()
+        persistence = _persistence(journal, handle, ids=ids, clock=clock, session=session)
+        builder = make_context_builder()
+        first = builder.build(session)
+        assert not any(
+            message.content and message.content.startswith("以下是用户状态数据")
+            for message in first.messages
+        )
+        session.preferences = Preferences(language="fr")
+        second = builder.build(session)
+        assert not any(
+            message.content and '"language": "fr"' in message.content for message in second.messages
+        )
+        assert persistence.current_agent_run_id is None
+    finally:
+        handle.close()

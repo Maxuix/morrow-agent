@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import sqlite3
+
+import pytest
 from typer.testing import CliRunner
 
 from morrow.adapters.state.operational import OperationalStore
 from morrow.application.api import OperationalApplicationService
 from morrow.application.backup import OperationalBackupService
 from morrow.application.doctor import OperationalDoctor
+from morrow.application.learning.memory_backup import verify_memory_references
 from morrow.application.learning.memory_selector import memory_selection_digest
 from morrow.interfaces import cli as cli_module
 from morrow.interfaces import learning_cli
@@ -19,7 +23,7 @@ from test_stage5_memory_agent_run import (
 )
 
 
-def _admitted(tmp_path):
+def _admitted(tmp_path, *, goal: str = "Operational SQLite"):
     handle, journal, clock = _open(tmp_path)
     _seed_terms(journal)
     session = _session()
@@ -28,7 +32,7 @@ def _admitted(tmp_path):
     persistence = _persistence(journal, handle, ids=ids, clock=clock, session=session)
     persistence.submit_user(
         session,
-        "Operational SQLite",
+        goal,
         "client_inspection",
         turn_id="turn_inspection",
         agent_run_id="arun_inspection",
@@ -52,6 +56,26 @@ def test_memory_selection_queries_include_agent_run_references_and_reasons(tmp_p
         assert view.selection.selected_items[0].reason_codes
         assert memory_selection_digest(view.selection) == view.selection.selection_digest
         assert journal.get_agent_run("ws_1", "arun_inspection") is not None
+    finally:
+        handle.close()
+
+
+@pytest.mark.parametrize(
+    "goal",
+    (
+        "where is the API key stored?",
+        "use sudo to inspect the unit",
+        "long input " * 600,
+        "inspect the status\u200b before continuing",
+    ),
+)
+def test_memory_admission_treats_user_text_as_bounded_retrieval_input(tmp_path, goal):
+    handle, journal, _api, _session = _admitted(tmp_path, goal=goal)
+    try:
+        assert journal.get_turn("ws_1", "turn_inspection") is not None
+        run = journal.get_agent_run("ws_1", "arun_inspection")
+        assert run is not None
+        assert run.snapshot.memory_selection_id is not None
     finally:
         handle.close()
 
@@ -132,5 +156,28 @@ def test_backup_verification_checks_memory_selection_and_knowledge_links(tmp_pat
         verified = backup.verify(bundle)
         assert verified.ok
         assert verified.memory_references_ok
+
+        connection = sqlite3.connect(bundle / "database.sqlite")
+        connection.execute(
+            "UPDATE memory_selections SET selection_digest = ?",
+            ("d" * 64,),
+        )
+        connection.commit()
+        connection.close()
+        broken = backup.verify(bundle)
+        assert not broken.ok
+        assert not broken.memory_references_ok
+        assert "memory_selection_digest" in broken.issues
     finally:
         handle.close()
+
+
+def test_backup_memory_verification_fails_closed_for_missing_v12_tables():
+    connection = sqlite3.connect(":memory:")
+    try:
+        connection.execute("PRAGMA user_version = 12")
+        ok, issues = verify_memory_references(connection)
+        assert not ok
+        assert issues == ("memory_schema_tables_missing",)
+    finally:
+        connection.close()

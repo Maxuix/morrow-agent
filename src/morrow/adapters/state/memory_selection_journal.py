@@ -267,7 +267,7 @@ class SqliteMemorySelectionJournal:
 
     def _validate_knowledge_reference(self, workspace_id: str, item: MemorySelectionItem) -> None:
         row = self.backend.read_one(
-            "SELECT workspace_id, knowledge_id FROM project_knowledge_revisions "
+            "SELECT workspace_id, knowledge_id, revision FROM project_knowledge_revisions "
             "WHERE knowledge_revision_id = ?",
             (item.record_revision_id,),
         )
@@ -275,6 +275,11 @@ class SqliteMemorySelectionJournal:
             raise StorageError(StorageErrorCode.NOT_FOUND, "memory selection revision is missing")
         if str(row[0]) != workspace_id or str(row[1]) != item.record_id:
             raise _workspace_error("selection knowledge reference")
+        if int(row[2]) != item.revision:
+            raise StorageError(
+                StorageErrorCode.UNAVAILABLE,
+                "memory selection revision number is inconsistent",
+            )
         head = self.backend.read_one(
             "SELECT workspace_id FROM project_knowledge_heads WHERE knowledge_id = ?",
             (item.record_id,),

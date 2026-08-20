@@ -260,6 +260,21 @@ def test_memory_selection_and_terms_round_trip_with_workspace_guards(tmp_path):
         session.close()
 
 
+def test_memory_selection_write_rejects_revision_number_mismatch(tmp_path):
+    store = OperationalStore(tmp_path / "state", clock=FixedClock(NOW), maintenance_timeout=0)
+    session = store.initialize()
+    journal = SqliteOperationalJournal(session)
+    try:
+        _knowledge_subject(journal)
+        item = _selection().selected_items[0].model_copy(update={"revision": 2})
+        invalid = _selection().model_copy(update={"selected_items": (item,)})
+        with pytest.raises(StorageError) as error:
+            journal.put_memory_selection("ws_1", invalid)
+        assert error.value.code is StorageErrorCode.UNAVAILABLE
+    finally:
+        session.close()
+
+
 def test_corrupt_selection_item_is_reported_as_needs_repair(tmp_path):
     store = OperationalStore(tmp_path / "state", clock=FixedClock(NOW), maintenance_timeout=0)
     session = store.initialize()

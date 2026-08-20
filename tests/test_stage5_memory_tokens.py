@@ -59,6 +59,16 @@ def test_memory_tokenizer_rejects_oversized_input_and_keeps_query_budget():
     assert all(item.weight_band is MemorySearchWeightBand.MEDIUM for item in query)
 
 
+def test_long_cjk_query_preserves_code_and_identifier_tokens():
+    query = tokenize_memory_query(
+        "这是一个需要检查持久化状态的中文问题" * 8 + " SQLite src/morrow/app.py"
+    )
+    values = {(item.token_kind, item.token) for item in query}
+    assert len(query) <= 64
+    assert (MemorySearchTokenKind.PATH, "src/morrow/app.py") in values
+    assert (MemorySearchTokenKind.IDENTIFIER, "sqlite") in values
+
+
 def test_memory_terms_rebuild_retrieve_and_follow_knowledge_lifecycle(tmp_path):
     store = OperationalStore(tmp_path / "state", clock=FixedClock(NOW), maintenance_timeout=0)
     session = store.initialize()

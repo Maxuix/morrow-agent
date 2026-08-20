@@ -41,8 +41,14 @@ def verify_memory_references(connection: sqlite3.Connection) -> tuple[bool, tupl
         ).fetchall()
     }
     if not _MEMORY_TABLES.issubset(tables):
-        # Backups made before v12 have no Memory selection authority to verify.
-        return True, ()
+        try:
+            schema_version = int(connection.execute("PRAGMA user_version").fetchone()[0])
+        except (TypeError, ValueError, sqlite3.Error):
+            return False, ("memory_schema_version_invalid",)
+        if schema_version < 12:
+            # Backups made before v12 have no Memory selection authority to verify.
+            return True, ()
+        return False, ("memory_schema_tables_missing",)
 
     issues: list[str] = []
     heads = _read_heads(connection, issues)

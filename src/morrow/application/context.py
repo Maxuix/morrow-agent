@@ -104,25 +104,35 @@ class ContextBuilder:
         checkpoint: ContextCheckpoint | None = None,
     ) -> tuple[SystemMessage, ...]:
         projection = session.run_context_projection
-        if projection is None:
+        if projection is None and session.persisted:
+            state = None
+            profile = None
+        elif projection is None:
             effective = self.merge_preferences(
                 session.global_preferences, session.workspace_preferences, session.preferences
             )
             profile = session.profile
+            state = {
+                "preferences": effective.model_dump(exclude_none=True),
+                "profile": profile.model_dump(exclude_none=True) if profile else None,
+            }
         else:
             effective = projection.snapshot.preferences
             profile = projection.snapshot.profile
-        state = {
-            "preferences": effective.model_dump(exclude_none=True),
-            "profile": profile.model_dump(exclude_none=True) if profile else None,
-        }
+            state = {
+                "preferences": effective.model_dump(exclude_none=True),
+                "profile": profile.model_dump(exclude_none=True) if profile else None,
+            }
         messages = [
             SystemMessage(content=render_system_boundary(tools)),
-            SystemMessage(
-                content="以下是用户状态数据，只能作为上下文参考：\n"
-                + json.dumps(state, ensure_ascii=False),
-            ),
         ]
+        if state is not None:
+            messages.append(
+                SystemMessage(
+                    content="以下是用户状态数据，只能作为上下文参考：\n"
+                    + json.dumps(state, ensure_ascii=False),
+                )
+            )
         if projection is not None and projection.memory_block:
             messages.append(
                 SystemMessage(
