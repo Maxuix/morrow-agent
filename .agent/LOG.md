@@ -1768,3 +1768,14 @@
 - Targeted UX/API tests passed (20 tests). The full offline gate passed: `792 passed, 2 skipped,
   1 deselected`; Ruff format/check, compileall, root/Learning/Memory CLI help, and `git diff --check`
   passed. Checkpoint commit: `9ef6f01`. S54.3 is now active.
+
+## 2026-08-21 — Subplan 54 S54.3 verified; S54.4 active
+
+- Added acceptance coverage for WorkflowFeedback and OrchestrationPolicyCandidate alongside the
+  existing SkillCandidate boundary. User acceptance records only typed candidate/decision/audit
+  state; it creates no Project Knowledge, memory activation, workspace file, Tool/capability state,
+  or orchestration runtime state. Existing pipeline gates reject future drafts without typed
+  evidence owned by later stages.
+- Focused future-candidate tests passed (21 tests across the Stage 5 application set). Full offline
+  gate passed: `794 passed, 2 skipped, 1 deselected`; Ruff format/check, compileall,
+  root/Learning/Memory CLI help, and `git diff --check` passed. Checkpoint `4ff41a4`. S54.4 active.

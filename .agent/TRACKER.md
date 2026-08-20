@@ -17,13 +17,14 @@ recovery, Session projections, and CLI/REPL controls. Subplan 51 is verified and
 
 ## Active task
 
-Implement S54.3: validate SkillCandidate, WorkflowFeedback, and OrchestrationPolicyCandidate as
-candidate-only outcomes without creating files, tools, capabilities, or runtime policy state.
+Implement S54.4: create the versioned synthetic adversarial evaluation dataset and deterministic
+quality evaluator for the complete Learning safety/promotion boundary.
 
 ## Next action
 
-Inspect the candidate pipeline and decision/promotion services, then add typed future-candidate
-fixtures and acceptance tests proving user acknowledgement changes only candidate/audit state.
+Map the existing safety scanner, candidate pipeline, promotion Saga, and Memory Selection budgets;
+then add JSON fixtures and a bounded report covering positive, negative, injection, secret, duplicate,
+suppression, workspace, and malformed Reviewer cases without live Provider calls.
 
 ## Blockers
 
@@ -88,6 +89,10 @@ adopted into version control.
   REPL commands, active-provider headless composition, zero-candidate notifications, and foreground
   cancellation behavior are covered. Full offline validation passed 792 tests, 2 skips, 1 deselected;
   the checkpoint is `9ef6f01`.
+- S54.3 is complete: Skill/Workflow/Orchestration future candidate acceptance is covered as a
+  candidate-only outcome; no Knowledge head, memory activation, workspace file, or future runtime
+  state is created. Full offline validation passed 794 tests, 2 skips, 1 deselected; checkpoint is
+  `4ff41a4`.
 - S52 is complete: prepared configuration revisions/digests, YAML promotion Saga, Preference/
   Profile whitelist, foreground recovery, activation provenance/undo, Session projection updates,
   recoverable after-state finalization, explicit REPL global scope, and activation memory events.
