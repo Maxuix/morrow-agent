@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 from morrow.adapters.state.journal import SqliteOperationalJournal
+from morrow.application.api_permissions import PermissionApplicationService
+from morrow.application.api_recovery import RecoveryApplicationService
 from morrow.application.artifacts import ArtifactService
 from morrow.application.checkpoints import (
     ContextCheckpointError,
@@ -13,11 +15,7 @@ from morrow.application.checkpoints import (
     SessionForkService,
 )
 from morrow.application.cleanup import ArtifactCleanupService
-from morrow.application.grants import (
-    CapabilityGrantError,
-    CapabilityGrantService,
-    validate_capability_subset,
-)
+from morrow.application.grants import CapabilityGrantError
 from morrow.application.recovery import RecoveryService
 from morrow.application.tasks import (
     TaskCommandConflict,
@@ -35,45 +33,25 @@ from morrow.core.application import (
     QueryPage,
 )
 from morrow.core.artifacts import ArtifactError, ArtifactMetadata
-from morrow.core.capabilities import PermissionPreset, PermissionProfile
 from morrow.core.domain import (
-    AGENT_RUN_ID_PREFIX,
     COMMAND_ID_PREFIX,
     WORKSPACE_ID_PREFIX,
-    DurableAgentRun,
     DurableSession,
     DurableTaskOutcome,
     DurableTaskRun,
-    SessionHealth,
     SessionLifecycle,
-    TaskOutcomeTrigger,
-    TaskRunStatus,
-    TurnSubmitDisposition,
     canonical_json_bytes,
     sha256_digest,
     validate_prefixed_id,
 )
-from morrow.core.execution import (
-    DurableApproval,
-    DurableToolExecution,
-    ToolExecutionDisposition,
-    ToolExecutionState,
-    transition_execution,
-)
+from morrow.core.execution import DurableApproval, DurableToolExecution
 from morrow.core.permissions import (
-    CAPABILITY_GRANT_ID_PREFIX,
-    PERMISSION_POLICY_VERSION,
     CapabilityGrant,
     CapabilityName,
     PermissionSnapshot,
 )
 from morrow.core.ports import IdSource
-from morrow.core.recovery import (
-    RecoveryDecisionError,
-    RecoveryReport,
-    RecoveryReportStatus,
-    RecoveryResolution,
-)
+from morrow.core.recovery import RecoveryDecisionError, RecoveryReport, RecoveryResolution
 from morrow.core.store import StorageError, StorageErrorCode
 from morrow.runtime.durable_log import restore_conversation_log
 from morrow.runtime.ids import RandomIdSource
@@ -81,13 +59,6 @@ from morrow.runtime.ids import RandomIdSource
 
 def request_digest(operation: str, payload: dict[str, object]) -> str:
     return sha256_digest(canonical_json_bytes({"operation": operation, **payload}))
-
-
-_FULL_ACCESS_MANUAL_PROFILE_DIGEST = sha256_digest(
-    canonical_json_bytes(
-        PermissionProfile.from_preset(PermissionPreset.FULL_ACCESS_MANUAL).model_dump(mode="json")
-    )
-)
 
 
 def _now(clock: Callable[[], datetime] | None) -> datetime:
@@ -129,6 +100,8 @@ class OperationalApplicationService:
         self.checkpoints = checkpoints
         self.forks = forks
         self.persistence = persistence
+        self._recovery_commands = RecoveryApplicationService(self)
+        self._permission_commands = PermissionApplicationService(self)
 
     # Queries -----------------------------------------------------------------
 
@@ -440,54 +413,9 @@ class OperationalApplicationService:
     def create_approval(
         self, execution: DurableToolExecution, *, persistence=None, command_id=None
     ):
-        persistence = persistence or self.persistence
-        if persistence is None:
-            raise ApplicationError(
-                ApplicationErrorCode.UNAVAILABLE, "Session persistence is unavailable"
-            )
-        operation = "approval_create"
-        payload = {"tool_execution_id": execution.tool_execution_id}
-        command_id, digest, replay = self._prepare(operation, payload, command_id)
-        if replay is not None:
-            value = self._query(
-                lambda: self.journal.get_approval(self.workspace_id, replay.result_id or "")
-            )
-            if value is None:
-                raise ApplicationError(
-                    ApplicationErrorCode.NEEDS_RECOVERY, "approval result is missing"
-                )
-            return ApplicationCommandResult(value, replay)
-
-        def work(txn):
-            existing = self._replay_in_txn(txn, command_id, digest)
-            if existing is not None:
-                value = txn.get_approval(self.workspace_id, existing.result_id or "")
-                if value is None:
-                    raise ApplicationError(
-                        ApplicationErrorCode.NEEDS_RECOVERY, "approval result is missing"
-                    )
-                return ApplicationCommandResult(value, existing)
-            value = persistence.create_pending_approval(execution)
-            event = self._event(
-                txn,
-                event_type="approval.created",
-                aggregate_kind="approval",
-                aggregate_id=value.approval_id,
-                payload={"tool_execution_id": execution.tool_execution_id},
-            )
-            receipt = self._receipt(
-                txn,
-                command_id=command_id,
-                operation=operation,
-                digest=digest,
-                session_id=execution.session_id,
-                result_kind="approval",
-                result_id=value.approval_id,
-                event_cursor=event.cursor,
-            )
-            return ApplicationCommandResult(value, receipt)
-
-        return self._translate(lambda: self.journal.transact(work))
+        return self._permission_commands.create_approval(
+            execution, persistence=persistence, command_id=command_id
+        )
 
     def create_grant(
         self,
@@ -501,101 +429,16 @@ class OperationalApplicationService:
         grant_id: str | None = None,
         command_id: str | None = None,
     ) -> ApplicationCommandResult[CapabilityGrant]:
-        """Create a grant from an explicit local-interface application command."""
-
-        try:
-            capabilities = validate_capability_subset(capabilities)
-        except CapabilityGrantError as exc:
-            raise self._translate_exception(exc) from exc
-        operation = "grant_create"
-        payload = {
-            "task_run_id": task_run_id,
-            "agent_run_id": agent_run_id,
-            "capabilities": tuple(value.value for value in capabilities),
-            "reason": reason,
-            "preview_digest": preview_digest,
-            "expires_at": expires_at.isoformat() if expires_at is not None else None,
-            "grant_id": grant_id,
-        }
-        command_id, digest, replay = self._prepare(operation, payload, command_id)
-        if replay is not None:
-            value = self._query(
-                lambda: self.journal.get_capability_grant(self.workspace_id, replay.result_id or "")
-            )
-            if value is None:
-                raise ApplicationError(
-                    ApplicationErrorCode.NEEDS_RECOVERY, "grant result is missing"
-                )
-            return ApplicationCommandResult(value, replay)
-
-        def work(txn: SqliteOperationalJournal):
-            existing = self._replay_in_txn(txn, command_id, digest)
-            if existing is not None:
-                value = txn.get_capability_grant(self.workspace_id, existing.result_id or "")
-                if value is None:
-                    raise ApplicationError(
-                        ApplicationErrorCode.NEEDS_RECOVERY, "grant result is missing"
-                    )
-                return ApplicationCommandResult(value, existing)
-            run = txn.get_agent_run(self.workspace_id, agent_run_id)
-            task = txn.get_task_run(self.workspace_id, task_run_id)
-            if run is None or task is None:
-                raise ApplicationError(ApplicationErrorCode.NOT_FOUND, "grant subject is missing")
-            turn = txn.get_turn(self.workspace_id, run.turn_id)
-            if turn is None or turn.task_run_id != task_run_id or run.session_id != task.session_id:
-                raise ApplicationError(
-                    ApplicationErrorCode.CROSS_WORKSPACE,
-                    "grant subject does not match the requested TaskRun",
-                )
-            if run.snapshot.permission_profile_digest != _FULL_ACCESS_MANUAL_PROFILE_DIGEST:
-                raise ApplicationError(
-                    ApplicationErrorCode.INVALID,
-                    "CapabilityGrant requires a Full Access Manual AgentRun",
-                )
-            created_at = _now(self.clock)
-            value = CapabilityGrantService(txn, workspace_id=self.workspace_id).create(
-                CapabilityGrant(
-                    grant_id=grant_id or self.id_source.new_id(CAPABILITY_GRANT_ID_PREFIX),
-                    workspace_id=self.workspace_id,
-                    task_run_id=task_run_id,
-                    agent_run_id=agent_run_id,
-                    capabilities=capabilities,
-                    command_id=command_id,
-                    reason=reason,
-                    preview_digest=preview_digest,
-                    policy_version=PERMISSION_POLICY_VERSION,
-                    created_at=created_at,
-                    expires_at=expires_at or created_at + timedelta(minutes=15),
-                ),
-                now=created_at,
-            )
-            event = self._event(
-                txn,
-                event_type="grant.created",
-                aggregate_kind="grant",
-                aggregate_id=value.grant_id,
-                payload={
-                    "task_run_id": value.task_run_id,
-                    "agent_run_id": value.agent_run_id,
-                    "capabilities": tuple(item.value for item in value.capabilities),
-                    "granted_by": value.granted_by.value,
-                    "expires_at": value.expires_at.isoformat(),
-                },
-            )
-            receipt = self._receipt(
-                txn,
-                command_id=command_id,
-                operation=operation,
-                digest=digest,
-                session_id=run.session_id,
-                result_kind="grant",
-                result_id=value.grant_id,
-                row_version=value.row_version,
-                event_cursor=event.cursor,
-            )
-            return ApplicationCommandResult(value, receipt)
-
-        return self._translate(lambda: self.journal.transact(work))
+        return self._permission_commands.create_grant(
+            task_run_id=task_run_id,
+            agent_run_id=agent_run_id,
+            capabilities=capabilities,
+            reason=reason,
+            preview_digest=preview_digest,
+            expires_at=expires_at,
+            grant_id=grant_id,
+            command_id=command_id,
+        )
 
     def revoke_grant(
         self,
@@ -605,117 +448,12 @@ class OperationalApplicationService:
         expected_row_version: int | None = None,
         command_id: str | None = None,
     ) -> ApplicationCommandResult[CapabilityGrant]:
-        operation = "grant_revoke"
-        payload = {
-            "grant_id": grant_id,
-            "reason": reason,
-            "expected_row_version": expected_row_version,
-        }
-        command_id, digest, replay = self._prepare(operation, payload, command_id)
-        if replay is not None:
-            value = self._query(
-                lambda: self.journal.get_capability_grant(self.workspace_id, replay.result_id or "")
-            )
-            if value is None:
-                raise ApplicationError(
-                    ApplicationErrorCode.NEEDS_RECOVERY, "grant result is missing"
-                )
-            return ApplicationCommandResult(value, replay)
-
-        def work(txn: SqliteOperationalJournal):
-            existing = self._replay_in_txn(txn, command_id, digest)
-            if existing is not None:
-                value = txn.get_capability_grant(self.workspace_id, existing.result_id or "")
-                if value is None:
-                    raise ApplicationError(
-                        ApplicationErrorCode.NEEDS_RECOVERY, "grant result is missing"
-                    )
-                return ApplicationCommandResult(value, existing)
-            current = txn.get_capability_grant(self.workspace_id, grant_id)
-            if current is None:
-                raise ApplicationError(
-                    ApplicationErrorCode.NOT_FOUND, "capability grant is missing"
-                )
-            expected = current.row_version if expected_row_version is None else expected_row_version
-            was_unrevoked = current.revoked_at is None
-            value = CapabilityGrantService(txn, workspace_id=self.workspace_id).revoke(
-                current,
-                reason=reason,
-                now=_now(self.clock),
-                expected_row_version=expected,
-            )
-            invalidated_approvals = 0
-            cancellation_requests = 0
-            if was_unrevoked:
-                revoke_reason = "capability grant revoked"
-                for approval in txn.list_approvals_for_grant(self.workspace_id, value.grant_id):
-                    if approval.resolution.value == "pending" and approval.consumed_at is None:
-                        txn.revoke_approval_in_txn(
-                            self.workspace_id,
-                            approval.approval_id,
-                            now=value.revoked_at or _now(self.clock),
-                            reason=revoke_reason,
-                        )
-                        invalidated_approvals += 1
-                for execution in txn.list_executions_for_grant(self.workspace_id, value.grant_id):
-                    stamp = value.revoked_at or _now(self.clock)
-                    if execution.state in {
-                        ToolExecutionState.PREPARED,
-                        ToolExecutionState.AWAITING_APPROVAL,
-                    }:
-                        closed = transition_execution(
-                            execution,
-                            ToolExecutionState.CLOSED,
-                            expected_row_version=execution.row_version,
-                            disposition=ToolExecutionDisposition.DENIED,
-                            now=stamp,
-                        )
-                        txn.save_execution(
-                            self.workspace_id,
-                            closed,
-                            expected_row_version=execution.row_version,
-                        )
-                    elif execution.state is ToolExecutionState.EXECUTING:
-                        requested = txn.request_execution_cancellation_in_txn(
-                            self.workspace_id,
-                            execution.tool_execution_id,
-                            now=stamp,
-                            reason=revoke_reason,
-                        )
-                        if requested is not None and requested.cancel_requested_at is not None:
-                            cancellation_requests += 1
-            run = txn.get_agent_run(self.workspace_id, value.agent_run_id)
-            if run is None:
-                raise ApplicationError(
-                    ApplicationErrorCode.NEEDS_RECOVERY, "grant subject is missing"
-                )
-            event = self._event(
-                txn,
-                event_type="grant.revoked",
-                aggregate_kind="grant",
-                aggregate_id=value.grant_id,
-                payload={
-                    "agent_run_id": value.agent_run_id,
-                    "revoked_at": value.revoked_at.isoformat() if value.revoked_at else None,
-                    "row_version": value.row_version,
-                    "invalidated_approvals": invalidated_approvals,
-                    "cancellation_requests": cancellation_requests,
-                },
-            )
-            receipt = self._receipt(
-                txn,
-                command_id=command_id,
-                operation=operation,
-                digest=digest,
-                session_id=run.session_id,
-                result_kind="grant",
-                result_id=value.grant_id,
-                row_version=value.row_version,
-                event_cursor=event.cursor,
-            )
-            return ApplicationCommandResult(value, receipt)
-
-        return self._translate(lambda: self.journal.transact(work))
+        return self._permission_commands.revoke_grant(
+            grant_id,
+            reason=reason,
+            expected_row_version=expected_row_version,
+            command_id=command_id,
+        )
 
     def resolve_approval(
         self,
@@ -726,74 +464,13 @@ class OperationalApplicationService:
         command_id: str | None = None,
         persistence=None,
     ):
-        persistence = persistence or self.persistence
-        if persistence is None:
-            raise ApplicationError(
-                ApplicationErrorCode.UNAVAILABLE, "Session persistence is unavailable"
-            )
-        operation = "approval_resolve"
-        payload = {
-            "approval_id": approval.approval_id,
-            "tool_execution_id": execution.tool_execution_id,
-            "approved": approved,
-        }
-        command_id, digest, replay = self._prepare(operation, payload, command_id)
-        if replay is not None:
-            saved_approval = self._query(
-                lambda: self.journal.get_approval(self.workspace_id, replay.result_id or "")
-            )
-            saved_execution = self._query(
-                lambda: self.journal.get_execution(self.workspace_id, execution.tool_execution_id)
-            )
-            if saved_approval is None or saved_execution is None:
-                raise ApplicationError(
-                    ApplicationErrorCode.NEEDS_RECOVERY, "approval result is missing"
-                )
-            return ApplicationCommandResult(
-                (saved_execution, saved_approval, saved_approval.resolution.value == "approved"),
-                replay,
-            )
-
-        def work(txn):
-            existing = self._replay_in_txn(txn, command_id, digest)
-            if existing is not None:
-                saved_approval = txn.get_approval(self.workspace_id, existing.result_id or "")
-                saved_execution = txn.get_execution(self.workspace_id, execution.tool_execution_id)
-                if saved_approval is None or saved_execution is None:
-                    raise ApplicationError(
-                        ApplicationErrorCode.NEEDS_RECOVERY, "approval result is missing"
-                    )
-                return ApplicationCommandResult(
-                    (
-                        saved_execution,
-                        saved_approval,
-                        saved_approval.resolution.value == "approved",
-                    ),
-                    existing,
-                )
-            saved_execution, saved_approval, did_execute = persistence.consume_and_mark_executing(
-                execution, approval, approved=approved, command_id=command_id
-            )
-            event = self._event(
-                txn,
-                event_type="approval.resolved",
-                aggregate_kind="approval",
-                aggregate_id=saved_approval.approval_id,
-                payload={"resolution": saved_approval.resolution.value, "approved": did_execute},
-            )
-            receipt = self._receipt(
-                txn,
-                command_id=command_id,
-                operation=operation,
-                digest=digest,
-                session_id=execution.session_id,
-                result_kind="approval",
-                result_id=saved_approval.approval_id,
-                event_cursor=event.cursor,
-            )
-            return ApplicationCommandResult((saved_execution, saved_approval, did_execute), receipt)
-
-        return self._translate(lambda: self.journal.transact(work))
+        return self._permission_commands.resolve_approval(
+            execution,
+            approval,
+            approved=approved,
+            command_id=command_id,
+            persistence=persistence,
+        )
 
     # Commands ----------------------------------------------------------------
 
@@ -1077,237 +754,14 @@ class OperationalApplicationService:
         writer=None,
         close_all: bool = False,
     ) -> ApplicationCommandResult[RecoveryReport]:
-        if self.recovery is None or log is None:
-            raise ApplicationError(
-                ApplicationErrorCode.UNAVAILABLE, "recovery service is unavailable"
-            )
-        if report.workspace_id != self.workspace_id:
-            raise ApplicationError(
-                ApplicationErrorCode.CROSS_WORKSPACE, "recovery report is outside the workspace"
-            )
-        payload = {
-            "report_id": report.report_id,
-            "resolution": resolution.value,
-            "item_id": item_id,
-        }
-        command_id, digest, replay = self._prepare("recovery_resolve", payload, command_id)
-        if replay is not None:
-            value = self._query(
-                lambda: self.journal.get_report(self.workspace_id, replay.result_id or "")
-            )
-            if value is None:
-                raise ApplicationError(
-                    ApplicationErrorCode.NEEDS_RECOVERY, "recovery result is missing"
-                )
-            return ApplicationCommandResult(value, replay)
-        try:
-            resumed_agent_run_id: list[str] = []
-            updated, recovery_receipt, planned = self.recovery.decide(
-                report,
-                command_id=command_id,
-                resolution=resolution,
-                item_id=item_id,
-                log=log,
-            )
-            if recovery_receipt.kind == "conflict":
-                raise ApplicationError(
-                    ApplicationErrorCode.CONFLICT,
-                    "recovery command ID was reused with a different request",
-                )
-            if recovery_receipt.kind == "replay":
-                value = self._query(
-                    lambda: self.journal.get_report(self.workspace_id, recovery_receipt.report_id)
-                )
-                if value is None:
-                    raise ApplicationError(
-                        ApplicationErrorCode.NEEDS_RECOVERY, "recovery result is missing"
-                    )
-                receipt = ApplicationCommandReceipt(
-                    command_id=command_id,
-                    workspace_id=self.workspace_id,
-                    session_id=value.session_id,
-                    operation="recovery_resolve",
-                    request_digest=digest,
-                    disposition=ApplicationCommandDisposition.REPLAY,
-                    result_kind="recovery",
-                    result_id=value.report_id,
-                )
-                return ApplicationCommandResult(value, receipt)
-
-            close_all = close_all or (resolution is RecoveryResolution.ABORT and item_id is None)
-
-            def work(txn: SqliteOperationalJournal):
-                existing = self._replay_in_txn(txn, command_id, digest)
-                if existing is not None:
-                    value = txn.get_report(self.workspace_id, existing.result_id or "")
-                    if value is None:
-                        raise ApplicationError(
-                            ApplicationErrorCode.NEEDS_RECOVERY, "recovery result is missing"
-                        )
-                    return ApplicationCommandResult(value, existing)
-                value = self.recovery.commit_decision(
-                    updated,
-                    recovery_receipt,
-                    planned=planned,
-                    log=log,
-                    writer=writer,
-                    close_all=close_all,
-                    apply_log_projection=False,
-                    finalize=lambda finalize_txn, saved: self._apply_recovery_lifecycle_in_txn(
-                        finalize_txn,
-                        report=report,
-                        saved=saved,
-                        resolution=resolution,
-                        resumed_agent_run_id=resumed_agent_run_id,
-                    ),
-                )
-                event = self._event(
-                    txn,
-                    event_type="recovery.resolved",
-                    aggregate_kind="recovery",
-                    aggregate_id=value.report_id,
-                    payload={"status": value.status.value, "resolution": resolution.value},
-                )
-                receipt = self._receipt(
-                    txn,
-                    command_id=command_id,
-                    operation="recovery_resolve",
-                    digest=digest,
-                    session_id=value.session_id,
-                    result_kind="recovery",
-                    result_id=value.report_id,
-                    event_cursor=event.cursor,
-                )
-                return ApplicationCommandResult(value, receipt)
-
-            try:
-                result = self._translate(lambda: self.journal.transact(work))
-                if planned is not None:
-                    log.apply_committed(planned)
-                self._sync_recovery_persistence(result.value, resumed_agent_run_id)
-                return result
-            except ApplicationError:
-                self._restore_log_projection(log, report.session_id)
-                raise
-        except ApplicationError:
-            raise
-        except Exception as exc:
-            self._restore_log_projection(log, report.session_id)
-            raise self._translate_exception(exc) from exc
-
-    def _apply_recovery_lifecycle_in_txn(
-        self,
-        txn: SqliteOperationalJournal,
-        *,
-        report: RecoveryReport,
-        saved: RecoveryReport,
-        resolution: RecoveryResolution,
-        resumed_agent_run_id: list[str],
-    ) -> None:
-        """Keep Session health, turn receipts, tasks, and resume runs atomic with recovery."""
-
-        session = txn.get_session(self.workspace_id, report.session_id)
-        if session is None:
-            raise StorageError(StorageErrorCode.NOT_FOUND, "operational session is missing")
-
-        health = SessionHealth.NEEDS_RECOVERY
-        current_task_run_id = session.current_task_run_id
-        if saved.status is RecoveryReportStatus.QUARANTINED:
-            health = SessionHealth.QUARANTINED
-        elif saved.status is RecoveryReportStatus.RESOLVED:
-            health = SessionHealth.OK
-            if resolution is RecoveryResolution.RESUME and saved.agent_run_id is not None:
-                previous = txn.get_agent_run(self.workspace_id, saved.agent_run_id)
-                if previous is None:
-                    raise StorageError(StorageErrorCode.NOT_FOUND, "recovery AgentRun is missing")
-                new_id = self.id_source.new_id(AGENT_RUN_ID_PREFIX)
-                runtime_instance_id = getattr(self.persistence, "runtime_instance_id", None)
-                snapshot = previous.snapshot
-                if runtime_instance_id is not None:
-                    snapshot = snapshot.model_copy(
-                        update={"runtime_instance_id": runtime_instance_id}
-                    )
-                txn.create_agent_run(
-                    self.workspace_id,
-                    DurableAgentRun(
-                        agent_run_id=new_id,
-                        turn_id=previous.turn_id,
-                        session_id=previous.session_id,
-                        resume_of_agent_run_id=previous.agent_run_id,
-                        snapshot=snapshot,
-                    ),
-                )
-                resumed_agent_run_id.append(new_id)
-            elif resolution is RecoveryResolution.ABORT:
-                current_task_run_id = self._abort_recovery_task_in_txn(
-                    txn, session, turn_id=report.turn_id
-                )
-                self._close_recovery_receipt_in_txn(txn, report)
-
-        txn.save_session(
-            self.workspace_id,
-            session.model_copy(
-                update={"health": health, "current_task_run_id": current_task_run_id}
-            ),
-        )
-
-    def _sync_recovery_persistence(
-        self, report: RecoveryReport, resumed_agent_run_id: list[str]
-    ) -> None:
-        persistence = self.persistence
-        session = getattr(persistence, "_session", None) if persistence is not None else None
-        if persistence is None or session is None or session.session_id != report.session_id:
-            return
-        row = self.journal.get_session(self.workspace_id, report.session_id)
-        if row is None:
-            return
-        session.health = row.health
-        persistence.current_task_run_id = row.current_task_run_id
-        if resumed_agent_run_id:
-            persistence.current_agent_run_id = resumed_agent_run_id[0]
-            persistence.current_permission_snapshot_id = None
-        persistence.open_report = None if report.status is RecoveryReportStatus.RESOLVED else report
-
-    def _abort_recovery_task_in_txn(
-        self, txn: SqliteOperationalJournal, session: DurableSession, *, turn_id: str | None
-    ) -> str | None:
-        task_id = session.current_task_run_id
-        if task_id is None:
-            return None
-        task = txn.get_task_run(self.workspace_id, task_id)
-        if task is None:
-            raise StorageError(StorageErrorCode.NOT_FOUND, "recovery TaskRun is missing")
-        if task.status in {TaskRunStatus.OPEN, TaskRunStatus.READY_FOR_ACCEPTANCE}:
-            task = self.tasks._transition_in_txn(
-                txn,
-                task,
-                TaskRunStatus.CANCELLED,
-                reason="recovery_abort",
-                turn_id=turn_id,
-            )
-            self.tasks._outcome_in_txn(
-                txn,
-                task,
-                trigger=TaskOutcomeTrigger.TERMINAL_CLOSE,
-                summary="TaskRun cancelled during recovery abort.",
-            )
-            return None
-        return task_id if not task.status.is_terminal else None
-
-    def _close_recovery_receipt_in_txn(
-        self, txn: SqliteOperationalJournal, report: RecoveryReport
-    ) -> None:
-        if report.turn_id is None:
-            return
-        turn = txn.get_turn(self.workspace_id, report.turn_id)
-        if turn is None:
-            return
-        receipt = txn.get_receipt(self.workspace_id, report.session_id, turn.client_message_id)
-        if receipt is None or receipt.disposition is TurnSubmitDisposition.ACCEPTED_CLOSED:
-            return
-        txn.update_receipt(
-            self.workspace_id,
-            receipt.model_copy(update={"disposition": TurnSubmitDisposition.ACCEPTED_CLOSED}),
+        return self._recovery_commands.resolve(
+            report,
+            command_id=command_id,
+            resolution=resolution,
+            item_id=item_id,
+            log=log,
+            writer=writer,
+            close_all=close_all,
         )
 
     # Internal composition helpers -------------------------------------------

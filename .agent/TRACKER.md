@@ -18,12 +18,12 @@ Artifact manifest/restore verification, and exact-target dry-run cleanup. Offlin
 
 ## Active task
 
-S4.46.2 — extract domain application handlers behind the compatible operational API facade.
+S4.46.3 — split the SQLite journal implementation by narrow domain ports.
 
 ## Next action
 
-Extract cohesive command/query collaborators without changing the public
-`OperationalApplicationService` surface or transaction boundaries.
+Adopt the existing Core journal protocols in application services, then partition concrete SQLite
+domain methods while retaining one `OperationalStoreSession` transaction owner.
 
 ## Blockers
 

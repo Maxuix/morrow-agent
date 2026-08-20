@@ -1248,3 +1248,11 @@
 - Recovery-created AgentRuns use the current runtime instance snapshot when a live Session
   persistence context exists, while standalone CLI recovery retains the prior frozen snapshot.
 - Focused Recovery/API/terminal validation passed: `31 passed`; Ruff check and format passed.
+
+## 2026-08-20 — S4.46.2 application command domains extracted
+
+- Kept `OperationalApplicationService` as the compatible client facade while extracting Recovery
+  and Permission/Approval command transactions into explicit domain collaborators.
+- Reduced `application/api.py` from 1,598 to 1,058 lines; Recovery and permission implementations
+  are now independently owned and tested without changing command signatures or transaction scope.
+- Focused API/permission/recovery validation passed: `35 passed`; Ruff check and format passed.
