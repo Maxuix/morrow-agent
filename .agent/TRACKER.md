@@ -2,38 +2,45 @@
 
 ## Current status
 
-Subplan 48 is complete, verified, and fast-forwarded into local `main`. Stage 5 remains inactive.
+The user authorized a complete executable Stage 5 plan. The master plan and Subplans 49–54 are
+defined; production implementation has not started.
 
 ## Last completed task
 
-S48.6 removed proven-unused API compatibility wrappers, reconciled architecture documentation,
-recomputed hotspot metrics, and passed the canonical `uv` offline and quality gates.
+Stage 5 planning aligned both research discussions with the current v9 codebase, corrected the
+future roadmap's Task trigger/policy/authority assumptions, and froze six sequential implementation
+slices.
 
 ## Active task
 
-None — Subplan 48 is complete.
+None — Subplan 49 is ready, but S49.1 has not started.
 
 ## Next action
 
-No implementation plan is active. Do not activate Stage 5 without an explicit user request.
+Create `feat/stage5-learning-foundation` from verified `main`, mark S49.1 in progress, and write the
+Stage 5 governance/authority decision plus architecture guards before adding domain code or schema
+v10.
 
 ## Blockers
 
-Remote publication is intentionally not performed: before this refactor, local `main` was already
-29 commits ahead of `origin/main`, so pushing would publish unrelated pre-existing local history
-without explicit user authorization.
+No Stage 5 implementation blocker.
+
+Remote publication is outside the current commit-only request. After this plan is committed and
+fast-forwarded, local `main` will be one planning commit ahead of `origin/main` until push is
+explicitly authorized.
+
+The two Stage 5 research discussions are untracked user files. They are preserved as input and are
+not part of the implementation plan changes unless the user explicitly requests that they be
+adopted into version control.
 
 ## Active boundary
 
-- No schema, capability, policy-default, public-event, network, Skill, MCP, or credential change.
-- ConversationLog and AgentLoop ownership remain unchanged.
-- One SQLite transaction continues to own cross-domain atomic writes.
-- The S48.4 full offline gate passed: `670 passed, 2 skipped, 1 deselected`; the skips remain the
-  nested-sandbox Seatbelt cases. Ruff reported `178 files already formatted`; Ruff check,
-  compileall, CLI help, state cleanup help, and `git diff --check` all exited 0.
-- The S48.5 full offline gate passed: `672 passed, 2 skipped, 1 deselected`; Ruff reported
-  `179 files already formatted`; Ruff check, compileall, CLI help, state cleanup help, and
-  `git diff --check` all exited 0.
-- The canonical unsandboxed S48.6 gate passed: `uv run pytest -m 'not live'` reported
-  `674 passed, 1 deselected`, including the real Seatbelt cases. `uv run ruff format --check .`,
-  Ruff check, compileall, CLI help, state cleanup help, and `git diff --check` all exited 0.
+- Stage 5 planning is authorized; no business implementation is active in this planning-only turn.
+- First release exposes only `off` and `review_only`; `explicit_auto` remains closed.
+- Automatic trigger is accepted TaskOutcome only; no `completed`/`corrected` Task status is added.
+- No background worker, natural-language acceptance, embedding/vector dependency, Skill write, or
+  Workflow activation is authorized.
+- Profile/Preferences remain YAML authorities; Project Knowledge and learning audit records use the
+  shared Operational Store.
+- AgentLoop and ConversationLog ownership, public runtime events, bundled capability policy, and
+  credentials remain unchanged.

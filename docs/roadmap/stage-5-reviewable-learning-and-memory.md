@@ -1,7 +1,7 @@
 # Stage 5：可审查学习与长期记忆
 
-> 状态：未开始
-> 阶段结果：Morrow 能在任务完成后提出有来源、有作用域、可拒绝和可撤销的学习候选，而不是把模型推断直接写入长期配置
+> 状态：实施计划已激活；Subplan 49 待开始，当前代码仍未实现 Stage 5
+> 阶段结果：Morrow 能在任务显式 accepted 后提出有来源、有作用域、可拒绝和可撤销的学习候选，而不是把模型推断直接写入长期配置
 > 上级文档：[开发路线总览](../ROADMAP.md)
 > 上一阶段：[Stage 4：Task、Session、Artifact 与持久化](stage-4-task-session-and-persistence.md)
 > 下一阶段：[Stage 6：Skills 与扩展生命周期](stage-6-skills-and-extensions.md)
@@ -13,15 +13,15 @@
 核心不是增加一个任务后 Summary Prompt，而是建立完整的学习闭环：
 
 ```text
-TaskRun 关闭
-→ 生成或确认 TaskOutcome
+TaskRun 显式进入 accepted
+→ 同一事务生成 accepted TaskOutcome 与 pending LearningReview
 → LearningReview 读取任务事实与用户反馈
 → 生成结构化 LearningCandidate
 → 去重、冲突、作用域和敏感性检查
-→ 根据 LearningPolicy 自动接受安全的明确意图，或进入待审查队列
+→ review_only 下进入待审查队列
 → 用户接受、编辑后接受、拒绝或忽略
 → 通过原有 Application Service 晋升为长期状态
-→ 后续任务按相关性选择性检索
+→ 后续 AgentRun 按相关性冻结 MemorySelection
 ```
 
 阶段完成后，Morrow 可以记住用户偏好和项目知识，但必须做到：
@@ -35,7 +35,8 @@ TaskRun 关闭
 ## 二、进入条件
 
 - Stage 4 的 Session、TaskRun、TaskOutcome、Artifact、事件和来源范围稳定。
-- 用户能够对任务标记 accepted、corrected、abandoned 等结果。
+- 用户能够通过现有状态机显式 `accepted`，并保留 `cancelled`、`failed`、`abandoned` 等事实；
+  `corrected` 不是 TaskRun 状态，后续 User Turn 与 `ready_for_acceptance → open` 转移提供纠正证据。
 - Profile、Preferences 和配置更新已有统一 Application Service 与 revision 边界。
 - 上下文摘要与长期状态已经分开，Task Summary 不会自动进入 Profile/Preferences。
 
@@ -47,8 +48,10 @@ TaskRun 关闭
 
 固定规则：
 
-- TaskOutcome 可以在 Task 完成时自动生成。
-- LearningReview 可以异步于最终回答，但在本地当前进程或明确后台流程中完成；不得承诺不可见的未来处理。
+- TaskOutcome 在显式 acceptance、显式 snapshot 或既有终态关闭里程碑生成；只有 accepted Outcome
+  默认触发 Stage 5 Review。
+- LearningReview 可以晚于最终回答执行，但 Stage 5 当前没有后台 Worker：交互入口使用提交后的有界前台
+  Review，headless 入口显式执行，不得承诺不可见的未来处理。
 - LearningReview 失败不影响 TaskOutcome 和任务完成状态。
 - LearningReview 不直接写 Active Preference、Profile、Knowledge 或 Skill。
 - 同一 TaskOutcome 可以重新审查，但候选必须去重并保留 review 版本。
@@ -168,39 +171,31 @@ LearningEvidence
 - 用户纠正和拒绝是高权重负证据。
 - Evidence 保存最小必要摘录与来源引用，避免复制全部敏感内容。
 
-### 4.4 PreferenceRecord
+### 4.4 Preference/Profile Active 权威与激活来源
 
-现有 `Preferences` 可以继续作为运行时合并投影，但长期记录需要更丰富的来源模型：
+Stage 5 第一版已经锁定单一权威：现有版本化 YAML 继续保存 global/workspace Preferences 和 workspace
+Profile 的 Active 值；SQLite 保存 Evidence、Candidate、用户决策、可恢复 PromotionOperation 与
+ConfigurationActivation 来源证明。SQLite 不保存一份参与运行时合并的重复 Active Preference 值。
 
 ```text
-PreferenceRecord
-- id
-- key / category
-- value
-- scope: global | workspace | session
-- source: explicit | inferred | imported
-- status: active | disabled | superseded | deleted
-- evidence_ids[]
+ConfigurationActivation
+- activation_id
+- candidate_id / decision_id / promotion_operation_id
+- target: preferences | profile
+- scope / path / operation
+- applied_revision
+- before_digest / after_digest / value_digest
+- supersedes_activation_id / reverses_activation_id
 - created_at
-- last_confirmed_at
-- activated_by
-- supersedes_id
-- sensitivity
-- revision
 ```
 
-运行时的 `Preferences` 由 Active PreferenceRecord 投影生成；不要让富记录和旧 YAML 标量形成双重权威。
+当前代码中的 `Preferences` 只支持 `language`、`response_detail` 和 `instructions`；Profile 只支持现有
+`ConfigPatchService` 字段。Stage 5 候选晋升严格受这份白名单约束。项目命令、工程约定和架构事实归入
+Project Knowledge，不能塞进 `Preferences.instructions` 充当通用记忆。
 
-当前代码中的 `Preferences` 只支持 `language`、`response_detail` 和 `instructions`。Stage 5 第一版的自动
-晋升白名单必须限制在当时配置服务实际支持的字段；若要增加新类别，先完成 Schema、迁移、命令与
-`ConfigPatchService` 合同更新，不能只在 `PreferenceRecord` 中新增任意 key。
-
-实施时必须通过 ADR 选择：
-
-1. 将 Active PreferenceRecord 保存在现有版本化 YAML，并把证据留在 SQLite；或
-2. 以 SQLite 为权威，导出用户可读 YAML 投影。
-
-推荐优先方案 1，以保持当前用户可编辑状态边界；但必须保证一次晋升事务不会出现“记录已接受、YAML 未写入”的半状态。
+跨 SQLite/YAML 晋升必须先持久化 operation，再写 YAML，最后完成 Candidate/activation/event/receipt；
+崩溃后只能在精确 before revision/digest 时重试，或在精确 expected applied revision/after digest 时
+finalize。内容相同但 revision 更晚仍视为漂移，未知的新 revision 绝不被覆盖。
 
 ### 4.5 ProjectKnowledgeRecord
 
@@ -208,9 +203,11 @@ PreferenceRecord
 ProjectKnowledgeRecord
 - id
 - workspace_id
+- semantic_key
 - statement
 - category: architecture | convention | decision | environment | domain | other
-- status: active | disputed | superseded | deleted
+- status: active | disabled | disputed | deleted
+- revision / supersedes_revision_id
 - evidence_ids[]
 - source_task_ids[]
 - created_at / last_confirmed_at
@@ -225,21 +222,18 @@ ProjectKnowledgeRecord
 
 ### 5.1 用户模式
 
-建议提供三个模式：
+领域上保留三个名称，但 Stage 5 第一版只开放前两个模式：
 
 | 模式 | 行为 |
 |---|---|
 | `off` | 不运行任务后 LearningReview；显式 `/config` 仍可用 |
 | `review_only` | 生成候选，全部等待用户审查；建议默认 |
-| `explicit_auto` | 只有明确、低风险、无冲突的用户持久化意图可自动激活；其余等待审查 |
+| `explicit_auto` | 预留、不可选择和持久化；Stage 5 第一版不自动激活 Candidate |
 
-第一版不提供“所有高置信推断自动写入”模式。
+第一版默认 `review_only`，允许用户显式关闭为 `off`。公开命令必须拒绝 `explicit_auto`，也不提供“所有
+高置信推断自动写入”模式。现有明确配置请求继续走 `update_configuration` 的预览、审批和配置服务路径。
 
-`explicit_auto` 本身必须由用户显式开启，不能通过 Learning 推断或默认启用。它是 Stage 5 的候选策略，
-不改变当前 Stage 3 `update_configuration` 的 `approval=required` 合同；激活该模式前需在 Stage 5 子计划中
-锁定等价的预授权、通知和撤销语义。
-
-### 5.2 自动晋升允许条件
+### 5.2 未来 `explicit_auto` 开放条件（本阶段不启用）
 
 只有同时满足以下条件，`explicit_auto` 才能自动晋升：
 
@@ -274,13 +268,12 @@ ProjectKnowledgeRecord
 
 默认在以下时机触发：
 
-- TaskRun 进入 completed，且有 TaskOutcome。
-- 用户将结果标记 accepted 或 corrected。
-- 用户显式执行“回顾并学习这次任务”。
+- TaskRun 通过现有 `ready_for_acceptance → accepted` 转移，并在同一命令中生成 accepted TaskOutcome。
+- 用户对既有 Outcome 显式执行“回顾并学习这次任务”，生成新的 Review version。
 
 不触发：
 
-- Task cancelled、abandoned 且没有明确可学习内容。
+- Task cancelled、failed、abandoned。
 - 纯闲聊或信息不足的短 Task。
 - 用户关闭 LearningPolicy。
 - TaskOutcome 仍处于事实冲突或 unknown 副作用状态。
@@ -361,11 +354,15 @@ Candidate
 
 这一区分防止系统不断重新学习用户刚删除的内容。
 
+Stage 5 的 Knowledge delete 是排除检索的逻辑 tombstone，保留 immutable revision 与审计来源；物理
+purge、安全擦除和备份级删除属于 Stage 10，界面不得把逻辑删除描述为字节已清除。
+
 ## 八、检索与上下文注入
 
 ### 8.1 只检索 Active 且相关的记录
 
-每次 AgentRun 不应注入全部 Preference 和 Knowledge。
+每次 AgentRun 不应注入全部 Project Knowledge。Stage 5 第一版继续把现有体量很小的合并
+Profile/Preferences 作为兼容 baseline 冻结到 AgentRun；Project Knowledge 必须经过选择。
 
 建议建立：
 
@@ -392,6 +389,10 @@ MemorySelection
 - 固定数量和 Token 预算。
 
 不需要在本阶段引入 Embedding。只有确定性/词法检索无法满足真实任务，且有评估数据时，再单独决策。
+
+选择冻结粒度是 AgentRun：新 User Turn 创建新的 MemorySelection，并把 selection ID、digest 和 workspace
+memory revision 写入 AgentRunSnapshot；同一 AgentRun 的所有模型/工具循环消费同一份选择。相同 Turn 的
+Recovery AgentRun 重用被中断 Run 的精确选择，不根据后来变化的 Active Memory 静默重选。
 
 ### 8.2 Prompt 层级
 
@@ -434,13 +435,17 @@ morrow learning accept <candidate-id>
 morrow learning edit <candidate-id>
 morrow learning reject <candidate-id> [--never-suggest]
 
-morrow memory list [--type preference|knowledge]
+morrow memory list [--type knowledge|configuration]
 morrow memory show <record-id>
 morrow memory disable <record-id>
+morrow memory enable <record-id>
 morrow memory delete <record-id>
+morrow learning undo <activation-id>
 ```
 
-REPL 可提供 `/learn`、`/memory` 的薄入口。命名在子计划确定，但读写必须共用 Application Service。
+Knowledge 的 disable/enable/delete 由 SQLite lifecycle 服务处理；Profile/Preferences 仍通过配置服务，
+Learning 来源的配置变更使用 activation undo。REPL 可提供 `/learn`、`/memory` 的薄入口。命名在子计划
+确定，但读写必须共用 Application Service。
 
 ### 9.2 事件与查询
 
@@ -498,40 +503,49 @@ Stage 5 只定义记录格式；Stage 7/8 才产生和应用这些信号。
 
 ## 十一、建议实施切片
 
-### 5A：分类、Schema 与 LearningPolicy
+### Subplan 49：分类、Schema 与 LearningPolicy
 
 - 固定信息分类。
-- LearningReview、Candidate、Evidence、PreferenceRecord、KnowledgeRecord。
-- off/review_only/explicit_auto。
+- LearningReview、Candidate、Evidence、Suppression 和严格候选 payload。
+- workspace `off/review_only`；`explicit_auto` 仅预留且关闭。
+- Operational Store v10 与 Fake Reviewer 测试边界。
 - 敏感信息和禁止学习规则。
 
-### 5B：TaskOutcome → Candidate Pipeline
+### Subplan 50：accepted TaskOutcome → Candidate Pipeline
 
 - 确定性信号提取。
 - 模型辅助结构化分类。
 - Schema 校验、去重和候选数量预算。
 - Fake Reviewer 测试。
+- claim/lease/retry 和提交后的显式前台 runner。
 
-### 5C：Conflict、Provenance 与 Promotion
+### Subplan 51：Inbox、Conflict、Provenance 与 Project Knowledge
 
 - 冲突检测和 supersedes。
-- Promotion Service。
-- SQLite/YAML 一致性恢复。
+- SQLite 内 Project Knowledge Promotion Service。
 - 删除与 never-suggest 负反馈。
+- Operational Store v11、用户决策与 CLI/REPL Inbox。
 
-### 5D：Memory Query 与 Context Selection
+### Subplan 52：Preferences/Profile Promotion Saga
+
+- `PreparedConfigurationChange`。
+- PromotionOperation 与 SQLite/YAML 一致性恢复。
+- activation provenance、undo 与 revision mismatch。
+
+### Subplan 53：Memory Query 与 Context Selection
 
 - 作用域、类别、词法相关性。
 - Token 预算和选择解释。
 - ContextBuilder/Assembler 集成。
+- Operational Store v12 与 AgentRun freeze/recovery reuse。
 
-### 5E：CLI、Inbox 与可视化管理
+### Subplan 51–54：CLI、Inbox 与管理入口
 
 - Learning Inbox。
 - Active Memory 管理。
 - 事件、Query API 和审计。
 
-### 5F：评估与真实任务试跑
+### Subplan 54：生产 Reviewer、评估与真实任务试跑
 
 - 候选准确率基准。
 - 错误学习、一次性指令和 Prompt Injection 测试。
@@ -552,7 +566,7 @@ Stage 5 只定义记录格式；Stage 7/8 才产生和应用这些信号。
 
 - LearningReview、LearningCandidate、Evidence 与策略模型。
 - TaskOutcome 后学习 Pipeline。
-- PreferenceRecord 和 ProjectKnowledgeRecord。
+- ConfigurationActivation 来源记录和 ProjectKnowledgeRecord；Active Profile/Preferences 仍以 YAML 为权威。
 - 去重、冲突、作用域、敏感信息和过期策略。
 - LearningPromotionService 与一致性恢复。
 - Memory Query / Selection 与上下文注入。
@@ -563,9 +577,11 @@ Stage 5 只定义记录格式；Stage 7/8 才产生和应用这些信号。
 
 ## 十四、验收场景
 
-### 14.1 明确长期偏好
+### 14.1 明确项目约定
 
-用户在任务中明确说“这个项目以后测试都用 `uv run pytest`”。系统生成 workspace Preference 候选；`review_only` 下等待确认，`explicit_auto` 下满足规则后自动激活并通知。后续任务只在该 Workspace 使用。
+用户在任务中明确说“这个项目以后测试都用 `uv run pytest`”。系统生成 workspace Project Knowledge
+候选（`convention/testing.command`）；`review_only` 下等待用户预览和确认，绝不自动激活。接受后，只有
+相关的后续 AgentRun 才会选择这条知识。
 
 ### 14.2 一次性要求不学习
 
@@ -630,7 +646,7 @@ Assistant 多次使用详细回答，但用户从未表达偏好。不得仅根�
 
 ## 十八、阶段完成标准
 
-1. 每个完成 Task 可以生成零个或多个结构化候选；“零候选”是正常结果。
+1. 每个 accepted Task 可以生成零个或多个结构化候选；“零候选”是正常结果。
 2. 推断性候选默认不会直接进入 Active 状态。
 3. 用户能查看候选类型、作用域、Evidence、冲突和模型/策略版本。
 4. 接受、编辑、拒绝、禁用、删除和 supersede 路径可用且可审计。

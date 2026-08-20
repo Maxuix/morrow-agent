@@ -1461,3 +1461,22 @@
   contained eight verified commits and local `main` had no divergent commits. Remote publication
   was withheld because `main` was already 29 commits ahead of `origin/main` before integration;
   pushing would also publish unrelated pre-existing local history.
+
+## 2026-08-20 — Stage 5 executable plan authorized
+
+- The user authorized Stage 5 planning after reviewing the two Learning/Memory design discussions
+  against the current code. Production implementation remains unstarted; Subplan 49 is ready.
+- Replaced the completed Pre-Stage 5 index with a six-slice Stage 5 route: 49 domain/v10, 50 accepted
+  Outcome pipeline, 51 Inbox/Project Knowledge/v11, 52 configuration Promotion Saga, 53
+  MemorySelection/context/v12, and 54 production Reviewer/evaluation/acceptance.
+- Locked current-code semantics: accepted TaskOutcome is the automatic trigger; no
+  `completed`/`corrected` Task state; no background Worker; first release exposes only `off` and
+  `review_only`; `/accept` remains Task-only and `/learn accept` is Candidate-only.
+- Locked authority and runtime boundaries: YAML remains Active Profile/Preferences authority;
+  SQLite owns Learning audit, Project Knowledge, Saga provenance, and selection; only Promotion may
+  change Active state; AgentRun freezes the selected memory consumed by ContextBuilder.
+- Corrected the Stage 5 roadmap and master roadmap to describe planning status, actual Task states,
+  closed `explicit_auto`, Project Knowledge classification for project test commands, and the
+  Subplan 49–54 execution sequence.
+- At the planning baseline `main` and `origin/main` are synchronized at `61f82f2`. The two untracked
+  Stage 5 research documents remain preserved user files and were not adopted or modified.

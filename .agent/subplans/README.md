@@ -1,7 +1,8 @@
 # Subplans
 
-Stage 4 Durable Task, Session, Artifact, and Recovery final review remediation is complete.
-Pre-Stage 5 Subplan 48 is completed; Stage 5 remains inactive.
+Stage 4 and the Pre-Stage 5 boundary refactor are complete. The user authorized the Stage 5 master
+plan on 2026-08-20. Subplan 49 is ready to start; no Stage 5 production implementation task has
+started yet.
 
 Subplan 35 and the conditional review remediation were accepted on 2026-08-19 and preserved in Git
 history at `20fb43e`; its retired task file is no longer kept in the active subplan directory.
@@ -21,6 +22,12 @@ history at `20fb43e`; its retired task file is no longer kept in the active subp
 | 46 | `46-stage4-boundary-refactor.md` | completed |
 | 47 | `47-stage4-real-user-remediation.md` | completed |
 | 48 | `48-pre-stage5-boundary-refactor.md` | completed |
+| 49 | `49-stage5-learning-foundation.md` | ready |
+| 50 | `50-stage5-review-pipeline.md` | planned |
+| 51 | `51-stage5-inbox-project-knowledge.md` | planned |
+| 52 | `52-stage5-configuration-promotion.md` | planned |
+| 53 | `53-stage5-memory-selection-context.md` | planned |
+| 54 | `54-stage5-reviewer-acceptance.md` | planned |
 
 Completed Stage 3 Subplans 29–34 were removed from the active directory when this master plan was
 created; they remain recoverable in Git history together with their accepted evidence.
@@ -30,7 +37,7 @@ created; they remain recoverable in Git history together with their accepted evi
 - `.agent/PLAN.md` is the living master index and cross-cutting contract.
 - `.agent/TODO.md` contains executable tasks for the one active subplan only.
 - Start one subplan only after its prerequisite gate passes and the user-authorized execution state
-  is updated.
+  is updated. For Stage 5, create the branch listed in that subplan from the latest verified `main`.
 - Keep production changes inside the active subplan's ownership; do not implement a later slice
   early.
 - When code or validation conflicts with a plan, update the stale plan before continuing.
