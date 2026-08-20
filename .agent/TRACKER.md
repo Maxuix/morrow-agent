@@ -17,14 +17,13 @@ recovery, Session projections, and CLI/REPL controls. Subplan 51 is verified and
 
 ## Active task
 
-Implement S54.4: create the versioned synthetic adversarial evaluation dataset and deterministic
-quality evaluator for the complete Learning safety/promotion boundary.
+Implement S54.5: complete Stage 5 doctor, backup, end-to-end acceptance, and documentation evidence.
 
 ## Next action
 
-Map the existing safety scanner, candidate pipeline, promotion Saga, and Memory Selection budgets;
-then add JSON fixtures and a bounded report covering positive, negative, injection, secret, duplicate,
-suppression, workspace, and malformed Reviewer cases without live Provider calls.
+Extend the read-only doctor and isolated backup acceptance over Review/Candidate/Knowledge/Selection
+invariants; then run restart, multi-workspace, crash-boundary, REPL/headless, and documentation
+acceptance checks without changing YAML authority or invoking a live Provider.
 
 ## Blockers
 
@@ -93,6 +92,12 @@ adopted into version control.
   candidate-only outcome; no Knowledge head, memory activation, workspace file, or future runtime
   state is created. Full offline validation passed 794 tests, 2 skips, 1 deselected; checkpoint is
   `4ff41a4`.
+- S54.4 is complete: versioned synthetic JSON cases and a deterministic no-Provider evaluator cover
+  durable/temporary/negative/quoted/hypothetical/Assistant-only, injection/secret/hidden-Unicode/
+  capability, duplicate/suppression/workspace, malformed Reviewer, future candidate-only, and
+  Selection budget/freeze boundaries. The report records 26/26 cases passed, 5 safety-negative
+  cases, and zero Active writes. Focused tests passed 10; the full offline gate passed 804 tests,
+  2 skips, 1 deselected; checkpoint is `6f77940`.
 - S52 is complete: prepared configuration revisions/digests, YAML promotion Saga, Preference/
   Profile whitelist, foreground recovery, activation provenance/undo, Session projection updates,
   recoverable after-state finalization, explicit REPL global scope, and activation memory events.

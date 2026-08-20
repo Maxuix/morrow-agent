@@ -1779,3 +1779,19 @@
 - Focused future-candidate tests passed (21 tests across the Stage 5 application set). Full offline
   gate passed: `794 passed, 2 skipped, 1 deselected`; Ruff format/check, compileall,
   root/Learning/Memory CLI help, and `git diff --check` passed. Checkpoint `4ff41a4`. S54.4 active.
+
+## 2026-08-21 — Subplan 54 S54.4 verified; S54.5 active
+
+- Added a versioned synthetic JSON evaluation set and a bounded deterministic evaluator. It strictly
+  parses Reviewer batches, enforces evidence allowlists and source authority, rejects safety-negative
+  content, deduplicated/suppressed/cross-workspace proposals, malformed or oversize output, and
+  keeps future Skill/Workflow/Orchestration proposals candidate-only. Selection item/character
+  budgets and same-Run reuse are represented as explicit cases.
+- Tightened the shared positive explicit-user evidence predicate and deterministic text classifier:
+  negative, one-shot, quoted, and hypothetical user text cannot satisfy the durable Preference/Profile
+  gate. Safety-rejected source text is represented by digest/reason code only in Learning context and
+  application events.
+- The offline report evaluated 26/26 cases, including 5 safety-negative cases, with zero Active
+  writes. Focused evaluation tests passed (10 tests). The full offline gate passed `804 passed,
+  2 skipped, 1 deselected`; Ruff format/check, compileall, root/Learning/Memory CLI help, and
+  `git diff --check` passed. Checkpoint `6f77940`. S54.5 active.
