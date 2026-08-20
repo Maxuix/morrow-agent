@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from morrow.core.journal import TransactionalJournalPort
+from morrow.core.journal import TransactionalJournalPort, TurnLifecycleJournalPort
+from morrow.core.learning_memory_ports import LearningMemoryJournalPort
 from morrow.core.memory_selection import MemorySearchTerm, MemorySelection
 
 
@@ -30,6 +31,15 @@ class MemorySelectionJournalPort(TransactionalJournalPort, Protocol):
         terms: tuple[MemorySearchTerm, ...],
     ) -> tuple[MemorySearchTerm, ...]: ...
 
+
+class MemorySelectionAdmissionPort(
+    TurnLifecycleJournalPort,
+    LearningMemoryJournalPort,
+    MemorySelectionJournalPort,
+    Protocol,
+):
+    """Composite read/write surface for one atomic foreground admission."""
+
     def list_memory_search_terms(
         self,
         workspace_id: str,
@@ -40,4 +50,4 @@ class MemorySelectionJournalPort(TransactionalJournalPort, Protocol):
     ) -> tuple[MemorySearchTerm, ...]: ...
 
 
-__all__ = ["MemorySelectionJournalPort"]
+__all__ = ["MemorySelectionAdmissionPort", "MemorySelectionJournalPort"]

@@ -32,6 +32,8 @@ from morrow.core.domain import (
     sha256_digest,
 )
 from morrow.core.journal import SessionRestoreJournalPort, TurnLifecycleJournalPort
+from morrow.core.memory_selection import MemoryQuery, MemorySelection
+from morrow.core.memory_selection_ports import MemorySelectionAdmissionPort
 from morrow.core.models import (
     FinishReason,
     ModelRef,
@@ -40,6 +42,7 @@ from morrow.core.models import (
     UserMessage,
 )
 from morrow.core.ports import IdSource
+from morrow.core.preferences import merge_preferences
 from morrow.core.recovery import RecoveryReport, RecoveryReportStatus
 from morrow.core.store import StorageError, StorageErrorCode
 from morrow.runtime.conversation import (
@@ -53,6 +56,9 @@ from morrow.runtime.durable_log import (
     restore_conversation_log,
 )
 from morrow.runtime.session import Session
+
+from .learning.memory_run_projection import load_frozen_memory_selection
+from .learning.memory_selector import MemorySelector
 
 
 @dataclass
@@ -97,7 +103,7 @@ class TurnSubmissionCoordinator:
 
     def __init__(
         self,
-        journal: TurnLifecycleJournalPort,
+        journal: MemorySelectionAdmissionPort,
         *,
         workspace_id: str,
         id_source: IdSource,
@@ -117,6 +123,7 @@ class TurnSubmissionCoordinator:
         self.tasks = tasks
         self.clock = clock
         self.state = state
+        self.memory_selector = MemorySelector(id_source=id_source, clock=clock)
 
     def commit(
         self,
@@ -193,16 +200,9 @@ class TurnSubmissionCoordinator:
             raise _turn_health_error(session.health)
 
         planned = session.log.plan_begin_turn(UserMessage(content=user_input))
-        snapshot = build_agent_run_snapshot(
-            session,
-            model=self.model,
-            run_policy=self.run_policy,
-            tools=tools,
-            runtime_instance_id=self.runtime_instance_id,
-        )
         command_id = self.id_source.new_id(COMMAND_ID_PREFIX)
 
-        def work(txn: TurnLifecycleJournalPort) -> _AcceptedTurn | TurnSubmitResult:
+        def work(txn: MemorySelectionAdmissionPort) -> _AcceptedTurn | TurnSubmitResult:
             row = txn.get_session(self.workspace_id, session.session_id)
             if row is None:
                 stamp = self.clock()
@@ -269,6 +269,25 @@ class TurnSubmissionCoordinator:
                     turn_id=turn_id,
                 )
             stored_agent_run_id = agent_run_id or self.id_source.new_id(AGENT_RUN_ID_PREFIX)
+            selection = self.memory_selector.select(
+                txn,
+                MemoryQuery(
+                    workspace_id=self.workspace_id,
+                    task_run_id=task_id,
+                    turn_id=turn_id,
+                    task_goal=user_input,
+                ),
+                now=stamp,
+            )
+            snapshot = build_agent_run_snapshot(
+                session,
+                model=self.model,
+                run_policy=self.run_policy,
+                tools=tools,
+                runtime_instance_id=self.runtime_instance_id,
+                memory_selection=selection,
+            )
+            txn.put_memory_selection(self.workspace_id, selection)
             txn.create_agent_run(
                 self.workspace_id,
                 DurableAgentRun(
@@ -502,6 +521,8 @@ class SessionRestoreCoordinator:
             self.state.permission_snapshot_id = (
                 interrupted.permission_snapshot_id if interrupted is not None else None
             )
+            if interrupted is not None:
+                self._validate_memory_projection(session, interrupted.snapshot)
         if report is not None and session.health is not SessionHealth.QUARANTINED:
             session.health = SessionHealth.NEEDS_RECOVERY
         elif session.lifecycle is SessionLifecycle.ACTIVE and session.log.has_active_turn:
@@ -511,7 +532,18 @@ class SessionRestoreCoordinator:
             self.state.agent_run_id = runs[-1].agent_run_id if runs else None
             if turns:
                 self.state.last_client_message_id = turns[-1].client_message_id
+            if runs:
+                self._validate_memory_projection(session, runs[-1].snapshot)
             self.state.pending_resume = session.health is SessionHealth.OK
+
+    def _validate_memory_projection(self, session: Session, snapshot: AgentRunSnapshot) -> None:
+        try:
+            load_frozen_memory_selection(self.journal, self.workspace_id, snapshot)
+        except StorageError as exc:
+            if exc.code is StorageErrorCode.NEEDS_REPAIR:
+                session.health = SessionHealth.QUARANTINED
+                return
+            raise
 
 
 def request_digest(user_input: str) -> str:
@@ -525,6 +557,7 @@ def build_agent_run_snapshot(
     run_policy,
     tools: tuple[ToolDefinition, ...],
     runtime_instance_id: str,
+    memory_selection: MemorySelection | None = None,
 ) -> AgentRunSnapshot:
     def source_digest(presence: StatePresence, value) -> str:
         return sha256_digest(
@@ -555,11 +588,21 @@ def build_agent_run_snapshot(
                 session.workspace_preferences,
             ),
         ),
+        SourceRevisionRef(
+            kind="session_preferences",
+            revision=0,
+            content_sha256=source_digest(StatePresence.PRESENT, session.preferences),
+        ),
+    )
+    effective_preferences = merge_preferences(
+        session.global_preferences,
+        session.workspace_preferences,
+        session.preferences,
     )
     tool_payload = [tool.model_dump(mode="json") for tool in tools]
     return AgentRunSnapshot(
         profile=session.profile,
-        preferences=session.preferences,
+        preferences=effective_preferences,
         model=model,
         provider_id=model.provider_id,
         source_revisions=revisions,
@@ -569,6 +612,11 @@ def build_agent_run_snapshot(
             canonical_json_bytes(session.permission_profile.model_dump(mode="json"))
         ),
         runtime_instance_id=runtime_instance_id,
+        memory_selection_id=memory_selection.selection_id if memory_selection else None,
+        memory_selection_digest=memory_selection.selection_digest if memory_selection else None,
+        memory_snapshot_revision=(
+            memory_selection.source_memory_revision if memory_selection is not None else None
+        ),
     )
 
 

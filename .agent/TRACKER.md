@@ -16,14 +16,14 @@ surfaces, and lazy query expiry. Subplan 50 is merged at `4d47be8` underneath it
 
 ## Active task
 
-Implement S53.4: freeze MemorySelection and effective configuration into new/recovery AgentRun
-admission.
+Implement S53.5: make ContextBuilder consume the frozen RunContextProjection for every model/tool
+cycle.
 
 ## Next action
 
-Integrate the existing selector into the short admission transaction, persist the immutable
-selection and AgentRun snapshot together, reuse it for recovery, and keep ContextBuilder,
-Reviewer, and history search out of this task.
+Trace the current ContextBuilder/runtime call path, add a bounded RunContextProjection loader that
+verifies the exact AgentRun selection and immutable Knowledge revisions, then route every model/tool
+cycle through that frozen projection without changing AgentLoop ownership.
 
 ## Blockers
 
@@ -66,6 +66,11 @@ adopted into version control.
   diversity, item/character budgets, explainable reasons, canonical rendering, and selection
   digests. Full offline validation passed with 763 tests, 2 skips, 1 deselection, Ruff
   format/check, compileall, and `git diff --check`.
+- S53.4 is implemented: foreground admission now builds and persists one MemorySelection with the
+  AgentRun snapshot, freezes effective global/workspace/session Preferences with source revisions,
+  recovery reuses the exact selection, and restore/recovery fail closed on missing or mismatched
+  selection references. Focused admission/recovery/rollback tests plus the full offline gate passed:
+  767 tests, 2 skips, 1 deselected; Ruff, compileall, CLI help, and diff check passed.
 - S52 is complete: prepared configuration revisions/digests, YAML promotion Saga, Preference/
   Profile whitelist, foreground recovery, activation provenance/undo, Session projection updates,
   recoverable after-state finalization, explicit REPL global scope, and activation memory events.

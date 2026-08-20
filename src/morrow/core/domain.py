@@ -470,7 +470,12 @@ class ApplicationEventCursor(ProtocolModel):
 
 
 class SourceRevisionRef(ProtocolModel):
-    kind: Literal["global_config", "workspace_profile", "workspace_preferences"]
+    kind: Literal[
+        "global_config",
+        "workspace_profile",
+        "workspace_preferences",
+        "session_preferences",
+    ]
     revision: int = Field(ge=0)
     content_sha256: str
 
@@ -494,6 +499,9 @@ class AgentRunSnapshot(ProtocolModel):
     tool_schema_digest: str
     permission_profile_digest: str
     runtime_instance_id: str
+    memory_selection_id: str | None = None
+    memory_selection_digest: str | None = None
+    memory_snapshot_revision: int | None = Field(default=None, ge=0)
 
     @field_validator("provider_id", "runtime_instance_id")
     @classmethod
@@ -509,8 +517,33 @@ class AgentRunSnapshot(ProtocolModel):
             raise ValueError("snapshot digest must be a SHA-256 hex digest")
         return value
 
+    @field_validator("memory_selection_id")
+    @classmethod
+    def valid_memory_selection_id(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return validate_prefixed_id(value, "msel")
+
+    @field_validator("memory_selection_digest")
+    @classmethod
+    def valid_memory_selection_digest(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if not DIGEST_PATTERN.match(value):
+            raise ValueError("memory selection digest must be a SHA-256 hex digest")
+        return value
+
     @model_validator(mode="after")
     def enforce_budget_and_redaction(self) -> AgentRunSnapshot:
+        memory_fields = (
+            self.memory_selection_id,
+            self.memory_selection_digest,
+            self.memory_snapshot_revision,
+        )
+        if any(value is not None for value in memory_fields) and not all(
+            value is not None for value in memory_fields
+        ):
+            raise ValueError("memory selection snapshot fields must be provided together")
         dumped = self.model_dump(mode="json")
         payload = canonical_json_bytes(dumped)
         require_payload_budget(payload, AGENT_RUN_SNAPSHOT_MAX_BYTES, label="AgentRun snapshot")

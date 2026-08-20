@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import timedelta
 
 from morrow.application.api_context import ApplicationCommandContext
+from morrow.application.learning.memory_run_projection import load_frozen_memory_selection
 from morrow.core.application import (
     ApplicationCommandDisposition,
     ApplicationCommandReceipt,
@@ -248,6 +249,7 @@ class RecoveryApplicationService:
                 previous = txn.get_agent_run(api.workspace_id, saved.agent_run_id)
                 if previous is None:
                     raise StorageError(StorageErrorCode.NOT_FOUND, "recovery AgentRun is missing")
+                load_frozen_memory_selection(txn, api.workspace_id, previous.snapshot)
                 new_id = api.id_source.new_id(AGENT_RUN_ID_PREFIX)
                 runtime_instance_id = getattr(api.persistence, "runtime_instance_id", None)
                 snapshot = previous.snapshot

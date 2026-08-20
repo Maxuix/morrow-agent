@@ -1673,3 +1673,15 @@
 - Activated S53.1: implement the v12 MemorySelection/Item/Query durable contracts, migration,
   repository/ports, and upgrade/future/corruption tests before adding selector or ContextBuilder
   behavior. The two research documents remain untracked and preserved.
+
+## 2026-08-21 — Subplan 53 S53.4 verified; S53.5 active
+
+- Integrated `MemorySelector` into the existing short foreground admission transaction. Each new
+  User Turn now persists its immutable selection/items, effective merged Preferences snapshot,
+  source revisions, AgentRun, receipt, and ConversationLog append atomically.
+- Added the `AgentRunSnapshot` memory reference contract and a small frozen-selection validation
+  helper. Recovery AgentRuns reuse the interrupted Run's exact selection; restore and recovery
+  quarantine or fail closed on missing/mismatched references instead of reselecting current memory.
+- Added admission, rollback, memory-revision-change recovery, and missing-selection restore tests.
+  Full offline validation passed: 767 tests, 2 skipped, 1 deselected; Ruff format/check,
+  compileall, root/Learning/Memory CLI help, and `git diff --check` passed. S53.5 is active.
