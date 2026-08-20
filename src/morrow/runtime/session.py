@@ -13,7 +13,7 @@ from morrow.core.capabilities import (
     ToolRunContext,
     WorkspaceCapability,
 )
-from morrow.core.context import ContextCheckpoint
+from morrow.core.context import ContextCheckpoint, RunContextProjection
 from morrow.core.domain import SessionHealth, SessionLifecycle
 from morrow.core.execution import (
     DurableApproval,
@@ -180,6 +180,7 @@ class Session:
     profile_presence: StatePresence = StatePresence.MISSING
     workspace_preferences_presence: StatePresence = StatePresence.MISSING
     context_checkpoint: ContextCheckpoint | None = None
+    run_context_projection: RunContextProjection | None = None
 
     def __post_init__(self) -> None:
         # Hand-built Sessions in tests and local integrations may only provide values.  Infer
@@ -237,6 +238,7 @@ class Session:
         self.latest_tool_facts = ()
         self.latest_metrics = None
         self.context_checkpoint = None
+        self.run_context_projection = None
         self.pending_full_access_grant = False
 
     def retain_run_facts(

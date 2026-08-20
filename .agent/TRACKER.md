@@ -16,14 +16,14 @@ surfaces, and lazy query expiry. Subplan 50 is merged at `4d47be8` underneath it
 
 ## Active task
 
-Implement S53.5: make ContextBuilder consume the frozen RunContextProjection for every model/tool
-cycle.
+Implement S53.6: add MemorySelection inspection, doctor/backup invariants, CLI/REPL surfaces, and
+documentation.
 
 ## Next action
 
-Trace the current ContextBuilder/runtime call path, add a bounded RunContextProjection loader that
-verifies the exact AgentRun selection and immutable Knowledge revisions, then route every model/tool
-cycle through that frozen projection without changing AgentLoop ownership.
+Add bounded selection list/show queries, cross-check AgentRun references and immutable Knowledge
+revisions in doctor/backup verification, expose the authorized CLI/REPL inspection surface, and
+document the frozen memory behavior without introducing scoring internals or new authorities.
 
 ## Blockers
 
@@ -71,6 +71,11 @@ adopted into version control.
   recovery reuses the exact selection, and restore/recovery fail closed on missing or mismatched
   selection references. Focused admission/recovery/rollback tests plus the full offline gate passed:
   767 tests, 2 skips, 1 deselected; Ruff, compileall, CLI help, and diff check passed.
+- S53.5 is implemented: durable Sessions now install a verified RunContextProjection, ContextBuilder
+  consumes the exact frozen Profile/Preferences and canonical untrusted Project Knowledge block,
+  same-Run live changes remain invisible, and new Runs/legacy process-local Sessions retain explicit
+  behavior. Full offline validation passed: 771 tests, 2 skips, 1 deselected; Ruff, compileall,
+  CLI help, and diff check passed.
 - S52 is complete: prepared configuration revisions/digests, YAML promotion Saga, Preference/
   Profile whitelist, foreground recovery, activation provenance/undo, Session projection updates,
   recoverable after-state finalization, explicit REPL global scope, and activation memory events.

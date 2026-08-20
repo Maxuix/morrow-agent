@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 
@@ -13,11 +14,14 @@ from morrow.core.domain import (
     SESSION_ID_PREFIX,
     TASK_RUN_ID_PREFIX,
     WORKSPACE_ID_PREFIX,
+    AgentRunSnapshot,
     ArtifactReference,
     canonical_json_bytes,
     refuse_secret_material,
     validate_prefixed_id,
 )
+from morrow.core.learning_memory import ProjectKnowledgeHead, ProjectKnowledgeRevision
+from morrow.core.memory_selection import MemorySelection
 from morrow.core.models import ProtocolModel, utc_now
 
 CONTEXT_CHECKPOINT_MAX_BYTES = 32 * 1024
@@ -25,6 +29,27 @@ CONTEXT_SECTION_MAX_BYTES = 8 * 1024
 CONTEXT_CHECKPOINT_MAX_RECORDS = 512
 CONTEXT_CHECKPOINT_MAX_SECTIONS = 128
 CONTEXT_CHECKPOINT_MAX_ARTIFACT_REFS = 64
+
+
+@dataclass(frozen=True, slots=True)
+class FrozenProjectKnowledge:
+    """One immutable Project Knowledge revision rendered for a Run projection."""
+
+    head: ProjectKnowledgeHead
+    revision: ProjectKnowledgeRevision
+    rendered_content: str
+    rendered_content_digest: str
+
+
+@dataclass(frozen=True, slots=True)
+class RunContextProjection:
+    """In-process context baseline rebuilt from one exact durable AgentRun."""
+
+    snapshot: AgentRunSnapshot
+    memory_selection: MemorySelection | None = None
+    selected_knowledge: tuple[FrozenProjectKnowledge, ...] = ()
+    memory_block: str = ""
+    memory_content_digest: str | None = None
 
 
 class CheckpointOmissionReason(StrEnum):

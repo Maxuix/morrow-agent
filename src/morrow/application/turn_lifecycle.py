@@ -31,9 +31,12 @@ from morrow.core.domain import (
     session_can_start_work,
     sha256_digest,
 )
-from morrow.core.journal import SessionRestoreJournalPort, TurnLifecycleJournalPort
+from morrow.core.journal import TurnLifecycleJournalPort
 from morrow.core.memory_selection import MemoryQuery, MemorySelection
-from morrow.core.memory_selection_ports import MemorySelectionAdmissionPort
+from morrow.core.memory_selection_ports import (
+    MemoryRunProjectionJournalPort,
+    MemorySelectionAdmissionPort,
+)
 from morrow.core.models import (
     FinishReason,
     ModelRef,
@@ -57,7 +60,10 @@ from morrow.runtime.durable_log import (
 )
 from morrow.runtime.session import Session
 
-from .learning.memory_run_projection import load_frozen_memory_selection
+from .learning.memory_run_projection import (
+    build_run_context_projection,
+    load_run_context_projection,
+)
 from .learning.memory_selector import MemorySelector
 
 
@@ -316,11 +322,21 @@ class TurnSubmissionCoordinator:
         if isinstance(accepted, TurnSubmitResult):
             session.health = SessionHealth.NEEDS_RECOVERY
             return accepted
+        try:
+            projection = load_run_context_projection(
+                self.journal, self.workspace_id, accepted.agent_run_id
+            )
+        except StorageError as exc:
+            session.run_context_projection = None
+            if exc.code is StorageErrorCode.NEEDS_REPAIR:
+                session.health = SessionHealth.QUARANTINED
+            raise
         self.state.turn_id = accepted.turn_id
         self.state.task_run_id = accepted.task_run_id
         self.state.agent_run_id = accepted.agent_run_id
         self.state.permission_snapshot_id = None
         self.state.last_client_message_id = client_message_id
+        session.run_context_projection = projection
         session.log.apply_committed(planned)
         session.dirty = True
         receipt = self.journal.get_receipt(self.workspace_id, session.session_id, client_message_id)
@@ -394,7 +410,7 @@ class SessionRestoreCoordinator:
 
     def __init__(
         self,
-        journal: SessionRestoreJournalPort,
+        journal: MemoryRunProjectionJournalPort,
         *,
         workspace_id: str,
         recovery: RecoveryService,
@@ -423,6 +439,7 @@ class SessionRestoreCoordinator:
 
     def restore_into(self, session: Session) -> None:
         self.state.reset()
+        session.run_context_projection = None
         row = self.journal.get_session(self.workspace_id, session.session_id)
         if row is None:
             stamp = self.clock()
@@ -489,6 +506,11 @@ class SessionRestoreCoordinator:
         if resumed_agent_run_id is not None:
             self.state.agent_run_id = resumed_agent_run_id
             self.state.permission_snapshot_id = None
+            session.run_context_projection = load_run_context_projection(
+                self.journal, self.workspace_id, resumed_agent_run_id
+            )
+        elif report.status is RecoveryReportStatus.RESOLVED:
+            session.run_context_projection = None
         self.state.open_report = None if report.status is RecoveryReportStatus.RESOLVED else report
 
     def _restore_context_checkpoint(self, row: DurableSession) -> ContextCheckpoint | None:
@@ -504,6 +526,7 @@ class SessionRestoreCoordinator:
             return None
 
     def _restore_active_work(self, session: Session) -> None:
+        session.run_context_projection = None
         report = self.recovery.discover(session.session_id, session.log)
         self.state.open_report = report
         if report is not None:
@@ -522,7 +545,7 @@ class SessionRestoreCoordinator:
                 interrupted.permission_snapshot_id if interrupted is not None else None
             )
             if interrupted is not None:
-                self._validate_memory_projection(session, interrupted.snapshot)
+                self._install_memory_projection(session, interrupted.snapshot)
         if report is not None and session.health is not SessionHealth.QUARANTINED:
             session.health = SessionHealth.NEEDS_RECOVERY
         elif session.lifecycle is SessionLifecycle.ACTIVE and session.log.has_active_turn:
@@ -533,14 +556,17 @@ class SessionRestoreCoordinator:
             if turns:
                 self.state.last_client_message_id = turns[-1].client_message_id
             if runs:
-                self._validate_memory_projection(session, runs[-1].snapshot)
+                self._install_memory_projection(session, runs[-1].snapshot)
             self.state.pending_resume = session.health is SessionHealth.OK
 
-    def _validate_memory_projection(self, session: Session, snapshot: AgentRunSnapshot) -> None:
+    def _install_memory_projection(self, session: Session, snapshot: AgentRunSnapshot) -> None:
         try:
-            load_frozen_memory_selection(self.journal, self.workspace_id, snapshot)
+            session.run_context_projection = build_run_context_projection(
+                self.journal, self.workspace_id, snapshot
+            )
         except StorageError as exc:
             if exc.code is StorageErrorCode.NEEDS_REPAIR:
+                session.run_context_projection = None
                 session.health = SessionHealth.QUARANTINED
                 return
             raise

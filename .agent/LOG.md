@@ -1685,3 +1685,16 @@
 - Added admission, rollback, memory-revision-change recovery, and missing-selection restore tests.
   Full offline validation passed: 767 tests, 2 skipped, 1 deselected; Ruff format/check,
   compileall, root/Learning/Memory CLI help, and `git diff --check` passed. S53.5 is active.
+
+## 2026-08-21 — Subplan 53 S53.5 verified; S53.6 active
+
+- Added a bounded `RunContextProjection` containing the exact AgentRun snapshot, selected
+  immutable Knowledge revisions, canonical untrusted memory JSON, and content digest. Durable
+  admission, restore, rollback synchronization, and recovery now install or rebuild it without
+  letting ContextBuilder query Learning storage.
+- ContextBuilder consumes the frozen Profile/Preferences baseline and memory block on every model
+  and structured-context cycle; process-local/test Sessions retain an explicit live-state fallback.
+  Same-Run configuration and Knowledge changes stay invisible until a new AgentRun.
+- Added frozen-context, next-Turn refresh, zero-item, and process-local fallback tests. Full offline
+  validation passed: 771 tests, 2 skipped, 1 deselected; Ruff format/check, compileall,
+  root/Learning/Memory CLI help, and `git diff --check` passed. S53.6 is active.

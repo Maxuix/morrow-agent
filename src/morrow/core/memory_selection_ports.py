@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from morrow.core.journal import TransactionalJournalPort, TurnLifecycleJournalPort
+from morrow.core.journal import (
+    SessionRestoreJournalPort,
+    TransactionalJournalPort,
+    TurnLifecycleJournalPort,
+)
 from morrow.core.learning_memory_ports import LearningMemoryJournalPort
 from morrow.core.memory_selection import MemorySearchTerm, MemorySelection
 
@@ -32,10 +36,18 @@ class MemorySelectionJournalPort(TransactionalJournalPort, Protocol):
     ) -> tuple[MemorySearchTerm, ...]: ...
 
 
-class MemorySelectionAdmissionPort(
-    TurnLifecycleJournalPort,
+class MemoryRunProjectionJournalPort(
+    SessionRestoreJournalPort,
     LearningMemoryJournalPort,
     MemorySelectionJournalPort,
+    Protocol,
+):
+    """Read surface for rebuilding one durable AgentRun context projection."""
+
+
+class MemorySelectionAdmissionPort(
+    TurnLifecycleJournalPort,
+    MemoryRunProjectionJournalPort,
     Protocol,
 ):
     """Composite read/write surface for one atomic foreground admission."""
@@ -50,4 +62,8 @@ class MemorySelectionAdmissionPort(
     ) -> tuple[MemorySearchTerm, ...]: ...
 
 
-__all__ = ["MemorySelectionAdmissionPort", "MemorySelectionJournalPort"]
+__all__ = [
+    "MemoryRunProjectionJournalPort",
+    "MemorySelectionAdmissionPort",
+    "MemorySelectionJournalPort",
+]

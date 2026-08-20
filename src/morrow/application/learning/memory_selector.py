@@ -42,6 +42,24 @@ _REASON_ORDER = {
 }
 
 
+def memory_selection_digest(selection: MemorySelection) -> str:
+    """Recompute the immutable selection digest without trusting its stored value."""
+
+    return sha256_digest(
+        canonical_json_bytes(
+            {
+                "selection_id": selection.selection_id,
+                "workspace_id": selection.workspace_id,
+                "query_digest": selection.query_digest,
+                "source_memory_revision": selection.source_memory_revision,
+                "items": [item.model_dump(mode="json") for item in selection.selected_items],
+                "omitted_count": selection.omitted_count,
+                "rendered_chars": selection.rendered_chars,
+            }
+        )
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class _SelectionCandidate:
     head: ProjectKnowledgeHead
@@ -129,20 +147,7 @@ class MemorySelector:
             for ordinal, candidate in enumerate(selected, start=1)
         )
         query_digest = sha256_digest(canonical_json_bytes(query.model_dump(mode="json")))
-        selection_digest = sha256_digest(
-            canonical_json_bytes(
-                {
-                    "selection_id": selection_id,
-                    "workspace_id": query.workspace_id,
-                    "query_digest": query_digest,
-                    "source_memory_revision": source_memory_revision,
-                    "items": [item.model_dump(mode="json") for item in items],
-                    "omitted_count": omitted,
-                    "rendered_chars": sum(item.estimated_chars for item in items),
-                }
-            )
-        )
-        return MemorySelection(
+        selection = MemorySelection(
             selection_id=selection_id,
             workspace_id=query.workspace_id,
             query_digest=query_digest,
@@ -151,9 +156,10 @@ class MemorySelector:
             item_count=len(items),
             omitted_count=omitted,
             rendered_chars=sum(item.estimated_chars for item in items),
-            selection_digest=selection_digest,
+            selection_digest="0" * 64,
             created_at=stamp,
         )
+        return selection.model_copy(update={"selection_digest": memory_selection_digest(selection)})
 
     def _candidates(
         self,
@@ -354,4 +360,4 @@ class MemorySelector:
         return stamp.astimezone(UTC)
 
 
-__all__ = ["MEMORY_SELECTOR_HEAD_LIMIT", "MemorySelector"]
+__all__ = ["MEMORY_SELECTOR_HEAD_LIMIT", "MemorySelector", "memory_selection_digest"]
