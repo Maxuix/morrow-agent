@@ -40,6 +40,9 @@ Use Git as the source of truth for code history and recovery.
 For larger work:
 
 - Use a dedicated branch for each active subplan.
+- Base each new subplan branch on the latest verified `main`. Stack branches only when the stack is
+  intentional and recorded in the active plan.
+- Keep at most one worktree for an active subplan; do not leave detached dirty worktrees behind.
 - Keep commits small, coherent, and recoverable.
 - Commit meaningful verified progress.
 - Create a checkpoint before risky changes or switching work contexts.
@@ -64,7 +67,13 @@ Before completing a subplan:
 1. Ensure the relevant changes are committed.
 2. Run the required validation.
 3. Update the execution state.
-4. Merge only verified work.
+4. Merge only verified work into `main`, using `git merge --ff-only` unless the active plan records
+   another strategy.
+5. When an authorized remote is configured, push `main` and verify that it is neither ahead of nor
+   behind its upstream. Record a blocker instead of silently leaving completed work only locally.
+6. Verify the topic branch has no commits absent from `main`, then delete it and remove its clean
+   worktree. Checkpoint or stash unexpected changes before removal; never force-remove a dirty
+   worktree.
 
 ## Boundaries
 
