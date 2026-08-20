@@ -6,19 +6,18 @@ Subplan 48 is active on `refactor/pre-stage5-boundaries`; Stage 5 remains inacti
 
 ## Last completed task
 
-S48.1 added the explicit `DurableRunCoordinator`, moved grant/fault/time access behind it, removed
-AgentLoop reach-through to SessionPersistence and SQLite, and preserved a separate process-local
-Session path. Its 221 focused regressions and touched-file quality gates passed.
+S48.2 introduced typed AgentLoop run state and extracted approval, permission recheck, handler
+timeout/cancellation, and durable execution transitions into a ToolCycle executor with no chat or
+public-event ownership. The full offline and quality gates passed.
 
 ## Active task
 
-S48.2 — extract typed AgentLoop run state and tool-cycle execution without moving history/event
-ownership.
+S48.3 — decompose SessionPersistence behind its compatible facade.
 
 ## Next action
 
-Introduce the typed run-state object, then isolate one tool-cycle execution behind typed inputs and
-outputs while keeping AgentLoop as the public-event and ConversationLog owner.
+Identify the state clusters and transaction seams inside SessionPersistence, then extract focused
+permission and durable-tool coordinators before Turn submission/restoration.
 
 ## Blockers
 

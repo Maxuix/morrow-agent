@@ -7,44 +7,42 @@ import inspect
 import json
 import time
 from collections.abc import AsyncIterator, Callable
+from dataclasses import dataclass, field
 
 from morrow.application.context import ContextBudgetError
 from morrow.core.application import ApplicationError
-from morrow.core.capabilities import PolicyVerdict, ToolRunContext
+from morrow.core.capabilities import ToolRunContext
 from morrow.core.events import completion_payload, make_event
 from morrow.core.execution import (
-    ApprovalDecisionError,
-    EffectClass,
-    ExecutionTransitionError,
+    DurableToolExecution,
     ToolExecutionDisposition,
     ToolExecutionState,
 )
-from morrow.core.faults import FaultPoint, InjectedFault
+from morrow.core.faults import InjectedFault
 from morrow.core.models import (
     AgentEvent,
     AgentStopCode,
     AssistantMessage,
     FinishReason,
+    FunctionToolCall,
     Message,
     ModelErrorCode,
     ModelEvent,
     ModelFinishReason,
     ModelRef,
     ProtocolModel,
-    ToolApprovalRequest,
     ToolDefinition,
-    ToolEffect,
     ToolMessage,
     UserMessage,
     sanitize_text,
     utc_now,
 )
-from morrow.core.permissions import PermissionEvidenceError
 from morrow.core.ports import Clock, IdSource, ModelProvider
 from morrow.runtime.conversation import ConversationLogError
 from morrow.runtime.durable_log import durable_call_id
 from morrow.runtime.ids import RandomIdSource
 from morrow.runtime.session import Session
+from morrow.runtime.tool_cycle import ToolCycleExecutor
 from morrow.runtime.tools import (
     MIN_ERROR_ENVELOPE_CHARS,
     ToolErrorCode,
@@ -203,8 +201,27 @@ def _consume_cancellation_request() -> None:
             task.uncancel()
 
 
-class _ToolCancellationRequested(Exception):
-    """The durable cancellation flag was observed before the handler completed."""
+@dataclass
+class _AgentRunState:
+    """Mutable state for one bounded AgentLoop run."""
+
+    turn_id: str
+    run_context: ToolRunContext
+    deadline: float
+    visible: str = ""
+    model_attempts: int = 0
+    tool_rounds: int = 0
+    tool_calls: int = 0
+    retry_count: int = 0
+    cycle_signatures: list[tuple] = field(default_factory=list)
+    active_calls: tuple[FunctionToolCall, ...] = ()
+    durable_executions: tuple[DurableToolExecution, ...] = ()
+    active_running_id: str | None = None
+    active_result_limit: int | None = None
+    final_committed: bool = False
+    facts_retained: bool = False
+    started: bool = False
+    settled: bool = False
 
 
 class _RunEventEmitter:
@@ -335,6 +352,15 @@ class AgentLoop:
         self.tool_executor = tool_executor
         self.grant_provider = grant_provider
         self.monotonic = monotonic or time.monotonic
+        self.tool_cycle = (
+            ToolCycleExecutor(
+                tool_executor,
+                self.run_policy,
+                wall_now=self._wall_now,
+            )
+            if tool_executor is not None
+            else None
+        )
 
     def _id(self, prefix: str) -> str:
         return self.id_source.new_id(prefix)
@@ -358,24 +384,6 @@ class AgentLoop:
             raise RuntimeError("本地 Host 权限授予未完成")
         session.pending_full_access_grant = False
 
-    async def _await_tool_with_cancellation(self, execution, session: Session, durable_execution):
-        task = asyncio.ensure_future(execution)
-        try:
-            while True:
-                done, _pending = await asyncio.wait((task,), timeout=0.05)
-                if done:
-                    return await task
-                current = self._reload_durable(session, durable_execution)
-                if current is not None and current.cancel_requested_at is not None:
-                    task.cancel()
-                    await asyncio.gather(task, return_exceptions=True)
-                    raise _ToolCancellationRequested
-        except asyncio.CancelledError:
-            if not task.done():
-                task.cancel()
-            await asyncio.gather(task, return_exceptions=True)
-            raise
-
     async def run_task(
         self,
         session: Session,
@@ -385,36 +393,29 @@ class AgentLoop:
         resume_current_turn: bool = False,
     ) -> AsyncIterator[AgentEvent]:
         client_message_id = client_message_id or self._id("cmsg")
-        turn_id = self._id("turn")
-        run_context = ToolRunContext(run_id=turn_id, session_id=session.session_id)
-        visible = ""
         policy = self.run_policy
         durable_runtime = session.durable_runtime
-        deadline = self.monotonic() + policy.max_run_seconds
-        model_attempts = 0
-        tool_rounds = 0
-        tool_calls = 0
-        retry_count = 0
-        cycle_signatures: list[tuple] = []
-        active_calls = ()
-        durable_executions = ()
-        active_running_id: str | None = None
-        active_result_limit: int | None = None
-        final_committed = False
-        facts_retained = False
+        initial_turn_id = self._id("turn")
+        state = _AgentRunState(
+            turn_id=initial_turn_id,
+            run_context=ToolRunContext(
+                run_id=initial_turn_id,
+                session_id=session.session_id,
+            ),
+            deadline=self.monotonic() + policy.max_run_seconds,
+        )
 
         def retain_facts(finish_reason: str = "unknown") -> None:
-            nonlocal facts_retained
-            if not facts_retained:
-                session.retain_run_facts(run_context, finish_reason=finish_reason)
-                facts_retained = True
+            if not state.facts_retained:
+                session.retain_run_facts(state.run_context, finish_reason=finish_reason)
+                state.facts_retained = True
 
         events = _RunEventEmitter(
             new_id=self._id,
             session=session,
             clock=self.clock,
-            turn_id=lambda: turn_id,
-            visible=lambda: visible,
+            turn_id=lambda: state.turn_id,
+            visible=lambda: state.visible,
             retain_facts=retain_facts,
         )
         event = events.event
@@ -427,14 +428,12 @@ class AgentLoop:
         ) -> list[AgentEvent]:
             return events.synthetic_statuses(
                 unresolved,
-                active_calls=active_calls,
-                active_running_id=active_running_id,
+                active_calls=state.active_calls,
+                active_running_id=state.active_running_id,
                 code=code,
                 running_status=running_status,
             )
 
-        started = False
-        settled = False
         try:
             if resume_current_turn:
                 if not session.log.has_active_turn:
@@ -443,25 +442,31 @@ class AgentLoop:
                     durable_runtime.current_turn_id if durable_runtime is not None else None
                 )
                 if current_turn_id:
-                    turn_id = current_turn_id
-                    run_context = ToolRunContext(run_id=turn_id, session_id=session.session_id)
+                    state.turn_id = current_turn_id
+                    state.run_context = ToolRunContext(
+                        run_id=state.turn_id,
+                        session_id=session.session_id,
+                    )
             else:
                 if durable_runtime is not None:
                     submit_outcome = durable_runtime.submit_user(
                         session,
                         user_input,
                         client_message_id,
-                        turn_id=turn_id,
+                        turn_id=state.turn_id,
                         agent_run_id=self._id("arun"),
                         tools=self.tool_executor.definitions if self.tool_executor else (),
                     )
                     if submit_outcome.turn_id:
-                        turn_id = submit_outcome.turn_id
-                        run_context = ToolRunContext(run_id=turn_id, session_id=session.session_id)
+                        state.turn_id = submit_outcome.turn_id
+                        state.run_context = ToolRunContext(
+                            run_id=state.turn_id,
+                            session_id=session.session_id,
+                        )
                     if submit_outcome.kind != "accepted":
                         yield event("turn.started", {})
-                        started = True
-                        settled = True
+                        state.started = True
+                        state.settled = True
                         if submit_outcome.kind == "closed_replay":
                             text = submit_outcome.assistant_text or ""
                             if text:
@@ -491,7 +496,7 @@ class AgentLoop:
                 else:
                     session.begin_user_turn(UserMessage(content=user_input))
 
-            started = True
+            state.started = True
             tools = self.tool_executor.definitions if self.tool_executor else ()
             yield event("turn.started", {})
             permission_snapshot = None
@@ -509,17 +514,17 @@ class AgentLoop:
                 if _pending_cancellation():
                     _consume_cancellation_request()
                     raise asyncio.CancelledError
-                if self.monotonic() >= deadline:
+                if self.monotonic() >= state.deadline:
                     for item in terminal_error("任务超过总运行时间", AgentStopCode.RUN_TIMEOUT):
                         yield item
                     return
-                if model_attempts >= policy.max_model_attempts:
+                if state.model_attempts >= policy.max_model_attempts:
                     for item in terminal_error(
                         "模型调用次数已达上限", AgentStopCode.MODEL_CALL_LIMIT
                     ):
                         yield item
                     return
-                if tool_rounds >= policy.max_tool_rounds:
+                if state.tool_rounds >= policy.max_tool_rounds:
                     for item in terminal_error("工具轮次已达上限", AgentStopCode.TOOL_CALL_LIMIT):
                         yield item
                     return
@@ -532,8 +537,8 @@ class AgentLoop:
                         yield item
                     return
 
-                model_attempts += 1
-                remaining_model_time = deadline - self.monotonic()
+                state.model_attempts += 1
+                remaining_model_time = state.deadline - self.monotonic()
                 if remaining_model_time <= 0:
                     for item in terminal_error("任务超过总运行时间", AgentStopCode.RUN_TIMEOUT):
                         yield item
@@ -553,9 +558,9 @@ class AgentLoop:
                                 yield item
                             return
                         if model_event.kind == "text_delta" and model_event.text:
-                            visible += model_event.text
+                            state.visible += model_event.text
                             yield event("text.delta", {"text": model_event.text})
-                        remaining_model_time = deadline - self.monotonic()
+                        remaining_model_time = state.deadline - self.monotonic()
                         if remaining_model_time <= 0:
                             for item in terminal_error(
                                 "任务超过总运行时间", AgentStopCode.RUN_TIMEOUT
@@ -573,10 +578,10 @@ class AgentLoop:
                 if outcome.error_code is not None:
                     if (
                         not self.runner.made_progress
-                        and retry_count < policy.model_retry_limit
+                        and state.retry_count < policy.model_retry_limit
                         and outcome.error_code in TRANSIENT_MODEL_ERRORS
                     ):
-                        retry_count += 1
+                        state.retry_count += 1
                         yield event("status.changed", {"status": "retrying"})
                         continue
                     if outcome.finish_reason == ModelFinishReason.LENGTH:
@@ -588,7 +593,7 @@ class AgentLoop:
                     for item in terminal_error(outcome.error_message or "模型调用失败", stop_code):
                         yield item
                     return
-                retry_count = 0
+                state.retry_count = 0
                 message = outcome.message
                 is_final_text = (
                     outcome.finish_reason == ModelFinishReason.STOP
@@ -605,7 +610,7 @@ class AgentLoop:
                         ):
                             yield item
                         return
-                    final_committed = True
+                    state.final_committed = True
                     current = asyncio.current_task()
                     if current is not None:
                         while current.cancelling():
@@ -614,7 +619,7 @@ class AgentLoop:
                     retain_facts(FinishReason.STOP.value)
                     yield event(
                         "turn.completed",
-                        completion_payload(FinishReason.STOP, visible),
+                        completion_payload(FinishReason.STOP, state.visible),
                     )
                     return
                 if self.tool_executor is None or message is None:
@@ -650,15 +655,15 @@ class AgentLoop:
                     freeze_permissions()
                     planned = session.log.plan_append_assistant(message)
                     if durable_runtime is not None:
-                        durable_executions = durable_runtime.prepare_and_commit_assistant(
+                        state.durable_executions = durable_runtime.prepare_and_commit_assistant(
                             planned,
                             message,
-                            run_context=run_context,
+                            run_context=state.run_context,
                             tool_executor=self.tool_executor,
                         )
                         missing = [
                             item.tool_execution_id
-                            for item in durable_executions
+                            for item in state.durable_executions
                             if not durable_runtime.execution_is_visible(item.tool_execution_id)
                         ]
                         if missing:
@@ -671,10 +676,10 @@ class AgentLoop:
                     ):
                         yield item
                     return
-                active_calls = calls
-                active_running_id = None
-                active_result_limit = per_call_result_limit
-                if tool_calls + len(calls) > policy.max_tool_calls:
+                state.active_calls = calls
+                state.active_running_id = None
+                state.active_result_limit = per_call_result_limit
+                if state.tool_calls + len(calls) > policy.max_tool_calls:
                     interrupted = tuple(call.id for call in calls)
                     for index, call in enumerate(calls, start=1):
                         outcome = self.tool_executor.error_outcome(
@@ -691,8 +696,8 @@ class AgentLoop:
                             len(calls),
                             error_code=ToolErrorCode.BUDGET_EXHAUSTED,
                         )
-                    tool_calls += len(calls)
-                    tool_rounds += 1
+                    state.tool_calls += len(calls)
+                    state.tool_rounds += 1
                     for item in terminal_error(
                         "工具调用总数已达上限",
                         AgentStopCode.TOOL_CALL_LIMIT,
@@ -701,22 +706,22 @@ class AgentLoop:
                         yield item
                     return
 
-                tool_calls += len(calls)
+                state.tool_calls += len(calls)
                 cycle_outcomes: list[ToolExecutionOutcome] = []
                 for index, call in enumerate(calls, start=1):
                     if _pending_cancellation():
                         _consume_cancellation_request()
                         raise asyncio.CancelledError
                     now = self.monotonic()
-                    if now >= deadline:
+                    if now >= state.deadline:
                         unresolved = session.log.unresolved_call_ids
                         interrupted = self._close_unresolved(
                             session,
-                            active_calls,
-                            durable_executions,
+                            state.active_calls,
+                            state.durable_executions,
                             ToolErrorCode.BUDGET_EXHAUSTED,
                             "任务总运行时间已耗尽",
-                            result_limit=active_result_limit,
+                            result_limit=state.active_result_limit,
                         )
                         for status_event in synthetic_statuses(
                             unresolved,
@@ -731,156 +736,29 @@ class AgentLoop:
                         ):
                             yield item
                         return
-                    active_running_id = call.id
+                    state.active_running_id = call.id
                     yield tool_status(call, "running", index, len(calls))
-                    durable = durable_executions[index - 1] if durable_executions else None
-                    skip_approval = durable is not None
-                    denied_result = None
-                    handler_disposition = None
-                    if durable is not None:
-                        if durable.intent.policy_verdict is PolicyVerdict.DENY:
-                            denied_result = self.tool_executor.error_outcome(
-                                call,
-                                ToolErrorCode.PERMISSION_DENIED,
-                                "当前能力策略拒绝此操作",
-                                result_limit=per_call_result_limit,
-                            )
-                            if durable_runtime is None:
-                                raise RuntimeError(
-                                    "durable execution requires a durable runtime coordinator"
-                                )
-                            durable = durable_runtime.deny_execution_before_handler(
-                                durable, now=self._wall_now(session)
-                            )
-                        else:
-                            try:
-                                durable, run_handler, denied_result = await self._gate_durable(
-                                    session,
-                                    durable,
-                                    call,
-                                    now=self._wall_now(session),
-                                    result_limit=per_call_result_limit,
-                                )
-                            except (
-                                ApprovalDecisionError,
-                                ExecutionTransitionError,
-                                PermissionEvidenceError,
-                            ):
-                                denied_result = self.tool_executor.error_outcome(
-                                    call,
-                                    ToolErrorCode.PERMISSION_DENIED,
-                                    "权限证据已撤销或不可证明",
-                                    result_limit=per_call_result_limit,
-                                )
-                                durable = self._reload_durable(session, durable)
-                                if durable_runtime is None:
-                                    raise RuntimeError(
-                                        "durable execution requires a durable runtime coordinator"
-                                    ) from None
-                                durable = durable_runtime.deny_execution_before_handler(
-                                    durable, now=self._wall_now(session)
-                                )
-                    try:
-                        if denied_result is not None:
-                            result = denied_result
-                        else:
-                            if durable is not None:
-                                if durable_runtime is None:
-                                    raise RuntimeError(
-                                        "durable execution requires a durable runtime coordinator"
-                                    )
-                                durable_runtime.check_fault(FaultPoint.HANDLER_BEFORE_ENTER)
-                                durable = durable_runtime.assert_handler_may_enter(
-                                    durable, now=self._wall_now(session)
-                                )
-                            extra = {"skip_approval": True} if skip_approval else {}
-                            if call.name == "run_command" and self._has_active_unconfined_grant(
-                                session, durable
-                            ):
-                                extra["allow_unconfined_host"] = True
-                            execution = self.tool_executor.execute_with_context(
-                                call,
-                                result_limit=per_call_result_limit,
-                                run_context=run_context,
-                                ordinal=index,
-                                total=len(calls),
-                                **extra,
-                            )
-                            result = await asyncio.wait_for(
-                                self._await_tool_with_cancellation(execution, session, durable),
-                                timeout=min(policy.tool_timeout_seconds, deadline - now),
-                            )
-                            if durable is not None:
-                                if durable_runtime is None:
-                                    raise RuntimeError(
-                                        "durable execution requires a durable runtime coordinator"
-                                    )
-                                durable_runtime.check_fault(FaultPoint.HANDLER_AFTER_RETURN)
-                    except TimeoutError:
-                        result = self.tool_executor.error_outcome(
-                            call,
-                            ToolErrorCode.TIMEOUT,
-                            "工具执行超时",
-                            result_limit=per_call_result_limit,
-                        )
-                    except _ToolCancellationRequested:
-                        result = self.tool_executor.error_outcome(
-                            call,
-                            ToolErrorCode.CANCELLED,
-                            "工具执行已收到撤销请求",
-                            result_limit=per_call_result_limit,
-                        )
-                        durable = self._reload_durable(session, durable)
-                        if durable is not None and durable.state is ToolExecutionState.EXECUTING:
-                            if (
-                                durable.tool_name == "run_command"
-                                and durable.intent.effect_class
-                                is EffectClass.UNCONFINED_EXTERNAL_EFFECT
-                            ):
-                                # The opaque Host process may already have taken effect.
-                                handler_disposition = ToolExecutionDisposition.UNKNOWN
-                        elif durable is not None and durable.state in {
-                            ToolExecutionState.PREPARED,
-                            ToolExecutionState.AWAITING_APPROVAL,
-                        }:
-                            if durable_runtime is None:
-                                raise RuntimeError(
-                                    "durable execution requires a durable runtime coordinator"
-                                ) from None
-                            durable = durable_runtime.cancel_execution_before_handler(
-                                durable, now=self._wall_now(session)
-                            )
-                    except (
-                        ApprovalDecisionError,
-                        ExecutionTransitionError,
-                        PermissionEvidenceError,
-                    ):
-                        result = self.tool_executor.error_outcome(
-                            call,
-                            ToolErrorCode.PERMISSION_DENIED,
-                            "权限证据已撤销或不可证明",
-                            result_limit=per_call_result_limit,
-                        )
-                        durable = self._reload_durable(session, durable)
-                        if durable is not None:
-                            if durable_runtime is None:
-                                raise RuntimeError(
-                                    "durable execution requires a durable runtime coordinator"
-                                ) from None
-                            durable = durable_runtime.deny_execution_before_handler(
-                                durable, now=self._wall_now(session)
-                            )
+                    durable = (
+                        state.durable_executions[index - 1] if state.durable_executions else None
+                    )
+                    if self.tool_cycle is None:
+                        raise RuntimeError("tool cycle executor is unavailable")
+                    call_execution = await self.tool_cycle.execute_call(
+                        session,
+                        call,
+                        durable_execution=durable,
+                        run_context=state.run_context,
+                        ordinal=index,
+                        total=len(calls),
+                        result_limit=per_call_result_limit,
+                        remaining_run_seconds=state.deadline - now,
+                    )
+                    result = call_execution.outcome
+                    durable = call_execution.durable_execution
                     if durable is not None:
                         if durable_runtime is None:
                             raise RuntimeError(
                                 "durable execution requires a durable runtime coordinator"
-                            )
-                        if durable.state is ToolExecutionState.EXECUTING:
-                            durable = durable_runtime.record_handler_completed(
-                                durable,
-                                result,
-                                now=self._wall_now(session),
-                                disposition=handler_disposition,
                             )
                         planned_tool = session.log.plan_append_tool_result(call.id, result.envelope)
                         durable_runtime.commit_tool_message(
@@ -889,8 +767,8 @@ class AgentLoop:
                     else:
                         session.append_tool_result(call.id, result.envelope)
                     cycle_outcomes.append(result)
-                    run_context.note_tool_outcome(ok=result.ok, error_code=result.error_code)
-                    active_running_id = None
+                    state.run_context.note_tool_outcome(ok=result.ok, error_code=result.error_code)
+                    state.active_running_id = None
                     yield tool_status(
                         call,
                         "succeeded" if result.ok else "failed",
@@ -899,12 +777,12 @@ class AgentLoop:
                         error_code=result.error_code,
                         truncated=result.truncated,
                     )
-                tool_rounds += 1
-                active_calls = ()
-                active_result_limit = None
-                cycle_signatures.append(_cycle_signature(message, cycle_outcomes))
+                state.tool_rounds += 1
+                state.active_calls = ()
+                state.active_result_limit = None
+                state.cycle_signatures.append(_cycle_signature(message, cycle_outcomes))
                 if policy.loop_detection_enabled and _has_repeated_suffix(
-                    cycle_signatures,
+                    state.cycle_signatures,
                     policy.loop_repeat_limit,
                     policy.loop_max_pattern_cycles,
                 ):
@@ -912,22 +790,22 @@ class AgentLoop:
                         yield item
                     return
         except InjectedFault:
-            settled = True
+            state.settled = True
             raise
         except asyncio.CancelledError:
-            if final_committed:
+            if state.final_committed:
                 return
-            if not started:
+            if not state.started:
                 yield event("turn.started", {})
             _consume_cancellation_request()
             unresolved = session.log.unresolved_call_ids
             interrupted = self._close_unresolved(
                 session,
-                active_calls,
-                durable_executions,
+                state.active_calls,
+                state.durable_executions,
                 ToolErrorCode.CANCELLED,
                 "任务已取消，工具调用未完成",
-                result_limit=active_result_limit,
+                result_limit=state.active_result_limit,
             )
             for status_event in synthetic_statuses(
                 unresolved,
@@ -943,21 +821,21 @@ class AgentLoop:
             retain_facts(FinishReason.CANCELLED.value)
             yield event(
                 "turn.completed",
-                completion_payload(FinishReason.CANCELLED, visible),
+                completion_payload(FinishReason.CANCELLED, state.visible),
             )
             return
         except Exception as exc:
-            if not started:
-                started = True
+            if not state.started:
+                state.started = True
                 yield event("turn.started", {})
             unresolved = session.log.unresolved_call_ids
             interrupted = self._close_unresolved(
                 session,
-                active_calls,
-                durable_executions,
+                state.active_calls,
+                state.durable_executions,
                 ToolErrorCode.INTERNAL,
                 "内部错误，工具调用未完成",
-                result_limit=active_result_limit,
+                result_limit=state.active_result_limit,
             )
             for status_event in synthetic_statuses(
                 unresolved,
@@ -977,72 +855,19 @@ class AgentLoop:
             return
         finally:
             retain_facts()
-            if not settled and session.log.has_active_turn:
+            if not state.settled and session.log.has_active_turn:
                 try:
                     interrupted = self._close_unresolved(
                         session,
-                        active_calls,
-                        durable_executions,
+                        state.active_calls,
+                        state.durable_executions,
                         ToolErrorCode.CANCELLED,
                         "任务已取消，工具调用未完成",
-                        result_limit=active_result_limit,
+                        result_limit=state.active_result_limit,
                     )
                     session.finish_turn(FinishReason.CANCELLED, interrupted_call_ids=interrupted)
                 except Exception:
                     pass
-
-    @staticmethod
-    def _reload_durable(session, execution):
-        if execution is None or session.durable_runtime is None:
-            return execution
-        return session.durable_runtime.get_execution(execution.tool_execution_id) or execution
-
-    def _has_active_unconfined_grant(self, session: Session, execution) -> bool:
-        if execution is None or execution.grant_id is None:
-            return False
-        durable_runtime = session.durable_runtime
-        if durable_runtime is None:
-            return False
-        return durable_runtime.has_active_unconfined_grant(execution, now=self._wall_now(session))
-
-    async def _gate_durable(self, session, execution, call, *, now, result_limit):
-        coordinator = session.durable_runtime
-        if coordinator is None:
-            raise RuntimeError("durable execution requires a durable runtime coordinator")
-        if execution.intent.requires_approval:
-            approval = coordinator.create_pending_approval(execution, now=now)
-            registered = (
-                self.tool_executor.tool_set.tools.get(call.name)
-                if self.tool_executor is not None
-                else None
-            )
-            request = ToolApprovalRequest(
-                call_id=call.id,
-                effect=(
-                    registered.execution_policy.effect
-                    if registered is not None
-                    else ToolEffect.NONE
-                ),
-                preview=execution.intent.preview,
-                approval_id=approval.approval_id,
-            )
-            decision = await self.tool_executor._request_approval(request)
-            approved = bool(decision is not None and decision.approved)
-            consume_now = self._wall_now(session)
-            execution, _approval, run_handler = coordinator.consume_and_mark_executing(
-                execution, approval, approved=approved, now=consume_now
-            )
-            if run_handler:
-                return execution, True, None
-            denied = self.tool_executor.error_outcome(
-                call,
-                ToolErrorCode.APPROVAL_REJECTED,
-                "工具操作未获批准",
-                result_limit=result_limit,
-            )
-            return execution, False, denied
-        execution = coordinator.mark_executing(execution, now=now)
-        return execution, True, None
 
     def _cycle_result_limit(self, message: AssistantMessage) -> int | None:
         """Largest equal raw envelope cap safe under worst-case JSON escaping."""
@@ -1101,7 +926,7 @@ class AgentLoop:
                 session.append_tool_result(call_id, outcome.envelope)
                 continue
 
-            durable = self._reload_durable(session, durable)
+            durable = ToolCycleExecutor.reload_durable(session, durable)
             if durable.state in {
                 ToolExecutionState.PREPARED,
                 ToolExecutionState.AWAITING_APPROVAL,

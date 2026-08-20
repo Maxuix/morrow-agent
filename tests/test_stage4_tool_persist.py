@@ -42,10 +42,11 @@ from morrow.core.permissions import (
     GrantSource,
 )
 from morrow.core.store import StoreOpenMode
-from morrow.runtime.agent import AgentLoop, _ToolCancellationRequested
+from morrow.runtime.agent import AgentLoop
 from morrow.runtime.capabilities import CapabilityPolicy
 from morrow.runtime.policy import ToolApproval, ToolExecutionPolicy
 from morrow.runtime.session import Session
+from morrow.runtime.tool_cycle import ToolCancellationRequested
 from morrow.runtime.tools import ToolExecutor, ToolRegistry, make_tool
 from morrow.services.files import (
     WorkspaceFileService,
@@ -580,6 +581,7 @@ async def test_active_execution_cancellation_request_cancels_the_underlying_hand
         ScriptedModelProvider(),
         ModelRef(provider_id="p", model_id="m"),
         make_context_builder(),
+        tool_executor=_spy_executor([]),
     )
 
     async def handler():
@@ -591,12 +593,12 @@ async def test_active_execution_cancellation_request_cancels_the_underlying_hand
             raise
 
     task = asyncio.create_task(
-        loop._await_tool_with_cancellation(
+        loop.tool_cycle.await_with_cancellation(
             handler(), session, SimpleNamespace(tool_execution_id="tex_1")
         )
     )
     await started.wait()
     current.cancel_requested_at = FixedClock().now()
-    with pytest.raises(_ToolCancellationRequested):
+    with pytest.raises(ToolCancellationRequested):
         await task
     assert cancelled.is_set()

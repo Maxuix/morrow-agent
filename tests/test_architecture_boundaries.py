@@ -96,3 +96,14 @@ def test_agent_loop_uses_one_explicit_durable_runtime_contract():
     }
 
     assert required <= provided
+
+
+def test_tool_cycle_executor_does_not_own_chat_history_or_public_events():
+    path = SOURCE_ROOT / "runtime/tool_cycle.py"
+    source = path.read_text(encoding="utf-8")
+    agent_source = (SOURCE_ROOT / "runtime/agent.py").read_text(encoding="utf-8")
+
+    assert "morrow.runtime.conversation" not in _imports(path)
+    assert "morrow.core.events" not in _imports(path)
+    assert "commit_tool_message" not in source
+    assert "commit_tool_message" in agent_source

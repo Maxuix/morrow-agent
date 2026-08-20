@@ -1352,3 +1352,17 @@
   SessionPersistence to provide every declared coordinator operation.
 - Validation passed across 221 focused runtime, persistence, permission, recovery, API, CLI, and
   product regressions. Touched-file Ruff check/format, compileall, and `git diff --check` passed.
+
+## 2026-08-20 — S48.2 AgentLoop state and tool execution extraction completed
+
+- Replaced the large mutable-local cluster in `run_task()` with a typed per-run state object.
+- Extracted policy denial, durable approval, permission recheck, handler timeout/cancellation,
+  grant evidence, fault injection, and handler-completed persistence into `ToolCycleExecutor`.
+  AgentLoop still emits every public event and commits every ToolMessage/ConversationLog change.
+- Made ToolExecutor approval dispatch an explicit runtime method and added architecture protection
+  preventing the ToolCycle collaborator from importing conversation or event ownership.
+- `run_task()` decreased from 609 lines/112 branch nodes at audit time to 484 lines/90 branch nodes;
+  the extracted `execute_call()` is 129 lines/17 branch nodes with typed inputs and output.
+- Full offline validation passed: `663 passed, 2 skipped, 1 deselected`. The skips are the existing
+  nested-sandbox Seatbelt cases. Full Ruff format/check, compileall, CLI help, and
+  `git diff --check` passed.

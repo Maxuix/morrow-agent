@@ -414,7 +414,7 @@ class ToolExecutor:
                     "工具审批预览生成失败",
                     limit=limit,
                 )
-            decision = await self._request_approval(request)
+            decision = await self.request_approval(request)
             if decision is None:
                 return self._error(
                     call,
@@ -481,7 +481,7 @@ class ToolExecutor:
         except Exception:
             return self._error(call, ToolErrorCode.EXECUTION_FAILED, "工具执行失败", limit=limit)
 
-    async def _request_approval(self, request: ToolApprovalRequest) -> ToolApprovalDecision | None:
+    async def request_approval(self, request: ToolApprovalRequest) -> ToolApprovalDecision | None:
         port = self.approval_port
         if port is None:
             return None
