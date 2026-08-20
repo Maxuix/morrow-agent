@@ -17,6 +17,7 @@ from morrow.application.checkpoints import (
     ContextCheckpointService,
     SessionForkService,
 )
+from morrow.application.turns import SessionPersistence
 from morrow.bootstrap import build_application, build_session_application
 from morrow.core.artifacts import (
     ArtifactKind,
@@ -29,6 +30,7 @@ from morrow.core.context import CheckpointOmissionReason, ContextCheckpoint
 from morrow.core.domain import ArtifactReference, DurableSession, TaskRunStatus, sha256_digest
 from morrow.core.faults import FaultPoint, InjectedFault, OnceFaultInjector
 from morrow.core.models import AssistantMessage, FinishReason, ModelRef, UserMessage
+from morrow.core.store import StoreOpenMode
 from morrow.runtime.conversation import ConversationLog
 from morrow.runtime.durable_log import DurableConversationWriter, restore_conversation_log
 from morrow.runtime.session import Session
@@ -99,6 +101,73 @@ def test_checkpoint_is_bounded_deterministic_and_does_not_duplicate_history(tmp_
         assert "request-0" not in service.render_projection(checkpoint)
     finally:
         opened.close()
+
+
+def test_context_compression_checkpoint_restores_and_projects_after_restart(tmp_path):
+    root = tmp_path / "state"
+    _store, opened, journal = _journal(tmp_path)
+    try:
+        log = _closed_history(journal)
+        checkpoint = ContextCheckpointService(
+            journal,
+            workspace_id="ws_1",
+            id_source=FixedIdSource(),
+            clock=FixedClock(),
+        ).create("ses_1", retain_recent_turns=1, checkpoint_id="chk_restart")
+        writer = DurableConversationWriter(
+            log,
+            journal,
+            workspace_id="ws_1",
+            session_id="ses_1",
+            id_source=FixedIdSource(),
+        )
+        writer.id_source.counts["rec"] = 6
+        writer.commit(log.plan_begin_turn(UserMessage(content="after compression")))
+        writer.commit(log.plan_append_assistant(AssistantMessage(content="after restart")))
+        writer.commit(log.plan_finish_turn(FinishReason.STOP))
+    finally:
+        opened.close()
+
+    with OperationalStore(
+        root,
+        clock=FixedClock(),
+        retry_policy=BusyRetryPolicy(
+            busy_timeout_ms=0, sleep=lambda _delay: None, rng=random.Random(0)
+        ),
+        maintenance_timeout=0,
+    ).open(StoreOpenMode.READ_WRITE) as reopened:
+        journal = SqliteOperationalJournal(reopened)
+        restored_checkpoint = journal.get_context_checkpoint("ws_1", checkpoint.checkpoint_id)
+        assert restored_checkpoint == checkpoint
+
+        session = Session(session_id="ses_1")
+        persistence = SessionPersistence(
+            workspace_id="ws_1",
+            journal=journal,
+            store_session=reopened,
+            id_source=FixedIdSource(),
+            model=ModelRef(provider_id="p", model_id="m"),
+            run_policy=make_context_builder().run_policy,
+            runtime_instance_id="restart-test",
+            clock=FixedClock(),
+        )
+        persistence.restore_into(session)
+        assert session.context_checkpoint == checkpoint
+
+        context = make_context_builder().build(session)
+        non_system = [message.content for message in context.messages if message.role != "system"]
+        assert non_system == [
+            "request-1",
+            "answer-1",
+            "after compression",
+            "after restart",
+        ]
+        assert context.checkpoint_id == "chk_restart"
+        system_context = "\n".join(
+            message.content for message in context.messages if message.role == "system"
+        )
+        assert "request-0" not in system_context
+        assert "chk_restart" not in system_context
 
 
 def test_checkpoint_requires_a_closed_boundary_and_fork_has_no_parent_copy(tmp_path):

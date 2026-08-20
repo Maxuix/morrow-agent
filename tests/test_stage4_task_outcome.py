@@ -23,7 +23,7 @@ from morrow.core.domain import (
     TaskRunStatus,
 )
 from morrow.core.models import ModelRef
-from morrow.core.store import StorageError, StorageErrorCode
+from morrow.core.store import StorageError, StorageErrorCode, StoreOpenMode
 from morrow.testing import FixedClock, FixedIdSource, ScriptedModelProvider
 
 
@@ -78,6 +78,81 @@ def test_task_state_machine_current_pointer_and_attempts(tmp_path):
         ]
     finally:
         session.close()
+
+
+def test_active_task_run_state_and_audit_survive_restart(tmp_path):
+    root = tmp_path / "state"
+    store = OperationalStore(
+        root,
+        clock=FixedClock(),
+        retry_policy=BusyRetryPolicy(
+            busy_timeout_ms=0, sleep=lambda _delay: None, rng=random.Random(0)
+        ),
+        maintenance_timeout=0,
+    )
+    session = store.initialize()
+    journal = SqliteOperationalJournal(session)
+    journal.create_session(DurableSession(session_id="ses_1", workspace_id="ws_1"))
+    try:
+        tasks = TaskService(journal=journal, workspace_id="ws_1", id_source=FixedIdSource())
+        created = tasks.new_task("ses_1", command_id="cmd_new").task
+        assert created is not None
+        ready = tasks._transition(
+            created,
+            TaskRunStatus.READY_FOR_ACCEPTANCE,
+            reason="answer_in_progress",
+            turn_id=None,
+            command_id=None,
+        )
+        transitions = journal.list_task_transitions("ws_1", ready.task_run_id)
+        assert ready.status is TaskRunStatus.READY_FOR_ACCEPTANCE
+        assert journal.get_session("ws_1", "ses_1").current_task_run_id == ready.task_run_id
+    finally:
+        session.close()
+
+    with OperationalStore(
+        root,
+        clock=FixedClock(),
+        retry_policy=BusyRetryPolicy(
+            busy_timeout_ms=0, sleep=lambda _delay: None, rng=random.Random(0)
+        ),
+        maintenance_timeout=0,
+    ).open(StoreOpenMode.READ_WRITE) as reopened:
+        journal = SqliteOperationalJournal(reopened)
+        restored = journal.get_task_run("ws_1", ready.task_run_id)
+        assert restored == ready
+        assert journal.get_session("ws_1", "ses_1").current_task_run_id == ready.task_run_id
+        assert journal.list_task_transitions("ws_1", ready.task_run_id) == transitions
+
+        ids = FixedIdSource()
+        ids.counts["ttr"] = len(transitions)
+        continued = TaskService(
+            journal=journal,
+            workspace_id="ws_1",
+            id_source=ids,
+        ).continue_after_answer(restored, reason="continue_after_restart")
+        assert continued.status is TaskRunStatus.OPEN
+        assert continued.row_version == ready.row_version + 1
+
+    with OperationalStore(
+        root,
+        clock=FixedClock(),
+        retry_policy=BusyRetryPolicy(
+            busy_timeout_ms=0, sleep=lambda _delay: None, rng=random.Random(0)
+        ),
+        maintenance_timeout=0,
+    ).open(StoreOpenMode.READ_WRITE) as reopened:
+        journal = SqliteOperationalJournal(reopened)
+        restored = journal.get_task_run("ws_1", ready.task_run_id)
+        assert restored is not None
+        assert restored.status is TaskRunStatus.OPEN
+        assert restored.row_version == ready.row_version + 1
+        assert [
+            item.to_status for item in journal.list_task_transitions("ws_1", ready.task_run_id)
+        ] == [
+            TaskRunStatus.READY_FOR_ACCEPTANCE,
+            TaskRunStatus.OPEN,
+        ]
 
 
 def test_accept_is_idempotent_and_outcome_is_immutable(tmp_path):

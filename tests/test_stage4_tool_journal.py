@@ -25,7 +25,9 @@ from morrow.core.execution import (
     DurableApproval,
     DurableToolExecution,
     EffectClass,
+    HandlerResultEnvelope,
     PreparedIntent,
+    ToolExecutionDisposition,
     ToolExecutionState,
     approval_preview_digest,
     consume_approval,
@@ -320,6 +322,79 @@ def test_consume_and_executing_are_one_transaction(tmp_path):
         assert approval.resolution is ApprovalResolution.APPROVED
         assert approval.consumed_at is None
         assert execution.state is ToolExecutionState.AWAITING_APPROVAL
+
+
+def test_tool_execution_intermediate_and_completed_states_survive_restart(tmp_path):
+    root = tmp_path / "state"
+    _store, opened, journal = _open_journal(tmp_path)
+    try:
+        _seed_run(journal)
+        intent = _intent()
+        prepared = journal.put_execution("ws_a", _execution(intent))
+        awaiting = transition_execution(
+            prepared,
+            ToolExecutionState.AWAITING_APPROVAL,
+            expected_row_version=prepared.row_version,
+        )
+        journal.save_execution("ws_a", awaiting, expected_row_version=prepared.row_version)
+        pending = journal.put_approval("ws_a", _approval(intent))
+        now = datetime(2026, 1, 1, 0, 1, tzinfo=UTC)
+        approved = resolve_approval(pending, approved=True, expected_row_version=1, now=now)
+        approved = journal.save_approval("ws_a", approved, expected_row_version=1)
+        consumed = consume_approval(approved, expected_row_version=2, now=now)
+        journal.save_approval("ws_a", consumed, expected_row_version=2)
+        executing = transition_execution(
+            awaiting,
+            ToolExecutionState.EXECUTING,
+            expected_row_version=awaiting.row_version,
+            now=now,
+            approval_id=consumed.approval_id,
+        )
+        journal.save_execution("ws_a", executing, expected_row_version=awaiting.row_version)
+    finally:
+        opened.close()
+
+    with OperationalStore(
+        root,
+        retry_policy=_retry(),
+        clock=FixedClock(),
+        maintenance_timeout=0,
+    ).open(StoreOpenMode.READ_WRITE) as reopened:
+        journal = SqliteOperationalJournal(reopened)
+        restored = journal.get_execution("ws_a", "tex_1")
+        restored_approval = journal.get_approval("ws_a", "apr_1")
+        assert restored is not None
+        assert restored.state is ToolExecutionState.EXECUTING
+        assert restored.row_version == 3
+        assert restored.approval_id == "apr_1"
+        assert restored_approval is not None
+        assert restored_approval.resolution is ApprovalResolution.APPROVED
+        assert restored_approval.consumed_at == now
+
+        completed = transition_execution(
+            restored,
+            ToolExecutionState.HANDLER_COMPLETED,
+            expected_row_version=restored.row_version,
+            disposition=ToolExecutionDisposition.SUCCEEDED,
+            result_envelope=HandlerResultEnvelope(ok=True, summary={"bytes": 4}),
+            now=now,
+        )
+        journal.save_execution("ws_a", completed, expected_row_version=restored.row_version)
+
+    with OperationalStore(
+        root,
+        retry_policy=_retry(),
+        clock=FixedClock(),
+        maintenance_timeout=0,
+    ).open(StoreOpenMode.READ_WRITE) as reopened:
+        journal = SqliteOperationalJournal(reopened)
+        restored = journal.get_execution("ws_a", "tex_1")
+        assert restored is not None
+        assert restored.state is ToolExecutionState.HANDLER_COMPLETED
+        assert restored.row_version == 4
+        assert restored.disposition is ToolExecutionDisposition.SUCCEEDED
+        assert restored.result_envelope is not None
+        assert restored.result_envelope.summary == {"bytes": 4}
 
 
 def test_sql_rejects_consumed_unapproved_approval(tmp_path):
