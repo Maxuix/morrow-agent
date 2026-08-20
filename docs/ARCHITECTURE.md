@@ -1,6 +1,6 @@
 # Morrow 架构基线
 
-> 状态：阶段 2、阶段 3 已完成（当前声明平台为 macOS；Linux 原生运行仍 unsupported）；阶段 4 已落地 Operational Store v9 的 Session/Task 历史、工具/审批日志、恢复分类、TaskOutcome、Artifact Store、ContextCheckpoint、Session Fork、统一应用 API、application events、doctor、备份 bundle、CapabilityGrant 与 Full Access Manual
+> 状态：阶段 2、阶段 3 已完成（当前声明平台为 macOS；Linux 原生运行仍 unsupported）；阶段 4 已落地 Operational Store v9 的 Session/Task 历史、工具/审批日志、恢复分类、TaskOutcome、Artifact Store、ContextCheckpoint、Session Fork、统一应用 API、application events、doctor、备份 bundle、CapabilityGrant 与 Full Access Manual；Subplan 47 真实用户测试修复已完成验证
 
 本文锁定当前依赖方向、数据所有权和安全边界。阶段 3 的能力策略、配置工具、工作空间读搜、冲突安全文件变更、审批后 Host 命令、只读 Git 和当前 macOS 原生沙箱
 已经交付；Linux 原生运行尚未声明支持。Stage 4 已落地数据根 SQLite Operational Store 的
@@ -100,6 +100,17 @@ Slash `CommandService` 是薄适配器，CLI、REPL 和未来客户端不直接�
 配置补丁显式分派到 Preferences 或 Profile，不存在兜底目标。`build_session_application()` 返回命名的
 `SessionApplication`，包含 `session`、`context_builder`、`commands`、`orchestrator`、`files`、`search`、`mutation`、`changes`、
 `process`、`checkpoints`、`forks`、统一 `api`、只读 `doctor` 和 `backup` 服务。
+
+普通前台工作的共享准入条件是 `Session.lifecycle=active` 且 `Session.health=ok`。
+Orchestrator 在调度前刷新 durable lifecycle/health；Task/Turn application service 执行稳定错误映射，
+SQLite journal 保留最终写入守卫。Archive 必须没有 current TaskRun；`needs_recovery` 只能经恢复边界解决，
+`quarantined`/`read_only` 不能启动普通 Turn 或 TaskRun。Session 的可观察 mutation 在每个外层
+事务共享一个注入时间戳，`updated_at` 以整秒精度跨事务严格单调。
+
+Recovery resolve 先按 command receipt 返回同请求 replay；新 command 只能作用于 `OPEN`
+RecoveryReport，并在写事务内重新读取 durable status。该终态守卫阻止旧 report 清除
+后来的 quarantined/read-only health 或重复创建 AgentRun。`resume_recovery()` 本身也要求
+Session 仍为 ACTIVE + health OK，不依赖陈旧内存投影扩大恢复权限。
 
 ### 工具能力边界
 
@@ -206,9 +217,16 @@ Host/sandbox 缺 `handler_completed` 一律 `outcome_unknown`。YAML 与凭据�
 Task/Execution、Checkpoint/Fork、Artifact metadata/bytes/reference 和 application-event cursor；报告只包含
 有界摘要与计数，绝不自动改写历史。`OperationalBackupService` 使用 SQLite online backup 生成隔离
 bundle，同时写入 Artifact hash/size manifest 和可验证副本；bundle 不读取或复制 YAML/CredentialStore。
-缺失、损坏或变化的 Artifact 在 manifest/restore verification 中显式可见。orphan cleanup 默认 dry-run，且只允许
-删除经过类型、链接、权限、路径和“无 SQLite metadata”校验的非托管文件。
-损坏、外源或未来版本文件保持原字节并失败关闭。
+缺失、损坏或变化的 Artifact 在 manifest/restore verification 中显式可见。Doctor 在遍历前验证
+data-root/`artifacts`/`tmp` 目录链，并区分 managed-unreferenced、unmanaged-removable 和
+unsafe-refused；受管 `tmp/` 本身不是 orphan。
+
+Orphan cleanup 默认 dry-run，其权威是 data root 内全部 workspace 的 Artifact metadata、
+普通 reference 和 checkpoint reference 并集。Apply 只在 `O_NOFOLLOW` dirfd 目录链下接受类型、
+单链接、0600 权限和 ID/后缀均精确匹配的普通文件，并在不可重放的 SQLite 写事务中
+终态复查全局权威。成功只会原子 rename 到随机 0700 私有 quarantine，报告
+`removed=0`/`quarantined=1`；该路径不调用 `unlink`、`truncate` 或 `ftruncate` 销毁原字节。
+不确定恢复不覆盖后来的路径，无法证明安全时保留 quarantine 并 fail closed。
 
 ### ContextCheckpoint 与 Session Fork
 
@@ -220,7 +238,8 @@ record IDs、确定性计数/Task 状态、Artifact 引用和 typed omitted reas
 
 Fork 只允许从合法闭合 Turn terminal 或以其结束的 Checkpoint 创建。子 Session 只写 parent Session、cut record/
 position、可选 checkpoint 和原因；恢复时投影 parent immutable prefix 加 child 本地记录，不复制 Preferences、TaskRun、
-Approval、CapabilityGrant 或文件。父子 Artifact 通过只读 ID/reference 共享，Workspace 文件不会被 fork 读取或修改。
+Approval、CapabilityGrant 或文件。“不复制 TaskRun”是创建时约束：child 持久化后可正常创建和拥有
+自己的 TaskRun、Turn 与 child-local records。父子 Artifact 通过只读 ID/reference 共享，Workspace 文件不会被 fork 读取或修改。
 
 ## 事件与安全边界
 
@@ -233,12 +252,17 @@ SQLite 事务提交的 Session/Task/Turn/Recovery/Artifact/Checkpoint/Approval �
 `AgentEvent.runtime_event_sequence`，不重建 ConversationLog，也不进入 Terminal 的流式生命周期；当前
 `core/events.py` 的 public lifecycle 保持不变。
 
+Session/Task/Artifact 列表的 Application page 合同在 CLI 中不被丢弃：文本模式在存在
+下一页时输出 `next_cursor`，`--json` 输出 `{items, next_cursor}`。Doctor 的报告生成与
+健康结果是两件事：报告保留可读输出，但只有 health OK 时 CLI exit 0，其他状态 exit 2。
+
 - 当前工具只读取冻结工作空间，或通过冲突安全的 mutation 服务更新项目文件，或经审批调用非隔离 Host 命令；Auto Sandboxed 只在原生临时快照内执行；Git 只读检查不修改仓库；配置服务更新既有状态；不联网。
 - 当前系统边界按冻结 ToolSet 动态渲染；未提供的能力、工作空间外访问、网络/loopback、Git 写入和权限提升始终被禁止。
 - 默认测试不联网、不使用真实钥匙串、不依赖用户主目录。
 - Provider 和结构化响应失败必须分类；不静默切换 Provider 或模型。
 - 无工具 Session 对话可持久化并在重启后恢复；Artifact 的 missing/corrupt/staging/orphan 状态保持可见，
-  只产生 retention/orphan 报告，不自动修复；显式 cleanup 默认 dry-run；conversation Fork、工具恢复和确定性 checkpoint 已实现；
+  只产生 retention/orphan 报告，不自动修复；显式 cleanup 默认 dry-run，apply 只做保字节隔离；
+  conversation Fork、工具恢复和确定性 checkpoint 已实现；
   工作空间/代码 rewind 不属于 Stage 4，长期偏好/知识学习留到 Stage 5。
   当前不存在过渡兼容写入器。
 

@@ -1,6 +1,6 @@
 # Stage 4：Task、Session、Artifact 与持久化
 
-> 状态：生产实现与最终验收已完成（Subplan 45）
+> 状态：生产实现、验收、边界重构与 Subplan 47 真实用户测试修复已完成
 > 阶段结果：前台 Session、TaskRun、ToolCycle、授权与关键产物可在进程退出后恢复，未完成副作用可被安全解释和对账
 > 上级文档：[开发路线总览](../ROADMAP.md)
 > 上一阶段：[Stage 3：本地 Code Agent 与安全闭环](stage-3-local-tools-and-safety.md)
@@ -78,9 +78,10 @@ Host 命令、原生快照沙箱、变更推广与只读 Git 均经过验收。S
 - 生产 ToolSet 中每个工具必须继续使用同一 ToolExecutor/ToolCycle 协议，不能在 AgentLoop 中按名称
   增加业务分支。
 
-Subplan 35 的 SQLite、并发、迁移、恢复、Payload、权限和来源治理 ADR 门禁已经通过；Subplans 36–45
+Subplan 35 的 SQLite、并发、迁移、恢复、Payload、权限和来源治理 ADR 门禁已经通过；Subplans 36–46
 已完成 Operational Store、Session/Task、ToolExecution/Recovery、Artifact、Context/Fork、API/Doctor/
-Backup、CapabilityGrant 实现及全链路验收；Stage 4 已关闭，不再新增能力范围。验收证据见
+Backup、CapabilityGrant 实现、全链路验收与边界重构。Subplan 47 只收敛真实用户报告的
+RUT-001～RUT-008，不新增能力范围；实现、聚焦回归、完整 offline 与质量门禁已通过。验收证据见
 [`docs/acceptance/stage-4-durable-agent-evidence.md`](../acceptance/stage-4-durable-agent-evidence.md)。
 
 ## 四、领域语义与所有权
@@ -98,6 +99,14 @@ session_health:    ok | needs_recovery | quarantined | read_only
 `deleted` 是 tombstone；物理删除留到 Stage 10。Quarantine 只能改变 session_health，不能把用户选择的
 active/archived/deleted 改成另一种业务状态。一个 Session
 可以顺序承载多个 TaskRun，默认只有一个前台 current TaskRun。
+
+普通前台 Turn 或 TaskRun 只能在 `lifecycle=active` 且 `health=ok` 时开始或恢复。
+Archive 要求 current TaskRun 为空，不自动改写任务历史；非 active Session 不能持有活跃
+current TaskRun。`needs_recovery` 只走显式恢复边界，`quarantined`/`read_only` 以稳定错误拒绝普通工作。
+
+`updated_at` 是 Session 的乐观 stale token。Task、Turn、conversation、lifecycle、health 和 recovery
+等所有可观察 mutation 都推进它；一个外层事务共享一个注入时间戳，跨事务的
+整秒值严格单调。
 
 ### 4.2 TaskRun
 
@@ -237,6 +246,12 @@ Artifact 使用 opaque ID 管理路径并用 SHA-256（或 ADR 锁定的等价�
 去重。发布顺序是：受管临时文件写入 → file fsync → atomic rename → parent fsync → metadata commit，
 每个故障点都有确定的 orphan/缺失状态。
 
+Orphan 判定以同一 data root 中全部 workspace 的 Artifact metadata、普通 reference 和
+checkpoint reference 并集为权威。Cleanup 默认 dry-run；显式 apply 也不删除字节，而是经
+`O_NOFOLLOW` dirfd 目录链、类型/权限/单链接和事务内全局权威复查后，原子 rename 到
+随机 0700 私有 quarantine。成功报告为 `removed=0`/`quarantined=1`；路径不调用
+`unlink`/`truncate`/`ftruncate`，无法证明安全时保留 quarantine 并 fail closed。
+
 首版可以持久化现有 8 KiB 上限内、完成整块脱敏的 command result。只有未来要保留 full/raw stream 时才
 必须先证明流式 redactor；未证明前不写盘。聊天与 TaskOutcome 只保存 Artifact 引用和有界 excerpt，
 不复制大内容。
@@ -286,6 +301,11 @@ never_started | safe_to_retry | requires_reconciliation | outcome_unknown | comp
 保留为后续 linked-attempt 扩展的判定依据；Stage 4 v1 在真正的 linked retry 原子路径实现前不暴露重试
 操作。恢复是分类和对账，不是自动改写事实。
 
+Recovery command 的幂等与状态终态同时受守卫：同 command receipt 只返回 replay；
+非 `OPEN` RecoveryReport 的新 command 稳定拒绝，并在同一写事务内再读 durable status。
+已关闭的旧 report 不能清除后来的 `quarantined`/`read_only` health，不能重复创建
+AgentRun。恢复决策完成后的 `resume_recovery()` 只在 Session 仍为 ACTIVE + health OK 时启动。
+
 ## 七、上下文与 Fork
 
 ContextCheckpoint 是对不可变记录的确定性投影，记录 source record ID/range、算法/version、预算事实、
@@ -301,7 +321,8 @@ Artifact 引用和创建来源。它不复制一份新的 `retained_tail_json` �
 LLM 摘要可以在未来作为带来源的附加投影，但不是 Stage 4 完成条件，也不能成为项目事实源。
 
 Conversation/session Fork 从合法 Turn 边界或 checkpoint 创建新 Session，保存 parent provenance，共享不可变
-Artifact 引用，后续历史互不反写。Fork 不回退、恢复或删除工作空间文件。
+Artifact 引用，后续历史互不反写。Child 创建时必须没有继承的 current TaskRun，但持久化后可
+正常创建和拥有自己的 TaskRun、Turn 与 child-local records。Fork 不回退、恢复或删除工作空间文件。
 
 ## 八、Command、Query、Event、Doctor 与 Backup
 
@@ -321,6 +342,11 @@ Doctor 只读检查当时已存在的 schema/integrity/foreign key、消息/Tool
 Grant 检查由 Subplan 44 添加。Doctor 可生成报告、
 建议 quarantine 和识别确定性 orphan 候选，不能修复业务历史。Backup 使用 SQLite online backup 与经 hash
 验证的 Artifact manifest/copy，在独立目标执行恢复验证，且不读取/复制 CredentialStore 密钥。
+
+Doctor 在候选遍历前验证 data-root/Artifact/tmp 目录链，并区分
+managed-unreferenced、unmanaged-removable 和 unsafe-refused；正常受管 `tmp/` 不是 orphan。
+Doctor health 非 OK 时 CLI exit 2。Session/Task/Artifact list 的文本输出显示 `next_cursor`，
+三者的 `--json` 都保留 `{items, next_cursor}` page metadata。
 
 ## 九、CapabilityGrant 与 Full Access Manual
 
@@ -363,6 +389,8 @@ Controlled Full Access Auto 只有在未来存在足够有用、可结构化约�
 | 43 | 统一 API/CLI/REPL、cursor events、只读 doctor 与备份恢复可用 |
 | 44 | CapabilityGrant 与 Full Access Manual 可撤销、可审计、无 Auto 路径 |
 | 45 | 全链路、故障矩阵、迁移、包安装、当前平台安全与文档验收 |
+| 46 | Recovery 单一写者、领域协作者、窄 journal port 与 runtime/CLI 边界收敛 |
+| 47 | RUT-001～RUT-008 数据安全、Fork/lifecycle、诊断和 CLI 修复与回归 |
 
 一次只执行一个 Subplan，下一项不得提前把生产行为混入当前切片。
 
@@ -391,11 +419,14 @@ Controlled Full Access Auto 只有在未来存在足够有用、可结构化约�
 3. 所有 side-effecting ToolCall 在 handler 前已可靠持久化。
 4. 崩溃后不会自动重放 outcome_unknown 的写入、推广、Host 或 Sandbox 命令；Stage 4 v1 缺少完成证据的
    Host/Sandbox 一律 unknown。
-5. Session lifecycle 与 health/quarantine 相互独立；future/corrupt 状态不被静默覆盖。
+5. Session lifecycle 与 health/quarantine 相互独立；普通工作只在 ACTIVE + health OK 时启动；
+   archive 不会留下活跃 current task；future/corrupt 状态不被静默覆盖。
 6. TaskRun 可跨多个 Turn 继续、纠正、取消和显式接受，并生成不可变版本化 TaskOutcome。
-7. Artifact 有界、脱敏、完整性可验证、来源明确，缺失/损坏可见。
+7. Artifact 有界、脱敏、完整性可验证、来源明确，缺失/损坏可见；cleanup 使用
+   data-root 全局权威且只保留字节地隔离，不按路径销毁字节。
 8. 长上下文通过确定性 checkpoint 继续，所有摘要/引用可追溯到原始记录。
-9. Fork 不修改父历史，也不回退或删除工作空间文件。
+9. Fork 不修改父历史，创建时不继承父 TaskRun，但 child 可后续创建自己的任务；
+   Fork 不回退或删除工作空间文件。
 10. Command/Query/CLI/REPL 共享同一业务实现；application events 有序重放且无后台 Outbox。
 11. Doctor、online backup、restore、迁移、contention、损坏和故障矩阵具有可复现证据。
 12. CapabilityGrant 只能由本地界面显式命令创建，按 AgentRun 冻结、过期和撤销；crash resume 的新

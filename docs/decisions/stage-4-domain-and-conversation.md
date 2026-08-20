@@ -2,8 +2,8 @@
 
 ## Status
 
-Accepted for Stage 4 implementation planning by S4.35.3. No production persistence is implemented
-by this decision.
+Accepted by S4.35.3 and implemented by Subplans 37–40. Subplan 47 tightens the production
+lifecycle/health and `updated_at` contracts after the integrated real-user test.
 
 This decision closes the domain, idempotency, ConversationLog, sequence, and `/new` blockers found
 in [`docs/reviews/stage-4-plan-review.md`](../reviews/stage-4-plan-review.md).
@@ -79,6 +79,28 @@ session_health:  ok | needs_recovery | quarantined | read_only
 - quarantine changes `session_health`, never lifecycle.
 - a store-level failure may force Session reads into a derived read-only view, but does not rewrite
   every Session row.
+
+Ordinary foreground work has one shared admission predicate:
+
+```text
+session_lifecycle == active AND session_health == ok
+```
+
+It applies to new Turn submission, new TaskRun creation, explicit TaskRun resume, and the persisted
+journal's final write guards. `needs_recovery` keeps its explicit recovery disposition;
+`quarantined` and `read_only` return their stable application error codes. Recovery resolution may
+perform only its narrowly authorized writes and does not become a general bypass.
+
+An archived or deleted Session cannot retain, create, or resume a current non-terminal TaskRun and
+cannot start a Turn. Archive fails closed while a current TaskRun exists; it does not implicitly
+cancel, abandon, or rewrite task history. Doctor treats a persisted `archived + active current task`
+combination as an error requiring repair.
+
+`Session.updated_at` is the optimistic concurrency token for every observable Session mutation,
+including task-pointer/status coordination, Turn/conversation append, lifecycle, health, and
+recovery changes. One outer write transaction obtains one injected-clock timestamp and all nested
+writes to that Session share it. Stored whole-second values advance strictly by at least one second
+between transactions, even when the injected physical clock has not advanced.
 
 ### TaskRun state machine
 

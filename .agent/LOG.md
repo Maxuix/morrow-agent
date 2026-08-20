@@ -1279,3 +1279,53 @@
   collaborators, narrow journal ports, explicit runtime/CLI seams, and architecture regression
   gates. Physical source partitioning remains optional follow-up work, not a correctness blocker.
 - Stage 4 remains closed; Stage 5 remains inactive.
+
+## 2026-08-20 — S4.47.1–S4.47.5 real-user remediation implemented
+
+- Replaced workspace-local, path-unlink Artifact cleanup with data-root-global authority checks,
+  trusted descriptor-bound directory validation, a non-replayable transactional final check, and
+  rename-only retained quarantine. Normal apply truthfully reports `removed=0` and
+  `quarantined=1`; original bytes are never unlinked or truncated.
+- Restored production Fork-child continuation while preserving the initial no-inherited-task rule.
+  Tightened Session admission to ACTIVE + health OK, archive/current-task invariants, Doctor
+  contradiction detection, and strictly monotonic outer-transaction `updated_at` tokens.
+- Added CLI page metadata/JSON output, Doctor non-OK exit 2, stable lifecycle/health errors, and
+  Grant stale consistency. Reconciled the roadmap, ADRs, architecture, README, acceptance evidence,
+  and the historical real-user report without rewriting the original observations.
+- At this checkpoint S4.47.6 remained active; final focused/offline counts, Ruff, compileall, CLI
+  help, final diff check, evidence reconciliation, and verified commits were still required.
+
+## 2026-08-20 — Provisional S4.47.6 gate before independent final review
+
+- Closed RUT-001 through RUT-008 with data-root-global rename-only Artifact quarantine, usable Fork
+  children, ACTIVE + health OK foreground admission, archive/current-task invariants, monotonic
+  transaction-scoped Session timestamps, truthful Doctor/CLI behavior, and stable errors.
+- Final focused RUT/Stage 4 regression across 14 files passed: `199 passed in 5.70s`.
+- Full offline suite passed: `663 passed, 1 deselected in 15.96s`. Ruff format reported
+  `164 files already formatted`; Ruff check and compileall passed.
+- Main CLI help and cleanup CLI help exited 0. Cleanup help states that apply moves validated
+  candidates into a private quarantine and does not destroy original bytes. `git diff --check`
+  passed.
+- Reconciled the historical report, remediation matrix, acceptance evidence, ADRs, Stage 4 roadmap,
+  architecture, README, and execution state. A later independent final review superseded this
+  closeout after finding the repeat-resume Recovery issue below.
+
+## 2026-08-20 — Subplan 47 final-review Recovery defense completed
+
+- Independent final review found that a resolved RecoveryReport could be submitted under a new
+  command ID, clear a later quarantined/read-only Session health state, and create another resume
+  AgentRun. The existing same-command receipt replay remained correct, but report terminality was
+  not a sufficient new-command guard.
+- Fixed the public and transactional boundaries: the same command receipt replays; a new command
+  against a non-OPEN report is stably rejected; the write transaction rechecks the durable report
+  status; and `resume_recovery()` requires the Session to remain ACTIVE + health OK. No rejected
+  command creates a receipt, clears later health, or creates a duplicate AgentRun.
+- The original independent reviewer re-reviewed the final implementation and reported no remaining
+  P0/P1. Verified source/test progress is committed at `73f24de`.
+- Final focused RUT/Stage 4 regressions passed across 14 files: `199 passed in 5.83s`. The full
+  host-level non-live suite passed `663 passed, 1 deselected in 12.26s` with every Seatbelt test
+  executed and `0 skipped`.
+- Ruff format reported `164 files already formatted`; Ruff check, compileall, main CLI help,
+  cleanup CLI help, and `git diff --check` all exited 0. Cleanup help still states that apply moves
+  candidates into private quarantine without destroying original bytes.
+- Subplan 47 and Stage 4 remediation are closed. Stage 5 remains inactive.

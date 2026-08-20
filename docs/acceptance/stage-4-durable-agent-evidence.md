@@ -1,8 +1,9 @@
 # Stage 4 Durable Agent 验收证据
 
 > 验收日期：2026-08-20
-> 当前状态：Subplan 45 验收及 Stage 4 最终 review-fix 完成；Stage 5 保持未激活
-> 当前分支：`feat/stage4-operational-store`
+> 当前状态：Subplans 45–47 的验收、边界重构与真实用户测试修复已完成；
+> Stage 5 保持未激活
+> 当前分支：`codex/fix-stage4-real-user-remediation`
 > Subplan 44 基线提交：`3e54dee` (`feat(permissions): complete Full Access Manual grants`)
 
 本文只记录本次工作树实际运行过的命令、测试和观察结果。Live Provider、真实网络和未提供
@@ -14,10 +15,10 @@ runner 的平台不被标记为通过；Stage 3 macOS 宿主级安全证据继�
 | 合同 | 生产实现 | 直接测试/证据 |
 |---|---|---|
 | Operational Store v1–v9、迁移、健康与备份 | `src/morrow/adapters/state/operational.py`, `migrations.py`, `journal.py` | `tests/test_operational_store.py`, `tests/test_stage4_session_conversation.py`, `tests/test_stage4_backup.py`, `tests/test_stage4_operational_store_spike.py` |
-| Session / Turn / ConversationLog / AgentRun | `src/morrow/application/turns.py`, `src/morrow/runtime/conversation.py`, `src/morrow/runtime/agent.py` | `tests/test_stage_boundary.py`, `tests/test_stage4_session_conversation.py`, `tests/test_stage4_recovery_crash.py` |
+| Session / Turn / ConversationLog / AgentRun | `src/morrow/application/turns.py`, `src/morrow/runtime/conversation.py`, `src/morrow/runtime/agent.py` | `tests/test_stage_boundary.py`, `tests/test_stage4_session_conversation.py`, `tests/test_stage4_recovery_crash.py`, `tests/test_conversation_and_loop.py` |
 | TaskRun / TaskOutcome | `src/morrow/application/tasks.py`, `src/morrow/core/domain.py` | `tests/test_stage4_task_outcome.py` |
 | Tool intent / Approval / Recovery | `src/morrow/core/execution.py`, `src/morrow/application/recovery.py` | `tests/test_stage4_tool_journal.py`, `tests/test_stage4_tool_persist.py`, `tests/test_stage4_recovery_crash.py` |
-| Artifact / checkpoint / fork | `src/morrow/application/artifacts.py`, `checkpoints.py`, `src/morrow/adapters/state/artifacts.py` | `tests/test_stage4_artifacts.py`, `tests/test_stage4_context_fork.py` |
+| Artifact / cleanup / checkpoint / fork | `src/morrow/application/artifacts.py`, `cleanup.py`, `cleanup_fs.py`, `checkpoints.py`, `src/morrow/adapters/state/artifacts.py` | `tests/test_stage4_artifacts.py`, `tests/test_stage4_cleanup.py`, `tests/test_stage4_context_fork.py` |
 | Command / Query / Event / Doctor | `src/morrow/application/api.py`, `doctor.py`, `src/morrow/interfaces/cli.py` | `tests/test_stage4_application_api.py`, `tests/test_stage4_cli_operational.py`, `tests/test_stage4_doctor.py` |
 | Full Access Manual | `src/morrow/core/permissions.py`, `src/morrow/application/grants.py`, `src/morrow/runtime/agent.py` | `tests/test_stage4_permissions.py`, `tests/test_stage4_tool_persist.py`, `tests/test_capability_policy.py` |
 
@@ -149,3 +150,61 @@ GUI、MCP/Skills 和 multi-agent 仍明确为未实现或 unsupported。
 [`docs/reviews/stage-4-final-grok-review.md`](../reviews/stage-4-final-grok-review.md)。报告指出的
 B1/B2/H1–H4 与确认存在的普通问题均已判断并修复；O5 及 S1–S6 属非阻塞优化，未扩大本轮范围。
 没有进行第二轮 Grok review；Stage 5 继续保持未激活。
+
+## 7. Subplan 47 真实用户测试修复
+
+原始真实用户报告作为历史证据保留；RUT-001～RUT-008 的根因、当前合同、回归用例
+和最终门禁记录集中在
+[`stage-4-real-user-test-remediation.md`](../reviews/stage-4-real-user-test-remediation.md)。
+
+本轮将 Stage 4 的验收语义补充为：
+
+- cleanup 权威覆盖 data root 内全部 workspace 的 Artifact metadata、普通 reference 和
+  checkpoint reference；只对受信 dirfd 目录链下的单链接 0600 普通文件操作。
+- cleanup apply 的成功语义是原子移入私有 quarantine：`removed=0`、
+  `quarantined=1`。它不 `unlink`/`truncate`/`ftruncate` 原字节；不确定时保留隔离证据并
+  fail closed。
+- Fork child 创建时不继承父 TaskRun，但后续可在 production bootstrap 恢复后创建自己的
+  TaskRun/Turn，父历史不变。
+- 普通 Turn/Task 只能在 `lifecycle=active` 且 `health=ok` 时开始或恢复；archive 要求
+  current task 为空；Doctor 把 persisted `archived + active task` 诊断为 needs-repair。
+- Recovery resolve 的同 command receipt 只 replay；已关闭 report 的新 command 会稳定拒绝，
+  并在事务内复核 durable `OPEN` status，不能清除后来的 quarantined/read-only health
+  或创建重复 AgentRun；`resume_recovery()` 要求 ACTIVE + health OK。
+- Session 的所有可观察 mutation 在一个外层事务内共享一个注入时间戳，跨事务的
+  `updated_at` 以整秒精度严格单调，可用作可靠 stale token。
+- Session/Task/Artifact list 显示 `next_cursor` 并支持 `--json`；Doctor 的 health 非 OK 时
+  CLI exit 2；乐观锁与 Session health 错误保留稳定 code。
+
+本节不覆盖第 3～6 节已完成的历史验收数字。Subplan 47 的最终验证为：
+
+```text
+RUT/Stage 4 聚焦回归（14 files）
+→ 199 passed in 5.83s
+
+uv run pytest -m 'not live'
+→ 663 passed, 1 deselected in 12.26s；0 skipped
+
+uv run ruff format --check .
+→ 164 files already formatted
+
+uv run ruff check .
+→ passed
+
+uv run python -m compileall -q src tests
+→ exit 0
+
+uv run morrow --help
+→ exit 0
+
+uv run morrow state cleanup --help
+→ exit 0；文案为“移入私有隔离区；不销毁原字节”
+
+git diff --check
+→ exit 0
+```
+
+本轮未运行 live Provider、真实网络或真实凭据测试；`not live` 门禁中的一项
+deselected 就是该显式边界。完整宿主级运行已执行全部 Seatbelt 用例，`0 skipped`。
+原独立 reviewer 在 Recovery 最终防线修复后复审，确认无剩余 P0/P1。完整证据与
+RUT 矩阵见上述修复记录第 6 节。

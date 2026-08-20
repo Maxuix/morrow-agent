@@ -1,8 +1,8 @@
 # Stage 4 Durable Task, Session, Artifact, and Recovery Plan
 
-> Status: complete — Stage 4 accepted; boundary refactor verified
+> Status: complete — Stage 4 real-user-test and final-review remediation verified
 > Active subplan: none (Stage 5 remains inactive until the user requests activation)
-> Production implementation: authorized; v9 grants, v8 application API, events, doctor, backup, and cleanup have landed
+> Production implementation: RUT-001 through RUT-008 and final Recovery replay defenses are verified
 > Stage 3 production baseline: `003dbdaab652520ca5cadf451ebca7a13bcba36d`
 > Stage 4 accepted contract baseline: `20fb43e`
 > Scope: durable foreground-agent operation, recovery, artifacts, context checkpoints,
@@ -165,6 +165,13 @@ session_health:    ok | needs_recovery | quarantined | read_only
 
 Locked foreground semantics:
 
+- Ordinary Turn submission, TaskRun creation, and TaskRun resume require Session lifecycle
+  `active` and Session health `ok`; recovery is the only narrow exception for `needs_recovery`.
+- Archive requires no current TaskRun and never silently cancel/abandons one. Inactive Sessions
+  cannot retain or create an active current TaskRun.
+- Every observable Session mutation advances one injected-clock `updated_at` token. Nested writes
+  in one outer transaction share one token; stored whole-second values are strictly monotonic across
+  transactions.
 - The first ordinary input in a Session creates an `open` TaskRun if none is current.
 - Subplan 37 persists only the open current-task pointer. Subplan 40 owns the complete state machine:
   `open → ready_for_acceptance → accepted`, with ordinary follow-up returning
@@ -242,6 +249,11 @@ history.
 
 - Artifact paths are addressed by opaque Artifact ID and verified by content hash; content-addressed
   deduplication is not a Stage 4 requirement.
+- Cleanup authority is global to the data root: Artifact metadata, ordinary references, and
+  checkpoint references from every workspace must all be absent. Apply only atomically renames an
+  exact private regular-file candidate into a retained private quarantine after a non-replayable
+  transactional recheck. It reports `removed=0`/`quarantined=1` and never unlinks or truncates the
+  original bytes.
 - Publication is temp write → file fsync → atomic rename → parent fsync → metadata commit, with
   deterministic orphan handling.
 - The first durable command-output Artifact contains only bounded, redacted content. Persisting a
@@ -318,9 +330,11 @@ but must preserve accepted public and safety contracts or explicitly reopen the 
 | 43 | Command/Query/Event, CLI, doctor, and backup | completed | one application API and operable recovery UX |
 | 44 | CapabilityGrant and Full Access Manual | completed | auditable run-bound manual elevation; no Full Access Auto |
 | 45 | End-to-end acceptance and Stage 4 closeout | completed | crash-tested packaged durable personal agent |
+| 46 | Architecture boundary refactor | completed | single Recovery writer, domain collaborators, narrow journal ports |
+| 47 | Real-user-test remediation | completed | RUT-001–RUT-008 fixes and full gates verified |
 
 Detailed executable tasks and gates are in `.agent/subplans/36-*.md` through
-`.agent/subplans/45-*.md`. Completed Subplan 35 is preserved in Git history at `20fb43e`.
+`.agent/subplans/47-*.md`. Completed Subplan 35 is preserved in Git history at `20fb43e`.
 
 ## Dependency route
 
@@ -336,6 +350,8 @@ Detailed executable tasks and gates are in `.agent/subplans/36-*.md` through
   → 43 API/CLI/doctor/backup
   → 44 grants/Full Access Manual
   → 45 acceptance/closeout
+  → 46 architecture boundary refactor
+  → 47 real-user-test remediation
 ```
 
 The route is intentionally serial because every later layer depends on the durability and recovery
@@ -432,3 +448,9 @@ and documentation acceptance on 2026-08-20. The reproducible evidence is recorde
 
 Stage 5 is deliberately not activated by this closeout. Its planning boundary remains available only
 after a new user request.
+
+The later integrated real-user report reopened only RUT-001 through RUT-008 under Subplan 47.
+The remediation and final Recovery replay defense completed with 199 focused tests and 663
+host-level non-live tests passing with no skips, plus Ruff, compileall, CLI help, cleanup-help
+wording, diff gates, and an independent final review with no remaining P0/P1. It did not activate
+Stage 5 or widen the Stage 4 capability inventory.

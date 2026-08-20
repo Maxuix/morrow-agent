@@ -1,5 +1,11 @@
 # Stage 4 真实用户场景复测报告
 
+> 历史记录：本文保留 `015f407` 上的原始测试结果，不随后续修复回写。
+> RUT-001～RUT-008 的根因、修复合同和回归证据见
+> [Stage 4 真实用户测试修复记录](stage-4-real-user-test-remediation.md)。
+> 当前 RUT-001～RUT-008 及独立终审补充发现的 Recovery health 守卫已完成修复与
+> 重验；原独立 reviewer 最终复审无 P0/P1，以修复记录为当前状态。
+
 > 测试日期：2026-08-20
 > 被测分支：`refactor/stage4-boundaries`
 > 被测提交：`015f407 docs(agent): close boundary refactor`

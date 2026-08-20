@@ -2,8 +2,7 @@
 
 ## Current stage
 
-Stage 4 and its user-authorized post-acceptance architecture refactor are complete. Stage 5 remains
-inactive.
+Stage 4 real-user-test and final-review remediation is complete. Stage 5 remains inactive.
 
 ## Active subplan
 
@@ -11,11 +10,10 @@ None.
 
 ## Tasks
 
-- [x] S4.46.1 Freeze dependency/transaction invariants and consolidate Recovery lifecycle ownership.
-- [x] S4.46.2 Extract domain application handlers behind the compatible operational API facade.
-- [x] S4.46.3 Activate narrow SQLite journal ports while sharing one transaction session and
-  confining the concrete adapter to cross-domain composition.
-- [x] S4.46.4 Decompose AgentLoop event emission without changing ConversationLog ownership or
-  public event lifecycle.
-- [x] S4.46.5 Remove CLI reach-through to API journal internals and establish domain command seams.
-- [x] S4.46.6 Reconcile docs, run full gates, and commit verified work.
+- [x] S4.47.1 Reproduce and fix cross-workspace Artifact cleanup and managed-path diagnostics.
+- [x] S4.47.2 Restore Fork child task/turn continuation through the production boundary.
+- [x] S4.47.3 Enforce archived Session/task/health invariants and diagnose contradictory state.
+- [x] S4.47.4 Make Session `updated_at` a reliable transaction-scoped mutation/stale token.
+- [x] S4.47.5 Expose CLI pagination, truthful Doctor exit status, and stable domain errors.
+- [x] S4.47.6 Run the final focused real-user regressions and all Stage 4/offline quality gates.
+- [x] S4.47.7 Close resolved-report repeat-resume side effects and rerun final gates.

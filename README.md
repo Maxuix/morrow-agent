@@ -41,10 +41,14 @@ morrow model current
 morrow grant list --agent-run-id AGENT_RUN_ID
 morrow grant create TASK_RUN_ID AGENT_RUN_ID --reason "一次明确的本地验证"
 morrow grant revoke GRANT_ID --reason "用户撤销"
-morrow session list --dir PATH
+morrow session list --dir PATH --limit 50 --json
 morrow session resume SESSION_ID --dir PATH
+morrow task list SESSION_ID --dir PATH --limit 50 --json
+morrow artifact list --dir PATH --limit 50 --json
 morrow recovery show SESSION_ID --dir PATH
 morrow recovery resolve REPORT_ID RESOLUTION --dir PATH
+morrow state doctor --workspace-id WORKSPACE_ID
+morrow state cleanup --workspace-id WORKSPACE_ID [--apply]
 ```
 
 用于 OpenCode Go Mimo v2.5 的持久化验收环境可使用仓库内包装命令；首次执行会隐藏输入
@@ -93,6 +97,10 @@ AgentRun 授予 `unconfined_host_process`，且每次 opaque Host 命令仍要�
 隔离，可能以当前用户权限触达用户文件、网络、凭据、套接字和 Morrow 状态；Grant 只对创建它的 AgentRun
 有效，过期、撤销或崩溃恢复后的新 AgentRun 都会 fail closed。
 
+`session list`、`task list` 和 `artifact list` 在文本模式下会显示可用的
+`next_cursor`；`--json` 保留 `items` 和 `next_cursor`，适合脚本分页。`state doctor`
+仍会输出完整诊断报告，但只有 health OK 时 exit 0，其他状态 exit 2。
+
 `Ctrl+C` 在模型或工具活动期间取消当前任务，之后可以直接继续对话。`/new` 创建并切换到新的
 Session，不删除或归档旧会话；仅当对话仍只存在于进程内时才要求确认丢弃。`/exit` 和输入 EOF 在
 已持久化会话上直接退出并保留历史；仅进程内未保存对话仍需确认丢弃，取消则留在 REPL，确认提示
@@ -104,10 +112,21 @@ Session，不删除或归档旧会话；仅当对话仍只存在于进程内时�
 以及数据根 Operational Store 中的 Session / TaskRun 状态、版本化 TaskOutcome、Turn / ConversationLog 与受控 Artifact
 和 ToolExecution 恢复证据。最终回答只把 TaskRun 置为待接受；普通追问继续同一 TaskRun，只有显式
 `/accept`、`/task new`、取消、放弃或恢复命令才改变任务语义。
+普通 Turn、新 TaskRun 或 TaskRun resume 要求 Session 同时为 `active` 和 health `ok`。
+归档前必须先明确关闭 current TaskRun；归档不会自动 cancel/abandon 或改写任务历史。
+Session 的 `updated_at` 会随任务、对话、lifecycle、health 和 recovery 变化以整秒精度严格递增，
+可用作乐观并发 token。
 可用同一 `session_id` 在重启后恢复合法对话；确定性上下文 checkpoint 会保留完整最近 Turn、source provenance
-和 checkpoint 后的新输入，conversation Fork 通过 parent/cut lineage 创建隔离子 Session；工具恢复仍遵循持久化证据分类。
+和 checkpoint 后的新输入，conversation Fork 通过 parent/cut lineage 创建隔离子 Session。
+Fork child 创建时不继承父 TaskRun，持久化后可创建并拥有自己的 TaskRun、Turn 和本地记录；
+父历史不变。工具恢复仍遵循持久化证据分类。
 工作空间/代码回退不属于 Stage 4，任务后可审查的长期偏好与项目知识学习留到
 Stage 5。
+
+Artifact cleanup 默认只 dry-run，并以同一 data root 内所有 workspace 的 metadata 与
+reference 为权威。`--apply` 不销毁字节：它只会把经目录、类型、权限、单链接和事务内
+全局权威复查的非托管候选原子移入随机私有 quarantine。成功报告是
+`removed=0` 与 `quarantined=1`；原字节仍保留，无法证明安全时 fail closed。
 
 旧版本可能留下 `handoff.yaml` 或 `handoff.yaml.bak`。当前版本不读取、校验、迁移、覆盖或自动删除
 这些遗留文件；是否导入或清理需要未来单独的产品与数据决策。

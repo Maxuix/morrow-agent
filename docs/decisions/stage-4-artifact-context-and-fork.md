@@ -2,8 +2,9 @@
 
 ## Status
 
-Accepted for Stage 4 implementation planning by S4.35.5. No Artifact Store, checkpoint, or fork is
-implemented by this decision.
+Accepted by S4.35.5 and implemented by Subplans 41–42. Subplan 47 amends cleanup and fork
+post-creation semantics after the integrated real-user test: cleanup authority is data-root global,
+cleanup never destroys bytes, and a persisted fork child may later create its own TaskRun.
 
 ## Artifact authority and layout
 
@@ -65,9 +66,26 @@ Crash outcomes:
 - unreferenced managed temp/final file: doctor reports an orphan candidate.
 
 Stage 4 does not automatically delete conversation records or Artifact bytes. Archive does not
-change retention. Doctor/cleanup defaults to dry-run and may remove only exact, validated,
-unreferenced managed temp/orphan targets after an explicit command. Referenced or pinned Artifacts
-are never cleanup candidates.
+change retention. Doctor/cleanup defaults to dry-run. Referenced, pinned, or metadata-owned
+Artifacts are never cleanup candidates.
+
+Explicit cleanup is a rename-only quarantine protocol, not a byte-deletion protocol:
+
+- authority is the union of Artifact metadata, ordinary Artifact references, and checkpoint
+  Artifact references across every workspace in the shared data root;
+- the data-root/`artifacts`/`tmp` directory chain is opened through directory descriptors and
+  validated for type, mode, identity, and no symlink traversal before candidate inspection;
+- only a correctly named, private `0600`, single-link regular file may become eligible;
+- immediately before moving one candidate, a non-replayable `BEGIN IMMEDIATE` transaction rechecks
+  that no global metadata or reference authority exists;
+- success atomically renames the entry into a random private `0700` quarantine directory under the
+  same trusted parent, fsyncs the directories, and retains the payload;
+- success is reported truthfully as `removed=0`, `quarantined=1`, with `quarantine_retained` evidence.
+
+Cleanup never calls `unlink`, `truncate`, or `ftruncate` on the original bytes. If commit outcome or
+path identity becomes uncertain, restoration first rechecks global authority and may create only an
+exclusive hard link to an absent original name; it never overwrites a replacement. When safety
+cannot be proved, the quarantine payload is retained and the operation fails closed.
 
 The YAML document publisher's `os.replace` protocol is not reused for SQLite. It may be shared only
 as a conceptual byte-file publication pattern for Artifact bytes.
@@ -116,9 +134,10 @@ The child stores parent Session ID, cut record ID/position, optional checkpoint 
 reason. It reads the immutable parent prefix plus its own local records as a projection; it does not
 copy or edit parent rows. Referenced parent Artifacts are shared read-only by ID/reference count.
 
-The child starts with no session-scoped Preferences and no current TaskRun unless the fork command
-explicitly creates a new open TaskRun using a bounded source-goal reference. It never inherits an
-active Approval or CapabilityGrant.
+The child starts with no session-scoped Preferences and no current TaskRun. This is a fork-creation
+invariant, not a permanent model prohibition: after the child has been committed, it may normally
+create and own a new TaskRun, Turn, and child-local conversation records. It never inherits its
+parent's TaskRun, active Approval, or CapabilityGrant.
 
 Fork from an open Turn, unresolved ToolCycle, pending Approval, or unresolved RecoveryReport is
 rejected. A checkpoint fork and a Turn-boundary fork must resolve to the same explicit source prefix;
@@ -143,6 +162,7 @@ Outbox or background worker.
 - content-addressed storage or deduplication as a completion requirement;
 - full/raw command streams before streaming-redactor proof;
 - automatic deletion/retention heuristics in Stage 4;
+- byte-destroying orphan cleanup or path-based `unlink` after a stale scan;
 - persisting current ContextBuilder omission markers as history;
 - self-contained checkpoints that duplicate a second transcript;
 - fork that mutates its parent, copies grants, or rewinds project files.
