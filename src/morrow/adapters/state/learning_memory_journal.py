@@ -271,6 +271,7 @@ class SqliteLearningMemoryJournal:
         *,
         status: ProjectKnowledgeStatus | None = None,
         category: ProjectKnowledgeCategory | None = None,
+        include_deleted: bool = False,
         limit: int = 100,
     ) -> tuple[ProjectKnowledgeHead, ...]:
         _check_limit(limit, "knowledge head")
@@ -279,6 +280,9 @@ class SqliteLearningMemoryJournal:
         if status is not None:
             sql += " AND status = ?"
             parameters.append(status.value)
+        elif not include_deleted:
+            sql += " AND status != ?"
+            parameters.append(ProjectKnowledgeStatus.DELETED.value)
         if category is not None:
             sql += " AND category = ?"
             parameters.append(category.value)
@@ -454,6 +458,45 @@ class SqliteLearningMemoryJournal:
             if loaded is None:
                 raise StorageError(
                     StorageErrorCode.UNAVAILABLE, "knowledge revision could not be read"
+                )
+            return loaded
+
+        return self.backend.transact(work)
+
+    def confirm_project_knowledge_revision(
+        self,
+        workspace_id: str,
+        revision_id: str,
+        *,
+        confirmed_at: datetime,
+    ) -> ProjectKnowledgeRevision:
+        def work() -> ProjectKnowledgeRevision:
+            revision = self.get_project_knowledge_revision(workspace_id, revision_id)
+            if revision is None:
+                raise _missing("knowledge confirmation revision")
+            stamp = confirmed_at
+            if stamp.tzinfo is None:
+                stamp = stamp.replace(tzinfo=UTC)
+            else:
+                stamp = stamp.astimezone(UTC)
+            if stamp < revision.last_confirmed_at:
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE, "knowledge confirmation timestamp is stale"
+                )
+            if stamp == revision.last_confirmed_at:
+                return revision
+            self.backend.executor().execute(
+                """
+                UPDATE project_knowledge_revisions
+                SET last_confirmed_at_unix = ?
+                WHERE knowledge_revision_id = ? AND workspace_id = ?
+                """,
+                (_unix(stamp), revision_id, workspace_id),
+            )
+            loaded = self.get_project_knowledge_revision(workspace_id, revision_id)
+            if loaded is None:
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE, "knowledge confirmation could not be read"
                 )
             return loaded
 

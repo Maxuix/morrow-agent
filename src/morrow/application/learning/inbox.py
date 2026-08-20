@@ -12,6 +12,7 @@ from morrow.application.learning.decisions import (
     LearningDecisionService,
 )
 from morrow.application.learning.policy import LearningPolicyService, LearningPolicyStatus
+from morrow.application.learning.promotion import LearningPromotionService
 from morrow.core.application import ApplicationError, ApplicationErrorCode, QueryPage
 from morrow.core.domain import canonical_json_bytes, sha256_digest
 from morrow.core.learning import (
@@ -84,6 +85,7 @@ class LearningApplicationService:
         self.context = context
         self.policy = policy or LearningPolicyService(context)
         self.decisions = LearningDecisionService(context)
+        self.promotion = LearningPromotionService(context)
 
     @property
     def workspace_id(self) -> str:
@@ -243,6 +245,12 @@ class LearningApplicationService:
 
     def expire_candidates(self, command):
         return self.decisions.expire_candidates(command)
+
+    def accept_candidate(self, command):
+        return self.promotion.accept_candidate(command)
+
+    def edit_and_accept_candidate(self, command):
+        return self.promotion.edit_and_accept_candidate(command)
 
     def _review_view(self, review: LearningReview) -> LearningReviewView:
         return LearningReviewView(

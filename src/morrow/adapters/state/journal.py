@@ -452,10 +452,15 @@ class SqliteOperationalJournal:
         *,
         status: ProjectKnowledgeStatus | None = None,
         category: ProjectKnowledgeCategory | None = None,
+        include_deleted: bool = False,
         limit: int = 100,
     ) -> tuple[ProjectKnowledgeHead, ...]:
         return self._learning_memory_journal.list_project_knowledge_heads(
-            workspace_id, status=status, category=category, limit=limit
+            workspace_id,
+            status=status,
+            category=category,
+            include_deleted=include_deleted,
+            limit=limit,
         )
 
     def put_project_knowledge_head(
@@ -496,6 +501,17 @@ class SqliteOperationalJournal:
         self, workspace_id: str, revision: ProjectKnowledgeRevision
     ) -> ProjectKnowledgeRevision:
         return self._learning_memory_journal.put_project_knowledge_revision(workspace_id, revision)
+
+    def confirm_project_knowledge_revision(
+        self,
+        workspace_id: str,
+        revision_id: str,
+        *,
+        confirmed_at: datetime,
+    ) -> ProjectKnowledgeRevision:
+        return self._learning_memory_journal.confirm_project_knowledge_revision(
+            workspace_id, revision_id, confirmed_at=confirmed_at
+        )
 
     def put_project_knowledge_evidence(
         self, workspace_id: str, link: ProjectKnowledgeEvidenceLink

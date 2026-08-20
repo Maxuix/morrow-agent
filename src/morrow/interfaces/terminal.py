@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 
 from prompt_toolkit import PromptSession
 from prompt_toolkit.patch_stdout import patch_stdout
 from rich.console import Console
 
-from morrow.application.commands import RecoveryCommandRequest
+from morrow.application.commands import (
+    RecoveryCommandRequest,
+)
 from morrow.application.orchestrator import DispatchResult
 from morrow.core.capabilities import CommandToolFact
+from morrow.core.learning_payloads import ProjectKnowledgeCandidatePayload
 from morrow.core.models import AgentEvent, ToolApprovalDecision, ToolApprovalRequest
 from morrow.core.permissions import UNCONFINED_HOST_APPROVAL_LANGUAGE
 
@@ -317,6 +321,26 @@ async def run_repl(
                         f"Learning Review {review_result.review.status.value}："
                         f"新增候选 {len(review_result.candidate_ids)} 个；可用 /learn inbox 查看。"
                     )
+            if result.action == "learning_accept_preview":
+                if await _handle_learning_accept(
+                    orchestrator, terminal, prompt_session, result.value
+                ):
+                    return _closed_input(terminal)
+            if result.action == "learning_edit_preview":
+                if await _handle_learning_edit(
+                    orchestrator, terminal, prompt_session, result.value
+                ):
+                    return _closed_input(terminal)
+            if result.action == "learning_reject_preview":
+                if await _handle_learning_reject(
+                    orchestrator, terminal, prompt_session, result.value
+                ):
+                    return _closed_input(terminal)
+            if result.action == "memory_lifecycle_preview":
+                if await _handle_memory_lifecycle(
+                    orchestrator, terminal, prompt_session, result.value
+                ):
+                    return _closed_input(terminal)
 
 
 async def _consume_dispatch(orchestrator, text: str, terminal: Terminal) -> DispatchResult:
@@ -337,6 +361,120 @@ async def _consume_dispatch(orchestrator, text: str, terminal: Terminal) -> Disp
 
 def _command_service(orchestrator):
     return orchestrator.command_service
+
+
+def _show_learning_result(terminal: Terminal, value) -> None:
+    if hasattr(value, "outcome"):
+        terminal.console.print(
+            f"Learning Candidate 已处理：{value.outcome}；候选 {value.candidate.candidate_id}。"
+        )
+    elif hasattr(value, "operation") and hasattr(value, "head"):
+        terminal.console.print(
+            f"Project Knowledge 已处理：{value.operation}；状态 {value.head.status.value}。"
+        )
+    elif hasattr(value, "candidate"):
+        terminal.console.print(
+            f"Learning Candidate 已处理：{value.candidate.status.value}；候选 {value.candidate.candidate_id}。"
+        )
+    else:
+        terminal.console.print("Learning 操作已完成。")
+
+
+async def _handle_learning_accept(orchestrator, terminal, prompt_session, request) -> bool:
+    confirmation = await _confirm(terminal, prompt_session, "确认接受这项 Learning Candidate？")
+    if confirmation == "closed":
+        return True
+    if confirmation != "yes":
+        terminal.console.print("已取消，未写入状态。")
+        return False
+    try:
+        value = _command_service(orchestrator).accept_learning_candidate(request)
+    except (ValueError, RuntimeError) as exc:
+        terminal.console.print(f"Learning 接受失败：{exc}")
+    else:
+        _show_learning_result(terminal, value)
+    return False
+
+
+async def _handle_learning_edit(orchestrator, terminal, prompt_session, request) -> bool:
+    service = _command_service(orchestrator)
+    view = service.api.get_learning_candidate_view(request.candidate_id)
+    if view is None:
+        terminal.console.print("Learning Candidate 不存在。")
+        return False
+    payload = view.candidate.proposed_payload
+    final_payload = payload
+    if isinstance(payload, ProjectKnowledgeCandidatePayload):
+        try:
+            statement = await terminal.prompt(
+                prompt_session,
+                f"Project Knowledge statement（留空保留当前：{payload.statement}）：",
+            )
+        except EOFError:
+            return True
+        except KeyboardInterrupt:
+            terminal.console.print("已取消编辑。")
+            return False
+        if statement.strip():
+            try:
+                final_payload = payload.model_copy(update={"statement": statement})
+            except ValueError as exc:
+                terminal.console.print(f"编辑值无效：{exc}")
+                return False
+    preview = service.api.preview_learning_candidate_decision(
+        request.candidate_id,
+        edit=final_payload,
+        conflict_resolution=request.conflict_resolution,
+    )
+    for line in service._preview_lines(preview):
+        terminal.console.print(line)
+    confirmation = await _confirm(terminal, prompt_session, "确认保存编辑后的 Candidate？")
+    if confirmation == "closed":
+        return True
+    if confirmation != "yes":
+        terminal.console.print("已取消，未写入状态。")
+        return False
+    try:
+        value = service.edit_learning_candidate(replace(request, final_payload=final_payload))
+    except (ValueError, RuntimeError) as exc:
+        terminal.console.print(f"Learning 编辑失败：{exc}")
+    else:
+        _show_learning_result(terminal, value)
+    return False
+
+
+async def _handle_learning_reject(orchestrator, terminal, prompt_session, request) -> bool:
+    confirmation = await _confirm(terminal, prompt_session, "确认拒绝这项 Learning Candidate？")
+    if confirmation == "closed":
+        return True
+    if confirmation != "yes":
+        terminal.console.print("已取消，未写入状态。")
+        return False
+    try:
+        value = _command_service(orchestrator).reject_learning_candidate(request)
+    except (ValueError, RuntimeError) as exc:
+        terminal.console.print(f"Learning 拒绝失败：{exc}")
+    else:
+        _show_learning_result(terminal, value)
+    return False
+
+
+async def _handle_memory_lifecycle(orchestrator, terminal, prompt_session, request) -> bool:
+    confirmation = await _confirm(
+        terminal, prompt_session, f"确认执行 Project Knowledge {request.operation}？"
+    )
+    if confirmation == "closed":
+        return True
+    if confirmation != "yes":
+        terminal.console.print("已取消，未写入状态。")
+        return False
+    try:
+        value = _command_service(orchestrator).mutate_knowledge(request)
+    except (ValueError, RuntimeError) as exc:
+        terminal.console.print(f"Project Knowledge 操作失败：{exc}")
+    else:
+        _show_learning_result(terminal, value)
+    return False
 
 
 def _reset_session(orchestrator) -> None:

@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
+from morrow.application.command_types import CommandResult, RecoveryCommandRequest
 from morrow.application.configuration import ConfigurationCommand, render_configuration_preview
+from morrow.application.learning.interaction import LearningCommandMixin
 from morrow.application.tasks import TaskCommandError, TaskCommandResult
 from morrow.core.capabilities import AccessScope, ApprovalMode, ProcessIsolation
 from morrow.core.domain import SessionHealth, TaskRunStatus
@@ -13,21 +13,7 @@ from morrow.core.preferences import merge_preferences
 from morrow.core.recovery import RecoveryReportStatus, RecoveryResolution
 
 
-@dataclass
-class CommandResult:
-    lines: list[str]
-    action: str | None = None
-    value: object | None = None
-
-
-@dataclass(frozen=True)
-class RecoveryCommandRequest:
-    report_id: str
-    resolution: RecoveryResolution
-    item_id: str | None = None
-
-
-class CommandService:
+class CommandService(LearningCommandMixin):
     def __init__(
         self,
         *,
@@ -218,6 +204,10 @@ class CommandService:
             return self._grant_command()
         if command == "/recovery":
             return self._recovery_command(parts)
+        if command == "/learn":
+            return self._learn_command(parts)
+        if command == "/memory":
+            return self._memory_command(parts)
         if command == "/task":
             return self._task_command(parts)
         if command == "/accept":

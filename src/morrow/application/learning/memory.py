@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from morrow.application.api_context import ApplicationCommandContext
 from morrow.application.learning.inbox import _offset
+from morrow.application.learning.lifecycle import MemoryLifecycleService
 from morrow.core.application import ApplicationError, ApplicationErrorCode, QueryPage
 from morrow.core.learning_memory import ProjectKnowledgeCategory, ProjectKnowledgeStatus
 from morrow.core.learning_views import (
@@ -20,6 +21,7 @@ class MemoryApplicationService:
 
     def __init__(self, context: ApplicationCommandContext) -> None:
         self.context = context
+        self.lifecycle = MemoryLifecycleService(context)
 
     @property
     def workspace_id(self) -> str:
@@ -34,6 +36,7 @@ class MemoryApplicationService:
         *,
         status: ProjectKnowledgeStatus | str | None = None,
         category: ProjectKnowledgeCategory | str | None = None,
+        include_deleted: bool = False,
         cursor: str | None = None,
         limit: int = 50,
     ) -> QueryPage[ProjectKnowledgeSummary]:
@@ -45,6 +48,7 @@ class MemoryApplicationService:
                 self.workspace_id,
                 status=selected_status,
                 category=selected_category,
+                include_deleted=include_deleted,
                 limit=min(500, offset + limit),
             )
         )
@@ -110,6 +114,18 @@ class MemoryApplicationService:
             timeline=tuple(timeline),
             evidence=evidence,
         )
+
+    def disable_knowledge(self, command):
+        return self.lifecycle.disable_knowledge(command)
+
+    def enable_knowledge(self, command):
+        return self.lifecycle.enable_knowledge(command)
+
+    def mark_disputed(self, command):
+        return self.lifecycle.mark_disputed(command)
+
+    def delete_knowledge(self, command):
+        return self.lifecycle.delete_knowledge(command)
 
     def _current_revision(self, revision_id: str | None, *, revisions=()):
         if revision_id is None:

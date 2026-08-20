@@ -297,11 +297,29 @@ class OperationalApplicationService:
     def preview_learning_candidate_decision(self, candidate_id: str, **kwargs):
         return self.learning.preview_candidate_decision(candidate_id, **kwargs)
 
+    def accept_learning_candidate(self, command):
+        return self.learning.accept_candidate(command)
+
+    def edit_and_accept_learning_candidate(self, command):
+        return self.learning.edit_and_accept_candidate(command)
+
     def list_project_knowledge(self, **kwargs):
         return self.memory.list_knowledge(**kwargs)
 
     def get_project_knowledge(self, knowledge_id: str, *, revision: int | None = None):
         return self.memory.get_knowledge(knowledge_id, revision=revision)
+
+    def disable_project_knowledge(self, command):
+        return self.memory.disable_knowledge(command)
+
+    def enable_project_knowledge(self, command):
+        return self.memory.enable_knowledge(command)
+
+    def dispute_project_knowledge(self, command):
+        return self.memory.mark_disputed(command)
+
+    def delete_project_knowledge(self, command):
+        return self.memory.delete_knowledge(command)
 
     def set_learning_mode(
         self,

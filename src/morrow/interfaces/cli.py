@@ -35,6 +35,7 @@ from morrow.core.permissions import (
 )
 from morrow.core.recovery import RecoveryResolution
 from morrow.core.store import StorageError, StorageErrorCode, StoreOpenMode
+from morrow.interfaces.learning_cli import learning_app, memory_app
 from morrow.interfaces.terminal import Terminal, TerminalApprovalPort, run_repl
 from morrow.runtime.durable_log import restore_conversation_log
 from morrow.services.workspace import WorkspaceError, WorkspaceWriterLock
@@ -49,7 +50,6 @@ artifact_app = typer.Typer(help="Artifact 查看与保留。")
 recovery_app = typer.Typer(help="恢复报告与决策。")
 grant_app = typer.Typer(help="Foreground AgentRun 的手动权限授予与撤销。")
 state_app = typer.Typer(help="Operational Store 诊断、事件与备份。")
-learning_app = typer.Typer(help="Learning Review 与候选查看。")
 app.add_typer(provider_app, name="provider")
 app.add_typer(model_app, name="model")
 app.add_typer(workspace_app, name="workspace")
@@ -60,6 +60,7 @@ app.add_typer(recovery_app, name="recovery")
 app.add_typer(grant_app, name="grant")
 app.add_typer(state_app, name="state")
 app.add_typer(learning_app, name="learning")
+app.add_typer(memory_app, name="memory")
 
 
 def _secret(provider_id: str = "opencode-go") -> str:

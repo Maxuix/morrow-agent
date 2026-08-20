@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Protocol
 
 from morrow.core.journal import TransactionalJournalPort
@@ -49,6 +50,7 @@ class LearningMemoryJournalPort(TransactionalJournalPort, Protocol):
         *,
         status: ProjectKnowledgeStatus | None = None,
         category: ProjectKnowledgeCategory | None = None,
+        include_deleted: bool = False,
         limit: int = 100,
     ) -> tuple[ProjectKnowledgeHead, ...]: ...
 
@@ -78,6 +80,14 @@ class LearningMemoryJournalPort(TransactionalJournalPort, Protocol):
 
     def put_project_knowledge_revision(
         self, workspace_id: str, revision: ProjectKnowledgeRevision
+    ) -> ProjectKnowledgeRevision: ...
+
+    def confirm_project_knowledge_revision(
+        self,
+        workspace_id: str,
+        revision_id: str,
+        *,
+        confirmed_at: datetime,
     ) -> ProjectKnowledgeRevision: ...
 
     def put_project_knowledge_evidence(
