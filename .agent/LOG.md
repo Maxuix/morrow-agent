@@ -1457,3 +1457,7 @@
 - Canonical unsandboxed validation passed: `uv run pytest -m 'not live'` reported
   `674 passed, 1 deselected`, including the real Seatbelt cases. `uv run ruff format --check .`,
   Ruff check, compileall, main CLI help, state cleanup help, and `git diff --check` all exited 0.
+- Fast-forwarded `refactor/pre-stage5-boundaries` into local `main` at `bb8f5d5`. The topic branch
+  contained eight verified commits and local `main` had no divergent commits. Remote publication
+  was withheld because `main` was already 29 commits ahead of `origin/main` before integration;
+  pushing would also publish unrelated pre-existing local history.

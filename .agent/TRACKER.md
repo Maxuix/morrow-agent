@@ -2,8 +2,7 @@
 
 ## Current status
 
-Subplan 48 is complete and verified on `refactor/pre-stage5-boundaries`, pending fast-forward
-integration into `main`. Stage 5 remains inactive.
+Subplan 48 is complete, verified, and fast-forwarded into local `main`. Stage 5 remains inactive.
 
 ## Last completed task
 
@@ -16,12 +15,13 @@ None — Subplan 48 is complete.
 
 ## Next action
 
-Fast-forward the verified topic branch into `main`, verify any configured upstream, and retire the
-topic branch. Do not activate Stage 5 without an explicit user request.
+No implementation plan is active. Do not activate Stage 5 without an explicit user request.
 
 ## Blockers
 
-None.
+Remote publication is intentionally not performed: before this refactor, local `main` was already
+29 commits ahead of `origin/main`, so pushing would publish unrelated pre-existing local history
+without explicit user authorization.
 
 ## Active boundary
 
