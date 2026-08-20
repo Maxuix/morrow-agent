@@ -113,12 +113,15 @@ class LearningReviewRunner:
                     evidence=extracted,
                 )
             )
-            context = self.contexts.build(
-                review=claimed,
-                outcome=outcome,
-                policy=policy,
-                evidence=evidence,
-            )
+            try:
+                context = self.contexts.build(
+                    review=claimed,
+                    outcome=outcome,
+                    policy=policy,
+                    evidence=evidence,
+                )
+            except (ValidationError, ValueError):
+                return self._failed_result(claimed, LearningReviewFailureCode.INTERNAL)
             response = await asyncio.wait_for(
                 self.reviewer.review(
                     context,
@@ -141,7 +144,11 @@ class LearningReviewRunner:
             return self._failed_result(claimed, LearningReviewFailureCode.INTERNAL)
         except Exception:
             return self._failed_result(claimed, LearningReviewFailureCode.PROVIDER_UNAVAILABLE)
-        return self._finalize(claimed, batch)
+        return self._finalize(
+            claimed,
+            batch,
+            allowed_evidence_ids=frozenset(item.evidence_id for item in context.evidence),
+        )
 
     def _claim(self, review_id: str, *, expected_row_version: int | None) -> LearningReview:
         def work(txn):
@@ -197,10 +204,37 @@ class LearningReviewRunner:
 
         return self._translate(lambda: self.journal.transact(work))
 
+    def cancel(
+        self,
+        review_id: str,
+        *,
+        expected_row_version: int | None = None,
+    ) -> LearningReviewRunResult:
+        """Release a currently owned foreground lease as a retryable cancellation."""
+
+        current = self._translate(
+            lambda: self.journal.get_learning_review(self.workspace_id, review_id)
+        )
+        if current is None:
+            raise ApplicationError(ApplicationErrorCode.NOT_FOUND, "Learning Review is missing")
+        if expected_row_version is not None and current.row_version != expected_row_version:
+            raise ApplicationError(ApplicationErrorCode.STALE, "Learning Review row is stale")
+        if current.status is not LearningReviewStatus.RUNNING:
+            return LearningReviewRunResult(review=current)
+        if (
+            current.lease_id is None
+            or current.lease_expires_at is None
+            or current.lease_expires_at <= self._now()
+        ):
+            return LearningReviewRunResult(review=current)
+        return self._failed_result(current, LearningReviewFailureCode.CANCELLED)
+
     def _finalize(
         self,
         claimed: LearningReview,
         batch: CandidateDraftBatch,
+        *,
+        allowed_evidence_ids: frozenset[str] | None = None,
     ) -> LearningReviewRunResult:
         def work(txn):
             current = txn.get_learning_review(self.workspace_id, claimed.review_id)
@@ -222,6 +256,7 @@ class LearningReviewRunner:
                 policy=policy,
                 evidence=evidence,
                 batch=batch,
+                allowed_evidence_ids=allowed_evidence_ids,
             )
             candidates = pipeline.candidates
             completed = current.model_copy(

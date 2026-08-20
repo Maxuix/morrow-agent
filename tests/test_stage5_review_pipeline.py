@@ -3,18 +3,28 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from types import SimpleNamespace
 
 import pytest
 
+import morrow.interfaces.cli as cli_module
 from morrow.adapters.state.journal import SqliteOperationalJournal
 from morrow.adapters.state.operational import OperationalStore
 from morrow.application.api import OperationalApplicationService
-from morrow.core.application import ApplicationError, ApplicationErrorCode
+from morrow.application.learning.context import LearningContextBuilder
+from morrow.core.application import (
+    ApplicationCommandResult,
+    ApplicationError,
+    ApplicationErrorCode,
+    QueryPage,
+)
 from morrow.core.domain import (
     DurableConversationRecord,
     DurableSession,
+    DurableTaskRun,
     DurableTurn,
     TaskRunStatus,
+    sha256_digest,
 )
 from morrow.core.learning import (
     CandidateDraftBatch,
@@ -27,6 +37,7 @@ from morrow.core.learning import (
     PreferenceCandidatePayload,
 )
 from morrow.core.learning_payloads import LearningCandidateDraft
+from morrow.core.learning_ports import LEARNING_CONTEXT_MAX_RENDERED_CHARS
 from morrow.core.models import ModelRef
 from morrow.testing import FixedClock, FixedIdSource
 
@@ -61,6 +72,16 @@ class ContextReviewer:
         )
 
 
+class EmptyReviewer:
+    def __init__(self) -> None:
+        self.contexts = []
+
+    async def review(self, context, *, model: ModelRef, timeout_seconds: float):
+        del model, timeout_seconds
+        self.contexts.append(context)
+        return CandidateDraftBatch()
+
+
 def _api(tmp_path, *, reviewer=None):
     store = OperationalStore(tmp_path / "state", clock=FixedClock(NOW), maintenance_timeout=0)
     session = store.initialize()
@@ -77,7 +98,7 @@ def _api(tmp_path, *, reviewer=None):
     return session, journal, api
 
 
-def _accepted(api, journal, *, with_user_turn=False):
+def _accepted(api, journal, *, with_user_turn=False, user_content="以后默认使用中文回答"):
     task = api.task_new("ses_1", command_id="cmd_new").value
     if with_user_turn:
         journal.create_turn(
@@ -98,7 +119,7 @@ def _accepted(api, journal, *, with_user_turn=False):
                     session_id="ses_1",
                     conversation_position=1,
                     kind="message",
-                    payload={"role": "user", "content": "以后默认使用中文回答"},
+                    payload={"role": "user", "content": user_content},
                 ),
             ),
         )
@@ -140,6 +161,174 @@ def test_accept_atomically_requests_one_review_and_replays_without_duplicates(tm
         ]
     finally:
         session.close()
+
+
+@pytest.mark.asyncio
+async def test_review_evidence_stays_with_the_accepted_task_after_a_later_task(tmp_path):
+    reviewer = EmptyReviewer()
+    session, journal, api = _api(tmp_path, reviewer=reviewer)
+    try:
+        accepted = _accepted(api, journal, with_user_turn=True)
+        journal.append_records(
+            "ws_1",
+            (
+                DurableConversationRecord(
+                    record_id="rec_a_terminal",
+                    session_id="ses_1",
+                    conversation_position=2,
+                    kind="terminal",
+                    payload={"finish_reason": "error", "interrupted_call_ids": []},
+                ),
+            ),
+        )
+        later = api.task_new("ses_1", command_id="cmd_new_later").value
+        journal.create_turn(
+            "ws_1",
+            DurableTurn(
+                turn_id="turn_2",
+                session_id="ses_1",
+                task_run_id=later.task_run_id,
+                client_message_id="client_2",
+                created_at=NOW,
+            ),
+        )
+        journal.append_records(
+            "ws_1",
+            (
+                DurableConversationRecord(
+                    record_id="rec_b_user",
+                    session_id="ses_1",
+                    conversation_position=3,
+                    kind="message",
+                    payload={"role": "user", "content": "later task content must stay isolated"},
+                ),
+                DurableConversationRecord(
+                    record_id="rec_b_terminal",
+                    session_id="ses_1",
+                    conversation_position=4,
+                    kind="terminal",
+                    payload={"finish_reason": "error", "interrupted_call_ids": []},
+                ),
+            ),
+        )
+        outcome = api.list_outcomes(accepted.value.task_run_id)[0]
+        review = api.list_learning_reviews(task_outcome_id=outcome.outcome_id).items[0]
+        result = await api.run_learning_review(review.review_id)
+        assert result.review.status is LearningReviewStatus.COMPLETED
+        user_excerpts = [
+            item.excerpt_redacted
+            for item in reviewer.contexts[0].evidence
+            if item.source_kind.value == "user_turn"
+        ]
+        assert user_excerpts == ["以后默认使用中文回答"]
+    finally:
+        session.close()
+
+
+@pytest.mark.asyncio
+async def test_long_user_turn_is_digest_preserved_and_excerpt_bounded(tmp_path):
+    reviewer = EmptyReviewer()
+    session, journal, api = _api(tmp_path, reviewer=reviewer)
+    try:
+        content = "以后默认使用中文回答 " + ("补充说明 " * 200)
+        accepted = _accepted(api, journal, with_user_turn=True, user_content=content)
+        outcome = api.list_outcomes(accepted.value.task_run_id)[0]
+        review = api.list_learning_reviews(task_outcome_id=outcome.outcome_id).items[0]
+        result = await api.run_learning_review(review.review_id)
+        assert result.review.status is LearningReviewStatus.COMPLETED
+        evidence = api.list_learning_evidence(review_id=review.review_id)
+        user = next(item for item in evidence if item.source_kind.value == "user_turn")
+        assert user.excerpt_redacted is not None
+        assert 0 < len(user.excerpt_redacted) <= 512
+        assert user.content_digest == sha256_digest(content)
+    finally:
+        session.close()
+
+
+def test_context_builder_projects_large_outcomes_into_the_rendered_budget(tmp_path):
+    session, journal, api = _api(tmp_path)
+    try:
+        accepted = _accepted(api, journal)
+        outcome = api.list_outcomes(accepted.value.task_run_id)[0]
+        review = api.list_learning_reviews(task_outcome_id=outcome.outcome_id).items[0]
+        huge = outcome.model_copy(
+            update={
+                "summary": "s" * 2_000,
+                "changed_paths": tuple(f"src/path_{index}" for index in range(128)),
+                "validation_facts": tuple("validation " * 50 for _ in range(64)),
+                "side_effects": tuple("side effect " * 50 for _ in range(64)),
+                "unresolved_items": tuple("unresolved " * 50 for _ in range(64)),
+                "completion_basis": tuple("basis " * 50 for _ in range(64)),
+                "feedback": tuple("feedback " * 50 for _ in range(64)),
+            }
+        )
+        context = LearningContextBuilder(journal=journal, workspace_id="ws_1").build(
+            review=review,
+            outcome=huge,
+            policy=api.learning_policy_status().policy,
+            evidence=(),
+        )
+        assert len(context.model_dump_json().encode("utf-8")) <= LEARNING_CONTEXT_MAX_RENDERED_CHARS
+        assert len(context.task_outcome.validation_facts) <= 8
+    finally:
+        session.close()
+
+
+def test_cancel_running_review_releases_its_foreground_lease(tmp_path):
+    session, journal, api = _api(tmp_path)
+    try:
+        accepted = _accepted(api, journal)
+        outcome = api.list_outcomes(accepted.value.task_run_id)[0]
+        review = api.list_learning_reviews(task_outcome_id=outcome.outcome_id).items[0]
+        claimed = api.learning_review_runner._claim(review.review_id, expected_row_version=None)
+        cancelled = api.cancel_learning_review(review.review_id)
+        assert claimed.status is LearningReviewStatus.RUNNING
+        assert cancelled.review.status is LearningReviewStatus.FAILED
+        assert cancelled.review.failure_code.value == "cancelled"
+        assert cancelled.review.lease_id is None
+    finally:
+        session.close()
+
+
+def test_headless_task_accept_prints_pending_review_id(monkeypatch, capsys, tmp_path):
+    task = DurableTaskRun(task_run_id="task_1", session_id="ses_1", workspace_id="ws_1")
+    outcome = SimpleNamespace(outcome_id="out_1")
+    review = SimpleNamespace(review_id="lrv_1", status=LearningReviewStatus.PENDING)
+
+    class FakeApi:
+        def task_accept(self, task_run_id, *, command_id, expected_row_version):
+            assert (task_run_id, command_id, expected_row_version) == ("task_1", None, None)
+            return ApplicationCommandResult(task, None)
+
+        def list_outcomes(self, task_run_id):
+            assert task_run_id == "task_1"
+            return (outcome,)
+
+        def list_learning_reviews(self, *, task_outcome_id):
+            assert task_outcome_id == "out_1"
+            return QueryPage((review,))
+
+    monkeypatch.setattr(
+        cli_module,
+        "_state_services",
+        lambda **_kwargs: (None, "handle", FakeApi(), None, None),
+    )
+    monkeypatch.setattr(cli_module, "_close_state", lambda _handle: None)
+    cli_module._task_command(
+        lambda api, task_run_id, command_id, expected_row_version: api.task_accept(
+            task_run_id,
+            command_id=command_id,
+            expected_row_version=expected_row_version,
+        ),
+        "task_1",
+        None,
+        "ws_1",
+        tmp_path,
+        None,
+        None,
+        show_learning_review=True,
+    )
+    assert "已排入 Learning Review：lrv_1" in capsys.readouterr().out
 
 
 def test_policy_off_skips_review_and_unresolved_outcome_is_not_requested(tmp_path):

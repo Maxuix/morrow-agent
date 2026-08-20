@@ -8,6 +8,7 @@ from datetime import UTC, datetime, timedelta
 
 from morrow.core.domain import DurableTaskOutcome, canonical_json_bytes
 from morrow.core.learning import (
+    LEARNING_MAX_REFERENCE_IDS,
     CandidateDraftBatch,
     LearningCandidate,
     LearningCandidateStatus,
@@ -59,8 +60,13 @@ class LearningCandidatePipeline:
         policy,
         evidence: tuple[LearningEvidence, ...],
         batch: CandidateDraftBatch,
+        allowed_evidence_ids: frozenset[str] | None = None,
     ) -> CandidatePipelineResult:
-        by_id = {item.evidence_id: item for item in evidence}
+        by_id = {
+            item.evidence_id: item
+            for item in evidence
+            if allowed_evidence_ids is None or item.evidence_id in allowed_evidence_ids
+        }
         persisted: list[LearningCandidate] = []
         duplicate_count = 0
         suppressed_count = 0
@@ -93,7 +99,9 @@ class LearningCandidatePipeline:
                 None,
             )
             if active_proposed is not None:
-                merged = tuple(dict.fromkeys((*active_proposed.evidence_ids, *draft.evidence_ids)))
+                merged = tuple(dict.fromkeys((*active_proposed.evidence_ids, *draft.evidence_ids)))[
+                    :LEARNING_MAX_REFERENCE_IDS
+                ]
                 if merged != active_proposed.evidence_ids:
                     txn.save_learning_candidate(
                         self.workspace_id,

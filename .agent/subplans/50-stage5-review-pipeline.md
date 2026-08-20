@@ -1,6 +1,6 @@
 # Subplan 50 — Accepted Outcome to Candidate Pipeline
 
-> Status: implementation complete; closeout pending
+> Status: verified and complete; review-fix applied once
 > Branch: `feat/stage5-review-pipeline`
 > Prerequisite: Subplan 49 complete and merged into verified `main`
 > Owns: Task acceptance hook, explicit re-review, Evidence/LearningContext, lease runner, candidates
@@ -218,7 +218,8 @@ in event payloads.
 
 ### S50.7 Closeout
 
-- Reconcile docs, run focused/full gates, merge verified work, and prepare Subplan 51.
+- Reconcile docs, run focused/full gates, complete the required independent Grok review-fix pass,
+  merge verified work, and prepare Subplan 51.
 
 ## Fault and regression matrix
 

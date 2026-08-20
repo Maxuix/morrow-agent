@@ -295,6 +295,21 @@ async def run_repl(
                     review_result = await _command_service(orchestrator).run_learning_review(
                         review_id
                     )
+                except (KeyboardInterrupt, asyncio.CancelledError):
+                    try:
+                        cancelled = _command_service(orchestrator).cancel_learning_review(review_id)
+                    except (ValueError, RuntimeError) as exc:
+                        terminal.console.print(f"Learning Review 取消失败：{exc}")
+                    else:
+                        status = cancelled.review.status.value
+                        failure = (
+                            cancelled.review.failure_code.value
+                            if cancelled.review.failure_code is not None
+                            else "lease_expired"
+                        )
+                        terminal.console.print(
+                            f"Learning Review {review_id} 已停止：{status}（{failure}）。"
+                        )
                 except (ValueError, RuntimeError) as exc:
                     terminal.console.print(f"Learning Review 处理失败：{exc}")
                 else:

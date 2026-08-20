@@ -1517,3 +1517,25 @@
 - Full offline validation passed: `715 passed, 2 skipped, 1 deselected` for `pytest -m 'not live'`;
   Ruff format/check, compileall, `morrow --help`, `morrow learning --help`, and `git diff --check`
   all exited 0. The two skips are nested macOS Seatbelt tests unavailable inside the Codex sandbox.
+
+## 2026-08-21 — Subplan 50 Grok review-fix and closeout
+
+- The required Grok review completed on the committed S50 branch after one sandbox permission block
+  and one escalated foreground run. Grok reported four confirmed defects, plus suggestions about
+  Active YAML duplicate visibility, evidence-reference capacity, headless pending-review output,
+  and fault-matrix coverage. No Grok write, commit, or push was permitted; no second review was run.
+- Independently confirmed and fixed: Evidence extraction now pairs session segments with their actual
+  Task Turns instead of taking the Session tail; long safe user text is stored with a bounded excerpt
+  and original digest; the context builder projects oversized Outcomes and fits prioritized Evidence
+  and suppressions into the named rendered budget; context construction failures are internal review
+  failures rather than provider/output failures; foreground cancellation releases a live lease with a
+  retryable `cancelled` failure; Reviewer drafts can reference only Evidence present in context; and
+  proposed-candidate evidence aggregation is capped at the domain reference limit.
+- Also fixed the headless `morrow task accept` hint so an eligible pending Review ID is printed. The
+  Active YAML duplicate suggestion is intentionally deferred to Subplan 52, which owns the
+  ConfigPatchService-backed Profile/Preferences promotion and current-target projection; S50 has no
+  second configuration authority. The remaining fault-matrix suggestion was addressed with focused
+  isolation, long-input, budget, cancellation, and CLI regressions without broadening S50 ownership.
+- Review-fix validation passed: `720 passed, 2 skipped, 1 deselected` for `pytest -m 'not live'`;
+  Ruff format/check, compileall, `morrow --help`, `morrow learning --help`, and `git diff --check`
+  all exited 0. The two skips are nested macOS Seatbelt tests unavailable inside the Codex sandbox.

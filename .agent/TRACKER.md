@@ -3,25 +3,24 @@
 ## Current status
 
 The user authorized a complete executable Stage 5 plan. The master plan and Subplans 49–54 are
-defined; Subplan 50 is active on `feat/stage5-review-pipeline`.
+defined; Subplan 50 is verified and closed on `feat/stage5-review-pipeline`, pending local merge.
 
 ## Last completed task
 
-Stage 5 planning aligned both research discussions with the current v9 codebase, corrected the
-future roadmap's Task trigger/policy/authority assumptions, and froze six sequential implementation
-slices. Subplan 49 now has the bounded Core Learning/v10 foundation, shared SQLite repositories,
-ports/fakes, architecture guards, and LearningPolicy command/query boundary implemented and integrated.
+Subplan 50 now has the accepted TaskOutcome → bounded Review/Evidence/LearningContext → validated
+Candidate pipeline, one-shot lease runner, explicit re-review, deduplication, sanitized events,
+headless/interactive composition, and the required Grok review-fix pass verified. Subplan 49's
+bounded Core Learning/v10 foundation remains integrated underneath it.
 
 ## Active task
 
-Subplan 50 — S50.7 closeout: run the full gate, commit, review, and merge the accepted
-TaskOutcome → Candidate pipeline while preserving TaskService ownership and the outer transaction
-boundary.
+Fast-forward the verified `feat/stage5-review-pipeline` commit into local `main`, retire that topic
+branch, and create/activate `feat/stage5-inbox-knowledge` from the verified main.
 
 ## Next action
 
-Reconcile Stage 5 docs, run the complete Subplan 50 validation gate, then commit before the required
-Grok `/review` and one-time review-fix pass.
+Merge the verified Subplan 50 review-fix commit, then read and activate Subplan 51 before beginning
+Inbox/Project Knowledge implementation.
 
 ## Blockers
 
@@ -37,8 +36,8 @@ adopted into version control.
 
 ## Active boundary
 
-- Stage 5 planning is authorized; Subplan 50 is active on its dedicated branch from verified local
-  `main`.
+- Stage 5 planning is authorized; Subplan 50 is verified on its dedicated branch from verified local
+  `main` and awaits fast-forward merge.
 - First release exposes only `off` and `review_only`; `explicit_auto` remains closed.
 - Automatic trigger is accepted TaskOutcome only; no `completed`/`corrected` Task status is added.
 - No background worker, natural-language acceptance, embedding/vector dependency, Skill write, or

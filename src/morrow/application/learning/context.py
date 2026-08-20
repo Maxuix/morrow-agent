@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 
 from morrow.core.domain import DurableTaskOutcome, TaskRunStatus, sha256_digest
 from morrow.core.learning import (
+    LEARNING_EVIDENCE_EXCERPT_MAX_CHARS,
     LearningEvidence,
     LearningEvidenceActor,
     LearningEvidenceAuthority,
@@ -37,6 +38,11 @@ _PERSISTENT_MARKERS = (
     "remember",
 )
 
+_CONTEXT_MAX_EVIDENCE_ITEMS = 8
+_CONTEXT_MAX_SUPPRESSION_ITEMS = 8
+_CONTEXT_OUTCOME_MAX_ITEMS = 8
+_CONTEXT_OUTCOME_LINE_MAX = 256
+
 
 def _utc(clock: Callable[[], datetime]) -> datetime:
     value = clock()
@@ -65,11 +71,18 @@ class LearningEvidenceExtractor:
         self, review: LearningReview, outcome: DurableTaskOutcome
     ) -> tuple[LearningEvidence, ...]:
         evidence: list[LearningEvidence] = [self._outcome_evidence(review, outcome)]
-        turns = self.journal.list_task_turns(self.workspace_id, outcome.task_run_id)
+        task_turn_ids = {
+            turn.turn_id
+            for turn in self.journal.list_task_turns(self.workspace_id, outcome.task_run_id)
+        }
+        session_turns = self.journal.list_session_turns(self.workspace_id, outcome.session_id)
         records = self.journal.load_records(self.workspace_id, outcome.session_id)
-        for turn, segment in zip(
-            turns[-len(turns) :], self._task_segments(records, len(turns)), strict=False
-        ):
+        segments = self._task_segments(records, len(session_turns))
+        if len(segments) != len(session_turns):
+            return tuple(evidence)
+        for turn, segment in zip(session_turns, segments, strict=True):
+            if turn.turn_id not in task_turn_ids:
+                continue
             for record in segment:
                 if record.kind != "message" or record.payload.get("role") != "user":
                     continue
@@ -185,7 +198,12 @@ class LearningEvidenceExtractor:
         rejection = codes[0] if codes else None
         excerpt = None
         if rejection is None:
-            excerpt = normalize_learning_text(text, label="learning evidence", maximum=512)
+            normalized = " ".join(text.split())
+            excerpt = normalize_learning_text(
+                normalized[:LEARNING_EVIDENCE_EXCERPT_MAX_CHARS].rstrip(),
+                label="learning evidence",
+                maximum=LEARNING_EVIDENCE_EXCERPT_MAX_CHARS,
+            )
         return LearningEvidence(
             evidence_id=self.id_source.new_id("lev"),
             workspace_id=self.workspace_id,
@@ -245,14 +263,70 @@ class LearningContextBuilder:
             self.workspace_id,
             limit=policy.max_evidence_per_review,
         )
-        return LearningContext(
-            workspace_id=self.workspace_id,
-            task_outcome=outcome,
-            evidence=evidence[: policy.max_evidence_per_review],
-            suppressions=suppressions,
-            policy=policy,
-            candidate_budget=policy.max_candidates_per_review,
-            rendered_char_budget=LEARNING_CONTEXT_MAX_RENDERED_CHARS,
+        selected_evidence = self._prioritize_evidence(evidence, policy.max_evidence_per_review)
+        evidence_limit = min(len(selected_evidence), _CONTEXT_MAX_EVIDENCE_ITEMS)
+        suppression_limit = min(len(suppressions), _CONTEXT_MAX_SUPPRESSION_ITEMS)
+
+        for line_limit in (_CONTEXT_OUTCOME_LINE_MAX, 128, 64):
+            projected_outcome = self._project_outcome(outcome, line_limit=line_limit)
+            for evidence_count in range(evidence_limit, -1, -1):
+                for suppression_count in range(suppression_limit, -1, -1):
+                    try:
+                        return LearningContext(
+                            workspace_id=self.workspace_id,
+                            task_outcome=projected_outcome,
+                            evidence=selected_evidence[:evidence_count],
+                            suppressions=suppressions[:suppression_count],
+                            policy=policy,
+                            candidate_budget=policy.max_candidates_per_review,
+                            rendered_char_budget=LEARNING_CONTEXT_MAX_RENDERED_CHARS,
+                        )
+                    except ValueError as exc:
+                        if "rendered character budget" not in str(exc):
+                            raise
+        raise ValueError("learning context cannot fit the rendered character budget")
+
+    @staticmethod
+    def _prioritize_evidence(
+        evidence: tuple[LearningEvidence, ...], policy_limit: int
+    ) -> tuple[LearningEvidence, ...]:
+        limit = min(policy_limit, _CONTEXT_MAX_EVIDENCE_ITEMS)
+        ranked = sorted(
+            enumerate(evidence[:policy_limit]),
+            key=lambda pair: (
+                0
+                if pair[1].source_kind is LearningEvidenceSourceKind.TASK_OUTCOME
+                else 1
+                if pair[1].authority
+                in {
+                    LearningEvidenceAuthority.USER_EXPLICIT_PERSISTENT,
+                    LearningEvidenceAuthority.USER_ACCEPTANCE,
+                }
+                else 2
+                if pair[1].source_kind is LearningEvidenceSourceKind.TASK_TRANSITION
+                else 3,
+                pair[0],
+            ),
+        )
+        return tuple(item for _index, item in sorted(ranked[:limit], key=lambda pair: pair[0]))
+
+    @staticmethod
+    def _project_outcome(outcome: DurableTaskOutcome, *, line_limit: int) -> DurableTaskOutcome:
+        def bound_lines(values: tuple[str, ...]) -> tuple[str, ...]:
+            return tuple(value[:line_limit] for value in values[:_CONTEXT_OUTCOME_MAX_ITEMS])
+
+        return outcome.model_copy(
+            update={
+                "summary": outcome.summary[:line_limit],
+                "changed_paths": outcome.changed_paths[:_CONTEXT_OUTCOME_MAX_ITEMS],
+                "validation_facts": bound_lines(outcome.validation_facts),
+                "side_effects": bound_lines(outcome.side_effects),
+                "unresolved_items": bound_lines(outcome.unresolved_items),
+                "completion_basis": bound_lines(outcome.completion_basis),
+                "feedback": bound_lines(outcome.feedback),
+                "evidence_refs": outcome.evidence_refs[:_CONTEXT_OUTCOME_MAX_ITEMS],
+                "artifact_refs": (),
+            }
         )
 
 

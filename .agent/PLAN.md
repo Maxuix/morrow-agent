@@ -1,7 +1,7 @@
 # Stage 5 Reviewable Learning and Long-Term Memory Plan
 
-> Status: authorized; Stage 5 implementation is in progress
-> Active subplan: 50 — accepted Outcome to Candidate pipeline
+> Status: authorized; Subplan 50 is complete and Stage 5 implementation continues
+> Active subplan: none; Subplan 51 is next to activate after the Subplan 50 merge
 > Baseline: `a46bd39` on verified local `main`
 > Target schema: Operational Store v9 → v10 → v11 → v12
 

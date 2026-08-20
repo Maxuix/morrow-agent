@@ -725,14 +725,34 @@ def task_list(
 
 
 def _task_command(
-    command, task_run_id, command_id, workspace_id, directory, state_root, expected_row_version
+    command,
+    task_run_id,
+    command_id,
+    workspace_id,
+    directory,
+    state_root,
+    expected_row_version,
+    *,
+    show_learning_review: bool = False,
 ):
     handle = None
     try:
         _application, handle, api, _doctor, _backup = _state_services(
             state_root=state_root, workspace_id=workspace_id, directory=directory, write=True
         )
-        _emit_model(command(api, task_run_id, command_id, expected_row_version).value)
+        result = command(api, task_run_id, command_id, expected_row_version)
+        if show_learning_review:
+            outcomes = api.list_outcomes(result.value.task_run_id)
+            latest = outcomes[-1] if outcomes else None
+            reviews = (
+                api.list_learning_reviews(task_outcome_id=latest.outcome_id).items
+                if latest is not None
+                else ()
+            )
+            review = reviews[0] if reviews else None
+            if review is not None and review.status.value == "pending":
+                typer.echo(f"已排入 Learning Review：{review.review_id}")
+        _emit_model(result.value)
     except Exception as exc:
         _cli_error(exc)
         raise typer.Exit(code=2) from None
@@ -783,6 +803,7 @@ def task_accept(
         directory,
         state_root,
         expected_row_version,
+        show_learning_review=True,
     )
 
 

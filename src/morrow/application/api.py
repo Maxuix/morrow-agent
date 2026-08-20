@@ -462,6 +462,17 @@ class OperationalApplicationService:
             expected_row_version=expected_row_version,
         )
 
+    def cancel_learning_review(
+        self,
+        review_id: str,
+        *,
+        expected_row_version: int | None = None,
+    ) -> LearningReviewRunResult:
+        return self.learning_review_runner.cancel(
+            review_id,
+            expected_row_version=expected_row_version,
+        )
+
     def cleanup_orphans(self, *, dry_run: bool = True):
         if self.artifacts is None:
             raise ApplicationError(
