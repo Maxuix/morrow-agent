@@ -31,6 +31,8 @@ from morrow.core.models import ModelRef, ProtocolModel
 
 T = TypeVar("T")
 
+LEARNING_CONTEXT_MAX_RENDERED_CHARS = 16 * 1024
+
 
 class LearningActiveSummary(ProtocolModel):
     """Small, attributable Active-state summary permitted in Reviewer context."""
@@ -51,7 +53,11 @@ class LearningContext(ProtocolModel):
     suppressions: tuple[LearningSuppression, ...] = ()
     policy: LearningPolicy
     candidate_budget: int = Field(ge=0, le=LEARNING_MAX_CANDIDATES_PER_REVIEW)
-    rendered_char_budget: int = Field(ge=256, le=32 * 1024)
+    rendered_char_budget: int = Field(
+        default=LEARNING_CONTEXT_MAX_RENDERED_CHARS,
+        ge=256,
+        le=LEARNING_CONTEXT_MAX_RENDERED_CHARS,
+    )
 
     _valid_workspace = field_validator("workspace_id")(
         lambda value: validate_prefixed_id(value, LEARNING_WORKSPACE_ID_PREFIX)
@@ -71,6 +77,8 @@ class LearningContext(ProtocolModel):
             raise ValueError("learning context evidence is outside the workspace")
         if any(item.workspace_id != self.workspace_id for item in self.suppressions):
             raise ValueError("learning context suppressions are outside the workspace")
+        if len(self.model_dump_json().encode("utf-8")) > self.rendered_char_budget:
+            raise ValueError("learning context exceeds its rendered character budget")
         return self
 
 
@@ -229,4 +237,5 @@ __all__ = [
     "LearningContext",
     "LearningJournalPort",
     "LearningReviewerPort",
+    "LEARNING_CONTEXT_MAX_RENDERED_CHARS",
 ]

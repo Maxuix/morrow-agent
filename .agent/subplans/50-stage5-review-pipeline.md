@@ -1,6 +1,6 @@
 # Subplan 50 — Accepted Outcome to Candidate Pipeline
 
-> Status: planned
+> Status: implementation complete; closeout pending
 > Branch: `feat/stage5-review-pipeline`
 > Prerequisite: Subplan 49 complete and merged into verified `main`
 > Owns: Task acceptance hook, explicit re-review, Evidence/LearningContext, lease runner, candidates

@@ -363,6 +363,33 @@ class CommandService:
                         else None
                     )
                     self.session.durable_runtime.synchronize_task_projection(active_task_id)
+                if self.api is not None and operation == "accept":
+                    outcomes = self.api.list_outcomes(task.task_run_id)
+                    latest = outcomes[-1] if outcomes else None
+                    reviews = (
+                        self.api.list_learning_reviews(task_outcome_id=latest.outcome_id).items
+                        if latest is not None
+                        else ()
+                    )
+                    review = reviews[0] if reviews else None
+                    ui_result = TaskCommandResult(
+                        "accepted",
+                        task,
+                        learning_review_id=(
+                            review.review_id
+                            if review is not None and review.status.value == "pending"
+                            else None
+                        ),
+                    )
+                    if ui_result.learning_review_id is not None:
+                        return CommandResult(
+                            [
+                                f"TaskRun {task.task_run_id}：{task.status.value}",
+                                f"已排入 Learning Review：{ui_result.learning_review_id}",
+                            ],
+                            action="learning_review_pending",
+                            value=ui_result,
+                        )
                 return CommandResult(
                     [f"TaskRun {task.task_run_id}：{task.status.value}"],
                     value=(TaskCommandResult("accepted", task) if self.api is not None else result),
@@ -370,6 +397,11 @@ class CommandService:
             return CommandResult([f"未知 Task 操作：{operation}"])
         except (TaskCommandError, ValueError, RuntimeError) as exc:
             return CommandResult([f"Task 操作失败：{exc}"])
+
+    async def run_learning_review(self, review_id: str):
+        if self.api is None:
+            raise RuntimeError("Learning Review 服务尚未就绪")
+        return await self.api.run_learning_review(review_id)
 
     def _current_task(self):
         if self.task_service is None:

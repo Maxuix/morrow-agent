@@ -48,6 +48,8 @@ LEARNING_CANDIDATE_PROPOSAL_MAX_BYTES = 8 * 1024
 LEARNING_SEMANTIC_KEY_MAX_CHARS = 128
 LEARNING_MAX_REFERENCE_IDS = 16
 LEARNING_MAX_CANDIDATES_PER_REVIEW = 3
+LEARNING_MAX_REVIEW_ATTEMPTS = 3
+LEARNING_REVIEW_LEASE_SECONDS = 60
 LEARNING_SUPPRESSION_REASON_MAX_CHARS = 256
 
 _SEMANTIC_KEY_PATTERN = re.compile(r"^[a-z][a-z0-9]*(?:[._-][a-z0-9]+){0,31}$")
@@ -194,6 +196,8 @@ class LearningConfidenceBand(StrEnum):
 def _utc(value: datetime | None) -> datetime | None:
     if value is None:
         return None
+    if isinstance(value, str):
+        value = datetime.fromisoformat(value.replace("Z", "+00:00"))
     if value.tzinfo is None:
         return value.replace(tzinfo=UTC)
     return value.astimezone(UTC)
@@ -697,6 +701,8 @@ __all__ = [
     "LearningSensitivity",
     "LearningSuppression",
     "LearningSuppressionStatus",
+    "LEARNING_MAX_REVIEW_ATTEMPTS",
+    "LEARNING_REVIEW_LEASE_SECONDS",
     "OrchestrationPolicyCandidatePayload",
     "PreferenceCandidatePayload",
     "ProfileCandidatePayload",

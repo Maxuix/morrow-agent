@@ -285,6 +285,23 @@ async def run_repl(
                         terminal.console.print(f"权限授予准备失败：{exc}")
                     else:
                         terminal.console.print("已准备下一次前台 AgentRun 的 Host 权限授予。")
+            if result.action == "learning_review_pending":
+                review_id = getattr(result.value, "learning_review_id", None)
+                if review_id is None:
+                    terminal.console.print("Learning Review 请求无效。")
+                    continue
+                terminal.console.print(f"正在审查 Learning Review {review_id}…")
+                try:
+                    review_result = await _command_service(orchestrator).run_learning_review(
+                        review_id
+                    )
+                except (ValueError, RuntimeError) as exc:
+                    terminal.console.print(f"Learning Review 处理失败：{exc}")
+                else:
+                    terminal.console.print(
+                        f"Learning Review {review_result.review.status.value}："
+                        f"新增候选 {len(review_result.candidate_ids)} 个；可用 /learn inbox 查看。"
+                    )
 
 
 async def _consume_dispatch(orchestrator, text: str, terminal: Terminal) -> DispatchResult:

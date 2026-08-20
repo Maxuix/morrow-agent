@@ -66,6 +66,7 @@ class TaskCommandResult:
     task: DurableTaskRun | None
     outcome: DurableTaskOutcome | None = None
     receipt: TaskCommandReceipt | None = None
+    learning_review_id: str | None = None
 
 
 def task_command_digest(operation: str, payload: dict[str, object]) -> str:

@@ -1,6 +1,6 @@
 # Stage 5：可审查学习与长期记忆
 
-> 状态：Subplan 49（分类、Schema 与 LearningPolicy 基础）已完成；Subplans 50–54 继续实施中
+> 状态：Subplan 49（分类、Schema 与 LearningPolicy 基础）和 Subplan 50（accepted Outcome → Candidate Pipeline）已完成；后续 Inbox/Promotion/Memory/生产 Reviewer 尚未实施
 > 阶段结果：Morrow 能在任务显式 accepted 后提出有来源、有作用域、可拒绝和可撤销的学习候选，而不是把模型推断直接写入长期配置
 > 上级文档：[开发路线总览](../ROADMAP.md)
 > 上一阶段：[Stage 4：Task、Session、Artifact 与持久化](stage-4-task-session-and-persistence.md)

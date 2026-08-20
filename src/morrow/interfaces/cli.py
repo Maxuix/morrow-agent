@@ -26,6 +26,7 @@ from morrow.bootstrap import (
 )
 from morrow.core.application import ApplicationError, ApplicationErrorCode
 from morrow.core.capabilities import PermissionPreset, PermissionProfile
+from morrow.core.learning import LearningReviewStatus
 from morrow.core.models import ModelErrorCode, ModelProviderError, provider_error_message
 from morrow.core.permissions import (
     UNCONFINED_HOST_WARNING,
@@ -48,6 +49,7 @@ artifact_app = typer.Typer(help="Artifact 查看与保留。")
 recovery_app = typer.Typer(help="恢复报告与决策。")
 grant_app = typer.Typer(help="Foreground AgentRun 的手动权限授予与撤销。")
 state_app = typer.Typer(help="Operational Store 诊断、事件与备份。")
+learning_app = typer.Typer(help="Learning Review 与候选查看。")
 app.add_typer(provider_app, name="provider")
 app.add_typer(model_app, name="model")
 app.add_typer(workspace_app, name="workspace")
@@ -57,6 +59,7 @@ app.add_typer(artifact_app, name="artifact")
 app.add_typer(recovery_app, name="recovery")
 app.add_typer(grant_app, name="grant")
 app.add_typer(state_app, name="state")
+app.add_typer(learning_app, name="learning")
 
 
 def _secret(provider_id: str = "opencode-go") -> str:
@@ -821,6 +824,91 @@ def task_resume(
         state_root,
         expected_row_version,
     )
+
+
+@learning_app.command("review")
+def learning_review(
+    review_id: str,
+    expected_row_version: int | None = typer.Option(None, "--expected-row-version", min=1),
+    workspace_id: str | None = typer.Option(None, "--workspace-id"),
+    directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+) -> None:
+    """Run exactly one identified Review; no worker or scheduler is started."""
+
+    handle = None
+    try:
+        _application, handle, api, _doctor, _backup = _state_services(
+            state_root=state_root, workspace_id=workspace_id, directory=directory, write=True
+        )
+        _emit_model(
+            asyncio.run(
+                api.run_learning_review(
+                    review_id,
+                    expected_row_version=expected_row_version,
+                )
+            )
+        )
+    except Exception as exc:
+        _cli_error(exc)
+        raise typer.Exit(code=2) from None
+    finally:
+        _close_state(handle)
+
+
+@learning_app.command("request")
+def learning_request(
+    outcome_id: str,
+    expected_latest_version: int | None = typer.Option(None, "--expected-latest-version", min=0),
+    command_id: str | None = typer.Option(None, "--command-id"),
+    workspace_id: str | None = typer.Option(None, "--workspace-id"),
+    directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+) -> None:
+    handle = None
+    try:
+        _application, handle, api, _doctor, _backup = _state_services(
+            state_root=state_root, workspace_id=workspace_id, directory=directory, write=True
+        )
+        _emit_model(
+            api.request_learning_review(
+                outcome_id,
+                expected_latest_version=expected_latest_version,
+                command_id=command_id,
+            ).value
+        )
+    except Exception as exc:
+        _cli_error(exc)
+        raise typer.Exit(code=2) from None
+    finally:
+        _close_state(handle)
+
+
+@learning_app.command("list")
+def learning_list(
+    status: LearningReviewStatus | None = typer.Option(None, "--status"),
+    outcome_id: str | None = typer.Option(None, "--outcome-id"),
+    workspace_id: str | None = typer.Option(None, "--workspace-id"),
+    directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+) -> None:
+    handle = None
+    try:
+        _application, handle, api, _doctor, _backup = _state_services(
+            state_root=state_root, workspace_id=workspace_id, directory=directory, write=False
+        )
+        _emit_page(
+            api.list_learning_reviews(status=status, task_outcome_id=outcome_id),
+            render=lambda review: (
+                f"{review.review_id}\t{review.status.value}\t"
+                f"outcome={review.task_outcome_id}\tversion={review.review_version}"
+            ),
+        )
+    except Exception as exc:
+        _cli_error(exc)
+        raise typer.Exit(code=2) from None
+    finally:
+        _close_state(handle)
 
 
 @grant_app.command("list")

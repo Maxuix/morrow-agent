@@ -107,11 +107,7 @@ class SqliteLearningCandidateMixin:
                 evidence = self.get_learning_evidence(workspace_id, evidence_id)
                 if evidence is None:
                     raise _missing("candidate evidence")
-                if evidence.origin_review_id != candidate.origin_review_id:
-                    raise StorageError(
-                        StorageErrorCode.UNAVAILABLE,
-                        "candidate evidence must belong to its origin review",
-                    )
+                self._assert_candidate_evidence(workspace_id, candidate, evidence)
             self.backend.executor().execute(
                 f"INSERT INTO learning_candidates({_CANDIDATE_COLUMNS}) VALUES ({','.join('?' for _ in range(25))})",
                 self._candidate_values(candidate),
@@ -204,11 +200,7 @@ class SqliteLearningCandidateMixin:
                 evidence = self.get_learning_evidence(workspace_id, evidence_id)
                 if evidence is None:
                     raise _missing("candidate evidence")
-                if evidence.origin_review_id != candidate.origin_review_id:
-                    raise StorageError(
-                        StorageErrorCode.UNAVAILABLE,
-                        "candidate evidence must belong to its origin review",
-                    )
+                self._assert_candidate_evidence(workspace_id, candidate, evidence)
             values = self._candidate_values(candidate)
             self.backend.executor().execute(
                 """
@@ -277,11 +269,7 @@ class SqliteLearningCandidateMixin:
             evidence = self.get_learning_evidence(workspace_id, evidence_id)
             if evidence is None:
                 raise _missing("candidate evidence link")
-            if evidence.origin_review_id != candidate.origin_review_id:
-                raise StorageError(
-                    StorageErrorCode.UNAVAILABLE,
-                    "candidate evidence must belong to its origin review",
-                )
+            self._assert_candidate_evidence(workspace_id, candidate, evidence)
             if evidence_id in candidate.evidence_ids:
                 return candidate
             next_candidate = LearningCandidate.model_validate(
@@ -298,6 +286,29 @@ class SqliteLearningCandidateMixin:
             )
 
         return self.backend.transact(work)
+
+    def _assert_candidate_evidence(
+        self,
+        workspace_id: str,
+        candidate: LearningCandidate,
+        evidence: LearningEvidence,
+    ) -> None:
+        """Keep re-review evidence inside the same accepted Outcome boundary."""
+
+        origin = self.get_learning_review(workspace_id, candidate.origin_review_id)
+        evidence_origin = self.get_learning_review(workspace_id, evidence.origin_review_id)
+        if origin is None or evidence_origin is None:
+            raise _missing("candidate evidence review")
+        if evidence_origin.task_outcome_id != origin.task_outcome_id:
+            raise StorageError(
+                StorageErrorCode.UNAVAILABLE,
+                "candidate evidence must belong to the same task outcome",
+            )
+        if evidence.task_run_id != origin.task_run_id:
+            raise StorageError(
+                StorageErrorCode.UNAVAILABLE,
+                "candidate evidence must belong to the same task run",
+            )
 
     def list_learning_candidate_evidence(
         self, workspace_id: str, candidate_id: str

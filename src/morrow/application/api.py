@@ -13,6 +13,8 @@ from morrow.application.artifacts import ArtifactService
 from morrow.application.checkpoints import ContextCheckpointService, SessionForkService
 from morrow.application.cleanup import ArtifactCleanupService
 from morrow.application.learning.policy import LearningPolicyService, LearningPolicyStatus
+from morrow.application.learning.requests import LearningReviewRequestService
+from morrow.application.learning.runner import LearningReviewRunner, LearningReviewRunResult
 from morrow.application.recovery import RecoveryService
 from morrow.application.tasks import TaskService
 from morrow.application.turns import TurnSubmitResult
@@ -34,6 +36,14 @@ from morrow.core.domain import (
     validate_prefixed_id,
 )
 from morrow.core.execution import DurableApproval, DurableToolExecution
+from morrow.core.learning import (
+    LearningCandidate,
+    LearningCandidateStatus,
+    LearningEvidence,
+    LearningReview,
+    LearningReviewStatus,
+)
+from morrow.core.learning_ports import LearningReviewerPort
 from morrow.core.permissions import (
     CapabilityGrant,
     CapabilityName,
@@ -67,6 +77,8 @@ class OperationalApplicationService:
         forks: SessionForkService | None = None,
         persistence=None,
         clock: Callable[[], datetime] | None = None,
+        learning_reviewer: LearningReviewerPort | None = None,
+        learning_model=None,
     ) -> None:
         self.journal = journal
         try:
@@ -98,6 +110,20 @@ class OperationalApplicationService:
         self._recovery_commands = RecoveryApplicationService(self.command_context)
         self._permission_commands = PermissionApplicationService(self.command_context)
         self.learning_policy = LearningPolicyService(self.command_context)
+        self.learning_reviews = LearningReviewRequestService(
+            journal=self.journal,
+            workspace_id=self.workspace_id,
+            id_source=self.id_source,
+            clock=self.clock,
+        )
+        self.learning_review_runner = LearningReviewRunner(
+            journal=self.journal,
+            workspace_id=self.workspace_id,
+            id_source=self.id_source,
+            clock=self.clock,
+            reviewer=learning_reviewer,
+            model=learning_model,
+        )
 
     # Queries -----------------------------------------------------------------
 
@@ -256,6 +282,183 @@ class OperationalApplicationService:
         return self.learning_policy.set_mode(
             mode,
             command_id=command_id,
+            expected_row_version=expected_row_version,
+        )
+
+    def get_learning_review(self, review_id: str) -> LearningReview | None:
+        return self._query(lambda: self.journal.get_learning_review(self.workspace_id, review_id))
+
+    def list_learning_reviews(
+        self,
+        *,
+        status: LearningReviewStatus | str | None = None,
+        task_outcome_id: str | None = None,
+        cursor: str | None = None,
+        limit: int = 50,
+    ) -> QueryPage[LearningReview]:
+        selected_status = None
+        if status is not None:
+            try:
+                selected_status = (
+                    status
+                    if isinstance(status, LearningReviewStatus)
+                    else LearningReviewStatus(status)
+                )
+            except (TypeError, ValueError) as exc:
+                raise ApplicationError(
+                    ApplicationErrorCode.INVALID, "Review status is invalid"
+                ) from exc
+        offset = self._offset(cursor, limit)
+        items = self._query(
+            lambda: self.journal.list_learning_reviews(
+                self.workspace_id,
+                status=selected_status,
+                task_outcome_id=task_outcome_id,
+                limit=min(500, offset + limit),
+            )
+        )
+        page = items[offset : offset + limit]
+        return QueryPage(page, str(offset + len(page)) if offset + len(page) < len(items) else None)
+
+    def get_learning_evidence(self, evidence_id: str) -> LearningEvidence | None:
+        return self._query(
+            lambda: self.journal.get_learning_evidence(self.workspace_id, evidence_id)
+        )
+
+    def list_learning_evidence(
+        self,
+        *,
+        review_id: str | None = None,
+        task_run_id: str | None = None,
+        limit: int = 100,
+    ) -> tuple[LearningEvidence, ...]:
+        return self._query(
+            lambda: self.journal.list_learning_evidence(
+                self.workspace_id,
+                review_id=review_id,
+                task_run_id=task_run_id,
+                limit=limit,
+            )
+        )
+
+    def get_learning_candidate(self, candidate_id: str) -> LearningCandidate | None:
+        return self._query(
+            lambda: self.journal.get_learning_candidate(self.workspace_id, candidate_id)
+        )
+
+    def list_learning_candidates(
+        self,
+        *,
+        status: LearningCandidateStatus | str | None = None,
+        fingerprint: str | None = None,
+        semantic_key: str | None = None,
+        cursor: str | None = None,
+        limit: int = 50,
+    ) -> QueryPage[LearningCandidate]:
+        selected_status = None
+        if status is not None:
+            try:
+                selected_status = (
+                    status
+                    if isinstance(status, LearningCandidateStatus)
+                    else LearningCandidateStatus(status)
+                )
+            except (TypeError, ValueError) as exc:
+                raise ApplicationError(
+                    ApplicationErrorCode.INVALID, "Candidate status is invalid"
+                ) from exc
+        offset = self._offset(cursor, limit)
+        items = self._query(
+            lambda: self.journal.list_learning_candidates(
+                self.workspace_id,
+                status=selected_status,
+                fingerprint=fingerprint,
+                semantic_key=semantic_key,
+                limit=min(500, offset + limit),
+            )
+        )
+        page = items[offset : offset + limit]
+        return QueryPage(page, str(offset + len(page)) if offset + len(page) < len(items) else None)
+
+    def request_learning_review(
+        self,
+        outcome_id: str,
+        *,
+        expected_latest_version: int | None = None,
+        command_id: str | None = None,
+    ) -> ApplicationCommandResult[LearningReview]:
+        operation = "learning_review_request"
+        payload = {
+            "outcome_id": outcome_id,
+            "expected_latest_version": expected_latest_version,
+        }
+        command_id, digest, replay = self._prepare(operation, payload, command_id)
+        if replay is not None:
+            value = self._query(
+                lambda: self.journal.get_learning_review(self.workspace_id, replay.result_id or "")
+            )
+            if value is None:
+                raise ApplicationError(
+                    ApplicationErrorCode.NEEDS_RECOVERY,
+                    "Learning Review command result is missing",
+                )
+            return ApplicationCommandResult(value, replay)
+
+        def work(txn):
+            existing = self._replay_in_txn(txn, command_id, digest)
+            if existing is not None:
+                value = txn.get_learning_review(self.workspace_id, existing.result_id or "")
+                if value is None:
+                    raise ApplicationError(
+                        ApplicationErrorCode.NEEDS_RECOVERY,
+                        "Learning Review command result is missing",
+                    )
+                return ApplicationCommandResult(value, existing)
+            review = self.learning_reviews.request_explicit(
+                txn,
+                outcome_id=outcome_id,
+                expected_latest_version=expected_latest_version,
+            )
+            task = txn.get_task_run(self.workspace_id, review.task_run_id)
+            if task is None:
+                raise ApplicationError(
+                    ApplicationErrorCode.NEEDS_RECOVERY, "Review TaskRun is missing"
+                )
+            event = self._event(
+                txn,
+                event_type="learning.review_requested",
+                aggregate_kind="learning_review",
+                aggregate_id=review.review_id,
+                payload={
+                    "review_version": review.review_version,
+                    "trigger": review.trigger.value,
+                    "status": review.status.value,
+                    "supersedes_review_id": review.supersedes_review_id,
+                },
+            )
+            receipt = self._receipt(
+                txn,
+                command_id=command_id,
+                operation=operation,
+                digest=digest,
+                session_id=task.session_id,
+                result_kind="learning_review",
+                result_id=review.review_id,
+                row_version=review.row_version,
+                event_cursor=event.cursor,
+            )
+            return ApplicationCommandResult(review, receipt)
+
+        return self._translate(lambda: self.journal.transact(work))
+
+    async def run_learning_review(
+        self,
+        review_id: str,
+        *,
+        expected_row_version: int | None = None,
+    ) -> LearningReviewRunResult:
+        return await self.learning_review_runner.run(
+            review_id,
             expected_row_version=expected_row_version,
         )
 
@@ -832,6 +1035,29 @@ class OperationalApplicationService:
                     "row_version": result.task.row_version,
                 },
             )
+            if operation == "task_accept" and result.outcome is not None:
+                decision = self.learning_reviews.ensure_for_accepted_outcome(txn, result.outcome)
+                if decision.review is not None:
+                    self._event(
+                        txn,
+                        event_type="learning.review_requested",
+                        aggregate_kind="learning_review",
+                        aggregate_id=decision.review.review_id,
+                        payload={
+                            "review_version": decision.review.review_version,
+                            "trigger": decision.review.trigger.value,
+                            "status": decision.review.status.value,
+                            "supersedes_review_id": decision.review.supersedes_review_id,
+                        },
+                    )
+                elif decision.reason is not None:
+                    self._event(
+                        txn,
+                        event_type="learning.review_not_requested",
+                        aggregate_kind="task_outcome",
+                        aggregate_id=result.outcome.outcome_id,
+                        payload={"reason": decision.reason},
+                    )
             receipt = self._receipt(
                 txn,
                 command_id=command_id,

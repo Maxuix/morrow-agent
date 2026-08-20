@@ -19,6 +19,7 @@ from morrow.adapters.state.learning_journal import (
 )
 from morrow.adapters.state.transaction import SqliteJournalBackend
 from morrow.core.learning import (
+    LEARNING_MAX_REVIEW_ATTEMPTS,
     LearningEvidence,
     LearningReview,
     LearningReviewStatus,
@@ -220,6 +221,11 @@ class SqliteLearningReviewMixin:
                 LearningReviewStatus.SUPERSEDED,
             }:
                 raise StorageError(StorageErrorCode.UNAVAILABLE, "learning review is not claimable")
+            if existing.attempt_count >= LEARNING_MAX_REVIEW_ATTEMPTS:
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE,
+                    "learning review retry limit is exhausted",
+                )
             if lease_expires_at <= started_at:
                 raise StorageError(StorageErrorCode.UNAVAILABLE, "learning review lease is invalid")
             claimed = LearningReview.model_validate(

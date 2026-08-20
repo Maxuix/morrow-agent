@@ -1502,3 +1502,18 @@
 - Final validation: `707 passed, 2 skipped, 1 deselected` for `pytest -m 'not live'`; Ruff format/check,
   compileall, `morrow --help`, and `git diff --check` passed. The two skips are nested macOS Seatbelt
   tests unavailable inside the Codex sandbox.
+
+## 2026-08-21 — Subplan 50 accepted Outcome pipeline implementation gate
+
+- Implemented the accepted TaskOutcome → pending Review → bounded Evidence/LearningContext →
+  validated Candidate pipeline. Acceptance and explicit re-review remain transactional and
+  idempotent; Review execution is a one-shot foreground claim/lease/finalize flow with no worker,
+  and provider/model failures leave the accepted TaskOutcome unchanged.
+- Added deterministic evidence extraction, strict Reviewer draft validation, confidence/fingerprint
+  calculation, duplicate/conflict/suppression handling, evidence aggregation across explicit
+  re-review, sanitized learning events, query APIs, headless learning commands, and truthful
+  interactive pending-review behavior. Candidate decisions, Active Knowledge, config promotion,
+  and production Reviewer composition remain owned by later Stage 5 subplans.
+- Full offline validation passed: `715 passed, 2 skipped, 1 deselected` for `pytest -m 'not live'`;
+  Ruff format/check, compileall, `morrow --help`, `morrow learning --help`, and `git diff --check`
+  all exited 0. The two skips are nested macOS Seatbelt tests unavailable inside the Codex sandbox.

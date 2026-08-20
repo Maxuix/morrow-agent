@@ -1,8 +1,8 @@
 # Stage 5 Reviewable Learning and Long-Term Memory Plan
 
-> Status: authorized; Subplan 49 implementation and review-fix are complete; integration is ready
-> Active subplan: 49 — Learning domain and v10 persistence (verified closeout)
-> Baseline: `61f82f2` on synchronized `main`
+> Status: authorized; Stage 5 implementation is in progress
+> Active subplan: 50 — accepted Outcome to Candidate pipeline
+> Baseline: `a46bd39` on verified local `main`
 > Target schema: Operational Store v9 → v10 → v11 → v12
 
 ## Objective
