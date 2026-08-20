@@ -1,7 +1,7 @@
 # Stage 4 Durable Task, Session, Artifact, and Recovery Plan
 
-> Status: Stage 4 accepted; post-acceptance boundary refactor active
-> Active subplan: 46 — Stage 4 ownership and dependency-boundary refactor
+> Status: complete — Stage 4 accepted; boundary refactor verified
+> Active subplan: none (Stage 5 remains inactive until the user requests activation)
 > Production implementation: authorized; v9 grants, v8 application API, events, doctor, backup, and cleanup have landed
 > Stage 3 production baseline: `003dbdaab652520ca5cadf451ebca7a13bcba36d`
 > Stage 4 accepted contract baseline: `20fb43e`

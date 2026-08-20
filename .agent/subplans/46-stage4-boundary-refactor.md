@@ -1,6 +1,6 @@
 # Subplan 46 — Stage 4 Ownership and Dependency-Boundary Refactor
 
-> Status: active
+> Status: completed
 > Prerequisite: Stage 4 accepted; Recovery wiring fix `8587622`
 > Owns: internal responsibility split, port adoption, architecture gates, behavior-preserving tests
 
@@ -30,7 +30,7 @@ durable schema, security defaults, public events, CLI contracts, or Conversation
 - [x] S4.46.4 Decompose AgentLoop event emission without changing ConversationLog ownership or
   public event lifecycle.
 - [x] S4.46.5 Remove CLI reach-through to API journal internals and establish domain command seams.
-- [>] S4.46.6 Reconcile docs, run full gates, and commit verified work.
+- [x] S4.46.6 Reconcile docs, run full gates, and commit verified work.
 
 ## Validation
 
@@ -51,3 +51,10 @@ No duplicate Recovery lifecycle writer remains; domain application services depe
 transaction ports rather than a concrete SQLite class; one concrete journal continues to preserve
 atomic cross-domain transactions; AgentLoop event rendering and CLI Recovery composition have
 explicit seams; and all existing Stage 4 acceptance behavior remains green.
+
+## Completion evidence
+
+- Full offline suite: `613 passed, 1 deselected`.
+- `uv run ruff format --check .`: 162 files already formatted.
+- `uv run ruff check .`, compileall, main CLI help, Recovery CLI help, and `git diff --check` passed.
+- No live or real-network tests were run.

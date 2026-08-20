@@ -1270,3 +1270,12 @@
   direction, journal-port adoption, single Recovery command ownership, and CLI API encapsulation.
 - Focused port/architecture validation passed: `68 passed`; focused CLI/Recovery validation passed:
   `43 passed`; Ruff and CLI help gates passed.
+
+## 2026-08-20 — Subplan 46 completed
+
+- Full offline suite passed: `613 passed, 1 deselected`.
+- Ruff format/check, compileall, main CLI help, Recovery CLI help, and `git diff --check` passed.
+- The high-risk God Class coupling is contained through single Recovery ownership, application
+  collaborators, narrow journal ports, explicit runtime/CLI seams, and architecture regression
+  gates. Physical source partitioning remains optional follow-up work, not a correctness blocker.
+- Stage 4 remains closed; Stage 5 remains inactive.
