@@ -1714,3 +1714,19 @@
 - Full offline validation passed: 777 tests, 2 skips, 1 deselected; Ruff format/check, compileall,
   root/Learning/Memory CLI help, and `git diff --check` passed. The one-time S53 Grok review is the
   remaining closeout action.
+
+## 2026-08-21 — Subplan 53 Grok review-fix
+
+- Ran the required read-only Grok `/review` once against the complete S53 branch and waited for the
+  full result. Grok found two confirmed bugs, two risks, and one feasible suggestion; it reported
+  that the freeze/recovery/isolation design was sound and did not identify a god file. Grok made no
+  workspace changes.
+- Independently confirmed and fixed the feasible findings: MemoryQuery now uses a bounded retrieval
+  normalizer instead of the Learning safety scanner; mixed-language query tokenization prioritizes
+  identifiers, paths, and words over CJK bigrams; durable Sessions omit live user state when their
+  projection is absent; v12 backup verification fails closed on missing memory tables; and
+  MemorySelection writes reject item revision-number mismatches.
+- Review-fix focused tests passed (26 tests). The final offline gate passed: `785 passed, 2 skipped,
+  1 deselected`; Ruff format/check, compileall, root/Learning/Memory CLI help, and `git diff --check`
+  passed. No second Grok review was run, per the one-review-per-subplan instruction. The review-fix
+  changes are ready to commit before S53 fast-forward closeout.
