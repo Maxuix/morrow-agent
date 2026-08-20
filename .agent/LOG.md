@@ -1608,3 +1608,17 @@
 - Full offline validation passed: `749 passed, 2 skipped, 1 deselected`; Ruff format/check,
   compileall, root/Learning/Memory CLI help, and `git diff --check` passed. The required Grok review
   is the remaining S52 closeout action.
+
+## 2026-08-21 — Subplan 52 Grok review-fix and closeout
+
+- Committed S52 implementation as `8b3d32e`, then ran the required read-only Grok `/review` and
+  waited for its complete report. Grok returned 15 findings: 5 bugs, 9 suggestions, and 1 nit.
+- Independently confirmed and fixed the after-state abort/cancel hole, hidden prepared recovery
+  operations, Review writes against `PROMOTING` Candidates, ignored command row-version tokens,
+  and missing REPL global scope. Also added explicit after-state projection sync, the required
+  `memory.record_activated` event, a bounded promotion result formatter, undo-safe duplicate
+  reopening, and focused recovery/CLI/event tests. No second Grok review was run.
+- Final review-fix commit is `6c76f75`. Full offline gate passed: `752 passed, 2 skipped,
+  1 deselected`; Ruff format/check, compileall, root/Learning/Memory CLI help, and
+  `git diff --check` passed. S52 is ready to fast-forward merge; the two research documents remain
+  untracked and preserved.

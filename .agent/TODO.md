@@ -2,8 +2,8 @@
 
 ## Current stage
 
-Stage 5 implementation is authorized; Subplan 52 implementation is complete on its dedicated
-branch and awaits the required one-time Grok review-fix pass.
+Stage 5 implementation is authorized; Subplan 52 implementation and its required one-time Grok
+review-fix pass are complete on its dedicated branch.
 
 ## Active subplan
 
@@ -19,17 +19,19 @@ Subplan 52 — Profile/Preferences Promotion Saga.
   and CLI/REPL preview-confirmation routing.
 - [x] S52.4 Add foreground recovery actions, drift/unknown-state handling, and crash/replay tests.
 - [x] S52.5 Add safe inverse previews, activation reversal provenance, and stale-current refusal.
-- [>] S52.6 Run the required Grok review-fix pass, reconcile docs, commit the closeout, and prepare
+- [x] S52.6 Run the required Grok review-fix pass, reconcile docs, commit the closeout, and prepare
   Subplan 53 activation.
 
 ## Validation evidence
 
-The full offline gate currently passes: 749 passed, 2 skipped, 1 deselected. Ruff format/check,
+The final S52 offline gate passes: 752 passed, 2 skipped, 1 deselected. Ruff format/check,
 compileall, root/Learning/Memory CLI help, and `git diff --check` also pass. The two nested macOS
 Seatbelt tests remain skipped by the sandbox.
 
 ## Start condition
 
-Subplan 51 is merged into local `main`; Subplan 52 is implemented on `feat/stage5-config-promotion`.
+Subplan 51 is merged into local `main`; Subplan 52 is committed on `feat/stage5-config-promotion` and
+ready for fast-forward merge. The two untracked
+`docs/research/stage5-overview-*.md` user files remain preserved.
 Preserve the two untracked `docs/research/stage5-overview-*.md` user files unless the user explicitly
 asks to adopt or commit them.
