@@ -1,6 +1,6 @@
 # Subplan 54 — Production Reviewer, Evaluation, and Stage 5 Acceptance
 
-> Status: planned
+> Status: active
 > Branch: `feat/stage5-reviewer-acceptance`
 > Prerequisite: Subplan 53 complete and merged into verified `main`
 > Owns: no-tool production Reviewer, final UX/policy controls, adversarial eval, doctor/docs/acceptance

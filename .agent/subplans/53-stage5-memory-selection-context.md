@@ -1,7 +1,7 @@
 # Subplan 53 — MemorySelection and ContextBuilder Integration
 
-> Status: active
-> Branch: `feat/stage5-memory-selection`
+> Status: completed
+> Branch: `feat/stage5-memory-selection` (retired after fast-forward merge)
 > Prerequisite: Subplan 52 complete and merged into verified `main`
 > Owns: v12 selection/token projection, deterministic selector, AgentRun freeze/resume, context use
 > Does not own: production Reviewer, embeddings, Task/conversation history search

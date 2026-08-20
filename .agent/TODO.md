@@ -2,24 +2,22 @@
 
 ## Current stage
 
-Stage 5 implementation is authorized; Subplan 53 is active on `feat/stage5-memory-selection`,
-based on verified local `main` at `7dfe5af`.
+Stage 5 implementation is authorized; Subplan 54 is active on `feat/stage5-reviewer-acceptance`,
+based on verified local `main` at `613ffdb`.
 
 ## Active subplan
 
-Subplan 53 — MemorySelection and ContextBuilder Integration.
+Subplan 54 — Production Reviewer, Evaluation, and Stage 5 Acceptance.
 
 ## Tasks
 
-- [x] S53.1 Implement v12 MemorySelection/Item/query models, ports, migration, repository, and
-  upgrade/future/corruption tests.
-- [x] S53.2 Implement deterministic lexical token projection and rebuildable Knowledge terms.
-- [x] S53.3 Implement bounded deterministic selection, ranking, diversity, reasons, and digests.
-- [x] S53.4 Freeze selection and effective configuration into new/recovery AgentRun admission.
-- [x] S53.5 Make ContextBuilder consume the frozen RunContextProjection for every cycle.
-- [x] S53.6 Add selection inspection, doctor/backup invariants, CLI/REPL surfaces, and docs.
-- [>] S53.7 Run focused/full gates, complete the one-time Grok review/fix pass, merge verified work,
-  and prepare Subplan 54.
+- [>] S54.1 Implement the bounded no-tool production Reviewer adapter and safe composition.
+- [ ] S54.2 Complete Learning policy, status, review/retry, and foreground UX surfaces.
+- [ ] S54.3 Validate future candidate-only behavior without activating Skills or Workflows.
+- [ ] S54.4 Build the versioned adversarial offline evaluation dataset and quality report.
+- [ ] S54.5 Complete Stage 5 doctor, backup, end-to-end acceptance, and documentation evidence.
+- [ ] S54.6 Record the live evaluation hold point; run it only with explicit authorization.
+- [ ] S54.7 Run the final independent review/fix pass, gates, merge, and Stage 5 closeout.
 
 ## Validation evidence
 
@@ -31,12 +29,13 @@ validation passed: 767 passed, 2 skipped, 1 deselected; Ruff format/check, compi
 Memory CLI help, and diff check also passed. S53.5 validation passed: 771 tests, 2 skips, 1
 deselected; the same quality gates passed. S53.6 validation passed: 777 tests, 2 skips, 1
 deselected; repository-wide Ruff format/check, compileall, root/Learning/Memory CLI help, and
-diff check passed. S53.7 review-fix validation then passed 785 tests, 2 skips, and 1 deselected;
-Ruff format/check, compileall, root/Learning/Memory CLI help, and diff check passed. S53.7 remains
-active until the review-fix commit is merged and S54 is prepared.
+diff check passed. S53.7 review-fix validation passed 785 tests, 2 skips, and 1 deselected; Ruff
+format/check, compileall, root/Learning/Memory CLI help, and diff check passed. S53 was committed,
+fast-forward merged into local `main` at `613ffdb`, and its topic branch was retired. S54 is now
+active.
 
 ## Start condition
 
-Subplan 52 is fast-forward merged into local `main` at `7dfe5af`; Subplan 53 is on its dedicated
+Subplan 53 is fast-forward merged into local `main` at `613ffdb`; Subplan 54 is on its dedicated
 branch. Preserve the two untracked `docs/research/stage5-overview-*.md` user files unless the user
 explicitly asks to adopt or commit them.

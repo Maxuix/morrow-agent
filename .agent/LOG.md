@@ -1730,3 +1730,14 @@
   1 deselected`; Ruff format/check, compileall, root/Learning/Memory CLI help, and `git diff --check`
   passed. No second Grok review was run, per the one-review-per-subplan instruction. The review-fix
   changes are ready to commit before S53 fast-forward closeout.
+
+## 2026-08-21 — Subplan 53 closeout and Subplan 54 activation
+
+- Committed the S53 review-fix as `250b843`, committed the execution-state evidence as `613ffdb`,
+  fast-forwarded local `main` from `7dfe5af` to `613ffdb`, verified no topic commits remained
+  outside `main`, and retired `feat/stage5-memory-selection`. The two research documents remain
+  untracked and preserved.
+- Activated Subplan 54 on `feat/stage5-reviewer-acceptance` from verified local `main`. S54.1 is
+  now the active task: implement the production no-tool Reviewer boundary using explicit bounded
+  messages, strict drafts, sanitized errors, and one bounded repair attempt. Live evaluation remains
+  a hold point requiring explicit user authorization and a compatible credential.

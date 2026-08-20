@@ -2,28 +2,29 @@
 
 ## Current status
 
-The user authorized a complete executable Stage 5 plan. Subplan 52 is merged and Subplan 53 is now
-active on `feat/stage5-memory-selection`.
+The user authorized a complete executable Stage 5 plan. Subplan 53 is merged at `613ffdb` and
+Subplan 54 is now active on `feat/stage5-reviewer-acceptance`.
 
 ## Last completed task
 
+Subplan 53 is verified and merged at `613ffdb`, including its one-time Grok review-fix pass. It adds
+v12 MemorySelection and rebuildable terms, deterministic selection, frozen AgentRun/context
+projections, bounded inspection surfaces, doctor/backup invariants, and the S53 acceptance docs.
 Subplan 52 is verified and merged at `7dfe5af`, including its one-time Grok review-fix pass. It adds
 prepared configuration OCC, recoverable YAML promotion/undo, Preference/Profile policy, provenance,
-recovery, Session projections, and CLI/REPL controls. Subplan 51 is verified and merged at `548f0bc`,
-including its one-time Grok review-fix pass. It adds
-the v11 Inbox decision boundary, SQLite Project Knowledge promotion/lifecycle, bounded CLI/REPL
-surfaces, and lazy query expiry. Subplan 50 is merged at `4d47be8` underneath it.
+recovery, Session projections, and CLI/REPL controls. Subplan 51 is verified and merged at
+`548f0bc`, including its one-time Grok review-fix pass.
 
 ## Active task
 
-Close S53.7: commit the verified one-time Grok review/fix pass, fast-forward merge the branch, and
-prepare Subplan 54.
+Implement S54.1: add the bounded, no-tool production Reviewer adapter without changing Task
+acceptance or granting model write/tool authority.
 
 ## Next action
 
-S53.6 is implemented and fully gated. Grok's one-time S53 review completed; its feasible findings
-were fixed once and the review-fix gate passed. Commit those fixes, fast-forward merge the verified
-branch, and activate S54.
+Read the existing `LearningReviewerPort`, `LearningContext`, strict draft models, and ModelProvider
+composition; then implement and test explicit-message structured completion with bounded timeout,
+one repair attempt, stable sanitized errors, and bounded Review metadata.
 
 ## Blockers
 
@@ -40,7 +41,7 @@ adopted into version control.
 
 ## Active boundary
 
-- Stage 5 planning is authorized; Subplan 53 is active from verified local `main` after Subplan 52.
+- Stage 5 planning is authorized; Subplan 54 is active from verified local `main` after Subplan 53.
 - First release exposes only `off` and `review_only`; `explicit_auto` remains closed.
 - Automatic trigger is accepted TaskOutcome only; no `completed`/`corrected` Task status is added.
 - No background worker, natural-language acceptance, embedding/vector dependency, Skill write, or
@@ -76,6 +77,10 @@ adopted into version control.
   same-Run live changes remain invisible, and new Runs/legacy process-local Sessions retain explicit
   behavior. Full offline validation passed: 771 tests, 2 skips, 1 deselected; Ruff, compileall,
   CLI help, and diff check passed.
+- S53 is complete: its one-time Grok review/fix pass found two confirmed bugs, two risks, and one
+  feasible suggestion; all feasible findings were independently fixed once. The final gate passed
+  785 tests, 2 skips, 1 deselected, plus Ruff, compileall, CLI help, and diff check. Local `main`
+  is fast-forwarded to `613ffdb`; the S53 topic branch is retired.
 - S52 is complete: prepared configuration revisions/digests, YAML promotion Saga, Preference/
   Profile whitelist, foreground recovery, activation provenance/undo, Session projection updates,
   recoverable after-state finalization, explicit REPL global scope, and activation memory events.

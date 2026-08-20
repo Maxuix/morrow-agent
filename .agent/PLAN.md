@@ -1,8 +1,8 @@
 # Stage 5 Reviewable Learning and Long-Term Memory Plan
 
 > Status: authorized; Stage 5 implementation is in progress
-> Active subplan: 53 — MemorySelection and ContextBuilder Integration
-> Baseline: `7dfe5af` on verified local `main`
+> Active subplan: 54 — Production Reviewer, Evaluation, and Stage 5 Acceptance
+> Baseline: `613ffdb` on verified local `main`
 > Target schema: Operational Store v9 → v10 → v11 → v12
 
 ## Objective
@@ -46,14 +46,13 @@ The plan starts from these verified implementation facts:
   `TaskOutcome`.
 - `OperationalApplicationService._task_command()` owns the outer SQLite transaction, application
   event, and receipt; nested journal transactions join that outer transaction.
-- The Operational Store currently supports schema v9 and the journal is already partitioned into
-  bounded repositories over one shared transaction backend.
-- `ConfigPatchService` validates and revision-protects Profile/Preferences YAML writes, but its
-  prepared operation is private, `apply_command()` prepares twice, and in-process Session revision
-  projections are not refreshed after every persistent write.
-- `AgentRunSnapshot` already freezes model, provider, Profile/Preferences, source revisions, policy,
-  tool, permission, and runtime identity; `ContextBuilder` still reads live Session state instead of
-  consuming that frozen snapshot.
+- The Operational Store supports schema v12 and the journal is partitioned into bounded repositories
+  over one shared transaction backend; v12 adds MemorySelection/items and rebuildable lexical terms.
+- `ConfigPatchService` exposes prepared, revision-protected Profile/Preferences YAML writes, and
+  persistent Session projections/AgentRun snapshots retain their source revisions.
+- `AgentRunSnapshot` freezes model, provider, Profile/Preferences, MemorySelection, source
+  revisions, policy, tool, permission, and runtime identity; durable `ContextBuilder` consumes the
+  verified RunContextProjection while process-local Sessions retain an explicit fallback.
 - `complete_structured()` builds from the full structured Session context and therefore is not a
   valid Learning Reviewer boundary.
 - `/accept` is already the alias for `/task accept`; the existing Terminal preview + `y/N` pattern
