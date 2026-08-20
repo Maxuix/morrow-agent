@@ -13,6 +13,21 @@
 - Marked S53.1 complete and activated S53.2. No Grok review was run because the required review is
   per completed subplan, not per internal task.
 
+## 2026-08-21 — Subplan 53.2 lexical memory projection completed
+
+- Added a pure bounded tokenizer for normalized Latin words, dotted/snake/kebab/camel identifiers,
+  paths, meaningful version/number tokens, CJK bigrams, fixed stop tokens, and deterministic
+  per-record/query budgets; it performs no filesystem or network work.
+- Added an independent transactional term projection service with rebuild, clear, and bounded
+  lexical candidate retrieval. Project Knowledge promotion clears superseded revision terms;
+  disable/dispute/delete clear the current projection; enable rebuilds it in the same SQLite
+  transaction.
+- Added mixed-language/token-budget/retrieval/lifecycle coverage and promotion assertions for term
+  activation and supersession. Full offline validation passed: 760 passed, 2 skipped, 1 deselected;
+  Ruff format/check, compileall, and `git diff --check` also passed.
+- Marked S53.2 complete and activated S53.3. The required Grok review remains deferred until all
+  S53 tasks are complete, per the user's once-per-subplan instruction.
+
 ## 2026-08-13 — Initialize large-plan workflow
 
 - Added `.agent/subplans/` for ordered child plans.

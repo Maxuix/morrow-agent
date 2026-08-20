@@ -13,8 +13,8 @@ Subplan 53 — MemorySelection and ContextBuilder Integration.
 
 - [x] S53.1 Implement v12 MemorySelection/Item/query models, ports, migration, repository, and
   upgrade/future/corruption tests.
-- [>] S53.2 Implement deterministic lexical token projection and rebuildable Knowledge terms.
-- [ ] S53.3 Implement bounded deterministic selection, ranking, diversity, reasons, and digests.
+- [x] S53.2 Implement deterministic lexical token projection and rebuildable Knowledge terms.
+- [>] S53.3 Implement bounded deterministic selection, ranking, diversity, reasons, and digests.
 - [ ] S53.4 Freeze selection and effective configuration into new/recovery AgentRun admission.
 - [ ] S53.5 Make ContextBuilder consume the frozen RunContextProjection for every cycle.
 - [ ] S53.6 Add selection inspection, doctor/backup invariants, CLI/REPL surfaces, and docs.
@@ -23,7 +23,9 @@ Subplan 53 — MemorySelection and ContextBuilder Integration.
 ## Validation evidence
 
 S52's final gate passed: 752 passed, 2 skipped, 1 deselected. S53.1 validation passed: 83 focused
-tests, Ruff format/check, compileall, and diff check. S53.2 is now active.
+tests, Ruff format/check, compileall, and diff check. S53.2 validation passed: 760 passed, 2
+skipped, 1 deselected, repository-wide Ruff format/check, compileall, and diff check. S53.3 is now
+active.
 
 ## Start condition
 

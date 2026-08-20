@@ -36,6 +36,8 @@ from morrow.core.learning_memory import (
 )
 from morrow.core.learning_payloads import CandidatePayload, ProjectKnowledgeCandidatePayload
 
+from .memory_terms import refresh_project_knowledge_terms
+
 
 def _now(context: ApplicationCommandContext) -> datetime:
     value = context.clock()
@@ -519,6 +521,12 @@ class LearningPromotionService:
             self.workspace_id,
             next_memory,
             expected_row_version=memory_state.row_version,
+        )
+        refresh_project_knowledge_terms(
+            txn,
+            self.workspace_id,
+            head,
+            previous_revision_id=current.knowledge_revision_id if current is not None else None,
         )
         return (
             outcome,

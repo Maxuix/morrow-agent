@@ -625,7 +625,7 @@ def test_ordered_checksummed_migration_rolls_back_a_failed_step(tmp_path):
         "learning_foundation",
         "learning_inbox_project_knowledge",
         "memory_selection_and_terms",
-        )
+    )
     assert report.backup_name
     assert (store.layout.backups_dir / report.backup_name).is_file()
 

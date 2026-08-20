@@ -152,6 +152,10 @@ async def test_project_knowledge_accept_confirm_replace_and_replay_are_atomic(tm
         revision = journal.get_project_knowledge_revision("ws_1", first.value.knowledge_revision_id)
         assert revision is not None
         assert revision.source_candidate_id == candidate.candidate_id
+        terms = journal.list_memory_search_terms(
+            "ws_1", knowledge_revision_id=revision.knowledge_revision_id
+        )
+        assert {term.token for term in terms} >= {"operational", "sqlite"}
         assert (
             len(journal.list_project_knowledge_evidence("ws_1", revision.knowledge_revision_id))
             == 1
@@ -251,6 +255,15 @@ async def test_project_knowledge_edit_accept_creates_superseding_revision(tmp_pa
         assert len(revisions) == 2
         assert revisions[1].supersedes_revision_id == revisions[0].knowledge_revision_id
         assert revisions[1].statement.endswith("immutable revisions.")
+        assert (
+            journal.list_memory_search_terms(
+                "ws_1", knowledge_revision_id=revisions[0].knowledge_revision_id
+            )
+            == ()
+        )
+        assert journal.list_memory_search_terms(
+            "ws_1", knowledge_revision_id=revisions[1].knowledge_revision_id
+        )
     finally:
         session.close()
 

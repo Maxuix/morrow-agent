@@ -16,12 +16,14 @@ surfaces, and lazy query expiry. Subplan 50 is merged at `4d47be8` underneath it
 
 ## Active task
 
-Implement S53.2: deterministic lexical token projection and rebuildable Project Knowledge terms.
+Implement S53.3: bounded deterministic Project Knowledge selection, ranking, diversity, reasons,
+and digests.
 
 ## Next action
 
-Keep tokenization pure and bounded, then wire transactional term regeneration to Knowledge
-revision lifecycle without starting selection ranking, AgentRun freeze, Reviewer, or history search.
+Build the selector as an independent bounded projection over current Knowledge and the v12 term
+surface; keep AgentRun freeze, ContextBuilder integration, Reviewer, and history search out of this
+task.
 
 ## Blockers
 
@@ -55,6 +57,10 @@ adopted into version control.
   selection/item and rebuildable-term tables, repository codecs/guards, v11 upgrade/future/
   corruption coverage, and legacy migration expectation updates. Focused validation passed with
   83 tests, Ruff format/check, compileall, and `git diff --check`.
+- S53.2 is implemented: pure bounded mixed-language/code/path tokenizer, deterministic term
+  generation, transactional rebuild/clear on Project Knowledge promotion and lifecycle changes,
+  and bounded lexical candidate retrieval. Full offline validation passed with 760 tests, 2 skips,
+  1 deselection, repository-wide Ruff format/check, compileall, and `git diff --check`.
 - S52 is complete: prepared configuration revisions/digests, YAML promotion Saga, Preference/
   Profile whitelist, foreground recovery, activation provenance/undo, Session projection updates,
   recoverable after-state finalization, explicit REPL global scope, and activation memory events.

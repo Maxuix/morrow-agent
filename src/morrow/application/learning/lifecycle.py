@@ -22,6 +22,8 @@ from morrow.core.learning_memory import (
 )
 from morrow.core.models import ProtocolModel
 
+from .memory_terms import refresh_project_knowledge_terms
+
 
 class KnowledgeLifecycleResult(ProtocolModel):
     head: ProjectKnowledgeHead
@@ -188,6 +190,7 @@ class MemoryLifecycleService:
                 ),
                 expected_row_version=state.row_version,
             )
+            refresh_project_knowledge_terms(txn, self.workspace_id, saved_head)
             event = self.context._event(
                 txn,
                 event_type=event_type,

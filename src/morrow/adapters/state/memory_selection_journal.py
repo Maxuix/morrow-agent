@@ -209,6 +209,9 @@ class SqliteMemorySelectionJournal:
             for term in terms
         ):
             raise _workspace_error("search term")
+        term_keys = {(term.token_kind, term.token) for term in terms}
+        if len(term_keys) != len(terms):
+            raise StorageError(StorageErrorCode.UNAVAILABLE, "memory search terms must be unique")
 
         def work() -> tuple[MemorySearchTerm, ...]:
             self._validate_revision_workspace(workspace_id, knowledge_revision_id)
