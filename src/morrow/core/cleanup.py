@@ -12,5 +12,6 @@ class OrphanCleanupReport(ProtocolModel):
     inspected: int = Field(ge=0)
     eligible: int = Field(ge=0)
     removed: int = Field(ge=0)
+    quarantined: int = Field(default=0, ge=0)
     refused: int = Field(ge=0)
     reasons: tuple[str, ...] = ()

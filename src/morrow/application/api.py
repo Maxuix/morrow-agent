@@ -91,9 +91,12 @@ class OperationalApplicationService:
         except ValueError as exc:
             raise ApplicationError(ApplicationErrorCode.INVALID, "workspace ID is invalid") from exc
         self.id_source = id_source or RandomIdSource()
-        self.clock = clock
+        self.clock = clock or journal.now
         self.tasks = tasks or TaskService(
-            journal=journal, workspace_id=workspace_id, id_source=self.id_source
+            journal=journal,
+            workspace_id=workspace_id,
+            id_source=self.id_source,
+            clock=self.clock,
         )
         self.artifacts = artifacts
         self.recovery = recovery
@@ -499,9 +502,12 @@ class OperationalApplicationService:
                         ApplicationErrorCode.NEEDS_RECOVERY, "command result is missing"
                     )
                 return ApplicationCommandResult(value, existing)
+            stamp = _now(self.clock)
             created = DurableSession(
                 session_id=session_id or self.id_source.new_id("ses"),
                 workspace_id=self.workspace_id,
+                created_at=stamp,
+                updated_at=stamp,
             )
             value = txn.create_session(created)
             event = self._event(
@@ -556,6 +562,11 @@ class OperationalApplicationService:
             if current.lifecycle is SessionLifecycle.DELETED:
                 raise ApplicationError(
                     ApplicationErrorCode.INVALID, "deleted Session cannot be archived"
+                )
+            if current.current_task_run_id is not None:
+                raise ApplicationError(
+                    ApplicationErrorCode.INVALID,
+                    "Session must close its current TaskRun before archive",
                 )
             updated = current.model_copy(
                 update={"lifecycle": SessionLifecycle.ARCHIVED, "updated_at": _now(self.clock)}
@@ -1051,7 +1062,7 @@ class OperationalApplicationService:
             return ApplicationError(ApplicationErrorCode.CONFLICT, str(exc))
         if isinstance(exc, (TaskCommandError, RecoveryDecisionError, ContextCheckpointError)):
             text = str(exc)
-            code = (
+            code = getattr(exc, "application_code", None) or (
                 ApplicationErrorCode.STALE
                 if "stale" in text.casefold()
                 else ApplicationErrorCode.INVALID

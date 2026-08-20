@@ -7,14 +7,18 @@ from pathlib import Path
 
 import pytest
 
+import morrow.bootstrap as bootstrap
 from morrow.adapters.credentials.keyring import MemoryCredentialStore
 from morrow.adapters.state.journal import SqliteOperationalJournal
 from morrow.adapters.state.operational import BusyRetryPolicy, OperationalStore
 from morrow.application.tasks import TaskCommandConflict, TaskCommandError, TaskService
 from morrow.bootstrap import build_application, build_session_application
+from morrow.core.application import ApplicationError, ApplicationErrorCode
 from morrow.core.domain import (
     DurableSession,
     DurableTurn,
+    SessionHealth,
+    SessionLifecycle,
     TaskOutcomeTrigger,
     TaskRunStatus,
 )
@@ -140,6 +144,213 @@ def test_terminal_task_cannot_be_reopened_and_new_task_is_explicit(tmp_path):
         assert journal.get_session("ws_1", "ses_1").current_task_run_id == second.task_run_id
     finally:
         session.close()
+
+
+@pytest.mark.asyncio
+async def test_archived_session_rejects_new_turn_at_application_and_orchestrator_boundaries(
+    tmp_path,
+):
+    project = tmp_path / "project"
+    project.mkdir()
+    app = build_application(
+        state_root=tmp_path / "state",
+        credentials=MemoryCredentialStore(),
+        id_source=FixedIdSource(),
+    )
+    identity = app.workspace_service.confirm(app.workspace_service.resolve(project))
+    provider = ScriptedModelProvider(["must not run"])
+    products = build_session_application(
+        app,
+        identity,
+        provider=provider,
+        model=ModelRef(provider_id="p", model_id="m"),
+    )
+    try:
+        session_id = products.session.session_id
+        archived = products.api.archive_session(session_id, command_id="cmd_archive").value
+        assert products.session.lifecycle is SessionLifecycle.ACTIVE
+
+        stale_dispatch = await products.orchestrator.dispatch("stale archived projection")
+        assert stale_dispatch.events == []
+        assert stale_dispatch.lines == ["当前 Session 已归档，无法开始新的 Turn。"]
+        assert products.session.lifecycle is SessionLifecycle.ARCHIVED
+        assert provider.stream_calls == []
+        assert products.tasks.list(session_id) == ()
+        assert products.persistence.journal.load_records(identity.workspace_id, session_id) == ()
+
+        with pytest.raises(ApplicationError) as error:
+            products.api.submit_turn(
+                products.session,
+                user_input="start after archive",
+                client_message_id="client-archived",
+                turn_id="turn_archived",
+                command_id="cmd_turn_archived",
+            )
+        assert error.value.code is ApplicationErrorCode.INVALID
+        assert "active Session" in error.value.message
+        assert products.tasks.list(session_id) == ()
+        assert products.persistence.journal.load_records(identity.workspace_id, session_id) == ()
+
+        assert products.session.lifecycle is archived.lifecycle
+        synchronized_dispatch = await products.orchestrator.dispatch("still archived")
+        assert synchronized_dispatch.events == []
+        assert synchronized_dispatch.lines == ["当前 Session 已归档，无法开始新的 Turn。"]
+        assert products.session.lifecycle is SessionLifecycle.ARCHIVED
+
+        with pytest.raises(ValueError, match="active Session"):
+            build_session_application(
+                app,
+                identity,
+                provider=ScriptedModelProvider(["must not resume"]),
+                model=ModelRef(provider_id="p", model_id="m"),
+                resume_session_id=session_id,
+            )
+    finally:
+        products.persistence.close()
+
+
+@pytest.mark.parametrize(
+    ("health", "expected_code"),
+    (
+        (SessionHealth.NEEDS_RECOVERY, ApplicationErrorCode.NEEDS_RECOVERY),
+        (SessionHealth.QUARANTINED, ApplicationErrorCode.QUARANTINED),
+        (SessionHealth.READ_ONLY, ApplicationErrorCode.READ_ONLY),
+    ),
+)
+def test_direct_api_submit_turn_rechecks_stale_durable_health(tmp_path, health, expected_code):
+    project = tmp_path / "project"
+    project.mkdir()
+    app = build_application(
+        state_root=tmp_path / "state",
+        credentials=MemoryCredentialStore(),
+        id_source=FixedIdSource(),
+    )
+    identity = app.workspace_service.confirm(app.workspace_service.resolve(project))
+    products = build_session_application(
+        app,
+        identity,
+        provider=ScriptedModelProvider(["must not run"]),
+        model=ModelRef(provider_id="p", model_id="m"),
+    )
+    try:
+        session_id = products.session.session_id
+        journal = products.persistence.journal
+        row = products.api.get_session(session_id)
+        journal.save_session(
+            identity.workspace_id,
+            row.model_copy(update={"health": health}),
+        )
+        assert products.session.health is SessionHealth.OK
+
+        with pytest.raises(ApplicationError) as error:
+            products.api.submit_turn(
+                products.session,
+                user_input="must not persist",
+                client_message_id="client-health",
+                turn_id="turn_health",
+                agent_run_id="arun_health",
+                command_id="cmd_turn_health",
+            )
+
+        assert error.value.code is expected_code
+        assert products.session.health is health
+        assert products.tasks.list(session_id) == ()
+        assert journal.load_records(identity.workspace_id, session_id) == ()
+        assert journal.list_session_turns(identity.workspace_id, session_id) == ()
+        assert journal.list_session_agent_runs(identity.workspace_id, session_id) == ()
+        assert (
+            journal.get_application_command_receipt(identity.workspace_id, "cmd_turn_health")
+            is None
+        )
+    finally:
+        products.persistence.close()
+
+
+@pytest.mark.parametrize(
+    ("health", "expected_message"),
+    (
+        (SessionHealth.NEEDS_RECOVERY, "当前回合需要恢复后才能继续"),
+        (SessionHealth.QUARANTINED, "Session health quarantined cannot start a Turn"),
+        (SessionHealth.READ_ONLY, "Session health read_only cannot start a Turn"),
+    ),
+)
+@pytest.mark.asyncio
+async def test_orchestrator_refreshes_stale_durable_session_health_before_submit(
+    tmp_path, health, expected_message
+):
+    project = tmp_path / "project"
+    project.mkdir()
+    app = build_application(
+        state_root=tmp_path / "state",
+        credentials=MemoryCredentialStore(),
+        id_source=FixedIdSource(),
+    )
+    identity = app.workspace_service.confirm(app.workspace_service.resolve(project))
+    provider = ScriptedModelProvider(["must not run"])
+    products = build_session_application(
+        app,
+        identity,
+        provider=provider,
+        model=ModelRef(provider_id="p", model_id="m"),
+    )
+    try:
+        session_id = products.session.session_id
+        row = products.api.get_session(session_id)
+        products.persistence.journal.save_session(
+            identity.workspace_id,
+            row.model_copy(update={"health": health}),
+        )
+        assert products.session.health is SessionHealth.OK
+
+        dispatch = await products.orchestrator.dispatch("must recover first")
+
+        assert products.session.health is health
+        assert [event.type for event in dispatch.events] == [
+            "turn.started",
+            "error",
+            "turn.completed",
+        ]
+        assert dispatch.events[1].payload["message"] == expected_message
+        assert provider.stream_calls == []
+        assert products.tasks.list(session_id) == ()
+        assert products.persistence.journal.load_records(identity.workspace_id, session_id) == ()
+    finally:
+        products.persistence.close()
+
+
+def test_session_application_closes_store_when_post_open_composition_fails(tmp_path, monkeypatch):
+    project = tmp_path / "project"
+    project.mkdir()
+    app = build_application(
+        state_root=tmp_path / "state",
+        credentials=MemoryCredentialStore(),
+        id_source=FixedIdSource(),
+    )
+    identity = app.workspace_service.confirm(app.workspace_service.resolve(project))
+    opened = []
+    open_store = bootstrap._open_operational_store
+
+    def track_open(application):
+        handle = open_store(application)
+        opened.append(handle)
+        return handle
+
+    def fail_layout(_filesystem):
+        raise RuntimeError("layout failure")
+
+    monkeypatch.setattr(bootstrap, "_open_operational_store", track_open)
+    monkeypatch.setattr(bootstrap.FilesystemArtifactStore, "ensure_layout", fail_layout)
+
+    with pytest.raises(RuntimeError, match="layout failure"):
+        build_session_application(
+            app,
+            identity,
+            provider=ScriptedModelProvider(["must not run"]),
+            model=ModelRef(provider_id="p", model_id="m"),
+        )
+
+    assert len(opened) == 1
+    assert opened[0]._closed is True
 
 
 @pytest.mark.asyncio

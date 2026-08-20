@@ -494,6 +494,55 @@ def test_write_retry_succeeds_after_injected_busy(tmp_path):
     assert attempts["count"] == 3
 
 
+def test_run_write_once_types_body_busy_without_replaying(tmp_path):
+    _root, store = _initialized(tmp_path)
+    attempts: list[int] = []
+
+    def busy(_executor) -> None:
+        attempts.append(1)
+        raise sqlite3.OperationalError("database is locked")
+
+    with store.open(StoreOpenMode.READ_WRITE) as session, pytest.raises(StorageError) as error:
+        session.run_write_once(busy)
+
+    assert error.value.code is StorageErrorCode.BUSY
+    assert attempts == [1]
+
+
+def test_run_write_once_does_not_replay_after_commit_fault(tmp_path):
+    root, store = _initialized(tmp_path)
+    attempts: list[int] = []
+
+    def injector(point: str) -> None:
+        if point == "after_commit":
+            raise sqlite3.OperationalError("database is locked")
+
+    def insert(executor) -> None:
+        attempts.append(1)
+        executor.execute(
+            """
+            INSERT INTO sessions(
+                session_id, workspace_id, lifecycle, health, current_task_run_id,
+                conversation_position, created_at_unix, updated_at_unix
+            ) VALUES ('ses_once', 'ws_1', 'active', 'ok', NULL, 0, 0, 0)
+            """
+        )
+
+    failing = _store(root, failure_injector=injector)
+    with failing.open(StoreOpenMode.READ_WRITE) as session, pytest.raises(StorageError) as error:
+        session.run_write_once(insert)
+
+    assert error.value.code is StorageErrorCode.BUSY
+    assert attempts == [1]
+    with store.open(StoreOpenMode.READ_WRITE) as session:
+        rows = session.run_read(
+            lambda executor: executor.execute(
+                "SELECT COUNT(*) FROM sessions WHERE session_id = 'ses_once'"
+            )
+        )
+    assert rows == ((1,),)
+
+
 def test_begin_immediate_contention_is_typed_busy(tmp_path):
     root, _store_obj = _initialized(tmp_path)
     context = multiprocessing.get_context("spawn")
@@ -702,6 +751,35 @@ def test_write_failure_rolls_back(tmp_path):
     with store.open(StoreOpenMode.READ_WRITE) as session:
         count = session.run_read(lambda executor: executor.execute("SELECT COUNT(*) FROM sessions"))
         assert count[0][0] == 0
+
+
+def test_base_exception_during_write_rolls_back_and_releases_transaction(tmp_path):
+    root, store = _initialized(tmp_path)
+    insert = (
+        "INSERT INTO sessions(session_id, workspace_id, lifecycle, health, "
+        "current_task_run_id, conversation_position, created_at_unix, updated_at_unix) "
+        "VALUES (?, 'ws_1', 'active', 'ok', NULL, 0, 0, 0)"
+    )
+
+    with store.open(StoreOpenMode.READ_WRITE) as session:
+
+        def interrupt(executor):
+            executor.execute(insert, ("ses_interrupted",))
+            raise KeyboardInterrupt
+
+        with pytest.raises(KeyboardInterrupt):
+            session.run_write(interrupt)
+        assert session.run_read(
+            lambda executor: executor.execute(
+                "SELECT COUNT(*) FROM sessions WHERE session_id = 'ses_interrupted'"
+            )
+        ) == ((0,),)
+        session.run_write(lambda executor: executor.execute(insert, ("ses_after",)))
+        assert session.run_read(
+            lambda executor: executor.execute(
+                "SELECT COUNT(*) FROM sessions WHERE session_id = 'ses_after'"
+            )
+        ) == ((1,),)
 
 
 def test_online_backup_during_writes_passes_integrity(tmp_path):

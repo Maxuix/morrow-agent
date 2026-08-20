@@ -424,12 +424,26 @@ def _state_services(
         filesystem=files,
         workspace_id=workspace_id,
         id_source=application.id_source,
+        clock=journal.now,
     )
     checkpoints = ContextCheckpointService(
-        journal, workspace_id=workspace_id, id_source=application.id_source
+        journal,
+        workspace_id=workspace_id,
+        id_source=application.id_source,
+        clock=journal.now,
     )
-    forks = SessionForkService(journal, workspace_id=workspace_id, id_source=application.id_source)
-    tasks = TaskService(journal=journal, workspace_id=workspace_id, id_source=application.id_source)
+    forks = SessionForkService(
+        journal,
+        workspace_id=workspace_id,
+        id_source=application.id_source,
+        clock=journal.now,
+    )
+    tasks = TaskService(
+        journal=journal,
+        workspace_id=workspace_id,
+        id_source=application.id_source,
+        clock=journal.now,
+    )
     recovery = RecoveryService(
         journal,
         workspace_id=workspace_id,
@@ -444,6 +458,7 @@ def _state_services(
         recovery=recovery,
         checkpoints=checkpoints,
         forks=forks,
+        clock=journal.now,
     )
     return (
         application,
@@ -473,6 +488,28 @@ def _emit_model(value, *, as_json: bool = False) -> None:
         typer.echo(str(payload))
 
 
+def _emit_page(page, *, render, as_json: bool = False) -> None:
+    if as_json:
+        typer.echo(
+            json.dumps(
+                {
+                    "items": [
+                        item.model_dump(mode="json") if hasattr(item, "model_dump") else item
+                        for item in page.items
+                    ],
+                    "next_cursor": page.next_cursor,
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            )
+        )
+        return
+    for item in page.items:
+        typer.echo(render(item))
+    if page.next_cursor is not None:
+        typer.echo(f"next_cursor: {page.next_cursor}")
+
+
 def _cli_error(exc: Exception) -> None:
     if isinstance(exc, ApplicationError):
         typer.echo(f"{exc.code.value}: {exc.message}", err=True)
@@ -488,6 +525,7 @@ def session_list(
     directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
     cursor: str | None = typer.Option(None, "--cursor"),
     limit: int = typer.Option(50, "--limit", min=1, max=100),
+    as_json: bool = typer.Option(False, "--json"),
     state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
 ) -> None:
     handle = None
@@ -495,11 +533,15 @@ def session_list(
         _application, handle, api, _doctor, _backup = _state_services(
             state_root=state_root, workspace_id=workspace_id, directory=directory, write=False
         )
-        for session in api.list_sessions(cursor=cursor, limit=limit).items:
-            typer.echo(
+        page = api.list_sessions(cursor=cursor, limit=limit)
+        _emit_page(
+            page,
+            as_json=as_json,
+            render=lambda session: (
                 f"{session.session_id}\t{session.lifecycle.value}\t{session.health.value}\t"
                 f"position={session.conversation_position}"
-            )
+            ),
+        )
     except Exception as exc:
         _cli_error(exc)
         raise typer.Exit(code=2) from None
@@ -679,6 +721,7 @@ def task_list(
     workspace_id: str | None = typer.Option(None, "--workspace-id"),
     cursor: str | None = typer.Option(None, "--cursor"),
     limit: int = typer.Option(50, "--limit", min=1, max=100),
+    as_json: bool = typer.Option(False, "--json"),
     directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
     state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
 ) -> None:
@@ -687,11 +730,15 @@ def task_list(
         _application, handle, api, _doctor, _backup = _state_services(
             state_root=state_root, workspace_id=workspace_id, directory=directory, write=False
         )
-        for task in api.list_tasks(session_id, cursor=cursor, limit=limit).items:
-            typer.echo(
+        page = api.list_tasks(session_id, cursor=cursor, limit=limit)
+        _emit_page(
+            page,
+            as_json=as_json,
+            render=lambda task: (
                 f"{task.task_run_id}\t{task.status.value}\t{task.row_version}\t"
                 f"attempt={task.attempt}"
-            )
+            ),
+        )
     except Exception as exc:
         _cli_error(exc)
         raise typer.Exit(code=2) from None
@@ -928,6 +975,9 @@ def artifact_list(
     session_id: str | None = typer.Option(None, "--session-id"),
     task_run_id: str | None = typer.Option(None, "--task-run-id"),
     workspace_id: str | None = typer.Option(None, "--workspace-id"),
+    cursor: str | None = typer.Option(None, "--cursor"),
+    limit: int = typer.Option(50, "--limit", min=1, max=100),
+    as_json: bool = typer.Option(False, "--json"),
     directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
     state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
 ) -> None:
@@ -936,10 +986,20 @@ def artifact_list(
         _application, handle, api, _doctor, _backup = _state_services(
             state_root=state_root, workspace_id=workspace_id, directory=directory, write=False
         )
-        for item in api.list_artifacts(session_id=session_id, task_run_id=task_run_id).items:
-            typer.echo(
-                f"{item.artifact_id}\t{item.state.value}\t{item.byte_size} bytes\t{item.retention.value}"
-            )
+        page = api.list_artifacts(
+            session_id=session_id,
+            task_run_id=task_run_id,
+            cursor=cursor,
+            limit=limit,
+        )
+        _emit_page(
+            page,
+            as_json=as_json,
+            render=lambda item: (
+                f"{item.artifact_id}\t{item.state.value}\t{item.byte_size} bytes\t"
+                f"{item.retention.value}"
+            ),
+        )
     except Exception as exc:
         _cli_error(exc)
         raise typer.Exit(code=2) from None
@@ -1094,6 +1154,10 @@ def state_doctor(
             typer.echo(f"schema_version: {report.schema_version}")
             for issue in report.issues:
                 typer.echo(f"{issue.severity.value}: {issue.code} ({issue.count}) {issue.summary}")
+        if report.health.value != "ok":
+            raise typer.Exit(code=2)
+    except typer.Exit:
+        raise
     except Exception as exc:
         _cli_error(exc)
         raise typer.Exit(code=2) from None
@@ -1166,7 +1230,11 @@ def state_verify_backup(
 @state_app.command("cleanup")
 def state_cleanup(
     workspace_id: str = typer.Option(..., "--workspace-id"),
-    apply: bool = typer.Option(False, "--apply", help="实际删除已验证的非托管孤儿文件。"),
+    apply: bool = typer.Option(
+        False,
+        "--apply",
+        help="将已验证的非托管孤儿文件移入私有隔离区；不销毁原字节。",
+    ),
     state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
 ) -> None:
     handle = None

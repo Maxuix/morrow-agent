@@ -7,9 +7,12 @@ ConversationLog; turns and messages remain the responsibility of
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Literal
 
+from morrow.core.application import ApplicationErrorCode
 from morrow.core.domain import (
     COMMAND_ID_PREFIX,
     TASK_OUTCOME_ID_PREFIX,
@@ -19,6 +22,8 @@ from morrow.core.domain import (
     DurableTaskOutcome,
     DurableTaskRun,
     DurableTaskRunTransition,
+    SessionHealth,
+    SessionLifecycle,
     TaskCommandDisposition,
     TaskCommandReceipt,
     TaskOutcomeEvidenceKind,
@@ -26,11 +31,13 @@ from morrow.core.domain import (
     TaskOutcomeTrigger,
     TaskRunStatus,
     canonical_json_bytes,
+    session_can_start_work,
     sha256_digest,
     validate_task_transition,
 )
 from morrow.core.execution import ToolExecutionDisposition, ToolExecutionState
 from morrow.core.journal import TaskJournalPort
+from morrow.core.models import utc_now
 from morrow.core.ports import IdSource
 
 TaskCommandKind = Literal["accepted", "replay", "conflict"]
@@ -38,6 +45,15 @@ TaskCommandKind = Literal["accepted", "replay", "conflict"]
 
 class TaskCommandError(RuntimeError):
     """Stable application error for an invalid or stale foreground command."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        application_code: ApplicationErrorCode | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.application_code = application_code
 
 
 class TaskCommandConflict(TaskCommandError):
@@ -59,10 +75,18 @@ def task_command_digest(operation: str, payload: dict[str, object]) -> str:
 class TaskOutcomeAssembler:
     """Build only bounded, deterministic facts from already durable records."""
 
-    def __init__(self, journal: TaskJournalPort, *, workspace_id: str, id_source: IdSource):
+    def __init__(
+        self,
+        journal: TaskJournalPort,
+        *,
+        workspace_id: str,
+        id_source: IdSource,
+        clock: Callable[[], datetime] = utc_now,
+    ):
         self.journal = journal
         self.workspace_id = workspace_id
         self.id_source = id_source
+        self.clock = clock
 
     def build(
         self,
@@ -193,6 +217,7 @@ class TaskOutcomeAssembler:
             feedback=feedback,
             evidence_refs=evidence_refs,
             artifact_refs=all_artifact_refs,
+            created_at=self.clock(),
         )
 
 
@@ -205,12 +230,17 @@ class TaskService:
         journal: TaskJournalPort,
         workspace_id: str,
         id_source: IdSource,
+        clock: Callable[[], datetime] | None = None,
     ) -> None:
         self.journal = journal
         self.workspace_id = workspace_id
         self.id_source = id_source
+        self.clock = clock or getattr(journal, "now", utc_now)
         self.outcomes = TaskOutcomeAssembler(
-            journal, workspace_id=workspace_id, id_source=id_source
+            journal,
+            workspace_id=workspace_id,
+            id_source=id_source,
+            clock=self.clock,
         )
 
     def get(self, task_run_id: str) -> DurableTaskRun | None:
@@ -218,6 +248,22 @@ class TaskService:
 
     def list(self, session_id: str) -> tuple[DurableTaskRun, ...]:
         return self.journal.list_task_runs(self.workspace_id, session_id)
+
+    @staticmethod
+    def _require_session_can_start_work(session, *, action: str) -> None:
+        if session_can_start_work(session.lifecycle, session.health):
+            return
+        if session.lifecycle is not SessionLifecycle.ACTIVE:
+            raise TaskCommandError(f"only an active Session can {action} a TaskRun")
+        codes = {
+            SessionHealth.NEEDS_RECOVERY: ApplicationErrorCode.NEEDS_RECOVERY,
+            SessionHealth.QUARANTINED: ApplicationErrorCode.QUARANTINED,
+            SessionHealth.READ_ONLY: ApplicationErrorCode.READ_ONLY,
+        }
+        raise TaskCommandError(
+            f"Session health {session.health.value} cannot {action} a TaskRun",
+            application_code=codes[session.health],
+        )
 
     def continue_after_answer(
         self,
@@ -263,6 +309,7 @@ class TaskService:
             session = txn.get_session(self.workspace_id, session_id)
             if session is None:
                 raise TaskCommandError("session is missing")
+            self._require_session_can_start_work(session, action="start")
             old_task = (
                 txn.get_task_run(self.workspace_id, session.current_task_run_id)
                 if session.current_task_run_id is not None
@@ -293,12 +340,15 @@ class TaskService:
                     old_task,
                     trigger=TaskOutcomeTrigger.TERMINAL_CLOSE,
                 )
+            stamp = self.clock()
             new = txn.create_task_run(
                 self.workspace_id,
                 DurableTaskRun(
                     task_run_id=self.id_source.new_id(TASK_RUN_ID_PREFIX),
                     session_id=session_id,
                     workspace_id=self.workspace_id,
+                    created_at=stamp,
+                    updated_at=stamp,
                 ),
                 make_current=True,
             )
@@ -578,6 +628,11 @@ class TaskService:
         next_attempt = task.attempt + (
             1 if task.status is TaskRunStatus.FAILED and target is TaskRunStatus.OPEN else 0
         )
+        if target is TaskRunStatus.OPEN:
+            session = txn.get_session(self.workspace_id, task.session_id)
+            if session is None:
+                raise TaskCommandError("session is missing")
+            self._require_session_can_start_work(session, action="resume")
         try:
             validate_task_transition(task.status, target)
         except ValueError as exc:
@@ -595,6 +650,7 @@ class TaskService:
             turn_id=turn_id,
             command_id=command_id,
             attempt=next_attempt,
+            created_at=self.clock(),
         )
         return txn.transition_task_run(
             self.workspace_id,
@@ -614,7 +670,10 @@ class TaskService:
         feedback: tuple[str, ...] = (),
     ) -> DurableTaskOutcome:
         assembler = TaskOutcomeAssembler(
-            txn, workspace_id=self.workspace_id, id_source=self.id_source
+            txn,
+            workspace_id=self.workspace_id,
+            id_source=self.id_source,
+            clock=self.clock,
         )
         outcome = assembler.build(task, trigger=trigger, summary=summary, feedback=feedback)
         return txn.put_task_outcome(self.workspace_id, outcome)
@@ -694,6 +753,7 @@ class TaskService:
             outcome_id=outcome_id,
             task_status=task.status if task is not None else None,
             row_version=task.row_version if task is not None else None,
+            created_at=self.clock(),
         )
         return txn.put_task_command_receipt(self.workspace_id, receipt)
 

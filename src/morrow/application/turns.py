@@ -11,6 +11,7 @@ from morrow.adapters.state.operational import OperationalStoreSession
 from morrow.application.prepared import prepare_cycle_executions
 from morrow.application.recovery import RecoveryService
 from morrow.application.tasks import TaskOutcomeAssembler, TaskService
+from morrow.core.application import ApplicationError, ApplicationErrorCode
 from morrow.core.artifacts import ArtifactError
 from morrow.core.domain import (
     AGENT_RUN_ID_PREFIX,
@@ -23,12 +24,14 @@ from morrow.core.domain import (
     DurableTaskRun,
     DurableTurn,
     SessionHealth,
+    SessionLifecycle,
     SourceRevisionRef,
     TaskOutcomeTrigger,
     TaskRunStatus,
     TurnSubmitDisposition,
     TurnSubmitReceipt,
     canonical_json_bytes,
+    session_can_start_work,
     sha256_digest,
 )
 from morrow.core.execution import (
@@ -94,6 +97,17 @@ class TurnSubmitResult:
 
 def request_digest(user_input: str) -> str:
     return sha256_digest(canonical_json_bytes({"content": user_input}))
+
+
+def _turn_health_error(health: SessionHealth) -> ApplicationError:
+    codes = {
+        SessionHealth.QUARANTINED: ApplicationErrorCode.QUARANTINED,
+        SessionHealth.READ_ONLY: ApplicationErrorCode.READ_ONLY,
+    }
+    return ApplicationError(
+        codes[health],
+        f"Session health {health.value} cannot start a Turn",
+    )
 
 
 def build_agent_run_snapshot(
@@ -243,16 +257,18 @@ class SessionPersistence:
             workspace_root=workspace_root,
         )
         self.faults = faults or NoOpFaultInjector()
-        self.clock = clock
+        self.clock = clock or store_session
         self.tasks = TaskService(
             journal=journal,
             workspace_id=workspace_id,
             id_source=id_source,
+            clock=self._now,
         )
         self.outcomes = TaskOutcomeAssembler(
             journal,
             workspace_id=workspace_id,
             id_source=id_source,
+            clock=self._now,
         )
         self.writer: DurableConversationWriter | None = None
         self._session: Session | None = None
@@ -389,6 +405,7 @@ class SessionPersistence:
                 txn,
                 workspace_id=self.workspace_id,
                 id_source=self.id_source,
+                clock=self._now,
             )
             outcome = self.outcomes.build(updated, trigger=trigger)
             txn.put_task_outcome(self.workspace_id, outcome)
@@ -455,6 +472,13 @@ class SessionPersistence:
             return TurnSubmitResult("recovery", existing.turn_id, existing)
         if session.health is SessionHealth.NEEDS_RECOVERY:
             return TurnSubmitResult("recovery", self.current_turn_id, None)
+        if session.lifecycle is not SessionLifecycle.ACTIVE:
+            raise ApplicationError(
+                ApplicationErrorCode.INVALID,
+                "only an active Session can start a Turn",
+            )
+        if session.health is not SessionHealth.OK:
+            raise _turn_health_error(session.health)
 
         planned = session.log.plan_begin_turn(UserMessage(content=user_input))
         snapshot = build_agent_run_snapshot(
@@ -469,12 +493,27 @@ class SessionPersistence:
         if writer is None:
             raise RuntimeError("session persistence is not attached")
 
-        def work(txn: SqliteOperationalJournal) -> str:
+        def work(txn: SqliteOperationalJournal) -> str | TurnSubmitResult:
             row = txn.get_session(self.workspace_id, session.session_id)
             if row is None:
+                stamp = self._now()
                 row = txn.create_session(
-                    DurableSession(session_id=session.session_id, workspace_id=self.workspace_id)
+                    DurableSession(
+                        session_id=session.session_id,
+                        workspace_id=self.workspace_id,
+                        created_at=stamp,
+                        updated_at=stamp,
+                    )
                 )
+            if not session_can_start_work(row.lifecycle, row.health):
+                if row.lifecycle is not SessionLifecycle.ACTIVE:
+                    raise ApplicationError(
+                        ApplicationErrorCode.INVALID,
+                        "only an active Session can start a Turn",
+                    )
+                if row.health is SessionHealth.NEEDS_RECOVERY:
+                    return TurnSubmitResult("recovery", self.current_turn_id, None)
+                raise _turn_health_error(row.health)
             task_id = row.current_task_run_id
             follow_up_task = None
             if task_id is not None:
@@ -488,16 +527,20 @@ class SessionPersistence:
                 elif current_task.status.is_terminal:
                     task_id = None
             if task_id is None:
+                stamp = self._now()
                 task = txn.create_task_run(
                     self.workspace_id,
                     DurableTaskRun(
                         task_run_id=self.id_source.new_id(TASK_RUN_ID_PREFIX),
                         session_id=session.session_id,
                         workspace_id=self.workspace_id,
+                        created_at=stamp,
+                        updated_at=stamp,
                     ),
                     make_current=True,
                 )
                 task_id = task.task_run_id
+            stamp = self._now()
             txn.create_turn(
                 self.workspace_id,
                 DurableTurn(
@@ -505,6 +548,7 @@ class SessionPersistence:
                     session_id=session.session_id,
                     task_run_id=task_id,
                     client_message_id=client_message_id,
+                    created_at=stamp,
                 ),
             )
             if follow_up_task is not None:
@@ -523,6 +567,7 @@ class SessionPersistence:
                     turn_id=turn_id,
                     session_id=session.session_id,
                     snapshot=snapshot,
+                    created_at=stamp,
                 ),
             )
             txn.put_receipt(
@@ -544,6 +589,9 @@ class SessionPersistence:
             return turn_id
 
         accepted_turn = self.journal.transact(work)
+        if isinstance(accepted_turn, TurnSubmitResult):
+            session.health = SessionHealth.NEEDS_RECOVERY
+            return accepted_turn
         session.log.apply_committed(planned)
         self._last_client_message_id = client_message_id
         session.dirty = True
@@ -551,8 +599,14 @@ class SessionPersistence:
         return TurnSubmitResult("accepted", accepted_turn, receipt)
 
     def start_new_session(self, session: Session, session_id: str) -> None:
+        stamp = self._now()
         self.journal.create_session(
-            DurableSession(session_id=session_id, workspace_id=self.workspace_id)
+            DurableSession(
+                session_id=session_id,
+                workspace_id=self.workspace_id,
+                created_at=stamp,
+                updated_at=stamp,
+            )
         )
         session.reset(session_id)
         session.log = ConversationLog()
@@ -568,8 +622,14 @@ class SessionPersistence:
     def restore_into(self, session: Session) -> None:
         row = self.journal.get_session(self.workspace_id, session.session_id)
         if row is None:
+            stamp = self._now()
             self.journal.create_session(
-                DurableSession(session_id=session.session_id, workspace_id=self.workspace_id)
+                DurableSession(
+                    session_id=session.session_id,
+                    workspace_id=self.workspace_id,
+                    created_at=stamp,
+                    updated_at=stamp,
+                )
             )
             self.attach(session)
             return
@@ -617,7 +677,11 @@ class SessionPersistence:
                 )
             if report is not None and session.health is not SessionHealth.QUARANTINED:
                 session.health = SessionHealth.NEEDS_RECOVERY
-            elif session.log.has_active_turn and session.health is SessionHealth.OK:
+            elif (
+                session.lifecycle is SessionLifecycle.ACTIVE
+                and session.log.has_active_turn
+                and session.health is SessionHealth.OK
+            ):
                 turns = self.journal.list_session_turns(self.workspace_id, session.session_id)
                 runs = self.journal.list_session_agent_runs(self.workspace_id, session.session_id)
                 self.current_turn_id = turns[-1].turn_id if turns else None

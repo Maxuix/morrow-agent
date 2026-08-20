@@ -17,6 +17,7 @@ from morrow.application.api import OperationalApplicationService
 from morrow.application.recovery import RecoveryService
 from morrow.application.turns import SessionPersistence
 from morrow.bootstrap import build_application, build_session_application
+from morrow.core.application import ApplicationError, ApplicationErrorCode
 from morrow.core.capabilities import AccessScope, ApprovalMode, ProcessIsolation
 from morrow.core.domain import (
     AgentRunSnapshot,
@@ -333,14 +334,17 @@ def test_application_recovery_updates_health_and_resume_run_atomically(tmp_path:
         )
         recovery = RecoveryService(journal, workspace_id="ws_1", id_source=ids)
         ids.counts["arun"] = 1
+        decision_clock = FixedClock(datetime(2040, 2, 3, 4, 5, 6, tzinfo=UTC))
         api = OperationalApplicationService(
             journal=journal,
             workspace_id="ws_1",
             id_source=ids,
             recovery=recovery,
+            clock=decision_clock.now,
         )
         report = recovery.discover("ses_1", log)
         assert report is not None
+        before_recovery = journal.get_session("ws_1", "ses_1")
         acknowledged = api.resolve_recovery(
             report,
             command_id=None,
@@ -351,9 +355,34 @@ def test_application_recovery_updates_health_and_resume_run_atomically(tmp_path:
         )
         assert acknowledged.receipt.command_id.startswith("cmd_")
         assert acknowledged.value.status.value == "open"
-        assert journal.get_session("ws_1", "ses_1").health is SessionHealth.NEEDS_RECOVERY
+        after_acknowledge = journal.get_session("ws_1", "ses_1")
+        assert after_acknowledge.health is SessionHealth.NEEDS_RECOVERY
+        assert after_acknowledge.updated_at > before_recovery.updated_at
         assert journal.get_execution("ws_1", "tex_1").state is ToolExecutionState.CLOSED
         assert log.unresolved_call_ids == ()
+
+        handle.run_write(
+            lambda executor: executor.execute(
+                "UPDATE sessions SET lifecycle = 'archived' WHERE session_id = 'ses_1'"
+            )
+        )
+        with pytest.raises(ApplicationError) as archived_error:
+            api.resolve_recovery(
+                acknowledged.value,
+                command_id="cmd_resume_api",
+                resolution=RecoveryResolution.RESUME,
+                log=log,
+                writer=writer,
+            )
+        assert archived_error.value.code is ApplicationErrorCode.INVALID
+        assert "active Session" in archived_error.value.message
+        assert journal.get_report("ws_1", acknowledged.value.report_id).status.value == "open"
+        assert len(journal.list_session_agent_runs("ws_1", "ses_1")) == 1
+        handle.run_write(
+            lambda executor: executor.execute(
+                "UPDATE sessions SET lifecycle = 'active' WHERE session_id = 'ses_1'"
+            )
+        )
 
         resumed = api.resolve_recovery(
             acknowledged.value,
@@ -363,10 +392,41 @@ def test_application_recovery_updates_health_and_resume_run_atomically(tmp_path:
             writer=writer,
         )
         assert resumed.value.status.value == "resolved"
-        assert journal.get_session("ws_1", "ses_1").health is SessionHealth.OK
+        assert resumed.value.resolved_at == decision_clock.value
+        after_resume = journal.get_session("ws_1", "ses_1")
+        assert after_resume.health is SessionHealth.OK
+        assert after_resume.updated_at > after_acknowledge.updated_at
         runs = journal.list_session_agent_runs("ws_1", "ses_1")
         assert len(runs) == 2
         assert runs[-1].resume_of_agent_run_id == "arun_1"
+
+        replayed = api.resolve_recovery(
+            acknowledged.value,
+            command_id="cmd_resume_api",
+            resolution=RecoveryResolution.RESUME,
+            log=log,
+            writer=writer,
+        )
+        assert replayed.value.status.value == "resolved"
+        assert len(journal.list_session_agent_runs("ws_1", "ses_1")) == 2
+
+        quarantined = journal.get_session("ws_1", "ses_1")
+        journal.save_session(
+            "ws_1",
+            quarantined.model_copy(update={"health": SessionHealth.QUARANTINED}),
+        )
+        with pytest.raises(ApplicationError) as repeated_error:
+            api.resolve_recovery(
+                acknowledged.value,
+                command_id="cmd_resume_again",
+                resolution=RecoveryResolution.RESUME,
+                log=log,
+                writer=writer,
+            )
+        assert repeated_error.value.code is ApplicationErrorCode.INVALID
+        assert journal.get_session("ws_1", "ses_1").health is SessionHealth.QUARANTINED
+        assert len(journal.list_session_agent_runs("ws_1", "ses_1")) == 2
+        assert journal.get_application_command_receipt("ws_1", "cmd_resume_again") is None
     finally:
         handle.close()
 
@@ -474,6 +534,9 @@ async def test_session_application_recovery_commands_acknowledge_and_resume(tmp_
         assert resumed.persistence.open_report is not None
         assert resumed.api.recovery is resumed.persistence.recovery
         assert "Recovery 报告" in resumed.commands.execute("/recovery").lines[0]
+
+        with pytest.raises(RuntimeError, match="active healthy Session"):
+            _ = [item async for item in resumed.orchestrator.resume_recovery()]
 
         item_id = resumed.persistence.open_report.items[0].item_id
         acknowledge = resumed.commands.execute(f"/recovery ack {item_id}")

@@ -157,6 +157,16 @@ class FilesystemArtifactStore:
             (self.artifacts_dir, ARTIFACT_FILE_SUFFIX, "unmanaged_final"),
         ):
             for path in self._iter_directory(directory):
+                # ``artifacts/tmp`` is part of the managed layout, not an orphan
+                # entry in the final Artifact directory. Keep an unexpected
+                # symlink or non-directory collision visible to Doctor/Cleanup.
+                if (
+                    directory == self.artifacts_dir
+                    and path == self.artifacts_tmp
+                    and not path.is_symlink()
+                    and path.is_dir()
+                ):
+                    continue
                 artifact_id = self._artifact_id_from_path(path, suffix)
                 if artifact_id is None:
                     candidates.append(ArtifactOrphanCandidate(None, path, label))

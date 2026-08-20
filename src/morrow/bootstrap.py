@@ -49,7 +49,7 @@ from morrow.core.capabilities import (
     ProcessIsolation,
     WorkspaceCapability,
 )
-from morrow.core.domain import DurableSession
+from morrow.core.domain import DurableSession, SessionLifecycle
 from morrow.core.execution import missing_declarations
 from morrow.core.models import Preferences
 from morrow.core.permissions import UNCONFINED_HOST_WARNING_DIGEST, CapabilityName
@@ -331,123 +331,146 @@ def build_session_application(
         tool_executor=tool_executor,
     )
     handle = _open_operational_store(app)
-    journal = SqliteOperationalJournal(handle)
-    artifact_files = FilesystemArtifactStore(OperationalStoreLayout.from_root(app.data_root.root))
-    artifact_files.ensure_layout()
-    artifacts = ArtifactService(
-        journal=journal,
-        filesystem=artifact_files,
-        workspace_id=identity.workspace_id,
-        id_source=app.id_source,
-    )
-    checkpoints = ContextCheckpointService(
-        journal,
-        workspace_id=identity.workspace_id,
-        id_source=app.id_source,
-    )
-    forks = SessionForkService(
-        journal,
-        workspace_id=identity.workspace_id,
-        id_source=app.id_source,
-    )
-    recovery = RecoveryService(
-        journal,
-        workspace_id=identity.workspace_id,
-        id_source=app.id_source,
-        workspace_root=workspace_capability.root,
-    )
-    persistence = SessionPersistence(
-        workspace_id=identity.workspace_id,
-        journal=journal,
-        store_session=handle,
-        id_source=app.id_source,
-        model=model,
-        run_policy=run_policy,
-        runtime_instance_id=f"inst-{os.getpid()}",
-        mutation=mutation,
-        artifacts=artifacts,
-        recovery=recovery,
-    )
-    if resume_session_id:
-        persistence.restore_into(session)
-    else:
-        if journal.get_session(identity.workspace_id, session.session_id) is None:
-            journal.create_session(
-                DurableSession(session_id=session.session_id, workspace_id=identity.workspace_id)
-            )
-        persistence.attach(session)
-    api = OperationalApplicationService(
-        journal=journal,
-        workspace_id=identity.workspace_id,
-        id_source=app.id_source,
-        tasks=persistence.tasks,
-        artifacts=artifacts,
-        recovery=recovery,
-        checkpoints=checkpoints,
-        forks=forks,
-        persistence=persistence,
-    )
-
-    def create_foreground_grant(current_session: Session):
-        profile = current_session.permission_profile
-        if (
-            profile.access_scope is not AccessScope.FULL_ACCESS
-            or profile.approval_mode is not ApprovalMode.MANUAL
-            or profile.process_isolation is not ProcessIsolation.HOST
-        ):
-            raise RuntimeError("只有 full-access-manual 预设支持本地 Host 权限授予")
-        task_run_id = getattr(current_session.committer, "current_task_run_id", None)
-        agent_run_id = getattr(current_session.committer, "current_agent_run_id", None)
-        if task_run_id is None or agent_run_id is None:
-            raise RuntimeError("当前前台 AgentRun 尚未创建")
-        result = api.create_grant(
-            task_run_id=task_run_id,
-            agent_run_id=agent_run_id,
-            capabilities=(CapabilityName.UNCONFINED_HOST_PROCESS,),
-            reason="local interface approved unconfined Host access for this foreground AgentRun",
-            preview_digest=UNCONFINED_HOST_WARNING_DIGEST,
-            command_id=app.id_source.new_id("cmd"),
+    try:
+        journal = SqliteOperationalJournal(handle)
+        if resume_session_id is not None:
+            resumed = journal.get_session(identity.workspace_id, resume_session_id)
+            if resumed is not None and resumed.lifecycle is not SessionLifecycle.ACTIVE:
+                raise ValueError("only an active Session can resume interactive mode")
+        artifact_files = FilesystemArtifactStore(
+            OperationalStoreLayout.from_root(app.data_root.root)
         )
-        return result.value
+        artifact_files.ensure_layout()
+        artifacts = ArtifactService(
+            journal=journal,
+            filesystem=artifact_files,
+            workspace_id=identity.workspace_id,
+            id_source=app.id_source,
+            clock=journal.now,
+        )
+        checkpoints = ContextCheckpointService(
+            journal,
+            workspace_id=identity.workspace_id,
+            id_source=app.id_source,
+            clock=journal.now,
+        )
+        forks = SessionForkService(
+            journal,
+            workspace_id=identity.workspace_id,
+            id_source=app.id_source,
+            clock=journal.now,
+        )
+        recovery = RecoveryService(
+            journal,
+            workspace_id=identity.workspace_id,
+            id_source=app.id_source,
+            workspace_root=workspace_capability.root,
+        )
+        persistence = SessionPersistence(
+            workspace_id=identity.workspace_id,
+            journal=journal,
+            store_session=handle,
+            id_source=app.id_source,
+            model=model,
+            run_policy=run_policy,
+            runtime_instance_id=f"inst-{os.getpid()}",
+            mutation=mutation,
+            artifacts=artifacts,
+            recovery=recovery,
+        )
+        if resume_session_id:
+            persistence.restore_into(session)
+        else:
+            if journal.get_session(identity.workspace_id, session.session_id) is None:
+                stamp = journal.now()
+                journal.create_session(
+                    DurableSession(
+                        session_id=session.session_id,
+                        workspace_id=identity.workspace_id,
+                        created_at=stamp,
+                        updated_at=stamp,
+                    )
+                )
+            persistence.attach(session)
+        api = OperationalApplicationService(
+            journal=journal,
+            workspace_id=identity.workspace_id,
+            id_source=app.id_source,
+            tasks=persistence.tasks,
+            artifacts=artifacts,
+            recovery=recovery,
+            checkpoints=checkpoints,
+            forks=forks,
+            persistence=persistence,
+            clock=journal.now,
+        )
 
-    runtime.loop.grant_provider = create_foreground_grant
-    operational_store = OperationalStore(app.data_root.root)
-    doctor = OperationalDoctor(operational_store)
-    backup = OperationalBackupService(operational_store, journal=journal)
-    commands = CommandService(
-        session=session,
-        identity=identity,
-        project_store=app.project_store,
-        config_service=config_service,
-        task_service=persistence.tasks,
-        api=api,
-        id_source=app.id_source,
-    )
-    orchestrator = SessionOrchestrator(
-        session=session,
-        runtime=runtime,
-        command_service=commands,
-        context_builder=context_builder,
-        id_source=app.id_source,
-    )
-    return SessionApplication(
-        session=session,
-        context_builder=context_builder,
-        commands=commands,
-        orchestrator=orchestrator,
-        files=files,
-        search=search,
-        mutation=mutation,
-        changes=changes,
-        process=process,
-        git=git,
-        sandbox_capability=sandbox_capability,
-        persistence=persistence,
-        tasks=persistence.tasks,
-        artifacts=artifacts,
-        checkpoints=checkpoints,
-        forks=forks,
-        api=api,
-        doctor=doctor,
-        backup=backup,
-    )
+        def create_foreground_grant(current_session: Session):
+            profile = current_session.permission_profile
+            if (
+                profile.access_scope is not AccessScope.FULL_ACCESS
+                or profile.approval_mode is not ApprovalMode.MANUAL
+                or profile.process_isolation is not ProcessIsolation.HOST
+            ):
+                raise RuntimeError("只有 full-access-manual 预设支持本地 Host 权限授予")
+            task_run_id = getattr(current_session.committer, "current_task_run_id", None)
+            agent_run_id = getattr(current_session.committer, "current_agent_run_id", None)
+            if task_run_id is None or agent_run_id is None:
+                raise RuntimeError("当前前台 AgentRun 尚未创建")
+            result = api.create_grant(
+                task_run_id=task_run_id,
+                agent_run_id=agent_run_id,
+                capabilities=(CapabilityName.UNCONFINED_HOST_PROCESS,),
+                reason=(
+                    "local interface approved unconfined Host access for this foreground AgentRun"
+                ),
+                preview_digest=UNCONFINED_HOST_WARNING_DIGEST,
+                command_id=app.id_source.new_id("cmd"),
+            )
+            return result.value
+
+        runtime.loop.grant_provider = create_foreground_grant
+        operational_store = OperationalStore(app.data_root.root)
+        doctor = OperationalDoctor(operational_store)
+        backup = OperationalBackupService(operational_store, journal=journal)
+        commands = CommandService(
+            session=session,
+            identity=identity,
+            project_store=app.project_store,
+            config_service=config_service,
+            task_service=persistence.tasks,
+            api=api,
+            id_source=app.id_source,
+        )
+        orchestrator = SessionOrchestrator(
+            session=session,
+            runtime=runtime,
+            command_service=commands,
+            context_builder=context_builder,
+            id_source=app.id_source,
+        )
+        products = SessionApplication(
+            session=session,
+            context_builder=context_builder,
+            commands=commands,
+            orchestrator=orchestrator,
+            files=files,
+            search=search,
+            mutation=mutation,
+            changes=changes,
+            process=process,
+            git=git,
+            sandbox_capability=sandbox_capability,
+            persistence=persistence,
+            tasks=persistence.tasks,
+            artifacts=artifacts,
+            checkpoints=checkpoints,
+            forks=forks,
+            api=api,
+            doctor=doctor,
+            backup=backup,
+        )
+    except BaseException:
+        handle.close()
+        raise
+    return products

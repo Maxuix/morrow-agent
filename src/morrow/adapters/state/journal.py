@@ -48,6 +48,7 @@ from morrow.core.domain import (
     TurnSubmitDisposition,
     TurnSubmitReceipt,
     canonical_json_bytes,
+    session_can_start_work,
     validate_task_transition,
 )
 from morrow.core.execution import (
@@ -183,27 +184,80 @@ def _from_unix(value: object) -> datetime:
 class SqliteOperationalJournal:
     """One SQLite adapter exposing the narrow lifecycle and journal ports."""
 
-    def __init__(self, session: OperationalStoreSession) -> None:
+    def __init__(
+        self,
+        session: OperationalStoreSession,
+        *,
+        clock: Callable[[], datetime] | None = None,
+    ) -> None:
         self._session = session
+        self._clock = clock or session.now
         self._executor: SqliteExecutor | None = None
+        self._transaction_time: datetime | None = None
+        self._transaction_replayable: bool | None = None
+        self._touched_session_ids: set[str] = set()
+
+    def now(self) -> datetime:
+        value = self._clock()
+        if value.tzinfo is None:
+            return value.replace(tzinfo=UTC)
+        return value.astimezone(UTC)
 
     def transact[T](self, work: Callable[[SqliteOperationalJournal], T]) -> T:
+        return self._transact_with(self._session.run_write, work, replayable=True)
+
+    def transact_once[T](self, work: Callable[[SqliteOperationalJournal], T]) -> T:
+        """Run a non-replayable journal transaction for filesystem-coupled maintenance."""
+
+        return self._transact_with(self._session.run_write_once, work, replayable=False)
+
+    def _transact_with[T](
+        self,
+        run_write: Callable[[Callable[[SqliteExecutor], T]], T],
+        work: Callable[[SqliteOperationalJournal], T],
+        *,
+        replayable: bool,
+    ) -> T:
         if self._executor is not None:
+            if not replayable and self._transaction_replayable:
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE,
+                    "non-replayable transaction cannot be nested in a replayable transaction",
+                )
             return work(self)
 
         def body(executor: SqliteExecutor) -> T:
             self._executor = executor
+            self._transaction_time = self.now()
+            self._transaction_replayable = replayable
+            self._touched_session_ids = set()
             try:
                 return work(self)
             finally:
                 self._executor = None
+                self._transaction_time = None
+                self._transaction_replayable = None
+                self._touched_session_ids = set()
 
-        return self._session.run_write(body)
+        return run_write(body)
 
     def create_session(
         self, session: DurableSession, *, task: DurableTaskRun | None = None
     ) -> DurableSession:
+        if (
+            session.lifecycle is not SessionLifecycle.ACTIVE
+            and session.current_task_run_id is not None
+        ):
+            raise StorageError(
+                StorageErrorCode.UNAVAILABLE,
+                "inactive session cannot retain a current task",
+            )
         if task is not None:
+            if not session_can_start_work(session.lifecycle, session.health):
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE,
+                    "only an active healthy session can start a task",
+                )
             if task.status is not TaskRunStatus.OPEN:
                 raise StorageError(
                     StorageErrorCode.UNAVAILABLE, "new operational task must start open"
@@ -254,10 +308,29 @@ class SqliteOperationalJournal:
         rows = self._read_all(
             "SELECT workspace_id FROM sessions "
             "UNION SELECT workspace_id FROM artifacts "
+            "UNION SELECT workspace_id FROM artifact_references "
+            "UNION SELECT workspace_id FROM checkpoint_artifact_references "
             "UNION SELECT workspace_id FROM application_events "
             "ORDER BY workspace_id"
         )
         return tuple(str(row[0]) for row in rows)
+
+    def has_global_artifact_authority(self, artifact_id: str) -> bool:
+        """Check root-wide metadata/reference authority for one cleanup candidate."""
+
+        row = self._read_one(
+            """
+            SELECT EXISTS (
+                SELECT artifact_id FROM artifacts WHERE artifact_id = ?
+                UNION ALL
+                SELECT artifact_id FROM artifact_references WHERE artifact_id = ?
+                UNION ALL
+                SELECT artifact_id FROM checkpoint_artifact_references WHERE artifact_id = ?
+            )
+            """,
+            (artifact_id, artifact_id, artifact_id),
+        )
+        return bool(row and row[0])
 
     def get_session_lineage(self, workspace_id: str, session_id: str) -> SessionLineage | None:
         session = self.get_session(workspace_id, session_id)
@@ -298,6 +371,30 @@ class SqliteOperationalJournal:
                         StorageErrorCode.UNAVAILABLE,
                         "operational session task pointer is inconsistent",
                     )
+                if task.status.is_terminal:
+                    raise StorageError(
+                        StorageErrorCode.UNAVAILABLE,
+                        "operational session cannot point at a terminal task",
+                    )
+            if (
+                session.lifecycle is not SessionLifecycle.ACTIVE
+                and session.current_task_run_id is not None
+            ):
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE,
+                    "inactive session cannot retain a current task",
+                )
+            visible_changed = (
+                existing.lifecycle != session.lifecycle
+                or existing.health != session.health
+                or existing.current_task_run_id != session.current_task_run_id
+                or existing.conversation_position != session.conversation_position
+            )
+            updated_at = (
+                journal._session_mutation_time(existing, requested=session.updated_at)
+                if visible_changed
+                else existing.updated_at
+            )
             journal._executor_or_raise().execute(
                 """
                 UPDATE sessions
@@ -310,7 +407,7 @@ class SqliteOperationalJournal:
                     session.health.value,
                     session.current_task_run_id,
                     session.conversation_position,
-                    _unix(session.updated_at),
+                    _unix(updated_at),
                     session.session_id,
                     workspace_id,
                 ),
@@ -357,9 +454,10 @@ class SqliteOperationalJournal:
             session = journal.get_session(workspace_id, task.session_id)
             if session is None:
                 raise StorageError(StorageErrorCode.NOT_FOUND, "operational session is missing")
-            if session.lifecycle is SessionLifecycle.DELETED:
+            if not session_can_start_work(session.lifecycle, session.health):
                 raise StorageError(
-                    StorageErrorCode.UNAVAILABLE, "deleted session cannot start a task"
+                    StorageErrorCode.UNAVAILABLE,
+                    "only an active healthy session can start a task",
                 )
             if make_current and session.current_task_run_id not in {None, task.task_run_id}:
                 current = journal.get_task_run(workspace_id, session.current_task_run_id)
@@ -372,6 +470,7 @@ class SqliteOperationalJournal:
                         "an active operational task must be closed before replacement",
                     )
             journal._insert_task(task)
+            updated_at = journal._session_mutation_time(session, requested=task.updated_at)
             if make_current or session.current_task_run_id is None:
                 journal._executor_or_raise().execute(
                     """
@@ -379,7 +478,16 @@ class SqliteOperationalJournal:
                     SET current_task_run_id = ?, updated_at_unix = ?
                     WHERE session_id = ? AND workspace_id = ?
                     """,
-                    (task.task_run_id, _unix(session.updated_at), task.session_id, workspace_id),
+                    (task.task_run_id, _unix(updated_at), task.session_id, workspace_id),
+                )
+            else:
+                journal._executor_or_raise().execute(
+                    """
+                    UPDATE sessions
+                    SET updated_at_unix = ?
+                    WHERE session_id = ? AND workspace_id = ?
+                    """,
+                    (_unix(updated_at), task.session_id, workspace_id),
                 )
             loaded = journal.get_task_run(workspace_id, task.task_run_id)
             if loaded is None:
@@ -444,6 +552,13 @@ class SqliteOperationalJournal:
             session = journal.get_session(workspace_id, current.session_id)
             if session is None:
                 raise StorageError(StorageErrorCode.NOT_FOUND, "operational session is missing")
+            if target is TaskRunStatus.OPEN and not session_can_start_work(
+                session.lifecycle, session.health
+            ):
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE,
+                    "only an active healthy session can resume a task",
+                )
             if target is TaskRunStatus.OPEN and session.current_task_run_id not in {
                 None,
                 task_run_id,
@@ -499,20 +614,29 @@ class SqliteOperationalJournal:
                 executor.execute(
                     """
                     UPDATE sessions
-                    SET current_task_run_id = NULL, updated_at_unix = ?
+                    SET current_task_run_id = NULL
                     WHERE session_id = ? AND workspace_id = ? AND current_task_run_id = ?
                     """,
-                    (_unix(now), current.session_id, workspace_id, task_run_id),
+                    (current.session_id, workspace_id, task_run_id),
                 )
             elif target is TaskRunStatus.OPEN:
                 executor.execute(
                     """
                     UPDATE sessions
-                    SET current_task_run_id = ?, updated_at_unix = ?
+                    SET current_task_run_id = ?
                     WHERE session_id = ? AND workspace_id = ?
                     """,
-                    (task_run_id, _unix(now), current.session_id, workspace_id),
+                    (task_run_id, current.session_id, workspace_id),
                 )
+            updated_at = journal._session_mutation_time(session, requested=now)
+            executor.execute(
+                """
+                UPDATE sessions
+                SET updated_at_unix = ?
+                WHERE session_id = ? AND workspace_id = ?
+                """,
+                (_unix(updated_at), current.session_id, workspace_id),
+            )
             loaded = journal.get_task_run(workspace_id, task_run_id)
             if loaded is None:
                 raise StorageError(
@@ -1076,8 +1200,14 @@ class SqliteOperationalJournal:
                 raise StorageError(
                     StorageErrorCode.UNAVAILABLE, "operational turn does not belong to the session"
                 )
-            if journal.get_session(workspace_id, turn.session_id) is None:
+            session = journal.get_session(workspace_id, turn.session_id)
+            if session is None:
                 raise StorageError(StorageErrorCode.NOT_FOUND, "operational session is missing")
+            if not session_can_start_work(session.lifecycle, session.health):
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE,
+                    "only an active healthy session can start a turn",
+                )
             journal._executor_or_raise().execute(
                 f"INSERT INTO turns({_TURN_COLUMNS}) VALUES (?, ?, ?, ?, ?)",
                 (
@@ -1087,6 +1217,15 @@ class SqliteOperationalJournal:
                     turn.client_message_id,
                     _unix(turn.created_at),
                 ),
+            )
+            updated_at = journal._session_mutation_time(session, requested=turn.created_at)
+            journal._executor_or_raise().execute(
+                """
+                UPDATE sessions
+                SET updated_at_unix = ?
+                WHERE session_id = ? AND workspace_id = ?
+                """,
+                (_unix(updated_at), turn.session_id, workspace_id),
             )
             loaded = journal.get_turn(workspace_id, turn.turn_id)
             if loaded is None:
@@ -1322,13 +1461,14 @@ class SqliteOperationalJournal:
                     ),
                 )
             new_position = expected + len(records) - 1
+            updated_at = journal._session_mutation_time(session)
             executor.execute(
                 """
                 UPDATE sessions
                 SET conversation_position = ?, updated_at_unix = ?
                 WHERE session_id = ? AND workspace_id = ?
                 """,
-                (new_position, _unix(session.updated_at), session_id, workspace_id),
+                (new_position, _unix(updated_at), session_id, workspace_id),
             )
             loaded = journal.get_session(workspace_id, session_id)
             if loaded is None:
@@ -2792,6 +2932,32 @@ class SqliteOperationalJournal:
                 StorageErrorCode.UNAVAILABLE, "operational journal write is not active"
             )
         return self._executor
+
+    def _session_mutation_time(
+        self,
+        session: DurableSession,
+        *,
+        requested: datetime | None = None,
+    ) -> datetime:
+        """Return one strictly monotonic Session token per outer transaction.
+
+        Session timestamps are stored as whole Unix seconds. Advancing by at least one second keeps
+        optimistic concurrency reliable even when multiple commands use the same injected clock
+        value or occur within one wall-clock second. Nested journal calls in one transaction share
+        the same token so a turn commit remains one atomic Session mutation.
+        """
+
+        self._executor_or_raise()
+        if session.session_id in self._touched_session_ids:
+            current = self.get_session(session.workspace_id, session.session_id)
+            return current.updated_at if current is not None else session.updated_at
+        candidate = self._transaction_time or self.now()
+        candidate_unix = _unix(candidate)
+        if requested is not None:
+            candidate_unix = max(candidate_unix, _unix(requested))
+        next_unix = max(candidate_unix, _unix(session.updated_at) + 1)
+        self._touched_session_ids.add(session.session_id)
+        return datetime.fromtimestamp(next_unix, UTC)
 
     def _read_one(self, sql: str, parameters: tuple[object, ...]) -> tuple[object, ...] | None:
         rows = self._read_all(sql, parameters)

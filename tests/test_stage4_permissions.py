@@ -348,6 +348,15 @@ def test_grant_commands_are_receipted_workspace_scoped_and_revocable(tmp_path):
                 command_id="cmd_grant_2",
             )
         assert error.value.code is ApplicationErrorCode.CONFLICT
+        with pytest.raises(ApplicationError) as stale:
+            api.revoke_grant(
+                created.value.grant_id,
+                reason="Stale client attempt",
+                expected_row_version=2,
+                command_id="cmd_revoke_stale",
+            )
+        assert stale.value.code is ApplicationErrorCode.STALE
+        assert api.get_grant(created.value.grant_id).revoked_at is None
         revoked = api.revoke_grant(
             created.value.grant_id,
             reason="User stopped the elevated run",

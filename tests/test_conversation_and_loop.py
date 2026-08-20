@@ -7,6 +7,7 @@ import asyncio
 import pytest
 from pydantic import ValidationError
 
+from morrow.core.application import ApplicationError, ApplicationErrorCode
 from morrow.core.models import (
     AssistantMessage,
     FinishReason,
@@ -318,6 +319,51 @@ async def test_history_admission_failure_is_invalid_response_not_internal():
     assert events[-2].payload["stop_code"] == "invalid_response"
     assert events[-1].payload["stop_code"] == "invalid_response"
     assert events[-2].payload["message"] != "模型服务发生未预期错误"
+
+
+@pytest.mark.asyncio
+async def test_pre_start_runtime_failure_still_emits_one_complete_event_pair():
+    class FailingCommitter:
+        def submit_user(self, *_args, **_kwargs):
+            raise RuntimeError("pre-start failure")
+
+    provider = ScriptedModelProvider(["must not run"])
+    session = Session(session_id="s", committer=FailingCommitter())
+    events = [
+        event
+        async for event in AgentLoop(
+            provider,
+            ModelRef(provider_id="p", model_id="m"),
+            make_context_builder(),
+        ).run_task(session, "go")
+    ]
+
+    assert [event.type for event in events] == ["turn.started", "error", "turn.completed"]
+    assert events[1].payload["message"] == "任务执行发生未预期错误"
+    assert provider.stream_calls == []
+
+
+@pytest.mark.asyncio
+async def test_pre_start_application_error_keeps_stable_non_provider_message():
+    class RejectingCommitter:
+        def submit_user(self, *_args, **_kwargs):
+            raise ApplicationError(ApplicationErrorCode.INVALID, "durable Session state changed")
+
+    provider = ScriptedModelProvider(["must not run"])
+    session = Session(session_id="s", committer=RejectingCommitter())
+    events = [
+        event
+        async for event in AgentLoop(
+            provider,
+            ModelRef(provider_id="p", model_id="m"),
+            make_context_builder(),
+        ).run_task(session, "go")
+    ]
+
+    assert [event.type for event in events] == ["turn.started", "error", "turn.completed"]
+    assert events[1].payload["message"] == "durable Session state changed"
+    assert "模型服务" not in events[1].payload["message"]
+    assert provider.stream_calls == []
 
 
 @pytest.mark.asyncio

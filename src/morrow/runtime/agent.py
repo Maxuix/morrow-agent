@@ -9,6 +9,7 @@ import time
 from collections.abc import AsyncIterator, Callable
 
 from morrow.application.context import ContextBudgetError
+from morrow.core.application import ApplicationError
 from morrow.core.capabilities import PolicyVerdict, ToolRunContext
 from morrow.core.events import completion_payload, make_event
 from morrow.core.execution import (
@@ -939,7 +940,10 @@ class AgentLoop:
                 completion_payload(FinishReason.CANCELLED, visible),
             )
             return
-        except Exception:
+        except Exception as exc:
+            if not started:
+                started = True
+                yield event("turn.started", {})
             unresolved = session.log.unresolved_call_ids
             interrupted = self._close_unresolved(
                 session,
@@ -961,7 +965,8 @@ class AgentLoop:
                 except ConversationLogError:
                     pass
             retain_facts(FinishReason.ERROR.value)
-            for item in fatal("模型服务发生未预期错误", AgentStopCode.INTERNAL):
+            message = exc.message if isinstance(exc, ApplicationError) else "任务执行发生未预期错误"
+            for item in fatal(message, AgentStopCode.INTERNAL):
                 yield item
             return
         finally:

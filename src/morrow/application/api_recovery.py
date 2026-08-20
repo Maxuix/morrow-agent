@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
+
 from morrow.core.application import (
     ApplicationCommandDisposition,
     ApplicationCommandReceipt,
@@ -14,6 +16,7 @@ from morrow.core.domain import (
     DurableAgentRun,
     DurableSession,
     SessionHealth,
+    SessionLifecycle,
     TaskOutcomeTrigger,
     TaskRunStatus,
     TurnSubmitDisposition,
@@ -64,6 +67,11 @@ class RecoveryApplicationService:
                     ApplicationErrorCode.NEEDS_RECOVERY, "recovery result is missing"
                 )
             return ApplicationCommandResult(value, replay)
+        if report.status is not RecoveryReportStatus.OPEN:
+            raise ApplicationError(
+                ApplicationErrorCode.INVALID,
+                "Recovery report is already closed",
+            )
         try:
             resumed_agent_run_id: list[str] = []
             updated, recovery_receipt, planned = api.recovery.decide(
@@ -72,6 +80,7 @@ class RecoveryApplicationService:
                 resolution=resolution,
                 item_id=item_id,
                 log=log,
+                now=api.clock(),
             )
             if recovery_receipt.kind == "conflict":
                 raise ApplicationError(
@@ -110,6 +119,17 @@ class RecoveryApplicationService:
                             "recovery result is missing",
                         )
                     return ApplicationCommandResult(value, existing)
+                current = txn.get_report(api.workspace_id, report.report_id)
+                if current is None:
+                    raise ApplicationError(
+                        ApplicationErrorCode.NOT_FOUND,
+                        "Recovery report is missing",
+                    )
+                if current.status is not RecoveryReportStatus.OPEN:
+                    raise ApplicationError(
+                        ApplicationErrorCode.INVALID,
+                        "Recovery report is already closed",
+                    )
                 value = api.recovery.commit_decision(
                     updated,
                     recovery_receipt,
@@ -207,6 +227,14 @@ class RecoveryApplicationService:
         session = txn.get_session(api.workspace_id, report.session_id)
         if session is None:
             raise StorageError(StorageErrorCode.NOT_FOUND, "operational session is missing")
+        if (
+            resolution is RecoveryResolution.RESUME
+            and session.lifecycle is not SessionLifecycle.ACTIVE
+        ):
+            raise ApplicationError(
+                ApplicationErrorCode.INVALID,
+                "only an active Session can resume recovery",
+            )
 
         health = SessionHealth.NEEDS_RECOVERY
         current_task_run_id = session.current_task_run_id
@@ -233,6 +261,10 @@ class RecoveryApplicationService:
                         session_id=previous.session_id,
                         resume_of_agent_run_id=previous.agent_run_id,
                         snapshot=snapshot,
+                        created_at=max(
+                            api.journal.now(),
+                            previous.created_at + timedelta(seconds=1),
+                        ),
                     ),
                 )
                 resumed_agent_run_id.append(new_id)

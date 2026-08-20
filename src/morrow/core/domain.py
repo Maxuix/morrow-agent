@@ -62,6 +62,15 @@ class SessionHealth(StrEnum):
     READ_ONLY = "read_only"
 
 
+def session_can_start_work(
+    lifecycle: SessionLifecycle,
+    health: SessionHealth,
+) -> bool:
+    """Return whether a Session may start or resume foreground Turn/TaskRun work."""
+
+    return lifecycle is SessionLifecycle.ACTIVE and health is SessionHealth.OK
+
+
 class TaskRunStatus(StrEnum):
     """Durable foreground TaskRun states owned by Subplan 40."""
 
@@ -584,8 +593,6 @@ class DurableSession(ProtocolModel):
             raise ValueError("forked Session must include a fork reason")
         if not has_parent and self.parent_checkpoint_id is not None:
             raise ValueError("checkpoint provenance requires a parent Session")
-        if has_parent and self.current_task_run_id is not None:
-            raise ValueError("forked Session cannot inherit a current TaskRun")
         if not has_parent and self.fork_reason is not None:
             raise ValueError("fork reason requires a parent Session")
         if (

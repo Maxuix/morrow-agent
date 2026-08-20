@@ -210,6 +210,7 @@ class OperationalStoreSession:
         health: StoreHealth,
         schema_version: int,
         retry_policy: BusyRetryPolicy,
+        clock: StoreClock,
         failure_injector: Callable[[str], None] | None = None,
     ) -> None:
         self.mode = mode
@@ -217,9 +218,15 @@ class OperationalStoreSession:
         self.schema_version = schema_version
         self._connection = connection
         self._retry_policy = retry_policy
+        self._clock = clock
         self._failure_injector = failure_injector
         self._owner_thread_id = threading.get_ident()
         self._closed = False
+
+    def now(self) -> datetime:
+        """Return the store-scoped wall clock shared by transactional adapters."""
+
+        return self._clock.now()
 
     def _fail(self, point: str) -> None:
         if self._failure_injector:
@@ -251,23 +258,36 @@ class OperationalStoreSession:
         if self.mode not in {StoreOpenMode.READ_WRITE, StoreOpenMode.CREATE}:
             raise StorageError(StorageErrorCode.UNAVAILABLE, "operational store is not writable")
 
-        def attempt() -> T:
-            try:
-                self._connection.execute("BEGIN IMMEDIATE")
-            except sqlite3.Error as exc:
-                raise translate_sqlite_error(exc) from exc
-            try:
-                self._fail("begin")
-                result = work(SqliteExecutor(self._connection))
-                self._fail("before_commit")
-                self._connection.execute("COMMIT")
-                self._fail("after_commit")
-                return result
-            except Exception:
-                rollback_quietly(self._connection)
-                raise
+        return run_with_busy_retry(lambda: self._write_attempt(work), self._retry_policy)
 
-        return run_with_busy_retry(attempt, self._retry_policy)
+    def run_write_once[T](self, work: Callable[[SqliteExecutor], T]) -> T:
+        """Run a non-replayable write attempt, translating BUSY without retrying the body."""
+
+        self._assert_open_owner()
+        if self.mode not in {StoreOpenMode.READ_WRITE, StoreOpenMode.CREATE}:
+            raise StorageError(StorageErrorCode.UNAVAILABLE, "operational store is not writable")
+        try:
+            return self._write_attempt(work)
+        except StorageError:
+            raise
+        except sqlite3.Error as exc:
+            raise translate_sqlite_error(exc) from exc
+
+    def _write_attempt[T](self, work: Callable[[SqliteExecutor], T]) -> T:
+        try:
+            self._connection.execute("BEGIN IMMEDIATE")
+        except sqlite3.Error as exc:
+            raise translate_sqlite_error(exc) from exc
+        try:
+            self._fail("begin")
+            result = work(SqliteExecutor(self._connection))
+            self._fail("before_commit")
+            self._connection.execute("COMMIT")
+            self._fail("after_commit")
+            return result
+        except BaseException:
+            rollback_quietly(self._connection)
+            raise
 
     def close(self) -> None:
         if self._closed:
@@ -410,6 +430,7 @@ class OperationalStore:
                 health=StoreHealth.OK,
                 schema_version=classified.schema_version or 0,
                 retry_policy=self.retry_policy,
+                clock=self.clock,
                 failure_injector=self.failure_injector,
             )
         except StorageError:
@@ -457,6 +478,7 @@ class OperationalStore:
                     health=health,
                     schema_version=classified.schema_version or 0,
                     retry_policy=self.retry_policy,
+                    clock=self.clock,
                     failure_injector=self.failure_injector,
                 )
             health = classified.health or StoreHealth.NEEDS_REPAIR
@@ -466,6 +488,7 @@ class OperationalStore:
                 health=health,
                 schema_version=classified.schema_version or 0,
                 retry_policy=self.retry_policy,
+                clock=self.clock,
                 failure_injector=self.failure_injector,
             )
         except StorageError:
@@ -519,6 +542,7 @@ class OperationalStore:
                 health=StoreHealth.OK,
                 schema_version=self.registry.supported_version,
                 retry_policy=self.retry_policy,
+                clock=self.clock,
                 failure_injector=self.failure_injector,
             )
         except StorageError:

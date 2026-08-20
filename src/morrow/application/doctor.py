@@ -2,18 +2,29 @@
 
 from __future__ import annotations
 
+import os
+import stat
 from collections import Counter
 from pathlib import Path
 
 from morrow.adapters.state.artifacts import FilesystemArtifactStore
 from morrow.adapters.state.journal import SqliteOperationalJournal
 from morrow.adapters.state.operational import OperationalStore
-from morrow.core.artifacts import ArtifactIntegrityError, ArtifactState
+from morrow.core.artifacts import (
+    ARTIFACT_FILE_SUFFIX,
+    ARTIFACT_TEMP_SUFFIX,
+    ArtifactIntegrityError,
+    ArtifactState,
+)
 from morrow.core.doctor import DoctorHealth, DoctorIssue, DoctorReport, DoctorSeverity
-from morrow.core.domain import WORKSPACE_ID_PREFIX, validate_prefixed_id
+from morrow.core.domain import (
+    WORKSPACE_ID_PREFIX,
+    SessionLifecycle,
+    validate_prefixed_id,
+)
 from morrow.core.execution import ToolExecutionState
 from morrow.core.permissions import capability_grant_digest
-from morrow.core.store import StorageError, StoreHealth, StoreOpenMode
+from morrow.core.store import DIRECTORY_MODE, FILE_MODE, StorageError, StoreHealth, StoreOpenMode
 from morrow.runtime.conversation import ConversationSnapshot
 from morrow.runtime.durable_log import conversation_record_from_durable
 
@@ -191,6 +202,30 @@ class OperationalDoctor:
                 )
             tasks = journal.list_task_runs(workspace_id, session.session_id)
             counts["task_runs"] += len(tasks)
+            current_task = next(
+                (task for task in tasks if task.task_run_id == session.current_task_run_id),
+                None,
+            )
+            if session.current_task_run_id is not None and current_task is None:
+                issues.append(
+                    self._issue(
+                        "task_pointer",
+                        DoctorSeverity.ERROR,
+                        "Session points at a missing TaskRun",
+                    )
+                )
+            elif (
+                session.lifecycle is SessionLifecycle.ARCHIVED
+                and current_task is not None
+                and not current_task.status.is_terminal
+            ):
+                issues.append(
+                    self._issue(
+                        "archived_active_task",
+                        DoctorSeverity.ERROR,
+                        "archived Session points at an active TaskRun",
+                    )
+                )
             for task in tasks:
                 transitions = journal.list_task_transitions(workspace_id, task.task_run_id)
                 counts["task_transitions"] += len(transitions)
@@ -245,6 +280,22 @@ class OperationalDoctor:
                         "artifact_staging", DoctorSeverity.WARNING, "Artifact remains in staging"
                     )
                 )
+        unsafe_layout = self._unsafe_artifact_layout_count(filesystem)
+        if unsafe_layout:
+            counts["orphan_candidates"] = unsafe_layout
+            counts["artifact_managed_unreferenced"] = 0
+            counts["artifact_unmanaged_removable"] = 0
+            counts["artifact_unsafe_refused"] = unsafe_layout
+            issues.append(
+                self._issue(
+                    "artifact_unsafe_refused",
+                    DoctorSeverity.ERROR,
+                    "unsafe Artifact layout was refused before candidate inspection",
+                    count=unsafe_layout,
+                )
+            )
+            return
+        for item in metadata:
             if item.state is not ArtifactState.AVAILABLE:
                 continue
             try:
@@ -257,21 +308,162 @@ class OperationalDoctor:
                     self._issue(code, DoctorSeverity.ERROR, "Artifact bytes do not match metadata")
                 )
         try:
+            global_metadata, global_references = self._global_artifact_authority(journal)
             orphan = filesystem.orphan_report(
-                metadata, referenced_ids=frozenset(item[0] for item in references)
+                global_metadata,
+                referenced_ids=global_references,
             )
-            counts["orphan_candidates"] = len(orphan.candidates)
-            if orphan.candidates:
+            known_ids = {item.artifact_id for item in global_metadata}
+            managed_unreferenced = 0
+            unmanaged_removable = 0
+            unsafe_refused = 0
+            classified_paths: set[tuple[str | None, Path]] = set()
+            for candidate in orphan.candidates:
+                key = (candidate.artifact_id, candidate.path.absolute())
+                if key in classified_paths:
+                    continue
+                classified_paths.add(key)
+                if candidate.artifact_id in known_ids:
+                    managed_unreferenced += 1
+                elif (
+                    candidate.artifact_id not in global_references
+                    and self._is_removable_unmanaged(filesystem, candidate)
+                ):
+                    unmanaged_removable += 1
+                else:
+                    unsafe_refused += 1
+            counts["orphan_candidates"] = (
+                managed_unreferenced + unmanaged_removable + unsafe_refused
+            )
+            counts["artifact_managed_unreferenced"] = managed_unreferenced
+            counts["artifact_unmanaged_removable"] = unmanaged_removable
+            counts["artifact_unsafe_refused"] = unsafe_refused
+            if managed_unreferenced:
                 issues.append(
                     self._issue(
-                        "artifact_orphan",
+                        "artifact_managed_unreferenced",
                         DoctorSeverity.WARNING,
-                        "managed Artifact paths include unreferenced candidates",
-                        count=len(orphan.candidates),
+                        "managed Artifact metadata is currently unreferenced",
+                        count=managed_unreferenced,
+                    )
+                )
+            if unmanaged_removable:
+                issues.append(
+                    self._issue(
+                        "artifact_unmanaged_removable",
+                        DoctorSeverity.WARNING,
+                        "private unmanaged Artifact files are eligible for cleanup",
+                        count=unmanaged_removable,
+                    )
+                )
+            if unsafe_refused:
+                issues.append(
+                    self._issue(
+                        "artifact_unsafe_refused",
+                        DoctorSeverity.WARNING,
+                        "unsafe Artifact paths were refused as cleanup targets",
+                        count=unsafe_refused,
                     )
                 )
         except StorageError:
             raise
+
+    @staticmethod
+    def _global_artifact_authority(journal):
+        metadata = []
+        referenced: set[str] = set()
+        for workspace_id in journal.list_workspace_ids():
+            metadata.extend(journal.list_artifacts(workspace_id))
+            referenced.update(item[0] for item in journal.list_artifact_references(workspace_id))
+        return tuple(metadata), frozenset(referenced)
+
+    @staticmethod
+    def _is_removable_unmanaged(filesystem, candidate) -> bool:
+        if candidate.artifact_id is None:
+            return False
+        path = candidate.path.absolute()
+        allowed = {
+            filesystem.artifacts_dir.absolute(): ARTIFACT_FILE_SUFFIX,
+            filesystem.artifacts_tmp.absolute(): ARTIFACT_TEMP_SUFFIX,
+        }
+        suffix = allowed.get(path.parent)
+        if suffix is None or path.name != f"{candidate.artifact_id}{suffix}":
+            return False
+        if not OperationalDoctor._is_safe_managed_directory(filesystem.root, path.parent):
+            return False
+        try:
+            info = path.stat(follow_symlinks=False)
+        except OSError:
+            return False
+        return (
+            stat.S_ISREG(info.st_mode)
+            and info.st_nlink == 1
+            and stat.S_IMODE(info.st_mode) == FILE_MODE
+        )
+
+    @staticmethod
+    def _is_safe_managed_directory(root: Path, directory: Path) -> bool:
+        root = root.absolute()
+        try:
+            relative = directory.absolute().relative_to(root)
+        except ValueError:
+            return False
+        if not OperationalDoctor._is_safe_directory(root, root=True):
+            return False
+        current = root
+        for part in relative.parts:
+            current /= part
+            if not OperationalDoctor._is_safe_directory(current, root=False):
+                return False
+        return True
+
+    @staticmethod
+    def _unsafe_artifact_layout_count(filesystem: FilesystemArtifactStore) -> int:
+        """Validate the managed chain before any filesystem candidate traversal."""
+
+        root = filesystem.root.absolute()
+        if not OperationalDoctor._is_safe_directory(root, root=True):
+            return 1
+        if not OperationalDoctor._is_safe_managed_directory(root, filesystem.artifacts_dir):
+            return 1
+        if not OperationalDoctor._is_safe_managed_directory(root, filesystem.artifacts_tmp):
+            return 1
+        return 0
+
+    @staticmethod
+    def _is_safe_directory(path: Path, *, root: bool) -> bool:
+        """Reject links and unsafe modes, confirming the lstat target with O_NOFOLLOW."""
+
+        try:
+            info = path.stat(follow_symlinks=False)
+        except OSError:
+            return False
+        mode = stat.S_IMODE(info.st_mode)
+        if not stat.S_ISDIR(info.st_mode):
+            return False
+        if root and mode & 0o022:
+            return False
+        if not root and mode != DIRECTORY_MODE:
+            return False
+
+        flags = os.O_RDONLY
+        if hasattr(os, "O_DIRECTORY"):
+            flags |= os.O_DIRECTORY
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+        descriptor: int | None = None
+        try:
+            descriptor = os.open(path, flags)
+            opened = os.fstat(descriptor)
+            return stat.S_ISDIR(opened.st_mode) and (opened.st_dev, opened.st_ino) == (
+                info.st_dev,
+                info.st_ino,
+            )
+        except OSError:
+            return False
+        finally:
+            if descriptor is not None:
+                os.close(descriptor)
 
     def _inspect_permissions(self, journal, workspace_id, counts, issues) -> None:
         grants = journal.list_capability_grants(workspace_id)

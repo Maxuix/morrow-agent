@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import random
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
+import morrow.bootstrap as bootstrap
+from morrow.adapters.credentials.keyring import MemoryCredentialStore
 from morrow.adapters.state.journal import SqliteOperationalJournal
 from morrow.adapters.state.operational import BusyRetryPolicy, OperationalStore
 from morrow.application.checkpoints import (
@@ -14,6 +17,7 @@ from morrow.application.checkpoints import (
     ContextCheckpointService,
     SessionForkService,
 )
+from morrow.bootstrap import build_application, build_session_application
 from morrow.core.artifacts import (
     ArtifactKind,
     ArtifactMetadata,
@@ -22,13 +26,18 @@ from morrow.core.artifacts import (
     ArtifactState,
 )
 from morrow.core.context import CheckpointOmissionReason, ContextCheckpoint
-from morrow.core.domain import ArtifactReference, DurableSession, sha256_digest
+from morrow.core.domain import ArtifactReference, DurableSession, TaskRunStatus, sha256_digest
 from morrow.core.faults import FaultPoint, InjectedFault, OnceFaultInjector
-from morrow.core.models import AssistantMessage, FinishReason, UserMessage
+from morrow.core.models import AssistantMessage, FinishReason, ModelRef, UserMessage
 from morrow.runtime.conversation import ConversationLog
 from morrow.runtime.durable_log import DurableConversationWriter, restore_conversation_log
 from morrow.runtime.session import Session
-from morrow.testing import FixedClock, FixedIdSource, make_context_builder
+from morrow.testing import (
+    FixedClock,
+    FixedIdSource,
+    ScriptedModelProvider,
+    make_context_builder,
+)
 
 
 def _journal(tmp_path: Path):
@@ -136,6 +145,162 @@ def test_checkpoint_requires_a_closed_boundary_and_fork_has_no_parent_copy(tmp_p
         assert log.snapshot().records[-1].sequence == 6
     finally:
         opened.close()
+
+
+@pytest.mark.asyncio
+async def test_fork_restored_through_production_bootstrap_can_complete_own_turn(tmp_path):
+    project = tmp_path / "project"
+    project.mkdir()
+    state_root = tmp_path / "state"
+    model = ModelRef(provider_id="p", model_id="m")
+
+    parent_app = build_application(
+        state_root=state_root,
+        credentials=MemoryCredentialStore(),
+    )
+    identity = parent_app.workspace_service.confirm(parent_app.workspace_service.resolve(project))
+    parent = build_session_application(
+        parent_app,
+        identity,
+        provider=ScriptedModelProvider(["parent answer"]),
+        model=model,
+    )
+    parent_session_id = parent.session.session_id
+    try:
+        await parent.orchestrator.dispatch("parent request")
+        parent_records = parent.persistence.journal.load_records(
+            identity.workspace_id, parent_session_id
+        )
+        checkpoint = parent.api.create_checkpoint(
+            parent_session_id,
+            checkpoint_id="chk_restart",
+            command_id="cmd_checkpoint",
+        ).value
+        child = parent.api.fork_session(
+            parent_session_id,
+            checkpoint_id=checkpoint.checkpoint_id,
+            reason="continue independently",
+            child_session_id="ses_child",
+            command_id="cmd_fork",
+        ).value
+        assert child.current_task_run_id is None
+        assert (
+            parent.persistence.journal.load_records(identity.workspace_id, child.session_id) == ()
+        )
+    finally:
+        parent.persistence.close()
+
+    resumed_app = build_application(
+        state_root=state_root,
+        credentials=MemoryCredentialStore(),
+    )
+    resumed_identity = resumed_app.workspace_service.confirm(
+        resumed_app.workspace_service.resolve(project)
+    )
+    resumed = build_session_application(
+        resumed_app,
+        resumed_identity,
+        provider=ScriptedModelProvider(["child answer"]),
+        model=model,
+        resume_session_id=child.session_id,
+    )
+    try:
+        assert [message.content for message in resumed.session.messages] == [
+            "parent request",
+            "parent answer",
+        ]
+
+        await resumed.orchestrator.dispatch("child request")
+
+        child_row = resumed.persistence.journal.get_session(
+            resumed_identity.workspace_id, child.session_id
+        )
+        assert child_row is not None
+        assert child_row.current_task_run_id is not None
+        child_task = resumed.tasks.get(child_row.current_task_run_id)
+        assert child_task is not None
+        assert child_task.session_id == child.session_id
+        assert child_task.status is TaskRunStatus.READY_FOR_ACCEPTANCE
+        assert [message.content for message in resumed.session.messages] == [
+            "parent request",
+            "parent answer",
+            "child request",
+            "child answer",
+        ]
+        assert (
+            len(
+                resumed.persistence.journal.load_records(
+                    resumed_identity.workspace_id, child.session_id
+                )
+            )
+            == 3
+        )
+        assert (
+            resumed.persistence.journal.load_records(
+                resumed_identity.workspace_id, parent_session_id
+            )
+            == parent_records
+        )
+    finally:
+        resumed.persistence.close()
+
+
+@pytest.mark.asyncio
+async def test_production_composition_uses_store_clock_for_session_artifact_checkpoint_and_fork(
+    tmp_path, monkeypatch
+):
+    project = tmp_path / "project"
+    project.mkdir()
+    state_root = tmp_path / "state"
+    stamp = datetime(2040, 2, 3, 4, 5, 6, tzinfo=UTC)
+    clock = FixedClock(stamp)
+    store = OperationalStore(state_root, clock=clock, maintenance_timeout=0)
+    handle = store.initialize()
+    monkeypatch.setattr(bootstrap, "_open_operational_store", lambda _app: handle)
+
+    app = build_application(
+        state_root=state_root,
+        credentials=MemoryCredentialStore(),
+        id_source=FixedIdSource(),
+    )
+    identity = app.workspace_service.confirm(app.workspace_service.resolve(project))
+    products = build_session_application(
+        app,
+        identity,
+        provider=ScriptedModelProvider(["parent answer"]),
+        model=ModelRef(provider_id="p", model_id="m"),
+    )
+    try:
+        session_id = products.session.session_id
+        created = products.api.get_session(session_id)
+        assert created.created_at == stamp
+        assert created.updated_at == stamp
+
+        artifact = products.artifacts.publish_bytes(
+            b"clock evidence",
+            kind=ArtifactKind.TEST_REPORT,
+            session_id=session_id,
+        )
+        await products.orchestrator.dispatch("parent request")
+        checkpoint = products.api.create_checkpoint(
+            session_id,
+            checkpoint_id="chk_clock",
+            command_id="cmd_checkpoint_clock",
+        ).value
+        child = products.api.fork_session(
+            session_id,
+            checkpoint_id=checkpoint.checkpoint_id,
+            child_session_id="ses_clock_child",
+            command_id="cmd_fork_clock",
+        ).value
+
+        assert artifact.created_at == stamp
+        assert artifact.updated_at == stamp
+        assert checkpoint.created_at == stamp
+        assert child.created_at == stamp
+        assert child.updated_at == stamp
+    finally:
+        products.persistence.close()
 
 
 def test_fork_rejects_an_open_turn_and_context_builder_projects_checkpoint(tmp_path):

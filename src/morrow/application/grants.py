@@ -84,11 +84,11 @@ class CapabilityGrantService:
                 "capability grant is outside the workspace",
                 code=ApplicationErrorCode.CROSS_WORKSPACE,
             )
+        if grant.row_version != expected_row_version:
+            raise CapabilityGrantError(
+                "capability grant row version is stale", code=ApplicationErrorCode.STALE
+            )
         if grant.revoked_at is not None:
-            if grant.row_version != expected_row_version:
-                raise CapabilityGrantError(
-                    "capability grant row version is stale", code=ApplicationErrorCode.STALE
-                )
             return grant
         revoked = grant.model_copy(
             update={

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import random
+import sqlite3
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -10,16 +12,19 @@ import pytest
 from morrow.adapters.state.journal import SqliteOperationalJournal
 from morrow.adapters.state.migrations import V1, V2, V3, V4, MigrationRegistry
 from morrow.adapters.state.operational import BusyRetryPolicy, OperationalStore
+from morrow.core.artifacts import ArtifactKind, ArtifactMetadata, ArtifactSensitivity
 from morrow.core.domain import (
     AgentRunSnapshot,
     DurableAgentRun,
     DurableConversationRecord,
     DurableSession,
     DurableTaskRun,
+    DurableTaskRunTransition,
     DurableTurn,
     SessionHealth,
     SessionLifecycle,
     SourceRevisionRef,
+    TaskRunStatus,
     TurnSubmitDisposition,
     TurnSubmitReceipt,
     sha256_digest,
@@ -107,6 +112,110 @@ def test_initialize_creates_v3_business_tables(tmp_path):
             "recovery_reports",
             "recovery_receipts",
         }.issubset(names)
+        assert journal.list_sessions("ws_a") == ()
+    finally:
+        session.close()
+
+
+def test_global_artifact_authority_includes_reference_only_fk_anomalies(tmp_path):
+    store, session, journal = _open_journal(tmp_path)
+    try:
+        journal.reserve_artifact(
+            "ws_metadata",
+            ArtifactMetadata(
+                artifact_id="art_metadata",
+                workspace_id="ws_metadata",
+                kind=ArtifactKind.TEST_REPORT,
+                sensitivity=ArtifactSensitivity.REDACTED,
+                sha256=_digest("metadata"),
+                byte_size=0,
+            ),
+        )
+    finally:
+        session.close()
+
+    connection = sqlite3.connect(store.layout.database)
+    try:
+        connection.execute(
+            """
+            INSERT INTO artifact_references(
+                artifact_id, workspace_id, owner_kind, owner_id, role, created_at_unix
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "art_reference_only",
+                "ws_reference_only",
+                "tool_execution",
+                "tex_missing",
+                "evidence",
+                1,
+            ),
+        )
+        connection.execute(
+            """
+            INSERT INTO checkpoint_artifact_references(
+                artifact_id, workspace_id, checkpoint_id, role, created_at_unix
+            ) VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                "art_checkpoint_only",
+                "ws_checkpoint_only",
+                "chk_missing",
+                "evidence",
+                1,
+            ),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+    with store.open(StoreOpenMode.READ_WRITE) as opened:
+        reopened = SqliteOperationalJournal(opened)
+        assert reopened.has_global_artifact_authority("art_metadata") is True
+        assert reopened.has_global_artifact_authority("art_reference_only") is True
+        assert reopened.has_global_artifact_authority("art_checkpoint_only") is True
+        assert reopened.has_global_artifact_authority("art_missing") is False
+        assert {"ws_metadata", "ws_reference_only", "ws_checkpoint_only"}.issubset(
+            reopened.list_workspace_ids()
+        )
+
+
+def test_transact_once_does_not_replay_busy_body_and_resets_journal_state(tmp_path):
+    _store, session, journal = _open_journal(tmp_path)
+    attempts: list[int] = []
+
+    def busy(_journal: SqliteOperationalJournal) -> None:
+        attempts.append(1)
+        raise sqlite3.OperationalError("database is locked")
+
+    try:
+        with pytest.raises(StorageError) as error:
+            journal.transact_once(busy)
+        assert error.value.code is StorageErrorCode.BUSY
+        assert attempts == [1]
+        assert journal.list_sessions("ws_a") == ()
+    finally:
+        session.close()
+
+
+def test_transact_once_fails_closed_inside_retryable_transaction(tmp_path):
+    _store, session, journal = _open_journal(tmp_path)
+    outer_attempts: list[int] = []
+    inner_attempts: list[int] = []
+
+    def inner(_journal: SqliteOperationalJournal) -> None:
+        inner_attempts.append(1)
+
+    def outer(txn: SqliteOperationalJournal) -> None:
+        outer_attempts.append(1)
+        txn.transact_once(inner)
+
+    try:
+        with pytest.raises(StorageError) as error:
+            journal.transact(outer)
+        assert error.value.code is StorageErrorCode.UNAVAILABLE
+        assert outer_attempts == [1]
+        assert inner_attempts == []
         assert journal.list_sessions("ws_a") == ()
     finally:
         session.close()
@@ -267,6 +376,85 @@ def test_quarantine_changes_health_not_lifecycle(tmp_path):
         session.close()
 
 
+@pytest.mark.parametrize(
+    "health",
+    (
+        SessionHealth.NEEDS_RECOVERY,
+        SessionHealth.QUARANTINED,
+        SessionHealth.READ_ONLY,
+    ),
+)
+def test_non_ok_session_health_blocks_new_task_turn_and_task_resume_at_journal(tmp_path, health):
+    _store, session, journal = _open_journal(tmp_path)
+    try:
+        journal.create_session(_session(), task=_task())
+        task = journal.get_task_run("ws_a", "task_1")
+        failed = journal.transition_task_run(
+            "ws_a",
+            task.task_run_id,
+            target=TaskRunStatus.FAILED,
+            transition=DurableTaskRunTransition(
+                transition_id="ttr_fail",
+                workspace_id="ws_a",
+                session_id="ses_1",
+                task_run_id=task.task_run_id,
+                from_status=TaskRunStatus.OPEN,
+                to_status=TaskRunStatus.FAILED,
+                reason="seed failed task",
+                attempt=task.attempt,
+            ),
+            expected_row_version=task.row_version,
+        )
+        row = journal.get_session("ws_a", "ses_1")
+        journal.save_session(
+            "ws_a",
+            row.model_copy(update={"health": health}),
+        )
+
+        with pytest.raises(StorageError) as task_error:
+            journal.create_task_run(
+                "ws_a",
+                _task("ws_a", "ses_1", "task_2"),
+                make_current=True,
+            )
+        with pytest.raises(StorageError) as turn_error:
+            journal.create_turn(
+                "ws_a",
+                DurableTurn(
+                    turn_id="turn_blocked",
+                    session_id="ses_1",
+                    task_run_id=failed.task_run_id,
+                    client_message_id="client-blocked",
+                ),
+            )
+        with pytest.raises(StorageError) as resume_error:
+            journal.transition_task_run(
+                "ws_a",
+                failed.task_run_id,
+                target=TaskRunStatus.OPEN,
+                transition=DurableTaskRunTransition(
+                    transition_id="ttr_resume",
+                    workspace_id="ws_a",
+                    session_id="ses_1",
+                    task_run_id=failed.task_run_id,
+                    from_status=TaskRunStatus.FAILED,
+                    to_status=TaskRunStatus.OPEN,
+                    reason="blocked resume",
+                    attempt=failed.attempt + 1,
+                ),
+                expected_row_version=failed.row_version,
+            )
+
+        assert task_error.value.code is StorageErrorCode.UNAVAILABLE
+        assert turn_error.value.code is StorageErrorCode.UNAVAILABLE
+        assert resume_error.value.code is StorageErrorCode.UNAVAILABLE
+        assert journal.get_task_run("ws_a", "task_2") is None
+        assert journal.get_turn("ws_a", "turn_blocked") is None
+        assert journal.get_task_run("ws_a", failed.task_run_id).status is TaskRunStatus.FAILED
+    finally:
+        session.close()
+
+
 def test_turn_and_receipt_uniqueness_is_per_session(tmp_path):
     _store, session, journal = _open_journal(tmp_path)
     try:
@@ -371,6 +559,62 @@ def test_conversation_position_is_monotonic_and_rolls_back(tmp_path):
         assert journal.get_session("ws_a", "ses_1").conversation_position == 1
         assert [record.record_id for record in journal.load_records("ws_a", "ses_1")] == ["rec_1"]
         assert journal.load_records("ws_b", "ses_1") == ()
+
+
+def test_atomic_turn_commit_advances_one_session_token_with_a_fixed_clock(tmp_path):
+    _store, session, journal = _open_journal(tmp_path)
+    stamp = FixedClock().value
+    try:
+        journal.create_session(
+            DurableSession(
+                session_id="ses_1",
+                workspace_id="ws_a",
+                created_at=stamp,
+                updated_at=stamp,
+            )
+        )
+
+        def work(txn: SqliteOperationalJournal) -> DurableSession:
+            txn.create_task_run(
+                "ws_a",
+                DurableTaskRun(
+                    task_run_id="task_1",
+                    session_id="ses_1",
+                    workspace_id="ws_a",
+                    created_at=stamp,
+                    updated_at=stamp,
+                ),
+                make_current=True,
+            )
+            txn.create_turn(
+                "ws_a",
+                DurableTurn(
+                    turn_id="turn_1",
+                    session_id="ses_1",
+                    task_run_id="task_1",
+                    client_message_id="client-1",
+                    created_at=stamp,
+                ),
+            )
+            return txn.append_records(
+                "ws_a",
+                (
+                    DurableConversationRecord(
+                        record_id="rec_1",
+                        session_id="ses_1",
+                        conversation_position=1,
+                        kind="message",
+                        payload={"role": "user", "content": "hello"},
+                    ),
+                ),
+            )
+
+        updated = journal.transact(work)
+        assert updated.current_task_run_id == "task_1"
+        assert updated.conversation_position == 1
+        assert updated.updated_at == stamp + timedelta(seconds=1)
+    finally:
+        session.close()
 
 
 def test_foreign_keys_reject_orphan_turns_and_runs(tmp_path):
