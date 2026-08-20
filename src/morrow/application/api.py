@@ -81,6 +81,7 @@ class OperationalApplicationService:
         clock: Callable[[], datetime] | None = None,
         learning_reviewer: LearningReviewerPort | None = None,
         learning_model=None,
+        config_service=None,
     ) -> None:
         self.journal = journal
         try:
@@ -115,6 +116,7 @@ class OperationalApplicationService:
         self.learning = LearningApplicationService(
             self.command_context,
             policy=self.learning_policy,
+            config_service=config_service,
         )
         self.memory = MemoryApplicationService(self.command_context)
         self.learning_reviews = LearningReviewRequestService(
@@ -302,6 +304,30 @@ class OperationalApplicationService:
 
     def edit_and_accept_learning_candidate(self, command):
         return self.learning.edit_and_accept_candidate(command)
+
+    def list_learning_promotions(self, *, state=None):
+        return self.learning.list_promotion_operations(state=state)
+
+    def get_learning_promotion(self, operation_id: str):
+        return self.learning.get_promotion_operation(operation_id)
+
+    def recover_learning_promotion(self, operation_id: str, *, action: str):
+        return self.learning.recover_promotion_operation(operation_id, action=action)
+
+    def preview_learning_undo(self, activation_id: str):
+        return self.learning.preview_learning_undo(activation_id)
+
+    def undo_learning_activation(self, activation_id: str, *, command_id: str):
+        return self.learning.undo_learning_activation(
+            activation_id,
+            command_id=command_id,
+        )
+
+    def get_learning_activation(self, activation_id: str):
+        return self.learning.get_learning_activation(activation_id)
+
+    def list_learning_activations(self, *, target: str | None = None, path: str | None = None):
+        return self.learning.list_learning_activations(target=target, path=path)
 
     def list_project_knowledge(self, **kwargs):
         return self.memory.list_knowledge(**kwargs)

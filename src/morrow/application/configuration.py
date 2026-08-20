@@ -6,7 +6,7 @@ import math
 from enum import StrEnum
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from morrow.core.capabilities import (
     OperationIntent,
@@ -14,7 +14,13 @@ from morrow.core.capabilities import (
     ToolCallContext,
     ToolHandlerOutcome,
 )
-from morrow.core.models import ToolEffect
+from morrow.core.domain import (
+    canonical_json_bytes,
+    refuse_secret_material,
+    require_payload_budget,
+    sha256_digest,
+)
+from morrow.core.models import StatePresence, ToolEffect
 from morrow.runtime.policy import ToolApproval, ToolExecutionPolicy
 from morrow.runtime.tools import RegisteredTool, ToolErrorCode, ToolExecutionError, make_tool
 
@@ -45,7 +51,7 @@ def _is_json_value(value: object) -> bool:
     return False
 
 
-def _validate_configuration_fields(model: BaseModel) -> None:
+def _validate_configuration_fields(model: BaseModel, *, validate_values: bool = True) -> None:
     scope = model.scope
     target = model.target
     operation = model.operation
@@ -75,6 +81,20 @@ def _validate_configuration_fields(model: BaseModel) -> None:
     if not _is_json_value(model.value):
         raise ValueError("value 必须是有限的 JSON 值")
     is_list = path in LIST_PATHS
+    if validate_values and not is_list and path in {"language", "name", "summary"}:
+        if not isinstance(model.value, str) or not model.value.strip():
+            raise ValueError(f"{path} 必须是非空字符串")
+        maximum = 128 if path == "language" else 2_048
+        if len(model.value) > maximum:
+            raise ValueError(f"{path} 超出长度限制")
+    if (
+        validate_values
+        and is_list
+        and (not isinstance(model.value, str) or not model.value.strip())
+    ):
+        raise ValueError(f"{path} 的值必须是非空字符串")
+    if validate_values and is_list and isinstance(model.value, str) and len(model.value) > 512:
+        raise ValueError(f"{path} 的值超出长度限制")
     if operation in {"append", "remove"} and not is_list:
         raise ValueError("标量字段只能使用 set 或 unset")
     if operation == "set" and is_list:
@@ -123,7 +143,9 @@ class ConfigurationCommand(BaseModel):
 
     @model_validator(mode="after")
     def valid_operation(self) -> ConfigurationCommand:
-        _validate_configuration_fields(self)
+        # The application service owns value/type validation so legacy callers can receive the
+        # stable ConfigurationValidationError instead of a construction-time Pydantic error.
+        _validate_configuration_fields(self, validate_values=False)
         return self
 
 
@@ -143,6 +165,57 @@ class ConfigurationChangeResult(BaseModel):
     operation: ConfigurationOperation
     path: str | None = None
     revision: int | None = None
+
+
+def configuration_state_digest(presence: StatePresence, value: BaseModel | None) -> str:
+    """Digest one configuration target without confusing missing and cleared state."""
+
+    payload = {
+        "presence": presence.value,
+        "value": value.model_dump(mode="json") if value is not None else None,
+    }
+    return sha256_digest(canonical_json_bytes(payload))
+
+
+class PreparedConfigurationChange(BaseModel):
+    """Bounded, immutable evidence for one configuration write.
+
+    The DTO is deliberately a change description rather than a cached target value.  Applying it
+    must reload the authority and prove that the exact state observed during preparation still
+    exists before publishing a new YAML revision.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    command: ConfigurationCommand
+    expected_revision: int | None = Field(default=None, ge=0)
+    before_presence: StatePresence
+    before_digest: str
+    after_digest: str
+    expected_applied_revision: int | None = Field(default=None, ge=1)
+    inverse_command: ConfigurationCommand | None = None
+    changed: bool
+    preview_lines: tuple[str, ...] = Field(max_length=16)
+    preparation_version: int = Field(default=1, ge=1, le=1)
+
+    @field_validator("before_digest", "after_digest")
+    @classmethod
+    def valid_digest(cls, value: str) -> str:
+        if len(value) != 64 or any(char not in "0123456789abcdef" for char in value):
+            raise ValueError("configuration digest must be a SHA-256 hex digest")
+        return value
+
+    @model_validator(mode="after")
+    def bounded_and_consistent(self) -> PreparedConfigurationChange:
+        payload = canonical_json_bytes(self.model_dump(mode="json"))
+        require_payload_budget(payload, 8 * 1024, label="prepared configuration")
+        refuse_secret_material(payload, label="prepared configuration")
+        if self.changed and self.expected_applied_revision is None:
+            if self.command.scope != "session":
+                raise ValueError("changed persisted configuration requires an applied revision")
+        if not self.changed and self.expected_applied_revision is not None:
+            raise ValueError("unchanged configuration cannot have an applied revision")
+        return self
 
 
 def render_configuration_preview(command: ConfigurationCommand) -> list[str]:

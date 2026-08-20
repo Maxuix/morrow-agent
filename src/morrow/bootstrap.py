@@ -52,7 +52,7 @@ from morrow.core.capabilities import (
 )
 from morrow.core.domain import DurableSession, SessionLifecycle
 from morrow.core.execution import missing_declarations
-from morrow.core.models import Preferences
+from morrow.core.models import Preferences, StatePresence
 from morrow.core.permissions import UNCONFINED_HOST_WARNING_DIGEST, CapabilityName
 from morrow.core.store import (
     StorageError,
@@ -282,6 +282,7 @@ def build_operational_api(
     *,
     tasks: TaskService | None = None,
     persistence=None,
+    config_service: ConfigPatchService | None = None,
 ) -> OperationalApplicationService:
     """Compose the shared command/query boundary over operational domain services."""
 
@@ -296,6 +297,8 @@ def build_operational_api(
         forks=services.forks,
         persistence=persistence,
         clock=services.journal.now,
+        config_service=config_service
+        or ConfigPatchService(app.project_store, app.global_store, workspace_id),
     )
 
 
@@ -313,7 +316,8 @@ def build_session_application(
     inspection = app.workspace_state_service.inspect(identity.workspace_id)
     profile_result = inspection.profile
     preferences_result = inspection.preferences
-    config = app.global_store.load().value
+    global_result = app.global_store.load()
+    config = global_result.value
     permission_profile = permission_profile or PermissionProfile()
     workspace_capability = WorkspaceCapability(
         workspace_id=identity.workspace_id,
@@ -338,6 +342,11 @@ def build_session_application(
         metrics_enabled=metrics_enabled,
         profile_revision=profile_result.revision or 0,
         preferences_revision=preferences_result.revision or 0,
+        global_preferences_revision=global_result.revision or 0,
+        profile_presence=profile_result.presence
+        or (StatePresence.PRESENT if profile_result.value else StatePresence.MISSING),
+        workspace_preferences_presence=preferences_result.presence
+        or (StatePresence.PRESENT if preferences_result.value else StatePresence.MISSING),
     )
     files = WorkspaceFileService(WorkspacePathResolver(workspace_capability.root))
     search = WorkspaceSearchService(files)
@@ -468,6 +477,7 @@ def build_session_application(
             operational,
             tasks=persistence.tasks,
             persistence=persistence,
+            config_service=config_service,
         )
 
         def create_foreground_grant(current_session: Session):

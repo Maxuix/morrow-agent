@@ -32,7 +32,13 @@ from morrow.core.domain import (
     sha256_digest,
 )
 from morrow.core.journal import SessionRestoreJournalPort, TurnLifecycleJournalPort
-from morrow.core.models import FinishReason, ModelRef, Preferences, ToolDefinition, UserMessage
+from morrow.core.models import (
+    FinishReason,
+    ModelRef,
+    StatePresence,
+    ToolDefinition,
+    UserMessage,
+)
 from morrow.core.ports import IdSource
 from morrow.core.recovery import RecoveryReport, RecoveryReportStatus
 from morrow.core.store import StorageError, StorageErrorCode
@@ -520,34 +526,43 @@ def build_agent_run_snapshot(
     tools: tuple[ToolDefinition, ...],
     runtime_instance_id: str,
 ) -> AgentRunSnapshot:
-    revisions: list[SourceRevisionRef] = []
-    if session.profile is not None:
-        revisions.append(
-            SourceRevisionRef(
-                kind="workspace_profile",
-                revision=session.profile_revision,
-                content_sha256=sha256_digest(
-                    canonical_json_bytes(session.profile.model_dump(mode="json"))
-                ),
+    def source_digest(presence: StatePresence, value) -> str:
+        return sha256_digest(
+            canonical_json_bytes(
+                {
+                    "presence": presence.value,
+                    "value": value.model_dump(mode="json") if value is not None else None,
+                }
             )
         )
-    if session.workspace_preferences != Preferences():
-        revisions.append(
-            SourceRevisionRef(
-                kind="workspace_preferences",
-                revision=session.preferences_revision,
-                content_sha256=sha256_digest(
-                    canonical_json_bytes(session.workspace_preferences.model_dump(mode="json"))
-                ),
-            )
-        )
+
+    revisions = (
+        SourceRevisionRef(
+            kind="global_config",
+            revision=session.global_preferences_revision,
+            content_sha256=source_digest(StatePresence.PRESENT, session.global_preferences),
+        ),
+        SourceRevisionRef(
+            kind="workspace_profile",
+            revision=session.profile_revision,
+            content_sha256=source_digest(session.profile_presence, session.profile),
+        ),
+        SourceRevisionRef(
+            kind="workspace_preferences",
+            revision=session.preferences_revision,
+            content_sha256=source_digest(
+                session.workspace_preferences_presence,
+                session.workspace_preferences,
+            ),
+        ),
+    )
     tool_payload = [tool.model_dump(mode="json") for tool in tools]
     return AgentRunSnapshot(
         profile=session.profile,
         preferences=session.preferences,
         model=model,
         provider_id=model.provider_id,
-        source_revisions=tuple(revisions),
+        source_revisions=revisions,
         run_policy_digest=sha256_digest(canonical_json_bytes(run_policy.model_dump(mode="json"))),
         tool_schema_digest=sha256_digest(canonical_json_bytes(tool_payload)),
         permission_profile_digest=sha256_digest(

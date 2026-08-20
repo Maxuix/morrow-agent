@@ -336,6 +336,22 @@ async def run_repl(
                     orchestrator, terminal, prompt_session, result.value
                 ):
                     return _closed_input(terminal)
+            if result.action == "learning_undo_preview":
+                confirmation = await _confirm(
+                    terminal,
+                    prompt_session,
+                    "确认撤销这项配置 activation？",
+                )
+                if confirmation == "closed":
+                    return _closed_input(terminal)
+                if confirmation != "yes":
+                    continue
+                try:
+                    value = _command_service(orchestrator).undo_learning_activation(result.value)
+                except (ValueError, RuntimeError) as exc:
+                    terminal.console.print(f"配置撤销失败：{exc}")
+                else:
+                    _show_learning_result(terminal, value)
             if result.action == "memory_lifecycle_preview":
                 if await _handle_memory_lifecycle(
                     orchestrator, terminal, prompt_session, result.value
@@ -370,9 +386,17 @@ def _show_learning_result(terminal: Terminal, value) -> None:
                 "候选已接受为候选/反馈；未创建或激活 Skill、Workflow 或 Orchestration 状态。"
             )
         else:
-            terminal.console.print(
-                f"Learning Candidate 已处理：{value.outcome}；候选 {value.candidate.candidate_id}。"
-            )
+            if getattr(value, "activation_id", None) is not None:
+                label = "撤销" if value.outcome == "reversed" else "激活"
+                terminal.console.print(
+                    f"{label} Active {value.target} field：scope={value.scope.value}；"
+                    f"path={value.path}；revision={value.revision}；"
+                    f"activation={value.activation_id}。"
+                )
+            else:
+                terminal.console.print(
+                    f"Learning Candidate 已处理：{value.outcome}；候选 {value.candidate.candidate_id}。"
+                )
     elif hasattr(value, "operation") and hasattr(value, "head"):
         terminal.console.print(
             f"Project Knowledge 已处理：{value.operation}；状态 {value.head.status.value}。"

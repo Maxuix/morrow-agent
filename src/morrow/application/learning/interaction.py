@@ -10,6 +10,7 @@ from morrow.application.command_types import (
     LearningCandidateCommandRequest,
 )
 from morrow.core.application import ApplicationError, ApplicationErrorCode
+from morrow.core.configuration_promotion import PromotionOperationState
 from morrow.core.learning import LearningCandidateStatus
 from morrow.core.learning_commands import (
     AcceptLearningCandidateCommand,
@@ -72,6 +73,7 @@ class LearningCommandMixin:
         if preview.before is not None:
             lines.append("当前值：" + cls._json_line(preview.before.value))
         lines.append("之后值：" + cls._json_line(preview.after.value))
+        lines.extend(preview.configuration_preview)
         return lines
 
     def _learn_command(self, parts: list[str]) -> CommandResult:
@@ -111,6 +113,29 @@ class LearningCommandMixin:
                 for item in page.items
             )
             return CommandResult(lines, value=page)
+        if operation == "promotions":
+            items = self.api.list_learning_promotions(
+                state=PromotionOperationState.NEEDS_RESOLUTION
+            )
+            lines = [f"配置 promotions：{len(items)} 个"]
+            lines.extend(
+                f"{item.operation_id}\t{item.state.value}\t{item.target}.{item.path}"
+                f"\t{item.scope.value}\trow={item.row_version}"
+                for item in items
+            )
+            return CommandResult(lines, value=items)
+        if operation == "undo":
+            if len(parts) < 3:
+                return CommandResult(["用法：/learn undo <activation-id>"])
+            activation = self.api.get_learning_activation(parts[2])
+            if activation is None:
+                return CommandResult(["配置 activation 不存在。"])
+            prepared = self.api.preview_learning_undo(parts[2])
+            return CommandResult(
+                ["配置撤销预览：", *prepared.preview_lines],
+                action="learning_undo_preview",
+                value=parts[2],
+            )
         if operation == "show":
             if len(parts) < 3:
                 return CommandResult(["用法：/learn show <candidate-id>"])
@@ -156,7 +181,9 @@ class LearningCommandMixin:
                     conflict_resolution=resolution,
                 ),
             )
-        return CommandResult(["用法：/learn [status|inbox|show|accept|edit|reject|reviews]"])
+        return CommandResult(
+            ["用法：/learn [status|inbox|show|accept|edit|reject|reviews|promotions|undo]"]
+        )
 
     @staticmethod
     def _parse_conflict_resolution(value: str) -> LearningConflictResolution:
@@ -263,6 +290,13 @@ class LearningCommandMixin:
                 never_suggest=request.never_suggest,
                 reason=request.reason,
             )
+        ).value
+
+    def undo_learning_activation(self, activation_id: str):
+        self._ensure_workspace_writable()
+        return self.api.undo_learning_activation(
+            activation_id,
+            command_id=self._new_command_id(),
         ).value
 
     def mutate_knowledge(self, request: KnowledgeLifecycleCommandRequest):

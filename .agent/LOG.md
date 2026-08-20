@@ -1592,3 +1592,19 @@
   format/check, compileall, `morrow --help`, `morrow learning --help`, `morrow memory --help`,
   and `git diff --check` all exited 0. The two skips are nested macOS Seatbelt tests unavailable
   inside the Codex sandbox. The two Stage 5 research documents remain untracked and preserved.
+
+## 2026-08-21 — Subplan 52 implementation gate
+
+- Published `PreparedConfigurationChange` with presence-aware before/after digests, exact revision
+  replay rules, idempotent `apply_prepared()`, and truthful global/workspace Session projections
+  and AgentRun source references.
+- Added v11 promotion repositories and split the cross-store configuration Saga into a small
+  promotion owner plus focused policy, finalize, recovery, and undo modules. Preference/Profile
+  candidates now require explicit evidence, use the bounded schema whitelist, preserve YAML as the
+  Active authority, and record activation/undo provenance in SQLite.
+- Added explicit unresolved-operation recovery, drift protection, global-scope preview rules,
+  Profile promotion, CLI/REPL surfaces, and crash/replay tests. The two research documents remain
+  untracked user files and were not staged.
+- Full offline validation passed: `749 passed, 2 skipped, 1 deselected`; Ruff format/check,
+  compileall, root/Learning/Memory CLI help, and `git diff --check` passed. The required Grok review
+  is the remaining S52 closeout action.

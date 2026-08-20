@@ -1,7 +1,7 @@
 # Stage 5：可审查学习与长期记忆
 
-> 状态：Subplan 49（分类、Schema 与 LearningPolicy 基础）和 Subplan 50（accepted Outcome → Candidate Pipeline）已完成；后续 Inbox/Promotion/Memory/生产 Reviewer 尚未实施
-> 阶段结果：Morrow 能在任务显式 accepted 后提出有来源、有作用域、可拒绝和可撤销的学习候选，而不是把模型推断直接写入长期配置
+> 状态：Subplans 49–52（LearningPolicy、accepted Outcome → Candidate Pipeline、Inbox/Project Knowledge、Profile/Preferences Promotion Saga）已完成；MemorySelection、ContextBuilder 集成与生产 Reviewer 尚未实施
+> 阶段结果：Morrow 能在任务显式 accepted 后提出有来源、有作用域、可拒绝和可撤销的学习候选，并可在明确确认后通过可恢复 Saga 更新 YAML 配置；模型推断不会直接写入长期配置
 > 上级文档：[开发路线总览](../ROADMAP.md)
 > 上一阶段：[Stage 4：Task、Session、Artifact 与持久化](stage-4-task-session-and-persistence.md)
 > 下一阶段：[Stage 6：Skills 与扩展生命周期](stage-6-skills-and-extensions.md)
@@ -531,6 +531,8 @@ Stage 5 只定义记录格式；Stage 7/8 才产生和应用这些信号。
 - `PreparedConfigurationChange`。
 - PromotionOperation 与 SQLite/YAML 一致性恢复。
 - activation provenance、undo 与 revision mismatch。
+- Preference/Profile whitelist、显式 Evidence/scope、Profile/Preferences CLI/REPL 预览确认。
+- Session revision/presence 投影与 AgentRun 配置来源冻结。
 
 ### Subplan 53：Memory Query 与 Context Selection
 

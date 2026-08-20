@@ -7,6 +7,9 @@ from datetime import UTC, datetime
 
 from morrow.adapters.state.application_journal import SqliteApplicationJournal
 from morrow.adapters.state.artifact_journal import SqliteArtifactJournal
+from morrow.adapters.state.configuration_promotion_journal import (
+    SqliteConfigurationPromotionJournal,
+)
 from morrow.adapters.state.context_journal import SqliteContextJournal
 from morrow.adapters.state.conversation_journal import SqliteConversationJournal
 from morrow.adapters.state.learning_journal import SqliteLearningJournal
@@ -24,6 +27,12 @@ from morrow.core.application import (
 from morrow.core.artifacts import (
     ArtifactMetadata,
     ArtifactState,
+)
+from morrow.core.configuration_promotion import (
+    ConfigurationActivation,
+    ConfigurationActivationStatus,
+    PromotionOperation,
+    PromotionOperationState,
 )
 from morrow.core.context import (
     ContextCheckpoint,
@@ -158,6 +167,7 @@ class SqliteOperationalJournal:
 
         self._learning_journal = SqliteLearningJournal(self._backend)
         self._learning_memory_journal = SqliteLearningMemoryJournal(self._backend)
+        self._configuration_promotion_journal = SqliteConfigurationPromotionJournal(self._backend)
 
     def now(self) -> datetime:
         return self._backend.now()
@@ -877,6 +887,83 @@ class SqliteOperationalJournal:
         self, workspace_id: str, receipt: ApplicationCommandReceipt
     ) -> ApplicationCommandReceipt:
         return self._application_journal.put_receipt_in_txn(workspace_id, receipt)
+
+    def get_promotion_operation(
+        self, workspace_id: str, operation_id: str
+    ) -> PromotionOperation | None:
+        return self._configuration_promotion_journal.get_promotion_operation(
+            workspace_id, operation_id
+        )
+
+    def get_promotion_operation_by_command(
+        self, workspace_id: str, command_id: str
+    ) -> PromotionOperation | None:
+        return self._configuration_promotion_journal.get_promotion_operation_by_command(
+            workspace_id, command_id
+        )
+
+    def list_promotion_operations(
+        self,
+        workspace_id: str,
+        *,
+        state: PromotionOperationState | None = None,
+        limit: int = 100,
+    ) -> tuple[PromotionOperation, ...]:
+        return self._configuration_promotion_journal.list_promotion_operations(
+            workspace_id, state=state, limit=limit
+        )
+
+    def put_promotion_operation(
+        self, workspace_id: str, operation: PromotionOperation
+    ) -> PromotionOperation:
+        return self._configuration_promotion_journal.put_promotion_operation(
+            workspace_id, operation
+        )
+
+    def save_promotion_operation(
+        self,
+        workspace_id: str,
+        operation: PromotionOperation,
+        *,
+        expected_row_version: int,
+    ) -> PromotionOperation:
+        return self._configuration_promotion_journal.save_promotion_operation(
+            workspace_id, operation, expected_row_version=expected_row_version
+        )
+
+    def get_configuration_activation(
+        self, workspace_id: str, activation_id: str
+    ) -> ConfigurationActivation | None:
+        return self._configuration_promotion_journal.get_configuration_activation(
+            workspace_id, activation_id
+        )
+
+    def list_configuration_activations(
+        self,
+        workspace_id: str,
+        *,
+        target: str | None = None,
+        path: str | None = None,
+        status: ConfigurationActivationStatus | None = None,
+        limit: int = 100,
+    ) -> tuple[ConfigurationActivation, ...]:
+        return self._configuration_promotion_journal.list_configuration_activations(
+            workspace_id, target=target, path=path, status=status, limit=limit
+        )
+
+    def put_configuration_activation(
+        self, workspace_id: str, activation: ConfigurationActivation
+    ) -> ConfigurationActivation:
+        return self._configuration_promotion_journal.put_configuration_activation(
+            workspace_id, activation
+        )
+
+    def save_configuration_activation(
+        self, workspace_id: str, activation: ConfigurationActivation
+    ) -> ConfigurationActivation:
+        return self._configuration_promotion_journal.save_configuration_activation(
+            workspace_id, activation
+        )
 
     def create_turn(self, workspace_id: str, turn: DurableTurn) -> DurableTurn:
         return self._conversation_journal.create_turn(workspace_id, turn)

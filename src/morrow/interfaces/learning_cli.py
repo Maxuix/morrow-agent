@@ -8,6 +8,7 @@ from pathlib import Path
 import typer
 
 from morrow.core.application import ApplicationError, ApplicationErrorCode
+from morrow.core.configuration_promotion import PromotionOperationState
 from morrow.core.learning import (
     LearningCandidateStatus,
     LearningCandidateType,
@@ -27,7 +28,11 @@ from morrow.core.learning_memory import (
     ProjectKnowledgeCategory,
     ProjectKnowledgeStatus,
 )
-from morrow.core.learning_payloads import ProjectKnowledgeCandidatePayload
+from morrow.core.learning_payloads import (
+    PreferenceCandidatePayload,
+    ProfileCandidatePayload,
+    ProjectKnowledgeCandidatePayload,
+)
 
 learning_app = typer.Typer(help="Learning Inbox、Review 与候选决策。")
 memory_app = typer.Typer(help="Project Knowledge 生命周期与历史。")
@@ -196,6 +201,69 @@ def learning_reviews(
     )
 
 
+@learning_app.command("promotions")
+def learning_promotions(
+    operation_id: str | None = typer.Option(None, "--operation-id"),
+    action: str | None = typer.Option(None, "--action"),
+    as_json: bool = typer.Option(False, "--json"),
+    workspace_id: str | None = typer.Option(None, "--workspace-id"),
+    directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+) -> None:
+    def action_handler(api) -> None:
+        if (operation_id is None) != (action is None):
+            raise ApplicationError(
+                ApplicationErrorCode.INVALID,
+                "--operation-id 与 --action 必须同时提供",
+            )
+        if operation_id is not None and action is not None:
+            value = api.recover_learning_promotion(operation_id, action=action)
+            _cli_helpers()[2](value.value if hasattr(value, "value") else value, as_json=as_json)
+            return
+        items = api.list_learning_promotions(state=PromotionOperationState.NEEDS_RESOLUTION)
+        _cli_helpers()[2](items, as_json=as_json)
+        if not as_json and not items:
+            typer.echo("没有待处理的配置 promotion。")
+
+    _run_state_command(
+        state_root=state_root,
+        workspace_id=workspace_id,
+        directory=directory,
+        write=operation_id is not None and action is not None,
+        action=action_handler,
+    )
+
+
+@learning_app.command("undo")
+def learning_undo(
+    activation_id: str,
+    command_id: str | None = typer.Option(None, "--command-id"),
+    workspace_id: str | None = typer.Option(None, "--workspace-id"),
+    directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+) -> None:
+    def action(api) -> None:
+        activation = api.get_learning_activation(activation_id)
+        if activation is None:
+            raise ApplicationError(ApplicationErrorCode.NOT_FOUND, "配置 activation 不存在")
+        prepared = api.preview_learning_undo(activation_id)
+        _cli_helpers()[2](prepared)
+        _confirm_or_exit("确认撤销这项配置 activation？")
+        value = api.undo_learning_activation(
+            activation_id,
+            command_id=_command_id(api, command_id),
+        ).value
+        _cli_helpers()[2](value)
+
+    _run_state_command(
+        state_root=state_root,
+        workspace_id=workspace_id,
+        directory=directory,
+        write=True,
+        action=action,
+    )
+
+
 @learning_app.command("accept")
 def learning_accept(
     candidate_id: str,
@@ -244,6 +312,8 @@ def learning_accept(
 @learning_app.command("edit")
 def learning_edit(
     candidate_id: str,
+    path: str | None = typer.Option(None, "--path"),
+    edit_value: str | None = typer.Option(None, "--value"),
     statement: str | None = typer.Option(None, "--statement"),
     semantic_key: str | None = typer.Option(None, "--semantic-key"),
     category: ProjectKnowledgeCategory | None = typer.Option(None, "--category"),
@@ -259,14 +329,60 @@ def learning_edit(
     def action(api) -> None:
         candidate = _candidate_or_error(api, candidate_id)
         payload = candidate.candidate.proposed_payload
-        if not isinstance(payload, ProjectKnowledgeCandidatePayload):
+        if isinstance(payload, PreferenceCandidatePayload):
+            if any(item is not None for item in (statement, semantic_key, category)):
+                raise ApplicationError(
+                    ApplicationErrorCode.INVALID, "Preference 不能使用 Project Knowledge 字段"
+                )
+            selected_path = path or payload.path
+            selected_value = edit_value
+            if selected_value is None:
+                final_payload = payload.model_copy(update={"path": selected_path})
+            elif selected_path == "instructions":
+                final_payload = payload.model_copy(
+                    update={"path": selected_path, "value": (selected_value,)}
+                )
+            else:
+                final_payload = payload.model_copy(
+                    update={"path": selected_path, "value": selected_value}
+                )
+        elif isinstance(payload, ProfileCandidatePayload):
+            if any(item is not None for item in (statement, semantic_key, category)):
+                raise ApplicationError(
+                    ApplicationErrorCode.INVALID, "Profile 不能使用 Project Knowledge 字段"
+                )
+            selected_path = path or payload.path
+            selected_value = edit_value
+            if selected_value is None:
+                final_payload = payload.model_copy(update={"path": selected_path})
+            elif selected_path in {"goals", "tech_stack", "constraints", "conventions"}:
+                final_payload = payload.model_copy(
+                    update={"path": selected_path, "value": (selected_value,)}
+                )
+            else:
+                final_payload = payload.model_copy(
+                    update={"path": selected_path, "value": selected_value}
+                )
+        elif not isinstance(payload, ProjectKnowledgeCandidatePayload):
+            if any(
+                item is not None for item in (path, edit_value, statement, semantic_key, category)
+            ):
+                raise ApplicationError(
+                    ApplicationErrorCode.INVALID,
+                    "当前候选类型不支持这些编辑字段",
+                )
+            final_payload = payload
+        else:
+            if path is not None or edit_value is not None:
+                raise ApplicationError(
+                    ApplicationErrorCode.INVALID, "Project Knowledge 使用专用字段编辑"
+                )
             if any(value is not None for value in (statement, semantic_key, category)):
                 raise ApplicationError(
                     ApplicationErrorCode.INVALID,
                     "当前 CLI 仅支持 Project Knowledge 的字段编辑；其他类型可用原值确认候选接受",
                 )
             final_payload = payload
-        else:
             final_payload = payload.model_copy(
                 update={
                     key: value

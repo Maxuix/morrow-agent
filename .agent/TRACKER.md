@@ -2,8 +2,8 @@
 
 ## Current status
 
-The user authorized a complete executable Stage 5 plan. The master plan and Subplans 49–54 are
-defined; Subplan 51 is complete and Subplan 52 is ready to activate from verified local `main`.
+The user authorized a complete executable Stage 5 plan. Subplan 52 implementation is complete on
+its topic branch, with the required one-time Grok review-fix pass still pending.
 
 ## Last completed task
 
@@ -13,17 +13,17 @@ surfaces, and lazy query expiry. Subplan 50 is merged at `4d47be8` underneath it
 
 ## Active task
 
-Activate Subplan 52: implement the Profile/Preferences Promotion Saga without changing YAML
-authority or opening `explicit_auto`.
+Run the required Grok `/review` for Subplan 52, independently validate its findings, apply one
+feasible fix pass, rerun the full gate, and then close/merge the subplan.
 
 ## Next action
 
-Create `feat/stage5-configuration-promotion` from verified local `main`, read the active Subplan 52,
-then inspect ConfigPatchService and its revision/digest write boundary before changing code.
+Commit the verified S52 implementation (excluding the two untracked research docs), run the required
+Grok review and wait for its complete response before making any review-fix changes.
 
 ## Blockers
 
-No Stage 5 implementation blocker.
+No Stage 5 implementation blocker; only the required review-fix closeout remains for S52.
 
 Remote publication is outside the current commit-only request. After this plan is committed and
 fast-forwarded, local `main` will be one planning commit ahead of `origin/main` until push is
@@ -48,6 +48,10 @@ adopted into version control.
   compatible while new typed view entry points live under `api.learning` and `api.memory`.
 - S51.3–S51.6 are implemented: candidate decisions/rejection/suppression/expiry, Project Knowledge
   promotion and lifecycle, replay/OCC/workspace isolation, and preview-confirm CLI/REPL boundaries.
+- S52 is implemented: prepared configuration revisions/digests, YAML promotion Saga, Preference/
+  Profile whitelist, foreground recovery, activation provenance/undo, Session projection updates,
+  and focused crash/profile/global-scope tests. Full offline gate: 749 passed, 2 skipped,
+  1 deselected; required Grok review is not yet run.
 - S51 Grok review found four confirmed issues; all four plus edited-payload duplicate/suppression
   revalidation and replay/presentation polish were independently fixed once. The final gate passed
   739 tests, Ruff, compileall, CLI help, and `git diff --check`; no second review was run.

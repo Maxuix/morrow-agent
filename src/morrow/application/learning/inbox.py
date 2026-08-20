@@ -83,11 +83,12 @@ class LearningApplicationService:
         context: ApplicationCommandContext,
         *,
         policy: LearningPolicyService | None = None,
+        config_service=None,
     ) -> None:
         self.context = context
         self.policy = policy or LearningPolicyService(context)
         self.decisions = LearningDecisionService(context)
-        self.promotion = LearningPromotionService(context)
+        self.promotion = LearningPromotionService(context, config_service=config_service)
 
     @property
     def workspace_id(self) -> str:
@@ -208,19 +209,42 @@ class LearningApplicationService:
         )
         if candidate is None:
             raise ApplicationError(ApplicationErrorCode.NOT_FOUND, "Learning Candidate is missing")
+        scope_was_explicit = scope is not None
         selected_scope = self._scope(scope or candidate.proposed_scope)
         selected_resolution = self._conflict_resolution(conflict_resolution)
         payload = self._edited_payload(candidate, edit)
         semantic_key = self._payload_semantic_key(candidate, payload)
         fingerprint = self._candidate_fingerprint(candidate, payload, selected_scope, semantic_key)
         after = self._preview_value(candidate, payload, selected_scope, semantic_key)
-        before, available, reason, conflict, effective_resolution = self._target_decision(
-            candidate,
-            payload,
-            selected_scope,
-            semantic_key,
-            selected_resolution,
-        )
+        configuration_preview: tuple[str, ...] = ()
+        if candidate.candidate_type in {
+            LearningCandidateType.PREFERENCE,
+            LearningCandidateType.PROFILE,
+        }:
+            (
+                before,
+                available,
+                reason,
+                conflict,
+                effective_resolution,
+                configuration_preview,
+                after,
+            ) = self._configuration_decision(
+                candidate,
+                payload,
+                selected_scope,
+                selected_resolution,
+                edit is not None,
+                scope_was_explicit,
+            )
+        else:
+            before, available, reason, conflict, effective_resolution = self._target_decision(
+                candidate,
+                payload,
+                selected_scope,
+                semantic_key,
+                selected_resolution,
+            )
         if candidate.status is not LearningCandidateStatus.PROPOSED:
             available = False
             reason = "candidate_not_proposed"
@@ -248,6 +272,7 @@ class LearningApplicationService:
             available=available,
             reason=reason,
             conflict=conflict,
+            configuration_preview=configuration_preview,
         )
 
     def reject_candidate(self, command):
@@ -261,6 +286,39 @@ class LearningApplicationService:
 
     def edit_and_accept_candidate(self, command):
         return self.promotion.edit_and_accept_candidate(command)
+
+    def list_promotion_operations(self, *, state=None):
+        return self.promotion.configuration.list_operations(state=state)
+
+    def get_promotion_operation(self, operation_id: str):
+        return self.promotion.configuration.get_operation(operation_id)
+
+    def recover_promotion_operation(self, operation_id: str, *, action: str):
+        return self.promotion.configuration.recover_operation(operation_id, action=action)
+
+    def preview_learning_undo(self, activation_id: str):
+        return self.promotion.configuration.preview_undo(activation_id)
+
+    def undo_learning_activation(self, activation_id: str, *, command_id: str):
+        return self.promotion.configuration.undo_activation(
+            activation_id,
+            command_id=command_id,
+        )
+
+    def get_learning_activation(self, activation_id: str):
+        return self.context._query(
+            lambda: self.journal.get_configuration_activation(self.workspace_id, activation_id)
+        )
+
+    def list_learning_activations(self, *, target: str | None = None, path: str | None = None):
+        return self.context._query(
+            lambda: self.journal.list_configuration_activations(
+                self.workspace_id,
+                target=target,
+                path=path,
+                limit=500,
+            )
+        )
 
     def _expire_due_candidates(self, *, limit: int = LEARNING_QUERY_MAX_PAGE_SIZE) -> None:
         supports_writes = getattr(self.journal, "supports_writes", None)
@@ -443,11 +501,6 @@ class LearningApplicationService:
         LearningConflictResolution,
     ]:
         after_kind = candidate.candidate_type.value
-        if (
-            candidate.candidate_type is LearningCandidateType.PREFERENCE
-            or candidate.candidate_type is LearningCandidateType.PROFILE
-        ):
-            return None, False, "configuration_promotion_deferred", None, resolution
         if candidate.candidate_type is not LearningCandidateType.PROJECT_KNOWLEDGE:
             return None, True, "candidate_only_acceptance", None, resolution
         head = self.context._query(
@@ -517,6 +570,65 @@ class LearningApplicationService:
                 resolution,
             )
         return before, False, "knowledge_deleted", "deleted_head", resolution
+
+    def _configuration_decision(
+        self,
+        candidate: LearningCandidate,
+        payload: CandidatePayload,
+        scope: LearningScope,
+        resolution: LearningConflictResolution,
+        edit: bool,
+        scope_explicit: bool,
+    ):
+        configuration = self.promotion.configuration
+        if configuration.config_service is None:
+            return (
+                None,
+                False,
+                "configuration_promotion_deferred",
+                None,
+                resolution,
+                (),
+                self._preview_value(candidate, payload, scope, candidate.semantic_key),
+            )
+        try:
+            prepared = configuration.preview_candidate(
+                candidate,
+                final_payload=payload,
+                scope=scope.value if scope_explicit else None,
+                edit=edit,
+            )
+        except ApplicationError as exc:
+            reason = {
+                ApplicationErrorCode.CONFLICT: "configuration_conflict",
+                ApplicationErrorCode.INVALID: "configuration_invalid",
+                ApplicationErrorCode.NOT_FOUND: "configuration_target_missing",
+                ApplicationErrorCode.NEEDS_RECOVERY: "configuration_needs_recovery",
+            }.get(exc.code, "configuration_promotion_unavailable")
+            return (
+                None,
+                False,
+                reason,
+                None,
+                resolution,
+                (),
+                self._preview_value(candidate, payload, scope, candidate.semantic_key),
+            )
+        before = LearningPreviewValue(
+            target_kind=candidate.candidate_type.value,
+            semantic_key=candidate.semantic_key,
+            scope=scope,
+            value=None,
+            value_digest=prepared.before_digest,
+        )
+        after = LearningPreviewValue(
+            target_kind=candidate.candidate_type.value,
+            semantic_key=candidate.semantic_key,
+            scope=scope,
+            value=prepared.command.model_dump(mode="json"),
+            value_digest=prepared.after_digest,
+        )
+        return before, True, None, None, resolution, prepared.preview_lines, after
 
     def _preview_value(
         self,

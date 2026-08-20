@@ -192,6 +192,7 @@ class LearningCandidateDecisionPreview(ProtocolModel):
     available: bool
     reason: str | None = Field(default=None, max_length=128)
     conflict: str | None = Field(default=None, max_length=128)
+    configuration_preview: tuple[str, ...] = Field(default=(), max_length=16)
 
 
 class ProjectKnowledgeSummary(ProtocolModel):

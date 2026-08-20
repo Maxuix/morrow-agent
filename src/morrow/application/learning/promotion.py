@@ -7,6 +7,8 @@ from datetime import UTC, datetime
 from typing import Literal
 
 from morrow.application.api_context import ApplicationCommandContext
+from morrow.application.learning.promotion_service import ConfigurationPromotionService
+from morrow.application.learning.results import LearningPromotionResult
 from morrow.core.application import ApplicationCommandResult, ApplicationError, ApplicationErrorCode
 from morrow.core.domain import canonical_json_bytes, sha256_digest
 from morrow.core.learning import (
@@ -33,17 +35,6 @@ from morrow.core.learning_memory import (
     ProjectKnowledgeStatus,
 )
 from morrow.core.learning_payloads import CandidatePayload, ProjectKnowledgeCandidatePayload
-from morrow.core.models import ProtocolModel
-
-
-class LearningPromotionResult(ProtocolModel):
-    candidate: LearningCandidate
-    decision: LearningCandidateDecision
-    outcome: Literal["activated", "confirmed", "superseded", "enabled", "candidate_only"]
-    knowledge_id: str | None = None
-    knowledge_revision_id: str | None = None
-    revision: int | None = None
-    memory_revision: int | None = None
 
 
 def _now(context: ApplicationCommandContext) -> datetime:
@@ -56,8 +47,9 @@ def _now(context: ApplicationCommandContext) -> datetime:
 class LearningPromotionService:
     """Promote only governed Project Knowledge or acknowledge future candidates."""
 
-    def __init__(self, context: ApplicationCommandContext) -> None:
+    def __init__(self, context: ApplicationCommandContext, config_service=None) -> None:
         self.context = context
+        self.configuration = ConfigurationPromotionService(context, config_service)
 
     @property
     def workspace_id(self) -> str:
@@ -75,6 +67,16 @@ class LearningPromotionService:
 
     def _accept(self, command, *, edit: bool):
         self._assert_workspace(command.workspace_id)
+        candidate = self.context._query(
+            lambda: self.context.journal.get_learning_candidate(
+                self.workspace_id, command.candidate_id
+            )
+        )
+        if candidate is not None and candidate.candidate_type in {
+            LearningCandidateType.PREFERENCE,
+            LearningCandidateType.PROFILE,
+        }:
+            return self.configuration.accept_candidate(command, edit=edit)
         operation = "learning_candidate_edit_and_accept" if edit else "learning_candidate_accept"
         payload = {
             "candidate_id": command.candidate_id,

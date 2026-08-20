@@ -23,8 +23,8 @@ history at `20fb43e`; its retired task file is no longer kept in the active subp
 | 48 | `48-pre-stage5-boundary-refactor.md` | completed |
 | 49 | `49-stage5-learning-foundation.md` | completed |
 | 50 | `50-stage5-review-pipeline.md` | completed |
-| 51 | `51-stage5-inbox-project-knowledge.md` | active |
-| 52 | `52-stage5-configuration-promotion.md` | planned |
+| 51 | `51-stage5-inbox-project-knowledge.md` | completed |
+| 52 | `52-stage5-configuration-promotion.md` | active |
 | 53 | `53-stage5-memory-selection-context.md` | planned |
 | 54 | `54-stage5-reviewer-acceptance.md` | planned |
 

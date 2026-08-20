@@ -1,6 +1,6 @@
 # Subplan 52 — Profile/Preferences Promotion Saga
 
-> Status: planned
+> Status: implementation complete; required Grok review-fix pending
 > Branch: `feat/stage5-config-promotion`
 > Prerequisite: Subplan 51 complete and merged into verified `main` (Operational Store v11)
 > Owns: prepared configuration contract, cross-store Saga/recovery/undo, config candidate promotion

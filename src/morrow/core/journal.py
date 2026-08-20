@@ -7,6 +7,12 @@ from typing import Protocol, Self, TypeVar
 
 from morrow.core.application import ApplicationCommandReceipt, ApplicationEvent
 from morrow.core.artifacts import ArtifactMetadata
+from morrow.core.configuration_promotion import (
+    ConfigurationActivation,
+    ConfigurationActivationStatus,
+    PromotionOperation,
+    PromotionOperationState,
+)
 from morrow.core.context import ContextCheckpoint, SessionLineage
 from morrow.core.domain import (
     ArtifactReference,
@@ -152,6 +158,60 @@ class ApplicationEventPort(Protocol):
     def put_application_command_receipt_in_txn(
         self, workspace_id: str, receipt: ApplicationCommandReceipt
     ) -> ApplicationCommandReceipt: ...
+
+
+class ConfigurationPromotionJournalPort(Protocol):
+    """SQLite-side Saga and activation provenance surface."""
+
+    def get_promotion_operation(
+        self, workspace_id: str, operation_id: str
+    ) -> PromotionOperation | None: ...
+
+    def get_promotion_operation_by_command(
+        self, workspace_id: str, command_id: str
+    ) -> PromotionOperation | None: ...
+
+    def list_promotion_operations(
+        self,
+        workspace_id: str,
+        *,
+        state: PromotionOperationState | None = None,
+        limit: int = 100,
+    ) -> tuple[PromotionOperation, ...]: ...
+
+    def put_promotion_operation(
+        self, workspace_id: str, operation: PromotionOperation
+    ) -> PromotionOperation: ...
+
+    def save_promotion_operation(
+        self,
+        workspace_id: str,
+        operation: PromotionOperation,
+        *,
+        expected_row_version: int,
+    ) -> PromotionOperation: ...
+
+    def get_configuration_activation(
+        self, workspace_id: str, activation_id: str
+    ) -> ConfigurationActivation | None: ...
+
+    def list_configuration_activations(
+        self,
+        workspace_id: str,
+        *,
+        target: str | None = None,
+        path: str | None = None,
+        status: ConfigurationActivationStatus | None = None,
+        limit: int = 100,
+    ) -> tuple[ConfigurationActivation, ...]: ...
+
+    def put_configuration_activation(
+        self, workspace_id: str, activation: ConfigurationActivation
+    ) -> ConfigurationActivation: ...
+
+    def save_configuration_activation(
+        self, workspace_id: str, activation: ConfigurationActivation
+    ) -> ConfigurationActivation: ...
 
 
 class AgentRunPort(Protocol):

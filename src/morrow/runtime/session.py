@@ -27,6 +27,7 @@ from morrow.core.models import (
     Message,
     Preferences,
     Profile,
+    StatePresence,
     ToolDefinition,
     UserMessage,
 )
@@ -175,7 +176,21 @@ class Session:
     lifecycle: SessionLifecycle = SessionLifecycle.ACTIVE
     profile_revision: int = 0
     preferences_revision: int = 0
+    global_preferences_revision: int = 0
+    profile_presence: StatePresence = StatePresence.MISSING
+    workspace_preferences_presence: StatePresence = StatePresence.MISSING
     context_checkpoint: ContextCheckpoint | None = None
+
+    def __post_init__(self) -> None:
+        # Hand-built Sessions in tests and local integrations may only provide values.  Infer
+        # presence for those projections while bootstrap supplies the authoritative tombstone.
+        if self.profile is not None and self.profile_presence is StatePresence.MISSING:
+            self.profile_presence = StatePresence.PRESENT
+        if (
+            self.workspace_preferences != Preferences()
+            and self.workspace_preferences_presence is StatePresence.MISSING
+        ):
+            self.workspace_preferences_presence = StatePresence.PRESENT
 
     @property
     def persisted(self) -> bool:
