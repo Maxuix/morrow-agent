@@ -240,3 +240,15 @@ class RunPermissionCoordinator:
             return False
         grant = self.journal.get_capability_grant(self.workspace_id, execution.grant_id)
         return grant is not None and grant.is_active(now)
+
+    def active_grant_evidence(
+        self, snapshot: PermissionSnapshot, *, now: datetime
+    ) -> tuple[str | None, IsolationLabel | None]:
+        """Return only currently valid grant evidence for a prepared execution."""
+
+        if snapshot.grant_id is None:
+            return None, None
+        grant = self.journal.get_capability_grant(self.workspace_id, snapshot.grant_id)
+        if grant is None or not grant.is_active(now):
+            return None, None
+        return grant.grant_id, snapshot.isolation_label

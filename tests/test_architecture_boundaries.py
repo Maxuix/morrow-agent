@@ -36,6 +36,7 @@ def test_domain_services_depend_on_journal_ports_not_sqlite_adapter():
         "application/api_permissions.py",
         "application/api_recovery.py",
         "application/turn_permissions.py",
+        "application/tool_persistence.py",
     )
 
     for relative in port_owned_modules:
@@ -138,5 +139,51 @@ def test_session_persistence_delegates_permission_evidence():
             and isinstance(node.value.value, ast.Name)
             and node.value.value.id == "self"
             and node.value.attr == "permissions"
+            for node in ast.walk(methods[name])
+        ), name
+
+
+def test_session_persistence_delegates_durable_tool_state():
+    source = (SOURCE_ROOT / "application/turns.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    persistence = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "SessionPersistence"
+    )
+    methods = {
+        node.name: node
+        for node in persistence.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+
+    for symbol in (
+        "prepare_cycle_executions",
+        "transition_execution",
+        "resolve_approval",
+        "approval_preview_digest",
+    ):
+        assert symbol not in source
+    assert "_close_execution_before_handler" not in methods
+
+    owners = {
+        "prepare_and_commit_assistant": "tool_conversation",
+        "execution_is_visible": "tool_executions",
+        "create_pending_approval": "tool_executions",
+        "consume_and_mark_executing": "tool_executions",
+        "mark_executing": "tool_executions",
+        "get_execution": "tool_executions",
+        "deny_execution_before_handler": "tool_executions",
+        "cancel_execution_before_handler": "tool_executions",
+        "record_handler_completed": "tool_executions",
+        "commit_tool_message": "tool_conversation",
+    }
+    for name, owner in owners.items():
+        assert any(
+            isinstance(node, ast.Attribute)
+            and isinstance(node.value, ast.Attribute)
+            and isinstance(node.value.value, ast.Name)
+            and node.value.value.id == "self"
+            and node.value.attr == owner
             for node in ast.walk(methods[name])
         ), name

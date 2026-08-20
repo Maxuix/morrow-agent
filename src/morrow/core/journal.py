@@ -276,6 +276,15 @@ class RunPermissionJournalPort(
     """Permission evidence surface required by one durable AgentRun."""
 
 
+class DurableToolJournalPort(
+    TransactionalJournalPort,
+    ToolExecutionJournalPort,
+    ApprovalJournalPort,
+    Protocol,
+):
+    """Atomic execution and approval surface for durable tool cycles."""
+
+
 class RecoveryJournalPort(ToolExecutionJournalPort, TransactionalJournalPort, Protocol):
     def put_report(self, workspace_id: str, report: RecoveryReport) -> RecoveryReport: ...
 

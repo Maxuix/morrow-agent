@@ -1378,3 +1378,16 @@
   permission construction/validation logic from returning to SessionPersistence.
 - Permission, tool-persistence, recovery, conversation, and architecture regressions passed:
   `51 passed`. Touched-file Ruff format/check, compileall, and `git diff --check` passed.
+
+## 2026-08-20 — S48.3 durable-tool boundary checkpoint
+
+- Split durable tool ownership into an execution coordinator for approval/state transitions and a
+  conversation persistence collaborator for atomic Assistant/Tool record and execution writes.
+  AgentLoop still owns public events and plans every ConversationLog mutation.
+- SessionPersistence retains the complete runtime compatibility surface through thin delegates;
+  durable permission/tool implementation logic no longer imports the concrete SQLite adapter.
+- SessionPersistence decreased to 606 lines at this checkpoint. The extracted classes are bounded
+  to 246 lines/10 methods and 123 lines/3 methods rather than recreating one new God Class.
+- Full offline validation passed: `665 passed, 2 skipped, 1 deselected`; the skips are the known
+  nested-sandbox Seatbelt cases. Full Ruff format/check, compileall, CLI help, architecture guards,
+  and `git diff --check` passed.

@@ -3,23 +3,24 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Literal
 
 from morrow.adapters.state.journal import SqliteOperationalJournal
 from morrow.adapters.state.operational import OperationalStoreSession
-from morrow.application.prepared import prepare_cycle_executions
 from morrow.application.recovery import RecoveryService
 from morrow.application.tasks import TaskOutcomeAssembler, TaskService
+from morrow.application.tool_persistence import (
+    DurableToolExecutionCoordinator,
+    ToolConversationPersistence,
+)
 from morrow.application.turn_permissions import RunPermissionCoordinator
 from morrow.core.application import ApplicationError, ApplicationErrorCode
-from morrow.core.artifacts import ArtifactError
 from morrow.core.domain import (
     AGENT_RUN_ID_PREFIX,
     COMMAND_ID_PREFIX,
     TASK_RUN_ID_PREFIX,
     AgentRunSnapshot,
-    ArtifactReference,
     DurableAgentRun,
     DurableSession,
     DurableTaskRun,
@@ -36,18 +37,9 @@ from morrow.core.domain import (
     sha256_digest,
 )
 from morrow.core.execution import (
-    APPROVAL_ID_PREFIX,
-    ApprovalResolution,
     DurableApproval,
     DurableToolExecution,
-    HandlerResultEnvelope,
     ToolExecutionDisposition,
-    ToolExecutionState,
-    approval_preview_digest,
-    consume_approval,
-    intent_hash,
-    resolve_approval,
-    transition_execution,
 )
 from morrow.core.faults import FaultInjector, FaultPoint, NoOpFaultInjector
 from morrow.core.models import (
@@ -58,10 +50,7 @@ from morrow.core.models import (
     UserMessage,
     utc_now,
 )
-from morrow.core.permissions import (
-    PermissionEvidenceError,
-    PermissionSnapshot,
-)
+from morrow.core.permissions import PermissionSnapshot
 from morrow.core.ports import Clock, IdSource
 from morrow.core.recovery import RecoveryReport
 from morrow.core.store import StorageError
@@ -73,7 +62,6 @@ from morrow.runtime.conversation import (
 )
 from morrow.runtime.durable_log import (
     DurableConversationWriter,
-    durable_call_id,
     restore_conversation_log,
 )
 from morrow.runtime.session import Session
@@ -188,6 +176,23 @@ class SessionPersistence:
             journal,
             workspace_id=workspace_id,
             id_source=id_source,
+            clock=self._now,
+        )
+        self.tool_executions = DurableToolExecutionCoordinator(
+            journal,
+            workspace_id=workspace_id,
+            id_source=id_source,
+            permissions=self.permissions,
+            faults=self.faults,
+            clock=self._now,
+            artifacts=artifacts,
+        )
+        self.tool_conversation = ToolConversationPersistence(
+            journal,
+            workspace_id=workspace_id,
+            id_source=id_source,
+            mutation=mutation,
+            faults=self.faults,
             clock=self._now,
         )
         self.tasks = TaskService(
@@ -632,88 +637,31 @@ class SessionPersistence:
             self._session,
             tools=tool_executor.definitions if tool_executor is not None else (),
         )
-        grant_id = snapshot.grant_id
-        isolation_label = snapshot.isolation_label if grant_id is not None else None
-        if grant_id is not None:
-            grant = self.journal.get_capability_grant(self.workspace_id, grant_id)
-            if grant is None or not grant.is_active(self._now()):
-                grant_id = None
-                isolation_label = None
-        executions = prepare_cycle_executions(
+        grant_id, isolation_label = self.permissions.active_grant_evidence(
+            snapshot, now=self._now()
+        )
+        return self.tool_conversation.prepare_and_commit_assistant(
+            planned,
             message,
             session=self._session,
-            tool_executor=tool_executor,
+            writer=self.writer,
             run_context=run_context,
-            id_source=self.id_source,
-            workspace_id=self.workspace_id,
+            tool_executor=tool_executor,
             task_run_id=self.current_task_run_id,
             turn_id=self.current_turn_id,
             agent_run_id=self.current_agent_run_id,
-            mutation=self.mutation,
-            isolation=self._session.permission_profile.process_isolation,
             permission_snapshot_id=snapshot.permission_snapshot_id,
             grant_id=grant_id,
             isolation_label=isolation_label,
         )
-        writer = self.writer
-        self.faults.check(FaultPoint.CONVERSATION_BEFORE_COMMIT)
-
-        def work(txn: SqliteOperationalJournal) -> tuple[DurableToolExecution, ...]:
-            durables, _snapshot = writer.persist_with_records(planned)
-            assistant_id = durables[0].record_id if durables else None
-            stored: list[DurableToolExecution] = []
-            for execution in executions:
-                durable_id = durable_call_id(execution.call_id)
-                stored.append(
-                    txn.put_execution(
-                        self.workspace_id,
-                        execution.model_copy(
-                            update={
-                                "assistant_record_id": assistant_id,
-                                "call_id": durable_id,
-                                "intent": execution.intent.model_copy(
-                                    update={"call_id": durable_id}
-                                ),
-                            }
-                        ),
-                    )
-                )
-            self.faults.check(FaultPoint.EXECUTION_INTENT_AFTER_COMMIT)
-            return tuple(stored)
-
-        committed = self.journal.transact(work)
-        self.faults.check(FaultPoint.CONVERSATION_AFTER_COMMIT)
-        self._session.log.apply_committed(planned)
-        self._session.dirty = self._session.log.has_active_turn
-        return committed
 
     def execution_is_visible(self, tool_execution_id: str) -> bool:
-        return self.journal.get_execution(self.workspace_id, tool_execution_id) is not None
+        return self.tool_executions.execution_is_visible(tool_execution_id)
 
     def create_pending_approval(
         self, execution: DurableToolExecution, *, now: datetime | None = None
     ) -> DurableApproval:
-        stamp = now or self._now()
-        self.permissions.assert_execution_permission(execution, now=stamp)
-        preview = execution.intent.preview
-        approval = DurableApproval(
-            approval_id=self.id_source.new_id(APPROVAL_ID_PREFIX),
-            tool_execution_id=execution.tool_execution_id,
-            intent_hash=intent_hash(execution.intent),
-            tool_schema_digest=execution.intent.schema_digest,
-            permission_context_digest=execution.intent.permission_context_digest,
-            requested_scope=f"{execution.intent.effect_class.value}:{execution.tool_name}",
-            preview=preview,
-            preview_digest=approval_preview_digest(preview),
-            permission_snapshot_id=execution.permission_snapshot_id,
-            grant_id=execution.grant_id,
-            isolation=execution.isolation,
-            created_at=stamp,
-            expires_at=stamp + APPROVAL_TTL,
-        )
-        stored = self.journal.put_approval(self.workspace_id, approval)
-        self.faults.check(FaultPoint.APPROVAL_AFTER_CREATE)
-        return stored
+        return self.tool_executions.create_pending_approval(execution, now=now)
 
     def consume_and_mark_executing(
         self,
@@ -724,150 +672,31 @@ class SessionPersistence:
         now: datetime | None = None,
         command_id: str | None = None,
     ) -> tuple[DurableToolExecution, DurableApproval, bool]:
-        stamp = now or self._now()
-        self.permissions.assert_execution_permission(execution, now=stamp)
-        resolved = resolve_approval(
+        return self.tool_executions.consume_and_mark_executing(
+            execution,
             approval,
             approved=approved,
-            expected_row_version=approval.row_version,
-            now=stamp,
+            now=now,
             command_id=command_id,
         )
-        if resolved.resolution is not ApprovalResolution.APPROVED:
-            denied = transition_execution(
-                execution,
-                ToolExecutionState.CLOSED,
-                expected_row_version=execution.row_version,
-                disposition=ToolExecutionDisposition.DENIED,
-                now=stamp,
-            )
-
-            def deny(txn: SqliteOperationalJournal) -> tuple[DurableToolExecution, DurableApproval]:
-                saved_approval = txn.save_approval(
-                    self.workspace_id, resolved, expected_row_version=approval.row_version
-                )
-                saved_execution = txn.save_execution(
-                    self.workspace_id, denied, expected_row_version=execution.row_version
-                )
-                return saved_execution, saved_approval
-
-            closed, stored_approval = self.journal.transact(deny)
-            return closed, stored_approval, False
-
-        executing = transition_execution(
-            execution,
-            ToolExecutionState.EXECUTING,
-            expected_row_version=execution.row_version,
-            now=stamp,
-            approval_id=approval.approval_id,
-        )
-
-        def work(txn: SqliteOperationalJournal) -> tuple[DurableToolExecution, DurableApproval]:
-            saved_resolved = txn.save_approval(
-                self.workspace_id, resolved, expected_row_version=approval.row_version
-            )
-            consumed = consume_approval(
-                saved_resolved, expected_row_version=saved_resolved.row_version, now=stamp
-            )
-            saved_approval = txn.save_approval(
-                self.workspace_id, consumed, expected_row_version=saved_resolved.row_version
-            )
-            saved_execution = txn.save_execution(
-                self.workspace_id, executing, expected_row_version=execution.row_version
-            )
-            self.faults.check(FaultPoint.APPROVAL_AFTER_CONSUME)
-            return saved_execution, saved_approval
-
-        saved_execution, saved_approval = self.journal.transact(work)
-        return saved_execution, saved_approval, True
 
     def mark_executing(
         self, execution: DurableToolExecution, *, now: datetime | None = None
     ) -> DurableToolExecution:
-        stamp = now or self._now()
-        self.permissions.assert_execution_permission(execution, now=stamp)
-        executing = transition_execution(
-            execution,
-            ToolExecutionState.EXECUTING,
-            expected_row_version=execution.row_version,
-            now=stamp,
-        )
-        return self.journal.save_execution(
-            self.workspace_id, executing, expected_row_version=execution.row_version
-        )
+        return self.tool_executions.mark_executing(execution, now=now)
 
     def get_execution(self, tool_execution_id: str) -> DurableToolExecution | None:
-        return self.journal.get_execution(self.workspace_id, tool_execution_id)
-
-    def _close_execution_before_handler(
-        self,
-        execution: DurableToolExecution,
-        *,
-        disposition: ToolExecutionDisposition,
-        now: datetime | None = None,
-    ) -> DurableToolExecution:
-        """Close an execution whose handler has not been allowed to enter."""
-
-        current = self.get_execution(execution.tool_execution_id)
-        if current is None:
-            raise PermissionEvidenceError("tool execution is missing")
-        if current.state is ToolExecutionState.CLOSED:
-            return current
-        if current.state is ToolExecutionState.HANDLER_COMPLETED:
-            return current
-        stamp = now or self._now()
-        approval = self.journal.get_approval_for_execution(
-            self.workspace_id, current.tool_execution_id
-        )
-        resolved_approval = None
-        if (
-            approval is not None
-            and approval.resolution is ApprovalResolution.PENDING
-            and approval.consumed_at is None
-        ):
-            resolved_approval = resolve_approval(
-                approval,
-                approved=False,
-                expected_row_version=approval.row_version,
-                now=stamp,
-            )
-        closed = transition_execution(
-            current,
-            ToolExecutionState.CLOSED,
-            expected_row_version=current.row_version,
-            disposition=disposition,
-            now=stamp,
-        )
-        if resolved_approval is None:
-            return self.journal.save_execution(
-                self.workspace_id, closed, expected_row_version=current.row_version
-            )
-
-        def work(txn: SqliteOperationalJournal) -> DurableToolExecution:
-            txn.save_approval(
-                self.workspace_id,
-                resolved_approval,
-                expected_row_version=approval.row_version,
-            )
-            return txn.save_execution(
-                self.workspace_id, closed, expected_row_version=current.row_version
-            )
-
-        return self.journal.transact(work)
+        return self.tool_executions.get_execution(tool_execution_id)
 
     def deny_execution_before_handler(
         self, execution: DurableToolExecution, *, now: datetime | None = None
     ) -> DurableToolExecution:
-        return self._close_execution_before_handler(
-            execution, disposition=ToolExecutionDisposition.DENIED, now=now
-        )
+        return self.tool_executions.deny_execution_before_handler(execution, now=now)
 
     def cancel_execution_before_handler(
         self, execution: DurableToolExecution, *, now: datetime | None = None
     ) -> DurableToolExecution:
-        return self._close_execution_before_handler(
-            execution, disposition=ToolExecutionDisposition.CANCELLED, now=now
-        )
+        return self.tool_executions.cancel_execution_before_handler(execution, now=now)
 
     def assert_handler_may_enter(
         self, execution: DurableToolExecution, *, now: datetime | None = None
@@ -884,42 +713,12 @@ class SessionPersistence:
         now: datetime | None = None,
         disposition: ToolExecutionDisposition | None = None,
     ) -> DurableToolExecution:
-        stamp = now or self._now()
-        final_disposition = disposition or (
-            ToolExecutionDisposition.SUCCEEDED if result.ok else ToolExecutionDisposition.FAILED
-        )
-        artifact_refs: tuple[ArtifactReference, ...] = ()
-        if self.artifacts is not None and execution.tool_name == "run_command":
-            try:
-                artifact = self.artifacts.publish_command_output(
-                    result.envelope,
-                    session_id=execution.session_id,
-                    task_run_id=execution.task_run_id,
-                    tool_execution_id=execution.tool_execution_id,
-                )
-                artifact_refs = (
-                    ArtifactReference(artifact_id=artifact.artifact_id, role="tool_output"),
-                )
-            except (ArtifactError, StorageError):
-                # The bounded inline execution envelope remains the truthful fallback;
-                # publication failures leave explicit Artifact metadata for diagnosis.
-                artifact_refs = ()
-        completed = transition_execution(
+        return self.tool_executions.record_handler_completed(
             execution,
-            ToolExecutionState.HANDLER_COMPLETED,
-            expected_row_version=execution.row_version,
-            disposition=final_disposition,
-            now=stamp,
-            result_envelope=_envelope_from_outcome(result),
-            error_code=result.error_code.value if result.error_code is not None else None,
+            result,
+            now=now,
+            disposition=disposition,
         )
-        if artifact_refs:
-            completed = completed.model_copy(update={"artifact_refs": artifact_refs})
-        stored = self.journal.save_execution(
-            self.workspace_id, completed, expected_row_version=execution.row_version
-        )
-        self.faults.check(FaultPoint.EXECUTION_AFTER_HANDLER_COMPLETED)
-        return stored
 
     def commit_tool_message(
         self,
@@ -931,57 +730,17 @@ class SessionPersistence:
     ) -> DurableToolExecution:
         if self.writer is None or self._session is None:
             raise RuntimeError("session persistence is not attached")
-        stamp = now or self._now()
-        writer = self.writer
-        self.faults.check(FaultPoint.CONVERSATION_BEFORE_TOOL_MESSAGE_COMMIT)
-        if execution.state is ToolExecutionState.CLOSED:
-
-            def persist_only(txn: SqliteOperationalJournal) -> DurableToolExecution:
-                del txn
-                writer.persist_with_records(planned)
-                return execution
-
-            stored = self.journal.transact(persist_only)
-            self.faults.check(FaultPoint.CONVERSATION_AFTER_TOOL_MESSAGE_COMMIT)
-            self._session.log.apply_committed(planned)
-            self._session.dirty = self._session.log.has_active_turn
-            return stored
-        closed = transition_execution(
+        return self.tool_conversation.commit_tool_message(
+            planned,
             execution,
-            ToolExecutionState.CLOSED,
-            expected_row_version=execution.row_version,
+            session=self._session,
+            writer=self.writer,
+            now=now,
             disposition=disposition,
-            now=stamp,
         )
-
-        def work(txn: SqliteOperationalJournal) -> DurableToolExecution:
-            writer.persist_with_records(planned)
-            stored = txn.save_execution(
-                self.workspace_id, closed, expected_row_version=execution.row_version
-            )
-            return stored
-
-        stored = self.journal.transact(work)
-        self.faults.check(FaultPoint.CONVERSATION_AFTER_TOOL_MESSAGE_COMMIT)
-        self._session.log.apply_committed(planned)
-        self._session.dirty = self._session.log.has_active_turn
-        return stored
 
     def close(self) -> None:
         self.store_session.close()
-
-
-APPROVAL_TTL = timedelta(minutes=5)
-
-
-def _envelope_from_outcome(result) -> HandlerResultEnvelope:
-    error_code = result.error_code.value if getattr(result, "error_code", None) else None
-    return HandlerResultEnvelope(
-        ok=bool(result.ok),
-        truncated=bool(getattr(result, "truncated", False)),
-        summary={"chars": len(getattr(result, "envelope", "") or "")},
-        error_code=error_code,
-    )
 
 
 def _last_assistant_text(log: ConversationLog) -> str | None:

@@ -12,13 +12,13 @@ public-event ownership. The full offline and quality gates passed.
 
 ## Active task
 
-S48.3 — decompose SessionPersistence behind its compatible facade. Permission evidence is now a
-separate coordinator; durable tool persistence is next.
+S48.3 — decompose SessionPersistence behind its compatible facade. Permission and durable-tool
+coordination are separate; Turn submission/restoration is next.
 
 ## Next action
 
-Extract the durable-tool persistence cluster while keeping SessionPersistence as the compatible
-runtime facade and preserving ConversationLog/public-event ownership.
+Extract Turn submission/restoration behind explicit state transfer while keeping
+SessionPersistence as the compatible runtime facade.
 
 ## Blockers
 
