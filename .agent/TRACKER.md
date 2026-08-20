@@ -17,14 +17,13 @@ recovery, Session projections, and CLI/REPL controls. Subplan 51 is verified and
 
 ## Active task
 
-Implement S54.2: complete the Learning policy/status/review/retry foreground surfaces while keeping
-Task acceptance Task-only and every candidate promotion explicit.
+Implement S54.3: validate SkillCandidate, WorkflowFeedback, and OrchestrationPolicyCandidate as
+candidate-only outcomes without creating files, tools, capabilities, or runtime policy state.
 
 ## Next action
 
-Inspect the existing policy service, review request/runner APIs, Typer/REPL command dispatch, and
-terminal cancellation flow; then add stable status/mode/review/retry behavior and explicit-auto
-refusal without introducing a worker or natural-language acceptance.
+Inspect the candidate pipeline and decision/promotion services, then add typed future-candidate
+fixtures and acceptance tests proving user acknowledgement changes only candidate/audit state.
 
 ## Blockers
 
@@ -85,6 +84,10 @@ adopted into version control.
   response budgets, one total deadline with at most one repair, strict candidate/evidence checks,
   sanitized provider errors, active-provider composition, and bounded repair metadata in results/
   events. The full offline gate passed 790 tests, 2 skips, 1 deselected; the checkpoint is `c955bbc`.
+- S54.2 is complete: Learning policy status/mode controls, explicit-auto refusal, review/retry CLI and
+  REPL commands, active-provider headless composition, zero-candidate notifications, and foreground
+  cancellation behavior are covered. Full offline validation passed 792 tests, 2 skips, 1 deselected;
+  the checkpoint is `9ef6f01`.
 - S52 is complete: prepared configuration revisions/digests, YAML promotion Saga, Preference/
   Profile whitelist, foreground recovery, activation provenance/undo, Session projection updates,
   recoverable after-state finalization, explicit REPL global scope, and activation memory events.

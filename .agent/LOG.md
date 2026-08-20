@@ -1756,3 +1756,15 @@
 - S54.1 focused tests and the full offline gate passed: `790 passed, 2 skipped, 1 deselected`; Ruff
   format/check, compileall, root/Learning/Memory CLI help, and `git diff --check` passed. Checkpoint
   commit: `c955bbc`. S54.2 is now active; no Grok review is run until the complete S54 subplan closes.
+
+## 2026-08-21 — Subplan 54 S54.2 verified; S54.3 active
+
+- Completed Learning policy and foreground controls: `/learn mode` plus `morrow learning set-mode`
+  support only `off` and `review-only` (including stable explicit-auto refusal), and review/retry are
+  available through the typed API, REPL, and headless CLI. Active Provider composition is used only
+  for Review execution; status, Inbox, and query commands remain provider-free. A shared terminal
+  path reports zero-candidate Reviews and preserves Ctrl+C cancellation without changing Task
+  acceptance semantics.
+- Targeted UX/API tests passed (20 tests). The full offline gate passed: `792 passed, 2 skipped,
+  1 deselected`; Ruff format/check, compileall, root/Learning/Memory CLI help, and `git diff --check`
+  passed. Checkpoint commit: `9ef6f01`. S54.3 is now active.
