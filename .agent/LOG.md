@@ -1622,3 +1622,12 @@
   1 deselected`; Ruff format/check, compileall, root/Learning/Memory CLI help, and
   `git diff --check` passed. S52 is ready to fast-forward merge; the two research documents remain
   untracked and preserved.
+
+## 2026-08-21 — Subplan 53 activated
+
+- Fast-forwarded the verified S52 branch into local `main` at `7dfe5af`, deleted the clean
+  `feat/stage5-config-promotion` branch, and created `feat/stage5-memory-selection` from that
+  baseline.
+- Activated S53.1: implement the v12 MemorySelection/Item/Query durable contracts, migration,
+  repository/ports, and upgrade/future/corruption tests before adding selector or ContextBuilder
+  behavior. The two research documents remain untracked and preserved.

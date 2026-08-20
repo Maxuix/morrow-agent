@@ -2,27 +2,27 @@
 
 ## Current status
 
-The user authorized a complete executable Stage 5 plan. Subplan 52 implementation and its required
-one-time Grok review-fix pass are complete on its topic branch.
+The user authorized a complete executable Stage 5 plan. Subplan 52 is merged and Subplan 53 is now
+active on `feat/stage5-memory-selection`.
 
 ## Last completed task
 
-Subplan 52 is verified on `feat/stage5-config-promotion` at `6c76f75`, including its one-time Grok
-review-fix pass. It adds prepared configuration OCC, recoverable YAML promotion/undo, Preference/
-Profile policy, provenance, recovery, Session projections, and CLI/REPL controls. Subplan 51 is
-verified and merged at `548f0bc`, including its one-time Grok review-fix pass. It adds
+Subplan 52 is verified and merged at `7dfe5af`, including its one-time Grok review-fix pass. It adds
+prepared configuration OCC, recoverable YAML promotion/undo, Preference/Profile policy, provenance,
+recovery, Session projections, and CLI/REPL controls. Subplan 51 is verified and merged at `548f0bc`,
+including its one-time Grok review-fix pass. It adds
 the v11 Inbox decision boundary, SQLite Project Knowledge promotion/lifecycle, bounded CLI/REPL
 surfaces, and lazy query expiry. Subplan 50 is merged at `4d47be8` underneath it.
 
 ## Active task
 
-Fast-forward merge the verified Subplan 52 branch into local `main`, then activate Subplan 53 from
-that verified baseline.
+Implement S53.1 from the verified `main` baseline: v12 models, migration, repository/ports, and
+corruption/future/rollback tests.
 
 ## Next action
 
-Merge `feat/stage5-config-promotion` with `--ff-only`, delete its clean topic branch, and update the
-execution state to activate `feat/stage5-memory-selection` for Subplan 53.
+Inspect the existing AgentRun/ContextBuilder and v11 Knowledge boundaries, then implement the
+smallest v12 durable selection slice without starting Reviewer or history search work.
 
 ## Blockers
 
@@ -39,7 +39,7 @@ adopted into version control.
 
 ## Active boundary
 
-- Stage 5 planning is authorized; Subplan 52 is next from verified local `main` after Subplan 51.
+- Stage 5 planning is authorized; Subplan 53 is active from verified local `main` after Subplan 52.
 - First release exposes only `off` and `review_only`; `explicit_auto` remains closed.
 - Automatic trigger is accepted TaskOutcome only; no `completed`/`corrected` Task status is added.
 - No background worker, natural-language acceptance, embedding/vector dependency, Skill write, or

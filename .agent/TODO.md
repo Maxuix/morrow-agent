@@ -2,36 +2,30 @@
 
 ## Current stage
 
-Stage 5 implementation is authorized; Subplan 52 implementation and its required one-time Grok
-review-fix pass are complete on its dedicated branch.
+Stage 5 implementation is authorized; Subplan 53 is active on `feat/stage5-memory-selection`,
+based on verified local `main` at `7dfe5af`.
 
 ## Active subplan
 
-Subplan 52 — Profile/Preferences Promotion Saga.
+Subplan 53 — MemorySelection and ContextBuilder Integration.
 
 ## Tasks
 
-- [x] S52.1 Publish the bounded prepared configuration API, exact revision/digest apply semantics,
-  and truthful Session/source-revision projections.
-- [x] S52.2 Add v11 PromotionOperation/ConfigurationActivation repositories and the SQLite A/YAML/
-  SQLite promotion Saga with replay-safe finalization.
-- [x] S52.3 Add Preference/Profile whitelist, explicit evidence/scope checks, activation provenance,
-  and CLI/REPL preview-confirmation routing.
-- [x] S52.4 Add foreground recovery actions, drift/unknown-state handling, and crash/replay tests.
-- [x] S52.5 Add safe inverse previews, activation reversal provenance, and stale-current refusal.
-- [x] S52.6 Run the required Grok review-fix pass, reconcile docs, commit the closeout, and prepare
-  Subplan 53 activation.
+- [>] S53.1 Implement v12 MemorySelection/Item/query models, ports, migration, repository, and
+  upgrade/future/corruption tests.
+- [ ] S53.2 Implement deterministic lexical token projection and rebuildable Knowledge terms.
+- [ ] S53.3 Implement bounded deterministic selection, ranking, diversity, reasons, and digests.
+- [ ] S53.4 Freeze selection and effective configuration into new/recovery AgentRun admission.
+- [ ] S53.5 Make ContextBuilder consume the frozen RunContextProjection for every cycle.
+- [ ] S53.6 Add selection inspection, doctor/backup invariants, CLI/REPL surfaces, and docs.
+- [ ] S53.7 Run focused/full gates, merge verified work, and prepare Subplan 54.
 
 ## Validation evidence
 
-The final S52 offline gate passes: 752 passed, 2 skipped, 1 deselected. Ruff format/check,
-compileall, root/Learning/Memory CLI help, and `git diff --check` also pass. The two nested macOS
-Seatbelt tests remain skipped by the sandbox.
+S52's final gate passed: 752 passed, 2 skipped, 1 deselected. S53 validation is pending.
 
 ## Start condition
 
-Subplan 51 is merged into local `main`; Subplan 52 is committed on `feat/stage5-config-promotion` and
-ready for fast-forward merge. The two untracked
-`docs/research/stage5-overview-*.md` user files remain preserved.
-Preserve the two untracked `docs/research/stage5-overview-*.md` user files unless the user explicitly
-asks to adopt or commit them.
+Subplan 52 is fast-forward merged into local `main` at `7dfe5af`; Subplan 53 is on its dedicated
+branch. Preserve the two untracked `docs/research/stage5-overview-*.md` user files unless the user
+explicitly asks to adopt or commit them.
