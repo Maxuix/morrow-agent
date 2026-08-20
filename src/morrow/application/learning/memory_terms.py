@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from morrow.core.learning import LearningSensitivity
 from morrow.core.learning_memory import (
     ProjectKnowledgeHead,
     ProjectKnowledgeRevision,
@@ -84,7 +85,10 @@ def refresh_project_knowledge_terms(
     if revision.knowledge_id != head.knowledge_id:
         raise StorageError(StorageErrorCode.NEEDS_REPAIR, "memory term revision is inconsistent")
     terms: tuple[MemorySearchTerm, ...] = ()
-    if head.status is ProjectKnowledgeStatus.ACTIVE:
+    if (
+        head.status is ProjectKnowledgeStatus.ACTIVE
+        and revision.sensitivity is not LearningSensitivity.PROHIBITED
+    ):
         terms = terms_for_project_knowledge_revision(revision, head)
     return txn.replace_memory_search_terms(
         workspace_id,

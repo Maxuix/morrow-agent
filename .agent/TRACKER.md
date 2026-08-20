@@ -16,14 +16,14 @@ surfaces, and lazy query expiry. Subplan 50 is merged at `4d47be8` underneath it
 
 ## Active task
 
-Implement S53.3: bounded deterministic Project Knowledge selection, ranking, diversity, reasons,
-and digests.
+Implement S53.4: freeze MemorySelection and effective configuration into new/recovery AgentRun
+admission.
 
 ## Next action
 
-Build the selector as an independent bounded projection over current Knowledge and the v12 term
-surface; keep AgentRun freeze, ContextBuilder integration, Reviewer, and history search out of this
-task.
+Integrate the existing selector into the short admission transaction, persist the immutable
+selection and AgentRun snapshot together, reuse it for recovery, and keep ContextBuilder,
+Reviewer, and history search out of this task.
 
 ## Blockers
 
@@ -61,6 +61,11 @@ adopted into version control.
   generation, transactional rebuild/clear on Project Knowledge promotion and lifecycle changes,
   and bounded lexical candidate retrieval. Full offline validation passed with 760 tests, 2 skips,
   1 deselection, repository-wide Ruff format/check, compileall, and `git diff --check`.
+- S53.3 is implemented: independent bounded selector with workspace/status/validity/sensitivity
+  filters, explicit/category/lexical candidate sources, deterministic score tuple, category
+  diversity, item/character budgets, explainable reasons, canonical rendering, and selection
+  digests. Full offline validation passed with 763 tests, 2 skips, 1 deselection, Ruff
+  format/check, compileall, and `git diff --check`.
 - S52 is complete: prepared configuration revisions/digests, YAML promotion Saga, Preference/
   Profile whitelist, foreground recovery, activation provenance/undo, Session projection updates,
   recoverable after-state finalization, explicit REPL global scope, and activation memory events.

@@ -28,6 +28,20 @@
 - Marked S53.2 complete and activated S53.3. The required Grok review remains deferred until all
   S53 tasks are complete, per the user's once-per-subplan instruction.
 
+## 2026-08-21 — Subplan 53.3 deterministic selector completed
+
+- Added an independent selector over bounded active Knowledge heads and rebuildable lexical hits.
+  It hard-filters workspace/current revision/status/validity/sensitivity, then applies explicit-key
+  priority, requested categories, lexical overlap, bounded confirmation recency, deterministic
+  tie-breaks, category diversity, item/character budgets, and explainable reason codes.
+- Added canonical untrusted Project Knowledge rendering and content digests shared by selection and
+  the future frozen Context projection. Zero-item and omitted-item selections remain valid.
+- Added deterministic, diversity, budget, expiry, and prohibited-revision coverage. Full offline
+  validation passed: 763 passed, 2 skipped, 1 deselected; Ruff format/check, compileall, and
+  `git diff --check` also passed.
+- Marked S53.3 complete and activated S53.4. Grok review remains deferred until Subplan 53 is
+  complete, as required.
+
 ## 2026-08-13 — Initialize large-plan workflow
 
 - Added `.agent/subplans/` for ordered child plans.
