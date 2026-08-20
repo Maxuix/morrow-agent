@@ -243,3 +243,72 @@ def test_application_collaborators_do_not_mutate_persistence_private_state():
     assert "persistence._last_client_message_id" not in combined
     assert "persistence.current_task_run_id =" not in combined
     assert "session.committer.current_task_run_id" not in combined
+
+
+def test_operational_journal_delegates_partitioned_state_domains():
+    source = (SOURCE_ROOT / "adapters/state/journal.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    journal = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "SqliteOperationalJournal"
+    )
+    methods = {
+        node.name: node
+        for node in journal.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    owners = {
+        "put_application_event": "_application_journal",
+        "reserve_artifact": "_artifact_journal",
+        "put_context_checkpoint": "_context_journal",
+        "append_records": "_conversation_journal",
+        "put_report": "_recovery_journal",
+        "get_task_run": "_task_journal",
+        "put_execution": "_tool_journal",
+        "get_agent_run": "_permission_journal",
+    }
+
+    for method_name, owner in owners.items():
+        assert any(
+            isinstance(node, ast.Attribute)
+            and isinstance(node.value, ast.Name)
+            and node.value.id == "self"
+            and node.attr == owner
+            for node in ast.walk(methods[method_name])
+        ), method_name
+
+
+def test_partitioned_state_repositories_do_not_depend_on_parent_facade():
+    repositories = (
+        "application_journal.py",
+        "artifact_journal.py",
+        "context_journal.py",
+        "conversation_journal.py",
+        "permission_journal.py",
+        "recovery_journal.py",
+        "task_journal.py",
+        "tool_journal.py",
+    )
+
+    for filename in repositories:
+        path = SOURCE_ROOT / "adapters/state" / filename
+        source = path.read_text(encoding="utf-8")
+        assert "morrow.adapters.state.journal" not in _imports(path), filename
+        assert "SqliteOperationalJournal" not in source, filename
+
+
+def test_operational_storage_uses_public_transaction_boundary():
+    journal_source = (SOURCE_ROOT / "adapters/state/journal.py").read_text(encoding="utf-8")
+    cleanup_source = (SOURCE_ROOT / "application/cleanup.py").read_text(encoding="utf-8")
+    backup_source = (SOURCE_ROOT / "application/backup.py").read_text(encoding="utf-8")
+
+    for legacy_state in (
+        "_transaction_time",
+        "_transaction_replayable",
+        "_touched_session_ids",
+    ):
+        assert legacy_state not in journal_source
+    assert "journal._session" not in cleanup_source
+    assert "journal._executor" not in cleanup_source
+    assert "journal._session" not in backup_source

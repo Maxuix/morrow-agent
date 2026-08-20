@@ -240,7 +240,7 @@ class OperationalBackupService:
         try:
             if self.journal is not None:
                 journal = self.journal
-                schema_version = journal._session.schema_version
+                schema_version = journal.schema_version()
             else:
                 handle = self.store.open(StoreOpenMode.DIAGNOSE)
                 journal = SqliteOperationalJournal(handle)

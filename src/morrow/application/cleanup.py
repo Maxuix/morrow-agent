@@ -12,7 +12,7 @@ from morrow.application.cleanup_fs import (
 )
 from morrow.core.artifacts import ArtifactMetadata
 from morrow.core.cleanup import OrphanCleanupReport
-from morrow.core.store import StorageError, StorageErrorCode, StoreOpenMode
+from morrow.core.store import StorageError, StorageErrorCode
 
 
 class ArtifactCleanupService:
@@ -21,12 +21,9 @@ class ArtifactCleanupService:
 
     def run(self, *, dry_run: bool = True) -> OrphanCleanupReport:
         journal = self.artifacts.journal
-        if not dry_run and journal._session.mode not in {
-            StoreOpenMode.READ_WRITE,
-            StoreOpenMode.CREATE,
-        }:
+        if not dry_run and not journal.supports_writes():
             raise StorageError(StorageErrorCode.UNAVAILABLE, "operational store is not writable")
-        if not dry_run and getattr(journal, "_executor", None) is not None:
+        if not dry_run and journal.transaction_is_active():
             raise StorageError(
                 StorageErrorCode.UNAVAILABLE,
                 "Artifact cleanup cannot run inside another transaction",

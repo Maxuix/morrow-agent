@@ -1405,3 +1405,21 @@
 - Full offline validation passed: `667 passed, 2 skipped, 1 deselected`; the skips are the known
   nested-sandbox Seatbelt cases. Ruff reported 169 files formatted; Ruff check, compileall, CLI
   help, architecture guards, and `git diff --check` passed.
+
+## 2026-08-20 — S48.4 operational journal partition completed
+
+- Introduced one `SqliteJournalBackend` and explicit transaction context owning executor,
+  replayability, timestamp, and touched-Session mutation state for all bounded repositories.
+- Split application events, artifacts, context checkpoints, conversation/Turn receipts,
+  AgentRun permissions, Recovery, Tasks, and durable tools into cohesive repositories that accept
+  the shared backend and narrow callbacks rather than the parent journal facade.
+- Reduced `journal.py` from 3503 to 931 lines. Its 832-line facade class retains 102 compatibility
+  methods, but only 24 are longer than eight lines; remaining substantive SQL owns the Session
+  aggregate, with a 70-line maximum method. Context and conversation repositories are 294 and 365
+  lines, avoiding both a replacement God Class and one-class-per-method fragmentation.
+- Removed application cleanup and backup reach-through to private SQLite session/executor state;
+  added public write-capability, active-transaction, and schema-version queries.
+- Added architecture regressions for repository delegation, parent-facade independence, and the
+  public transaction boundary. Full offline validation passed: `670 passed, 2 skipped,
+  1 deselected`; Ruff format/check, compileall, CLI help, state cleanup help, and
+  `git diff --check` passed.
