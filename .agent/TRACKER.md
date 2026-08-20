@@ -7,7 +7,7 @@ defined; Subplan 51 is complete and Subplan 52 is ready to activate from verifie
 
 ## Last completed task
 
-Subplan 51 is verified and ready to merge, including its one-time Grok review-fix pass. It adds
+Subplan 51 is verified and merged at `548f0bc`, including its one-time Grok review-fix pass. It adds
 the v11 Inbox decision boundary, SQLite Project Knowledge promotion/lifecycle, bounded CLI/REPL
 surfaces, and lazy query expiry. Subplan 50 is merged at `4d47be8` underneath it.
 
@@ -43,7 +43,7 @@ adopted into version control.
 - Profile/Preferences remain YAML authorities; Project Knowledge and learning audit records use the
   shared Operational Store.
 - S51.1 is verified: v11 upgrade/rollback, decision/Knowledge/memory persistence, corruption and
-  reserved Saga constraint tests pass on `feat/stage5-inbox-knowledge`.
+  reserved Saga constraint tests passed on `feat/stage5-inbox-knowledge`.
 - S51.2 is implemented and focused query/preview tests pass; the legacy API methods remain
   compatible while new typed view entry points live under `api.learning` and `api.memory`.
 - S51.3–S51.6 are implemented: candidate decisions/rejection/suppression/expiry, Project Knowledge

@@ -2,7 +2,7 @@
 
 > Status: authorized; Stage 5 implementation is in progress
 > Active subplan: 52 — Profile/Preferences Promotion Saga
-> Baseline: `4d47be8` on verified local `main`
+> Baseline: `548f0bc` on verified local `main`
 > Target schema: Operational Store v9 → v10 → v11 → v12
 
 ## Objective
