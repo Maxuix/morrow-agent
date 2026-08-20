@@ -20,6 +20,7 @@ from morrow.core.learning import (
     CandidateDraftBatch,
     LearningCandidate,
     LearningCandidateStatus,
+    LearningCandidateType,
     LearningEvidence,
     LearningPolicy,
     LearningReview,
@@ -110,6 +111,13 @@ class LearningJournalPort(TransactionalJournalPort, Protocol):
         limit: int = 100,
     ) -> tuple[LearningReview, ...]: ...
 
+    def count_learning_reviews(
+        self,
+        workspace_id: str,
+        *,
+        status: LearningReviewStatus | None = None,
+    ) -> int: ...
+
     def save_learning_review(
         self,
         workspace_id: str,
@@ -146,6 +154,14 @@ class LearningJournalPort(TransactionalJournalPort, Protocol):
         limit: int = 100,
     ) -> tuple[LearningEvidence, ...]: ...
 
+    def count_learning_evidence(
+        self,
+        workspace_id: str,
+        *,
+        review_id: str | None = None,
+        task_run_id: str | None = None,
+    ) -> int: ...
+
     def link_learning_review_evidence(
         self, workspace_id: str, review_id: str, evidence_id: str
     ) -> None: ...
@@ -167,10 +183,22 @@ class LearningJournalPort(TransactionalJournalPort, Protocol):
         workspace_id: str,
         *,
         status: LearningCandidateStatus | None = None,
+        candidate_type: LearningCandidateType | None = None,
+        origin_review_id: str | None = None,
         fingerprint: str | None = None,
         semantic_key: str | None = None,
+        expires_before: datetime | None = None,
         limit: int = 100,
     ) -> tuple[LearningCandidate, ...]: ...
+
+    def count_learning_candidates(
+        self,
+        workspace_id: str,
+        *,
+        status: LearningCandidateStatus | None = None,
+        candidate_type: LearningCandidateType | None = None,
+        origin_review_id: str | None = None,
+    ) -> int: ...
 
     def save_learning_candidate(
         self,
@@ -208,6 +236,7 @@ class LearningJournalPort(TransactionalJournalPort, Protocol):
         candidate_type: str | None = None,
         scope: LearningScope | None = None,
         semantic_key: str | None = None,
+        fingerprint: str | None = None,
         limit: int = 100,
     ) -> tuple[LearningSuppression, ...]: ...
 

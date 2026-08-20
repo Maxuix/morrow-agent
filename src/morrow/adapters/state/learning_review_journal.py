@@ -65,6 +65,24 @@ class SqliteLearningReviewMixin:
         parameters.append(limit)
         return tuple(_review_from_row(row) for row in self.backend.read_all(sql, tuple(parameters)))
 
+    def count_learning_reviews(
+        self,
+        workspace_id: str,
+        *,
+        status: LearningReviewStatus | None = None,
+    ) -> int:
+        sql = "SELECT COUNT(*) FROM learning_reviews WHERE workspace_id = ?"
+        parameters: list[object] = [workspace_id]
+        if status is not None:
+            sql += " AND status = ?"
+            parameters.append(status.value)
+        row = self.backend.read_one(sql, tuple(parameters))
+        if row is None:
+            raise StorageError(
+                StorageErrorCode.UNAVAILABLE, "learning review count could not be read"
+            )
+        return int(row[0])
+
     def put_learning_review(self, workspace_id: str, review: LearningReview) -> LearningReview:
         if review.workspace_id != workspace_id:
             raise _workspace_error("review")
@@ -318,6 +336,28 @@ class SqliteLearningReviewMixin:
         return tuple(
             _evidence_from_row(row) for row in self.backend.read_all(sql, tuple(parameters))
         )
+
+    def count_learning_evidence(
+        self,
+        workspace_id: str,
+        *,
+        review_id: str | None = None,
+        task_run_id: str | None = None,
+    ) -> int:
+        sql = "SELECT COUNT(*) FROM learning_evidence WHERE workspace_id = ?"
+        parameters: list[object] = [workspace_id]
+        if review_id is not None:
+            sql += " AND origin_review_id = ?"
+            parameters.append(review_id)
+        if task_run_id is not None:
+            sql += " AND task_run_id = ?"
+            parameters.append(task_run_id)
+        row = self.backend.read_one(sql, tuple(parameters))
+        if row is None:
+            raise StorageError(
+                StorageErrorCode.UNAVAILABLE, "learning evidence count could not be read"
+            )
+        return int(row[0])
 
     def put_learning_evidence(
         self, workspace_id: str, evidence: LearningEvidence

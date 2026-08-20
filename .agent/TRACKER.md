@@ -13,13 +13,13 @@ underneath the active Inbox/Project Knowledge slice.
 
 ## Active task
 
-Implement S51.2: add bounded Review/Candidate/Knowledge queries and pure candidate-decision previews
-on top of the verified v11 persistence boundary; keep all Active/configuration writes closed.
+Implement S51.3: complete immutable candidate rejection, exact/key suppression, lazy/batch expiry,
+receipts/events, replay, and concurrency behavior on top of the verified v11 boundary.
 
 ## Next action
 
-Read the existing application-service composition and response-budget patterns, then add focused
-Learning/Memory query services without growing OperationalApplicationService or touching YAML.
+Finish the focused Learning decision child service, validate stale/replay/expiry paths, then proceed
+to Project Knowledge promotion; keep Preference/Profile YAML promotion closed until Subplan 52.
 
 ## Blockers
 
@@ -45,5 +45,7 @@ adopted into version control.
   shared Operational Store.
 - S51.1 is verified: v11 upgrade/rollback, decision/Knowledge/memory persistence, corruption and
   reserved Saga constraint tests pass on `feat/stage5-inbox-knowledge`.
+- S51.2 is implemented and focused query/preview tests pass; the legacy API methods remain
+  compatible while new typed view entry points live under `api.learning` and `api.memory`.
 - AgentLoop and ConversationLog ownership, public runtime events, bundled capability policy, and
   credentials remain unchanged.

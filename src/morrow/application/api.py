@@ -12,6 +12,8 @@ from morrow.application.api_recovery import RecoveryApplicationService
 from morrow.application.artifacts import ArtifactService
 from morrow.application.checkpoints import ContextCheckpointService, SessionForkService
 from morrow.application.cleanup import ArtifactCleanupService
+from morrow.application.learning.inbox import LearningApplicationService
+from morrow.application.learning.memory import MemoryApplicationService
 from morrow.application.learning.policy import LearningPolicyService, LearningPolicyStatus
 from morrow.application.learning.requests import LearningReviewRequestService
 from morrow.application.learning.runner import LearningReviewRunner, LearningReviewRunResult
@@ -110,6 +112,11 @@ class OperationalApplicationService:
         self._recovery_commands = RecoveryApplicationService(self.command_context)
         self._permission_commands = PermissionApplicationService(self.command_context)
         self.learning_policy = LearningPolicyService(self.command_context)
+        self.learning = LearningApplicationService(
+            self.command_context,
+            policy=self.learning_policy,
+        )
+        self.memory = MemoryApplicationService(self.command_context)
         self.learning_reviews = LearningReviewRequestService(
             journal=self.journal,
             workspace_id=self.workspace_id,
@@ -271,6 +278,30 @@ class OperationalApplicationService:
 
     def learning_policy_status(self) -> LearningPolicyStatus:
         return self.learning_policy.get_status()
+
+    def learning_status(self):
+        return self.learning.status()
+
+    def get_learning_candidate_view(self, candidate_id: str):
+        return self.learning.get_candidate(candidate_id)
+
+    def list_learning_candidate_views(self, **kwargs):
+        return self.learning.list_candidates(**kwargs)
+
+    def get_learning_review_view(self, review_id: str):
+        return self.learning.get_review(review_id)
+
+    def list_learning_review_views(self, **kwargs):
+        return self.learning.list_reviews(**kwargs)
+
+    def preview_learning_candidate_decision(self, candidate_id: str, **kwargs):
+        return self.learning.preview_candidate_decision(candidate_id, **kwargs)
+
+    def list_project_knowledge(self, **kwargs):
+        return self.memory.list_knowledge(**kwargs)
+
+    def get_project_knowledge(self, knowledge_id: str, *, revision: int | None = None):
+        return self.memory.get_knowledge(knowledge_id, revision=revision)
 
     def set_learning_mode(
         self,

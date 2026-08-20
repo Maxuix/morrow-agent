@@ -52,6 +52,7 @@ from morrow.core.execution import (
 from morrow.core.learning import (
     LearningCandidate,
     LearningCandidateStatus,
+    LearningCandidateType,
     LearningEvidence,
     LearningPolicy,
     LearningReview,
@@ -212,6 +213,14 @@ class SqliteOperationalJournal:
             workspace_id, status=status, task_outcome_id=task_outcome_id, limit=limit
         )
 
+    def count_learning_reviews(
+        self,
+        workspace_id: str,
+        *,
+        status: LearningReviewStatus | None = None,
+    ) -> int:
+        return self._learning_journal.count_learning_reviews(workspace_id, status=status)
+
     def save_learning_review(
         self,
         workspace_id: str,
@@ -262,6 +271,17 @@ class SqliteOperationalJournal:
             workspace_id, review_id=review_id, task_run_id=task_run_id, limit=limit
         )
 
+    def count_learning_evidence(
+        self,
+        workspace_id: str,
+        *,
+        review_id: str | None = None,
+        task_run_id: str | None = None,
+    ) -> int:
+        return self._learning_journal.count_learning_evidence(
+            workspace_id, review_id=review_id, task_run_id=task_run_id
+        )
+
     def link_learning_review_evidence(
         self, workspace_id: str, review_id: str, evidence_id: str
     ) -> None:
@@ -287,16 +307,37 @@ class SqliteOperationalJournal:
         workspace_id: str,
         *,
         status: LearningCandidateStatus | None = None,
+        candidate_type: LearningCandidateType | None = None,
+        origin_review_id: str | None = None,
         fingerprint: str | None = None,
         semantic_key: str | None = None,
+        expires_before: datetime | None = None,
         limit: int = 100,
     ) -> tuple[LearningCandidate, ...]:
         return self._learning_journal.list_learning_candidates(
             workspace_id,
             status=status,
+            candidate_type=candidate_type,
+            origin_review_id=origin_review_id,
             fingerprint=fingerprint,
             semantic_key=semantic_key,
+            expires_before=expires_before,
             limit=limit,
+        )
+
+    def count_learning_candidates(
+        self,
+        workspace_id: str,
+        *,
+        status: LearningCandidateStatus | None = None,
+        candidate_type: LearningCandidateType | None = None,
+        origin_review_id: str | None = None,
+    ) -> int:
+        return self._learning_journal.count_learning_candidates(
+            workspace_id,
+            status=status,
+            candidate_type=candidate_type,
+            origin_review_id=origin_review_id,
         )
 
     def save_learning_candidate(
@@ -347,6 +388,7 @@ class SqliteOperationalJournal:
         candidate_type: str | None = None,
         scope: LearningScope | None = None,
         semantic_key: str | None = None,
+        fingerprint: str | None = None,
         limit: int = 100,
     ) -> tuple[LearningSuppression, ...]:
         return self._learning_journal.list_learning_suppressions(
@@ -354,6 +396,7 @@ class SqliteOperationalJournal:
             candidate_type=candidate_type,
             scope=scope,
             semantic_key=semantic_key,
+            fingerprint=fingerprint,
             limit=limit,
         )
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from morrow.adapters.state.learning_journal import (
     _CANDIDATE_COLUMNS,
     _EVIDENCE_COLUMNS_QUALIFIED,
@@ -20,6 +22,7 @@ from morrow.core.domain import canonical_json_bytes
 from morrow.core.learning import (
     LearningCandidate,
     LearningCandidateStatus,
+    LearningCandidateType,
     LearningEvidence,
     LearningScope,
     LearningSuppression,
@@ -65,8 +68,11 @@ class SqliteLearningCandidateMixin:
         workspace_id: str,
         *,
         status: LearningCandidateStatus | None = None,
+        candidate_type: LearningCandidateType | None = None,
+        origin_review_id: str | None = None,
         fingerprint: str | None = None,
         semantic_key: str | None = None,
+        expires_before: datetime | None = None,
         limit: int = 100,
     ) -> tuple[LearningCandidate, ...]:
         if not 1 <= limit <= 500:
@@ -76,17 +82,55 @@ class SqliteLearningCandidateMixin:
         if status is not None:
             sql += " AND status = ?"
             parameters.append(status.value)
+        if candidate_type is not None:
+            sql += " AND candidate_type = ?"
+            parameters.append(candidate_type.value)
+        if origin_review_id is not None:
+            sql += " AND origin_review_id = ?"
+            parameters.append(origin_review_id)
         if fingerprint is not None:
             sql += " AND fingerprint = ?"
             parameters.append(fingerprint)
         if semantic_key is not None:
             sql += " AND semantic_key = ?"
             parameters.append(semantic_key)
+        if expires_before is not None:
+            cutoff = expires_before
+            if cutoff.tzinfo is None:
+                cutoff = cutoff.replace(tzinfo=UTC)
+            sql += " AND expires_at_unix <= ?"
+            parameters.append(int(cutoff.timestamp()))
         sql += " ORDER BY created_at_unix ASC, candidate_id ASC LIMIT ?"
         parameters.append(limit)
         return tuple(
             _candidate_from_row(row) for row in self.backend.read_all(sql, tuple(parameters))
         )
+
+    def count_learning_candidates(
+        self,
+        workspace_id: str,
+        *,
+        status: LearningCandidateStatus | None = None,
+        candidate_type: LearningCandidateType | None = None,
+        origin_review_id: str | None = None,
+    ) -> int:
+        sql = "SELECT COUNT(*) FROM learning_candidates WHERE workspace_id = ?"
+        parameters: list[object] = [workspace_id]
+        if status is not None:
+            sql += " AND status = ?"
+            parameters.append(status.value)
+        if candidate_type is not None:
+            sql += " AND candidate_type = ?"
+            parameters.append(candidate_type.value)
+        if origin_review_id is not None:
+            sql += " AND origin_review_id = ?"
+            parameters.append(origin_review_id)
+        row = self.backend.read_one(sql, tuple(parameters))
+        if row is None:
+            raise StorageError(
+                StorageErrorCode.UNAVAILABLE, "learning candidate count could not be read"
+            )
+        return int(row[0])
 
     def put_learning_candidate(
         self, workspace_id: str, candidate: LearningCandidate
@@ -342,6 +386,7 @@ class SqliteLearningCandidateMixin:
         candidate_type: str | None = None,
         scope: LearningScope | None = None,
         semantic_key: str | None = None,
+        fingerprint: str | None = None,
         limit: int = 100,
     ) -> tuple[LearningSuppression, ...]:
         if not 1 <= limit <= 500:
@@ -357,6 +402,9 @@ class SqliteLearningCandidateMixin:
         if semantic_key is not None:
             sql += " AND semantic_key = ?"
             parameters.append(semantic_key)
+        if fingerprint is not None:
+            sql += " AND fingerprint = ?"
+            parameters.append(fingerprint)
         sql += " ORDER BY created_at_unix ASC, suppression_id ASC LIMIT ?"
         parameters.append(limit)
         return tuple(

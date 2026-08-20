@@ -1560,3 +1560,16 @@
 - Focused validation passed: 10 Stage 5 store tests plus 61 operational/store/journal tests; Ruff
   format/check passed for touched code. S51.2 is now active; no Active YAML or Saga behavior was
   introduced.
+
+## 2026-08-21 — Subplan 51 S51.2 verified; S51.3 active
+
+- Added focused `LearningApplicationService` and `MemoryApplicationService` children. Typed views
+  provide bounded status/counts, Review metadata without policy/prompts, Candidate summaries and
+  bounded Evidence/conflict/suppression/target projections, Knowledge history/evidence, and a
+  pure candidate decision preview. Existing Stage 5 API methods remain compatibility shims.
+- Added typed reject and expiry commands with immutable decision rows, exact+semantic suppression,
+  lazy expiry on reject, bounded cutoff expiry, optimistic row checks, deterministic batch decision
+  command IDs, sanitized events, command receipts, and replay reconstruction. Preference/Profile
+  promotion remains unavailable and no YAML/Saga behavior was added.
+- Focused S51.2/S51.3 validation currently passes: four application projection/decision tests,
+  existing Learning pipeline/store/policy regressions, Ruff, and compileall.
