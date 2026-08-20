@@ -105,14 +105,14 @@ def learning_status(
         state_root=state_root,
         workspace_id=workspace_id,
         directory=directory,
-        write=False,
+        write=True,
         action=action,
     )
 
 
 @learning_app.command("inbox")
 def learning_inbox(
-    status: LearningCandidateStatus | None = typer.Option(None, "--status"),
+    status: LearningCandidateStatus = typer.Option(LearningCandidateStatus.PROPOSED, "--status"),
     candidate_type: LearningCandidateType | None = typer.Option(None, "--type"),
     cursor: str | None = typer.Option(None, "--cursor"),
     limit: int = typer.Option(50, "--limit", min=1, max=100),
@@ -141,7 +141,7 @@ def learning_inbox(
         state_root=state_root,
         workspace_id=workspace_id,
         directory=directory,
-        write=False,
+        write=True,
         action=action,
     )
 
@@ -161,7 +161,7 @@ def learning_show(
         state_root=state_root,
         workspace_id=workspace_id,
         directory=directory,
-        write=False,
+        write=True,
         action=action,
     )
 
@@ -225,7 +225,12 @@ def learning_accept(
             scope=scope,
             conflict_resolution=conflict_resolution,
         )
-        _cli_helpers()[2](api.accept_learning_candidate(command).value)
+        value = api.accept_learning_candidate(command).value
+        if value.outcome == "candidate_only":
+            typer.echo(
+                "候选已接受为候选/反馈；未创建或激活 Skill、Workflow 或 Orchestration 状态。"
+            )
+        _cli_helpers()[2](value)
 
     _run_state_command(
         state_root=state_root,
@@ -290,7 +295,12 @@ def learning_edit(
             conflict_resolution=conflict_resolution,
             final_payload=final_payload,
         )
-        _cli_helpers()[2](api.edit_and_accept_learning_candidate(command).value)
+        value = api.edit_and_accept_learning_candidate(command).value
+        if value.outcome == "candidate_only":
+            typer.echo(
+                "候选已接受为候选/反馈；未创建或激活 Skill、Workflow 或 Orchestration 状态。"
+            )
+        _cli_helpers()[2](value)
 
     _run_state_command(
         state_root=state_root,
@@ -334,8 +344,8 @@ def learning_reject(
     )
 
 
-def _knowledge_or_error(api, knowledge_id: str):
-    value = api.get_project_knowledge(knowledge_id)
+def _knowledge_or_error(api, knowledge_id: str, *, revision: int | None = None):
+    value = api.get_project_knowledge(knowledge_id, revision=revision)
     if value is None:
         raise ApplicationError(ApplicationErrorCode.NOT_FOUND, "Project Knowledge is missing")
     return value
@@ -389,7 +399,9 @@ def memory_show(
     state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
 ) -> None:
     def action(api) -> None:
-        _cli_helpers()[2](_knowledge_or_error(api, knowledge_id), as_json=as_json)
+        _cli_helpers()[2](
+            _knowledge_or_error(api, knowledge_id, revision=revision), as_json=as_json
+        )
 
     _run_state_command(
         state_root=state_root,
@@ -409,6 +421,8 @@ def _memory_mutation(
 ) -> None:
     view = _knowledge_or_error(api, knowledge_id)
     _cli_helpers()[2](view)
+    if operation == "delete":
+        typer.echo("这是逻辑删除：历史修订和备份仍会保留，当前记录将不再参与 Memory 选择。")
     _confirm_or_exit(f"确认执行 Project Knowledge {operation}？")
     command = command_type(
         workspace_id=api.workspace_id,

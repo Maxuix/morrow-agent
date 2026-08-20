@@ -233,15 +233,23 @@ class MemoryLifecycleService:
             knowledge_id = reference["knowledge_id"]
             operation = reference["operation"]
             memory_revision = reference["memory_revision"]
-            head = self.context._query(
-                lambda: self.context.journal.get_project_knowledge_head(
-                    self.workspace_id, knowledge_id
+            if "head" in reference:
+                head = ProjectKnowledgeHead.model_validate(reference["head"])
+            else:
+                head = self.context._query(
+                    lambda: self.context.journal.get_project_knowledge_head(
+                        self.workspace_id, knowledge_id
+                    )
                 )
-            )
-            if head is None:
+                if head is None:
+                    raise ApplicationError(
+                        ApplicationErrorCode.NEEDS_RECOVERY,
+                        "Knowledge lifecycle head is missing",
+                    )
+            if head.workspace_id != self.workspace_id or head.knowledge_id != knowledge_id:
                 raise ApplicationError(
                     ApplicationErrorCode.NEEDS_RECOVERY,
-                    "Knowledge lifecycle head is missing",
+                    "Knowledge lifecycle result is outside the workspace",
                 )
             return KnowledgeLifecycleResult(
                 head=head,
@@ -262,6 +270,7 @@ class MemoryLifecycleService:
                 "knowledge_id": result.head.knowledge_id,
                 "operation": result.operation,
                 "memory_revision": result.memory_revision,
+                "head": result.head.model_dump(mode="json"),
             }
         ).decode("utf-8")
 

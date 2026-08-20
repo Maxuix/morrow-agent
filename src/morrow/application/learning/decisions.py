@@ -125,6 +125,7 @@ class LearningDecisionService:
                     aggregate_id=updated.candidate_id,
                     payload={
                         "candidate_type": updated.candidate_type.value,
+                        "semantic_key_digest": sha256_digest(updated.semantic_key),
                         "status": updated.status.value,
                         "row_version": updated.row_version,
                         "reason_code": "expired_before_rejection",
@@ -204,6 +205,7 @@ class LearningDecisionService:
                 aggregate_id=updated.candidate_id,
                 payload={
                     "candidate_type": updated.candidate_type.value,
+                    "semantic_key_digest": sha256_digest(updated.semantic_key),
                     "status": updated.status.value,
                     "row_version": updated.row_version,
                     "decision_kind": decision.kind.value,
@@ -218,6 +220,11 @@ class LearningDecisionService:
                     aggregate_id=suppression.suppression_id,
                     payload={
                         "candidate_type": suppression.candidate_type.value,
+                        "semantic_key_digest": (
+                            sha256_digest(suppression.semantic_key)
+                            if suppression.semantic_key is not None
+                            else None
+                        ),
                         "scope": suppression.scope.value,
                         "status": suppression.status.value,
                         "row_version": suppression.row_version,
@@ -304,6 +311,7 @@ class LearningDecisionService:
                     aggregate_id=updated.candidate_id,
                     payload={
                         "candidate_type": updated.candidate_type.value,
+                        "semantic_key_digest": sha256_digest(updated.semantic_key),
                         "status": updated.status.value,
                         "row_version": updated.row_version,
                         "reason_code": "expired_by_cutoff",

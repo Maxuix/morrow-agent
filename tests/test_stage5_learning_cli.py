@@ -11,6 +11,7 @@ from typer.testing import CliRunner
 from morrow.application.commands import CommandService
 from morrow.application.orchestrator import DispatchResult
 from morrow.interfaces import cli as cli_module
+from morrow.interfaces import learning_cli
 from morrow.interfaces import terminal as terminal_module
 from test_stage5_project_knowledge import _project_candidate
 from test_terminal import ScriptedTerminal
@@ -115,3 +116,18 @@ def test_learning_and_memory_typer_surfaces_are_registered():
     assert "accept" in learning.stdout
     assert memory.exit_code == 0
     assert "disable" in memory.stdout
+
+
+def test_memory_show_passes_requested_revision_to_application_service():
+    class FakeApi:
+        def __init__(self):
+            self.calls = []
+
+        def get_project_knowledge(self, knowledge_id, *, revision=None):
+            self.calls.append((knowledge_id, revision))
+            return {"knowledge_id": knowledge_id, "revision": revision}
+
+    api = FakeApi()
+    value = learning_cli._knowledge_or_error(api, "knw_history", revision=1)
+    assert value == {"knowledge_id": "knw_history", "revision": 1}
+    assert api.calls == [("knw_history", 1)]

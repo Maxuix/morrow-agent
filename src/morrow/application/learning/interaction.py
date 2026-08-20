@@ -173,6 +173,8 @@ class LearningCommandMixin:
             return CommandResult(["Memory 服务尚未就绪。"])
         operation = parts[1].casefold() if len(parts) > 1 else "list"
         if operation == "list":
+            if len(parts) > 1 and parts[2:] not in ([], ["--type", "knowledge"]):
+                return CommandResult(["用法：/memory list [--type knowledge]"])
             page = self.api.list_project_knowledge(limit=50)
             lines = [f"Project Knowledge：{len(page.items)} 条"]
             lines.extend(
@@ -217,7 +219,9 @@ class LearningCommandMixin:
                     operation=operation,
                 ),
             )
-        return CommandResult(["用法：/memory [list|show|disable|enable|dispute|delete]"])
+        return CommandResult(
+            ["用法：/memory [list [--type knowledge]|show|disable|enable|dispute|delete]"]
+        )
 
     def accept_learning_candidate(self, request: LearningCandidateCommandRequest):
         self._ensure_workspace_writable()

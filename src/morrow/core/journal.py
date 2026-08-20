@@ -31,6 +31,8 @@ T = TypeVar("T")
 class TransactionalJournalPort(Protocol):
     """Run work against the same transaction-scoped journal implementation."""
 
+    def supports_writes(self) -> bool: ...
+
     def transact(self, work: Callable[[Self], T]) -> T: ...
 
 

@@ -155,6 +155,7 @@ class SqliteOperationalJournal:
             validate_artifact_refs=self._validate_artifact_refs,
             replace_artifact_refs=self._replace_artifact_references,
         )
+
         self._learning_journal = SqliteLearningJournal(self._backend)
         self._learning_memory_journal = SqliteLearningMemoryJournal(self._backend)
 

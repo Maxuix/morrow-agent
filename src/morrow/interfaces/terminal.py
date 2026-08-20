@@ -365,9 +365,14 @@ def _command_service(orchestrator):
 
 def _show_learning_result(terminal: Terminal, value) -> None:
     if hasattr(value, "outcome"):
-        terminal.console.print(
-            f"Learning Candidate 已处理：{value.outcome}；候选 {value.candidate.candidate_id}。"
-        )
+        if value.outcome == "candidate_only":
+            terminal.console.print(
+                "候选已接受为候选/反馈；未创建或激活 Skill、Workflow 或 Orchestration 状态。"
+            )
+        else:
+            terminal.console.print(
+                f"Learning Candidate 已处理：{value.outcome}；候选 {value.candidate.candidate_id}。"
+            )
     elif hasattr(value, "operation") and hasattr(value, "head"):
         terminal.console.print(
             f"Project Knowledge 已处理：{value.operation}；状态 {value.head.status.value}。"
@@ -460,6 +465,10 @@ async def _handle_learning_reject(orchestrator, terminal, prompt_session, reques
 
 
 async def _handle_memory_lifecycle(orchestrator, terminal, prompt_session, request) -> bool:
+    if request.operation == "delete":
+        terminal.console.print(
+            "这是逻辑删除：历史修订和备份仍会保留，当前记录将不再参与 Memory 选择。"
+        )
     confirmation = await _confirm(
         terminal, prompt_session, f"确认执行 Project Knowledge {request.operation}？"
     )

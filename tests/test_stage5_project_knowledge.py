@@ -21,7 +21,11 @@ from morrow.core.learning_commands import (
     EnableProjectKnowledgeCommand,
     MarkProjectKnowledgeDisputedCommand,
 )
-from morrow.core.learning_memory import LearningConflictResolution, ProjectKnowledgeStatus
+from morrow.core.learning_memory import (
+    LearningConflictResolution,
+    ProjectKnowledgeCategory,
+    ProjectKnowledgeStatus,
+)
 from morrow.core.learning_payloads import (
     LearningCandidateDraft,
     ProjectKnowledgeCandidatePayload,
@@ -252,6 +256,43 @@ async def test_project_knowledge_edit_accept_creates_superseding_revision(tmp_pa
 
 
 @pytest.mark.asyncio
+async def test_project_knowledge_preview_rejects_category_conflicts(tmp_path):
+    session, _journal, api, candidate, _reviewer = await _project_candidate(tmp_path)
+    try:
+        first = api.accept_learning_candidate(_accept_command(candidate, "cmd_category_first"))
+        current = await _run_project_review(api, _journal)
+        current_view = api.get_learning_candidate_view(current.candidate_id)
+        assert current_view is not None
+        edited_payload = current_view.candidate.proposed_payload.model_copy(
+            update={
+                "category": ProjectKnowledgeCategory.CONVENTION,
+                "statement": "same statement",
+            }
+        )
+        preview = api.preview_learning_candidate_decision(
+            current.candidate_id,
+            edit=edited_payload,
+            conflict_resolution=LearningConflictResolution.REPLACE,
+        )
+        assert preview.available is False
+        assert preview.reason == "knowledge_category_conflict"
+        command = EditAndAcceptLearningCandidateCommand(
+            workspace_id="ws_1",
+            candidate_id=current.candidate_id,
+            expected_row_version=current.row_version,
+            command_id="cmd_category_conflict",
+            conflict_resolution=LearningConflictResolution.REPLACE,
+            final_payload=edited_payload,
+        )
+        with pytest.raises(ApplicationError) as error:
+            api.edit_and_accept_learning_candidate(command)
+        assert error.value.code is ApplicationErrorCode.CONFLICT
+        assert api.get_project_knowledge(first.value.knowledge_id).revision.revision == 1
+    finally:
+        session.close()
+
+
+@pytest.mark.asyncio
 async def test_project_knowledge_lifecycle_is_replay_safe_and_hides_logical_deletes(tmp_path):
     session, journal, api, candidate, _reviewer = await _project_candidate(
         tmp_path,
@@ -330,6 +371,15 @@ async def test_project_knowledge_lifecycle_is_replay_safe_and_hides_logical_dele
         )
         assert deleted.value.head.status is ProjectKnowledgeStatus.DELETED
         assert deleted.value.memory_revision == 6
+        replay_after_lifecycle = api.disable_project_knowledge(
+            DisableProjectKnowledgeCommand(
+                workspace_id="ws_1",
+                knowledge_id=knowledge_id,
+                expected_row_version=2,
+                command_id="cmd_knw_disable",
+            )
+        )
+        assert replay_after_lifecycle.value.head.status is ProjectKnowledgeStatus.DISABLED
         assert api.list_project_knowledge().items == ()
         assert len(api.list_project_knowledge(status=ProjectKnowledgeStatus.DELETED).items) == 1
         history = api.get_project_knowledge(knowledge_id)

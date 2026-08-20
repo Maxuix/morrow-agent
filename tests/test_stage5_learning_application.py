@@ -48,6 +48,37 @@ async def test_learning_application_exposes_bounded_status_views_and_pure_previe
         session.close()
 
 
+@pytest.mark.asyncio
+async def test_inbox_queries_lazily_expire_due_candidates(tmp_path):
+    reviewer = ContextReviewer()
+    session, journal, api = _api(tmp_path, reviewer=reviewer)
+    try:
+        accepted = _accepted(api, journal, with_user_turn=True)
+        outcome = api.list_outcomes(accepted.value.task_run_id)[0]
+        review = api.list_learning_reviews(task_outcome_id=outcome.outcome_id).items[0]
+        await api.run_learning_review(review.review_id)
+        candidate = api.list_learning_candidate_views(status="proposed").items[0]
+        session.run_write(
+            lambda executor: executor.execute(
+                "UPDATE learning_candidates SET expires_at_unix = ? WHERE candidate_id = ?",
+                (int(datetime(2025, 12, 31, tzinfo=UTC).timestamp()), candidate.candidate_id),
+            )
+        )
+
+        assert api.list_learning_candidate_views(status="proposed").items == ()
+        expired = journal.get_learning_candidate("ws_1", candidate.candidate_id)
+        assert expired is not None and expired.status.value == "expired"
+        decisions = journal.list_learning_candidate_decisions(
+            "ws_1", candidate_id=candidate.candidate_id
+        )
+        assert len(decisions) == 1 and decisions[0].kind.value == "expire"
+        assert journal.list_application_events("ws_1")[-1].event_type == (
+            "learning.candidate_expired"
+        )
+    finally:
+        session.close()
+
+
 def test_learning_and_memory_query_boundaries_reject_invalid_filters(tmp_path):
     session, _journal, api = _api(tmp_path)
     try:

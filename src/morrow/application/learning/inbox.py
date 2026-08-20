@@ -18,12 +18,14 @@ from morrow.core.domain import canonical_json_bytes, sha256_digest
 from morrow.core.learning import (
     LEARNING_MAX_REFERENCE_IDS,
     LearningCandidate,
+    LearningCandidateOperation,
     LearningCandidateStatus,
     LearningCandidateType,
     LearningReview,
     LearningReviewStatus,
     LearningScope,
 )
+from morrow.core.learning_commands import ExpireLearningCandidatesCommand
 from morrow.core.learning_memory import (
     LearningCandidateDecisionKind,
     LearningConflictResolution,
@@ -74,7 +76,7 @@ def _offset(cursor: str | None, limit: int) -> int:
 
 
 class LearningApplicationService:
-    """Focused Learning facade; mutations are added by later Inbox sub-tasks."""
+    """Focused Learning facade for bounded Inbox queries and decisions."""
 
     def __init__(
         self,
@@ -99,6 +101,7 @@ class LearningApplicationService:
         return self.policy.get_status()
 
     def status(self) -> LearningStatusView:
+        self._expire_due_candidates()
         policy = self.policy_status()
         return LearningStatusView(
             policy=policy.policy,
@@ -154,6 +157,7 @@ class LearningApplicationService:
         return QueryPage(page, next_cursor)
 
     def get_candidate(self, candidate_id: str) -> LearningCandidateView | None:
+        self._expire_due_candidates()
         candidate = self.context._query(
             lambda: self.journal.get_learning_candidate(self.workspace_id, candidate_id)
         )
@@ -172,6 +176,7 @@ class LearningApplicationService:
         selected_status = self._candidate_status(status)
         selected_type = self._candidate_type(candidate_type)
         offset = _offset(cursor, limit)
+        self._expire_due_candidates()
         candidates = self.context._query(
             lambda: self.journal.list_learning_candidates(
                 self.workspace_id,
@@ -197,6 +202,7 @@ class LearningApplicationService:
         scope: LearningScope | str | None = None,
         conflict_resolution: LearningConflictResolution | str | None = None,
     ) -> LearningCandidateDecisionPreview:
+        self._expire_due_candidates()
         candidate = self.context._query(
             lambda: self.journal.get_learning_candidate(self.workspace_id, candidate_id)
         )
@@ -206,6 +212,7 @@ class LearningApplicationService:
         selected_resolution = self._conflict_resolution(conflict_resolution)
         payload = self._edited_payload(candidate, edit)
         semantic_key = self._payload_semantic_key(candidate, payload)
+        fingerprint = self._candidate_fingerprint(candidate, payload, selected_scope, semantic_key)
         after = self._preview_value(candidate, payload, selected_scope, semantic_key)
         before, available, reason, conflict, effective_resolution = self._target_decision(
             candidate,
@@ -220,7 +227,10 @@ class LearningApplicationService:
         elif candidate.expires_at <= _now(self.context):
             available = False
             reason = "candidate_expired"
-        if self._is_suppressed(candidate, semantic_key):
+        if self._has_duplicate(candidate, fingerprint):
+            available = False
+            reason = "candidate_duplicate"
+        elif self._is_suppressed(candidate, selected_scope, semantic_key, fingerprint):
             available = False
             reason = "candidate_suppressed"
         return LearningCandidateDecisionPreview(
@@ -251,6 +261,43 @@ class LearningApplicationService:
 
     def edit_and_accept_candidate(self, command):
         return self.promotion.edit_and_accept_candidate(command)
+
+    def _expire_due_candidates(self, *, limit: int = LEARNING_QUERY_MAX_PAGE_SIZE) -> None:
+        supports_writes = getattr(self.journal, "supports_writes", None)
+        if supports_writes is not None and not supports_writes():
+            return
+        cutoff = _now(self.context)
+        candidates = self.context._query(
+            lambda: self.journal.list_learning_candidates(
+                self.workspace_id,
+                status=LearningCandidateStatus.PROPOSED,
+                expires_before=cutoff,
+                limit=limit,
+            )
+        )
+        if not candidates:
+            return
+        command_id = (
+            "cmd_"
+            + sha256_digest(
+                canonical_json_bytes(
+                    [
+                        "lazy-inbox-expiry",
+                        self.workspace_id,
+                        cutoff.isoformat(),
+                        [candidate.candidate_id for candidate in candidates],
+                    ]
+                )
+            )[:48]
+        )
+        self.decisions.expire_candidates(
+            ExpireLearningCandidatesCommand(
+                workspace_id=self.workspace_id,
+                cutoff=cutoff,
+                limit=limit,
+                command_id=command_id,
+            )
+        )
 
     def _review_view(self, review: LearningReview) -> LearningReviewView:
         return LearningReviewView(
@@ -426,6 +473,14 @@ class LearningApplicationService:
             )
         if not isinstance(payload, ProjectKnowledgeCandidatePayload):
             return before, False, "project_knowledge_payload_invalid", None, resolution
+        if head.category is not payload.category:
+            return (
+                before,
+                False,
+                "knowledge_category_conflict",
+                "category_mismatch",
+                resolution,
+            )
         if head.status is ProjectKnowledgeStatus.ACTIVE and revision is not None:
             if revision.statement == payload.statement:
                 return before, True, None, "same_statement", LearningConflictResolution.CONFIRM
@@ -506,13 +561,19 @@ class LearningApplicationService:
             else candidate.semantic_key
         )
 
-    def _is_suppressed(self, candidate: LearningCandidate, semantic_key: str) -> bool:
+    def _is_suppressed(
+        self,
+        candidate: LearningCandidate,
+        scope: LearningScope,
+        semantic_key: str,
+        fingerprint: str,
+    ) -> bool:
         now = _now(self.context)
         suppressions = self.context._query(
             lambda: self.journal.list_learning_suppressions(
                 self.workspace_id,
                 candidate_type=candidate.candidate_type.value,
-                scope=candidate.proposed_scope,
+                scope=scope,
                 semantic_key=semantic_key,
                 limit=LEARNING_MAX_REFERENCE_IDS,
             )
@@ -520,14 +581,49 @@ class LearningApplicationService:
             lambda: self.journal.list_learning_suppressions(
                 self.workspace_id,
                 candidate_type=candidate.candidate_type.value,
-                scope=candidate.proposed_scope,
-                fingerprint=candidate.fingerprint,
+                scope=scope,
+                fingerprint=fingerprint,
                 limit=LEARNING_MAX_REFERENCE_IDS,
             )
         )
         return any(
             item.status.value == "active" and (item.expires_at is None or item.expires_at > now)
             for item in suppressions
+        )
+
+    def _has_duplicate(self, candidate: LearningCandidate, fingerprint: str) -> bool:
+        candidates = self.context._query(
+            lambda: self.journal.list_learning_candidates(
+                self.workspace_id,
+                fingerprint=fingerprint,
+                limit=LEARNING_MAX_REFERENCE_IDS,
+            )
+        )
+        return any(
+            item.candidate_id != candidate.candidate_id
+            and item.status
+            in {
+                LearningCandidateStatus.PROPOSED,
+                LearningCandidateStatus.PROMOTING,
+                LearningCandidateStatus.ACCEPTED,
+                LearningCandidateStatus.EDITED_AND_ACCEPTED,
+            }
+            for item in candidates
+        )
+
+    @staticmethod
+    def _candidate_fingerprint(
+        candidate: LearningCandidate,
+        payload: CandidatePayload,
+        scope: LearningScope,
+        semantic_key: str,
+    ) -> str:
+        return LearningCandidate.fingerprint_for(
+            candidate_type=candidate.candidate_type,
+            scope=scope,
+            semantic_key=semantic_key,
+            operation=LearningCandidateOperation(candidate.operation),
+            proposed_payload=payload,
         )
 
     @staticmethod

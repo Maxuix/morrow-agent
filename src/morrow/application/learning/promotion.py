@@ -12,6 +12,7 @@ from morrow.core.domain import canonical_json_bytes, sha256_digest
 from morrow.core.learning import (
     LEARNING_MAX_REFERENCE_IDS,
     LearningCandidate,
+    LearningCandidateOperation,
     LearningCandidateStatus,
     LearningCandidateType,
     LearningResolutionActor,
@@ -149,7 +150,24 @@ class LearningPromotionService:
             scope = self._scope(command.scope or candidate.proposed_scope.value)
             self._validate_scope(candidate.candidate_type, scope)
             semantic_key = self._semantic_key(candidate, final_payload)
-            self._assert_not_suppressed(txn, candidate, semantic_key, stamp)
+            fingerprint = LearningCandidate.fingerprint_for(
+                candidate_type=candidate.candidate_type,
+                scope=scope,
+                semantic_key=semantic_key,
+                operation=LearningCandidateOperation(candidate.operation),
+                proposed_payload=final_payload,
+            )
+            if (
+                not edit
+                and scope is candidate.proposed_scope
+                and fingerprint != candidate.fingerprint
+            ):
+                raise ApplicationError(
+                    ApplicationErrorCode.NEEDS_RECOVERY,
+                    "Learning Candidate fingerprint does not match its proposal",
+                )
+            self._assert_not_duplicate(txn, candidate, fingerprint)
+            self._assert_not_suppressed(txn, candidate, scope, semantic_key, fingerprint, stamp)
             decision_kind = (
                 LearningCandidateDecisionKind.EDIT_AND_ACCEPT
                 if edit
@@ -157,7 +175,6 @@ class LearningPromotionService:
             )
             effective_resolution = self._effective_conflict_resolution(
                 txn,
-                candidate=candidate,
                 payload=final_payload,
                 semantic_key=semantic_key,
                 requested=command.conflict_resolution,
@@ -187,7 +204,6 @@ class LearningPromotionService:
                     decision=decision,
                     payload=final_payload,
                     semantic_key=semantic_key,
-                    scope=scope,
                     stamp=stamp,
                 )
             elif candidate.candidate_type in {
@@ -195,12 +211,7 @@ class LearningPromotionService:
                 LearningCandidateType.WORKFLOW_FEEDBACK,
                 LearningCandidateType.ORCHESTRATION_POLICY_CANDIDATE,
             }:
-                knowledge = self._acknowledge_candidate_only(
-                    txn,
-                    candidate=candidate,
-                    decision=decision,
-                    stamp=stamp,
-                )
+                knowledge = self._acknowledge_candidate_only()
             else:
                 raise ApplicationError(
                     ApplicationErrorCode.INVALID, "Learning Candidate type is unavailable"
@@ -241,6 +252,7 @@ class LearningPromotionService:
                 aggregate_id=updated.candidate_id,
                 payload={
                     "candidate_type": updated.candidate_type.value,
+                    "semantic_key_digest": sha256_digest(semantic_key),
                     "status": updated.status.value,
                     "row_version": updated.row_version,
                     "decision_kind": decision.kind.value,
@@ -321,17 +333,37 @@ class LearningPromotionService:
                 ),
                 expected_row_version=candidate.row_version,
             )
-            self.context._event(
+            event = self.context._event(
                 txn,
                 event_type="learning.candidate_expired",
                 aggregate_kind="learning_candidate",
                 aggregate_id=updated.candidate_id,
                 payload={
                     "candidate_type": updated.candidate_type.value,
+                    "semantic_key_digest": sha256_digest(updated.semantic_key),
                     "status": updated.status.value,
                     "row_version": updated.row_version,
                     "reason_code": "expired_before_promotion",
                 },
+            )
+            self.context._receipt(
+                txn,
+                command_id=decision_command_id,
+                operation="learning_candidate_expire_lazy",
+                digest=sha256_digest(
+                    canonical_json_bytes(
+                        {
+                            "candidate_id": candidate_id,
+                            "origin_command_id": origin_command_id,
+                            "reason_code": "expired_before_promotion",
+                        }
+                    )
+                ),
+                session_id=None,
+                result_kind="learning_candidate_decision",
+                result_id=decision.decision_id,
+                row_version=updated.row_version,
+                event_cursor=event.cursor,
             )
             return True
 
@@ -345,7 +377,6 @@ class LearningPromotionService:
         decision: LearningCandidateDecision,
         payload: CandidatePayload,
         semantic_key: str,
-        scope: LearningScope,
         stamp: datetime,
     ) -> tuple[str, str | None, str | None, int | None, int | None, str | None]:
         if not isinstance(payload, ProjectKnowledgeCandidatePayload):
@@ -504,14 +535,8 @@ class LearningPromotionService:
             memory_event,
         )
 
-    def _acknowledge_candidate_only(
-        self,
-        txn,
-        *,
-        candidate: LearningCandidate,
-        decision: LearningCandidateDecision,
-        stamp: datetime,
-    ) -> tuple[str, None, None, None, None, None]:
+    @staticmethod
+    def _acknowledge_candidate_only() -> tuple[str, None, None, None, None, None]:
         return ("candidate_only", None, None, None, None, None)
 
     def _new_revision(
@@ -585,7 +610,6 @@ class LearningPromotionService:
         self,
         txn,
         *,
-        candidate: LearningCandidate,
         payload: CandidatePayload,
         semantic_key: str,
         requested: LearningConflictResolution,
@@ -596,23 +620,55 @@ class LearningPromotionService:
         if head is None or head.current_revision_id is None:
             return requested
         current = txn.get_project_knowledge_revision(self.workspace_id, head.current_revision_id)
+        if current is not None and head.category is not payload.category:
+            return requested
         if current is not None and head.status is ProjectKnowledgeStatus.ACTIVE:
             if current.statement == payload.statement:
                 return LearningConflictResolution.CONFIRM
         return requested
 
-    def _assert_not_suppressed(self, txn, candidate, semantic_key: str, stamp: datetime) -> None:
+    def _assert_not_duplicate(self, txn, candidate: LearningCandidate, fingerprint: str) -> None:
+        candidates = txn.list_learning_candidates(
+            self.workspace_id,
+            fingerprint=fingerprint,
+            limit=LEARNING_MAX_REFERENCE_IDS,
+        )
+        if any(
+            item.candidate_id != candidate.candidate_id
+            and item.status
+            in {
+                LearningCandidateStatus.PROPOSED,
+                LearningCandidateStatus.PROMOTING,
+                LearningCandidateStatus.ACCEPTED,
+                LearningCandidateStatus.EDITED_AND_ACCEPTED,
+            }
+            for item in candidates
+        ):
+            raise ApplicationError(
+                ApplicationErrorCode.CONFLICT,
+                "Learning Candidate duplicates an existing candidate",
+            )
+
+    def _assert_not_suppressed(
+        self,
+        txn,
+        candidate: LearningCandidate,
+        scope: LearningScope,
+        semantic_key: str,
+        fingerprint: str,
+        stamp: datetime,
+    ) -> None:
         suppressions = txn.list_learning_suppressions(
             self.workspace_id,
             candidate_type=candidate.candidate_type.value,
-            scope=candidate.proposed_scope,
+            scope=scope,
             semantic_key=semantic_key,
             limit=LEARNING_MAX_REFERENCE_IDS,
         ) + txn.list_learning_suppressions(
             self.workspace_id,
             candidate_type=candidate.candidate_type.value,
-            scope=candidate.proposed_scope,
-            fingerprint=candidate.fingerprint,
+            scope=scope,
+            fingerprint=fingerprint,
             limit=LEARNING_MAX_REFERENCE_IDS,
         )
         if any(
