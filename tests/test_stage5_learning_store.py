@@ -15,7 +15,9 @@ from morrow.adapters.state.migrations import (
     V7,
     V8,
     V9,
+    V10,
     V10_NAME,
+    V11_NAME,
     MigrationRegistry,
     SchemaMigration,
 )
@@ -53,6 +55,16 @@ from morrow.core.learning import (
     LearningSuppressionStatus,
     PreferenceCandidatePayload,
 )
+from morrow.core.learning_memory import (
+    LearningCandidateDecision,
+    LearningCandidateDecisionKind,
+    LearningConflictResolution,
+    ProjectKnowledgeCategory,
+    ProjectKnowledgeEvidenceLink,
+    ProjectKnowledgeHead,
+    ProjectKnowledgeRevision,
+    ProjectKnowledgeStatus,
+)
 from morrow.core.store import StorageError, StorageErrorCode, StoreOpenMode
 from morrow.testing import FixedClock
 
@@ -63,6 +75,13 @@ DIGEST = "a" * 64
 def _v9_registry() -> MigrationRegistry:
     registry = MigrationRegistry(supported_version=9)
     for migration in (V1, V2, V3, V4, V5, V6, V7, V8, V9):
+        registry.add(migration)
+    return registry
+
+
+def _v10_registry() -> MigrationRegistry:
+    registry = MigrationRegistry(supported_version=10)
+    for migration in (V1, V2, V3, V4, V5, V6, V7, V8, V9, V10):
         registry.add(migration)
     return registry
 
@@ -192,20 +211,21 @@ def _candidate() -> LearningCandidate:
     )
 
 
-def test_v9_store_upgrades_to_v10_without_rewriting_old_migrations(tmp_path):
+def test_v9_store_upgrades_to_v11_without_rewriting_old_migrations(tmp_path):
     legacy = _store(tmp_path, registry=_v9_registry())
     legacy.initialize().close()
     upgraded = _store(tmp_path)
     report = upgraded.migrate()
 
     assert report.from_version == 9
-    assert report.to_version == 10
-    assert report.applied == (V10_NAME,)
+    assert report.to_version == 11
+    assert report.applied == (V10_NAME, V11_NAME)
     with upgraded.open(StoreOpenMode.READ_WRITE) as session:
-        assert session.schema_version == 10
+        assert session.schema_version == 11
         rows = session.run_read(
             lambda executor: executor.execute(
-                "SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'learning_%'"
+                "SELECT name FROM sqlite_master WHERE type = 'table' AND ("
+                "name LIKE 'learning_%' OR name LIKE 'project_%' OR name = 'memory_workspace_state')"
             )
         )
         assert {str(row[0]) for row in rows} == {
@@ -216,7 +236,66 @@ def test_v9_store_upgrades_to_v10_without_rewriting_old_migrations(tmp_path):
             "learning_candidates",
             "learning_candidate_evidence",
             "learning_suppressions",
+            "learning_candidate_decisions",
+            "project_knowledge_heads",
+            "project_knowledge_revisions",
+            "project_knowledge_evidence",
+            "memory_workspace_state",
         }
+
+
+def test_v10_store_upgrades_to_v11_without_rewriting_v10(tmp_path):
+    legacy = _store(tmp_path, registry=_v10_registry())
+    legacy.initialize().close()
+    upgraded = _store(tmp_path)
+
+    report = upgraded.migrate()
+
+    assert report.from_version == 10
+    assert report.to_version == 11
+    assert report.applied == (V11_NAME,)
+    with upgraded.open(StoreOpenMode.READ_WRITE) as session:
+        rows = session.run_read(
+            lambda executor: executor.execute(
+                "SELECT version, checksum FROM schema_migrations WHERE version IN (9, 10, 11) "
+                "ORDER BY version"
+            )
+        )
+        assert tuple(int(row[0]) for row in rows) == (9, 10, 11)
+        assert str(rows[1][1]) == V10.checksum
+
+
+def test_v11_migration_rolls_back_all_inbox_and_memory_ddl_on_failure(tmp_path):
+    legacy = _store(tmp_path, registry=_v10_registry())
+    legacy.initialize().close()
+    broken = MigrationRegistry(supported_version=11)
+    for migration in (V1, V2, V3, V4, V5, V6, V7, V8, V9, V10):
+        broken.add(migration)
+    broken.add(
+        SchemaMigration(
+            version=11,
+            name="broken_inbox_memory",
+            statements=(
+                "CREATE TABLE v11_rollback_probe (id INTEGER PRIMARY KEY)",
+                "THIS IS NOT SQL",
+            ),
+        )
+    )
+    failing = _store(tmp_path, registry=broken)
+
+    with pytest.raises(StorageError) as error:
+        failing.migrate()
+    assert error.value.code is StorageErrorCode.UNAVAILABLE
+    assert failing.classify().schema_version == 10
+    with failing.open(StoreOpenMode.READ_WRITE) as session:
+        names = session.run_read(
+            lambda executor: executor.execute(
+                "SELECT name FROM sqlite_master WHERE name IN ("
+                "'v11_rollback_probe', 'learning_candidate_decisions', "
+                "'project_knowledge_heads', 'promotion_operations')"
+            )
+        )
+        assert names == ()
 
 
 def test_v10_migration_rolls_back_all_learning_ddl_on_failure(tmp_path):
@@ -429,5 +508,185 @@ def test_learning_corruption_is_classified_as_needs_repair_and_outer_writes_roll
                 )[-1]
             )
         assert journal.get_learning_policy("ws_1") is None
+    finally:
+        session.close()
+
+
+def test_v11_decisions_knowledge_and_memory_state_round_trip(tmp_path):
+    store = _store(tmp_path)
+    session = store.initialize()
+    journal = SqliteOperationalJournal(session)
+    try:
+        _seed_subjects(journal)
+        journal.put_learning_review("ws_1", _review())
+        journal.put_learning_evidence("ws_1", _evidence())
+        candidate = journal.put_learning_candidate("ws_1", _candidate())
+
+        decision = journal.put_learning_candidate_decision(
+            "ws_1",
+            LearningCandidateDecision(
+                decision_id="lcd_1",
+                workspace_id="ws_1",
+                candidate_id=candidate.candidate_id,
+                kind=LearningCandidateDecisionKind.ACCEPT,
+                actor="user",
+                original_proposal_digest=candidate.fingerprint,
+                scope=LearningScope.WORKSPACE,
+                conflict_resolution=LearningConflictResolution.NONE,
+                command_id="cmd_learning_1",
+                created_at=NOW,
+            ),
+        )
+        assert decision.original_proposal_digest == candidate.fingerprint
+        assert journal.list_learning_candidate_decisions("ws_1", candidate_id="lcn_1") == (
+            decision,
+        )
+
+        head = journal.put_project_knowledge_head(
+            "ws_1",
+            ProjectKnowledgeHead(
+                knowledge_id="knw_1",
+                workspace_id="ws_1",
+                semantic_key="architecture.persistence",
+                category=ProjectKnowledgeCategory.ARCHITECTURE,
+                status=ProjectKnowledgeStatus.ACTIVE,
+                created_at=NOW,
+                updated_at=NOW,
+            ),
+        )
+        revision = journal.put_project_knowledge_revision(
+            "ws_1",
+            ProjectKnowledgeRevision(
+                knowledge_revision_id="krv_1",
+                knowledge_id=head.knowledge_id,
+                workspace_id="ws_1",
+                revision=1,
+                statement="Operational state is persisted in SQLite.",
+                statement_digest=ProjectKnowledgeRevision.digest_for(
+                    "Operational state is persisted in SQLite."
+                ),
+                source_candidate_id=candidate.candidate_id,
+                source_decision_id=decision.decision_id,
+                sensitivity=LearningSensitivity.NORMAL,
+                created_at=NOW,
+                last_confirmed_at=NOW,
+            ),
+        )
+        head = journal.save_project_knowledge_head(
+            "ws_1",
+            head.model_copy(
+                update={"current_revision_id": revision.knowledge_revision_id, "row_version": 2}
+            ),
+            expected_row_version=1,
+        )
+        link = journal.put_project_knowledge_evidence(
+            "ws_1",
+            ProjectKnowledgeEvidenceLink(
+                workspace_id="ws_1",
+                knowledge_revision_id=revision.knowledge_revision_id,
+                evidence_id="lev_1",
+            ),
+        )
+        state = journal.ensure_memory_workspace_state("ws_1")
+        assert state.memory_revision == 0
+        state = journal.save_memory_workspace_state(
+            "ws_1",
+            state.model_copy(update={"memory_revision": 1, "row_version": 2}),
+            expected_row_version=1,
+        )
+
+        assert journal.get_project_knowledge_head_by_key("ws_1", head.semantic_key) == head
+        assert (
+            journal.get_project_knowledge_revision("ws_1", revision.knowledge_revision_id)
+            == revision
+        )
+        assert journal.list_project_knowledge_evidence("ws_1", revision.knowledge_revision_id) == (
+            link,
+        )
+        assert journal.get_memory_workspace_state("ws_1") == state
+    finally:
+        session.close()
+
+
+def test_v11_workspace_guards_immutable_revision_and_reserved_saga_constraints(tmp_path):
+    store = _store(tmp_path)
+    session = store.initialize()
+    journal = SqliteOperationalJournal(session)
+    try:
+        _seed_subjects(journal)
+        journal.put_learning_review("ws_1", _review())
+        journal.put_learning_evidence("ws_1", _evidence())
+        candidate = journal.put_learning_candidate("ws_1", _candidate())
+        decision = journal.put_learning_candidate_decision(
+            "ws_1",
+            LearningCandidateDecision(
+                decision_id="lcd_guard",
+                workspace_id="ws_1",
+                candidate_id=candidate.candidate_id,
+                kind=LearningCandidateDecisionKind.ACCEPT,
+                actor="user",
+                original_proposal_digest=candidate.fingerprint,
+                scope=LearningScope.WORKSPACE,
+                command_id="cmd_guard",
+                created_at=NOW,
+            ),
+        )
+        head = journal.put_project_knowledge_head(
+            "ws_1",
+            ProjectKnowledgeHead(
+                knowledge_id="knw_guard",
+                workspace_id="ws_1",
+                semantic_key="architecture.guard",
+                category=ProjectKnowledgeCategory.ARCHITECTURE,
+                created_at=NOW,
+                updated_at=NOW,
+            ),
+        )
+        revision = journal.put_project_knowledge_revision(
+            "ws_1",
+            ProjectKnowledgeRevision(
+                knowledge_revision_id="krv_guard",
+                knowledge_id=head.knowledge_id,
+                workspace_id="ws_1",
+                revision=1,
+                statement="Guarded statement.",
+                statement_digest=ProjectKnowledgeRevision.digest_for("Guarded statement."),
+                source_candidate_id=candidate.candidate_id,
+                source_decision_id=decision.decision_id,
+                created_at=NOW,
+                last_confirmed_at=NOW,
+            ),
+        )
+        with pytest.raises(StorageError) as error:
+            journal.get_project_knowledge_revision("ws_2", revision.knowledge_revision_id)
+        assert error.value.code is StorageErrorCode.UNAVAILABLE
+
+        with pytest.raises(StorageError):
+            session.run_write(
+                lambda executor: executor.execute(
+                    "UPDATE project_knowledge_revisions SET statement = 'mutated' "
+                    "WHERE knowledge_revision_id = 'krv_guard'"
+                )
+            )
+        with pytest.raises(StorageError):
+            session.run_write(
+                lambda executor: executor.execute(
+                    "INSERT INTO memory_workspace_state(workspace_id, memory_revision, row_version, updated_at_unix) "
+                    "VALUES ('ws_1', -1, 1, ?)",
+                    (int(NOW.timestamp()),),
+                )
+            )
+        with pytest.raises(StorageError):
+            session.run_write(
+                lambda executor: executor.execute(
+                    "INSERT INTO promotion_operations("
+                    "operation_id, command_id, request_digest, workspace_id, candidate_id, "
+                    "candidate_row_version, target, scope, path, prepared_change_json, "
+                    "prepared_change_digest, state, row_version, created_at_unix, updated_at_unix) "
+                    "VALUES ('pop_1', 'cmd_pop', ?, 'ws_1', 'lcn_1', 1, 'profile', 'workspace', "
+                    "'summary', '{}', ?, 'invalid', 1, ?, ?)",
+                    (DIGEST, DIGEST, int(NOW.timestamp()), int(NOW.timestamp())),
+                )
+            )
     finally:
         session.close()

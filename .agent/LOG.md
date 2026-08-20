@@ -1539,3 +1539,24 @@
 - Review-fix validation passed: `720 passed, 2 skipped, 1 deselected` for `pytest -m 'not live'`;
   Ruff format/check, compileall, `morrow --help`, `morrow learning --help`, and `git diff --check`
   all exited 0. The two skips are nested macOS Seatbelt tests unavailable inside the Codex sandbox.
+
+## 2026-08-21 — Subplan 51 activated
+
+- Fast-forwarded verified Subplan 50 into local `main` at `4d47be8`, retired its topic branch, and
+  created `feat/stage5-inbox-knowledge` from that verified baseline.
+- Activated Subplan 51. Its first task is the immutable v11 migration and bounded persistence
+  boundary for candidate decisions, Project Knowledge heads/revisions/evidence, workspace memory
+  revision state, and reserved-but-unused configuration Saga tables. Preference/Profile YAML
+  promotion remains closed for Subplan 52; the two research documents remain untracked user files.
+
+## 2026-08-21 — Subplan 51 S51.1 verified
+
+- Added schema v11 `learning_inbox_project_knowledge` without changing v1–v10 migration bodies:
+  immutable candidate decisions, Project Knowledge heads/revisions/evidence, workspace memory
+  revision state, and reserved `promotion_operations`/`configuration_activations` Saga tables.
+- Added independent Core models/port and `SqliteLearningMemoryJournal`; the parent Operational
+  Journal only composes and delegates to it. Revision statements are digest-bound, provenance and
+  workspace guards are enforced, and revision identity is immutable at the SQL boundary.
+- Focused validation passed: 10 Stage 5 store tests plus 61 operational/store/journal tests; Ruff
+  format/check passed for touched code. S51.2 is now active; no Active YAML or Saga behavior was
+  introduced.

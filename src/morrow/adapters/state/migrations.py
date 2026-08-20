@@ -1,8 +1,8 @@
 """Ordered, checksummed Operational Store migrations.
 
-Production currently owns schema v1–v10. Version 10 adds the governed Learning
-foundation without rewriting older evidence or creating a second configuration
-authority.
+Production currently owns schema v1–v11. Version 10 adds the governed Learning
+foundation and version 11 adds immutable decisions plus Project Knowledge without
+rewriting older evidence or creating a second configuration authority.
 """
 
 from __future__ import annotations
@@ -1012,6 +1012,292 @@ V10_STATEMENTS = (
 
 V10 = SchemaMigration(version=10, name=V10_NAME, statements=V10_STATEMENTS)
 
+V11_NAME = "learning_inbox_project_knowledge"
+V11_STATEMENTS = (
+    """
+    CREATE TABLE learning_candidate_decisions (
+        decision_id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        candidate_id TEXT NOT NULL REFERENCES learning_candidates(candidate_id),
+        kind TEXT NOT NULL CHECK (kind IN (
+            'accept', 'edit_and_accept', 'reject', 'reject_and_suppress',
+            'expire', 'supersede'
+        )),
+        actor TEXT NOT NULL CHECK (actor IN ('user', 'policy')),
+        original_proposal_digest TEXT NOT NULL CHECK (length(original_proposal_digest) = 64),
+        final_proposal_json TEXT,
+        final_proposal_bytes INTEGER CHECK (
+            final_proposal_bytes IS NULL OR final_proposal_bytes BETWEEN 1 AND 8192
+        ),
+        scope TEXT NOT NULL CHECK (scope IN ('global', 'workspace', 'session', 'task')),
+        conflict_resolution TEXT NOT NULL CHECK (conflict_resolution IN (
+            'none', 'confirm', 'replace', 'merge', 're_enable', 'resolve_dispute'
+        )),
+        command_id TEXT NOT NULL,
+        created_at_unix INTEGER NOT NULL,
+        UNIQUE (workspace_id, command_id),
+        CHECK ((final_proposal_json IS NULL) = (final_proposal_bytes IS NULL)),
+        CHECK ((kind = 'edit_and_accept') = (final_proposal_json IS NOT NULL)),
+        CHECK (final_proposal_json IS NULL OR length(final_proposal_json) BETWEEN 2 AND 8192)
+    )
+    """,
+    """
+    CREATE INDEX learning_candidate_decisions_candidate
+        ON learning_candidate_decisions(workspace_id, candidate_id, created_at_unix, decision_id)
+    """,
+    """
+    CREATE TABLE project_knowledge_heads (
+        knowledge_id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        semantic_key TEXT NOT NULL CHECK (length(semantic_key) BETWEEN 1 AND 128),
+        category TEXT NOT NULL CHECK (category IN (
+            'architecture', 'convention', 'decision', 'environment', 'domain', 'other'
+        )),
+        status TEXT NOT NULL CHECK (
+            status IN ('active', 'disabled', 'disputed', 'deleted')
+        ),
+        current_revision_id TEXT REFERENCES project_knowledge_revisions(knowledge_revision_id),
+        row_version INTEGER NOT NULL CHECK (row_version >= 1),
+        created_at_unix INTEGER NOT NULL,
+        updated_at_unix INTEGER NOT NULL,
+        UNIQUE (workspace_id, semantic_key),
+        CHECK (updated_at_unix >= created_at_unix)
+    )
+    """,
+    """
+    CREATE INDEX project_knowledge_heads_workspace_status
+        ON project_knowledge_heads(workspace_id, status, category, semantic_key, knowledge_id)
+    """,
+    """
+    CREATE TABLE project_knowledge_revisions (
+        knowledge_revision_id TEXT PRIMARY KEY,
+        knowledge_id TEXT NOT NULL REFERENCES project_knowledge_heads(knowledge_id),
+        workspace_id TEXT NOT NULL,
+        revision INTEGER NOT NULL CHECK (revision >= 1),
+        statement TEXT NOT NULL CHECK (length(statement) BETWEEN 1 AND 4096),
+        statement_digest TEXT NOT NULL CHECK (length(statement_digest) = 64),
+        source_candidate_id TEXT REFERENCES learning_candidates(candidate_id),
+        source_decision_id TEXT REFERENCES learning_candidate_decisions(decision_id),
+        supersedes_revision_id TEXT REFERENCES project_knowledge_revisions(knowledge_revision_id),
+        sensitivity TEXT NOT NULL CHECK (
+            sensitivity IN ('normal', 'personal', 'sensitive', 'prohibited')
+        ),
+        valid_from_unix INTEGER,
+        valid_until_unix INTEGER,
+        created_at_unix INTEGER NOT NULL,
+        last_confirmed_at_unix INTEGER NOT NULL,
+        UNIQUE (knowledge_id, revision),
+        CHECK (source_candidate_id IS NOT NULL OR source_decision_id IS NOT NULL),
+        CHECK (
+            valid_until_unix IS NULL OR valid_from_unix IS NULL
+            OR valid_until_unix > valid_from_unix
+        ),
+        CHECK (last_confirmed_at_unix >= created_at_unix)
+    )
+    """,
+    """
+    CREATE INDEX project_knowledge_revisions_history
+        ON project_knowledge_revisions(workspace_id, knowledge_id, revision, created_at_unix)
+    """,
+    """
+    CREATE INDEX project_knowledge_revisions_source
+        ON project_knowledge_revisions(workspace_id, source_candidate_id, source_decision_id)
+    """,
+    """
+    CREATE TABLE project_knowledge_evidence (
+        workspace_id TEXT NOT NULL,
+        knowledge_revision_id TEXT NOT NULL
+            REFERENCES project_knowledge_revisions(knowledge_revision_id),
+        evidence_id TEXT NOT NULL REFERENCES learning_evidence(evidence_id),
+        PRIMARY KEY (knowledge_revision_id, evidence_id)
+    )
+    """,
+    """
+    CREATE INDEX project_knowledge_evidence_workspace
+        ON project_knowledge_evidence(workspace_id, knowledge_revision_id, evidence_id)
+    """,
+    """
+    CREATE TABLE memory_workspace_state (
+        workspace_id TEXT PRIMARY KEY,
+        memory_revision INTEGER NOT NULL DEFAULT 0 CHECK (memory_revision >= 0),
+        row_version INTEGER NOT NULL DEFAULT 1 CHECK (row_version >= 1),
+        updated_at_unix INTEGER NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE promotion_operations (
+        operation_id TEXT PRIMARY KEY,
+        command_id TEXT NOT NULL,
+        request_digest TEXT NOT NULL CHECK (length(request_digest) = 64),
+        workspace_id TEXT NOT NULL,
+        candidate_id TEXT NOT NULL REFERENCES learning_candidates(candidate_id),
+        candidate_row_version INTEGER NOT NULL CHECK (candidate_row_version >= 1),
+        target TEXT NOT NULL CHECK (length(target) BETWEEN 1 AND 64),
+        scope TEXT NOT NULL CHECK (scope IN ('global', 'workspace', 'session', 'task')),
+        path TEXT NOT NULL CHECK (length(path) BETWEEN 1 AND 256),
+        prepared_change_json TEXT NOT NULL CHECK (length(prepared_change_json) BETWEEN 2 AND 8192),
+        prepared_change_digest TEXT NOT NULL CHECK (length(prepared_change_digest) = 64),
+        state TEXT NOT NULL CHECK (
+            state IN ('prepared', 'finalized', 'aborted', 'needs_resolution')
+        ),
+        before_revision INTEGER CHECK (before_revision IS NULL OR before_revision >= 0),
+        before_digest TEXT CHECK (before_digest IS NULL OR length(before_digest) = 64),
+        after_digest TEXT CHECK (after_digest IS NULL OR length(after_digest) = 64),
+        applied_revision INTEGER CHECK (applied_revision IS NULL OR applied_revision >= 1),
+        row_version INTEGER NOT NULL CHECK (row_version >= 1),
+        failure_code TEXT CHECK (
+            failure_code IS NULL OR failure_code IN (
+                'stale', 'conflict', 'validation', 'filesystem', 'yaml', 'needs_recovery',
+                'internal'
+            )
+        ),
+        created_at_unix INTEGER NOT NULL,
+        updated_at_unix INTEGER NOT NULL,
+        prepared_at_unix INTEGER,
+        finalized_at_unix INTEGER,
+        UNIQUE (workspace_id, command_id),
+        CHECK (updated_at_unix >= created_at_unix),
+        CHECK (state != 'finalized' OR applied_revision IS NOT NULL),
+        CHECK (state = 'finalized' OR finalized_at_unix IS NULL)
+    )
+    """,
+    """
+    CREATE TABLE configuration_activations (
+        activation_id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        candidate_id TEXT NOT NULL REFERENCES learning_candidates(candidate_id),
+        decision_id TEXT NOT NULL REFERENCES learning_candidate_decisions(decision_id),
+        operation_id TEXT NOT NULL REFERENCES promotion_operations(operation_id),
+        target TEXT NOT NULL CHECK (length(target) BETWEEN 1 AND 64),
+        scope TEXT NOT NULL CHECK (scope IN ('global', 'workspace', 'session', 'task')),
+        path TEXT NOT NULL CHECK (length(path) BETWEEN 1 AND 256),
+        operation TEXT NOT NULL CHECK (operation IN ('set', 'append', 'replace', 'remove')),
+        applied_revision INTEGER NOT NULL CHECK (applied_revision >= 1),
+        before_digest TEXT CHECK (before_digest IS NULL OR length(before_digest) = 64),
+        after_digest TEXT NOT NULL CHECK (length(after_digest) = 64),
+        value_digest TEXT NOT NULL CHECK (length(value_digest) = 64),
+        inverse_command_json TEXT NOT NULL CHECK (
+            length(inverse_command_json) BETWEEN 2 AND 8192
+        ),
+        inverse_command_digest TEXT NOT NULL CHECK (length(inverse_command_digest) = 64),
+        supersedes_activation_id TEXT REFERENCES configuration_activations(activation_id),
+        reverses_activation_id TEXT REFERENCES configuration_activations(activation_id),
+        status TEXT NOT NULL CHECK (status IN ('active', 'reversed', 'superseded')),
+        created_at_unix INTEGER NOT NULL,
+        updated_at_unix INTEGER NOT NULL,
+        CHECK (updated_at_unix >= created_at_unix)
+    )
+    """,
+    """
+    CREATE INDEX promotion_operations_workspace_state
+        ON promotion_operations(workspace_id, state, updated_at_unix, operation_id)
+    """,
+    """
+    CREATE INDEX configuration_activations_workspace_target
+        ON configuration_activations(workspace_id, target, path, status, applied_revision)
+    """,
+    """
+    CREATE TRIGGER learning_candidate_decisions_workspace_guard_insert
+    BEFORE INSERT ON learning_candidate_decisions
+    BEGIN
+        SELECT CASE WHEN EXISTS (
+            SELECT 1 FROM learning_candidates c
+            WHERE c.candidate_id = NEW.candidate_id AND c.workspace_id != NEW.workspace_id
+        ) THEN RAISE(ABORT, 'learning workspace mismatch') END;
+    END
+    """,
+    """
+    CREATE TRIGGER project_knowledge_heads_workspace_guard_insert
+    BEFORE INSERT ON project_knowledge_heads
+    BEGIN
+        SELECT CASE WHEN EXISTS (
+            SELECT 1 FROM project_knowledge_revisions r
+            WHERE r.knowledge_revision_id = NEW.current_revision_id
+              AND (r.workspace_id != NEW.workspace_id OR r.knowledge_id != NEW.knowledge_id)
+        ) THEN RAISE(ABORT, 'memory workspace mismatch') END;
+    END
+    """,
+    """
+    CREATE TRIGGER project_knowledge_heads_workspace_guard_update
+    BEFORE UPDATE OF workspace_id, knowledge_id, current_revision_id ON project_knowledge_heads
+    BEGIN
+        SELECT CASE WHEN EXISTS (
+            SELECT 1 FROM project_knowledge_revisions r
+            WHERE r.knowledge_revision_id = NEW.current_revision_id
+              AND (r.workspace_id != NEW.workspace_id OR r.knowledge_id != NEW.knowledge_id)
+        ) THEN RAISE(ABORT, 'memory workspace mismatch') END;
+    END
+    """,
+    """
+    CREATE TRIGGER project_knowledge_revisions_workspace_guard_insert
+    BEFORE INSERT ON project_knowledge_revisions
+    BEGIN
+        SELECT CASE WHEN EXISTS (
+            SELECT 1 FROM project_knowledge_heads h
+            WHERE h.knowledge_id = NEW.knowledge_id
+              AND h.workspace_id != NEW.workspace_id
+        ) THEN RAISE(ABORT, 'memory workspace mismatch') END;
+        SELECT CASE WHEN EXISTS (
+            SELECT 1 FROM learning_candidates c
+            WHERE c.candidate_id = NEW.source_candidate_id
+              AND c.workspace_id != NEW.workspace_id
+        ) THEN RAISE(ABORT, 'memory workspace mismatch') END;
+        SELECT CASE WHEN EXISTS (
+            SELECT 1 FROM learning_candidate_decisions d
+            WHERE d.decision_id = NEW.source_decision_id
+              AND d.workspace_id != NEW.workspace_id
+        ) THEN RAISE(ABORT, 'memory workspace mismatch') END;
+        SELECT CASE WHEN EXISTS (
+            SELECT 1 FROM learning_candidate_decisions d
+            WHERE d.decision_id = NEW.source_decision_id
+              AND NEW.source_candidate_id IS NOT NULL
+              AND d.candidate_id != NEW.source_candidate_id
+        ) THEN RAISE(ABORT, 'memory provenance mismatch') END;
+        SELECT CASE WHEN EXISTS (
+            SELECT 1 FROM project_knowledge_revisions r
+            WHERE r.knowledge_revision_id = NEW.supersedes_revision_id
+              AND (r.workspace_id != NEW.workspace_id OR r.knowledge_id != NEW.knowledge_id)
+        ) THEN RAISE(ABORT, 'memory revision mismatch') END;
+    END
+    """,
+    """
+    CREATE TRIGGER project_knowledge_evidence_workspace_guard_insert
+    BEFORE INSERT ON project_knowledge_evidence
+    BEGIN
+        SELECT CASE WHEN EXISTS (
+            SELECT 1
+            FROM project_knowledge_revisions r
+            JOIN learning_evidence e ON e.evidence_id = NEW.evidence_id
+            WHERE r.knowledge_revision_id = NEW.knowledge_revision_id
+              AND (r.workspace_id != NEW.workspace_id OR e.workspace_id != NEW.workspace_id)
+        ) THEN RAISE(ABORT, 'memory workspace mismatch') END;
+    END
+    """,
+    """
+    CREATE TRIGGER project_knowledge_revisions_immutable_update
+    BEFORE UPDATE ON project_knowledge_revisions
+    WHEN NEW.knowledge_revision_id IS NOT OLD.knowledge_revision_id
+      OR NEW.knowledge_id IS NOT OLD.knowledge_id
+      OR NEW.workspace_id IS NOT OLD.workspace_id
+      OR NEW.revision IS NOT OLD.revision
+      OR NEW.statement IS NOT OLD.statement
+      OR NEW.statement_digest IS NOT OLD.statement_digest
+      OR NEW.source_candidate_id IS NOT OLD.source_candidate_id
+      OR NEW.source_decision_id IS NOT OLD.source_decision_id
+      OR NEW.supersedes_revision_id IS NOT OLD.supersedes_revision_id
+      OR NEW.sensitivity IS NOT OLD.sensitivity
+      OR NEW.valid_from_unix IS NOT OLD.valid_from_unix
+      OR NEW.valid_until_unix IS NOT OLD.valid_until_unix
+      OR NEW.created_at_unix IS NOT OLD.created_at_unix
+      OR NEW.last_confirmed_at_unix < OLD.last_confirmed_at_unix
+    BEGIN
+        SELECT RAISE(ABORT, 'project knowledge revision is immutable');
+    END
+    """,
+)
+
+V11 = SchemaMigration(version=11, name=V11_NAME, statements=V11_STATEMENTS)
+
 
 class MigrationRegistry:
     def __init__(self, *, supported_version: int = SUPPORTED_SCHEMA_VERSION) -> None:
@@ -1076,6 +1362,7 @@ def production_registry() -> MigrationRegistry:
     registry.add(V8)
     registry.add(V9)
     registry.add(V10)
+    registry.add(V11)
     return registry
 
 

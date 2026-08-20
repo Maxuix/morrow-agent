@@ -10,6 +10,7 @@ from morrow.adapters.state.artifact_journal import SqliteArtifactJournal
 from morrow.adapters.state.context_journal import SqliteContextJournal
 from morrow.adapters.state.conversation_journal import SqliteConversationJournal
 from morrow.adapters.state.learning_journal import SqliteLearningJournal
+from morrow.adapters.state.learning_memory_journal import SqliteLearningMemoryJournal
 from morrow.adapters.state.operational import OperationalStoreSession, SqliteExecutor
 from morrow.adapters.state.permission_journal import SqliteRunPermissionJournal
 from morrow.adapters.state.recovery_journal import SqliteRecoveryJournal
@@ -57,6 +58,15 @@ from morrow.core.learning import (
     LearningReviewStatus,
     LearningScope,
     LearningSuppression,
+)
+from morrow.core.learning_memory import (
+    LearningCandidateDecision,
+    MemoryWorkspaceState,
+    ProjectKnowledgeCategory,
+    ProjectKnowledgeEvidenceLink,
+    ProjectKnowledgeHead,
+    ProjectKnowledgeRevision,
+    ProjectKnowledgeStatus,
 )
 from morrow.core.permissions import (
     CapabilityGrant,
@@ -145,6 +155,7 @@ class SqliteOperationalJournal:
             replace_artifact_refs=self._replace_artifact_references,
         )
         self._learning_journal = SqliteLearningJournal(self._backend)
+        self._learning_memory_journal = SqliteLearningMemoryJournal(self._backend)
 
     def now(self) -> datetime:
         return self._backend.now()
@@ -355,6 +366,121 @@ class SqliteOperationalJournal:
     ) -> LearningSuppression:
         return self._learning_journal.save_learning_suppression(
             workspace_id, suppression, expected_row_version=expected_row_version
+        )
+
+    def put_learning_candidate_decision(
+        self, workspace_id: str, decision: LearningCandidateDecision
+    ) -> LearningCandidateDecision:
+        return self._learning_memory_journal.put_learning_candidate_decision(workspace_id, decision)
+
+    def get_learning_candidate_decision(
+        self, workspace_id: str, decision_id: str
+    ) -> LearningCandidateDecision | None:
+        return self._learning_memory_journal.get_learning_candidate_decision(
+            workspace_id, decision_id
+        )
+
+    def list_learning_candidate_decisions(
+        self,
+        workspace_id: str,
+        *,
+        candidate_id: str | None = None,
+        limit: int = 100,
+    ) -> tuple[LearningCandidateDecision, ...]:
+        return self._learning_memory_journal.list_learning_candidate_decisions(
+            workspace_id, candidate_id=candidate_id, limit=limit
+        )
+
+    def get_project_knowledge_head(
+        self, workspace_id: str, knowledge_id: str
+    ) -> ProjectKnowledgeHead | None:
+        return self._learning_memory_journal.get_project_knowledge_head(workspace_id, knowledge_id)
+
+    def get_project_knowledge_head_by_key(
+        self, workspace_id: str, semantic_key: str
+    ) -> ProjectKnowledgeHead | None:
+        return self._learning_memory_journal.get_project_knowledge_head_by_key(
+            workspace_id, semantic_key
+        )
+
+    def list_project_knowledge_heads(
+        self,
+        workspace_id: str,
+        *,
+        status: ProjectKnowledgeStatus | None = None,
+        category: ProjectKnowledgeCategory | None = None,
+        limit: int = 100,
+    ) -> tuple[ProjectKnowledgeHead, ...]:
+        return self._learning_memory_journal.list_project_knowledge_heads(
+            workspace_id, status=status, category=category, limit=limit
+        )
+
+    def put_project_knowledge_head(
+        self, workspace_id: str, head: ProjectKnowledgeHead
+    ) -> ProjectKnowledgeHead:
+        return self._learning_memory_journal.put_project_knowledge_head(workspace_id, head)
+
+    def save_project_knowledge_head(
+        self,
+        workspace_id: str,
+        head: ProjectKnowledgeHead,
+        *,
+        expected_row_version: int,
+    ) -> ProjectKnowledgeHead:
+        return self._learning_memory_journal.save_project_knowledge_head(
+            workspace_id, head, expected_row_version=expected_row_version
+        )
+
+    def get_project_knowledge_revision(
+        self, workspace_id: str, revision_id: str
+    ) -> ProjectKnowledgeRevision | None:
+        return self._learning_memory_journal.get_project_knowledge_revision(
+            workspace_id, revision_id
+        )
+
+    def list_project_knowledge_revisions(
+        self,
+        workspace_id: str,
+        knowledge_id: str,
+        *,
+        limit: int = 100,
+    ) -> tuple[ProjectKnowledgeRevision, ...]:
+        return self._learning_memory_journal.list_project_knowledge_revisions(
+            workspace_id, knowledge_id, limit=limit
+        )
+
+    def put_project_knowledge_revision(
+        self, workspace_id: str, revision: ProjectKnowledgeRevision
+    ) -> ProjectKnowledgeRevision:
+        return self._learning_memory_journal.put_project_knowledge_revision(workspace_id, revision)
+
+    def put_project_knowledge_evidence(
+        self, workspace_id: str, link: ProjectKnowledgeEvidenceLink
+    ) -> ProjectKnowledgeEvidenceLink:
+        return self._learning_memory_journal.put_project_knowledge_evidence(workspace_id, link)
+
+    def list_project_knowledge_evidence(
+        self, workspace_id: str, revision_id: str
+    ) -> tuple[ProjectKnowledgeEvidenceLink, ...]:
+        return self._learning_memory_journal.list_project_knowledge_evidence(
+            workspace_id, revision_id
+        )
+
+    def get_memory_workspace_state(self, workspace_id: str) -> MemoryWorkspaceState | None:
+        return self._learning_memory_journal.get_memory_workspace_state(workspace_id)
+
+    def ensure_memory_workspace_state(self, workspace_id: str) -> MemoryWorkspaceState:
+        return self._learning_memory_journal.ensure_memory_workspace_state(workspace_id)
+
+    def save_memory_workspace_state(
+        self,
+        workspace_id: str,
+        state: MemoryWorkspaceState,
+        *,
+        expected_row_version: int,
+    ) -> MemoryWorkspaceState:
+        return self._learning_memory_journal.save_memory_workspace_state(
+            workspace_id, state, expected_row_version=expected_row_version
         )
 
     def create_session(

@@ -291,6 +291,7 @@ def test_v3_store_migrates_to_v4_recovery(tmp_path):
         "application_events_and_command_receipts",
         "capability_grants_and_permission_snapshots",
         "learning_foundation",
+        "learning_inbox_project_knowledge",
     )
 
 
@@ -332,6 +333,7 @@ def test_v4_task_children_survive_task_run_rebuild_to_v5(tmp_path):
         "application_events_and_command_receipts",
         "capability_grants_and_permission_snapshots",
         "learning_foundation",
+        "learning_inbox_project_knowledge",
     )
     with upgraded.open(StoreOpenMode.READ_WRITE) as opened:
         journal = SqliteOperationalJournal(opened)

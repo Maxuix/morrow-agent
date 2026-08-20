@@ -1,6 +1,6 @@
 # Subplan 51 — Learning Inbox, Decisions, and Project Knowledge
 
-> Status: planned
+> Status: active
 > Branch: `feat/stage5-inbox-knowledge`
 > Prerequisite: Subplan 50 complete and merged into verified `main`
 > Owns: v11, candidate decisions/UI, suppressions/expiry, Project Knowledge lifecycle
