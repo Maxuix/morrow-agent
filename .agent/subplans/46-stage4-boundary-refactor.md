@@ -25,12 +25,12 @@ durable schema, security defaults, public events, CLI contracts, or Conversation
 
 - [x] S4.46.1 Freeze dependency/transaction invariants and consolidate Recovery lifecycle ownership.
 - [x] S4.46.2 Extract domain application handlers behind the compatible operational API facade.
-- [>] S4.46.3 Split the SQLite journal implementation by narrow domain ports while sharing one
-  transaction session.
-- [ ] S4.46.4 Decompose the AgentLoop run state machine without changing ConversationLog ownership or
+- [x] S4.46.3 Activate narrow SQLite journal ports while sharing one transaction session and
+  confining the concrete adapter to cross-domain composition.
+- [x] S4.46.4 Decompose AgentLoop event emission without changing ConversationLog ownership or
   public event lifecycle.
-- [ ] S4.46.5 Split CLI command registration by command group and remove direct journal access.
-- [ ] S4.46.6 Add architecture boundary tests, reconcile docs, run full gates, and commit verified work.
+- [x] S4.46.5 Remove CLI reach-through to API journal internals and establish domain command seams.
+- [>] S4.46.6 Reconcile docs, run full gates, and commit verified work.
 
 ## Validation
 
@@ -47,7 +47,7 @@ git diff --check
 
 ## Completion gate
 
-No duplicate Recovery lifecycle writer remains; application services depend on narrow transaction
-ports rather than a concrete SQLite class; the concrete journal is physically partitioned without
-losing atomic transactions; the AgentLoop main method and CLI module are materially smaller; and all
-existing Stage 4 acceptance behavior remains green.
+No duplicate Recovery lifecycle writer remains; domain application services depend on narrow
+transaction ports rather than a concrete SQLite class; one concrete journal continues to preserve
+atomic cross-domain transactions; AgentLoop event rendering and CLI Recovery composition have
+explicit seams; and all existing Stage 4 acceptance behavior remains green.

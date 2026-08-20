@@ -6,7 +6,7 @@ import asyncio
 import inspect
 import json
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 
 from morrow.application.context import ContextBudgetError
 from morrow.core.capabilities import PolicyVerdict, ToolRunContext
@@ -206,6 +206,111 @@ class _ToolCancellationRequested(Exception):
     """The durable cancellation flag was observed before the handler completed."""
 
 
+class _RunEventEmitter:
+    """Render one run's ordered public events without owning loop transitions."""
+
+    def __init__(
+        self,
+        *,
+        new_id: Callable[[str], str],
+        session: Session,
+        clock: Clock | None,
+        turn_id: Callable[[], str],
+        visible: Callable[[], str],
+        retain_facts: Callable[[str], None],
+    ) -> None:
+        self.new_id = new_id
+        self.session = session
+        self.clock = clock
+        self.turn_id = turn_id
+        self.visible = visible
+        self.retain_facts = retain_facts
+        self.sequence = 0
+
+    def event(self, event_type: str, payload: dict) -> AgentEvent:
+        self.sequence += 1
+        return make_event(
+            event_type=event_type,
+            event_id=self.new_id("evt"),
+            session_id=self.session.session_id,
+            turn_id=self.turn_id(),
+            sequence=self.sequence,
+            payload=payload,
+            timestamp=self.clock.now() if self.clock else None,
+        )
+
+    def fatal(self, message: str, stop_code: AgentStopCode) -> tuple[AgentEvent, AgentEvent]:
+        return (
+            self.event(
+                "error",
+                {"message": sanitize_text(message), "stop_code": stop_code.value},
+            ),
+            self.event(
+                "turn.completed",
+                completion_payload(FinishReason.ERROR, self.visible(), stop_code=stop_code),
+            ),
+        )
+
+    def tool_status(
+        self,
+        call,
+        status: str,
+        ordinal: int,
+        total: int,
+        *,
+        error_code: ToolErrorCode | None = None,
+        truncated: bool = False,
+    ) -> AgentEvent:
+        payload = {
+            "call_id": call.id,
+            "name": call.name,
+            "status": status,
+            "ordinal": ordinal,
+            "total": total,
+        }
+        if error_code is not None:
+            payload["error_code"] = error_code.value
+        if truncated:
+            payload["truncated"] = True
+        return self.event("tool.status", payload)
+
+    def terminal_error(
+        self,
+        message: str,
+        stop_code: AgentStopCode,
+        *,
+        interrupted: tuple[str, ...] = (),
+    ) -> tuple[AgentEvent, AgentEvent]:
+        self.session.finish_turn(FinishReason.ERROR, interrupted_call_ids=interrupted)
+        self.retain_facts(FinishReason.ERROR.value)
+        return self.fatal(message, stop_code)
+
+    def synthetic_statuses(
+        self,
+        unresolved: tuple[str, ...],
+        *,
+        active_calls,
+        active_running_id: str | None,
+        code: ToolErrorCode,
+        running_status: str,
+    ) -> list[AgentEvent]:
+        statuses = []
+        by_id = {call.id: (index, call) for index, call in enumerate(active_calls, start=1)}
+        for call_id in unresolved:
+            ordinal, call = by_id[call_id]
+            status = running_status if call_id == active_running_id else "skipped"
+            statuses.append(
+                self.tool_status(
+                    call,
+                    status,
+                    ordinal,
+                    len(active_calls),
+                    error_code=code,
+                )
+            )
+        return statuses
+
+
 class AgentLoop:
     """Owns task lifecycle, budgets, tool execution and every chat history write."""
 
@@ -280,7 +385,6 @@ class AgentLoop:
         client_message_id = client_message_id or self._id("cmsg")
         turn_id = self._id("turn")
         run_context = ToolRunContext(run_id=turn_id, session_id=session.session_id)
-        sequence = 0
         visible = ""
         policy = self.run_policy
         deadline = self.monotonic() + policy.max_run_seconds
@@ -302,81 +406,29 @@ class AgentLoop:
                 session.retain_run_facts(run_context, finish_reason=finish_reason)
                 facts_retained = True
 
-        def event(event_type: str, payload: dict) -> AgentEvent:
-            nonlocal sequence
-            sequence += 1
-            return make_event(
-                event_type=event_type,
-                event_id=self._id("evt"),
-                session_id=session.session_id,
-                turn_id=turn_id,
-                sequence=sequence,
-                payload=payload,
-                timestamp=self.clock.now() if self.clock else None,
-            )
-
-        def fatal(message: str, stop_code: AgentStopCode) -> tuple[AgentEvent, AgentEvent]:
-            return (
-                event(
-                    "error",
-                    {"message": sanitize_text(message), "stop_code": stop_code.value},
-                ),
-                event(
-                    "turn.completed",
-                    completion_payload(FinishReason.ERROR, visible, stop_code=stop_code),
-                ),
-            )
-
-        def tool_status(
-            call,
-            status: str,
-            ordinal: int,
-            total: int,
-            *,
-            error_code: ToolErrorCode | None = None,
-            truncated: bool = False,
-        ) -> AgentEvent:
-            payload = {
-                "call_id": call.id,
-                "name": call.name,
-                "status": status,
-                "ordinal": ordinal,
-                "total": total,
-            }
-            if error_code is not None:
-                payload["error_code"] = error_code.value
-            if truncated:
-                payload["truncated"] = True
-            return event("tool.status", payload)
-
-        def terminal_error(
-            message: str,
-            stop_code: AgentStopCode,
-            *,
-            interrupted: tuple[str, ...] = (),
-        ) -> tuple[AgentEvent, AgentEvent]:
-            session.finish_turn(FinishReason.ERROR, interrupted_call_ids=interrupted)
-            retain_facts(FinishReason.ERROR.value)
-            return fatal(message, stop_code)
+        events = _RunEventEmitter(
+            new_id=self._id,
+            session=session,
+            clock=self.clock,
+            turn_id=lambda: turn_id,
+            visible=lambda: visible,
+            retain_facts=retain_facts,
+        )
+        event = events.event
+        fatal = events.fatal
+        tool_status = events.tool_status
+        terminal_error = events.terminal_error
 
         def synthetic_statuses(
             unresolved: tuple[str, ...], *, code: ToolErrorCode, running_status: str
         ) -> list[AgentEvent]:
-            statuses = []
-            by_id = {call.id: (index, call) for index, call in enumerate(active_calls, start=1)}
-            for call_id in unresolved:
-                ordinal, call = by_id[call_id]
-                status = running_status if call_id == active_running_id else "skipped"
-                statuses.append(
-                    tool_status(
-                        call,
-                        status,
-                        ordinal,
-                        len(active_calls),
-                        error_code=code,
-                    )
-                )
-            return statuses
+            return events.synthetic_statuses(
+                unresolved,
+                active_calls=active_calls,
+                active_running_id=active_running_id,
+                code=code,
+                running_status=running_status,
+            )
 
         started = False
         settled = False

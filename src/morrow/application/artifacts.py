@@ -7,7 +7,6 @@ from collections.abc import Callable
 from datetime import datetime
 
 from morrow.adapters.state.artifacts import FilesystemArtifactStore
-from morrow.adapters.state.journal import SqliteOperationalJournal
 from morrow.core.artifacts import (
     ARTIFACT_EXCERPT_MAX_BYTES,
     ARTIFACT_MAX_BYTES,
@@ -35,6 +34,7 @@ from morrow.core.domain import (
     sha256_digest,
     utc_now,
 )
+from morrow.core.journal import ArtifactJournalPort
 from morrow.core.ports import IdSource
 from morrow.core.store import StorageError, StorageErrorCode
 
@@ -62,7 +62,7 @@ class ArtifactService:
     def __init__(
         self,
         *,
-        journal: SqliteOperationalJournal,
+        journal: ArtifactJournalPort,
         filesystem: FilesystemArtifactStore,
         workspace_id: str,
         id_source: IdSource,

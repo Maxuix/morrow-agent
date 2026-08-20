@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-from typing import Protocol
+from collections.abc import Callable, Sequence
+from typing import Protocol, Self, TypeVar
 
 from morrow.core.application import ApplicationCommandReceipt, ApplicationEvent
 from morrow.core.artifacts import ArtifactMetadata
 from morrow.core.context import ContextCheckpoint, SessionLineage
 from morrow.core.domain import (
+    ArtifactReference,
     DurableAgentRun,
     DurableConversationRecord,
     DurableSession,
@@ -23,6 +24,14 @@ from morrow.core.domain import (
 from morrow.core.execution import DurableApproval, DurableToolExecution
 from morrow.core.permissions import CapabilityGrant, PermissionSnapshot
 from morrow.core.recovery import RecoveryReceipt, RecoveryReport
+
+T = TypeVar("T")
+
+
+class TransactionalJournalPort(Protocol):
+    """Run work against the same transaction-scoped journal implementation."""
+
+    def transact(self, work: Callable[[Self], T]) -> T: ...
 
 
 class SessionLifecyclePort(Protocol):
@@ -238,7 +247,7 @@ class ApprovalJournalPort(Protocol):
     ) -> tuple[DurableApproval, ...]: ...
 
 
-class CapabilityGrantJournalPort(Protocol):
+class CapabilityGrantJournalPort(AgentRunPort, Protocol):
     def put_capability_grant(
         self, workspace_id: str, grant: CapabilityGrant
     ) -> CapabilityGrant: ...
@@ -258,7 +267,7 @@ class CapabilityGrantJournalPort(Protocol):
     ) -> CapabilityGrant: ...
 
 
-class RecoveryJournalPort(Protocol):
+class RecoveryJournalPort(ToolExecutionJournalPort, TransactionalJournalPort, Protocol):
     def put_report(self, workspace_id: str, report: RecoveryReport) -> RecoveryReport: ...
 
     def get_open_report(self, workspace_id: str, session_id: str) -> RecoveryReport | None: ...
@@ -304,3 +313,29 @@ class ArtifactMetadataJournalPort(Protocol):
         *,
         expected_row_version: int,
     ) -> ArtifactMetadata: ...
+
+    def artifact_bytes_for_task(self, workspace_id: str, task_run_id: str) -> int: ...
+
+    def list_artifact_references(
+        self, workspace_id: str, artifact_id: str
+    ) -> tuple[ArtifactReference, ...]: ...
+
+
+class ArtifactJournalPort(ArtifactMetadataJournalPort, ToolExecutionJournalPort, Protocol):
+    """Artifact metadata plus execution references used by ArtifactService."""
+
+
+class TaskJournalPort(
+    SessionLifecyclePort, ToolExecutionJournalPort, TransactionalJournalPort, Protocol
+):
+    """Task lifecycle and outcome transaction surface."""
+
+
+class CheckpointJournalPort(
+    SessionLifecyclePort,
+    ConversationJournalPort,
+    ArtifactMetadataJournalPort,
+    ToolExecutionJournalPort,
+    Protocol,
+):
+    """Read/commit surface required by checkpoint and fork services."""

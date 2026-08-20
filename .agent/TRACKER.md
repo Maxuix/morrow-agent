@@ -18,12 +18,12 @@ Artifact manifest/restore verification, and exact-target dry-run cleanup. Offlin
 
 ## Active task
 
-S4.46.3 — split the SQLite journal implementation by narrow domain ports.
+S4.46.6 — documentation reconciliation and final validation.
 
 ## Next action
 
-Adopt the existing Core journal protocols in application services, then partition concrete SQLite
-domain methods while retaining one `OperationalStoreSession` transaction owner.
+Update architecture truth, run full offline/Ruff/compile/CLI/diff gates, record evidence, and close
+the post-acceptance refactor.
 
 ## Blockers
 

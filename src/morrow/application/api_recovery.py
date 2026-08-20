@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from morrow.adapters.state.journal import SqliteOperationalJournal
 from morrow.core.application import (
     ApplicationCommandDisposition,
     ApplicationCommandReceipt,
@@ -21,6 +20,7 @@ from morrow.core.domain import (
 )
 from morrow.core.recovery import RecoveryReport, RecoveryReportStatus, RecoveryResolution
 from morrow.core.store import StorageError, StorageErrorCode
+from morrow.runtime.durable_log import DurableConversationWriter, restore_conversation_log
 
 
 class RecoveryApplicationService:
@@ -100,7 +100,7 @@ class RecoveryApplicationService:
 
             close_all = close_all or (resolution is RecoveryResolution.ABORT and item_id is None)
 
-            def work(txn: SqliteOperationalJournal):
+            def work(txn):
                 existing = api._replay_in_txn(txn, command_id, digest)
                 if existing is not None:
                     value = txn.get_report(api.workspace_id, existing.result_id or "")
@@ -160,9 +160,41 @@ class RecoveryApplicationService:
             api._restore_log_projection(log, report.session_id)
             raise api._translate_exception(exc) from exc
 
+    def resolve_by_id(
+        self,
+        report_id: str,
+        *,
+        command_id: str | None = None,
+        resolution: RecoveryResolution,
+        item_id: str | None = None,
+    ) -> ApplicationCommandResult[RecoveryReport]:
+        """Resolve a standalone CLI request without exposing journal internals."""
+
+        api = self.application
+        report = api.get_recovery(report_id)
+        if report is None:
+            raise ApplicationError(ApplicationErrorCode.NOT_FOUND, "Recovery report is missing")
+        log = restore_conversation_log(api.journal, api.workspace_id, report.session_id)
+        writer = DurableConversationWriter(
+            log,
+            api.journal,
+            workspace_id=api.workspace_id,
+            session_id=report.session_id,
+            id_source=api.id_source,
+        )
+        return self.resolve(
+            report,
+            command_id=command_id,
+            resolution=resolution,
+            item_id=item_id,
+            log=log,
+            writer=writer,
+            close_all=resolution is RecoveryResolution.ABORT and item_id is None,
+        )
+
     def _apply_lifecycle_in_txn(
         self,
-        txn: SqliteOperationalJournal,
+        txn,
         *,
         report: RecoveryReport,
         saved: RecoveryReport,
@@ -232,7 +264,7 @@ class RecoveryApplicationService:
         persistence.open_report = None if report.status is RecoveryReportStatus.RESOLVED else report
 
     def _abort_task_in_txn(
-        self, txn: SqliteOperationalJournal, session: DurableSession, *, turn_id: str | None
+        self, txn, session: DurableSession, *, turn_id: str | None
     ) -> str | None:
         api = self.application
         task_id = session.current_task_run_id
@@ -258,7 +290,7 @@ class RecoveryApplicationService:
             return None
         return task_id if not task.status.is_terminal else None
 
-    def _close_receipt_in_txn(self, txn: SqliteOperationalJournal, report: RecoveryReport) -> None:
+    def _close_receipt_in_txn(self, txn, report: RecoveryReport) -> None:
         api = self.application
         if report.turn_id is None:
             return

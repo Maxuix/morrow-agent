@@ -6,7 +6,6 @@ from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 
-from morrow.adapters.state.journal import SqliteOperationalJournal
 from morrow.core.capabilities import ProcessIsolation
 from morrow.core.execution import (
     EffectClass,
@@ -18,6 +17,7 @@ from morrow.core.execution import (
     tool_declaration,
     transition_execution,
 )
+from morrow.core.journal import RecoveryJournalPort
 from morrow.core.models import FinishReason, utc_now
 from morrow.core.ports import IdSource
 from morrow.core.recovery import (
@@ -149,7 +149,7 @@ def item_from_execution(execution, *, report_id: str, item_id: str, workspace_ro
 class RecoveryService:
     def __init__(
         self,
-        journal: SqliteOperationalJournal,
+        journal: RecoveryJournalPort,
         *,
         workspace_id: str,
         id_source: IdSource,
@@ -280,9 +280,9 @@ class RecoveryService:
         writer: DurableConversationWriter | None,
         close_all: bool,
         apply_log_projection: bool = True,
-        finalize: Callable[[SqliteOperationalJournal, RecoveryReport], None] | None = None,
+        finalize: Callable[[RecoveryJournalPort, RecoveryReport], None] | None = None,
     ) -> RecoveryReport:
-        def work(txn: SqliteOperationalJournal) -> RecoveryReport:
+        def work(txn: RecoveryJournalPort) -> RecoveryReport:
             saved = txn.save_report(self.workspace_id, report)
             txn.put_recovery_receipt(self.workspace_id, receipt)
             if receipt.resolution in {
@@ -316,7 +316,7 @@ class RecoveryService:
 
 
 def _persist_closed_execution(
-    journal: SqliteOperationalJournal,
+    journal: RecoveryJournalPort,
     workspace_id: str,
     execution,
     disposition: ToolExecutionDisposition,

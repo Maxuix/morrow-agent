@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from morrow.adapters.state.journal import SqliteOperationalJournal
 from morrow.core.application import ApplicationErrorCode
+from morrow.core.journal import CapabilityGrantJournalPort
 from morrow.core.permissions import CapabilityGrant, CapabilityName, GrantSource
 
 
@@ -27,7 +27,7 @@ class CapabilityGrantService:
     path is called only by the local Application API command adapter.
     """
 
-    def __init__(self, journal: SqliteOperationalJournal, *, workspace_id: str) -> None:
+    def __init__(self, journal: CapabilityGrantJournalPort, *, workspace_id: str) -> None:
         self.journal = journal
         self.workspace_id = workspace_id
 

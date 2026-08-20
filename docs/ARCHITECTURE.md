@@ -45,6 +45,8 @@ Core 不依赖 CLI、Rich、具体模型 SDK、YAML、数据库或操作系统�
 
 普通对话只有一条状态机路径：`AgentLoop.run_task()` 负责任务生命周期、模型重试、工具轮次、
 deadline/预算、取消闭合、循环检测和全部聊天历史写入；`AgentRuntime.run_turn()` 是薄委托。
+有序公开事件的构造由 loop 内部事件发射协作者负责，但状态转换、事件时机和 ConversationLog
+写入权仍只属于 `AgentLoop.run_task()`。
 
 Session 持有的进程内 `ConversationLog` 是唯一聊天历史权威，`Session.messages` 是只读投影。
 带 calls 的 Assistant 与其有序 ToolMessage 构成不可拆分的 ToolCycle。ContextBuilder 从不可变
@@ -91,6 +93,10 @@ AgentRun 有 grant 而获得 elevated 证据，`full_access + auto` 保持 unsup
 命令识别归 CommandService；状态/生命周期 Command、Query、Event 统一归
 `OperationalApplicationService`；调度归 SessionOrchestrator；输入、确认、渲染和退出码归终端接口。
 Slash `CommandService` 是薄适配器，CLI、REPL 和未来客户端不直接访问 SQL 或 Artifact 文件。
+`OperationalApplicationService` 保留兼容 facade；Recovery 与 Permission/Approval 命令事务由独立
+领域协作者实现。Artifact、Task、Checkpoint/Fork、Grant、Recovery 与 durable conversation 服务依赖
+`core/journal.py` 的窄端口；只有 composition、跨域事务聚合、诊断和备份持有具体 SQLite adapter。
+所有端口仍由同一个 `OperationalStoreSession` 实现，拆分依赖不会拆散原子事务。
 配置补丁显式分派到 Preferences 或 Profile，不存在兜底目标。`build_session_application()` 返回命名的
 `SessionApplication`，包含 `session`、`context_builder`、`commands`、`orchestrator`、`files`、`search`、`mutation`、`changes`、
 `process`、`checkpoints`、`forks`、统一 `api`、只读 `doctor` 和 `backup` 服务。

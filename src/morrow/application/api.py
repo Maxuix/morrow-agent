@@ -764,6 +764,21 @@ class OperationalApplicationService:
             close_all=close_all,
         )
 
+    def resolve_recovery_by_id(
+        self,
+        report_id: str,
+        *,
+        command_id: str | None = None,
+        resolution: RecoveryResolution,
+        item_id: str | None = None,
+    ) -> ApplicationCommandResult[RecoveryReport]:
+        return self._recovery_commands.resolve_by_id(
+            report_id,
+            command_id=command_id,
+            resolution=resolution,
+            item_id=item_id,
+        )
+
     # Internal composition helpers -------------------------------------------
 
     def _task_command(self, operation, payload, command_id, call, *, event_type):

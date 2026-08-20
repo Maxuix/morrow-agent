@@ -7,7 +7,6 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 
-from morrow.adapters.state.journal import SqliteOperationalJournal
 from morrow.core.artifacts import ArtifactState
 from morrow.core.context import (
     CONTEXT_CHECKPOINT_MAX_ARTIFACT_REFS,
@@ -29,6 +28,7 @@ from morrow.core.domain import (
     canonical_json_bytes,
 )
 from morrow.core.faults import FaultInjector, FaultPoint, NoOpFaultInjector
+from morrow.core.journal import CheckpointJournalPort
 from morrow.core.models import utc_now
 from morrow.core.ports import IdSource
 from morrow.core.store import StorageError
@@ -62,7 +62,7 @@ class ContextCheckpointService:
 
     def __init__(
         self,
-        journal: SqliteOperationalJournal,
+        journal: CheckpointJournalPort,
         *,
         workspace_id: str,
         id_source: IdSource,
@@ -345,7 +345,7 @@ class SessionForkService:
 
     def __init__(
         self,
-        journal: SqliteOperationalJournal,
+        journal: CheckpointJournalPort,
         *,
         workspace_id: str,
         id_source: IdSource,

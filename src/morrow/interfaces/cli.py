@@ -35,8 +35,7 @@ from morrow.core.permissions import (
 from morrow.core.recovery import RecoveryResolution
 from morrow.core.store import StorageError, StorageErrorCode, StoreOpenMode
 from morrow.interfaces.terminal import Terminal, TerminalApprovalPort, run_repl
-from morrow.runtime.durable_log import DurableConversationWriter, restore_conversation_log
-from morrow.runtime.ids import RandomIdSource
+from morrow.runtime.durable_log import restore_conversation_log
 from morrow.services.workspace import WorkspaceError, WorkspaceWriterLock
 
 app = typer.Typer(help="Morrow（承序）工作空间终端 Agent。")
@@ -1064,25 +1063,11 @@ def recovery_resolve(
         _application, handle, api, _doctor, _backup = _state_services(
             state_root=state_root, workspace_id=workspace_id, directory=directory, write=True
         )
-        report = api.get_recovery(report_id)
-        if report is None:
-            raise ApplicationError(ApplicationErrorCode.NOT_FOUND, "Recovery report is missing")
-        log = restore_conversation_log(api.journal, api.workspace_id, report.session_id)
-        writer = DurableConversationWriter(
-            log,
-            api.journal,
-            workspace_id=api.workspace_id,
-            session_id=report.session_id,
-            id_source=RandomIdSource(),
-        )
-        result = api.resolve_recovery(
-            report,
+        result = api.resolve_recovery_by_id(
+            report_id,
             command_id=command_id,
             resolution=resolution,
             item_id=item_id,
-            log=log,
-            writer=writer,
-            close_all=resolution is RecoveryResolution.ABORT and item_id is None,
         )
         _emit_model(result.value)
     except Exception as exc:

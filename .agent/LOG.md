@@ -1256,3 +1256,17 @@
 - Reduced `application/api.py` from 1,598 to 1,058 lines; Recovery and permission implementations
   are now independently owned and tested without changing command signatures or transaction scope.
 - Focused API/permission/recovery validation passed: `35 passed`; Ruff check and format passed.
+
+## 2026-08-20 — S4.46.3–S4.46.5 dependency and runtime seams completed
+
+- Domain Artifact, Task, Checkpoint/Fork, Grant, Recovery, and durable conversation services now
+  type against Core journal ports instead of the concrete SQLite adapter. One concrete adapter is
+  intentionally retained for shared cross-domain transactions rather than replaced by independent
+  connections or repository-local commits.
+- Extracted ordered public-event rendering from the AgentLoop transition method while preserving
+  the single loop and ConversationLog owner. Focused loop/lifecycle validation passed: `73 passed`.
+- Standalone CLI Recovery no longer reaches through `api.journal`; the Recovery application handler
+  owns durable log restoration and writer construction. Added AST architecture gates for Core layer
+  direction, journal-port adoption, single Recovery command ownership, and CLI API encapsulation.
+- Focused port/architecture validation passed: `68 passed`; focused CLI/Recovery validation passed:
+  `43 passed`; Ruff and CLI help gates passed.

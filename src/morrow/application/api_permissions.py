@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
-from morrow.adapters.state.journal import SqliteOperationalJournal
 from morrow.application.grants import (
     CapabilityGrantError,
     CapabilityGrantService,
@@ -143,7 +142,7 @@ class PermissionApplicationService:
                 )
             return ApplicationCommandResult(value, replay)
 
-        def work(txn: SqliteOperationalJournal):
+        def work(txn):
             existing = api._replay_in_txn(txn, command_id, digest)
             if existing is not None:
                 value = txn.get_capability_grant(api.workspace_id, existing.result_id or "")
@@ -238,7 +237,7 @@ class PermissionApplicationService:
                 )
             return ApplicationCommandResult(value, replay)
 
-        def work(txn: SqliteOperationalJournal):
+        def work(txn):
             existing = api._replay_in_txn(txn, command_id, digest)
             if existing is not None:
                 value = txn.get_capability_grant(api.workspace_id, existing.result_id or "")

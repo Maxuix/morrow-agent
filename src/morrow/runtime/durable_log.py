@@ -6,12 +6,12 @@ import re
 
 from pydantic import TypeAdapter
 
-from morrow.adapters.state.journal import SqliteOperationalJournal
 from morrow.core.domain import (
     CONVERSATION_RECORD_ID_PREFIX,
     DurableConversationRecord,
     sha256_digest,
 )
+from morrow.core.journal import ConversationJournalPort
 from morrow.core.models import FinishReason, Message
 from morrow.core.ports import IdSource
 from morrow.runtime.conversation import (
@@ -99,7 +99,7 @@ def durable_from_conversation_record(
 
 
 def restore_conversation_log(
-    journal: SqliteOperationalJournal, workspace_id: str, session_id: str
+    journal: ConversationJournalPort, workspace_id: str, session_id: str
 ) -> ConversationLog:
     records = tuple(
         conversation_record_from_durable(item)
@@ -114,7 +114,7 @@ class DurableConversationWriter:
     def __init__(
         self,
         log: ConversationLog,
-        journal: SqliteOperationalJournal,
+        journal: ConversationJournalPort,
         *,
         workspace_id: str,
         session_id: str,

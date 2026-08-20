@@ -10,7 +10,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-from morrow.adapters.state.journal import SqliteOperationalJournal
 from morrow.core.domain import (
     COMMAND_ID_PREFIX,
     TASK_OUTCOME_ID_PREFIX,
@@ -31,6 +30,7 @@ from morrow.core.domain import (
     validate_task_transition,
 )
 from morrow.core.execution import ToolExecutionDisposition, ToolExecutionState
+from morrow.core.journal import TaskJournalPort
 from morrow.core.ports import IdSource
 
 TaskCommandKind = Literal["accepted", "replay", "conflict"]
@@ -59,9 +59,7 @@ def task_command_digest(operation: str, payload: dict[str, object]) -> str:
 class TaskOutcomeAssembler:
     """Build only bounded, deterministic facts from already durable records."""
 
-    def __init__(
-        self, journal: SqliteOperationalJournal, *, workspace_id: str, id_source: IdSource
-    ):
+    def __init__(self, journal: TaskJournalPort, *, workspace_id: str, id_source: IdSource):
         self.journal = journal
         self.workspace_id = workspace_id
         self.id_source = id_source
@@ -204,7 +202,7 @@ class TaskService:
     def __init__(
         self,
         *,
-        journal: SqliteOperationalJournal,
+        journal: TaskJournalPort,
         workspace_id: str,
         id_source: IdSource,
     ) -> None:
@@ -258,7 +256,7 @@ class TaskService:
         if replay is not None:
             return replay
 
-        def work(txn: SqliteOperationalJournal) -> TaskCommandResult:
+        def work(txn: TaskJournalPort) -> TaskCommandResult:
             replay = self._replay_in_txn(txn, command_id, digest)
             if replay is not None:
                 return replay
@@ -409,7 +407,7 @@ class TaskService:
         if replay is not None:
             return replay
 
-        def work(txn: SqliteOperationalJournal) -> TaskCommandResult:
+        def work(txn: TaskJournalPort) -> TaskCommandResult:
             replay = self._replay_in_txn(txn, command_id, digest)
             if replay is not None:
                 return replay
@@ -459,7 +457,7 @@ class TaskService:
         if replay is not None:
             return replay
 
-        def work(txn: SqliteOperationalJournal) -> TaskCommandResult:
+        def work(txn: TaskJournalPort) -> TaskCommandResult:
             replay = self._replay_in_txn(txn, command_id, digest)
             if replay is not None:
                 return replay
@@ -512,7 +510,7 @@ class TaskService:
         if replay is not None:
             return replay
 
-        def work(txn: SqliteOperationalJournal) -> TaskCommandResult:
+        def work(txn: TaskJournalPort) -> TaskCommandResult:
             replay = self._replay_in_txn(txn, command_id, digest)
             if replay is not None:
                 return replay
@@ -569,7 +567,7 @@ class TaskService:
 
     def _transition_in_txn(
         self,
-        txn: SqliteOperationalJournal,
+        txn: TaskJournalPort,
         task: DurableTaskRun,
         target: TaskRunStatus,
         *,
@@ -608,7 +606,7 @@ class TaskService:
 
     def _outcome_in_txn(
         self,
-        txn: SqliteOperationalJournal,
+        txn: TaskJournalPort,
         task: DurableTaskRun,
         *,
         trigger: TaskOutcomeTrigger,
@@ -621,7 +619,7 @@ class TaskService:
         outcome = assembler.build(task, trigger=trigger, summary=summary, feedback=feedback)
         return txn.put_task_outcome(self.workspace_id, outcome)
 
-    def _load(self, txn: SqliteOperationalJournal, task_run_id: str) -> DurableTaskRun:
+    def _load(self, txn: TaskJournalPort, task_run_id: str) -> DurableTaskRun:
         task = txn.get_task_run(self.workspace_id, task_run_id)
         if task is None:
             raise TaskCommandError("TaskRun is missing")
@@ -637,7 +635,7 @@ class TaskService:
 
     def _replay_in_txn(
         self,
-        txn: SqliteOperationalJournal,
+        txn: TaskJournalPort,
         command_id: str | None,
         digest: str,
     ) -> TaskCommandResult | None:
@@ -645,7 +643,7 @@ class TaskService:
 
     def _replay_from(
         self,
-        reader: SqliteOperationalJournal,
+        reader: TaskJournalPort,
         command_id: str | None,
         digest: str,
     ) -> TaskCommandResult | None:
@@ -672,7 +670,7 @@ class TaskService:
 
     def _store_receipt(
         self,
-        txn: SqliteOperationalJournal,
+        txn: TaskJournalPort,
         *,
         command_id: str | None,
         session_id: str,
