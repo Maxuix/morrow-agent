@@ -121,7 +121,8 @@ Session 的 `updated_at` 会随任务、对话、lifecycle、health 和 recovery
 Fork child 创建时不继承父 TaskRun，持久化后可创建并拥有自己的 TaskRun、Turn 和本地记录；
 父历史不变。工具恢复仍遵循持久化证据分类。
 工作空间/代码回退不属于 Stage 4，任务后可审查的长期偏好与项目知识学习留到
-Stage 5。
+Stage 5。当前可通过 `morrow memory selection list` / `show <selection-id>` 查看一次 AgentRun
+冻结的 Memory Selection；输出只包含引用、原因、预算和 digest，不默认展开 Knowledge 内容。
 
 Artifact cleanup 默认只 dry-run，并以同一 data root 内所有 workspace 的 metadata 与
 reference 为权威。`--apply` 不销毁字节：它只会把经目录、类型、权限、单链接和事务内

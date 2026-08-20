@@ -35,6 +35,8 @@ from morrow.core.learning_payloads import (
 
 learning_app = typer.Typer(help="Learning Inbox、Review 与候选决策。")
 memory_app = typer.Typer(help="Project Knowledge 生命周期与历史。")
+selection_app = typer.Typer(help="已冻结的 Memory Selection 查询。")
+memory_app.add_typer(selection_app, name="selection")
 
 
 def _cli_helpers():
@@ -480,6 +482,86 @@ def _knowledge_or_error(api, knowledge_id: str, *, revision: int | None = None):
     if value is None:
         raise ApplicationError(ApplicationErrorCode.NOT_FOUND, "Project Knowledge is missing")
     return value
+
+
+def _selection_or_error(api, selection_id: str):
+    value = api.get_memory_selection(selection_id)
+    if value is None:
+        raise ApplicationError(ApplicationErrorCode.NOT_FOUND, "Memory Selection is missing")
+    return value
+
+
+def _render_selection(value) -> None:
+    selection = value.selection
+    typer.echo(f"selection_id: {selection.selection_id}")
+    typer.echo(f"source_memory_revision: {selection.source_memory_revision}")
+    typer.echo(f"selection_digest: {selection.selection_digest}")
+    typer.echo(
+        f"items: {selection.item_count}; omitted: {selection.omitted_count}; "
+        f"rendered_chars: {selection.rendered_chars}"
+    )
+    typer.echo("agent_runs: " + (", ".join(value.agent_run_ids) or "none"))
+    for item in selection.selected_items:
+        reasons = ",".join(reason.value for reason in item.reason_codes) or "none"
+        typer.echo(
+            f"#{item.ordinal}\t{item.record_id}@{item.revision}\t"
+            f"revision_id={item.record_revision_id}\treasons={reasons}\t"
+            f"chars={item.estimated_chars}\tcontent_digest={item.rendered_content_digest}"
+        )
+
+
+@selection_app.command("list")
+def memory_selection_list(
+    cursor: str | None = typer.Option(None, "--cursor"),
+    limit: int = typer.Option(50, "--limit", min=1, max=100),
+    as_json: bool = typer.Option(False, "--json"),
+    workspace_id: str | None = typer.Option(None, "--workspace-id"),
+    directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+) -> None:
+    def action(api) -> None:
+        page = api.list_memory_selections(cursor=cursor, limit=limit)
+        _cli_helpers()[3](
+            page,
+            render=lambda item: (
+                f"{item.selection_id}\tmemory_revision={item.source_memory_revision}\t"
+                f"items={item.item_count}\tomitted={item.omitted_count}\t"
+                f"chars={item.rendered_chars}\tdigest={item.selection_digest}"
+            ),
+            as_json=as_json,
+        )
+
+    _run_state_command(
+        state_root=state_root,
+        workspace_id=workspace_id,
+        directory=directory,
+        write=False,
+        action=action,
+    )
+
+
+@selection_app.command("show")
+def memory_selection_show(
+    selection_id: str,
+    as_json: bool = typer.Option(False, "--json"),
+    workspace_id: str | None = typer.Option(None, "--workspace-id"),
+    directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+) -> None:
+    def action(api) -> None:
+        value = _selection_or_error(api, selection_id)
+        if as_json:
+            _cli_helpers()[2](value, as_json=True)
+        else:
+            _render_selection(value)
+
+    _run_state_command(
+        state_root=state_root,
+        workspace_id=workspace_id,
+        directory=directory,
+        write=False,
+        action=action,
+    )
 
 
 @memory_app.command("list")

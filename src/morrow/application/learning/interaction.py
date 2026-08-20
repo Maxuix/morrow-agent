@@ -237,6 +237,43 @@ class LearningCommandMixin:
         if self.api is None:
             return CommandResult(["Memory 服务尚未就绪。"])
         operation = parts[1].casefold() if len(parts) > 1 else "list"
+        if operation == "selection":
+            selection_operation = parts[2].casefold() if len(parts) > 2 else "list"
+            if selection_operation == "list":
+                if len(parts) > 2 and parts[3:] not in ([],):
+                    return CommandResult(["用法：/memory selection [show <selection-id>]"])
+                page = self.api.list_memory_selections(limit=50)
+                lines = [f"Memory Selection：{len(page.items)} 条"]
+                lines.extend(
+                    f"{item.selection_id}\tmemory_revision={item.source_memory_revision}\t"
+                    f"items={item.item_count}\tomitted={item.omitted_count}\t"
+                    f"chars={item.rendered_chars}\tdigest={item.selection_digest}"
+                    for item in page.items
+                )
+                return CommandResult(lines, value=page)
+            if selection_operation == "show":
+                if len(parts) != 4:
+                    return CommandResult(["用法：/memory selection show <selection-id>"])
+                value = self.api.get_memory_selection(parts[3])
+                if value is None:
+                    return CommandResult(["Memory Selection 不存在。"])
+                selection = value.selection
+                lines = [
+                    f"Selection：{selection.selection_id}；memory_revision："
+                    f"{selection.source_memory_revision}",
+                    f"digest：{selection.selection_digest}；items：{selection.item_count}；"
+                    f"omitted：{selection.omitted_count}；chars：{selection.rendered_chars}",
+                    "AgentRuns：" + (", ".join(value.agent_run_ids) or "无"),
+                ]
+                lines.extend(
+                    f"#{item.ordinal} {item.record_id}@{item.revision} "
+                    f"({item.record_revision_id})；reasons="
+                    f"{','.join(reason.value for reason in item.reason_codes) or 'none'}；"
+                    f"chars={item.estimated_chars}；content_digest={item.rendered_content_digest}"
+                    for item in selection.selected_items
+                )
+                return CommandResult(lines, value=value)
+            return CommandResult(["用法：/memory selection [show <selection-id>]"])
         if operation == "list":
             if len(parts) > 1 and parts[2:] not in ([], ["--type", "knowledge"]):
                 return CommandResult(["用法：/memory list [--type knowledge]"])
@@ -285,7 +322,10 @@ class LearningCommandMixin:
                 ),
             )
         return CommandResult(
-            ["用法：/memory [list [--type knowledge]|show|disable|enable|dispute|delete]"]
+            [
+                "用法：/memory [list [--type knowledge]|selection [show <selection-id>]|"
+                "show|disable|enable|dispute|delete]"
+            ]
         )
 
     def accept_learning_candidate(self, request: LearningCandidateCommandRequest):

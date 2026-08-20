@@ -97,6 +97,7 @@ class BackupVerificationReport(ProtocolModel):
     foreign_keys_ok: bool
     manifest_ok: bool
     artifacts_ok: bool
+    memory_references_ok: bool = True
     credentials_excluded: bool = True
     issues: tuple[str, ...] = ()
 
@@ -107,5 +108,6 @@ class BackupVerificationReport(ProtocolModel):
             and self.foreign_keys_ok
             and self.manifest_ok
             and self.artifacts_ok
+            and self.memory_references_ok
             and self.credentials_excluded
         )

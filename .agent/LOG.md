@@ -1698,3 +1698,19 @@
 - Added frozen-context, next-Turn refresh, zero-item, and process-local fallback tests. Full offline
   validation passed: 771 tests, 2 skipped, 1 deselected; Ruff format/check, compileall,
   root/Learning/Memory CLI help, and `git diff --check` passed. S53.6 is active.
+
+## 2026-08-21 — Subplan 53 S53.6 verified; S53.7 active
+
+- Added bounded Memory Selection list/show views through the application API, Typer commands, and
+  `/memory selection` REPL commands. Output includes AgentRun references, source/current revision
+  identifiers, reason codes, character budgets, omission counts, and digests without defaulting to
+  Knowledge content.
+- Added isolated Memory doctor invariants for selection/item ordering and digests, immutable
+  Knowledge references, AgentRun snapshot reuse, and rebuildable current term rows. Backup
+  verification now validates selection/Knowledge/term/AgentRun links in the copied SQLite database.
+- Split Memory doctor and backup checks into focused modules to keep `OperationalDoctor` and
+  `OperationalBackupService` as orchestration layers; updated architecture, roadmap, and README
+  documentation.
+- Full offline validation passed: 777 tests, 2 skips, 1 deselected; Ruff format/check, compileall,
+  root/Learning/Memory CLI help, and `git diff --check` passed. The one-time S53 Grok review is the
+  remaining closeout action.

@@ -6,6 +6,7 @@ from morrow.application.api_context import ApplicationCommandContext
 from morrow.application.learning.inbox import _offset
 from morrow.application.learning.lifecycle import MemoryLifecycleService
 from morrow.core.application import ApplicationError, ApplicationErrorCode, QueryPage
+from morrow.core.domain import validate_prefixed_id
 from morrow.core.learning_memory import ProjectKnowledgeCategory, ProjectKnowledgeStatus
 from morrow.core.learning_views import (
     LEARNING_QUERY_MAX_EVIDENCE,
@@ -14,6 +15,8 @@ from morrow.core.learning_views import (
     ProjectKnowledgeSummary,
     ProjectKnowledgeView,
 )
+from morrow.core.memory_selection import MEMORY_SELECTION_ID_PREFIX, MemorySelection
+from morrow.core.memory_views import MemorySelectionSummary, MemorySelectionView
 
 
 class MemoryApplicationService:
@@ -115,6 +118,45 @@ class MemoryApplicationService:
             evidence=evidence,
         )
 
+    def list_selections(
+        self, *, cursor: str | None = None, limit: int = 50
+    ) -> QueryPage[MemorySelectionSummary]:
+        offset = _offset(cursor, limit)
+        selections = self.context._query(
+            lambda: self.journal.list_memory_selections(
+                self.workspace_id,
+                limit=min(500, offset + limit),
+            )
+        )
+        refs = self._selection_agent_runs(selections)
+        page = tuple(
+            MemorySelectionSummary.from_selection(
+                selection,
+                agent_run_ids=refs.get(selection.selection_id, ()),
+            )
+            for selection in selections[offset : offset + limit]
+        )
+        next_cursor = str(offset + len(page)) if offset + len(page) < len(selections) else None
+        return QueryPage(page, next_cursor)
+
+    def get_selection(self, selection_id: str) -> MemorySelectionView | None:
+        try:
+            selection_id = validate_prefixed_id(selection_id, MEMORY_SELECTION_ID_PREFIX)
+        except ValueError as exc:
+            raise ApplicationError(
+                ApplicationErrorCode.INVALID, "memory selection ID is invalid"
+            ) from exc
+        selection = self.context._query(
+            lambda: self.journal.get_memory_selection(self.workspace_id, selection_id)
+        )
+        if selection is None:
+            return None
+        refs = self._selection_agent_runs((selection,))
+        return MemorySelectionView(
+            selection=selection,
+            agent_run_ids=refs.get(selection.selection_id, ()),
+        )
+
     def disable_knowledge(self, command):
         return self.lifecycle.disable_knowledge(command)
 
@@ -126,6 +168,26 @@ class MemoryApplicationService:
 
     def delete_knowledge(self, command):
         return self.lifecycle.delete_knowledge(command)
+
+    def _selection_agent_runs(
+        self, selections: tuple[MemorySelection, ...]
+    ) -> dict[str, tuple[str, ...]]:
+        selection_ids = {selection.selection_id for selection in selections}
+        refs: dict[str, list[str]] = {selection_id: [] for selection_id in selection_ids}
+        if not selection_ids:
+            return {}
+        sessions = self.context._query(lambda: self.journal.list_sessions(self.workspace_id))
+        for session in sessions:
+            runs = self.context._query(
+                lambda session=session: self.journal.list_session_agent_runs(
+                    self.workspace_id, session.session_id
+                )
+            )
+            for run in runs:
+                selection_id = run.snapshot.memory_selection_id
+                if selection_id in refs:
+                    refs[selection_id].append(run.agent_run_id)
+        return {selection_id: tuple(values) for selection_id, values in refs.items()}
 
     def _current_revision(self, revision_id: str | None, *, revisions=()):
         if revision_id is None:

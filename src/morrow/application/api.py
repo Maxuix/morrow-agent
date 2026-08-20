@@ -335,6 +335,12 @@ class OperationalApplicationService:
     def get_project_knowledge(self, knowledge_id: str, *, revision: int | None = None):
         return self.memory.get_knowledge(knowledge_id, revision=revision)
 
+    def list_memory_selections(self, **kwargs):
+        return self.memory.list_selections(**kwargs)
+
+    def get_memory_selection(self, selection_id: str):
+        return self.memory.get_selection(selection_id)
+
     def disable_project_knowledge(self, command):
         return self.memory.disable_knowledge(command)
 

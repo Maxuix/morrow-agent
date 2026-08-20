@@ -10,6 +10,7 @@ from pathlib import Path
 from morrow.adapters.state.artifacts import FilesystemArtifactStore
 from morrow.adapters.state.journal import SqliteOperationalJournal
 from morrow.adapters.state.operational import OperationalStore
+from morrow.application.learning.memory_doctor import inspect_memory
 from morrow.core.artifacts import (
     ARTIFACT_FILE_SUFFIX,
     ARTIFACT_TEMP_SUFFIX,
@@ -117,7 +118,16 @@ class OperationalDoctor:
             )
             self._inspect_domains(journal, workspace_id, counts, issues)
             self._inspect_permissions(journal, workspace_id, counts, issues)
-            checks.extend(("artifacts_and_references", "application_events"))
+            checks.extend(
+                ("memory_selections_and_terms", "artifacts_and_references", "application_events")
+            )
+            inspect_memory(
+                journal,
+                workspace_id,
+                counts,
+                issues,
+                issue_factory=self._issue,
+            )
             self._inspect_artifacts(journal, workspace_id, counts, issues)
             self._inspect_events(journal, workspace_id, counts, issues)
         except StorageError as exc:

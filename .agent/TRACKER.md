@@ -16,14 +16,16 @@ surfaces, and lazy query expiry. Subplan 50 is merged at `4d47be8` underneath it
 
 ## Active task
 
-Implement S53.6: add MemorySelection inspection, doctor/backup invariants, CLI/REPL surfaces, and
-documentation.
+Close S53.7: perform the required one-time Grok review/fix pass for the completed S53 subplan,
+then merge the verified branch and prepare Subplan 54.
 
 ## Next action
 
-Add bounded selection list/show queries, cross-check AgentRun references and immutable Knowledge
-revisions in doctor/backup verification, expose the authorized CLI/REPL inspection surface, and
-document the frozen memory behavior without introducing scoring internals or new authorities.
+S53.6 is implemented and fully gated: add the bounded selection list/show queries, cross-check
+AgentRun references and immutable Knowledge revisions in doctor/backup verification, expose the
+authorized CLI/REPL inspection surface, and document frozen memory behavior without exposing
+scoring internals or adding authorities. Commit the work, invoke Grok `/review` once for S53,
+wait for its complete result, fix feasible findings once, then merge and activate S54.
 
 ## Blockers
 

@@ -1,6 +1,6 @@
 # Stage 5：可审查学习与长期记忆
 
-> 状态：Subplans 49–52（LearningPolicy、accepted Outcome → Candidate Pipeline、Inbox/Project Knowledge、Profile/Preferences Promotion Saga）已完成；MemorySelection、ContextBuilder 集成与生产 Reviewer 尚未实施
+> 状态：Subplans 49–53（LearningPolicy、accepted Outcome → Candidate Pipeline、Inbox/Project Knowledge、Profile/Preferences Promotion Saga、MemorySelection/ContextBuilder）已完成；生产 Reviewer 与评估仍由 Subplan 54 负责
 > 阶段结果：Morrow 能在任务显式 accepted 后提出有来源、有作用域、可拒绝和可撤销的学习候选，并可在明确确认后通过可恢复 Saga 更新 YAML 配置；模型推断不会直接写入长期配置
 > 上级文档：[开发路线总览](../ROADMAP.md)
 > 上一阶段：[Stage 4：Task、Session、Artifact 与持久化](stage-4-task-session-and-persistence.md)
@@ -421,6 +421,20 @@ Active Preference/Knowledge 仍是用户状态数据：
 
 公开 UI 不需要默认展示全部内容，但必须可展开查询。
 
+当前只读入口为：
+
+```text
+morrow memory selection list
+morrow memory selection show <selection-id>
+/memory selection
+/memory selection show <selection-id>
+```
+
+查询默认只展示 selection/AgentRun 引用、Memory revision、记录 revision、reason codes、字符预算、
+省略数和 SHA-256 digest，不直接展开不受控的 Knowledge 内容。`state doctor` 会校验选择与不可变
+Knowledge revision、AgentRun snapshot、可重建术语之间的关系；backup verify 也会在隔离 SQLite 副本
+上执行这些引用检查。
+
 ## 九、用户入口
 
 ### 9.1 CLI / REPL
@@ -534,14 +548,16 @@ Stage 5 只定义记录格式；Stage 7/8 才产生和应用这些信号。
 - Preference/Profile whitelist、显式 Evidence/scope、Profile/Preferences CLI/REPL 预览确认。
 - Session revision/presence 投影与 AgentRun 配置来源冻结。
 
-### Subplan 53：Memory Query 与 Context Selection
+### Subplan 53：Memory Query 与 Context Selection（已完成）
 
 - 作用域、类别、词法相关性。
 - Token 预算和选择解释。
 - ContextBuilder/Assembler 集成。
 - Operational Store v12 与 AgentRun freeze/recovery reuse。
+- ContextBuilder 消费 durable RunContextProjection；恢复 Run 重用原选择，不按新状态重选。
+- Memory Selection 查询、REPL/Typer 入口、doctor/backup 引用校验。
 
-### Subplan 51–54：CLI、Inbox 与管理入口
+### Subplan 51–53：CLI、Inbox 与管理入口
 
 - Learning Inbox。
 - Active Memory 管理。
