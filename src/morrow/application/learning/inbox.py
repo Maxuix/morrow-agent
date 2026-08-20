@@ -21,6 +21,7 @@ from morrow.core.learning import (
     LearningCandidateOperation,
     LearningCandidateStatus,
     LearningCandidateType,
+    LearningEvidenceAuthority,
     LearningReview,
     LearningReviewStatus,
     LearningScope,
@@ -288,6 +289,8 @@ class LearningApplicationService:
         return self.promotion.edit_and_accept_candidate(command)
 
     def list_promotion_operations(self, *, state=None):
+        if state is None:
+            return self.promotion.configuration.list_unresolved_operations()
         return self.promotion.configuration.list_operations(state=state)
 
     def get_promotion_operation(self, operation_id: str):
@@ -586,6 +589,41 @@ class LearningApplicationService:
                 None,
                 False,
                 "configuration_promotion_deferred",
+                None,
+                resolution,
+                (),
+                self._preview_value(candidate, payload, scope, candidate.semantic_key),
+            )
+        evidence = self.context._query(
+            lambda: self.journal.list_learning_candidate_evidence(
+                self.workspace_id, candidate.candidate_id
+            )
+        )[:LEARNING_MAX_REFERENCE_IDS]
+        if (
+            len(evidence) != len(candidate.evidence_ids)
+            or {item.evidence_id for item in evidence} != set(candidate.evidence_ids)
+            or any(
+                item.workspace_id != self.workspace_id or item.safety_rejection_code is not None
+                for item in evidence
+            )
+        ):
+            return (
+                None,
+                False,
+                "configuration_evidence_ineligible",
+                None,
+                resolution,
+                (),
+                self._preview_value(candidate, payload, scope, candidate.semantic_key),
+            )
+        if not any(
+            item.authority is LearningEvidenceAuthority.USER_EXPLICIT_PERSISTENT
+            for item in evidence
+        ):
+            return (
+                None,
+                False,
+                "configuration_explicit_evidence_required",
                 None,
                 resolution,
                 (),

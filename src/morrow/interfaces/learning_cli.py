@@ -8,7 +8,6 @@ from pathlib import Path
 import typer
 
 from morrow.core.application import ApplicationError, ApplicationErrorCode
-from morrow.core.configuration_promotion import PromotionOperationState
 from morrow.core.learning import (
     LearningCandidateStatus,
     LearningCandidateType,
@@ -67,6 +66,19 @@ def _confirm_or_exit(question: str) -> None:
         return
     typer.echo("已取消，未写入状态。")
     raise typer.Exit(code=2)
+
+
+def _emit_promotion_result(value, *, as_json: bool) -> None:
+    if not as_json and getattr(value, "activation_id", None) is not None:
+        action = "撤销" if value.outcome == "reversed" else "激活"
+        label = "Active Preference" if value.target == "preferences" else "Active Profile field"
+        scope = value.scope.value if value.scope is not None else "unknown"
+        typer.echo(
+            f"{action}{label}：scope={scope}；path={value.path}；"
+            f"revision={value.revision}；activation={value.activation_id}。"
+        )
+        return
+    _cli_helpers()[2](value, as_json=as_json)
 
 
 def _run_state_command(
@@ -218,9 +230,12 @@ def learning_promotions(
             )
         if operation_id is not None and action is not None:
             value = api.recover_learning_promotion(operation_id, action=action)
-            _cli_helpers()[2](value.value if hasattr(value, "value") else value, as_json=as_json)
+            _emit_promotion_result(
+                value.value if hasattr(value, "value") else value,
+                as_json=as_json,
+            )
             return
-        items = api.list_learning_promotions(state=PromotionOperationState.NEEDS_RESOLUTION)
+        items = api.list_learning_promotions()
         _cli_helpers()[2](items, as_json=as_json)
         if not as_json and not items:
             typer.echo("没有待处理的配置 promotion。")
@@ -253,7 +268,7 @@ def learning_undo(
             activation_id,
             command_id=_command_id(api, command_id),
         ).value
-        _cli_helpers()[2](value)
+        _emit_promotion_result(value, as_json=False)
 
     _run_state_command(
         state_root=state_root,
@@ -298,7 +313,7 @@ def learning_accept(
             typer.echo(
                 "候选已接受为候选/反馈；未创建或激活 Skill、Workflow 或 Orchestration 状态。"
             )
-        _cli_helpers()[2](value)
+        _emit_promotion_result(value, as_json=False)
 
     _run_state_command(
         state_root=state_root,
@@ -416,7 +431,7 @@ def learning_edit(
             typer.echo(
                 "候选已接受为候选/反馈；未创建或激活 Skill、Workflow 或 Orchestration 状态。"
             )
-        _cli_helpers()[2](value)
+        _emit_promotion_result(value, as_json=False)
 
     _run_state_command(
         state_root=state_root,

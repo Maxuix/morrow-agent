@@ -6,6 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
+from morrow.core.configuration_promotion import ConfigurationActivationStatus
 from morrow.core.domain import DurableTaskOutcome, canonical_json_bytes
 from morrow.core.learning import (
     LEARNING_MAX_REFERENCE_IDS,
@@ -89,13 +90,11 @@ class LearningCandidatePipeline:
                 fingerprint=fingerprint,
                 limit=500,
             )
+            if any(item.status is LearningCandidateStatus.PROMOTING for item in existing):
+                duplicate_count += 1
+                continue
             active_proposed = next(
-                (
-                    item
-                    for item in existing
-                    if item.status
-                    in {LearningCandidateStatus.PROPOSED, LearningCandidateStatus.PROMOTING}
-                ),
+                (item for item in existing if item.status is LearningCandidateStatus.PROPOSED),
                 None,
             )
             if active_proposed is not None:
@@ -121,6 +120,14 @@ class LearningCandidatePipeline:
                     LearningCandidateStatus.ACCEPTED,
                     LearningCandidateStatus.EDITED_AND_ACCEPTED,
                 }
+                and (
+                    item.candidate_type
+                    not in {
+                        LearningCandidateType.PREFERENCE,
+                        LearningCandidateType.PROFILE,
+                    }
+                    or self._has_current_configuration_activation(txn, item)
+                )
                 for item in existing
             ):
                 duplicate_count += 1
@@ -194,6 +201,27 @@ class LearningCandidatePipeline:
             duplicate_count=duplicate_count,
             suppressed_count=suppressed_count,
             rejected_count=rejected_count,
+        )
+
+    def _has_current_configuration_activation(self, txn, candidate: LearningCandidate) -> bool:
+        target = (
+            "preferences"
+            if candidate.candidate_type is LearningCandidateType.PREFERENCE
+            else "profile"
+        )
+        path = getattr(candidate.proposed_payload, "path", None)
+        if path is None:
+            return True
+        activations = txn.list_configuration_activations(
+            self.workspace_id,
+            target=target,
+            path=path,
+            status=ConfigurationActivationStatus.ACTIVE,
+            limit=500,
+        )
+        return any(
+            item.candidate_id == candidate.candidate_id and item.reverses_activation_id is None
+            for item in activations
         )
 
     @staticmethod

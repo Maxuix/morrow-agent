@@ -34,6 +34,12 @@ class LearningCandidateCommandRequest:
 
 
 @dataclass(frozen=True)
+class LearningPromotionRecoveryRequest:
+    operation_id: str
+    action: str
+
+
+@dataclass(frozen=True)
 class KnowledgeLifecycleCommandRequest:
     knowledge_id: str
     expected_row_version: int
@@ -44,5 +50,6 @@ __all__ = [
     "CommandResult",
     "KnowledgeLifecycleCommandRequest",
     "LearningCandidateCommandRequest",
+    "LearningPromotionRecoveryRequest",
     "RecoveryCommandRequest",
 ]

@@ -327,6 +327,13 @@ def test_preference_candidate_saga_applies_yaml_and_replays_without_duplicate_ac
             app.project_store.load_preferences(identity.workspace_id).value.preferences.language
             == "中文"
         )
+        assert [
+            event.event_type for event in journal.list_application_events(identity.workspace_id)
+        ][-3:] == [
+            "learning.candidate_accepted",
+            "configuration.activated",
+            "memory.record_activated",
+        ]
         assert (
             journal.get_learning_candidate(identity.workspace_id, candidate.candidate_id).status
             is LearningCandidateStatus.ACCEPTED
@@ -492,9 +499,21 @@ def test_configuration_saga_replays_after_sqlite_finalize_crash(tmp_path, monkey
             api.accept_learning_candidate(command)
         operation = journal.list_promotion_operations(identity.workspace_id)[0]
         assert operation.state.value == "prepared"
+        assert [item.operation_id for item in api.list_learning_promotions()] == [
+            operation.operation_id
+        ]
         assert (
             app.project_store.load_preferences(identity.workspace_id).value.preferences.language
             == "中文"
+        )
+
+        with pytest.raises(ApplicationError):
+            api.recover_learning_promotion(operation.operation_id, action="abort")
+        assert (
+            journal.get_promotion_operation(
+                identity.workspace_id, operation.operation_id
+            ).state.value
+            == "prepared"
         )
 
         replay = api.accept_learning_candidate(command)
@@ -503,6 +522,66 @@ def test_configuration_saga_replays_after_sqlite_finalize_crash(tmp_path, monkey
         assert (
             journal.list_promotion_operations(identity.workspace_id)[0].state.value == "finalized"
         )
+    finally:
+        handle.close()
+
+
+def test_configuration_accept_honors_command_row_version_token(tmp_path):
+    app, identity, handle, journal, api, candidate = _promotion_subjects(tmp_path)
+    try:
+        with pytest.raises(ApplicationError) as error:
+            api.accept_learning_candidate(
+                AcceptLearningCandidateCommand(
+                    workspace_id=identity.workspace_id,
+                    candidate_id=candidate.candidate_id,
+                    expected_row_version=2,
+                    command_id="cmd_config_stale_token",
+                )
+            )
+        assert error.value.code is ApplicationErrorCode.STALE
+        assert journal.list_promotion_operations(identity.workspace_id) == ()
+        assert journal.get_learning_candidate(
+            identity.workspace_id, candidate.candidate_id
+        ).status is (LearningCandidateStatus.PROPOSED)
+        assert app.project_store.load_preferences(identity.workspace_id).value is None
+    finally:
+        handle.close()
+
+
+def test_configuration_recovery_finalizes_after_state_explicitly(tmp_path, monkeypatch):
+    app, identity, handle, journal, api, candidate = _promotion_subjects(tmp_path)
+    try:
+        original_event = journal.put_application_event_in_txn
+        fail_once = True
+
+        def fail_finalize_once(*args, **kwargs):
+            nonlocal fail_once
+            if fail_once:
+                fail_once = False
+                raise RuntimeError("injected finalize failure")
+            return original_event(*args, **kwargs)
+
+        monkeypatch.setattr(journal, "put_application_event_in_txn", fail_finalize_once)
+        command = AcceptLearningCandidateCommand(
+            workspace_id=identity.workspace_id,
+            candidate_id=candidate.candidate_id,
+            expected_row_version=1,
+            command_id="cmd_config_explicit_finalize",
+        )
+        with pytest.raises(ApplicationError):
+            api.accept_learning_candidate(command)
+        operation = journal.list_promotion_operations(identity.workspace_id)[0]
+        assert operation.state.value == "prepared"
+
+        session = Session(session_id="ses_recovery")
+        api.learning.promotion.configuration.config_service.session = session
+        assert session.workspace_preferences.language is None
+        result = api.recover_learning_promotion(operation.operation_id, action="finalize")
+        assert result.value.outcome == "activated"
+        assert session.workspace_preferences.language == "中文"
+        assert journal.get_promotion_operation(
+            identity.workspace_id, operation.operation_id
+        ).state.value == ("finalized")
     finally:
         handle.close()
 

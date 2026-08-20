@@ -197,7 +197,7 @@ class ConfigurationPromotionUndoMixin:
             self._mark_needs_resolution(operation, PromotionFailureCode.NEEDS_RECOVERY)
             raise self._configuration_error(exc) from exc
         if revision == prepared.expected_applied_revision and digest == prepared.after_digest:
-            applied_revision = revision
+            applied_revision = self._sync_after_state(operation, prepared)
         elif revision == prepared.expected_revision and digest == prepared.before_digest:
             try:
                 result = self.config_service.apply_prepared(  # type: ignore[union-attr]

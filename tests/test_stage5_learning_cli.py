@@ -10,9 +10,11 @@ from typer.testing import CliRunner
 
 from morrow.application.commands import CommandService
 from morrow.application.orchestrator import DispatchResult
+from morrow.core.learning import LearningScope
 from morrow.interfaces import cli as cli_module
 from morrow.interfaces import learning_cli
 from morrow.interfaces import terminal as terminal_module
+from test_stage5_configuration_promotion import _promotion_subjects
 from test_stage5_project_knowledge import _project_candidate
 from test_terminal import ScriptedTerminal
 
@@ -131,3 +133,19 @@ def test_memory_show_passes_requested_revision_to_application_service():
     value = learning_cli._knowledge_or_error(api, "knw_history", revision=1)
     assert value == {"knowledge_id": "knw_history", "revision": 1}
     assert api.calls == [("knw_history", 1)]
+
+
+def test_repl_learning_accept_can_explicitly_select_global_scope(tmp_path):
+    _app, identity, handle, _journal, api, candidate = _promotion_subjects(
+        tmp_path, candidate_scope=LearningScope.GLOBAL
+    )
+    try:
+        command_service, _session = _command_service(api, tmp_path)
+        result = command_service._learn_command(
+            ["/learn", "accept", candidate.candidate_id, "--scope", "global"]
+        )
+        assert result.action == "learning_accept_preview"
+        assert result.value.scope == "global"
+        assert "作用域：global" in result.lines[2]
+    finally:
+        handle.close()

@@ -194,6 +194,20 @@ class ConfigurationPromotionFinalizeMixin:
                     "after_digest": prepared.after_digest,
                 },
             )
+            memory_event = self.context._event(
+                txn,
+                event_type="memory.record_activated",
+                aggregate_kind="configuration_activation",
+                aggregate_id=activation.activation_id,
+                payload={
+                    "target": prepared.command.target,
+                    "scope": operation.scope.value,
+                    "path": prepared.command.path,
+                    "activation_id": activation.activation_id,
+                    "applied_revision": applied_revision,
+                    "after_digest": prepared.after_digest,
+                },
+            )
             finalized = current_operation.model_copy(
                 update={
                     "state": PromotionOperationState.FINALIZED,
@@ -232,7 +246,7 @@ class ConfigurationPromotionFinalizeMixin:
                 result_kind="learning_configuration_promotion",
                 result_id=self._result_ref(result),
                 row_version=updated.row_version,
-                event_cursor=activation_event.cursor or event.cursor,
+                event_cursor=memory_event.cursor or activation_event.cursor or event.cursor,
             )
             return ApplicationCommandResult(result, receipt)
 

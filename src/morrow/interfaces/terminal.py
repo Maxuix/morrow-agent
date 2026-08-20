@@ -352,6 +352,25 @@ async def run_repl(
                     terminal.console.print(f"配置撤销失败：{exc}")
                 else:
                     _show_learning_result(terminal, value)
+            if result.action == "learning_promotion_recovery_preview":
+                confirmation = await _confirm(
+                    terminal,
+                    prompt_session,
+                    "确认执行这项配置 promotion 恢复动作？",
+                )
+                if confirmation == "closed":
+                    return _closed_input(terminal)
+                if confirmation != "yes":
+                    terminal.console.print("已取消，未写入状态。")
+                    continue
+                try:
+                    value = _command_service(orchestrator).recover_learning_promotion(result.value)
+                except (ValueError, RuntimeError) as exc:
+                    terminal.console.print(f"配置 promotion 恢复失败：{exc}")
+                else:
+                    _show_learning_result(
+                        terminal, value.value if hasattr(value, "value") else value
+                    )
             if result.action == "memory_lifecycle_preview":
                 if await _handle_memory_lifecycle(
                     orchestrator, terminal, prompt_session, result.value
@@ -387,9 +406,12 @@ def _show_learning_result(terminal: Terminal, value) -> None:
             )
         else:
             if getattr(value, "activation_id", None) is not None:
-                label = "撤销" if value.outcome == "reversed" else "激活"
+                action = "撤销" if value.outcome == "reversed" else "激活"
+                label = (
+                    "Active Preference" if value.target == "preferences" else "Active Profile field"
+                )
                 terminal.console.print(
-                    f"{label} Active {value.target} field：scope={value.scope.value}；"
+                    f"{action}{label}：scope={value.scope.value}；"
                     f"path={value.path}；revision={value.revision}；"
                     f"activation={value.activation_id}。"
                 )
@@ -453,6 +475,7 @@ async def _handle_learning_edit(orchestrator, terminal, prompt_session, request)
     preview = service.api.preview_learning_candidate_decision(
         request.candidate_id,
         edit=final_payload,
+        scope=request.scope,
         conflict_resolution=request.conflict_resolution,
     )
     for line in service._preview_lines(preview):

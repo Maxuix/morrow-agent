@@ -191,14 +191,6 @@ class LearningPromotionService:
                 created_at=stamp,
             )
             txn.put_learning_candidate_decision(self.workspace_id, decision)
-            if candidate.candidate_type in {
-                LearningCandidateType.PREFERENCE,
-                LearningCandidateType.PROFILE,
-            }:
-                raise ApplicationError(
-                    ApplicationErrorCode.UNAVAILABLE,
-                    "Preference/Profile promotion is reserved for Subplan 52",
-                )
             if candidate.candidate_type is LearningCandidateType.PROJECT_KNOWLEDGE:
                 knowledge = self._promote_project_knowledge(
                     txn,

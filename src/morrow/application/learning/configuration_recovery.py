@@ -28,6 +28,17 @@ class ConfigurationPromotionRecoveryMixin:
             )
         )
 
+    def list_unresolved_operations(self):
+        return tuple(
+            operation
+            for operation in self.list_operations()
+            if operation.state
+            in {
+                PromotionOperationState.PREPARED,
+                PromotionOperationState.NEEDS_RESOLUTION,
+            }
+        )
+
     def get_operation(self, operation_id: str) -> PromotionOperation | None:
         return self.context._query(
             lambda: self.context.journal.get_promotion_operation(self.workspace_id, operation_id)
@@ -61,7 +72,7 @@ class ConfigurationPromotionRecoveryMixin:
             digest = None
         before = revision == prepared.expected_revision and digest == prepared.before_digest
         after = revision == prepared.expected_applied_revision and digest == prepared.after_digest
-        undo = self._is_undo_operation(operation)
+        undo = self._is_undo_operation(operation, prepared)
         if action == "finalize":
             if not after:
                 if not before:
@@ -70,9 +81,10 @@ class ConfigurationPromotionRecoveryMixin:
                     ApplicationErrorCode.CONFLICT,
                     "当前 YAML 不匹配可安全 finalize 的 after 状态",
                 )
+            applied_revision = self._sync_after_state(operation, prepared)
             if undo:
-                return self._finalize_undo(operation, prepared, applied_revision=revision)
-            return self._finalize(operation, prepared, applied_revision=revision)
+                return self._finalize_undo(operation, prepared, applied_revision=applied_revision)
+            return self._finalize(operation, prepared, applied_revision=applied_revision)
         if action == "retry":
             if not before:
                 if not after:
@@ -86,6 +98,11 @@ class ConfigurationPromotionRecoveryMixin:
             if undo:
                 return self._resume_undo(operation, request_digest=operation.request_digest)
             return self._resume(operation, request_digest=operation.request_digest)
+        if after and action in {"cancel", "abort"}:
+            raise ApplicationError(
+                ApplicationErrorCode.CONFLICT,
+                "YAML 已处于 after 状态，只能 finalize，不能取消或中止",
+            )
         if action == "cancel" and not before:
             if not after:
                 self._mark_needs_resolution(operation, PromotionFailureCode.CONFLICT)
@@ -97,13 +114,52 @@ class ConfigurationPromotionRecoveryMixin:
             operation, failure_code=None if before else PromotionFailureCode.CONFLICT
         )
 
-    def _is_undo_operation(self, operation: PromotionOperation) -> bool:
+    def _sync_after_state(self, operation: PromotionOperation, prepared) -> int:
+        """Re-validate an after-state and refresh any attached Session projection."""
+
+        try:
+            result = self.config_service.apply_prepared(  # type: ignore[union-attr]
+                prepared,
+                operation_id=operation.operation_id,
+            )
+        except KeyboardInterrupt:
+            raise
+        except Exception as exc:
+            self._mark_needs_resolution(operation, PromotionFailureCode.NEEDS_RECOVERY)
+            raise self._configuration_error(exc) from exc
+        if result.revision is None:
+            self._mark_needs_resolution(operation, PromotionFailureCode.NEEDS_RECOVERY)
+            raise ApplicationError(
+                ApplicationErrorCode.NEEDS_RECOVERY,
+                "配置写入版本缺失，已暂停恢复",
+            )
+        return result.revision
+
+    def _is_undo_operation(self, operation: PromotionOperation, prepared) -> bool:
         candidate = self.context._query(
             lambda: self.context.journal.get_learning_candidate(
                 self.workspace_id, operation.candidate_id
             )
         )
-        return candidate is not None and candidate.status is not LearningCandidateStatus.PROMOTING
+        if candidate is None or candidate.status is LearningCandidateStatus.PROMOTING:
+            return False
+        activations = self.context._query(
+            lambda: self.context.journal.list_configuration_activations(
+                self.workspace_id,
+                target=operation.target,
+                path=operation.path,
+                status=ConfigurationActivationStatus.ACTIVE,
+                limit=500,
+            )
+        )
+        return any(
+            item.candidate_id == operation.candidate_id
+            and item.scope is operation.scope
+            and item.applied_revision == prepared.expected_revision
+            and item.after_digest == prepared.before_digest
+            and item.reverses_activation_id is None
+            for item in activations
+        )
 
     def _reopen_operation(self, operation: PromotionOperation) -> PromotionOperation:
         stamp = promotion_now(self.context)

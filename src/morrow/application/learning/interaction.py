@@ -8,9 +8,9 @@ from morrow.application.command_types import (
     CommandResult,
     KnowledgeLifecycleCommandRequest,
     LearningCandidateCommandRequest,
+    LearningPromotionRecoveryRequest,
 )
 from morrow.core.application import ApplicationError, ApplicationErrorCode
-from morrow.core.configuration_promotion import PromotionOperationState
 from morrow.core.learning import LearningCandidateStatus
 from morrow.core.learning_commands import (
     AcceptLearningCandidateCommand,
@@ -114,9 +114,23 @@ class LearningCommandMixin:
             )
             return CommandResult(lines, value=page)
         if operation == "promotions":
-            items = self.api.list_learning_promotions(
-                state=PromotionOperationState.NEEDS_RESOLUTION
-            )
+            if len(parts) >= 4:
+                action = parts[3].casefold()
+                if action not in {"retry", "finalize", "cancel", "abort"}:
+                    raise ApplicationError(ApplicationErrorCode.INVALID, "配置恢复动作无效")
+                operation_id = parts[2]
+                operation = self.api.get_learning_promotion(operation_id)
+                if operation is None:
+                    return CommandResult(["配置 promotion 不存在。"])
+                return CommandResult(
+                    [
+                        f"将对配置 promotion {operation_id} 执行 {action}；",
+                        "请确认后才会处理。",
+                    ],
+                    action="learning_promotion_recovery_preview",
+                    value=LearningPromotionRecoveryRequest(operation_id, action),
+                )
+            items = self.api.list_learning_promotions()
             lines = [f"配置 promotions：{len(items)} 个"]
             lines.extend(
                 f"{item.operation_id}\t{item.state.value}\t{item.target}.{item.path}"
@@ -161,13 +175,10 @@ class LearningCommandMixin:
                         never_suggest=never_suggest,
                     ),
                 )
-            resolution = (
-                self._parse_conflict_resolution(parts[3])
-                if len(parts) > 3
-                else LearningConflictResolution.NONE
-            )
+            scope, resolution = self._parse_learning_options(parts[3:])
             preview = self.api.preview_learning_candidate_decision(
                 view.candidate.candidate_id,
+                scope=scope,
                 conflict_resolution=resolution,
             )
             return CommandResult(
@@ -178,11 +189,15 @@ class LearningCommandMixin:
                 value=LearningCandidateCommandRequest(
                     candidate_id=view.candidate.candidate_id,
                     expected_row_version=view.candidate.row_version,
+                    scope=scope,
                     conflict_resolution=resolution,
                 ),
             )
         return CommandResult(
-            ["用法：/learn [status|inbox|show|accept|edit|reject|reviews|promotions|undo]"]
+            [
+                "用法：/learn [status|inbox|show|accept|edit|reject|reviews|promotions|undo]",
+                "恢复：/learn promotions <operation-id> <retry|finalize|cancel|abort>",
+            ]
         )
 
     @staticmethod
@@ -194,6 +209,29 @@ class LearningCommandMixin:
                 ApplicationErrorCode.INVALID,
                 "冲突处理必须是 none、confirm、replace、merge、re_enable 或 resolve_dispute",
             ) from exc
+
+    @classmethod
+    def _parse_learning_options(
+        cls, values: list[str]
+    ) -> tuple[str | None, LearningConflictResolution]:
+        scope = None
+        resolution = LearningConflictResolution.NONE
+        index = 0
+        while index < len(values):
+            value = values[index]
+            if value == "--scope":
+                if index + 1 >= len(values):
+                    raise ApplicationError(ApplicationErrorCode.INVALID, "--scope 需要一个值")
+                scope = values[index + 1].casefold()
+                index += 2
+                continue
+            if value.startswith("--"):
+                raise ApplicationError(ApplicationErrorCode.INVALID, f"未知 Learning 选项：{value}")
+            if resolution is not LearningConflictResolution.NONE:
+                raise ApplicationError(ApplicationErrorCode.INVALID, "冲突处理选项只能指定一次")
+            resolution = cls._parse_conflict_resolution(value)
+            index += 1
+        return scope, resolution
 
     def _memory_command(self, parts: list[str]) -> CommandResult:
         if self.api is None:
@@ -298,6 +336,10 @@ class LearningCommandMixin:
             activation_id,
             command_id=self._new_command_id(),
         ).value
+
+    def recover_learning_promotion(self, request: LearningPromotionRecoveryRequest):
+        self._ensure_workspace_writable()
+        return self.api.recover_learning_promotion(request.operation_id, action=request.action)
 
     def mutate_knowledge(self, request: KnowledgeLifecycleCommandRequest):
         self._ensure_workspace_writable()
