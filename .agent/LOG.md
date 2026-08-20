@@ -1573,3 +1573,22 @@
   promotion remains unavailable and no YAML/Saga behavior was added.
 - Focused S51.2/S51.3 validation currently passes: four application projection/decision tests,
   existing Learning pipeline/store/policy regressions, Ruff, and compileall.
+
+## 2026-08-21 — Subplan 51 completed and Grok review-fix applied
+
+- Completed S51.3–S51.6: immutable Candidate decisions with rejection/suppression/expiry, the
+  SQLite-atomic Project Knowledge Promotion Service, immutable revisions and lifecycle tombstones,
+  workspace memory revisions, candidate-only acknowledgement for future types, and typed
+  `/learn`/`/memory` REPL and Typer interfaces. General command handling was split into focused
+  Learning interaction code and the Typer registration was moved to its own module.
+- The committed implementation is `4d715ac`. The required Grok `/review` then found four confirmed
+  issues: Inbox queries did not persist due-row expiry, Typer Inbox defaulted to all statuses,
+  historical `memory show --revision` was ignored, and preview could disagree with acceptance on
+  category mismatch. Independently verified and fixed all four in `bd9dfff`; also revalidated edited
+  payload fingerprints/duplicates/suppressions, added lazy-expiry receipts and semantic-key digests,
+  preserved lifecycle replay snapshots, and improved logical-delete/candidate-only user messaging.
+  No second Grok review was run, per the one-review-per-subplan rule.
+- Final S51 gate passed: `739 passed, 2 skipped, 1 deselected` for `pytest -m 'not live'`; Ruff
+  format/check, compileall, `morrow --help`, `morrow learning --help`, `morrow memory --help`,
+  and `git diff --check` all exited 0. The two skips are nested macOS Seatbelt tests unavailable
+  inside the Codex sandbox. The two Stage 5 research documents remain untracked and preserved.

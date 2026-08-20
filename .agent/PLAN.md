@@ -1,7 +1,7 @@
 # Stage 5 Reviewable Learning and Long-Term Memory Plan
 
 > Status: authorized; Stage 5 implementation is in progress
-> Active subplan: 51 — Learning Inbox, Decisions, and Project Knowledge
+> Active subplan: 52 — Profile/Preferences Promotion Saga
 > Baseline: `4d47be8` on verified local `main`
 > Target schema: Operational Store v9 → v10 → v11 → v12
 
