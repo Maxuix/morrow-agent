@@ -1230,3 +1230,21 @@
 - Final validation after fixes: offline suite `605 passed, 2 skipped, 1 deselected`; focused review-fix
   regression `70 passed`; Ruff format/check, compileall, CLI help, `git diff --check`, wheel build, and
   isolated wheel import/help passed. Stage 4 remains closed and Stage 5 remains inactive.
+
+## 2026-08-20 — Activated Subplan 46 architecture boundary refactor
+
+- User explicitly authorized remediation of verified God Class and dependency-boundary debt after
+  Recovery workflow fix `8587622`.
+- Locked behavior-preserving scope: one Recovery lifecycle writer, domain collaborators behind the
+  compatible operational API, narrow journal ports over one SQLite transaction session, phased
+  AgentLoop helpers, grouped CLI modules, and architecture regression tests.
+- Stage 5 remains inactive; no schema, capability, policy-default, public-event, or network change is
+  authorized.
+
+## 2026-08-20 — S4.46.1 Recovery ownership consolidated
+
+- Removed the duplicate `SessionPersistence.apply_recovery` command/lifecycle implementation;
+  production and tests now use `OperationalApplicationService.resolve_recovery` as the sole writer.
+- Recovery-created AgentRuns use the current runtime instance snapshot when a live Session
+  persistence context exists, while standalone CLI recovery retains the prior frozen snapshot.
+- Focused Recovery/API/terminal validation passed: `31 passed`; Ruff check and format passed.

@@ -2,9 +2,8 @@
 
 ## Current status
 
-Stage 4 Durable Task, Session, Artifact, and Recovery implementation and acceptance are complete.
-Interrupted tool work is classified on restart without blind replay, TaskRun/TaskOutcome and bounded
-Artifacts, application events, backup/doctor operation, and Full Access Manual grants are durable.
+Stage 4 remains accepted. User-authorized Subplan 46 is refactoring ownership and dependency
+boundaries without changing schemas, public behavior, security defaults, or Stage 5 scope.
 
 ## Last completed task
 
@@ -19,19 +18,20 @@ Artifact manifest/restore verification, and exact-target dry-run cleanup. Offlin
 
 ## Active task
 
-None — Stage 4 is closed.
+S4.46.2 — extract domain application handlers behind the compatible operational API facade.
 
 ## Next action
 
-Await a new user request before creating or activating any Stage 5 plan.
+Extract cohesive command/query collaborators without changing the public
+`OperationalApplicationService` surface or transaction boundaries.
 
 ## Blockers
 
-None. Stage 4 acceptance is complete; no implementation blocker remains.
+None.
 
 ## Active boundary
 
-- Stage 4 execution is closed. No later-stage implementation is active.
+- Stage 4 product scope remains closed; Subplan 46 is architecture-only remediation.
 - ConversationLog remains the sole chat-history authority; ordinary chat stays on
   `AgentLoop.run_task()`.
 - Current YAML/CredentialStore authorities and Stage 3 runtime/security behavior remain unchanged.

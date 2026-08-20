@@ -725,23 +725,36 @@ def test_recovery_resume_creates_an_ungranted_agent_run(tmp_path: Path):
         )
         persistence.restore_into(session)
         assert persistence.open_report is not None
+        api = OperationalApplicationService(
+            journal=journal,
+            workspace_id="ws_1",
+            id_source=ids,
+            tasks=persistence.tasks,
+            recovery=persistence.recovery,
+            persistence=persistence,
+        )
         item = persistence.open_report.items[0]
-        persistence.apply_recovery(
-            session,
+        api.resolve_recovery(
+            persistence.open_report,
             command_id="cmd_ack",
             resolution=RecoveryResolution.ACKNOWLEDGE,
             item_id=item.item_id,
+            log=session.log,
+            writer=persistence.writer,
         )
-        resumed = persistence.apply_recovery(
-            session,
+        resumed = api.resolve_recovery(
+            persistence.open_report,
             command_id="cmd_resume",
             resolution=RecoveryResolution.RESUME,
+            log=session.log,
+            writer=persistence.writer,
         )
-        assert resumed.status.value == "resolved"
+        assert resumed.value.status.value == "resolved"
         assert persistence.current_agent_run_id == "arun_2"
         new_run = journal.get_agent_run("ws_1", "arun_2")
         assert new_run is not None
         assert new_run.resume_of_agent_run_id == "arun_1"
+        assert new_run.snapshot.runtime_instance_id == "host-2"
         assert new_run.permission_snapshot_id is None
         assert journal.get_permission_snapshot_for_run("ws_1", "arun_2") is None
         assert journal.list_capability_grants("ws_1", agent_run_id="arun_2") == ()

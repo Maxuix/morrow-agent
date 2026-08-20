@@ -1221,6 +1221,12 @@ class OperationalApplicationService:
                 if previous is None:
                     raise StorageError(StorageErrorCode.NOT_FOUND, "recovery AgentRun is missing")
                 new_id = self.id_source.new_id(AGENT_RUN_ID_PREFIX)
+                runtime_instance_id = getattr(self.persistence, "runtime_instance_id", None)
+                snapshot = previous.snapshot
+                if runtime_instance_id is not None:
+                    snapshot = snapshot.model_copy(
+                        update={"runtime_instance_id": runtime_instance_id}
+                    )
                 txn.create_agent_run(
                     self.workspace_id,
                     DurableAgentRun(
@@ -1228,7 +1234,7 @@ class OperationalApplicationService:
                         turn_id=previous.turn_id,
                         session_id=previous.session_id,
                         resume_of_agent_run_id=previous.agent_run_id,
-                        snapshot=previous.snapshot,
+                        snapshot=snapshot,
                     ),
                 )
                 resumed_agent_run_id.append(new_id)

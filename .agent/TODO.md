@@ -2,30 +2,20 @@
 
 ## Current stage
 
-Stage 4 end-to-end acceptance and closeout is complete. Subplans 36–45 are complete; Stage 5 remains
-inactive until the user explicitly requests its activation.
+Stage 4 remains accepted. The user explicitly authorized a post-acceptance architecture refactor;
+Stage 5 remains inactive.
 
 ## Active subplan
 
-None — Stage 4 is closed.
+Subplan 46 — Stage 4 ownership and dependency-boundary refactor.
 
 ## Tasks
 
-- [x] S4.45.1 Freeze the final schema/tool/command/grant inventory and verify every Stage 4 contract
-  has a production owner and test owner.
-- [x] S4.45.2 Run no-tool, file-edit/test, interrupted Host command, sandbox/promotion, correction/
-  acceptance, long-context/fork, backup/restore, and Full Access Manual product stories.
-- [x] S4.45.3 Execute the full logical and subprocess fault matrix with deterministic IPC and record
-  recovery classifications/evidence.
-- [x] S4.45.4 Run migration/future-schema/corruption/contention/disk/Artifact integrity and doctor
-  acceptance fixtures.
-- [x] S4.45.5 Run the complete offline, Ruff, compileall, CLI help, diff, current-host security, and
-  package build/install/recovery gates.
-- [x] S4.45.6 Create `docs/acceptance/stage-4-durable-agent-evidence.md` mapping every completion
-  criterion to exact commands/tests/results and declared unsupported boundaries.
-- [x] S4.45.7 Reconcile all product/architecture/roadmap/reference/license docs with actual code;
-  remove stale planning claims and do not claim unsupported platforms or Full Access Auto.
-- [x] S4.45.8 Commit verified progress and close Stage 4 execution state; leave Stage 5 inactive until
-  the user requests a new plan.
-
-Stage 4 is closed. Stage 5 remains inactive.
+- [x] S4.46.1 Freeze dependency/transaction invariants and consolidate Recovery lifecycle ownership.
+- [>] S4.46.2 Extract domain application handlers behind the compatible operational API facade.
+- [ ] S4.46.3 Split the SQLite journal implementation by narrow domain ports while sharing one
+  transaction session.
+- [ ] S4.46.4 Decompose the AgentLoop run state machine without changing ConversationLog ownership or
+  public event lifecycle.
+- [ ] S4.46.5 Split CLI command registration by command group and remove direct journal access.
+- [ ] S4.46.6 Add architecture boundary tests, reconcile docs, run full gates, and commit verified work.
