@@ -7,7 +7,6 @@ from datetime import UTC, datetime
 
 from morrow.adapters.state.journal import SqliteOperationalJournal
 from morrow.application.api_context import ApplicationCommandContext
-from morrow.application.api_context import request_digest as _request_digest
 from morrow.application.api_permissions import PermissionApplicationService
 from morrow.application.api_recovery import RecoveryApplicationService
 from morrow.application.artifacts import ArtifactService
@@ -49,10 +48,6 @@ def _now(clock: Callable[[], datetime] | None) -> datetime:
     if value.tzinfo is None:
         return value.replace(tzinfo=UTC)
     return value.astimezone(UTC)
-
-
-def request_digest(operation: str, payload: dict[str, object]) -> str:
-    return _request_digest(operation, payload)
 
 
 class OperationalApplicationService:
@@ -973,10 +968,3 @@ class OperationalApplicationService:
             persistence.synchronize_projection(session)
         except Exception:
             return
-
-    def _restore_log_projection(self, log, session_id: str) -> None:
-        self.command_context._restore_log_projection(log, session_id)
-
-    @staticmethod
-    def _translate_exception(exc: Exception) -> ApplicationError:
-        return ApplicationCommandContext._translate_exception(exc)

@@ -1,6 +1,6 @@
 # Subplan 48 — Pre-Stage 5 Boundary Refactor
 
-> Status: active
+> Status: completed
 > Branch: `refactor/pre-stage5-boundaries`
 > Scope: behavior-preserving refactor only
 

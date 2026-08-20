@@ -2,23 +2,22 @@
 
 ## Current status
 
-Subplan 48 is active on `refactor/pre-stage5-boundaries`; Stage 5 remains inactive.
+Subplan 48 is complete and verified on `refactor/pre-stage5-boundaries`, pending fast-forward
+integration into `main`. Stage 5 remains inactive.
 
 ## Last completed task
 
-S48.5 replaced permission/Recovery child-service ownership of the entire application facade with
-an explicit command context and centralized provider-independent operational service/API
-composition for both interactive bootstrap and headless CLI commands. Full offline and quality
-gates passed.
+S48.6 removed proven-unused API compatibility wrappers, reconciled architecture documentation,
+recomputed hotspot metrics, and passed the canonical `uv` offline and quality gates.
 
 ## Active task
 
-S48.6 — remove stale abstractions, reconcile docs, and pass final gates.
+None — Subplan 48 is complete.
 
 ## Next action
 
-Audit remaining compatibility surfaces and documentation against the implemented boundaries,
-remove stale abstractions where safe, then run the final acceptance and quality gates.
+Fast-forward the verified topic branch into `main`, verify any configured upstream, and retire the
+topic branch. Do not activate Stage 5 without an explicit user request.
 
 ## Blockers
 
@@ -35,3 +34,6 @@ None.
 - The S48.5 full offline gate passed: `672 passed, 2 skipped, 1 deselected`; Ruff reported
   `179 files already formatted`; Ruff check, compileall, CLI help, state cleanup help, and
   `git diff --check` all exited 0.
+- The canonical unsandboxed S48.6 gate passed: `uv run pytest -m 'not live'` reported
+  `674 passed, 1 deselected`, including the real Seatbelt cases. `uv run ruff format --check .`,
+  Ruff check, compileall, CLI help, state cleanup help, and `git diff --check` all exited 0.

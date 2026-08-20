@@ -1,6 +1,6 @@
 # Morrow 架构基线
 
-> 状态：阶段 2、阶段 3 已完成（当前声明平台为 macOS；Linux 原生运行仍 unsupported）；阶段 4 已落地 Operational Store v9 的 Session/Task 历史、工具/审批日志、恢复分类、TaskOutcome、Artifact Store、ContextCheckpoint、Session Fork、统一应用 API、application events、doctor、备份 bundle、CapabilityGrant 与 Full Access Manual；Subplan 47 真实用户测试修复已完成验证
+> 状态：阶段 2、阶段 3 已完成（当前声明平台为 macOS；Linux 原生运行仍 unsupported）；阶段 4 已落地 Operational Store v9 的 Session/Task 历史、工具/审批日志、恢复分类、TaskOutcome、Artifact Store、ContextCheckpoint、Session Fork、统一应用 API、application events、doctor、备份 bundle、CapabilityGrant 与 Full Access Manual；Subplan 48 已完成运行时、持久化、SQLite 与应用组装边界重构
 
 本文锁定当前依赖方向、数据所有权和安全边界。阶段 3 的能力策略、配置工具、工作空间读搜、冲突安全文件变更、审批后 Host 命令、只读 Git 和当前 macOS 原生沙箱
 已经交付；Linux 原生运行尚未声明支持。Stage 4 已落地数据根 SQLite Operational Store 的
@@ -13,6 +13,7 @@
 ```mermaid
 flowchart LR
     UI["CLI / REPL / future clients"] --> API["OperationalApplicationService"]
+    API --> CMDCTX["ApplicationCommandContext"]
     API --> ORCH["SessionOrchestrator"]
     ORCH --> COMMAND["CommandService"]
     ORCH --> RUNTIME["AgentRuntime → AgentLoop"]
@@ -30,6 +31,9 @@ flowchart LR
     SERVICES --> STATE["ProjectStateStore"]
     SERVICES --> CREDENTIAL["CredentialStore"]
     PROVIDER --> ADAPTER["Provider adapters"]
+    CMDCTX --> JOURNAL["SqliteOperationalJournal facade"]
+    JOURNAL --> REPOSITORIES["Bounded SQLite repositories"]
+    REPOSITORIES --> TRANSACTION["Shared transaction backend"]
     GLOBAL --> STORAGE["Local state storage"]
     INDEX --> STORAGE
     STATE --> STORAGE
@@ -46,7 +50,9 @@ Core 不依赖 CLI、Rich、具体模型 SDK、YAML、数据库或操作系统�
 普通对话只有一条状态机路径：`AgentLoop.run_task()` 负责任务生命周期、模型重试、工具轮次、
 deadline/预算、取消闭合、循环检测和全部聊天历史写入；`AgentRuntime.run_turn()` 是薄委托。
 有序公开事件的构造由 loop 内部事件发射协作者负责，但状态转换、事件时机和 ConversationLog
-写入权仍只属于 `AgentLoop.run_task()`。
+写入权仍只属于 `AgentLoop.run_task()`。持久化运行能力由显式 `DurableRunCoordinator` 合同提供；
+工具 handler 的审批、权限复查、超时/取消和 durable execution 状态由 `ToolCycleExecutor` 执行，
+但它不拥有聊天历史或公开事件。
 
 Session 持有的进程内 `ConversationLog` 是唯一聊天历史权威，`Session.messages` 是只读投影。
 带 calls 的 Assistant 与其有序 ToolMessage 构成不可拆分的 ToolCycle。ContextBuilder 从不可变
@@ -94,12 +100,22 @@ AgentRun 有 grant 而获得 elevated 证据，`full_access + auto` 保持 unsup
 `OperationalApplicationService`；调度归 SessionOrchestrator；输入、确认、渲染和退出码归终端接口。
 Slash `CommandService` 是薄适配器，CLI、REPL 和未来客户端不直接访问 SQL 或 Artifact 文件。
 `OperationalApplicationService` 保留兼容 facade；Recovery 与 Permission/Approval 命令事务由独立
-领域协作者实现。Artifact、Task、Checkpoint/Fork、Grant、Recovery 与 durable conversation 服务依赖
+领域协作者实现，并只接收显式 `ApplicationCommandContext`，不持有或穿透父 facade。命令上下文统一
+拥有 command replay、application event/receipt、时钟、ID 和错误翻译。Artifact、Task、Checkpoint/Fork、Grant、Recovery 与 durable conversation 服务依赖
 `core/journal.py` 的窄端口；只有 composition、跨域事务聚合、诊断和备份持有具体 SQLite adapter。
-所有端口仍由同一个 `OperationalStoreSession` 实现，拆分依赖不会拆散原子事务。
+`SqliteOperationalJournal` 只保留 Session 聚合与兼容委托；application event、Artifact、Context、
+Conversation/Turn、Permission、Recovery、Task 与 Tool SQL 分属有界 repository。全部 repository 共享
+一个 `SqliteJournalBackend` 的外层事务、时间戳、replayability 与 touched-Session 状态，因此拆分不会
+拆散跨域原子事务，也不会形成 repository 对父 facade 的反向依赖。
 配置补丁显式分派到 Preferences 或 Profile，不存在兜底目标。`build_session_application()` 返回命名的
 `SessionApplication`，包含 `session`、`context_builder`、`commands`、`orchestrator`、`files`、`search`、`mutation`、`changes`、
 `process`、`checkpoints`、`forks`、统一 `api`、只读 `doctor` 和 `backup` 服务。
+交互 bootstrap 与 headless CLI 通过 `build_operational_services()` / `build_operational_api()` 复用同一
+Operational 组装路径；接口层不自行复制领域服务构造。
+
+`SessionPersistence` 继续作为运行时兼容 facade，但 Turn 提交、Session 恢复、权限证据、durable tool
+状态以及 Tool/Conversation 原子写分别由聚焦 coordinator 持有。外部应用协作者只能调用公开同步方法，
+不能修改其 Session、Task 或 AgentRun 私有投影。
 
 普通前台工作的共享准入条件是 `Session.lifecycle=active` 且 `Session.health=ok`。
 Orchestrator 在调度前刷新 durable lifecycle/health；Task/Turn application service 执行稳定错误映射，

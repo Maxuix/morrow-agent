@@ -1,7 +1,7 @@
 # Pre-Stage 5 Boundary Refactor Plan
 
-> Status: active — behavior-preserving architecture refactor
-> Active subplan: 48 — runtime, persistence, storage, and application boundaries
+> Status: completed — verified and ready for integration
+> Active subplan: none
 > Stage 5 status: inactive
 > Baseline: `408da68`
 

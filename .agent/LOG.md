@@ -1441,3 +1441,19 @@
   would add protocols and navigation without isolating another independent lifecycle.
 - Full offline validation passed: `672 passed, 2 skipped, 1 deselected`; Ruff format/check,
   compileall, CLI help, state cleanup help, architecture guards, and `git diff --check` passed.
+
+## 2026-08-20 — S48.6 closeout verified
+
+- Removed the unreferenced API-level request-digest re-export and the unused log-projection and
+  exception-translation facade wrappers. Retained Core base ports that are still inherited by
+  active composite ports and retained compatibility methods with real production/test callers.
+- Reconciled `docs/ARCHITECTURE.md` with the explicit durable runtime coordinator, tool-cycle
+  executor, decomposed SessionPersistence, bounded SQLite repositories/shared transaction backend,
+  application command context, and shared operational composition roots.
+- Against baseline `408da68`, `AgentLoop.run_task()` decreased from 609 lines/112 branch nodes to
+  484/90; `SessionPersistence` from 908 lines/112 branches to 346/17; and
+  `SqliteOperationalJournal` from 2790 class lines/335 branches to 832/48. The application facade
+  decreased from 1014 class lines/98 branches to 918/80 while retaining its public boundary.
+- Canonical unsandboxed validation passed: `uv run pytest -m 'not live'` reported
+  `674 passed, 1 deselected`, including the real Seatbelt cases. `uv run ruff format --check .`,
+  Ruff check, compileall, main CLI help, state cleanup help, and `git diff --check` all exited 0.
