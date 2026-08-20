@@ -6,41 +6,30 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 
 from morrow.adapters.state.journal import SqliteOperationalJournal
+from morrow.application.api_context import ApplicationCommandContext
+from morrow.application.api_context import request_digest as _request_digest
 from morrow.application.api_permissions import PermissionApplicationService
 from morrow.application.api_recovery import RecoveryApplicationService
 from morrow.application.artifacts import ArtifactService
-from morrow.application.checkpoints import (
-    ContextCheckpointError,
-    ContextCheckpointService,
-    SessionForkService,
-)
+from morrow.application.checkpoints import ContextCheckpointService, SessionForkService
 from morrow.application.cleanup import ArtifactCleanupService
-from morrow.application.grants import CapabilityGrantError
 from morrow.application.recovery import RecoveryService
-from morrow.application.tasks import (
-    TaskCommandConflict,
-    TaskCommandError,
-    TaskService,
-)
+from morrow.application.tasks import TaskService
 from morrow.application.turns import TurnSubmitResult
 from morrow.core.application import (
-    ApplicationCommandDisposition,
-    ApplicationCommandReceipt,
     ApplicationCommandResult,
     ApplicationError,
     ApplicationErrorCode,
     ApplicationEvent,
     QueryPage,
 )
-from morrow.core.artifacts import ArtifactError, ArtifactMetadata
+from morrow.core.artifacts import ArtifactMetadata
 from morrow.core.domain import (
-    COMMAND_ID_PREFIX,
     WORKSPACE_ID_PREFIX,
     DurableSession,
     DurableTaskOutcome,
     DurableTaskRun,
     SessionLifecycle,
-    canonical_json_bytes,
     sha256_digest,
     validate_prefixed_id,
 )
@@ -51,14 +40,8 @@ from morrow.core.permissions import (
     PermissionSnapshot,
 )
 from morrow.core.ports import IdSource
-from morrow.core.recovery import RecoveryDecisionError, RecoveryReport, RecoveryResolution
-from morrow.core.store import StorageError, StorageErrorCode
-from morrow.runtime.durable_log import restore_conversation_log
+from morrow.core.recovery import RecoveryReport, RecoveryResolution
 from morrow.runtime.ids import RandomIdSource
-
-
-def request_digest(operation: str, payload: dict[str, object]) -> str:
-    return sha256_digest(canonical_json_bytes({"operation": operation, **payload}))
 
 
 def _now(clock: Callable[[], datetime] | None) -> datetime:
@@ -66,6 +49,10 @@ def _now(clock: Callable[[], datetime] | None) -> datetime:
     if value.tzinfo is None:
         return value.replace(tzinfo=UTC)
     return value.astimezone(UTC)
+
+
+def request_digest(operation: str, payload: dict[str, object]) -> str:
+    return _request_digest(operation, payload)
 
 
 class OperationalApplicationService:
@@ -103,8 +90,17 @@ class OperationalApplicationService:
         self.checkpoints = checkpoints
         self.forks = forks
         self.persistence = persistence
-        self._recovery_commands = RecoveryApplicationService(self)
-        self._permission_commands = PermissionApplicationService(self)
+        self.command_context = ApplicationCommandContext(
+            journal=self.journal,
+            workspace_id=self.workspace_id,
+            id_source=self.id_source,
+            clock=self.clock,
+            tasks=self.tasks,
+            recovery=self.recovery,
+            persistence=self.persistence,
+        )
+        self._recovery_commands = RecoveryApplicationService(self.command_context)
+        self._permission_commands = PermissionApplicationService(self.command_context)
 
     # Queries -----------------------------------------------------------------
 
@@ -897,35 +893,10 @@ class OperationalApplicationService:
         return self._translate(lambda: self.journal.transact(work))
 
     def _prepare(self, operation, payload, command_id):
-        command_id = command_id or self.id_source.new_id(COMMAND_ID_PREFIX)
-        digest = request_digest(operation, payload)
-        try:
-            existing = self.journal.get_application_command_receipt(self.workspace_id, command_id)
-        except Exception as exc:
-            raise self._translate_exception(exc) from exc
-        if existing is not None:
-            if existing.request_digest != digest:
-                raise ApplicationError(
-                    ApplicationErrorCode.CONFLICT,
-                    "command ID was reused with a different request",
-                )
-            return (
-                command_id,
-                digest,
-                existing.model_copy(update={"disposition": ApplicationCommandDisposition.REPLAY}),
-            )
-        return command_id, digest, None
+        return self.command_context._prepare(operation, payload, command_id)
 
     def _replay_in_txn(self, txn, command_id, digest):
-        existing = txn.get_application_command_receipt(self.workspace_id, command_id)
-        if existing is None:
-            return None
-        if existing.request_digest != digest:
-            raise ApplicationError(
-                ApplicationErrorCode.CONFLICT,
-                "command ID was reused with a different request",
-            )
-        return existing.model_copy(update={"disposition": ApplicationCommandDisposition.REPLAY})
+        return self.command_context._replay_in_txn(txn, command_id, digest)
 
     def _receipt(
         self,
@@ -940,33 +911,25 @@ class OperationalApplicationService:
         event_cursor,
         row_version=None,
     ):
-        return txn.put_application_command_receipt_in_txn(
-            self.workspace_id,
-            ApplicationCommandReceipt(
-                command_id=command_id,
-                workspace_id=self.workspace_id,
-                session_id=session_id,
-                operation=operation,
-                request_digest=digest,
-                result_kind=result_kind,
-                result_id=result_id,
-                event_cursor=event_cursor,
-                row_version=row_version,
-            ),
+        return self.command_context._receipt(
+            txn,
+            command_id=command_id,
+            operation=operation,
+            digest=digest,
+            session_id=session_id,
+            result_kind=result_kind,
+            result_id=result_id,
+            event_cursor=event_cursor,
+            row_version=row_version,
         )
 
     def _event(self, txn, *, event_type, aggregate_kind, aggregate_id, payload):
-        return txn.put_application_event_in_txn(
-            self.workspace_id,
-            ApplicationEvent(
-                event_id=self.id_source.new_id("evt"),
-                workspace_id=self.workspace_id,
-                event_type=event_type,
-                aggregate_kind=aggregate_kind,
-                aggregate_id=aggregate_id,
-                payload=payload,
-                created_at=_now(self.clock),
-            ),
+        return self.command_context._event(
+            txn,
+            event_type=event_type,
+            aggregate_kind=aggregate_kind,
+            aggregate_id=aggregate_id,
+            payload=payload,
         )
 
     def _require_session(self, session_id: str) -> DurableSession:
@@ -1000,20 +963,10 @@ class OperationalApplicationService:
         return value
 
     def _translate(self, call):
-        try:
-            return call()
-        except ApplicationError:
-            raise
-        except Exception as exc:
-            raise self._translate_exception(exc) from exc
+        return self.command_context._translate(call)
 
     def _query(self, call):
-        try:
-            return call()
-        except ApplicationError:
-            raise
-        except Exception as exc:
-            raise self._translate_exception(exc) from exc
+        return self.command_context._query(call)
 
     def _restore_session_projection(self, session, persistence) -> None:
         try:
@@ -1022,48 +975,8 @@ class OperationalApplicationService:
             return
 
     def _restore_log_projection(self, log, session_id: str) -> None:
-        try:
-            log.install_snapshot(
-                restore_conversation_log(self.journal, self.workspace_id, session_id).snapshot()
-            )
-        except Exception:
-            return
+        self.command_context._restore_log_projection(log, session_id)
 
     @staticmethod
     def _translate_exception(exc: Exception) -> ApplicationError:
-        if isinstance(exc, StorageError):
-            if "outside the workspace" in str(exc):
-                return ApplicationError(ApplicationErrorCode.CROSS_WORKSPACE, str(exc))
-            mapping = {
-                StorageErrorCode.NOT_FOUND: ApplicationErrorCode.NOT_FOUND,
-                StorageErrorCode.BUSY: ApplicationErrorCode.BUSY,
-                StorageErrorCode.NEEDS_REPAIR: ApplicationErrorCode.NEEDS_RECOVERY,
-                StorageErrorCode.UNAVAILABLE: ApplicationErrorCode.UNAVAILABLE,
-                StorageErrorCode.FUTURE_SCHEMA: ApplicationErrorCode.UNAVAILABLE,
-                StorageErrorCode.IDENTITY_MISMATCH: ApplicationErrorCode.NEEDS_RECOVERY,
-            }
-            return ApplicationError(mapping[exc.code], str(exc))
-        if isinstance(exc, TaskCommandConflict):
-            return ApplicationError(ApplicationErrorCode.CONFLICT, str(exc))
-        if isinstance(exc, (TaskCommandError, RecoveryDecisionError, ContextCheckpointError)):
-            text = str(exc)
-            code = getattr(exc, "application_code", None) or (
-                ApplicationErrorCode.STALE
-                if "stale" in text.casefold()
-                else ApplicationErrorCode.INVALID
-            )
-            return ApplicationError(code, text)
-        if isinstance(exc, CapabilityGrantError):
-            return ApplicationError(exc.code, str(exc))
-        if isinstance(exc, ArtifactError):
-            code = (
-                ApplicationErrorCode.NOT_FOUND
-                if exc.code.value.endswith("missing")
-                else ApplicationErrorCode.CONFLICT
-                if exc.code.value.endswith("conflict")
-                else ApplicationErrorCode.INVALID
-            )
-            return ApplicationError(code, exc.message)
-        if isinstance(exc, ValueError):
-            return ApplicationError(ApplicationErrorCode.INVALID, "application input is invalid")
-        return ApplicationError(ApplicationErrorCode.UNAVAILABLE, "application command failed")
+        return ApplicationCommandContext._translate_exception(exc)

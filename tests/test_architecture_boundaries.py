@@ -312,3 +312,31 @@ def test_operational_storage_uses_public_transaction_boundary():
     assert "journal._session" not in cleanup_source
     assert "journal._executor" not in cleanup_source
     assert "journal._session" not in backup_source
+
+
+def test_application_command_handlers_receive_explicit_context():
+    api_source = (SOURCE_ROOT / "application/api.py").read_text(encoding="utf-8")
+    context_path = SOURCE_ROOT / "application/api_context.py"
+
+    assert "morrow.application.api" not in _imports(context_path)
+    assert "PermissionApplicationService(self.command_context)" in api_source
+    assert "RecoveryApplicationService(self.command_context)" in api_source
+    for filename in ("api_permissions.py", "api_recovery.py"):
+        source = (SOURCE_ROOT / "application" / filename).read_text(encoding="utf-8")
+        assert "self.application" not in source, filename
+        assert "context: ApplicationCommandContext" in source, filename
+
+
+def test_cli_uses_shared_operational_composition():
+    cli_source = (SOURCE_ROOT / "interfaces/cli.py").read_text(encoding="utf-8")
+
+    assert "build_operational_services(" in cli_source
+    assert "build_operational_api(" in cli_source
+    for constructor in (
+        "ArtifactService(",
+        "ContextCheckpointService(",
+        "SessionForkService(",
+        "RecoveryService(",
+        "OperationalApplicationService(",
+    ):
+        assert constructor not in cli_source

@@ -14,17 +14,16 @@ from prompt_toolkit import PromptSession
 from morrow.adapters.credentials.keyring import CredentialAccessError, environment_credential
 from morrow.adapters.local.sandbox import default_sandbox_backend
 from morrow.adapters.registry import PRESETS
-from morrow.adapters.state.artifacts import FilesystemArtifactStore
 from morrow.adapters.state.journal import SqliteOperationalJournal
 from morrow.adapters.state.operational import OperationalStore
-from morrow.application.api import OperationalApplicationService
-from morrow.application.artifacts import ArtifactService
-from morrow.application.backup import BackupBundleError, OperationalBackupService
-from morrow.application.checkpoints import ContextCheckpointService, SessionForkService
+from morrow.application.backup import BackupBundleError
 from morrow.application.doctor import OperationalDoctor
-from morrow.application.recovery import RecoveryService
-from morrow.application.tasks import TaskService
-from morrow.bootstrap import build_application, build_session_application
+from morrow.bootstrap import (
+    build_application,
+    build_operational_api,
+    build_operational_services,
+    build_session_application,
+)
 from morrow.core.application import ApplicationError, ApplicationErrorCode
 from morrow.core.capabilities import PermissionPreset, PermissionProfile
 from morrow.core.permissions import (
@@ -415,57 +414,19 @@ def _state_services(
             handle = store.initialize()
         else:
             raise
-    journal = SqliteOperationalJournal(handle)
-    files = FilesystemArtifactStore(store.layout)
-    if write:
-        files.ensure_layout()
-    artifacts = ArtifactService(
-        journal=journal,
-        filesystem=files,
-        workspace_id=workspace_id,
-        id_source=application.id_source,
-        clock=journal.now,
+    operational = build_operational_services(
+        application,
+        workspace_id,
+        handle=handle,
+        write=write,
     )
-    checkpoints = ContextCheckpointService(
-        journal,
-        workspace_id=workspace_id,
-        id_source=application.id_source,
-        clock=journal.now,
-    )
-    forks = SessionForkService(
-        journal,
-        workspace_id=workspace_id,
-        id_source=application.id_source,
-        clock=journal.now,
-    )
-    tasks = TaskService(
-        journal=journal,
-        workspace_id=workspace_id,
-        id_source=application.id_source,
-        clock=journal.now,
-    )
-    recovery = RecoveryService(
-        journal,
-        workspace_id=workspace_id,
-        id_source=application.id_source,
-    )
-    api = OperationalApplicationService(
-        journal=journal,
-        workspace_id=workspace_id,
-        id_source=application.id_source,
-        tasks=tasks,
-        artifacts=artifacts,
-        recovery=recovery,
-        checkpoints=checkpoints,
-        forks=forks,
-        clock=journal.now,
-    )
+    api = build_operational_api(application, workspace_id, operational)
     return (
         application,
         handle,
         api,
-        OperationalDoctor(store),
-        OperationalBackupService(store, journal=journal),
+        operational.doctor,
+        operational.backup,
     )
 
 

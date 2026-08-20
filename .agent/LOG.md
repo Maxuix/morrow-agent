@@ -1423,3 +1423,21 @@
   public transaction boundary. Full offline validation passed: `670 passed, 2 skipped,
   1 deselected`; Ruff format/check, compileall, CLI help, state cleanup help, and
   `git diff --check` passed.
+
+## 2026-08-20 — S48.5 application context and composition completed
+
+- Added a 194-line `ApplicationCommandContext` that explicitly supplies the journal, workspace,
+  clock, ID source, Task/Recovery services, persistence, and shared idempotency/event/receipt/error
+  bookkeeping needed by transactional command handlers.
+- Permission and Recovery application services now receive that context and no longer retain the
+  complete `OperationalApplicationService` parent facade. Architecture tests prevent regression
+  to parent-facade injection.
+- Added shared `build_operational_services()` and `build_operational_api()` composition roots.
+  Interactive bootstrap and headless CLI commands now construct artifacts, checkpoints, forks,
+  Recovery, doctor, backup, and the application API through the same path; CLI no longer directly
+  instantiates those services.
+- Kept the 982-line application API as the deliberate public command/query facade. Its complex
+  permission and Recovery commands are already delegated; further one-class-per-command splitting
+  would add protocols and navigation without isolating another independent lifecycle.
+- Full offline validation passed: `672 passed, 2 skipped, 1 deselected`; Ruff format/check,
+  compileall, CLI help, state cleanup help, architecture guards, and `git diff --check` passed.

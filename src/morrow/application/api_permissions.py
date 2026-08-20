@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
+from morrow.application.api_context import ApplicationCommandContext
 from morrow.application.grants import (
     CapabilityGrantError,
     CapabilityGrantService,
@@ -48,13 +49,13 @@ def _now(clock: Callable[[], datetime] | None) -> datetime:
 class PermissionApplicationService:
     """Own approval and grant command transactions for one application facade."""
 
-    def __init__(self, application) -> None:
-        self.application = application
+    def __init__(self, context: ApplicationCommandContext) -> None:
+        self.context = context
 
     def create_approval(
         self, execution: DurableToolExecution, *, persistence=None, command_id=None
     ):
-        api = self.application
+        api = self.context
         persistence = persistence or api.persistence
         if persistence is None:
             raise ApplicationError(
@@ -116,7 +117,7 @@ class PermissionApplicationService:
         grant_id: str | None = None,
         command_id: str | None = None,
     ) -> ApplicationCommandResult[CapabilityGrant]:
-        api = self.application
+        api = self.context
         try:
             capabilities = validate_capability_subset(capabilities)
         except CapabilityGrantError as exc:
@@ -219,7 +220,7 @@ class PermissionApplicationService:
         expected_row_version: int | None = None,
         command_id: str | None = None,
     ) -> ApplicationCommandResult[CapabilityGrant]:
-        api = self.application
+        api = self.context
         operation = "grant_revoke"
         payload = {
             "grant_id": grant_id,
@@ -341,7 +342,7 @@ class PermissionApplicationService:
         command_id: str | None = None,
         persistence=None,
     ):
-        api = self.application
+        api = self.context
         persistence = persistence or api.persistence
         if persistence is None:
             raise ApplicationError(

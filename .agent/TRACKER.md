@@ -6,19 +6,19 @@ Subplan 48 is active on `refactor/pre-stage5-boundaries`; Stage 5 remains inacti
 
 ## Last completed task
 
-S48.4 replaced the monolithic SQLite journal implementation with bounded application-event,
-artifact, context, conversation, permission, Recovery, Task, and tool repositories sharing one
-explicit transaction backend. The compatible facade retains Session aggregation and delegation
-without exposing its store session or executor. Full offline and quality gates passed.
+S48.5 replaced permission/Recovery child-service ownership of the entire application facade with
+an explicit command context and centralized provider-independent operational service/API
+composition for both interactive bootstrap and headless CLI commands. Full offline and quality
+gates passed.
 
 ## Active task
 
-S48.5 — decouple application collaborators and centralize operational composition.
+S48.6 — remove stale abstractions, reconcile docs, and pass final gates.
 
 ## Next action
 
-Replace application child-service parent-facade injection with an explicit command context, then
-centralize duplicated headless operational composition without changing CLI behavior.
+Audit remaining compatibility surfaces and documentation against the implemented boundaries,
+remove stale abstractions where safe, then run the final acceptance and quality gates.
 
 ## Blockers
 
@@ -32,3 +32,6 @@ None.
 - The S48.4 full offline gate passed: `670 passed, 2 skipped, 1 deselected`; the skips remain the
   nested-sandbox Seatbelt cases. Ruff reported `178 files already formatted`; Ruff check,
   compileall, CLI help, state cleanup help, and `git diff --check` all exited 0.
+- The S48.5 full offline gate passed: `672 passed, 2 skipped, 1 deselected`; Ruff reported
+  `179 files already formatted`; Ruff check, compileall, CLI help, state cleanup help, and
+  `git diff --check` all exited 0.

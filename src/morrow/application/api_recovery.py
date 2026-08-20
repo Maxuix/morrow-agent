@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 
+from morrow.application.api_context import ApplicationCommandContext
 from morrow.core.application import (
     ApplicationCommandDisposition,
     ApplicationCommandReceipt,
@@ -29,8 +30,8 @@ from morrow.runtime.durable_log import DurableConversationWriter, restore_conver
 class RecoveryApplicationService:
     """Own Recovery command transactions without expanding the public facade."""
 
-    def __init__(self, application) -> None:
-        self.application = application
+    def __init__(self, context: ApplicationCommandContext) -> None:
+        self.context = context
 
     def resolve(
         self,
@@ -43,7 +44,7 @@ class RecoveryApplicationService:
         writer=None,
         close_all: bool = False,
     ) -> ApplicationCommandResult[RecoveryReport]:
-        api = self.application
+        api = self.context
         if api.recovery is None or log is None:
             raise ApplicationError(
                 ApplicationErrorCode.UNAVAILABLE, "recovery service is unavailable"
@@ -190,7 +191,7 @@ class RecoveryApplicationService:
     ) -> ApplicationCommandResult[RecoveryReport]:
         """Resolve a standalone CLI request without exposing journal internals."""
 
-        api = self.application
+        api = self.context
         report = api.get_recovery(report_id)
         if report is None:
             raise ApplicationError(ApplicationErrorCode.NOT_FOUND, "Recovery report is missing")
@@ -223,7 +224,7 @@ class RecoveryApplicationService:
     ) -> None:
         """Keep Session health, turn receipts, tasks, and resume runs atomic."""
 
-        api = self.application
+        api = self.context
         session = txn.get_session(api.workspace_id, report.session_id)
         if session is None:
             raise StorageError(StorageErrorCode.NOT_FOUND, "operational session is missing")
@@ -280,7 +281,7 @@ class RecoveryApplicationService:
         )
 
     def _sync_persistence(self, report: RecoveryReport, resumed_agent_run_id: list[str]) -> None:
-        api = self.application
+        api = self.context
         persistence = api.persistence
         if persistence is None:
             return
@@ -292,7 +293,7 @@ class RecoveryApplicationService:
     def _abort_task_in_txn(
         self, txn, session: DurableSession, *, turn_id: str | None
     ) -> str | None:
-        api = self.application
+        api = self.context
         task_id = session.current_task_run_id
         if task_id is None:
             return None
@@ -317,7 +318,7 @@ class RecoveryApplicationService:
         return task_id if not task.status.is_terminal else None
 
     def _close_receipt_in_txn(self, txn, report: RecoveryReport) -> None:
-        api = self.application
+        api = self.context
         if report.turn_id is None:
             return
         turn = txn.get_turn(api.workspace_id, report.turn_id)

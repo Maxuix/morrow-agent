@@ -15,7 +15,7 @@ from morrow.adapters.models.openai_compatible import estimate_request_chars, mak
 from morrow.adapters.registry import AdapterRegistry
 from morrow.adapters.state.artifacts import FilesystemArtifactStore
 from morrow.adapters.state.journal import SqliteOperationalJournal
-from morrow.adapters.state.operational import OperationalStore
+from morrow.adapters.state.operational import OperationalStore, OperationalStoreSession
 from morrow.adapters.state.yaml import (
     GlobalConfigYamlStore,
     ProjectStateYamlStore,
@@ -41,6 +41,7 @@ from morrow.application.local_tools import (
 )
 from morrow.application.orchestrator import SessionOrchestrator
 from morrow.application.recovery import RecoveryService
+from morrow.application.tasks import TaskService
 from morrow.application.turns import SessionPersistence
 from morrow.core.capabilities import (
     AccessScope,
@@ -54,7 +55,6 @@ from morrow.core.execution import missing_declarations
 from morrow.core.models import Preferences
 from morrow.core.permissions import UNCONFINED_HOST_WARNING_DIGEST, CapabilityName
 from morrow.core.store import (
-    OperationalStoreLayout,
     StorageError,
     StorageErrorCode,
     StoreOpenMode,
@@ -116,6 +116,21 @@ class SessionApplication:
     api: OperationalApplicationService | None = None
     doctor: OperationalDoctor | None = None
     backup: OperationalBackupService | None = None
+
+
+@dataclass(frozen=True)
+class OperationalServices:
+    """Provider-independent operational services sharing one store session and journal."""
+
+    store: OperationalStore
+    handle: OperationalStoreSession
+    journal: SqliteOperationalJournal
+    artifacts: ArtifactService
+    checkpoints: ContextCheckpointService
+    forks: SessionForkService
+    recovery: RecoveryService
+    doctor: OperationalDoctor
+    backup: OperationalBackupService
 
 
 def _default_tool_executor(
@@ -205,6 +220,83 @@ def _open_operational_store(app: Application):
         if exc.code is StorageErrorCode.NOT_FOUND:
             return store.initialize()
         raise
+
+
+def build_operational_services(
+    app: Application,
+    workspace_id: str,
+    *,
+    handle: OperationalStoreSession,
+    write: bool,
+    workspace_root: Path | None = None,
+) -> OperationalServices:
+    """Compose the operational domain services used by interactive and headless interfaces."""
+
+    store = OperationalStore(app.data_root.root)
+    journal = SqliteOperationalJournal(handle)
+    artifact_files = FilesystemArtifactStore(store.layout)
+    if write:
+        artifact_files.ensure_layout()
+    artifacts = ArtifactService(
+        journal=journal,
+        filesystem=artifact_files,
+        workspace_id=workspace_id,
+        id_source=app.id_source,
+        clock=journal.now,
+    )
+    checkpoints = ContextCheckpointService(
+        journal,
+        workspace_id=workspace_id,
+        id_source=app.id_source,
+        clock=journal.now,
+    )
+    forks = SessionForkService(
+        journal,
+        workspace_id=workspace_id,
+        id_source=app.id_source,
+        clock=journal.now,
+    )
+    recovery = RecoveryService(
+        journal,
+        workspace_id=workspace_id,
+        id_source=app.id_source,
+        workspace_root=workspace_root,
+    )
+    return OperationalServices(
+        store=store,
+        handle=handle,
+        journal=journal,
+        artifacts=artifacts,
+        checkpoints=checkpoints,
+        forks=forks,
+        recovery=recovery,
+        doctor=OperationalDoctor(store),
+        backup=OperationalBackupService(store, journal=journal),
+    )
+
+
+def build_operational_api(
+    app: Application,
+    workspace_id: str,
+    services: OperationalServices,
+    *,
+    tasks: TaskService | None = None,
+    persistence=None,
+) -> OperationalApplicationService:
+    """Compose the shared command/query boundary over operational domain services."""
+
+    return OperationalApplicationService(
+        journal=services.journal,
+        workspace_id=workspace_id,
+        id_source=app.id_source,
+        tasks=tasks,
+        artifacts=services.artifacts,
+        recovery=services.recovery,
+        checkpoints=services.checkpoints,
+        forks=services.forks,
+        persistence=persistence,
+        clock=services.journal.now,
+    )
 
 
 def build_session_application(
@@ -332,40 +424,18 @@ def build_session_application(
     )
     handle = _open_operational_store(app)
     try:
-        journal = SqliteOperationalJournal(handle)
+        operational = build_operational_services(
+            app,
+            identity.workspace_id,
+            handle=handle,
+            write=True,
+            workspace_root=workspace_capability.root,
+        )
+        journal = operational.journal
         if resume_session_id is not None:
             resumed = journal.get_session(identity.workspace_id, resume_session_id)
             if resumed is not None and resumed.lifecycle is not SessionLifecycle.ACTIVE:
                 raise ValueError("only an active Session can resume interactive mode")
-        artifact_files = FilesystemArtifactStore(
-            OperationalStoreLayout.from_root(app.data_root.root)
-        )
-        artifact_files.ensure_layout()
-        artifacts = ArtifactService(
-            journal=journal,
-            filesystem=artifact_files,
-            workspace_id=identity.workspace_id,
-            id_source=app.id_source,
-            clock=journal.now,
-        )
-        checkpoints = ContextCheckpointService(
-            journal,
-            workspace_id=identity.workspace_id,
-            id_source=app.id_source,
-            clock=journal.now,
-        )
-        forks = SessionForkService(
-            journal,
-            workspace_id=identity.workspace_id,
-            id_source=app.id_source,
-            clock=journal.now,
-        )
-        recovery = RecoveryService(
-            journal,
-            workspace_id=identity.workspace_id,
-            id_source=app.id_source,
-            workspace_root=workspace_capability.root,
-        )
         persistence = SessionPersistence(
             workspace_id=identity.workspace_id,
             journal=journal,
@@ -375,8 +445,8 @@ def build_session_application(
             run_policy=run_policy,
             runtime_instance_id=f"inst-{os.getpid()}",
             mutation=mutation,
-            artifacts=artifacts,
-            recovery=recovery,
+            artifacts=operational.artifacts,
+            recovery=operational.recovery,
         )
         if resume_session_id:
             persistence.restore_into(session)
@@ -392,17 +462,12 @@ def build_session_application(
                     )
                 )
             persistence.attach(session)
-        api = OperationalApplicationService(
-            journal=journal,
-            workspace_id=identity.workspace_id,
-            id_source=app.id_source,
+        api = build_operational_api(
+            app,
+            identity.workspace_id,
+            operational,
             tasks=persistence.tasks,
-            artifacts=artifacts,
-            recovery=recovery,
-            checkpoints=checkpoints,
-            forks=forks,
             persistence=persistence,
-            clock=journal.now,
         )
 
         def create_foreground_grant(current_session: Session):
@@ -430,9 +495,6 @@ def build_session_application(
             return result.value
 
         runtime.loop.grant_provider = create_foreground_grant
-        operational_store = OperationalStore(app.data_root.root)
-        doctor = OperationalDoctor(operational_store)
-        backup = OperationalBackupService(operational_store, journal=journal)
         commands = CommandService(
             session=session,
             identity=identity,
@@ -463,12 +525,12 @@ def build_session_application(
             sandbox_capability=sandbox_capability,
             persistence=persistence,
             tasks=persistence.tasks,
-            artifacts=artifacts,
-            checkpoints=checkpoints,
-            forks=forks,
+            artifacts=operational.artifacts,
+            checkpoints=operational.checkpoints,
+            forks=operational.forks,
             api=api,
-            doctor=doctor,
-            backup=backup,
+            doctor=operational.doctor,
+            backup=operational.backup,
         )
     except BaseException:
         handle.close()
