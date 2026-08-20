@@ -19,6 +19,7 @@ from morrow.core.models import (
     ProviderConfig,
     ProviderModelConfig,
     UserMessage,
+    provider_error_message,
 )
 
 
@@ -218,7 +219,7 @@ class ProviderService:
             result = LastTestResult(
                 ok=False,
                 error_code=code,
-                message="模型连接测试失败",
+                message=provider_error_message(code),
             )
         else:
             result = LastTestResult(ok=True)

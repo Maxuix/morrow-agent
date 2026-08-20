@@ -208,6 +208,23 @@ class ModelProviderError(RuntimeError):
         self.code = code
 
 
+def provider_error_message(code: ModelErrorCode, *, phase: str | None = None) -> str:
+    """Return one stable, sanitized user-facing message for a provider failure."""
+
+    if phase == "connect":
+        return "连接模型服务超时"
+    if phase == "first_token":
+        return "等待模型首个响应超时"
+    return {
+        ModelErrorCode.AUTH: "认证失败，请检查 API Key 或重新配置 Provider",
+        ModelErrorCode.NETWORK: "无法连接模型服务，请检查网络或代理设置后重试",
+        ModelErrorCode.RATE_LIMIT: "模型服务限流，请稍后重试",
+        ModelErrorCode.TIMEOUT: "等待模型响应超时，请稍后重试",
+        ModelErrorCode.INVALID_RESPONSE: "模型响应无效，请检查 Provider 地址和模型配置",
+        ModelErrorCode.INTERNAL: "模型服务暂时不可用，请稍后重试",
+    }[code]
+
+
 class ModelFinishReason(StrEnum):
     """Normalized internal model finish reasons; vendor values never leak."""
 

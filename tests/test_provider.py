@@ -5,6 +5,8 @@ import os
 import sys
 from types import SimpleNamespace
 
+import httpx
+import openai
 import pytest
 
 from morrow.adapters.credentials.keyring import (
@@ -384,6 +386,20 @@ def test_provider_error_messages_distinguish_network_auth_rate_limit_and_timeout
     assert classify_error(TimeoutError()) is ModelErrorCode.TIMEOUT
 
 
+def test_sdk_transport_errors_and_wrapped_causes_are_network_without_io():
+    request = httpx.Request("POST", "https://example.test")
+    connection = openai.APIConnectionError(request=request)
+    timeout = openai.APITimeoutError(request)
+    proxy = httpx.ProxyError("proxy refused", request=request)
+    wrapped = RuntimeError("provider request failed")
+    wrapped.__cause__ = httpx.ConnectError("connection refused", request=request)
+
+    assert classify_error(connection) is ModelErrorCode.NETWORK
+    assert classify_error(timeout) is ModelErrorCode.TIMEOUT
+    assert classify_error(proxy) is ModelErrorCode.NETWORK
+    assert classify_error(wrapped) is ModelErrorCode.NETWORK
+
+
 @pytest.mark.asyncio
 async def test_adapter_connect_timeout_is_network_without_waiting_for_token():
     class HangingCompletions:
@@ -447,6 +463,7 @@ def test_provider_test_persists_typed_failure_code(tmp_path):
 
     assert result.ok is False
     assert result.error_code == ModelErrorCode.AUTH
+    assert result.message == provider_error_message(ModelErrorCode.AUTH)
     assert app.provider_service.provider("opencode-go").last_test.error_code == ModelErrorCode.AUTH
 
 

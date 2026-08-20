@@ -17,6 +17,7 @@ from morrow.core.models import (
     ModelRef,
     ToolDefinition,
     ToolMessage,
+    provider_error_message,
 )
 
 
@@ -182,35 +183,49 @@ class StreamAccumulator:
         return None, reason
 
 
+def _error_chain(error: BaseException) -> tuple[BaseException, ...]:
+    chain: list[BaseException] = []
+    seen: set[int] = set()
+    current: BaseException | None = error
+    while current is not None and id(current) not in seen:
+        chain.append(current)
+        seen.add(id(current))
+        current = current.__cause__ or current.__context__
+    return tuple(chain)
+
+
 def classify_error(error: BaseException) -> ModelErrorCode:
-    name = type(error).__name__.casefold()
-    status = getattr(error, "status_code", None)
-    if status in (401, 403) or "auth" in name:
+    errors = _error_chain(error)
+    for item in errors:
+        if isinstance(item, ModelProviderError):
+            return item.code
+    if any(
+        getattr(item, "status_code", None) in (401, 403) or "auth" in type(item).__name__.casefold()
+        for item in errors
+    ):
         return ModelErrorCode.AUTH
-    if status == 429 or "rate" in name:
+    if any(
+        getattr(item, "status_code", None) == 429 or "rate" in type(item).__name__.casefold()
+        for item in errors
+    ):
         return ModelErrorCode.RATE_LIMIT
-    if isinstance(error, TimeoutError) or "timeout" in name:
+    if any(
+        isinstance(item, TimeoutError) or "timeout" in type(item).__name__.casefold()
+        for item in errors
+    ):
         return ModelErrorCode.TIMEOUT
-    if isinstance(error, (ConnectionError, OSError)) or "connect" in name or "network" in name:
+    if any(
+        isinstance(item, (ConnectionError, OSError))
+        or any(
+            marker in type(item).__name__.casefold()
+            for marker in ("connect", "network", "proxy", "transport")
+        )
+        for item in errors
+    ):
         return ModelErrorCode.NETWORK
     if isinstance(error, (TypeError, ValueError)):
         return ModelErrorCode.INVALID_RESPONSE
     return ModelErrorCode.INTERNAL
-
-
-def provider_error_message(code: ModelErrorCode, *, phase: str | None = None) -> str:
-    if phase == "connect":
-        return "连接模型服务超时"
-    if phase == "first_token":
-        return "等待模型首个响应超时"
-    return {
-        ModelErrorCode.AUTH: "认证失败，请检查 API Key 或重新配置 Provider",
-        ModelErrorCode.NETWORK: "无法连接模型服务，请检查网络后重试",
-        ModelErrorCode.RATE_LIMIT: "模型服务限流，请稍后重试",
-        ModelErrorCode.TIMEOUT: "等待模型响应超时",
-        ModelErrorCode.INVALID_RESPONSE: "模型响应无效",
-        ModelErrorCode.INTERNAL: "模型服务暂时不可用",
-    }[code]
 
 
 async def _close_response(response) -> None:

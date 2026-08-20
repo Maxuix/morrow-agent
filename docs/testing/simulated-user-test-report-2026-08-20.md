@@ -206,4 +206,40 @@ Provider 添加失败：ModelProviderError
 
 本轮模拟用户环境测试通过核心验收：真实终端交互可用，简单 coding 任务可完成，审批与拒绝正确，Session/TaskRun/文件可持久化恢复，备份和 Doctor 一致性正常，路径穿越和 Host 越权尝试 fail closed。
 
-建议后续单独处理 Provider onboarding 的稳定错误分类和用户提示；这不会阻塞当前已验证的本地 coding、持久化和权限安全主流程。
+Provider onboarding 的稳定错误分类和用户提示已在下述后续修复中处理；本地 coding、持久化和权限安全主流程的原验收结论不变。
+
+## 6. 后续问题复核与修复
+
+复核日期：2026-08-20。
+
+### 6.1 Provider onboarding 错误信息：确认并修复
+
+根因确认：OpenAI-compatible Adapter 已经把 SDK 错误归一化为带 `ModelErrorCode` 的
+`ModelProviderError`，但 `provider add` 和 `provider configure` 的 CLI 通用异常分支只输出异常
+类名，导致稳定分类与可操作建议在最外层丢失。
+
+修复结果：
+
+- `provider add`、`provider configure` 和异常形式的 `provider test` 现在展示稳定错误码；
+- `provider test` 对持久化失败结果使用同一套脱敏提示；
+- `network` 提示包含网络/代理检查建议，`auth`、`rate_limit`、`timeout`、
+  `invalid_response` 和 `internal` 也都有稳定下一步建议；
+- CLI 不回显 Provider/SDK 原始异常文本，避免把凭据、代理地址或底层实现细节带到终端。
+
+### 6.2 SDK 连接异常分类：部分既有、缺口确认并修复
+
+复核发现，OpenAI SDK 的 `APIConnectionError` 和 `APITimeoutError` 原本可由类名正确分类；真正
+缺失的是 `httpx.ProxyError` 等代理传输错误，以及外层异常包装底层连接错误的因果链。这两种情况
+会落入 `internal`。
+
+修复结果：分类器现在以有界、防循环的方式检查异常因果链，并将 connection、network、proxy、
+transport 与底层 `ConnectionError`/`OSError` 统一映射为 `network`；超时仍优先映射为
+`timeout`，认证和限流仍分别映射为 `auth`、`rate_limit`。
+
+新增测试完全离线构造 OpenAI/httpx 异常对象，没有发起网络请求。验证结果：
+
+- Provider、CLI 与架构边界针对性测试：68 passed，1 个显式 live 用例跳过；
+- 完整离线测试：683 passed，2 skipped，1 deselected；
+- Ruff format/check、compileall、CLI help 和 `git diff --check`：通过。
+
+结论：报告中的确定 P2 已修复；候选 P2 的实际分类缺口也已确认并修复。

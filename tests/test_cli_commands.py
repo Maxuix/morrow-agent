@@ -10,6 +10,7 @@ from morrow.core.models import (
     CredentialRef,
     LastTestResult,
     ModelErrorCode,
+    ModelProviderError,
     ModelRef,
     ProviderConfig,
     ProviderModelConfig,
@@ -43,6 +44,7 @@ def test_failed_provider_test_returns_non_zero_exit(monkeypatch):
 
     assert result.exit_code == 2
     assert "auth" in result.output
+    assert "API Key" in result.output
 
 
 def test_unknown_provider_test_returns_controlled_error(tmp_path):
@@ -177,6 +179,28 @@ def test_provider_add_reports_whether_active_model_switched(monkeypatch):
     assert result.exit_code == 0, result.output
     assert "已配置 opencode-go/mimo-v2.5" in result.output
     assert "当前模型未切换：opencode-go/deepseek-v4-flash" in result.output
+
+
+def test_provider_add_reports_typed_sanitized_connection_failure(monkeypatch):
+    class ProviderServiceStub:
+        def add(self, preset, secret, **kwargs):
+            del preset, secret, kwargs
+            raise ModelProviderError(ModelErrorCode.NETWORK, "raw transport detail")
+
+    monkeypatch.setattr(
+        cli_module,
+        "build_application",
+        lambda **kwargs: type("Application", (), {"provider_service": ProviderServiceStub()})(),
+    )
+    monkeypatch.setattr(cli_module, "_secret", lambda provider_id="opencode-go": "secret")
+
+    result = CliRunner().invoke(app, ["provider", "add", "--preset", "opencode-go"])
+
+    assert result.exit_code == 2
+    assert "Provider 添加失败（network）" in result.output
+    assert "检查网络或代理设置后重试" in result.output
+    assert "ModelProviderError" not in result.output
+    assert "raw transport detail" not in result.output
 
 
 def test_unknown_workspace_relink_returns_controlled_error(tmp_path):

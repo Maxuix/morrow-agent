@@ -26,6 +26,7 @@ from morrow.bootstrap import (
 )
 from morrow.core.application import ApplicationError, ApplicationErrorCode
 from morrow.core.capabilities import PermissionPreset, PermissionProfile
+from morrow.core.models import ModelErrorCode, ModelProviderError, provider_error_message
 from morrow.core.permissions import (
     UNCONFINED_HOST_WARNING,
     UNCONFINED_HOST_WARNING_DIGEST,
@@ -72,6 +73,10 @@ def _preset_option_help() -> str:
 
 def _echo_credential_error(exc: CredentialAccessError) -> None:
     typer.echo(exc.message, err=True)
+
+
+def _echo_provider_failure(prefix: str, code: ModelErrorCode) -> None:
+    typer.echo(f"{prefix}（{code.value}）：{provider_error_message(code)}", err=True)
 
 
 @app.callback(invoke_without_command=True)
@@ -290,6 +295,9 @@ def provider_add(
     except CredentialAccessError as exc:
         _echo_credential_error(exc)
         raise typer.Exit(code=2) from None
+    except ModelProviderError as exc:
+        _echo_provider_failure("Provider 添加失败", exc.code)
+        raise typer.Exit(code=2) from None
     except Exception as exc:
         typer.echo(f"Provider 添加失败：{type(exc).__name__}", err=True)
         raise typer.Exit(code=2) from exc
@@ -314,12 +322,15 @@ def provider_test(
     except ValueError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=2) from exc
+    except ModelProviderError as exc:
+        _echo_provider_failure("连接失败", exc.code)
+        raise typer.Exit(code=2) from None
     except Exception as exc:
         typer.echo(f"连接失败：{type(exc).__name__}", err=True)
         raise typer.Exit(code=2) from exc
     if not result.ok:
-        code = result.error_code.value if result.error_code else "internal"
-        typer.echo(f"连接失败（{code}）：{result.message or '未知错误'}", err=True)
+        code = result.error_code or ModelErrorCode.INTERNAL
+        _echo_provider_failure("连接失败", code)
         raise typer.Exit(code=2)
     typer.echo("连接成功")
 
@@ -344,6 +355,9 @@ def provider_configure(
         )
     except CredentialAccessError as exc:
         _echo_credential_error(exc)
+        raise typer.Exit(code=2) from None
+    except ModelProviderError as exc:
+        _echo_provider_failure("Provider 更新失败", exc.code)
         raise typer.Exit(code=2) from None
     except Exception as exc:
         typer.echo(f"Provider 更新失败：{type(exc).__name__}", err=True)
