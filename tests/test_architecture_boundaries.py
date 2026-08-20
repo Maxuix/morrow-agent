@@ -62,3 +62,37 @@ def test_cli_does_not_reach_through_operational_api_to_the_journal():
     source = (SOURCE_ROOT / "interfaces/cli.py").read_text(encoding="utf-8")
 
     assert "api.journal" not in source
+
+
+def test_agent_loop_uses_one_explicit_durable_runtime_contract():
+    agent_source = (SOURCE_ROOT / "runtime/agent.py").read_text(encoding="utf-8")
+    session_tree = ast.parse((SOURCE_ROOT / "runtime/session.py").read_text(encoding="utf-8"))
+    turns_tree = ast.parse((SOURCE_ROOT / "application/turns.py").read_text(encoding="utf-8"))
+
+    assert "session.committer" not in agent_source
+    assert 'getattr(session, "committer"' not in agent_source
+    assert "getattr(session.committer" not in agent_source
+    assert ".journal.get_capability_grant" not in agent_source
+
+    contract = next(
+        node
+        for node in session_tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "DurableRunCoordinator"
+    )
+    implementation = next(
+        node
+        for node in turns_tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "SessionPersistence"
+    )
+    required = {
+        node.name
+        for node in contract.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    provided = {
+        node.name
+        for node in implementation.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+
+    assert required <= provided

@@ -1329,3 +1329,26 @@
   cleanup CLI help, and `git diff --check` all exited 0. Cleanup help still states that apply moves
   candidates into private quarantine without destroying original bytes.
 - Subplan 47 and Stage 4 remediation are closed. Stage 5 remains inactive.
+
+## 2026-08-20 — Activated Subplan 48 pre-Stage 5 boundary refactor
+
+- User authorized follow-up after an architecture audit confirmed remaining God Method/Class,
+  hidden runtime-protocol, private-facade, and duplicated composition debt.
+- Activated behavior-preserving work on `refactor/pre-stage5-boundaries`. Stage 5 remains inactive;
+  no schema, capability, bundled policy, public-event, network, Skill, MCP, or credential change is
+  authorized.
+- S48.1 starts with the explicit durable runtime contract while preserving AgentLoop and
+  ConversationLog ownership.
+
+## 2026-08-20 — S48.1 explicit durable runtime contract completed
+
+- Added `DurableRunCoordinator` as the complete production persistence contract alongside the
+  deliberately narrow process-local `SessionCommitter` path.
+- AgentLoop no longer discovers durable operations through `getattr`, reaches through the
+  committer to its Journal/clock/fault injector, or probes for the standard ToolExecutor context
+  method. SessionPersistence now exposes time, fault checks, and active-grant evidence through the
+  explicit contract.
+- Added an architecture regression requiring AgentLoop to avoid the committer/Journal and requiring
+  SessionPersistence to provide every declared coordinator operation.
+- Validation passed across 221 focused runtime, persistence, permission, recovery, API, CLI, and
+  product regressions. Touched-file Ruff check/format, compileall, and `git diff --check` passed.

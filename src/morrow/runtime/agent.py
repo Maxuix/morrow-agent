@@ -340,13 +340,14 @@ class AgentLoop:
         return self.id_source.new_id(prefix)
 
     def _wall_now(self, session: Session | None = None):
-        clock = self.clock
-        if clock is None and session is not None:
-            clock = getattr(getattr(session, "committer", None), "clock", None)
-        return clock.now() if clock is not None else utc_now()
+        if self.clock is not None:
+            return self.clock.now()
+        if session is not None and session.durable_runtime is not None:
+            return session.durable_runtime.now()
+        return utc_now()
 
     async def _request_pending_grant(self, session: Session) -> None:
-        if not getattr(session, "pending_full_access_grant", False):
+        if not session.pending_full_access_grant:
             return
         if self.grant_provider is None:
             raise RuntimeError("本地 Host 权限授予接口不可用")
@@ -388,6 +389,7 @@ class AgentLoop:
         run_context = ToolRunContext(run_id=turn_id, session_id=session.session_id)
         visible = ""
         policy = self.run_policy
+        durable_runtime = session.durable_runtime
         deadline = self.monotonic() + policy.max_run_seconds
         model_attempts = 0
         tool_rounds = 0
@@ -437,14 +439,15 @@ class AgentLoop:
             if resume_current_turn:
                 if not session.log.has_active_turn:
                     raise ConversationLogError("no active turn is available to resume")
-                current_turn_id = getattr(session.committer, "current_turn_id", None)
+                current_turn_id = (
+                    durable_runtime.current_turn_id if durable_runtime is not None else None
+                )
                 if current_turn_id:
                     turn_id = current_turn_id
                     run_context = ToolRunContext(run_id=turn_id, session_id=session.session_id)
             else:
-                submit = getattr(session.committer, "submit_user", None)
-                if submit is not None:
-                    submit_outcome = submit(
+                if durable_runtime is not None:
+                    submit_outcome = durable_runtime.submit_user(
                         session,
                         user_input,
                         client_message_id,
@@ -491,15 +494,16 @@ class AgentLoop:
             started = True
             tools = self.tool_executor.definitions if self.tool_executor else ()
             yield event("turn.started", {})
-            freeze = getattr(session.committer, "freeze_permission_snapshot", None)
             permission_snapshot = None
             await self._request_pending_grant(session)
 
             def freeze_permissions() -> None:
                 nonlocal permission_snapshot
-                if freeze is None or permission_snapshot is not None:
+                if durable_runtime is None or permission_snapshot is not None:
                     return
-                permission_snapshot = freeze(session, tools=tools)
+                permission_snapshot = durable_runtime.freeze_permission_snapshot(
+                    session, tools=tools
+                )
 
             while True:
                 if _pending_cancellation():
@@ -645,9 +649,8 @@ class AgentLoop:
                 try:
                     freeze_permissions()
                     planned = session.log.plan_append_assistant(message)
-                    prepare = getattr(session.committer, "prepare_and_commit_assistant", None)
-                    if prepare is not None:
-                        durable_executions = prepare(
+                    if durable_runtime is not None:
+                        durable_executions = durable_runtime.prepare_and_commit_assistant(
                             planned,
                             message,
                             run_context=run_context,
@@ -656,7 +659,7 @@ class AgentLoop:
                         missing = [
                             item.tool_execution_id
                             for item in durable_executions
-                            if not session.committer.execution_is_visible(item.tool_execution_id)
+                            if not durable_runtime.execution_is_visible(item.tool_execution_id)
                         ]
                         if missing:
                             raise ConversationLogError("committed tool intent is not observable")
@@ -742,11 +745,13 @@ class AgentLoop:
                                 "当前能力策略拒绝此操作",
                                 result_limit=per_call_result_limit,
                             )
-                            deny_before_handler = getattr(
-                                session.committer, "deny_execution_before_handler", None
+                            if durable_runtime is None:
+                                raise RuntimeError(
+                                    "durable execution requires a durable runtime coordinator"
+                                )
+                            durable = durable_runtime.deny_execution_before_handler(
+                                durable, now=self._wall_now(session)
                             )
-                            if deny_before_handler is not None:
-                                durable = deny_before_handler(durable, now=self._wall_now(session))
                         else:
                             try:
                                 durable, run_handler, denied_result = await self._gate_durable(
@@ -768,55 +773,49 @@ class AgentLoop:
                                     result_limit=per_call_result_limit,
                                 )
                                 durable = self._reload_durable(session, durable)
-                                deny_before_handler = getattr(
-                                    session.committer, "deny_execution_before_handler", None
+                                if durable_runtime is None:
+                                    raise RuntimeError(
+                                        "durable execution requires a durable runtime coordinator"
+                                    ) from None
+                                durable = durable_runtime.deny_execution_before_handler(
+                                    durable, now=self._wall_now(session)
                                 )
-                                if deny_before_handler is not None:
-                                    durable = deny_before_handler(
-                                        durable, now=self._wall_now(session)
-                                    )
                     try:
                         if denied_result is not None:
                             result = denied_result
                         else:
                             if durable is not None:
-                                session.committer.faults.check(FaultPoint.HANDLER_BEFORE_ENTER)
-                                verify_handler = getattr(
-                                    session.committer, "assert_handler_may_enter", None
+                                if durable_runtime is None:
+                                    raise RuntimeError(
+                                        "durable execution requires a durable runtime coordinator"
+                                    )
+                                durable_runtime.check_fault(FaultPoint.HANDLER_BEFORE_ENTER)
+                                durable = durable_runtime.assert_handler_may_enter(
+                                    durable, now=self._wall_now(session)
                                 )
-                                if verify_handler is not None:
-                                    verified = verify_handler(durable, now=self._wall_now(session))
-                                    if verified is not None:
-                                        durable = verified
-                            execute_with_context = getattr(
-                                self.tool_executor, "execute_with_context", None
-                            )
                             extra = {"skip_approval": True} if skip_approval else {}
                             if call.name == "run_command" and self._has_active_unconfined_grant(
                                 session, durable
                             ):
                                 extra["allow_unconfined_host"] = True
-                            if execute_with_context is not None:
-                                execution = execute_with_context(
-                                    call,
-                                    result_limit=per_call_result_limit,
-                                    run_context=run_context,
-                                    ordinal=index,
-                                    total=len(calls),
-                                    **extra,
-                                )
-                            else:
-                                execution = self.tool_executor.execute(
-                                    call,
-                                    result_limit=per_call_result_limit,
-                                    **extra,
-                                )
+                            execution = self.tool_executor.execute_with_context(
+                                call,
+                                result_limit=per_call_result_limit,
+                                run_context=run_context,
+                                ordinal=index,
+                                total=len(calls),
+                                **extra,
+                            )
                             result = await asyncio.wait_for(
                                 self._await_tool_with_cancellation(execution, session, durable),
                                 timeout=min(policy.tool_timeout_seconds, deadline - now),
                             )
                             if durable is not None:
-                                session.committer.faults.check(FaultPoint.HANDLER_AFTER_RETURN)
+                                if durable_runtime is None:
+                                    raise RuntimeError(
+                                        "durable execution requires a durable runtime coordinator"
+                                    )
+                                durable_runtime.check_fault(FaultPoint.HANDLER_AFTER_RETURN)
                     except TimeoutError:
                         result = self.tool_executor.error_outcome(
                             call,
@@ -844,13 +843,13 @@ class AgentLoop:
                             ToolExecutionState.PREPARED,
                             ToolExecutionState.AWAITING_APPROVAL,
                         }:
-                            cancel_before_handler = getattr(
-                                session.committer, "cancel_execution_before_handler", None
+                            if durable_runtime is None:
+                                raise RuntimeError(
+                                    "durable execution requires a durable runtime coordinator"
+                                ) from None
+                            durable = durable_runtime.cancel_execution_before_handler(
+                                durable, now=self._wall_now(session)
                             )
-                            if cancel_before_handler is not None:
-                                durable = cancel_before_handler(
-                                    durable, now=self._wall_now(session)
-                                )
                     except (
                         ApprovalDecisionError,
                         ExecutionTransitionError,
@@ -863,21 +862,28 @@ class AgentLoop:
                             result_limit=per_call_result_limit,
                         )
                         durable = self._reload_durable(session, durable)
-                        deny_before_handler = getattr(
-                            session.committer, "deny_execution_before_handler", None
-                        )
-                        if deny_before_handler is not None and durable is not None:
-                            durable = deny_before_handler(durable, now=self._wall_now(session))
+                        if durable is not None:
+                            if durable_runtime is None:
+                                raise RuntimeError(
+                                    "durable execution requires a durable runtime coordinator"
+                                ) from None
+                            durable = durable_runtime.deny_execution_before_handler(
+                                durable, now=self._wall_now(session)
+                            )
                     if durable is not None:
+                        if durable_runtime is None:
+                            raise RuntimeError(
+                                "durable execution requires a durable runtime coordinator"
+                            )
                         if durable.state is ToolExecutionState.EXECUTING:
-                            durable = session.committer.record_handler_completed(
+                            durable = durable_runtime.record_handler_completed(
                                 durable,
                                 result,
                                 now=self._wall_now(session),
                                 disposition=handler_disposition,
                             )
                         planned_tool = session.log.plan_append_tool_result(call.id, result.envelope)
-                        session.committer.commit_tool_message(
+                        durable_runtime.commit_tool_message(
                             planned_tool, durable, now=self._wall_now(session)
                         )
                     else:
@@ -987,28 +993,24 @@ class AgentLoop:
 
     @staticmethod
     def _reload_durable(session, execution):
-        if execution is None or session.committer is None:
+        if execution is None or session.durable_runtime is None:
             return execution
-        getter = getattr(session.committer, "get_execution", None)
-        if getter is None:
-            return execution
-        return getter(execution.tool_execution_id) or execution
+        return session.durable_runtime.get_execution(execution.tool_execution_id) or execution
 
     def _has_active_unconfined_grant(self, session: Session, execution) -> bool:
         if execution is None or execution.grant_id is None:
             return False
-        committer = getattr(session, "committer", None)
-        journal = getattr(committer, "journal", None)
-        workspace_id = getattr(committer, "workspace_id", None)
-        if journal is None or workspace_id is None:
+        durable_runtime = session.durable_runtime
+        if durable_runtime is None:
             return False
-        grant = journal.get_capability_grant(workspace_id, execution.grant_id)
-        return grant is not None and grant.is_active(self._wall_now(session))
+        return durable_runtime.has_active_unconfined_grant(execution, now=self._wall_now(session))
 
     async def _gate_durable(self, session, execution, call, *, now, result_limit):
-        committer = session.committer
+        coordinator = session.durable_runtime
+        if coordinator is None:
+            raise RuntimeError("durable execution requires a durable runtime coordinator")
         if execution.intent.requires_approval:
-            approval = committer.create_pending_approval(execution, now=now)
+            approval = coordinator.create_pending_approval(execution, now=now)
             registered = (
                 self.tool_executor.tool_set.tools.get(call.name)
                 if self.tool_executor is not None
@@ -1027,7 +1029,7 @@ class AgentLoop:
             decision = await self.tool_executor._request_approval(request)
             approved = bool(decision is not None and decision.approved)
             consume_now = self._wall_now(session)
-            execution, _approval, run_handler = committer.consume_and_mark_executing(
+            execution, _approval, run_handler = coordinator.consume_and_mark_executing(
                 execution, approval, approved=approved, now=consume_now
             )
             if run_handler:
@@ -1039,7 +1041,7 @@ class AgentLoop:
                 result_limit=result_limit,
             )
             return execution, False, denied
-        execution = committer.mark_executing(execution, now=now)
+        execution = coordinator.mark_executing(execution, now=now)
         return execution, True, None
 
     def _cycle_result_limit(self, message: AssistantMessage) -> int | None:
@@ -1080,7 +1082,7 @@ class AgentLoop:
         interrupted = session.log.unresolved_call_ids
         calls_by_id = {call.id: call for call in active_calls}
         executions_by_call_id = {durable_call_id(item.call_id): item for item in durable_executions}
-        committer = getattr(session, "committer", None)
+        durable_runtime = session.durable_runtime
         while session.log.unresolved_call_ids:
             call_id = session.log.unresolved_call_ids[0]
             call = calls_by_id.get(call_id)
@@ -1095,7 +1097,7 @@ class AgentLoop:
                 result_limit=result_limit,
             )
             durable = executions_by_call_id.get(durable_call_id(call_id))
-            if durable is None or committer is None:
+            if durable is None or durable_runtime is None:
                 session.append_tool_result(call_id, outcome.envelope)
                 continue
 
@@ -1104,27 +1106,24 @@ class AgentLoop:
                 ToolExecutionState.PREPARED,
                 ToolExecutionState.AWAITING_APPROVAL,
             }:
-                cancel = getattr(committer, "cancel_execution_before_handler", None)
-                if cancel is not None:
-                    durable = cancel(durable, now=self._wall_now(session))
+                durable = durable_runtime.cancel_execution_before_handler(
+                    durable, now=self._wall_now(session)
+                )
             elif durable.state is ToolExecutionState.EXECUTING:
-                complete = getattr(committer, "record_handler_completed", None)
-                if complete is not None:
-                    durable = complete(
-                        durable,
-                        outcome,
-                        now=self._wall_now(session),
-                        disposition=ToolExecutionDisposition.UNKNOWN,
-                    )
-            commit_tool = getattr(committer, "commit_tool_message", None)
-            if commit_tool is None or durable.state not in {
+                durable = durable_runtime.record_handler_completed(
+                    durable,
+                    outcome,
+                    now=self._wall_now(session),
+                    disposition=ToolExecutionDisposition.UNKNOWN,
+                )
+            if durable.state not in {
                 ToolExecutionState.CLOSED,
                 ToolExecutionState.HANDLER_COMPLETED,
             }:
                 session.append_tool_result(call_id, outcome.envelope)
                 continue
             planned = session.log.plan_append_tool_result(call_id, outcome.envelope)
-            commit_tool(planned, durable, now=self._wall_now(session))
+            durable_runtime.commit_tool_message(planned, durable, now=self._wall_now(session))
         return interrupted
 
 

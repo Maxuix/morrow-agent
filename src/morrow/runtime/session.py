@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Protocol
+from datetime import datetime
+from typing import TYPE_CHECKING, Protocol
 
 from morrow.core.capabilities import (
     PermissionProfile,
@@ -14,19 +15,136 @@ from morrow.core.capabilities import (
 )
 from morrow.core.context import ContextCheckpoint
 from morrow.core.domain import SessionHealth, SessionLifecycle
+from morrow.core.execution import (
+    DurableApproval,
+    DurableToolExecution,
+    ToolExecutionDisposition,
+)
+from morrow.core.faults import FaultPoint
 from morrow.core.models import (
     AssistantMessage,
     FinishReason,
     Message,
     Preferences,
     Profile,
+    ToolDefinition,
     UserMessage,
 )
+from morrow.core.permissions import PermissionSnapshot
 from morrow.runtime.conversation import ConversationAppend, ConversationLog
+
+if TYPE_CHECKING:
+    from morrow.runtime.tools import ToolExecutionOutcome, ToolExecutor
 
 
 class SessionCommitter(Protocol):
     def commit(self, planned: ConversationAppend) -> None: ...
+
+
+class TurnSubmissionResult(Protocol):
+    """Outcome shape required by AgentLoop when durable Turn submission is enabled."""
+
+    kind: str
+    turn_id: str | None
+    assistant_text: str | None
+
+
+class DurableRunCoordinator(SessionCommitter, Protocol):
+    """Explicit durable lifecycle contract consumed by AgentLoop.
+
+    Process-local Sessions leave ``durable_runtime`` unset. Production persistence implements this
+    complete contract; AgentLoop never discovers individual durable capabilities dynamically.
+    """
+
+    current_turn_id: str | None
+
+    def now(self) -> datetime: ...
+
+    def submit_user(
+        self,
+        session: Session,
+        user_input: str,
+        client_message_id: str,
+        *,
+        turn_id: str,
+        agent_run_id: str,
+        tools: tuple[ToolDefinition, ...],
+    ) -> TurnSubmissionResult: ...
+
+    def freeze_permission_snapshot(
+        self,
+        session: Session,
+        *,
+        tools: tuple[ToolDefinition, ...] = (),
+        now: datetime | None = None,
+    ) -> PermissionSnapshot: ...
+
+    def prepare_and_commit_assistant(
+        self,
+        planned: ConversationAppend,
+        message: AssistantMessage,
+        *,
+        run_context: ToolRunContext,
+        tool_executor: ToolExecutor,
+    ) -> tuple[DurableToolExecution, ...]: ...
+
+    def execution_is_visible(self, tool_execution_id: str) -> bool: ...
+
+    def get_execution(self, tool_execution_id: str) -> DurableToolExecution | None: ...
+
+    def create_pending_approval(
+        self, execution: DurableToolExecution, *, now: datetime | None = None
+    ) -> DurableApproval: ...
+
+    def consume_and_mark_executing(
+        self,
+        execution: DurableToolExecution,
+        approval: DurableApproval,
+        *,
+        approved: bool,
+        now: datetime | None = None,
+        command_id: str | None = None,
+    ) -> tuple[DurableToolExecution, DurableApproval, bool]: ...
+
+    def mark_executing(
+        self, execution: DurableToolExecution, *, now: datetime | None = None
+    ) -> DurableToolExecution: ...
+
+    def deny_execution_before_handler(
+        self, execution: DurableToolExecution, *, now: datetime | None = None
+    ) -> DurableToolExecution: ...
+
+    def cancel_execution_before_handler(
+        self, execution: DurableToolExecution, *, now: datetime | None = None
+    ) -> DurableToolExecution: ...
+
+    def assert_handler_may_enter(
+        self, execution: DurableToolExecution, *, now: datetime | None = None
+    ) -> DurableToolExecution: ...
+
+    def record_handler_completed(
+        self,
+        execution: DurableToolExecution,
+        result: ToolExecutionOutcome,
+        *,
+        now: datetime | None = None,
+        disposition: ToolExecutionDisposition | None = None,
+    ) -> DurableToolExecution: ...
+
+    def commit_tool_message(
+        self,
+        planned: ConversationAppend,
+        execution: DurableToolExecution,
+        *,
+        now: datetime | None = None,
+        disposition: ToolExecutionDisposition | None = None,
+    ) -> DurableToolExecution: ...
+
+    def check_fault(self, point: FaultPoint) -> None: ...
+
+    def has_active_unconfined_grant(
+        self, execution: DurableToolExecution, *, now: datetime
+    ) -> bool: ...
 
 
 @dataclass
@@ -48,6 +166,7 @@ class Session:
     metrics_enabled: bool = True
     latest_metrics: RunMetricsSnapshot | None = None
     committer: SessionCommitter | None = None
+    durable_runtime: DurableRunCoordinator | None = None
     pending_full_access_grant: bool = False
     health: SessionHealth = SessionHealth.OK
     lifecycle: SessionLifecycle = SessionLifecycle.ACTIVE

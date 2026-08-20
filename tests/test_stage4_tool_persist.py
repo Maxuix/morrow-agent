@@ -575,7 +575,7 @@ async def test_active_execution_cancellation_request_cancels_the_underlying_hand
             return current
 
     session = Session(session_id="ses_1")
-    session.committer = _Committer()
+    session.durable_runtime = _Committer()
     loop = AgentLoop(
         ScriptedModelProvider(),
         ModelRef(provider_id="p", model_id="m"),

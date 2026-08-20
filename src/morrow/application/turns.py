@@ -290,9 +290,28 @@ class SessionPersistence:
             id_source=self.id_source,
         )
         session.committer = self
+        session.durable_runtime = self
 
     def _now(self) -> datetime:
         return self.clock.now() if self.clock is not None else utc_now()
+
+    def now(self) -> datetime:
+        """Return the durable lifecycle clock exposed to AgentLoop."""
+
+        return self._now()
+
+    def check_fault(self, point: FaultPoint) -> None:
+        """Keep fault-injection ownership behind the durable runtime contract."""
+
+        self.faults.check(point)
+
+    def has_active_unconfined_grant(
+        self, execution: DurableToolExecution, *, now: datetime
+    ) -> bool:
+        if execution.grant_id is None:
+            return False
+        grant = self.journal.get_capability_grant(self.workspace_id, execution.grant_id)
+        return grant is not None and grant.is_active(now)
 
     def freeze_permission_snapshot(
         self,

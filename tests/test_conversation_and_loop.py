@@ -328,7 +328,7 @@ async def test_pre_start_runtime_failure_still_emits_one_complete_event_pair():
             raise RuntimeError("pre-start failure")
 
     provider = ScriptedModelProvider(["must not run"])
-    session = Session(session_id="s", committer=FailingCommitter())
+    session = Session(session_id="s", durable_runtime=FailingCommitter())
     events = [
         event
         async for event in AgentLoop(
@@ -350,7 +350,7 @@ async def test_pre_start_application_error_keeps_stable_non_provider_message():
             raise ApplicationError(ApplicationErrorCode.INVALID, "durable Session state changed")
 
     provider = ScriptedModelProvider(["must not run"])
-    session = Session(session_id="s", committer=RejectingCommitter())
+    session = Session(session_id="s", durable_runtime=RejectingCommitter())
     events = [
         event
         async for event in AgentLoop(
