@@ -294,33 +294,14 @@ async def run_repl(
                 if review_id is None:
                     terminal.console.print("Learning Review 请求无效。")
                     continue
-                terminal.console.print(f"正在审查 Learning Review {review_id}…")
-                try:
-                    review_result = await _command_service(orchestrator).run_learning_review(
-                        review_id
-                    )
-                except (KeyboardInterrupt, asyncio.CancelledError):
-                    try:
-                        cancelled = _command_service(orchestrator).cancel_learning_review(review_id)
-                    except (ValueError, RuntimeError) as exc:
-                        terminal.console.print(f"Learning Review 取消失败：{exc}")
-                    else:
-                        status = cancelled.review.status.value
-                        failure = (
-                            cancelled.review.failure_code.value
-                            if cancelled.review.failure_code is not None
-                            else "lease_expired"
-                        )
-                        terminal.console.print(
-                            f"Learning Review {review_id} 已停止：{status}（{failure}）。"
-                        )
-                except (ValueError, RuntimeError) as exc:
-                    terminal.console.print(f"Learning Review 处理失败：{exc}")
-                else:
-                    terminal.console.print(
-                        f"Learning Review {review_result.review.status.value}："
-                        f"新增候选 {len(review_result.candidate_ids)} 个；可用 /learn inbox 查看。"
-                    )
+                await _run_learning_review(orchestrator, terminal, review_id)
+            if result.action in {"learning_review_run", "learning_review_retry"}:
+                await _run_learning_review(
+                    orchestrator,
+                    terminal,
+                    str(result.value),
+                    retry=result.action == "learning_review_retry",
+                )
             if result.action == "learning_accept_preview":
                 if await _handle_learning_accept(
                     orchestrator, terminal, prompt_session, result.value
@@ -376,6 +357,43 @@ async def run_repl(
                     orchestrator, terminal, prompt_session, result.value
                 ):
                     return _closed_input(terminal)
+
+
+async def _run_learning_review(orchestrator, terminal: Terminal, review_id: str, *, retry=False):
+    service = _command_service(orchestrator)
+    terminal.console.print(f"正在审查 Learning Review {review_id}…")
+    try:
+        review_result = await (
+            service.retry_learning_review(review_id)
+            if retry
+            else service.run_learning_review(review_id)
+        )
+    except (KeyboardInterrupt, asyncio.CancelledError):
+        try:
+            cancelled = service.cancel_learning_review(review_id)
+        except (ValueError, RuntimeError) as exc:
+            terminal.console.print(f"Learning Review 取消失败：{exc}")
+        else:
+            status = cancelled.review.status.value
+            failure = (
+                cancelled.review.failure_code.value
+                if cancelled.review.failure_code is not None
+                else "lease_expired"
+            )
+            terminal.console.print(f"Learning Review {review_id} 已停止：{status}（{failure}）。")
+    except (ValueError, RuntimeError) as exc:
+        terminal.console.print(f"Learning Review 处理失败：{exc}")
+    else:
+        candidate_count = len(review_result.candidate_ids)
+        if candidate_count:
+            terminal.console.print(
+                f"Learning Review {review_result.review.status.value}：新增候选 "
+                f"{candidate_count} 个；可用 /learn inbox 查看。"
+            )
+        else:
+            terminal.console.print(
+                f"Learning Review {review_result.review.status.value}：没有生成候选。"
+            )
 
 
 async def _consume_dispatch(orchestrator, text: str, terminal: Terminal) -> DispatchResult:

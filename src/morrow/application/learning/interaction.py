@@ -11,7 +11,7 @@ from morrow.application.command_types import (
     LearningPromotionRecoveryRequest,
 )
 from morrow.core.application import ApplicationError, ApplicationErrorCode
-from morrow.core.learning import LearningCandidateStatus
+from morrow.core.learning import LearningCandidateStatus, LearningMode
 from morrow.core.learning_commands import (
     AcceptLearningCandidateCommand,
     DeleteProjectKnowledgeCommand,
@@ -80,6 +80,28 @@ class LearningCommandMixin:
         if self.api is None:
             return CommandResult(["Learning 服务尚未就绪。"])
         operation = parts[1].casefold() if len(parts) > 1 else "status"
+        if operation in {"mode", "set-mode"}:
+            if len(parts) != 3:
+                return CommandResult(["用法：/learn mode <off|review-only>"])
+            selected = parts[2].casefold().replace("-", "_")
+            try:
+                mode = LearningMode(selected)
+            except ValueError as exc:
+                raise ApplicationError(
+                    ApplicationErrorCode.INVALID,
+                    "Learning mode 只能是 off 或 review-only；explicit-auto 不可用",
+                ) from exc
+            self._ensure_workspace_writable()
+            status = self.api.learning_status()
+            saved = self.api.set_learning_mode(
+                mode,
+                expected_row_version=status.policy.row_version,
+                command_id=self._new_command_id(),
+            ).value
+            return CommandResult(
+                [f"Learning Policy 已设置为 {saved.policy.mode.value}。"],
+                value=saved,
+            )
         if operation == "status":
             status = self.api.learning_status()
             return CommandResult(
@@ -113,6 +135,19 @@ class LearningCommandMixin:
                 for item in page.items
             )
             return CommandResult(lines, value=page)
+        if operation in {"review", "retry"}:
+            if len(parts) != 3:
+                return CommandResult([f"用法：/learn {operation} <review-id>"])
+            review = self.api.get_learning_review_view(parts[2])
+            if review is None:
+                return CommandResult(["Learning Review 不存在。"])
+            if operation == "retry" and review.status.value != "failed":
+                return CommandResult(["只有 failed Learning Review 才能 retry。"])
+            return CommandResult(
+                [f"将运行 Learning Review {review.review_id}；结果只会进入 Inbox，不会自动激活。"],
+                action="learning_review_retry" if operation == "retry" else "learning_review_run",
+                value=review.review_id,
+            )
         if operation == "promotions":
             if len(parts) >= 4:
                 action = parts[3].casefold()
@@ -195,7 +230,7 @@ class LearningCommandMixin:
             )
         return CommandResult(
             [
-                "用法：/learn [status|inbox|show|accept|edit|reject|reviews|promotions|undo]",
+                "用法：/learn [status|mode|review|retry|inbox|show|accept|edit|reject|reviews|promotions|undo]",
                 "恢复：/learn promotions <operation-id> <retry|finalize|cancel|abort>",
             ]
         )

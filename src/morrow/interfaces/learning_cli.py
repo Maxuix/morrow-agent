@@ -129,6 +129,37 @@ def learning_status(
     )
 
 
+@learning_app.command("set-mode")
+def learning_set_mode(
+    mode: str,
+    command_id: str | None = typer.Option(None, "--command-id"),
+    expected_row_version: int | None = typer.Option(None, "--expected-row-version", min=0),
+    as_json: bool = typer.Option(False, "--json"),
+    workspace_id: str | None = typer.Option(None, "--workspace-id"),
+    directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+) -> None:
+    def action(api) -> None:
+        selected = mode.casefold().replace("-", "_")
+        expected = expected_row_version
+        if expected is None:
+            expected = api.learning_status().policy.row_version
+        result = api.set_learning_mode(
+            selected,
+            command_id=_command_id(api, command_id),
+            expected_row_version=expected,
+        )
+        _cli_helpers()[2](result.value, as_json=as_json)
+
+    _run_state_command(
+        state_root=state_root,
+        workspace_id=workspace_id,
+        directory=directory,
+        write=True,
+        action=action,
+    )
+
+
 @learning_app.command("inbox")
 def learning_inbox(
     status: LearningCandidateStatus = typer.Option(LearningCandidateStatus.PROPOSED, "--status"),

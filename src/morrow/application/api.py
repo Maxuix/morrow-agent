@@ -543,6 +543,27 @@ class OperationalApplicationService:
             expected_row_version=expected_row_version,
         )
 
+    async def retry_learning_review(
+        self,
+        review_id: str,
+        *,
+        expected_row_version: int | None = None,
+    ) -> LearningReviewRunResult:
+        """Retry one identified Review through the same foreground runner."""
+
+        current = self.get_learning_review(review_id)
+        if current is None:
+            raise ApplicationError(ApplicationErrorCode.NOT_FOUND, "Learning Review is missing")
+        if current.status is not LearningReviewStatus.FAILED:
+            raise ApplicationError(
+                ApplicationErrorCode.INVALID,
+                "only a failed Learning Review can be retried",
+            )
+        return await self.learning_review_runner.run(
+            review_id,
+            expected_row_version=expected_row_version,
+        )
+
     def cancel_learning_review(
         self,
         review_id: str,

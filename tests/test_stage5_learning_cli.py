@@ -10,12 +10,14 @@ from typer.testing import CliRunner
 
 from morrow.application.commands import CommandService
 from morrow.application.orchestrator import DispatchResult
-from morrow.core.learning import LearningScope
+from morrow.core.application import ApplicationError
+from morrow.core.learning import LearningMode, LearningScope
 from morrow.interfaces import cli as cli_module
 from morrow.interfaces import learning_cli
 from morrow.interfaces import terminal as terminal_module
 from test_stage5_configuration_promotion import _promotion_subjects
 from test_stage5_project_knowledge import _project_candidate
+from test_stage5_review_pipeline import EmptyReviewer, _accepted, _api
 from test_terminal import ScriptedTerminal
 
 
@@ -116,6 +118,8 @@ def test_learning_and_memory_typer_surfaces_are_registered():
     memory = runner.invoke(cli_module.app, ["memory", "--help"])
     assert learning.exit_code == 0
     assert "accept" in learning.stdout
+    assert "retry" in learning.stdout
+    assert "set-mode" in learning.stdout
     assert memory.exit_code == 0
     assert "disable" in memory.stdout
 
@@ -149,3 +153,41 @@ def test_repl_learning_accept_can_explicitly_select_global_scope(tmp_path):
         assert "作用域：global" in result.lines[2]
     finally:
         handle.close()
+
+
+def test_repl_learning_mode_is_explicit_and_rejects_explicit_auto(tmp_path):
+    session, _journal, api = _api(tmp_path)
+    try:
+        command_service, _repl_session = _command_service(api, tmp_path)
+        result = command_service._learn_command(["/learn", "mode", "off"])
+        assert result.value.policy.mode is LearningMode.OFF
+        assert api.learning_policy_status().policy.mode is LearningMode.OFF
+        with pytest.raises(ApplicationError) as error:
+            command_service._learn_command(["/learn", "mode", "explicit-auto"])
+        assert "explicit_auto" in error.value.message
+    finally:
+        session.close()
+
+
+@pytest.mark.asyncio
+async def test_repl_learning_review_runs_in_foreground_and_reports_zero_candidates(
+    tmp_path, monkeypatch
+):
+    session, journal, api = _api(tmp_path, reviewer=EmptyReviewer())
+    try:
+        accepted = _accepted(api, journal)
+        outcome = api.list_outcomes(accepted.value.task_run_id)[0]
+        review = api.list_learning_reviews(task_outcome_id=outcome.outcome_id).items[0]
+        command_service, repl_session = _command_service(api, tmp_path)
+        terminal = ScriptedTerminal([f"/learn review {review.review_id}", "/exit"])
+        _install_scripted_terminal(monkeypatch, terminal)
+
+        code = await terminal_module.run_repl(
+            CommandOrchestrator(command_service, repl_session), session=repl_session
+        )
+
+        assert code == 0
+        assert any("没有生成候选" in line for line in terminal.console.lines)
+        assert api.get_learning_review(review.review_id).status.value == "completed"
+    finally:
+        session.close()

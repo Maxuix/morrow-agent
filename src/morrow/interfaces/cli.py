@@ -892,6 +892,40 @@ def learning_review(
         _close_state(handle)
 
 
+@learning_app.command("retry")
+def learning_retry(
+    review_id: str,
+    expected_row_version: int | None = typer.Option(None, "--expected-row-version", min=1),
+    workspace_id: str | None = typer.Option(None, "--workspace-id"),
+    directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+) -> None:
+    """Retry one failed Review through the active no-tool Provider."""
+
+    handle = None
+    try:
+        _application, handle, api, _doctor, _backup = _state_services(
+            state_root=state_root,
+            workspace_id=workspace_id,
+            directory=directory,
+            write=True,
+            with_reviewer=True,
+        )
+        _emit_model(
+            asyncio.run(
+                api.retry_learning_review(
+                    review_id,
+                    expected_row_version=expected_row_version,
+                )
+            )
+        )
+    except Exception as exc:
+        _cli_error(exc)
+        raise typer.Exit(code=2) from None
+    finally:
+        _close_state(handle)
+
+
 @learning_app.command("request")
 def learning_request(
     outcome_id: str,

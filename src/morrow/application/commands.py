@@ -393,6 +393,11 @@ class CommandService(LearningCommandMixin):
             raise RuntimeError("Learning Review 服务尚未就绪")
         return await self.api.run_learning_review(review_id)
 
+    async def retry_learning_review(self, review_id: str):
+        if self.api is None:
+            raise RuntimeError("Learning Review 服务尚未就绪")
+        return await self.api.retry_learning_review(review_id)
+
     def cancel_learning_review(self, review_id: str):
         if self.api is None:
             raise RuntimeError("Learning Review 服务尚未就绪")

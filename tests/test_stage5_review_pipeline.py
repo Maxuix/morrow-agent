@@ -476,7 +476,7 @@ async def test_reviewer_failure_is_retryable_without_changing_accepted_task(tmp_
         assert failed.review.status is LearningReviewStatus.FAILED
         assert failed.review.failure_code.value == "provider_unavailable"
         assert api.get_task(accepted.value.task_run_id).status is TaskRunStatus.ACCEPTED
-        retried = await api.run_learning_review(review.review_id)
+        retried = await api.retry_learning_review(review.review_id)
         assert retried.review.status is LearningReviewStatus.FAILED
         latest = api.get_learning_review(review.review_id)
         assert latest.attempt_count == 2
