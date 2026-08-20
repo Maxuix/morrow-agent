@@ -16,13 +16,12 @@ surfaces, and lazy query expiry. Subplan 50 is merged at `4d47be8` underneath it
 
 ## Active task
 
-Implement S53.1 from the verified `main` baseline: v12 models, migration, repository/ports, and
-corruption/future/rollback tests.
+Implement S53.2: deterministic lexical token projection and rebuildable Project Knowledge terms.
 
 ## Next action
 
-Inspect the existing AgentRun/ContextBuilder and v11 Knowledge boundaries, then implement the
-smallest v12 durable selection slice without starting Reviewer or history search work.
+Keep tokenization pure and bounded, then wire transactional term regeneration to Knowledge
+revision lifecycle without starting selection ranking, AgentRun freeze, Reviewer, or history search.
 
 ## Blockers
 
@@ -52,6 +51,10 @@ adopted into version control.
   compatible while new typed view entry points live under `api.learning` and `api.memory`.
 - S51.3–S51.6 are implemented: candidate decisions/rejection/suppression/expiry, Project Knowledge
   promotion and lifecycle, replay/OCC/workspace isolation, and preview-confirm CLI/REPL boundaries.
+- S53.1 is implemented on the active branch: v12 MemoryQuery/Selection contracts, immutable
+  selection/item and rebuildable-term tables, repository codecs/guards, v11 upgrade/future/
+  corruption coverage, and legacy migration expectation updates. Focused validation passed with
+  83 tests, Ruff format/check, compileall, and `git diff --check`.
 - S52 is complete: prepared configuration revisions/digests, YAML promotion Saga, Preference/
   Profile whitelist, foreground recovery, activation provenance/undo, Session projection updates,
   recoverable after-state finalization, explicit REPL global scope, and activation memory events.

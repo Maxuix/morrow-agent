@@ -1,7 +1,8 @@
 """Ordered, checksummed Operational Store migrations.
 
-Production currently owns schema v1–v11. Version 10 adds the governed Learning
-foundation and version 11 adds immutable decisions plus Project Knowledge without
+Production currently owns schema v1–v12. Version 10 adds the governed Learning
+foundation, version 11 adds immutable decisions plus Project Knowledge, and version
+12 adds immutable MemorySelection records plus rebuildable lexical terms without
 rewriting older evidence or creating a second configuration authority.
 """
 
@@ -1298,6 +1299,98 @@ V11_STATEMENTS = (
 
 V11 = SchemaMigration(version=11, name=V11_NAME, statements=V11_STATEMENTS)
 
+V12_NAME = "memory_selection_and_terms"
+V12_STATEMENTS = (
+    """
+    CREATE TABLE memory_selections (
+        selection_id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        query_digest TEXT NOT NULL CHECK (length(query_digest) = 64),
+        source_memory_revision INTEGER NOT NULL CHECK (source_memory_revision >= 0),
+        item_count INTEGER NOT NULL CHECK (item_count BETWEEN 0 AND 12),
+        omitted_count INTEGER NOT NULL CHECK (omitted_count >= 0),
+        rendered_chars INTEGER NOT NULL CHECK (rendered_chars BETWEEN 0 AND 6144),
+        selection_digest TEXT NOT NULL CHECK (length(selection_digest) = 64),
+        created_at_unix INTEGER NOT NULL,
+        UNIQUE (workspace_id, selection_id)
+    )
+    """,
+    """
+    CREATE INDEX memory_selections_workspace_created
+        ON memory_selections(workspace_id, created_at_unix, selection_id)
+    """,
+    """
+    CREATE TABLE memory_selection_items (
+        selection_id TEXT NOT NULL REFERENCES memory_selections(selection_id),
+        workspace_id TEXT NOT NULL,
+        ordinal INTEGER NOT NULL CHECK (ordinal >= 1),
+        record_kind TEXT NOT NULL CHECK (record_kind = 'project_knowledge'),
+        record_id TEXT NOT NULL REFERENCES project_knowledge_heads(knowledge_id),
+        record_revision_id TEXT NOT NULL
+            REFERENCES project_knowledge_revisions(knowledge_revision_id),
+        revision INTEGER NOT NULL CHECK (revision >= 1),
+        reason_json TEXT NOT NULL CHECK (length(reason_json) BETWEEN 2 AND 2048),
+        reason_bytes INTEGER NOT NULL CHECK (reason_bytes BETWEEN 2 AND 2048),
+        estimated_chars INTEGER NOT NULL CHECK (estimated_chars >= 0),
+        rendered_content_digest TEXT NOT NULL CHECK (length(rendered_content_digest) = 64),
+        PRIMARY KEY (selection_id, ordinal),
+        UNIQUE (selection_id, record_revision_id),
+        CHECK (reason_bytes = length(reason_json))
+    )
+    """,
+    """
+    CREATE INDEX memory_selection_items_workspace_revision
+        ON memory_selection_items(workspace_id, record_revision_id, selection_id, ordinal)
+    """,
+    """
+    CREATE TABLE memory_search_terms (
+        workspace_id TEXT NOT NULL,
+        knowledge_revision_id TEXT NOT NULL
+            REFERENCES project_knowledge_revisions(knowledge_revision_id),
+        token_kind TEXT NOT NULL CHECK (
+            token_kind IN ('word', 'identifier', 'cjk_bigram', 'number', 'path')
+        ),
+        token TEXT NOT NULL CHECK (length(token) BETWEEN 1 AND 128),
+        weight_band TEXT NOT NULL CHECK (weight_band IN ('high', 'medium', 'low')),
+        PRIMARY KEY (workspace_id, knowledge_revision_id, token_kind, token)
+    )
+    """,
+    """
+    CREATE INDEX memory_search_terms_workspace_token
+        ON memory_search_terms(workspace_id, token, token_kind, knowledge_revision_id)
+    """,
+    """
+    CREATE TRIGGER memory_selection_items_workspace_guard_insert
+    BEFORE INSERT ON memory_selection_items
+    BEGIN
+        SELECT CASE WHEN EXISTS (
+            SELECT 1
+            FROM memory_selections s
+            JOIN project_knowledge_heads h ON h.knowledge_id = NEW.record_id
+            JOIN project_knowledge_revisions r ON r.knowledge_revision_id = NEW.record_revision_id
+            WHERE s.selection_id = NEW.selection_id
+              AND (s.workspace_id != NEW.workspace_id
+                   OR h.workspace_id != NEW.workspace_id
+                   OR r.workspace_id != NEW.workspace_id
+                   OR r.knowledge_id != NEW.record_id)
+        ) THEN RAISE(ABORT, 'memory selection workspace mismatch') END;
+    END
+    """,
+    """
+    CREATE TRIGGER memory_search_terms_workspace_guard_insert
+    BEFORE INSERT ON memory_search_terms
+    BEGIN
+        SELECT CASE WHEN EXISTS (
+            SELECT 1 FROM project_knowledge_revisions r
+            WHERE r.knowledge_revision_id = NEW.knowledge_revision_id
+              AND r.workspace_id != NEW.workspace_id
+        ) THEN RAISE(ABORT, 'memory search term workspace mismatch') END;
+    END
+    """,
+)
+
+V12 = SchemaMigration(version=12, name=V12_NAME, statements=V12_STATEMENTS)
+
 
 class MigrationRegistry:
     def __init__(self, *, supported_version: int = SUPPORTED_SCHEMA_VERSION) -> None:
@@ -1363,6 +1456,7 @@ def production_registry() -> MigrationRegistry:
     registry.add(V9)
     registry.add(V10)
     registry.add(V11)
+    registry.add(V12)
     return registry
 
 

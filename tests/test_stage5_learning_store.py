@@ -17,6 +17,7 @@ from morrow.adapters.state.migrations import (
     V9,
     V10,
     V10_NAME,
+    V11,
     V11_NAME,
     MigrationRegistry,
     SchemaMigration,
@@ -82,6 +83,13 @@ def _v9_registry() -> MigrationRegistry:
 def _v10_registry() -> MigrationRegistry:
     registry = MigrationRegistry(supported_version=10)
     for migration in (V1, V2, V3, V4, V5, V6, V7, V8, V9, V10):
+        registry.add(migration)
+    return registry
+
+
+def _v11_registry() -> MigrationRegistry:
+    registry = MigrationRegistry(supported_version=11)
+    for migration in (V1, V2, V3, V4, V5, V6, V7, V8, V9, V10, V11):
         registry.add(migration)
     return registry
 
@@ -214,7 +222,7 @@ def _candidate() -> LearningCandidate:
 def test_v9_store_upgrades_to_v11_without_rewriting_old_migrations(tmp_path):
     legacy = _store(tmp_path, registry=_v9_registry())
     legacy.initialize().close()
-    upgraded = _store(tmp_path)
+    upgraded = _store(tmp_path, registry=_v11_registry())
     report = upgraded.migrate()
 
     assert report.from_version == 9
@@ -247,7 +255,7 @@ def test_v9_store_upgrades_to_v11_without_rewriting_old_migrations(tmp_path):
 def test_v10_store_upgrades_to_v11_without_rewriting_v10(tmp_path):
     legacy = _store(tmp_path, registry=_v10_registry())
     legacy.initialize().close()
-    upgraded = _store(tmp_path)
+    upgraded = _store(tmp_path, registry=_v11_registry())
 
     report = upgraded.migrate()
 

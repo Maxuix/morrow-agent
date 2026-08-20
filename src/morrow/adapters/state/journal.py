@@ -14,6 +14,7 @@ from morrow.adapters.state.context_journal import SqliteContextJournal
 from morrow.adapters.state.conversation_journal import SqliteConversationJournal
 from morrow.adapters.state.learning_journal import SqliteLearningJournal
 from morrow.adapters.state.learning_memory_journal import SqliteLearningMemoryJournal
+from morrow.adapters.state.memory_selection_journal import SqliteMemorySelectionJournal
 from morrow.adapters.state.operational import OperationalStoreSession, SqliteExecutor
 from morrow.adapters.state.permission_journal import SqliteRunPermissionJournal
 from morrow.adapters.state.recovery_journal import SqliteRecoveryJournal
@@ -78,6 +79,7 @@ from morrow.core.learning_memory import (
     ProjectKnowledgeRevision,
     ProjectKnowledgeStatus,
 )
+from morrow.core.memory_selection import MemorySearchTerm, MemorySelection
 from morrow.core.permissions import (
     CapabilityGrant,
     PermissionSnapshot,
@@ -168,6 +170,7 @@ class SqliteOperationalJournal:
         self._learning_journal = SqliteLearningJournal(self._backend)
         self._learning_memory_journal = SqliteLearningMemoryJournal(self._backend)
         self._configuration_promotion_journal = SqliteConfigurationPromotionJournal(self._backend)
+        self._memory_selection_journal = SqliteMemorySelectionJournal(self._backend)
 
     def now(self) -> datetime:
         return self._backend.now()
@@ -551,6 +554,44 @@ class SqliteOperationalJournal:
     ) -> MemoryWorkspaceState:
         return self._learning_memory_journal.save_memory_workspace_state(
             workspace_id, state, expected_row_version=expected_row_version
+        )
+
+    def put_memory_selection(
+        self, workspace_id: str, selection: MemorySelection
+    ) -> MemorySelection:
+        return self._memory_selection_journal.put_memory_selection(workspace_id, selection)
+
+    def get_memory_selection(self, workspace_id: str, selection_id: str) -> MemorySelection | None:
+        return self._memory_selection_journal.get_memory_selection(workspace_id, selection_id)
+
+    def list_memory_selections(
+        self, workspace_id: str, *, limit: int = 100
+    ) -> tuple[MemorySelection, ...]:
+        return self._memory_selection_journal.list_memory_selections(workspace_id, limit=limit)
+
+    def replace_memory_search_terms(
+        self,
+        workspace_id: str,
+        knowledge_revision_id: str,
+        terms: tuple[MemorySearchTerm, ...],
+    ) -> tuple[MemorySearchTerm, ...]:
+        return self._memory_selection_journal.replace_memory_search_terms(
+            workspace_id, knowledge_revision_id, terms
+        )
+
+    def list_memory_search_terms(
+        self,
+        workspace_id: str,
+        *,
+        knowledge_revision_id: str | None = None,
+        token: str | None = None,
+        limit: int = 500,
+    ) -> tuple[MemorySearchTerm, ...]:
+        return self._memory_selection_journal.list_memory_search_terms(
+            workspace_id,
+            knowledge_revision_id=knowledge_revision_id,
+            token=token,
+            limit=limit,
         )
 
     def create_session(

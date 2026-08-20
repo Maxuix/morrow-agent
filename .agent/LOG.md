@@ -1,5 +1,18 @@
 # Execution Log
 
+## 2026-08-21 — Subplan 53.1 v12 selection persistence completed
+
+- Added bounded `MemoryQuery`, immutable `MemorySelection`/`MemorySelectionItem`, closed reason
+  codes, and rebuildable `MemorySearchTerm` contracts without introducing a second authority.
+- Added the v12 `memory_selections`, `memory_selection_items`, and `memory_search_terms` schema,
+  workspace/FK guards, shared-transaction repository, codecs, and narrow persistence port.
+- Preserved v1–v11 migration behavior, updated legacy expectations to pin v11 where required, and
+  added v11→v12 upgrade, failed-migration rollback, workspace isolation, round-trip, and corruption
+  coverage.
+- Focused validation passed: 83 tests, Ruff format/check, compileall, and `git diff --check`.
+- Marked S53.1 complete and activated S53.2. No Grok review was run because the required review is
+  per completed subplan, not per internal task.
+
 ## 2026-08-13 — Initialize large-plan workflow
 
 - Added `.agent/subplans/` for ordered child plans.
