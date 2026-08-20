@@ -1,5 +1,23 @@
 # Stage 4 真实用户场景测试报告
 
+## 修复复核（2026-08-20）
+
+本报告提出的问题已基于当前分支重新核对：
+
+- **R-001 确认存在并已修复。** Session application 现在构造一个绑定同一 journal、workspace
+  和 workspace root 的 `RecoveryService`，同时注入 `SessionPersistence` 与
+  `OperationalApplicationService`；Recovery 发现、acknowledge 和 resume 不再使用断裂的服务装配。
+- 新增从 `build_session_application(..., resume_session_id=...)` 进入的崩溃恢复回归测试，覆盖
+  `/recovery` 展示、acknowledge、resume，以及内存与持久化 Session health 最终恢复为 `ok`。
+- **CLI 的 opaque command ID 摩擦确认存在并已优化。** `recovery resolve` 省略
+  `--command-id` 时会自动生成幂等 ID；需要安全重试同一请求的客户端仍可显式复用该参数。
+- **CLI resume 的说明缺口确认存在并已优化。** 命令帮助与 README 现在明确：独立 CLI 的
+  `resume` 只提交恢复决策并准备 AgentRun，不调用 Provider；后续需重新进入对应 Session。
+- `artifact_orphan` 仍被确认是独立 Artifact 的正确诊断，不属于存储损坏，未改变其行为。
+
+修复后验证：Recovery/CLI 定向测试 `16 passed`；完整非 live 测试 `609 passed, 1 deselected`；
+Ruff check、Ruff format check 与 compileall 均通过。未运行 live/real-network 测试。
+
 ## 结论
 
 本轮在 Stage 4 最终 review-fix 提交 `e6f9547` 上，使用临时隔离状态目录执行了 Session、REPL、Recovery、TaskRun、Artifact、checkpoint/fork、Backup、CLI 及权限边界场景。

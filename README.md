@@ -44,7 +44,7 @@ morrow grant revoke GRANT_ID --reason "用户撤销"
 morrow session list --dir PATH
 morrow session resume SESSION_ID --dir PATH
 morrow recovery show SESSION_ID --dir PATH
-morrow recovery resolve REPORT_ID RESOLUTION --command-id COMMAND_ID --dir PATH
+morrow recovery resolve REPORT_ID RESOLUTION --dir PATH
 ```
 
 用于 OpenCode Go Mimo v2.5 的持久化验收环境可使用仓库内包装命令；首次执行会隐藏输入
@@ -66,6 +66,9 @@ REPL 常用命令包括 `/workspace`、`/workspace edit summary ...`、`/workspa
 `/grant`、`/recovery`、`/new` 和 `/exit`。默认启动会创建新的 Session；若要继续已有 Session，
 使用 `--session-id SESSION_ID` 或 `session resume SESSION_ID`。检测到已有可恢复 Session 时，启动会
 显示其 ID；恢复后如有未完成的安全对账，先用 `/recovery` 查看并处理，再继续同一回合。
+独立 CLI 的 `recovery resolve` 会自动生成幂等 command ID；需要安全重试同一请求的客户端仍可显式传入
+`--command-id`。其中 `resume` 只持久化恢复决策并准备新的 AgentRun，不会调用 Provider；随后请用
+`morrow --dir PATH --session-id SESSION_ID` 继续模型回合。
 所有确定性编辑和自然语言配置都会先显示作用域、目标、操作、字段和值，确认后才写入。
 自然语言配置只在用户明确要求保存、写入、记住或更新时调用标准
 `update_configuration` 工具；本次回答风格、问题、解释、假设、引用和否定句不会持久化。

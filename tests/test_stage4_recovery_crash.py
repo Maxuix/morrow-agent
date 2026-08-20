@@ -10,11 +10,13 @@ from pathlib import Path
 
 import pytest
 
+from morrow.adapters.credentials.keyring import MemoryCredentialStore
 from morrow.adapters.state.journal import SqliteOperationalJournal
 from morrow.adapters.state.operational import BusyRetryPolicy, OperationalStore
 from morrow.application.api import OperationalApplicationService
 from morrow.application.recovery import RecoveryService
 from morrow.application.turns import SessionPersistence
+from morrow.bootstrap import build_application, build_session_application
 from morrow.core.capabilities import AccessScope, ApprovalMode, ProcessIsolation
 from morrow.core.domain import (
     AgentRunSnapshot,
@@ -56,9 +58,9 @@ from morrow.core.permissions import (
 from morrow.core.recovery import FileObservation, RecoveryResolution
 from morrow.core.store import StoreOpenMode
 from morrow.runtime.conversation import ConversationLog
-from morrow.runtime.durable_log import DurableConversationWriter
+from morrow.runtime.durable_log import DurableConversationWriter, durable_call_id
 from morrow.runtime.session import Session
-from morrow.testing import FixedClock, FixedIdSource
+from morrow.testing import FixedClock, FixedIdSource, ScriptedModelProvider
 
 
 def _retry() -> BusyRetryPolicy:
@@ -341,12 +343,13 @@ def test_application_recovery_updates_health_and_resume_run_atomically(tmp_path:
         assert report is not None
         acknowledged = api.resolve_recovery(
             report,
-            command_id="cmd_ack_api",
+            command_id=None,
             resolution=RecoveryResolution.ACKNOWLEDGE,
             item_id=report.items[0].item_id,
             log=log,
             writer=writer,
         )
+        assert acknowledged.receipt.command_id.startswith("cmd_")
         assert acknowledged.value.status.value == "open"
         assert journal.get_session("ws_1", "ses_1").health is SessionHealth.NEEDS_RECOVERY
         assert journal.get_execution("ws_1", "tex_1").state is ToolExecutionState.CLOSED
@@ -366,6 +369,132 @@ def test_application_recovery_updates_health_and_resume_run_atomically(tmp_path:
         assert runs[-1].resume_of_agent_run_id == "arun_1"
     finally:
         handle.close()
+
+
+@pytest.mark.asyncio
+async def test_session_application_recovery_commands_acknowledge_and_resume(tmp_path: Path):
+    project = tmp_path / "project"
+    project.mkdir()
+    ids = FixedIdSource()
+    app = build_application(
+        state_root=tmp_path / "state",
+        credentials=MemoryCredentialStore(),
+        id_source=ids,
+    )
+    identity = app.workspace_service.confirm(app.workspace_service.resolve(project))
+    crashed = build_session_application(
+        app,
+        identity,
+        provider=ScriptedModelProvider(),
+        model=ModelRef(provider_id="p", model_id="m"),
+    )
+    session_id = crashed.session.session_id
+    journal = crashed.persistence.journal
+    try:
+        submitted = crashed.persistence.submit_user(
+            crashed.session,
+            "read the file",
+            "client-crash",
+            turn_id="turn_crash",
+            agent_run_id="arun_crash",
+        )
+        assert submitted.kind == "accepted"
+        provider_call_id = "provider-call"
+        crashed.persistence.writer.commit(
+            crashed.session.log.plan_append_assistant(
+                AssistantMessage(
+                    tool_calls=(
+                        FunctionToolCall(
+                            id=provider_call_id,
+                            name="read_file",
+                            arguments="{}",
+                        ),
+                    )
+                )
+            )
+        )
+        call_id = durable_call_id(provider_call_id)
+        intent = PreparedIntent(
+            tool_name="read_file",
+            call_id=call_id,
+            ordinal=1,
+            arguments_digest=_digest("args"),
+            schema_digest=_digest("schema"),
+            permission_context_digest=_digest("perms"),
+            effect_class=EffectClass.BOUNDED_READ,
+        )
+        prepared = journal.put_execution(
+            identity.workspace_id,
+            DurableToolExecution(
+                tool_execution_id="tex_crash",
+                workspace_id=identity.workspace_id,
+                session_id=session_id,
+                task_run_id=crashed.persistence.current_task_run_id,
+                turn_id="turn_crash",
+                agent_run_id="arun_crash",
+                call_id=call_id,
+                ordinal=1,
+                tool_name="read_file",
+                intent=intent,
+            ),
+        )
+        executing = transition_execution(
+            prepared,
+            ToolExecutionState.EXECUTING,
+            expected_row_version=prepared.row_version,
+        )
+        executing = journal.save_execution(
+            identity.workspace_id,
+            executing,
+            expected_row_version=prepared.row_version,
+        )
+        completed = transition_execution(
+            executing,
+            ToolExecutionState.HANDLER_COMPLETED,
+            expected_row_version=executing.row_version,
+            disposition=ToolExecutionDisposition.FAILED,
+        )
+        journal.save_execution(
+            identity.workspace_id,
+            completed,
+            expected_row_version=executing.row_version,
+        )
+    finally:
+        crashed.persistence.close()
+
+    resumed = build_session_application(
+        app,
+        identity,
+        provider=ScriptedModelProvider(["resumed answer"]),
+        model=ModelRef(provider_id="p", model_id="m"),
+        resume_session_id=session_id,
+    )
+    try:
+        assert resumed.session.health is SessionHealth.NEEDS_RECOVERY
+        assert resumed.persistence.open_report is not None
+        assert resumed.api.recovery is resumed.persistence.recovery
+        assert "Recovery 报告" in resumed.commands.execute("/recovery").lines[0]
+
+        item_id = resumed.persistence.open_report.items[0].item_id
+        acknowledge = resumed.commands.execute(f"/recovery ack {item_id}")
+        acknowledged = resumed.commands.resolve_recovery(acknowledge.value)
+        assert acknowledged.status.value == "open"
+
+        resume = resumed.commands.execute("/recovery resume")
+        resolved = resumed.commands.resolve_recovery(resume.value)
+        assert resolved.status.value == "resolved"
+        assert resumed.session.health is SessionHealth.OK
+        assert resumed.persistence.open_report is None
+        assert (
+            resumed.persistence.journal.get_session(identity.workspace_id, session_id).health
+            is SessionHealth.OK
+        )
+        events = [item async for item in resumed.orchestrator.resume_recovery()]
+        assert events
+        assert resumed.session.messages[-1].content == "resumed answer"
+        assert resumed.session.log.has_active_turn is False
+    finally:
+        resumed.persistence.close()
 
 
 def test_item_recovery_does_not_close_other_open_executions(tmp_path: Path):

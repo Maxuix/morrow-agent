@@ -40,6 +40,7 @@ from morrow.application.local_tools import (
     make_write_file_tool,
 )
 from morrow.application.orchestrator import SessionOrchestrator
+from morrow.application.recovery import RecoveryService
 from morrow.application.turns import SessionPersistence
 from morrow.core.capabilities import (
     AccessScope,
@@ -349,6 +350,12 @@ def build_session_application(
         workspace_id=identity.workspace_id,
         id_source=app.id_source,
     )
+    recovery = RecoveryService(
+        journal,
+        workspace_id=identity.workspace_id,
+        id_source=app.id_source,
+        workspace_root=workspace_capability.root,
+    )
     persistence = SessionPersistence(
         workspace_id=identity.workspace_id,
         journal=journal,
@@ -359,6 +366,7 @@ def build_session_application(
         runtime_instance_id=f"inst-{os.getpid()}",
         mutation=mutation,
         artifacts=artifacts,
+        recovery=recovery,
     )
     if resume_session_id:
         persistence.restore_into(session)
@@ -374,6 +382,7 @@ def build_session_application(
         id_source=app.id_source,
         tasks=persistence.tasks,
         artifacts=artifacts,
+        recovery=recovery,
         checkpoints=checkpoints,
         forks=forks,
         persistence=persistence,

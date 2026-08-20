@@ -1070,7 +1070,7 @@ class OperationalApplicationService:
         self,
         report: RecoveryReport,
         *,
-        command_id: str,
+        command_id: str | None = None,
         resolution: RecoveryResolution,
         item_id: str | None = None,
         log=None,

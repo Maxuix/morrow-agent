@@ -1048,12 +1048,17 @@ def recovery_show(
 def recovery_resolve(
     report_id: str,
     resolution: RecoveryResolution,
-    command_id: str = typer.Option(..., "--command-id"),
+    command_id: str | None = typer.Option(
+        None,
+        "--command-id",
+        help="可选幂等键；省略时自动生成，重试同一请求时可显式复用。",
+    ),
     item_id: str | None = typer.Option(None, "--item-id"),
     workspace_id: str | None = typer.Option(None, "--workspace-id"),
     directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
     state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
 ) -> None:
+    """持久化 Recovery 决策；resume 只准备 AgentRun，不调用 Provider。"""
     handle = None
     try:
         _application, handle, api, _doctor, _backup = _state_services(

@@ -222,6 +222,7 @@ class SessionPersistence:
         runtime_instance_id: str,
         mutation=None,
         artifacts=None,
+        recovery: RecoveryService | None = None,
         faults: FaultInjector | None = None,
         clock: Clock | None = None,
     ) -> None:
@@ -234,6 +235,13 @@ class SessionPersistence:
         self.runtime_instance_id = runtime_instance_id
         self.mutation = mutation
         self.artifacts = artifacts
+        workspace_root = mutation.files.resolver.root if mutation is not None else None
+        self.recovery = recovery or RecoveryService(
+            journal,
+            workspace_id=workspace_id,
+            id_source=id_source,
+            workspace_root=workspace_root,
+        )
         self.faults = faults or NoOpFaultInjector()
         self.clock = clock
         self.tasks = TaskService(
@@ -590,16 +598,7 @@ class SessionPersistence:
             session.log = ConversationLog()
             session.health = SessionHealth.QUARANTINED
         else:
-            root = None
-            if self.mutation is not None:
-                root = self.mutation.files.resolver.root
-            service = RecoveryService(
-                self.journal,
-                workspace_id=self.workspace_id,
-                id_source=self.id_source,
-                workspace_root=root,
-            )
-            report = service.discover(session.session_id, session.log)
+            report = self.recovery.discover(session.session_id, session.log)
             self.open_report = report
             if report is not None:
                 self.current_turn_id = report.turn_id
@@ -724,16 +723,7 @@ class SessionPersistence:
         if self.open_report is None:
             raise RuntimeError("no open recovery report")
         report = self.open_report
-        root = None
-        if self.mutation is not None:
-            root = self.mutation.files.resolver.root
-        service = RecoveryService(
-            self.journal,
-            workspace_id=self.workspace_id,
-            id_source=self.id_source,
-            workspace_root=root,
-        )
-        updated, receipt, planned = service.decide(
+        updated, receipt, planned = self.recovery.decide(
             report,
             command_id=command_id,
             resolution=resolution,
@@ -745,7 +735,7 @@ class SessionPersistence:
         if receipt.kind == "replay":
             return self.open_report
         resumed_agent_run_id: list[str] = []
-        saved = service.commit_decision(
+        saved = self.recovery.commit_decision(
             updated,
             receipt,
             planned=planned,

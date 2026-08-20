@@ -58,3 +58,11 @@ def test_cli_doctor_can_report_a_missing_store_without_opening_it(tmp_path):
     )
     assert diagnosed.exit_code == 0, diagnosed.stdout
     assert "health: needs_repair" in diagnosed.stdout
+
+
+def test_recovery_resolve_help_explains_generated_id_and_provider_boundary():
+    result = CliRunner().invoke(app, ["recovery", "resolve", "--help"])
+
+    assert result.exit_code == 0, result.stdout
+    assert "自动生成" in result.stdout
+    assert "不调用 Provider" in result.stdout
