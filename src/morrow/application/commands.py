@@ -327,8 +327,8 @@ class CommandService:
                     else self.task_service.new_task(self.session.session_id, command_id=command_id)
                 )
                 task = result.value if self.api is not None else result.task
-                if self.session.committer is not None:
-                    self.session.committer.current_task_run_id = task.task_run_id
+                if self.session.durable_runtime is not None:
+                    self.session.durable_runtime.synchronize_task_projection(task.task_run_id)
                 ui_result = TaskCommandResult("accepted", task) if self.api is not None else result
                 return CommandResult([f"已创建 TaskRun：{task.task_run_id}"], value=ui_result)
             if current is None:
@@ -351,15 +351,18 @@ class CommandService:
                         expected_row_version=current.row_version,
                     )
                     task = result.task
-                if self.session.committer is not None:
-                    self.session.committer.current_task_run_id = (
-                        task.task_run_id if task.status is not TaskRunStatus.CANCELLED else None
+                if self.session.durable_runtime is not None:
+                    active_task_id = (
+                        task.task_run_id
+                        if task.status
+                        not in {
+                            TaskRunStatus.ACCEPTED,
+                            TaskRunStatus.ABANDONED,
+                            TaskRunStatus.CANCELLED,
+                        }
+                        else None
                     )
-                    if task.status in {
-                        TaskRunStatus.ACCEPTED,
-                        TaskRunStatus.ABANDONED,
-                    }:
-                        self.session.committer.current_task_run_id = None
+                    self.session.durable_runtime.synchronize_task_projection(active_task_id)
                 return CommandResult(
                     [f"TaskRun {task.task_run_id}：{task.status.value}"],
                     value=(TaskCommandResult("accepted", task) if self.api is not None else result),
@@ -371,7 +374,11 @@ class CommandService:
     def _current_task(self):
         if self.task_service is None:
             return None
-        task_id = getattr(self.session.committer, "current_task_run_id", None)
+        task_id = (
+            self.session.durable_runtime.current_task_run_id
+            if self.session.durable_runtime is not None
+            else None
+        )
         if task_id is None:
             return None
         return self.task_service.get(task_id)

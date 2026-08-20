@@ -1017,22 +1017,7 @@ class OperationalApplicationService:
 
     def _restore_session_projection(self, session, persistence) -> None:
         try:
-            row = self.journal.get_session(self.workspace_id, session.session_id)
-            if row is None:
-                return
-            session.log.install_snapshot(
-                restore_conversation_log(
-                    self.journal, self.workspace_id, session.session_id
-                ).snapshot()
-            )
-            session.health = row.health
-            session.lifecycle = row.lifecycle
-            session.dirty = session.log.has_active_turn
-            persistence.current_turn_id = None
-            persistence.current_task_run_id = row.current_task_run_id
-            persistence.current_agent_run_id = None
-            persistence._last_client_message_id = None
-            persistence.attach(session)
+            persistence.synchronize_projection(session)
         except Exception:
             return
 

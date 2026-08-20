@@ -57,6 +57,7 @@ class DurableRunCoordinator(SessionCommitter, Protocol):
     """
 
     current_turn_id: str | None
+    current_task_run_id: str | None
 
     def now(self) -> datetime: ...
 
@@ -145,6 +146,8 @@ class DurableRunCoordinator(SessionCommitter, Protocol):
     def has_active_unconfined_grant(
         self, execution: DurableToolExecution, *, now: datetime
     ) -> bool: ...
+
+    def synchronize_task_projection(self, task_run_id: str | None) -> None: ...
 
 
 @dataclass

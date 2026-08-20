@@ -6,19 +6,19 @@ Subplan 48 is active on `refactor/pre-stage5-boundaries`; Stage 5 remains inacti
 
 ## Last completed task
 
-S48.2 introduced typed AgentLoop run state and extracted approval, permission recheck, handler
-timeout/cancellation, and durable execution transitions into a ToolCycle executor with no chat or
-public-event ownership. The full offline and quality gates passed.
+S48.3 split permission evidence, durable tool state, tool/conversation atomic writes, Turn
+submission/terminal transitions, and Session restoration into focused collaborators behind the
+compatible SessionPersistence facade. Application collaborators no longer mutate its private
+state. Full offline and quality gates passed.
 
 ## Active task
 
-S48.3 — decompose SessionPersistence behind its compatible facade. Permission and durable-tool
-coordination are separate; Turn submission/restoration is next.
+S48.4 — partition the SQLite journal behind one transaction context.
 
 ## Next action
 
-Extract Turn submission/restoration behind explicit state transfer while keeping
-SessionPersistence as the compatible runtime facade.
+Map the current journal transaction/executor/timestamp invariants, introduce a shared internal
+transaction context, then partition one bounded SQL domain without changing the facade or schema.
 
 ## Blockers
 

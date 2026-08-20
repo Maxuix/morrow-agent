@@ -282,18 +282,12 @@ class RecoveryApplicationService:
     def _sync_persistence(self, report: RecoveryReport, resumed_agent_run_id: list[str]) -> None:
         api = self.application
         persistence = api.persistence
-        session = getattr(persistence, "_session", None) if persistence is not None else None
-        if persistence is None or session is None or session.session_id != report.session_id:
+        if persistence is None:
             return
-        row = api.journal.get_session(api.workspace_id, report.session_id)
-        if row is None:
-            return
-        session.health = row.health
-        persistence.current_task_run_id = row.current_task_run_id
-        if resumed_agent_run_id:
-            persistence.current_agent_run_id = resumed_agent_run_id[0]
-            persistence.current_permission_snapshot_id = None
-        persistence.open_report = None if report.status is RecoveryReportStatus.RESOLVED else report
+        persistence.synchronize_recovery_projection(
+            report,
+            resumed_agent_run_id=resumed_agent_run_id[0] if resumed_agent_run_id else None,
+        )
 
     def _abort_task_in_txn(
         self, txn, session: DurableSession, *, turn_id: str | None

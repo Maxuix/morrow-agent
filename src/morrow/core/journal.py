@@ -190,6 +190,29 @@ class TurnSubmitReceiptPort(Protocol):
 
     def put_receipt(self, workspace_id: str, receipt: TurnSubmitReceipt) -> TurnSubmitReceipt: ...
 
+    def update_receipt(
+        self, workspace_id: str, receipt: TurnSubmitReceipt
+    ) -> TurnSubmitReceipt: ...
+
+
+class TurnLifecycleJournalPort(
+    SessionLifecyclePort,
+    AgentRunPort,
+    TurnSubmitReceiptPort,
+    TransactionalJournalPort,
+    Protocol,
+):
+    """Atomic Session, Task, Turn, AgentRun, and submit-receipt surface."""
+
+
+class SessionRestoreJournalPort(
+    SessionLifecyclePort,
+    ConversationJournalPort,
+    AgentRunPort,
+    Protocol,
+):
+    """Read surface needed to restore one in-process Session projection."""
+
 
 class ToolExecutionJournalPort(Protocol):
     def put_execution(

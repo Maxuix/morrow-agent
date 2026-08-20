@@ -37,6 +37,7 @@ def test_domain_services_depend_on_journal_ports_not_sqlite_adapter():
         "application/api_recovery.py",
         "application/turn_permissions.py",
         "application/tool_persistence.py",
+        "application/turn_lifecycle.py",
     )
 
     for relative in port_owned_modules:
@@ -187,3 +188,58 @@ def test_session_persistence_delegates_durable_tool_state():
             and node.value.attr == owner
             for node in ast.walk(methods[name])
         ), name
+
+
+def test_session_persistence_delegates_turn_lifecycle_and_restore():
+    source = (SOURCE_ROOT / "application/turns.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    persistence = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "SessionPersistence"
+    )
+    methods = {
+        node.name: node
+        for node in persistence.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+
+    for symbol in (
+        "build_agent_run_snapshot",
+        "session_can_start_work",
+        "restore_conversation_log",
+        "_apply_task_terminal_in_txn",
+        "_close_open_receipt_in_txn",
+    ):
+        assert symbol not in source
+
+    owners = {
+        "commit": "turn_submission",
+        "close_open_receipt": "turn_submission",
+        "submit_user": "turn_submission",
+        "start_new_session": "session_restore",
+        "restore_into": "session_restore",
+        "synchronize_projection": "session_restore",
+        "synchronize_recovery_projection": "session_restore",
+    }
+    for name, owner in owners.items():
+        assert any(
+            isinstance(node, ast.Attribute)
+            and isinstance(node.value, ast.Attribute)
+            and isinstance(node.value.value, ast.Name)
+            and node.value.value.id == "self"
+            and node.value.attr == owner
+            for node in ast.walk(methods[name])
+        ), name
+
+
+def test_application_collaborators_do_not_mutate_persistence_private_state():
+    api_source = (SOURCE_ROOT / "application/api.py").read_text(encoding="utf-8")
+    recovery_source = (SOURCE_ROOT / "application/api_recovery.py").read_text(encoding="utf-8")
+    commands_source = (SOURCE_ROOT / "application/commands.py").read_text(encoding="utf-8")
+    combined = api_source + recovery_source + commands_source
+
+    assert "persistence._session" not in combined
+    assert "persistence._last_client_message_id" not in combined
+    assert "persistence.current_task_run_id =" not in combined
+    assert "session.committer.current_task_run_id" not in combined

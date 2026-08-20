@@ -1391,3 +1391,17 @@
 - Full offline validation passed: `665 passed, 2 skipped, 1 deselected`; the skips are the known
   nested-sandbox Seatbelt cases. Full Ruff format/check, compileall, CLI help, architecture guards,
   and `git diff --check` passed.
+
+## 2026-08-20 — S48.3 SessionPersistence decomposition completed
+
+- Extracted Turn admission/replay and terminal Task transactions into `TurnSubmissionCoordinator`;
+  extracted context/log/Recovery projection restoration into `SessionRestoreCoordinator` with one
+  typed `DurableTurnState` shared by the compatible facade.
+- Replaced direct application API, Recovery, and command mutations of `_session`,
+  `_last_client_message_id`, and current Task/Agent fields with explicit synchronization methods.
+- SessionPersistence decreased from 908 lines at audit time to 346 lines/33 mostly thin facade and
+  compatibility methods. Turn submission is 276 lines/7 methods and restoration 140 lines/7
+  methods, each with a narrow journal port and explicit transaction/state ownership.
+- Full offline validation passed: `667 passed, 2 skipped, 1 deselected`; the skips are the known
+  nested-sandbox Seatbelt cases. Ruff reported 169 files formatted; Ruff check, compileall, CLI
+  help, architecture guards, and `git diff --check` passed.
