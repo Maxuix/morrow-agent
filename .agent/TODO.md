@@ -11,8 +11,8 @@ Subplan 54 — Production Reviewer, Evaluation, and Stage 5 Acceptance.
 
 ## Tasks
 
-- [>] S54.1 Implement the bounded no-tool production Reviewer adapter and safe composition.
-- [ ] S54.2 Complete Learning policy, status, review/retry, and foreground UX surfaces.
+- [x] S54.1 Implement the bounded no-tool production Reviewer adapter and safe composition.
+- [>] S54.2 Complete Learning policy, status, review/retry, and foreground UX surfaces.
 - [ ] S54.3 Validate future candidate-only behavior without activating Skills or Workflows.
 - [ ] S54.4 Build the versioned adversarial offline evaluation dataset and quality report.
 - [ ] S54.5 Complete Stage 5 doctor, backup, end-to-end acceptance, and documentation evidence.
@@ -39,3 +39,7 @@ active.
 Subplan 53 is fast-forward merged into local `main` at `613ffdb`; Subplan 54 is on its dedicated
 branch. Preserve the two untracked `docs/research/stage5-overview-*.md` user files unless the user
 explicitly asks to adopt or commit them.
+
+S54.1 validation passed: 790 tests, 2 skips, 1 deselected; Ruff format/check, compileall, root/
+Learning/Memory CLI help, and diff check passed. The production Reviewer checkpoint is committed
+as `c955bbc`; S54.2 is now active.

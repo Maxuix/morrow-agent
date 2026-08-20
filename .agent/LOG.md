@@ -1741,3 +1741,18 @@
   now the active task: implement the production no-tool Reviewer boundary using explicit bounded
   messages, strict drafts, sanitized errors, and one bounded repair attempt. Live evaluation remains
   a hold point requiring explicit user authorization and a compatible credential.
+
+## 2026-08-21 — Subplan 54 S54.1 verified; S54.2 active
+
+- Added `ModelLearningReviewer` as a provider-independent no-tool adapter. It renders a fixed
+  versioned system contract plus one canonical bounded LearningContext payload, validates request and
+  response budgets, uses one total deadline, permits one repair prompt with only an error category
+  and schema, rejects unknown/unsafe/oversize/invented-Evidence drafts, and maps provider failures
+  to sanitized typed errors without persisting raw output.
+- Wired the active Provider/model into interactive and explicit CLI Review composition while keeping
+  state queries provider-free. Runner metadata records provider/model/prompt/schema versions, and
+  bounded repair usage is returned and included in sanitized Review events. Task acceptance remains
+  unchanged and the test-only Reviewer stays available to direct application tests.
+- S54.1 focused tests and the full offline gate passed: `790 passed, 2 skipped, 1 deselected`; Ruff
+  format/check, compileall, root/Learning/Memory CLI help, and `git diff --check` passed. Checkpoint
+  commit: `c955bbc`. S54.2 is now active; no Grok review is run until the complete S54 subplan closes.

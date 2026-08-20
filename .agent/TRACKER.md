@@ -17,14 +17,14 @@ recovery, Session projections, and CLI/REPL controls. Subplan 51 is verified and
 
 ## Active task
 
-Implement S54.1: add the bounded, no-tool production Reviewer adapter without changing Task
-acceptance or granting model write/tool authority.
+Implement S54.2: complete the Learning policy/status/review/retry foreground surfaces while keeping
+Task acceptance Task-only and every candidate promotion explicit.
 
 ## Next action
 
-Read the existing `LearningReviewerPort`, `LearningContext`, strict draft models, and ModelProvider
-composition; then implement and test explicit-message structured completion with bounded timeout,
-one repair attempt, stable sanitized errors, and bounded Review metadata.
+Inspect the existing policy service, review request/runner APIs, Typer/REPL command dispatch, and
+terminal cancellation flow; then add stable status/mode/review/retry behavior and explicit-auto
+refusal without introducing a worker or natural-language acceptance.
 
 ## Blockers
 
@@ -81,6 +81,10 @@ adopted into version control.
   feasible suggestion; all feasible findings were independently fixed once. The final gate passed
   785 tests, 2 skips, 1 deselected, plus Ruff, compileall, CLI help, and diff check. Local `main`
   is fast-forwarded to `613ffdb`; the S53 topic branch is retired.
+- S54.1 is complete: `ModelLearningReviewer` now uses explicit no-tool messages, bounded request/
+  response budgets, one total deadline with at most one repair, strict candidate/evidence checks,
+  sanitized provider errors, active-provider composition, and bounded repair metadata in results/
+  events. The full offline gate passed 790 tests, 2 skips, 1 deselected; the checkpoint is `c955bbc`.
 - S52 is complete: prepared configuration revisions/digests, YAML promotion Saga, Preference/
   Profile whitelist, foreground recovery, activation provenance/undo, Session projection updates,
   recoverable after-state finalization, explicit REPL global scope, and activation memory events.
