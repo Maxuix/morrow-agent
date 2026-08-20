@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator, Iterable
+from collections.abc import AsyncIterator, Iterable, Sequence
 from datetime import UTC, datetime
 
+from morrow.core.learning import CandidateDraftBatch
+from morrow.core.learning_ports import LearningContext
 from morrow.core.models import (
     AssistantMessage,
     FinishReason,
@@ -62,6 +64,40 @@ class FixedIdSource:
     def new_id(self, prefix: str) -> str:
         self.counts[prefix] = self.counts.get(prefix, 0) + 1
         return f"{prefix}_{self.counts[prefix]}"
+
+
+class FixedLearningClock(FixedClock):
+    """Named clock fixture for deterministic Learning tests."""
+
+
+class FixedLearningIdSource(FixedIdSource):
+    """Named ID fixture that shares the normal deterministic prefix contract."""
+
+
+class ScriptedLearningReviewer:
+    """Test-only no-tool Reviewer; never imported by production composition."""
+
+    def __init__(self, responses: Sequence[CandidateDraftBatch | BaseException] = ()) -> None:
+        self.responses = list(responses)
+        self.calls: list[LearningContext] = []
+        self._index = 0
+
+    async def review(
+        self,
+        context: LearningContext,
+        *,
+        model: ModelRef,
+        timeout_seconds: float,
+    ) -> CandidateDraftBatch:
+        del model, timeout_seconds
+        self.calls.append(context)
+        if not self.responses:
+            return CandidateDraftBatch()
+        response = self.responses[min(self._index, len(self.responses) - 1)]
+        self._index += 1
+        if isinstance(response, BaseException):
+            raise response
+        return response
 
 
 def seed_user_turn(session, content, *, assistant=None, finish=None) -> None:

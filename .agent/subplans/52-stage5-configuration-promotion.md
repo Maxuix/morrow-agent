@@ -36,6 +36,7 @@ PreparedConfigurationChange
 ```python
 def prepare(command: ConfigurationCommand) -> PreparedConfigurationChange: ...
 
+
 def apply_prepared(
     prepared: PreparedConfigurationChange,
     *,

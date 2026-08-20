@@ -1,8 +1,7 @@
 # Subplans
 
 Stage 4 and the Pre-Stage 5 boundary refactor are complete. The user authorized the Stage 5 master
-plan on 2026-08-20. Subplan 49 is ready to start; no Stage 5 production implementation task has
-started yet.
+plan on 2026-08-20. Subplan 49 is verified; Subplan 50 is the next authorized implementation slice.
 
 Subplan 35 and the conditional review remediation were accepted on 2026-08-19 and preserved in Git
 history at `20fb43e`; its retired task file is no longer kept in the active subplan directory.
@@ -22,7 +21,7 @@ history at `20fb43e`; its retired task file is no longer kept in the active subp
 | 46 | `46-stage4-boundary-refactor.md` | completed |
 | 47 | `47-stage4-real-user-remediation.md` | completed |
 | 48 | `48-pre-stage5-boundary-refactor.md` | completed |
-| 49 | `49-stage5-learning-foundation.md` | ready |
+| 49 | `49-stage5-learning-foundation.md` | completed |
 | 50 | `50-stage5-review-pipeline.md` | planned |
 | 51 | `51-stage5-inbox-project-knowledge.md` | planned |
 | 52 | `52-stage5-configuration-promotion.md` | planned |

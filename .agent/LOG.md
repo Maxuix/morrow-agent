@@ -1480,3 +1480,25 @@
   Subplan 49–54 execution sequence.
 - At the planning baseline `main` and `origin/main` are synchronized at `61f82f2`. The two untracked
   Stage 5 research documents remain preserved user files and were not adopted or modified.
+
+## 2026-08-21 — Subplan 49 Learning foundation verified
+
+- Implemented the governed Core Learning domain: `LearningPolicy`, `LearningReview`, typed Evidence,
+  discriminated Candidate payloads, deterministic fingerprints/confidence inputs, Suppression, and
+  fail-closed safety codes. Added narrow Learning/Reviewer ports, bounded `LearningContext`, and
+  deterministic no-tool test fixtures outside production composition.
+- Added checksummed Operational Store v10 migration and shared-backend SQLite repositories for policy,
+  reviews/evidence, candidates, links, and suppressions. Preserved YAML as the Profile/Preferences
+  Active authority; the application boundary exposes only `off` and `review_only`, with default
+  `review_only`, optimistic row versions, idempotent command receipts, and sanitized events.
+- Split the Learning adapter into bounded policy, review/evidence, candidate/suppression mixins plus a
+  small codec/composition module. Added architecture guards and migration, isolation, corruption,
+  lease, OCC, multibyte excerpt, and policy atomicity regressions.
+- The requested Grok `/review` completed after one permission-blocked attempt and one escalated run.
+  Grok identified one P0, two P1, and six P2 items; the feasible issues were independently verified
+  and fixed once: UTF-8 excerpt bounds, Candidate evidence-link OCC/ownership/terminal guards,
+  fingerprint binding, evidence/context budgets, payload shape/truncation, default-policy OCC token,
+  and the closed `source_kind` SQL constraint. No second review was run for this subplan.
+- Final validation: `707 passed, 2 skipped, 1 deselected` for `pytest -m 'not live'`; Ruff format/check,
+  compileall, `morrow --help`, and `git diff --check` passed. The two skips are nested macOS Seatbelt
+  tests unavailable inside the Codex sandbox.

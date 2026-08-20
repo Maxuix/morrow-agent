@@ -12,6 +12,7 @@ from morrow.application.api_recovery import RecoveryApplicationService
 from morrow.application.artifacts import ArtifactService
 from morrow.application.checkpoints import ContextCheckpointService, SessionForkService
 from morrow.application.cleanup import ArtifactCleanupService
+from morrow.application.learning.policy import LearningPolicyService, LearningPolicyStatus
 from morrow.application.recovery import RecoveryService
 from morrow.application.tasks import TaskService
 from morrow.application.turns import TurnSubmitResult
@@ -96,6 +97,7 @@ class OperationalApplicationService:
         )
         self._recovery_commands = RecoveryApplicationService(self.command_context)
         self._permission_commands = PermissionApplicationService(self.command_context)
+        self.learning_policy = LearningPolicyService(self.command_context)
 
     # Queries -----------------------------------------------------------------
 
@@ -240,6 +242,22 @@ class OperationalApplicationService:
         )
         next_cursor = events[-1].cursor if len(events) == limit else None
         return QueryPage(events, str(next_cursor) if next_cursor is not None else None)
+
+    def learning_policy_status(self) -> LearningPolicyStatus:
+        return self.learning_policy.get_status()
+
+    def set_learning_mode(
+        self,
+        mode,
+        *,
+        command_id: str | None = None,
+        expected_row_version: int | None = None,
+    ):
+        return self.learning_policy.set_mode(
+            mode,
+            command_id=command_id,
+            expected_row_version=expected_row_version,
+        )
 
     def cleanup_orphans(self, *, dry_run: bool = True):
         if self.artifacts is None:

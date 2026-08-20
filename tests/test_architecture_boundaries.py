@@ -340,3 +340,61 @@ def test_cli_uses_shared_operational_composition():
         "OperationalApplicationService(",
     ):
         assert constructor not in cli_source
+
+
+def _learning_python_files() -> tuple[Path, ...]:
+    root = SOURCE_ROOT / "application" / "learning"
+    return tuple(sorted(root.rglob("*.py"))) if root.exists() else ()
+
+
+def test_stage5_task_and_agent_boundaries_do_not_reach_learning_application():
+    for relative in ("application/tasks.py", "runtime/agent.py"):
+        path = SOURCE_ROOT / relative
+        imports = _imports(path)
+        violations = sorted(
+            module for module in imports if module.startswith("morrow.application.learning")
+        )
+        assert violations == [], relative
+
+
+def test_stage5_reviewer_adapter_has_no_runtime_or_context_ownership():
+    path = SOURCE_ROOT / "adapters/models/learning_reviewer.py"
+    if not path.exists():
+        return
+
+    forbidden = (
+        "morrow.runtime.tools",
+        "morrow.runtime.session",
+        "morrow.application.context",
+        "morrow.runtime.conversation",
+    )
+    violations = sorted(module for module in _imports(path) if module.startswith(forbidden))
+    assert violations == []
+
+
+def test_stage5_scripted_reviewer_stays_out_of_production_composition():
+    bootstrap = SOURCE_ROOT / "bootstrap.py"
+    assert "ScriptedLearningReviewer" not in bootstrap.read_text()
+
+
+def test_stage5_learning_ui_does_not_import_storage_or_configuration_adapters():
+    candidates = [
+        path for path in (SOURCE_ROOT / "interfaces").glob("*learning*.py") if path.is_file()
+    ]
+    candidates.extend(
+        path
+        for path in _learning_python_files()
+        if any(token in path.stem for token in ("command", "query", "ui", "cli"))
+    )
+    forbidden = ("morrow.adapters.state", "morrow.adapters.configuration")
+    for path in candidates:
+        violations = sorted(module for module in _imports(path) if module.startswith(forbidden))
+        assert violations == [], path.relative_to(SOURCE_ROOT)
+
+
+def test_stage5_only_promotion_may_depend_on_configuration_mutation():
+    for path in _learning_python_files():
+        imports = _imports(path)
+        if "morrow.application.configuration" not in imports:
+            continue
+        assert path.stem in {"promotion", "promotion_service"}, path.relative_to(SOURCE_ROOT)

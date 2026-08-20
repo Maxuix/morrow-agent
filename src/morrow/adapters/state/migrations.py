@@ -1,7 +1,8 @@
 """Ordered, checksummed Operational Store migrations.
 
-Production currently owns schema v1–v9. Version 9 adds run-bound capability
-grants and immutable permission snapshots without rewriting older evidence.
+Production currently owns schema v1–v10. Version 10 adds the governed Learning
+foundation without rewriting older evidence or creating a second configuration
+authority.
 """
 
 from __future__ import annotations
@@ -691,6 +692,326 @@ V9_STATEMENTS = (
 
 V9 = SchemaMigration(version=9, name=V9_NAME, statements=V9_STATEMENTS)
 
+V10_NAME = "learning_foundation"
+V10_STATEMENTS = (
+    """
+    CREATE TABLE learning_policies (
+        workspace_id TEXT PRIMARY KEY,
+        mode TEXT NOT NULL CHECK (mode IN ('off', 'review_only')),
+        candidate_ttl_days INTEGER NOT NULL CHECK (candidate_ttl_days BETWEEN 1 AND 365),
+        max_candidates_per_review INTEGER NOT NULL CHECK (
+            max_candidates_per_review BETWEEN 1 AND 3
+        ),
+        max_evidence_per_review INTEGER NOT NULL CHECK (
+            max_evidence_per_review BETWEEN 1 AND 32
+        ),
+        row_version INTEGER NOT NULL CHECK (row_version >= 1),
+        created_at_unix INTEGER NOT NULL,
+        updated_at_unix INTEGER NOT NULL,
+        CHECK (updated_at_unix >= created_at_unix)
+    )
+    """,
+    """
+    CREATE TABLE learning_reviews (
+        review_id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        task_run_id TEXT NOT NULL REFERENCES task_runs(task_run_id),
+        task_outcome_id TEXT NOT NULL REFERENCES task_outcomes(outcome_id),
+        review_version INTEGER NOT NULL CHECK (review_version >= 1),
+        trigger TEXT NOT NULL CHECK (trigger IN ('task_accepted', 'explicit_request')),
+        status TEXT NOT NULL CHECK (
+            status IN ('pending', 'running', 'completed', 'failed', 'superseded')
+        ),
+        policy_snapshot_json TEXT NOT NULL,
+        policy_snapshot_bytes INTEGER NOT NULL CHECK (
+            policy_snapshot_bytes BETWEEN 1 AND 8192
+        ),
+        policy_digest TEXT NOT NULL CHECK (length(policy_digest) = 64),
+        reviewer_provider_id TEXT,
+        reviewer_model_id TEXT,
+        reviewer_prompt_version TEXT NOT NULL,
+        reviewer_schema_version TEXT NOT NULL,
+        supersedes_review_id TEXT REFERENCES learning_reviews(review_id),
+        lease_id TEXT UNIQUE,
+        lease_expires_at_unix INTEGER,
+        attempt_count INTEGER NOT NULL CHECK (attempt_count BETWEEN 0 AND 32),
+        row_version INTEGER NOT NULL CHECK (row_version >= 1),
+        created_at_unix INTEGER NOT NULL,
+        started_at_unix INTEGER,
+        completed_at_unix INTEGER,
+        failure_code TEXT CHECK (
+            failure_code IS NULL OR failure_code IN (
+                'provider_unavailable', 'timeout', 'invalid_output',
+                'safety_rejected', 'lease_lost', 'cancelled', 'internal'
+            )
+        ),
+        UNIQUE (workspace_id, task_outcome_id, review_version),
+        CHECK (status != 'running' OR (lease_id IS NOT NULL AND lease_expires_at_unix IS NOT NULL)),
+        CHECK (status != 'failed' OR failure_code IS NOT NULL),
+        CHECK (status = 'failed' OR failure_code IS NULL),
+        CHECK (completed_at_unix IS NULL OR completed_at_unix >= created_at_unix)
+    )
+    """,
+    """
+    CREATE INDEX learning_reviews_workspace_status
+        ON learning_reviews(workspace_id, status, created_at_unix, review_id)
+    """,
+    """
+    CREATE INDEX learning_reviews_outcome
+        ON learning_reviews(workspace_id, task_outcome_id, review_version)
+    """,
+    """
+    CREATE INDEX learning_reviews_lease
+        ON learning_reviews(workspace_id, status, lease_expires_at_unix)
+    """,
+    """
+    CREATE TABLE learning_evidence (
+        evidence_id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        origin_review_id TEXT NOT NULL REFERENCES learning_reviews(review_id),
+        task_run_id TEXT NOT NULL REFERENCES task_runs(task_run_id),
+        source_kind TEXT NOT NULL CHECK (source_kind IN (
+            'user_turn', 'task_transition', 'task_outcome', 'artifact',
+            'tool_execution', 'configuration', 'candidate_decision', 'system'
+        )),
+        source_id TEXT NOT NULL,
+        source_pointer TEXT NOT NULL DEFAULT '',
+        actor TEXT NOT NULL CHECK (actor IN ('user', 'assistant', 'tool', 'system')),
+        authority TEXT NOT NULL CHECK (authority IN (
+            'user_explicit_persistent', 'user_correction', 'user_acceptance',
+            'configuration_change', 'deterministic_task_fact',
+            'deterministic_artifact_fact', 'behavioral_signal',
+            'untrusted_external_content'
+        )),
+        explicitness TEXT NOT NULL CHECK (
+            explicitness IN ('explicit', 'behavioral', 'inferred')
+        ),
+        polarity TEXT NOT NULL CHECK (polarity IN ('positive', 'negative', 'neutral')),
+        scope_hint TEXT CHECK (
+            scope_hint IS NULL OR scope_hint IN ('global', 'workspace', 'session', 'task')
+        ),
+        excerpt_redacted TEXT,
+        excerpt_bytes INTEGER NOT NULL CHECK (excerpt_bytes BETWEEN 0 AND 2048),
+        content_digest TEXT NOT NULL CHECK (length(content_digest) = 64),
+        safety_rejection_code TEXT CHECK (
+            safety_rejection_code IS NULL OR safety_rejection_code IN (
+                'secret_material', 'prohibited_personal_data',
+                'hidden_unicode_control', 'capability_authorization',
+                'prompt_injection'
+            )
+        ),
+        observed_at_unix INTEGER NOT NULL,
+        created_at_unix INTEGER NOT NULL,
+        UNIQUE (workspace_id, source_kind, source_id, source_pointer),
+        CHECK ((safety_rejection_code IS NULL) OR excerpt_redacted IS NULL),
+        CHECK (excerpt_redacted IS NULL OR length(excerpt_redacted) <= 512)
+    )
+    """,
+    """
+    CREATE INDEX learning_evidence_workspace_source
+        ON learning_evidence(workspace_id, source_kind, source_id, created_at_unix)
+    """,
+    """
+    CREATE INDEX learning_evidence_workspace_authority
+        ON learning_evidence(workspace_id, authority, created_at_unix)
+    """,
+    """
+    CREATE TABLE learning_review_evidence (
+        workspace_id TEXT NOT NULL,
+        review_id TEXT NOT NULL REFERENCES learning_reviews(review_id),
+        evidence_id TEXT NOT NULL REFERENCES learning_evidence(evidence_id),
+        PRIMARY KEY (review_id, evidence_id)
+    )
+    """,
+    """
+    CREATE INDEX learning_review_evidence_workspace
+        ON learning_review_evidence(workspace_id, review_id, evidence_id)
+    """,
+    """
+    CREATE TABLE learning_candidates (
+        candidate_id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        origin_review_id TEXT NOT NULL REFERENCES learning_reviews(review_id),
+        candidate_type TEXT NOT NULL CHECK (candidate_type IN (
+            'preference', 'profile', 'project_knowledge', 'skill_candidate',
+            'workflow_feedback', 'orchestration_policy_candidate'
+        )),
+        operation TEXT NOT NULL CHECK (operation IN ('set', 'append', 'replace', 'remove')),
+        semantic_key TEXT NOT NULL,
+        proposed_scope TEXT NOT NULL CHECK (
+            proposed_scope IN ('global', 'workspace', 'session', 'task')
+        ),
+        proposed_payload_json TEXT NOT NULL,
+        proposed_payload_bytes INTEGER NOT NULL CHECK (
+            proposed_payload_bytes BETWEEN 1 AND 8192
+        ),
+        fingerprint TEXT NOT NULL CHECK (length(fingerprint) = 64),
+        status TEXT NOT NULL CHECK (status IN (
+            'proposed', 'promoting', 'accepted', 'edited_and_accepted',
+            'rejected', 'expired', 'superseded'
+        )),
+        evidence_ids_json TEXT NOT NULL,
+        confidence_band TEXT NOT NULL CHECK (confidence_band IN ('low', 'medium', 'high')),
+        confidence_basis_json TEXT NOT NULL,
+        sensitivity TEXT NOT NULL CHECK (
+            sensitivity IN ('normal', 'personal', 'sensitive', 'prohibited')
+        ),
+        expected_target_revision INTEGER CHECK (expected_target_revision IS NULL OR expected_target_revision >= 1),
+        duplicate_of_id TEXT REFERENCES learning_candidates(candidate_id),
+        supersedes_id TEXT REFERENCES learning_candidates(candidate_id),
+        conflict_refs_json TEXT NOT NULL,
+        expires_at_unix INTEGER NOT NULL,
+        row_version INTEGER NOT NULL CHECK (row_version >= 1),
+        created_at_unix INTEGER NOT NULL,
+        resolved_at_unix INTEGER,
+        resolved_by TEXT CHECK (resolved_by IS NULL OR resolved_by IN ('user', 'policy')),
+        rejection_reason TEXT,
+        CHECK (resolved_at_unix IS NULL OR resolved_at_unix >= created_at_unix),
+        CHECK (status IN ('proposed', 'promoting') OR resolved_at_unix IS NOT NULL),
+        CHECK (status IN ('proposed', 'promoting') OR resolved_by IS NOT NULL)
+    )
+    """,
+    """
+    CREATE INDEX learning_candidates_workspace_status
+        ON learning_candidates(workspace_id, status, expires_at_unix, candidate_id)
+    """,
+    """
+    CREATE INDEX learning_candidates_workspace_review
+        ON learning_candidates(workspace_id, origin_review_id, created_at_unix, candidate_id)
+    """,
+    """
+    CREATE UNIQUE INDEX learning_candidates_active_fingerprint
+        ON learning_candidates(workspace_id, fingerprint)
+        WHERE status IN ('proposed', 'promoting')
+    """,
+    """
+    CREATE TABLE learning_candidate_evidence (
+        workspace_id TEXT NOT NULL,
+        candidate_id TEXT NOT NULL REFERENCES learning_candidates(candidate_id),
+        evidence_id TEXT NOT NULL REFERENCES learning_evidence(evidence_id),
+        PRIMARY KEY (candidate_id, evidence_id)
+    )
+    """,
+    """
+    CREATE INDEX learning_candidate_evidence_workspace
+        ON learning_candidate_evidence(workspace_id, candidate_id, evidence_id)
+    """,
+    """
+    CREATE TABLE learning_suppressions (
+        suppression_id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        candidate_type TEXT NOT NULL CHECK (candidate_type IN (
+            'preference', 'profile', 'project_knowledge', 'skill_candidate',
+            'workflow_feedback', 'orchestration_policy_candidate'
+        )),
+        scope TEXT NOT NULL CHECK (scope IN ('global', 'workspace', 'session', 'task')),
+        semantic_key TEXT,
+        fingerprint TEXT CHECK (fingerprint IS NULL OR length(fingerprint) = 64),
+        source_candidate_id TEXT REFERENCES learning_candidates(candidate_id),
+        reason TEXT NOT NULL CHECK (length(reason) BETWEEN 1 AND 256),
+        status TEXT NOT NULL CHECK (status IN ('active', 'disabled', 'expired')),
+        expires_at_unix INTEGER,
+        row_version INTEGER NOT NULL CHECK (row_version >= 1),
+        created_at_unix INTEGER NOT NULL,
+        updated_at_unix INTEGER NOT NULL,
+        CHECK (semantic_key IS NOT NULL OR fingerprint IS NOT NULL),
+        CHECK (updated_at_unix >= created_at_unix)
+    )
+    """,
+    """
+    CREATE INDEX learning_suppressions_lookup
+        ON learning_suppressions(
+            workspace_id, candidate_type, scope, semantic_key, fingerprint, status
+        )
+    """,
+    """
+    CREATE UNIQUE INDEX learning_suppressions_active_identity
+        ON learning_suppressions(
+            workspace_id, candidate_type, scope,
+            COALESCE(semantic_key, ''), COALESCE(fingerprint, '')
+        )
+        WHERE status = 'active'
+    """,
+    """
+    CREATE TRIGGER learning_reviews_workspace_guard_insert
+    BEFORE INSERT ON learning_reviews
+    BEGIN
+        SELECT CASE WHEN EXISTS (
+            SELECT 1 FROM task_runs t
+            WHERE t.task_run_id = NEW.task_run_id AND t.workspace_id != NEW.workspace_id
+        ) THEN RAISE(ABORT, 'learning workspace mismatch') END;
+        SELECT CASE WHEN EXISTS (
+            SELECT 1 FROM task_outcomes o
+            WHERE o.outcome_id = NEW.task_outcome_id AND o.workspace_id != NEW.workspace_id
+        ) THEN RAISE(ABORT, 'learning workspace mismatch') END;
+    END
+    """,
+    """
+    CREATE TRIGGER learning_reviews_workspace_guard_update
+    BEFORE UPDATE OF workspace_id, task_run_id, task_outcome_id ON learning_reviews
+    BEGIN
+        SELECT CASE WHEN EXISTS (
+            SELECT 1 FROM task_runs t
+            WHERE t.task_run_id = NEW.task_run_id AND t.workspace_id != NEW.workspace_id
+        ) THEN RAISE(ABORT, 'learning workspace mismatch') END;
+        SELECT CASE WHEN EXISTS (
+            SELECT 1 FROM task_outcomes o
+            WHERE o.outcome_id = NEW.task_outcome_id AND o.workspace_id != NEW.workspace_id
+        ) THEN RAISE(ABORT, 'learning workspace mismatch') END;
+    END
+    """,
+    """
+    CREATE TRIGGER learning_evidence_workspace_guard_insert
+    BEFORE INSERT ON learning_evidence
+    BEGIN
+        SELECT CASE WHEN EXISTS (
+            SELECT 1 FROM learning_reviews r
+            WHERE r.review_id = NEW.origin_review_id AND r.workspace_id != NEW.workspace_id
+        ) THEN RAISE(ABORT, 'learning workspace mismatch') END;
+        SELECT CASE WHEN EXISTS (
+            SELECT 1 FROM task_runs t
+            WHERE t.task_run_id = NEW.task_run_id AND t.workspace_id != NEW.workspace_id
+        ) THEN RAISE(ABORT, 'learning workspace mismatch') END;
+    END
+    """,
+    """
+    CREATE TRIGGER learning_review_evidence_workspace_guard_insert
+    BEFORE INSERT ON learning_review_evidence
+    BEGIN
+        SELECT CASE WHEN EXISTS (
+            SELECT 1 FROM learning_reviews r
+            JOIN learning_evidence e ON e.evidence_id = NEW.evidence_id
+            WHERE r.review_id = NEW.review_id
+              AND (r.workspace_id != NEW.workspace_id OR e.workspace_id != NEW.workspace_id)
+        ) THEN RAISE(ABORT, 'learning workspace mismatch') END;
+    END
+    """,
+    """
+    CREATE TRIGGER learning_candidate_workspace_guard_insert
+    BEFORE INSERT ON learning_candidates
+    BEGIN
+        SELECT CASE WHEN EXISTS (
+            SELECT 1 FROM learning_reviews r
+            WHERE r.review_id = NEW.origin_review_id AND r.workspace_id != NEW.workspace_id
+        ) THEN RAISE(ABORT, 'learning workspace mismatch') END;
+    END
+    """,
+    """
+    CREATE TRIGGER learning_candidate_evidence_workspace_guard_insert
+    BEFORE INSERT ON learning_candidate_evidence
+    BEGIN
+        SELECT CASE WHEN EXISTS (
+            SELECT 1 FROM learning_candidates c
+            JOIN learning_evidence e ON e.evidence_id = NEW.evidence_id
+            WHERE c.candidate_id = NEW.candidate_id
+              AND (c.workspace_id != NEW.workspace_id OR e.workspace_id != NEW.workspace_id)
+        ) THEN RAISE(ABORT, 'learning workspace mismatch') END;
+    END
+    """,
+)
+
+V10 = SchemaMigration(version=10, name=V10_NAME, statements=V10_STATEMENTS)
+
 
 class MigrationRegistry:
     def __init__(self, *, supported_version: int = SUPPORTED_SCHEMA_VERSION) -> None:
@@ -754,6 +1075,7 @@ def production_registry() -> MigrationRegistry:
     registry.add(V7)
     registry.add(V8)
     registry.add(V9)
+    registry.add(V10)
     return registry
 
 

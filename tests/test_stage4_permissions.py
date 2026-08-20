@@ -249,7 +249,7 @@ def test_v9_schema_keeps_old_tables_and_adds_permission_evidence_tables(tmp_path
     )
     session = store.initialize()
     try:
-        assert session.schema_version == SUPPORTED_SCHEMA_VERSION == 9
+        assert session.schema_version == SUPPORTED_SCHEMA_VERSION == 10
         rows = session.run_read(
             lambda executor: executor.execute(
                 "SELECT name FROM sqlite_master WHERE type = 'table' "

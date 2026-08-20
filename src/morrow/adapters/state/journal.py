@@ -9,6 +9,7 @@ from morrow.adapters.state.application_journal import SqliteApplicationJournal
 from morrow.adapters.state.artifact_journal import SqliteArtifactJournal
 from morrow.adapters.state.context_journal import SqliteContextJournal
 from morrow.adapters.state.conversation_journal import SqliteConversationJournal
+from morrow.adapters.state.learning_journal import SqliteLearningJournal
 from morrow.adapters.state.operational import OperationalStoreSession, SqliteExecutor
 from morrow.adapters.state.permission_journal import SqliteRunPermissionJournal
 from morrow.adapters.state.recovery_journal import SqliteRecoveryJournal
@@ -46,6 +47,16 @@ from morrow.core.domain import (
 from morrow.core.execution import (
     DurableApproval,
     DurableToolExecution,
+)
+from morrow.core.learning import (
+    LearningCandidate,
+    LearningCandidateStatus,
+    LearningEvidence,
+    LearningPolicy,
+    LearningReview,
+    LearningReviewStatus,
+    LearningScope,
+    LearningSuppression,
 )
 from morrow.core.permissions import (
     CapabilityGrant,
@@ -133,6 +144,7 @@ class SqliteOperationalJournal:
             validate_artifact_refs=self._validate_artifact_refs,
             replace_artifact_refs=self._replace_artifact_references,
         )
+        self._learning_journal = SqliteLearningJournal(self._backend)
 
     def now(self) -> datetime:
         return self._backend.now()
@@ -153,6 +165,197 @@ class SqliteOperationalJournal:
         """Run a non-replayable journal transaction for filesystem-coupled maintenance."""
 
         return self._backend.transact(lambda: work(self), replayable=False)
+
+    def get_learning_policy(self, workspace_id: str) -> LearningPolicy | None:
+        return self._learning_journal.get_learning_policy(workspace_id)
+
+    def get_effective_learning_policy(self, workspace_id: str) -> LearningPolicy:
+        return self._learning_journal.get_effective_learning_policy(workspace_id)
+
+    def save_learning_policy(
+        self,
+        workspace_id: str,
+        policy: LearningPolicy,
+        *,
+        expected_row_version: int | None,
+    ) -> LearningPolicy:
+        return self._learning_journal.save_learning_policy(
+            workspace_id, policy, expected_row_version=expected_row_version
+        )
+
+    def put_learning_review(self, workspace_id: str, review: LearningReview) -> LearningReview:
+        return self._learning_journal.put_learning_review(workspace_id, review)
+
+    def get_learning_review(self, workspace_id: str, review_id: str) -> LearningReview | None:
+        return self._learning_journal.get_learning_review(workspace_id, review_id)
+
+    def list_learning_reviews(
+        self,
+        workspace_id: str,
+        *,
+        status: LearningReviewStatus | None = None,
+        task_outcome_id: str | None = None,
+        limit: int = 100,
+    ) -> tuple[LearningReview, ...]:
+        return self._learning_journal.list_learning_reviews(
+            workspace_id, status=status, task_outcome_id=task_outcome_id, limit=limit
+        )
+
+    def save_learning_review(
+        self,
+        workspace_id: str,
+        review: LearningReview,
+        *,
+        expected_row_version: int,
+    ) -> LearningReview:
+        return self._learning_journal.save_learning_review(
+            workspace_id, review, expected_row_version=expected_row_version
+        )
+
+    def claim_learning_review(
+        self,
+        workspace_id: str,
+        review_id: str,
+        *,
+        expected_row_version: int,
+        lease_id: str,
+        lease_expires_at: datetime,
+        started_at: datetime,
+    ) -> LearningReview:
+        return self._learning_journal.claim_learning_review(
+            workspace_id,
+            review_id,
+            expected_row_version=expected_row_version,
+            lease_id=lease_id,
+            lease_expires_at=lease_expires_at,
+            started_at=started_at,
+        )
+
+    def put_learning_evidence(
+        self, workspace_id: str, evidence: LearningEvidence
+    ) -> LearningEvidence:
+        return self._learning_journal.put_learning_evidence(workspace_id, evidence)
+
+    def get_learning_evidence(self, workspace_id: str, evidence_id: str) -> LearningEvidence | None:
+        return self._learning_journal.get_learning_evidence(workspace_id, evidence_id)
+
+    def list_learning_evidence(
+        self,
+        workspace_id: str,
+        *,
+        review_id: str | None = None,
+        task_run_id: str | None = None,
+        limit: int = 100,
+    ) -> tuple[LearningEvidence, ...]:
+        return self._learning_journal.list_learning_evidence(
+            workspace_id, review_id=review_id, task_run_id=task_run_id, limit=limit
+        )
+
+    def link_learning_review_evidence(
+        self, workspace_id: str, review_id: str, evidence_id: str
+    ) -> None:
+        self._learning_journal.link_learning_review_evidence(workspace_id, review_id, evidence_id)
+
+    def list_learning_review_evidence(
+        self, workspace_id: str, review_id: str
+    ) -> tuple[LearningEvidence, ...]:
+        return self._learning_journal.list_learning_review_evidence(workspace_id, review_id)
+
+    def put_learning_candidate(
+        self, workspace_id: str, candidate: LearningCandidate
+    ) -> LearningCandidate:
+        return self._learning_journal.put_learning_candidate(workspace_id, candidate)
+
+    def get_learning_candidate(
+        self, workspace_id: str, candidate_id: str
+    ) -> LearningCandidate | None:
+        return self._learning_journal.get_learning_candidate(workspace_id, candidate_id)
+
+    def list_learning_candidates(
+        self,
+        workspace_id: str,
+        *,
+        status: LearningCandidateStatus | None = None,
+        fingerprint: str | None = None,
+        semantic_key: str | None = None,
+        limit: int = 100,
+    ) -> tuple[LearningCandidate, ...]:
+        return self._learning_journal.list_learning_candidates(
+            workspace_id,
+            status=status,
+            fingerprint=fingerprint,
+            semantic_key=semantic_key,
+            limit=limit,
+        )
+
+    def save_learning_candidate(
+        self,
+        workspace_id: str,
+        candidate: LearningCandidate,
+        *,
+        expected_row_version: int,
+    ) -> LearningCandidate:
+        return self._learning_journal.save_learning_candidate(
+            workspace_id, candidate, expected_row_version=expected_row_version
+        )
+
+    def link_learning_candidate_evidence(
+        self,
+        workspace_id: str,
+        candidate_id: str,
+        evidence_id: str,
+        *,
+        expected_row_version: int,
+    ) -> LearningCandidate:
+        return self._learning_journal.link_learning_candidate_evidence(
+            workspace_id,
+            candidate_id,
+            evidence_id,
+            expected_row_version=expected_row_version,
+        )
+
+    def list_learning_candidate_evidence(
+        self, workspace_id: str, candidate_id: str
+    ) -> tuple[LearningEvidence, ...]:
+        return self._learning_journal.list_learning_candidate_evidence(workspace_id, candidate_id)
+
+    def put_learning_suppression(
+        self, workspace_id: str, suppression: LearningSuppression
+    ) -> LearningSuppression:
+        return self._learning_journal.put_learning_suppression(workspace_id, suppression)
+
+    def get_learning_suppression(
+        self, workspace_id: str, suppression_id: str
+    ) -> LearningSuppression | None:
+        return self._learning_journal.get_learning_suppression(workspace_id, suppression_id)
+
+    def list_learning_suppressions(
+        self,
+        workspace_id: str,
+        *,
+        candidate_type: str | None = None,
+        scope: LearningScope | None = None,
+        semantic_key: str | None = None,
+        limit: int = 100,
+    ) -> tuple[LearningSuppression, ...]:
+        return self._learning_journal.list_learning_suppressions(
+            workspace_id,
+            candidate_type=candidate_type,
+            scope=scope,
+            semantic_key=semantic_key,
+            limit=limit,
+        )
+
+    def save_learning_suppression(
+        self,
+        workspace_id: str,
+        suppression: LearningSuppression,
+        *,
+        expected_row_version: int,
+    ) -> LearningSuppression:
+        return self._learning_journal.save_learning_suppression(
+            workspace_id, suppression, expected_row_version=expected_row_version
+        )
 
     def create_session(
         self, session: DurableSession, *, task: DurableTaskRun | None = None
