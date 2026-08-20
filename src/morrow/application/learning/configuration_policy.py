@@ -16,9 +16,9 @@ from morrow.core.learning import (
     LearningCandidateOperation,
     LearningCandidateStatus,
     LearningCandidateType,
-    LearningEvidenceAuthority,
     LearningScope,
     LearningSensitivity,
+    is_positive_explicit_user_evidence,
 )
 from morrow.core.learning_payloads import (
     CandidatePayload,
@@ -70,10 +70,7 @@ class ConfigurationPromotionPolicyMixin:
         if candidate.candidate_type in {
             LearningCandidateType.PREFERENCE,
             LearningCandidateType.PROFILE,
-        } and not any(
-            item.authority is LearningEvidenceAuthority.USER_EXPLICIT_PERSISTENT
-            for item in evidence
-        ):
+        } and not any(is_positive_explicit_user_evidence(item) for item in evidence):
             raise ApplicationError(
                 ApplicationErrorCode.INVALID,
                 "Preference/Profile 变更需要明确的用户证据",

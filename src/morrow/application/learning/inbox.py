@@ -21,10 +21,10 @@ from morrow.core.learning import (
     LearningCandidateOperation,
     LearningCandidateStatus,
     LearningCandidateType,
-    LearningEvidenceAuthority,
     LearningReview,
     LearningReviewStatus,
     LearningScope,
+    is_positive_explicit_user_evidence,
 )
 from morrow.core.learning_commands import ExpireLearningCandidatesCommand
 from morrow.core.learning_memory import (
@@ -616,10 +616,7 @@ class LearningApplicationService:
                 (),
                 self._preview_value(candidate, payload, scope, candidate.semantic_key),
             )
-        if not any(
-            item.authority is LearningEvidenceAuthority.USER_EXPLICIT_PERSISTENT
-            for item in evidence
-        ):
+        if not any(is_positive_explicit_user_evidence(item) for item in evidence):
             return (
                 None,
                 False,

@@ -37,6 +37,43 @@ _PERSISTENT_MARKERS = (
     "from now",
     "remember",
 )
+_NEGATIVE_MARKERS = (
+    "不要记住",
+    "不要保存",
+    "不要默认",
+    "不要总是",
+    "不必记住",
+    "不必保存",
+    "do not remember",
+    "don't remember",
+    "do not save",
+    "don't save",
+    "do not always",
+    "don't always",
+)
+_NON_DURABLE_MARKERS = (
+    "这次",
+    "本次",
+    "临时",
+    "暂时",
+    "仅在这次",
+    "for this answer",
+    "just this time",
+)
+_UNTRUSTED_CONTEXT_MARKERS = (
+    "示例",
+    "例如",
+    "文档中",
+    "文档示例",
+    "引用",
+    "他说",
+    "假设",
+    "如果",
+    "example",
+    "quoted",
+    "hypothetical",
+    "suppose",
+)
 
 _CONTEXT_MAX_EVIDENCE_ITEMS = 8
 _CONTEXT_MAX_SUPPRESSION_ITEMS = 8
@@ -89,7 +126,7 @@ class LearningEvidenceExtractor:
                 content = record.payload.get("content")
                 if not isinstance(content, str) or not content.strip():
                     continue
-                persistent = self._looks_persistent(content)
+                authority, explicitness, polarity = self._classify_user_text(content)
                 evidence.append(
                     self._text_evidence(
                         review,
@@ -99,17 +136,9 @@ class LearningEvidenceExtractor:
                         source_pointer=f"{record.record_id}:{review.review_id}",
                         text=content,
                         actor=LearningEvidenceActor.USER,
-                        authority=(
-                            LearningEvidenceAuthority.USER_EXPLICIT_PERSISTENT
-                            if persistent
-                            else LearningEvidenceAuthority.BEHAVIORAL_SIGNAL
-                        ),
-                        explicitness=(
-                            LearningEvidenceExplicitness.EXPLICIT
-                            if persistent
-                            else LearningEvidenceExplicitness.BEHAVIORAL
-                        ),
-                        polarity=LearningEvidencePolarity.NEUTRAL,
+                        authority=authority,
+                        explicitness=explicitness,
+                        polarity=polarity,
                     )
                 )
 
@@ -225,9 +254,43 @@ class LearningEvidenceExtractor:
         )
 
     @staticmethod
-    def _looks_persistent(text: str) -> bool:
+    def _classify_user_text(
+        text: str,
+    ) -> tuple[
+        LearningEvidenceAuthority,
+        LearningEvidenceExplicitness,
+        LearningEvidencePolarity,
+    ]:
         lowered = text.casefold()
-        return any(marker.casefold() in lowered for marker in _PERSISTENT_MARKERS)
+        if any(marker.casefold() in lowered for marker in _NEGATIVE_MARKERS):
+            return (
+                LearningEvidenceAuthority.USER_EXPLICIT_PERSISTENT,
+                LearningEvidenceExplicitness.EXPLICIT,
+                LearningEvidencePolarity.NEGATIVE,
+            )
+        if any(marker.casefold() in lowered for marker in _NON_DURABLE_MARKERS):
+            return (
+                LearningEvidenceAuthority.BEHAVIORAL_SIGNAL,
+                LearningEvidenceExplicitness.BEHAVIORAL,
+                LearningEvidencePolarity.NEUTRAL,
+            )
+        if any(marker.casefold() in lowered for marker in _UNTRUSTED_CONTEXT_MARKERS):
+            return (
+                LearningEvidenceAuthority.UNTRUSTED_EXTERNAL_CONTENT,
+                LearningEvidenceExplicitness.INFERRED,
+                LearningEvidencePolarity.NEUTRAL,
+            )
+        if any(marker.casefold() in lowered for marker in _PERSISTENT_MARKERS):
+            return (
+                LearningEvidenceAuthority.USER_EXPLICIT_PERSISTENT,
+                LearningEvidenceExplicitness.EXPLICIT,
+                LearningEvidencePolarity.POSITIVE,
+            )
+        return (
+            LearningEvidenceAuthority.BEHAVIORAL_SIGNAL,
+            LearningEvidenceExplicitness.BEHAVIORAL,
+            LearningEvidencePolarity.NEUTRAL,
+        )
 
     @staticmethod
     def _task_segments(records, turn_count: int) -> tuple[tuple[object, ...], ...]:

@@ -21,6 +21,7 @@ from morrow.core.learning import (
     LearningReview,
     LearningSensitivity,
     LearningSuppressionStatus,
+    is_positive_explicit_user_evidence,
     scan_learning_text,
 )
 from morrow.core.ports import IdSource
@@ -241,13 +242,16 @@ class LearningCandidatePipeline:
             return None
         authorities = {item.authority for item in evidence}
         sources = {item.source_kind for item in evidence}
+        has_positive_explicit_evidence = any(
+            is_positive_explicit_user_evidence(item) for item in evidence
+        )
         if (
             draft.candidate_type
             in {
                 LearningCandidateType.PREFERENCE,
                 LearningCandidateType.PROFILE,
             }
-            and LearningEvidenceAuthority.USER_EXPLICIT_PERSISTENT not in authorities
+            and not has_positive_explicit_evidence
         ):
             return None
         if draft.candidate_type is LearningCandidateType.PROJECT_KNOWLEDGE and not (
@@ -274,7 +278,7 @@ class LearningCandidatePipeline:
             LearningCandidateType.ORCHESTRATION_POLICY_CANDIDATE,
         }:
             return None
-        if LearningEvidenceAuthority.USER_EXPLICIT_PERSISTENT in authorities:
+        if has_positive_explicit_evidence:
             confidence = LearningConfidenceBand.HIGH
             basis = ("explicit_user_evidence",)
         elif LearningEvidenceAuthority.DETERMINISTIC_TASK_FACT in authorities:
@@ -294,8 +298,7 @@ class LearningCandidatePipeline:
         old = txn.list_learning_candidate_evidence(self.workspace_id, candidate.candidate_id)
         old_digests = {item.content_digest for item in old}
         return any(
-            item.authority is LearningEvidenceAuthority.USER_EXPLICIT_PERSISTENT
-            and item.content_digest not in old_digests
+            is_positive_explicit_user_evidence(item) and item.content_digest not in old_digests
             for evidence_id in evidence_ids
             for item in (evidence_by_id[evidence_id],)
         )

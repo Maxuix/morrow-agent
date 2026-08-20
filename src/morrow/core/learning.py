@@ -451,6 +451,18 @@ class LearningEvidence(ProtocolModel):
         return self
 
 
+def is_positive_explicit_user_evidence(evidence: LearningEvidence) -> bool:
+    """Return whether evidence is sufficient for a durable Preference/Profile write."""
+
+    return (
+        evidence.authority is LearningEvidenceAuthority.USER_EXPLICIT_PERSISTENT
+        and evidence.explicitness is LearningEvidenceExplicitness.EXPLICIT
+        and evidence.polarity is LearningEvidencePolarity.POSITIVE
+        and evidence.actor is LearningEvidenceActor.USER
+        and evidence.safety_rejection_code is None
+    )
+
+
 class LearningCandidate(ProtocolModel):
     candidate_id: str
     workspace_id: str
@@ -692,6 +704,7 @@ __all__ = [
     "LearningEvidenceAuthority",
     "LearningEvidenceExplicitness",
     "LearningEvidencePolarity",
+    "is_positive_explicit_user_evidence",
     "LearningEvidenceSourceKind",
     "LearningMode",
     "LearningPolicy",
