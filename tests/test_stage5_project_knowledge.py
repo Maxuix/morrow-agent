@@ -9,6 +9,7 @@ from morrow.core.domain import DurableConversationRecord, DurableTurn, TaskRunSt
 from morrow.core.learning import (
     CandidateDraftBatch,
     LearningCandidate,
+    LearningCandidateStatus,
     LearningCandidateType,
     LearningConfidenceBand,
     LearningSensitivity,
@@ -28,8 +29,10 @@ from morrow.core.learning_memory import (
 )
 from morrow.core.learning_payloads import (
     LearningCandidateDraft,
+    OrchestrationPolicyCandidatePayload,
     ProjectKnowledgeCandidatePayload,
     SkillCandidatePayload,
+    WorkflowFeedbackCandidatePayload,
 )
 from morrow.core.models import ModelRef
 from test_stage5_review_pipeline import NOW, _accepted, _api
@@ -456,6 +459,84 @@ async def test_project_knowledge_candidate_only_acceptance_has_no_active_side_ef
         assert journal.get_memory_workspace_state("ws_1") is None
         assert [event.event_type for event in journal.list_application_events("ws_1")][-1] == (
             "learning.candidate_accepted"
+        )
+    finally:
+        session.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("candidate_type", "semantic_key", "payload"),
+    (
+        (
+            LearningCandidateType.WORKFLOW_FEEDBACK,
+            "workflow.release_checks",
+            WorkflowFeedbackCandidatePayload(
+                workflow_name="release_checks",
+                edit_summary="Reordered the verification step.",
+                result_summary="The run completed with the expected checks.",
+            ),
+        ),
+        (
+            LearningCandidateType.ORCHESTRATION_POLICY_CANDIDATE,
+            "orchestration.release_checks",
+            OrchestrationPolicyCandidatePayload(
+                trigger="task.accepted",
+                workflow_name="release_checks",
+                rule_summary="Use the verification workflow for release tasks.",
+            ),
+        ),
+    ),
+)
+async def test_future_candidate_acceptance_remains_candidate_only(
+    tmp_path, candidate_type, semantic_key, payload
+):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    marker = workspace / "keep.txt"
+    marker.write_text("unchanged", encoding="utf-8")
+    session, journal, api = _api(tmp_path)
+    try:
+        accepted = _accepted(api, journal, with_user_turn=True)
+        outcome = api.list_outcomes(accepted.value.task_run_id)[0]
+        review = api.list_learning_reviews(task_outcome_id=outcome.outcome_id).items[0]
+        await api.run_learning_review(review.review_id)
+        evidence = journal.list_learning_review_evidence("ws_1", review.review_id)[0]
+        candidate = journal.put_learning_candidate(
+            "ws_1",
+            LearningCandidate.from_draft(
+                candidate_id=f"lcn_{candidate_type.value}",
+                workspace_id="ws_1",
+                origin_review_id=review.review_id,
+                draft=LearningCandidateDraft(
+                    candidate_type=candidate_type,
+                    operation="set",
+                    semantic_key=semantic_key,
+                    proposed_scope="workspace",
+                    proposed_payload=payload,
+                    evidence_ids=(evidence.evidence_id,),
+                    temporary_or_durable="durable",
+                ),
+                confidence_band=LearningConfidenceBand.MEDIUM,
+                confidence_basis=("manual_future_candidate_fixture",),
+                sensitivity=LearningSensitivity.NORMAL,
+                expires_at=NOW.replace(day=31),
+                now=NOW,
+            ),
+        )
+        view = api.get_learning_candidate_view(candidate.candidate_id)
+        assert view is not None
+
+        result = api.accept_learning_candidate(_accept_command(view, f"cmd_{candidate_type.value}"))
+
+        assert result.value.outcome == "candidate_only"
+        assert result.value.candidate.status is LearningCandidateStatus.ACCEPTED
+        assert journal.list_project_knowledge_heads("ws_1") == ()
+        assert journal.get_memory_workspace_state("ws_1") is None
+        assert marker.read_text(encoding="utf-8") == "unchanged"
+        assert not any(
+            event.event_type == "memory.record_activated"
+            for event in journal.list_application_events("ws_1")
         )
     finally:
         session.close()
