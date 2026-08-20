@@ -20,7 +20,7 @@ from morrow.core.learning import (
     LearningReviewFailureCode,
     LearningReviewStatus,
 )
-from morrow.core.learning_ports import LearningReviewerPort
+from morrow.core.learning_ports import LearningReviewerError, LearningReviewerPort
 from morrow.core.models import ModelRef, ProtocolModel
 from morrow.core.ports import IdSource
 from morrow.core.store import StorageError
@@ -34,6 +34,7 @@ class LearningReviewRunResult(ProtocolModel):
     duplicate_count: int = 0
     suppressed_count: int = 0
     rejected_count: int = 0
+    repair_used: bool = False
 
 
 class DeterministicLearningReviewer:
@@ -138,6 +139,12 @@ class LearningReviewRunner:
             return self._failed_result(claimed, LearningReviewFailureCode.TIMEOUT)
         except ValidationError:
             return self._failed_result(claimed, LearningReviewFailureCode.INVALID_OUTPUT)
+        except LearningReviewerError as exc:
+            failure = {
+                "timeout": LearningReviewFailureCode.TIMEOUT,
+                "invalid_response": LearningReviewFailureCode.INVALID_OUTPUT,
+            }.get(exc.code.value, LearningReviewFailureCode.PROVIDER_UNAVAILABLE)
+            return self._failed_result(claimed, failure)
         except ApplicationError:
             return self._failed_result(claimed, LearningReviewFailureCode.INTERNAL)
         except StorageError:
@@ -184,6 +191,12 @@ class LearningReviewRunner:
     def _record_reviewer(self, claimed: LearningReview) -> LearningReview:
         provider_id = str(getattr(self.model, "provider_id", "deterministic"))[:128]
         model_id = str(getattr(self.model, "model_id", "stage5-v1"))[:128]
+        prompt_version = str(
+            getattr(self.reviewer, "prompt_version", claimed.reviewer_prompt_version)
+        )[:64]
+        schema_version = str(
+            getattr(self.reviewer, "schema_version", claimed.reviewer_schema_version)
+        )[:64]
 
         def work(txn):
             current = txn.get_learning_review(self.workspace_id, claimed.review_id)
@@ -193,6 +206,8 @@ class LearningReviewRunner:
                 update={
                     "reviewer_provider_id": provider_id,
                     "reviewer_model_id": model_id,
+                    "reviewer_prompt_version": prompt_version,
+                    "reviewer_schema_version": schema_version,
                     "row_version": current.row_version + 1,
                 }
             )
@@ -286,6 +301,7 @@ class LearningReviewRunner:
                     "duplicate_count": pipeline.duplicate_count,
                     "suppressed_count": pipeline.suppressed_count,
                     "rejected_count": pipeline.rejected_count,
+                    "repair_used": self._repair_used(),
                 },
             )
             return LearningReviewRunResult(
@@ -294,6 +310,7 @@ class LearningReviewRunner:
                 duplicate_count=pipeline.duplicate_count,
                 suppressed_count=pipeline.suppressed_count,
                 rejected_count=pipeline.rejected_count,
+                repair_used=self._repair_used(),
             )
 
         return self._translate(lambda: self.journal.transact(work))
@@ -303,7 +320,10 @@ class LearningReviewRunner:
         claimed: LearningReview,
         code: LearningReviewFailureCode,
     ) -> LearningReviewRunResult:
-        return LearningReviewRunResult(review=self._fail(claimed, code))
+        return LearningReviewRunResult(
+            review=self._fail(claimed, code),
+            repair_used=self._repair_used(),
+        )
 
     def _fail(self, claimed: LearningReview, code: LearningReviewFailureCode) -> LearningReview:
         def work(txn):
@@ -336,11 +356,15 @@ class LearningReviewRunner:
                     "status": saved.status.value,
                     "failure_code": code.value,
                     "attempt_count": saved.attempt_count,
+                    "repair_used": self._repair_used(),
                 },
             )
             return saved
 
         return self._translate(lambda: self.journal.transact(work))
+
+    def _repair_used(self) -> bool:
+        return bool(getattr(self.reviewer, "last_repair_used", False))
 
     def _assert_lease(self, current: LearningReview, claimed: LearningReview) -> None:
         if (

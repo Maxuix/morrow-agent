@@ -28,7 +28,7 @@ from morrow.core.learning import (
     LearningScope,
     LearningSuppression,
 )
-from morrow.core.models import ModelRef, ProtocolModel
+from morrow.core.models import ModelErrorCode, ModelRef, ProtocolModel
 
 T = TypeVar("T")
 
@@ -81,6 +81,15 @@ class LearningContext(ProtocolModel):
         if len(self.model_dump_json().encode("utf-8")) > self.rendered_char_budget:
             raise ValueError("learning context exceeds its rendered character budget")
         return self
+
+
+class LearningReviewerError(RuntimeError):
+    """Sanitized, typed failure raised by a production Reviewer adapter."""
+
+    def __init__(self, code: ModelErrorCode, message: str, *, category: str) -> None:
+        super().__init__(message)
+        self.code = code
+        self.category = category
 
 
 class LearningJournalPort(TransactionalJournalPort, Protocol):
@@ -266,5 +275,6 @@ __all__ = [
     "LearningContext",
     "LearningJournalPort",
     "LearningReviewerPort",
+    "LearningReviewerError",
     "LEARNING_CONTEXT_MAX_RENDERED_CHARS",
 ]

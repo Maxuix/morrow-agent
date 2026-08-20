@@ -414,8 +414,9 @@ def _state_services(
     workspace_id: str | None,
     directory: Path,
     write: bool,
+    with_reviewer: bool = False,
 ):
-    """Build the same application boundary used by the REPL without providers."""
+    """Build the shared state boundary, optionally with the active no-tool Reviewer."""
 
     application = build_application(state_root=state_root)
     if workspace_id is None:
@@ -423,6 +424,9 @@ def _state_services(
         if resolution.status == "candidate":
             raise WorkspaceError("工作空间尚未登记；请先用主命令确认，或提供 --workspace-id。")
         workspace_id = resolution.identity.workspace_id
+    learning_provider = learning_model = None
+    if with_reviewer:
+        learning_provider, learning_model = application.provider_service.build_active()
     store = OperationalStore(application.data_root.root)
     mode = StoreOpenMode.READ_WRITE if write else StoreOpenMode.READ_ONLY
     try:
@@ -438,7 +442,13 @@ def _state_services(
         handle=handle,
         write=write,
     )
-    api = build_operational_api(application, workspace_id, operational)
+    api = build_operational_api(
+        application,
+        workspace_id,
+        operational,
+        learning_provider=learning_provider,
+        learning_model=learning_model,
+    )
     return (
         application,
         handle,
@@ -861,7 +871,11 @@ def learning_review(
     handle = None
     try:
         _application, handle, api, _doctor, _backup = _state_services(
-            state_root=state_root, workspace_id=workspace_id, directory=directory, write=True
+            state_root=state_root,
+            workspace_id=workspace_id,
+            directory=directory,
+            write=True,
+            with_reviewer=True,
         )
         _emit_model(
             asyncio.run(

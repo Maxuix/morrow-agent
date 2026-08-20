@@ -11,6 +11,7 @@ from morrow.adapters.local.sandbox import (
     NativeSandboxProcessAdapter,
     default_sandbox_backend,
 )
+from morrow.adapters.models.learning_reviewer import ModelLearningReviewer
 from morrow.adapters.models.openai_compatible import estimate_request_chars, make_openai_compatible
 from morrow.adapters.registry import AdapterRegistry
 from morrow.adapters.state.artifacts import FilesystemArtifactStore
@@ -283,9 +284,14 @@ def build_operational_api(
     tasks: TaskService | None = None,
     persistence=None,
     config_service: ConfigPatchService | None = None,
+    learning_provider=None,
+    learning_model=None,
 ) -> OperationalApplicationService:
     """Compose the shared command/query boundary over operational domain services."""
 
+    learning_reviewer = (
+        ModelLearningReviewer(learning_provider) if learning_provider is not None else None
+    )
     return OperationalApplicationService(
         journal=services.journal,
         workspace_id=workspace_id,
@@ -297,6 +303,8 @@ def build_operational_api(
         forks=services.forks,
         persistence=persistence,
         clock=services.journal.now,
+        learning_reviewer=learning_reviewer,
+        learning_model=learning_model,
         config_service=config_service
         or ConfigPatchService(app.project_store, app.global_store, workspace_id),
     )
@@ -478,6 +486,8 @@ def build_session_application(
             tasks=persistence.tasks,
             persistence=persistence,
             config_service=config_service,
+            learning_provider=provider,
+            learning_model=model,
         )
 
         def create_foreground_grant(current_session: Session):
