@@ -5,6 +5,7 @@ from __future__ import annotations
 import multiprocessing
 import os
 import random
+import sqlite3
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -766,8 +767,21 @@ def test_recovery_resume_creates_an_ungranted_agent_run(tmp_path: Path):
     finally:
         handle.close()
 
+    inject_busy = False
+    busy_attempts = 0
+
+    def fail_once_before_commit(point: str) -> None:
+        nonlocal busy_attempts
+        if inject_busy and point == "before_commit" and busy_attempts == 0:
+            busy_attempts += 1
+            raise sqlite3.OperationalError("database is locked")
+
     store = OperationalStore(
-        tmp_path / "state", retry_policy=_retry(), clock=FixedClock(), maintenance_timeout=0
+        tmp_path / "state",
+        retry_policy=_retry(),
+        clock=FixedClock(),
+        maintenance_timeout=0,
+        failure_injector=fail_once_before_commit,
     )
     handle = store.open(StoreOpenMode.READ_WRITE)
     try:
@@ -805,6 +819,7 @@ def test_recovery_resume_creates_an_ungranted_agent_run(tmp_path: Path):
             log=session.log,
             writer=persistence.writer,
         )
+        inject_busy = True
         resumed = api.resolve_recovery(
             persistence.open_report,
             command_id="cmd_resume",
@@ -813,8 +828,10 @@ def test_recovery_resume_creates_an_ungranted_agent_run(tmp_path: Path):
             writer=persistence.writer,
         )
         assert resumed.value.status.value == "resolved"
-        assert persistence.current_agent_run_id == "arun_2"
-        new_run = journal.get_agent_run("ws_1", "arun_2")
+        assert busy_attempts == 1
+        assert journal.get_agent_run("ws_1", "arun_2") is None
+        assert persistence.current_agent_run_id == "arun_3"
+        new_run = journal.get_agent_run("ws_1", "arun_3")
         assert new_run is not None
         assert new_run.resume_of_agent_run_id == "arun_1"
         assert new_run.snapshot.runtime_instance_id == "host-2"
@@ -823,9 +840,9 @@ def test_recovery_resume_creates_an_ungranted_agent_run(tmp_path: Path):
         assert journal.list_capability_grants("ws_1", agent_run_id="arun_2") == ()
         assert journal.get_agent_run("ws_1", "arun_1").permission_snapshot_id == "psnap_1"
         resumed_snapshot = persistence.freeze_permission_snapshot(session, tools=())
-        assert resumed_snapshot.agent_run_id == "arun_2"
+        assert resumed_snapshot.agent_run_id == "arun_3"
         assert resumed_snapshot.grant_id is None
-        assert journal.get_permission_snapshot_for_run("ws_1", "arun_2") == resumed_snapshot
+        assert journal.get_permission_snapshot_for_run("ws_1", "arun_3") == resumed_snapshot
     finally:
         handle.close()
 

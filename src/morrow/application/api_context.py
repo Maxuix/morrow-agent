@@ -20,6 +20,12 @@ from morrow.core.application import (
 )
 from morrow.core.artifacts import ArtifactError
 from morrow.core.domain import COMMAND_ID_PREFIX, canonical_json_bytes, sha256_digest
+from morrow.core.execution import (
+    ApprovalDecisionError,
+    ExecutionTransitionError,
+    StaleRowVersionError,
+)
+from morrow.core.permissions import PermissionEvidenceError
 from morrow.core.ports import IdSource
 from morrow.core.recovery import RecoveryDecisionError, RecoveryReport
 from morrow.core.store import StorageError, StorageErrorCode
@@ -180,6 +186,13 @@ class ApplicationCommandContext:
             return ApplicationError(code, text)
         if isinstance(exc, CapabilityGrantError):
             return ApplicationError(exc.code, str(exc))
+        if isinstance(exc, StaleRowVersionError):
+            return ApplicationError(ApplicationErrorCode.STALE, str(exc))
+        if isinstance(
+            exc,
+            (PermissionEvidenceError, ApprovalDecisionError, ExecutionTransitionError),
+        ):
+            return ApplicationError(ApplicationErrorCode.CONFLICT, str(exc))
         if isinstance(exc, ArtifactError):
             code = (
                 ApplicationErrorCode.NOT_FOUND

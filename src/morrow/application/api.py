@@ -372,11 +372,6 @@ class OperationalApplicationService:
                     ApplicationErrorCode.CONFLICT,
                     "client message conflicts with an existing request",
                 )
-            if result.kind == "recovery":
-                raise ApplicationError(
-                    ApplicationErrorCode.NEEDS_RECOVERY,
-                    "Session requires recovery before this Turn",
-                )
             if result.kind != "accepted":
                 return ApplicationCommandResult(result, None)
             event = self._event(
@@ -399,10 +394,17 @@ class OperationalApplicationService:
             return ApplicationCommandResult(result, receipt)
 
         try:
-            return self._translate(lambda: self.journal.transact(work))
+            result = self._translate(lambda: self.journal.transact_once(work))
         except ApplicationError:
             self._restore_session_projection(session, persistence)
             raise
+        if result.value.kind == "recovery":
+            self._restore_session_projection(session, persistence)
+            raise ApplicationError(
+                ApplicationErrorCode.NEEDS_RECOVERY,
+                "Session requires recovery before this Turn",
+            )
+        return result
 
     def create_approval(
         self, execution: DurableToolExecution, *, persistence=None, command_id=None

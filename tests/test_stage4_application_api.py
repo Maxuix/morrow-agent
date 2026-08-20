@@ -10,6 +10,7 @@ import pytest
 from morrow.adapters.state.journal import SqliteOperationalJournal
 from morrow.adapters.state.operational import BusyRetryPolicy, OperationalStore
 from morrow.application.api import OperationalApplicationService
+from morrow.application.api_context import ApplicationCommandContext
 from morrow.core.application import ApplicationError, ApplicationErrorCode
 from morrow.core.domain import (
     DurableConversationRecord,
@@ -18,6 +19,12 @@ from morrow.core.domain import (
     SessionLifecycle,
     TaskRunStatus,
 )
+from morrow.core.execution import (
+    ApprovalDecisionError,
+    ExecutionTransitionError,
+    StaleRowVersionError,
+)
+from morrow.core.permissions import PermissionEvidenceError
 from morrow.testing import FixedClock, FixedIdSource
 
 
@@ -38,6 +45,28 @@ def _api(tmp_path: Path, workspace_id: str = "ws_1"):
         workspace_id=workspace_id,
         id_source=FixedIdSource(),
     )
+
+
+@pytest.mark.parametrize(
+    ("error", "expected_code"),
+    (
+        (StaleRowVersionError("stale approval row version"), ApplicationErrorCode.STALE),
+        (ApprovalDecisionError("approval expired"), ApplicationErrorCode.CONFLICT),
+        (
+            ExecutionTransitionError("illegal tool execution transition"),
+            ApplicationErrorCode.CONFLICT,
+        ),
+        (
+            PermissionEvidenceError("capability grant is expired or revoked"),
+            ApplicationErrorCode.CONFLICT,
+        ),
+    ),
+)
+def test_application_boundary_preserves_typed_state_errors(error, expected_code):
+    translated = ApplicationCommandContext._translate_exception(error)
+
+    assert translated.code is expected_code
+    assert translated.message == str(error)
 
 
 def test_session_command_receipt_replay_conflict_and_same_transaction_event(tmp_path):

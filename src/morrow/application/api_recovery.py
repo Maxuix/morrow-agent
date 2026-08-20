@@ -74,7 +74,6 @@ class RecoveryApplicationService:
                 "Recovery report is already closed",
             )
         try:
-            resumed_agent_run_id: list[str] = []
             updated, recovery_receipt, planned = api.recovery.decide(
                 report,
                 command_id=command_id,
@@ -111,6 +110,7 @@ class RecoveryApplicationService:
             close_all = close_all or (resolution is RecoveryResolution.ABORT and item_id is None)
 
             def work(txn):
+                resumed_agent_run_ids: list[str] = []
                 existing = api._replay_in_txn(txn, command_id, digest)
                 if existing is not None:
                     value = txn.get_report(api.workspace_id, existing.result_id or "")
@@ -119,7 +119,7 @@ class RecoveryApplicationService:
                             ApplicationErrorCode.NEEDS_RECOVERY,
                             "recovery result is missing",
                         )
-                    return ApplicationCommandResult(value, existing)
+                    return ApplicationCommandResult(value, existing), None
                 current = txn.get_report(api.workspace_id, report.report_id)
                 if current is None:
                     raise ApplicationError(
@@ -144,7 +144,7 @@ class RecoveryApplicationService:
                         report=report,
                         saved=saved,
                         resolution=resolution,
-                        resumed_agent_run_id=resumed_agent_run_id,
+                        resumed_agent_run_id=resumed_agent_run_ids,
                     ),
                 )
                 event = api._event(
@@ -164,10 +164,11 @@ class RecoveryApplicationService:
                     result_id=value.report_id,
                     event_cursor=event.cursor,
                 )
-                return ApplicationCommandResult(value, receipt)
+                resumed_agent_run_id = resumed_agent_run_ids[0] if resumed_agent_run_ids else None
+                return ApplicationCommandResult(value, receipt), resumed_agent_run_id
 
             try:
-                result = api._translate(lambda: api.journal.transact(work))
+                result, resumed_agent_run_id = api._translate(lambda: api.journal.transact(work))
                 if planned is not None:
                     log.apply_committed(planned)
                 self._sync_persistence(result.value, resumed_agent_run_id)
@@ -280,14 +281,14 @@ class RecoveryApplicationService:
             ),
         )
 
-    def _sync_persistence(self, report: RecoveryReport, resumed_agent_run_id: list[str]) -> None:
+    def _sync_persistence(self, report: RecoveryReport, resumed_agent_run_id: str | None) -> None:
         api = self.context
         persistence = api.persistence
         if persistence is None:
             return
         persistence.synchronize_recovery_projection(
             report,
-            resumed_agent_run_id=resumed_agent_run_id[0] if resumed_agent_run_id else None,
+            resumed_agent_run_id=resumed_agent_run_id,
         )
 
     def _abort_task_in_txn(

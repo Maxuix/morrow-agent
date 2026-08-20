@@ -10,6 +10,7 @@ from fixtures.stage4_v2 import write_v2_store
 from morrow.adapters.credentials.keyring import MemoryCredentialStore
 from morrow.application.commands import CommandService
 from morrow.bootstrap import build_application, build_session_application
+from morrow.core.application import ApplicationError, ApplicationErrorCode
 from morrow.core.domain import (
     DurableConversationRecord,
     SessionHealth,
@@ -210,4 +211,75 @@ def test_quarantine_rejects_invalid_sequence_without_rewriting_lifecycle(tmp_pat
     assert products.session.health is SessionHealth.QUARANTINED
     row = journal.get_session(identity.workspace_id, products.session.session_id)
     assert row.lifecycle is SessionLifecycle.ACTIVE
+    assert products.session.messages == ()
+
+
+def test_duplicate_open_submit_commits_recovery_and_restores_active_projection(tmp_path):
+    _app, identity, products = _session_app(tmp_path)
+    session = products.session
+    api = products.api
+    assert api is not None
+
+    accepted = api.submit_turn(
+        session,
+        user_input="in flight",
+        client_message_id="client-open",
+        turn_id="turn_open",
+        agent_run_id="arun_open",
+        command_id="cmd_open",
+        persistence=products.persistence,
+    )
+    assert accepted.value.kind == "accepted"
+    task_run_id = products.persistence.current_task_run_id
+
+    with pytest.raises(ApplicationError) as error:
+        api.submit_turn(
+            session,
+            user_input="in flight",
+            client_message_id="client-open",
+            turn_id="turn_duplicate",
+            agent_run_id="arun_duplicate",
+            command_id="cmd_duplicate",
+            persistence=products.persistence,
+        )
+
+    assert error.value.code is ApplicationErrorCode.NEEDS_RECOVERY
+    durable = products.persistence.journal.get_session(identity.workspace_id, session.session_id)
+    assert durable is not None
+    assert durable.health is SessionHealth.NEEDS_RECOVERY
+    assert session.health is SessionHealth.NEEDS_RECOVERY
+    assert products.persistence.current_turn_id == "turn_open"
+    assert products.persistence.current_task_run_id == task_run_id
+    assert products.persistence.current_agent_run_id == "arun_open"
+    assert products.commands.execute("/new").action is None
+
+
+def test_restore_quarantines_malformed_conversation_json(tmp_path):
+    _app, identity, products = _session_app(tmp_path)
+    journal = products.persistence.journal
+    journal.append_records(
+        identity.workspace_id,
+        (
+            DurableConversationRecord(
+                record_id="rec_corrupt",
+                session_id=products.session.session_id,
+                conversation_position=1,
+                kind="message",
+                payload={"role": "user", "content": "hello"},
+            ),
+        ),
+    )
+    products.persistence.store_session.run_write(
+        lambda executor: executor.execute(
+            "UPDATE conversation_records SET payload_json = ? WHERE record_id = ?",
+            ("{", "rec_corrupt"),
+        )
+    )
+
+    products.persistence.restore_into(products.session)
+
+    assert products.session.health is SessionHealth.QUARANTINED
+    durable = journal.get_session(identity.workspace_id, products.session.session_id)
+    assert durable is not None
+    assert durable.health is SessionHealth.QUARANTINED
     assert products.session.messages == ()

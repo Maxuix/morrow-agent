@@ -35,7 +35,7 @@ from morrow.core.journal import SessionRestoreJournalPort, TurnLifecycleJournalP
 from morrow.core.models import FinishReason, ModelRef, Preferences, ToolDefinition, UserMessage
 from morrow.core.ports import IdSource
 from morrow.core.recovery import RecoveryReport, RecoveryReportStatus
-from morrow.core.store import StorageError
+from morrow.core.store import StorageError, StorageErrorCode
 from morrow.runtime.conversation import (
     ConversationAppend,
     ConversationLog,
@@ -418,7 +418,12 @@ class SessionRestoreCoordinator:
             session.log = restore_conversation_log(
                 self.journal, self.workspace_id, session.session_id
             )
-        except ConversationLogError:
+        except (ConversationLogError, ValueError):
+            session.log = ConversationLog()
+            session.health = SessionHealth.QUARANTINED
+        except StorageError as exc:
+            if exc.code is not StorageErrorCode.NEEDS_REPAIR:
+                raise
             session.log = ConversationLog()
             session.health = SessionHealth.QUARANTINED
         else:
@@ -442,6 +447,7 @@ class SessionRestoreCoordinator:
         session.dirty = session.log.has_active_turn
         self.state.reset()
         self.state.task_run_id = row.current_task_run_id
+        self._restore_active_work(session)
         return True
 
     def synchronize_recovery(
@@ -492,18 +498,14 @@ class SessionRestoreCoordinator:
             )
         if report is not None and session.health is not SessionHealth.QUARANTINED:
             session.health = SessionHealth.NEEDS_RECOVERY
-        elif (
-            session.lifecycle is SessionLifecycle.ACTIVE
-            and session.log.has_active_turn
-            and session.health is SessionHealth.OK
-        ):
+        elif session.lifecycle is SessionLifecycle.ACTIVE and session.log.has_active_turn:
             turns = self.journal.list_session_turns(self.workspace_id, session.session_id)
             runs = self.journal.list_session_agent_runs(self.workspace_id, session.session_id)
             self.state.turn_id = turns[-1].turn_id if turns else None
             self.state.agent_run_id = runs[-1].agent_run_id if runs else None
             if turns:
                 self.state.last_client_message_id = turns[-1].client_message_id
-            self.state.pending_resume = True
+            self.state.pending_resume = session.health is SessionHealth.OK
 
 
 def request_digest(user_input: str) -> str:
