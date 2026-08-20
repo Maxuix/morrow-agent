@@ -267,6 +267,15 @@ class CapabilityGrantJournalPort(AgentRunPort, Protocol):
     ) -> CapabilityGrant: ...
 
 
+class RunPermissionJournalPort(
+    CapabilityGrantJournalPort,
+    ApprovalJournalPort,
+    ToolExecutionJournalPort,
+    Protocol,
+):
+    """Permission evidence surface required by one durable AgentRun."""
+
+
 class RecoveryJournalPort(ToolExecutionJournalPort, TransactionalJournalPort, Protocol):
     def put_report(self, workspace_id: str, report: RecoveryReport) -> RecoveryReport: ...
 

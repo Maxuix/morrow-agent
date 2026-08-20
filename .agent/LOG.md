@@ -1366,3 +1366,15 @@
 - Full offline validation passed: `663 passed, 2 skipped, 1 deselected`. The skips are the existing
   nested-sandbox Seatbelt cases. Full Ruff format/check, compileall, CLI help, and
   `git diff --check` passed.
+
+## 2026-08-20 — S48.3 permission boundary checkpoint
+
+- Extracted immutable PermissionSnapshot construction, run-bound grant selection, execution
+  evidence validation, handler-entry revalidation, and active-grant checks into an explicit
+  `RunPermissionCoordinator` backed by a narrow composite journal port.
+- SessionPersistence retains compatibility methods but delegates permission authority; its source
+  footprint decreased from 908 lines at audit time to 822 lines at this checkpoint.
+- Added an architecture guard preventing concrete SQLite coupling in the coordinator and preventing
+  permission construction/validation logic from returning to SessionPersistence.
+- Permission, tool-persistence, recovery, conversation, and architecture regressions passed:
+  `51 passed`. Touched-file Ruff format/check, compileall, and `git diff --check` passed.

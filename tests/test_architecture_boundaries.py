@@ -35,6 +35,7 @@ def test_domain_services_depend_on_journal_ports_not_sqlite_adapter():
         "runtime/durable_log.py",
         "application/api_permissions.py",
         "application/api_recovery.py",
+        "application/turn_permissions.py",
     )
 
     for relative in port_owned_modules:
@@ -107,3 +108,35 @@ def test_tool_cycle_executor_does_not_own_chat_history_or_public_events():
     assert "morrow.core.events" not in _imports(path)
     assert "commit_tool_message" not in source
     assert "commit_tool_message" in agent_source
+
+
+def test_session_persistence_delegates_permission_evidence():
+    source = (SOURCE_ROOT / "application/turns.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    persistence = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "SessionPersistence"
+    )
+    methods = {
+        node.name: node
+        for node in persistence.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+
+    assert "build_permission_snapshot" not in source
+    assert "assert_grant_snapshot_matches" not in source
+    assert "_assert_execution_permission" not in methods
+    for name in (
+        "freeze_permission_snapshot",
+        "has_active_unconfined_grant",
+        "assert_handler_may_enter",
+    ):
+        assert any(
+            isinstance(node, ast.Attribute)
+            and isinstance(node.value, ast.Attribute)
+            and isinstance(node.value.value, ast.Name)
+            and node.value.value.id == "self"
+            and node.value.attr == "permissions"
+            for node in ast.walk(methods[name])
+        ), name
