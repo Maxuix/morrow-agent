@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal
 
+from morrow.adapters.state.preference_migration import legacy_entries_from_preferences
+from morrow.adapters.state.preference_projection import preferences_from_entries
 from morrow.application.recovery import RecoveryService
 from morrow.application.tasks import TaskOutcomeAssembler, TaskService
 from morrow.core.application import ApplicationError, ApplicationErrorCode
@@ -45,7 +47,7 @@ from morrow.core.models import (
     UserMessage,
 )
 from morrow.core.ports import IdSource
-from morrow.core.preferences import merge_preferences
+from morrow.core.preferences import merge_preference_entries
 from morrow.core.recovery import RecoveryReport, RecoveryReportStatus
 from morrow.core.store import StorageError, StorageErrorCode
 from morrow.runtime.conversation import (
@@ -586,20 +588,54 @@ def build_agent_run_snapshot(
     memory_selection: MemorySelection | None = None,
 ) -> AgentRunSnapshot:
     def source_digest(presence: StatePresence, value) -> str:
+        if value is not None and not hasattr(value, "model_dump"):
+            value = [item.model_dump(mode="json") for item in value]
+        payload = value.model_dump(mode="json") if hasattr(value, "model_dump") else value
         return sha256_digest(
             canonical_json_bytes(
                 {
                     "presence": presence.value,
-                    "value": value.model_dump(mode="json") if value is not None else None,
+                    "value": payload,
                 }
             )
         )
+
+    global_entries = (
+        session.generic_global_preferences.entries
+        if session.generic_global_preferences is not None
+        else legacy_entries_from_preferences(
+            "global", session.global_preferences.model_dump(mode="python")
+        )
+    )
+    workspace_entries = (
+        session.generic_workspace_preferences.entries
+        if session.generic_workspace_preferences is not None
+        else legacy_entries_from_preferences(
+            "workspace", session.workspace_preferences.model_dump(mode="python")
+        )
+    )
+    session_entries = (
+        session.generic_session_preferences
+        if session.generic_session_preferences
+        else legacy_entries_from_preferences(
+            "session", session.preferences.model_dump(mode="python"), allow_session=True
+        )
+    )
+    effective_entries = merge_preference_entries(
+        global_entries,
+        workspace_entries,
+        session_entries,
+    )
+    effective_preferences = preferences_from_entries(effective_entries)
 
     revisions = (
         SourceRevisionRef(
             kind="global_config",
             revision=session.global_preferences_revision,
-            content_sha256=source_digest(StatePresence.PRESENT, session.global_preferences),
+            content_sha256=source_digest(
+                StatePresence.PRESENT,
+                session.generic_global_preferences or session.global_preferences,
+            ),
         ),
         SourceRevisionRef(
             kind="workspace_profile",
@@ -611,19 +647,14 @@ def build_agent_run_snapshot(
             revision=session.preferences_revision,
             content_sha256=source_digest(
                 session.workspace_preferences_presence,
-                session.workspace_preferences,
+                session.generic_workspace_preferences or session.workspace_preferences,
             ),
         ),
         SourceRevisionRef(
             kind="session_preferences",
             revision=0,
-            content_sha256=source_digest(StatePresence.PRESENT, session.preferences),
+            content_sha256=source_digest(StatePresence.PRESENT, session_entries),
         ),
-    )
-    effective_preferences = merge_preferences(
-        session.global_preferences,
-        session.workspace_preferences,
-        session.preferences,
     )
     tool_payload = [tool.model_dump(mode="json") for tool in tools]
     return AgentRunSnapshot(

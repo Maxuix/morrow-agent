@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Callable
 from pathlib import Path
 
@@ -43,6 +44,7 @@ from morrow.adapters.state.preference_yaml_types import (
     PreferenceYamlLoad,
     PreferenceYamlLoadStatus,
 )
+from morrow.core.domain import canonical_json_bytes
 from morrow.core.preference_documents import GlobalConfigV2, WorkspacePreferenceDocumentV3
 
 
@@ -60,6 +62,12 @@ def _schema_version(raw: dict | None) -> int | None:
         return int(raw.get("schema_version", 0))
     except (TypeError, ValueError) as exc:
         raise PreferenceYamlError("corrupt", "Preference YAML schema is invalid") from exc
+
+
+def _value_digest(value: GlobalConfigV2 | WorkspacePreferenceDocumentV3) -> str:
+    payload = value.model_dump(mode="json")
+    payload.pop("updated_at", None)
+    return hashlib.sha256(canonical_json_bytes(payload)).hexdigest()
 
 
 class PreferenceYamlStore(PreferenceYamlMigrationMixin):
@@ -87,14 +95,26 @@ class PreferenceYamlStore(PreferenceYamlMigrationMixin):
         return self.root / "workspaces" / workspace_id / "preferences.yaml"
 
     def _lock(self, scope: str, workspace_id: str | None = None) -> FileLock:
-        name = (
-            "config-preferences.lock" if scope == "global" else f"{workspace_id}-preferences.lock"
-        )
+        name = "config.lock" if scope == "global" else f"{workspace_id}-preferences.yaml.lock"
         return FileLock(str(self.locks / name), timeout=5)
 
     def load_global(self) -> PreferenceYamlLoad:
+        return self._load_global_path(self.global_path)
+
+    def load_global_backup(self) -> PreferenceYamlLoad:
+        return self._load_global_path(
+            self.global_path.with_suffix(".yaml.bak"), missing_error="backup_missing"
+        )
+
+    def _load_global_path(
+        self, path: Path, *, missing_error: str | None = None
+    ) -> PreferenceYamlLoad:
+        if missing_error is not None and not path.exists():
+            return PreferenceYamlLoad(
+                PreferenceYamlLoadStatus.CORRUPT, None, 0, None, error=missing_error
+            )
         try:
-            raw = _read_raw(self.global_path)
+            raw = _read_raw(path)
         except PreferenceYamlError as exc:
             return PreferenceYamlLoad(
                 PreferenceYamlLoadStatus.CORRUPT, None, 0, None, error=exc.code
@@ -133,7 +153,21 @@ class PreferenceYamlStore(PreferenceYamlMigrationMixin):
         )
 
     def load_workspace(self, workspace_id: str) -> PreferenceYamlLoad:
+        return self._load_workspace_path(workspace_id, self.workspace_path(workspace_id))
+
+    def load_workspace_backup(self, workspace_id: str) -> PreferenceYamlLoad:
         path = self.workspace_path(workspace_id)
+        return self._load_workspace_path(
+            workspace_id, path.with_suffix(".yaml.bak"), missing_error="backup_missing"
+        )
+
+    def _load_workspace_path(
+        self, workspace_id: str, path: Path, *, missing_error: str | None = None
+    ) -> PreferenceYamlLoad:
+        if missing_error is not None and not path.exists():
+            return PreferenceYamlLoad(
+                PreferenceYamlLoadStatus.CORRUPT, None, 0, None, error=missing_error
+            )
         try:
             raw = _read_raw(path)
         except PreferenceYamlError as exc:
@@ -174,9 +208,20 @@ class PreferenceYamlStore(PreferenceYamlMigrationMixin):
         )
 
     def write_global(
-        self, value: GlobalConfigV2, *, expected_revision: int | None = None
+        self,
+        value: GlobalConfigV2,
+        *,
+        expected_revision: int | None = None,
+        expected_value_digest: str | None = None,
     ) -> PreferenceYamlLoad:
-        return self._write_value(value, self.global_path, "global", None, expected_revision)
+        return self._write_value(
+            value,
+            self.global_path,
+            "global",
+            None,
+            expected_revision,
+            expected_value_digest,
+        )
 
     def write_workspace(
         self,
@@ -184,9 +229,15 @@ class PreferenceYamlStore(PreferenceYamlMigrationMixin):
         value: WorkspacePreferenceDocumentV3,
         *,
         expected_revision: int | None = None,
+        expected_value_digest: str | None = None,
     ) -> PreferenceYamlLoad:
         return self._write_value(
-            value, self.workspace_path(workspace_id), "workspace", workspace_id, expected_revision
+            value,
+            self.workspace_path(workspace_id),
+            "workspace",
+            workspace_id,
+            expected_revision,
+            expected_value_digest,
         )
 
     def _write_value(
@@ -196,6 +247,7 @@ class PreferenceYamlStore(PreferenceYamlMigrationMixin):
         scope: str,
         workspace_id: str | None,
         expected_revision: int | None,
+        expected_value_digest: str | None,
     ) -> PreferenceYamlLoad:
         with self._lock(scope, workspace_id):
             raw = _read_raw(path)
@@ -210,6 +262,9 @@ class PreferenceYamlStore(PreferenceYamlMigrationMixin):
                 )
             if expected_revision is not None and current.revision != expected_revision:
                 raise PreferenceYamlConflict()
+            if expected_value_digest is not None:
+                if current.value is None or _value_digest(current.value) != expected_value_digest:
+                    raise PreferenceYamlConflict()
             if scope == "global" and not isinstance(value, GlobalConfigV2):
                 raise PreferenceYamlError("scope", "global Preference document has the wrong type")
             if scope == "workspace" and not isinstance(value, WorkspacePreferenceDocumentV3):

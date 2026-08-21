@@ -25,6 +25,12 @@ from morrow.core.models import (
     StatePresence,
     StateWriteStatus,
 )
+from morrow.core.preference_models import (
+    PreferenceLifecycleOperation,
+    PreferenceOperation,
+    PreferenceScope,
+    PreferenceStatus,
+)
 
 ALLOWED_PATHS = _ALLOWED_PATHS
 
@@ -92,11 +98,19 @@ def render_patch_preview(patch: ConfigPatch) -> list[str]:
 
 
 class ConfigPatchService:
-    def __init__(self, project_store, global_store, workspace_id: str, session=None) -> None:
+    def __init__(
+        self,
+        project_store,
+        global_store,
+        workspace_id: str,
+        session=None,
+        preference_writer=None,
+    ) -> None:
         self.project_store = project_store
         self.global_store = global_store
         self.workspace_id = workspace_id
         self.session = session
+        self.preference_writer = preference_writer
 
     @dataclass(frozen=True)
     class _TargetState:
@@ -342,12 +356,55 @@ class ConfigPatchService:
         if result.status != StateWriteStatus.OK:
             raise ConfigurationStateError("配置写入失败")
 
+    def _commit_generic_preferences(
+        self,
+        state: _TargetState,
+        command: ConfigurationCommand,
+        prepared: PreparedConfigurationChange,
+    ) -> int:
+        if self.preference_writer is None:  # pragma: no cover - guarded by caller
+            raise ConfigurationStateError("generic Preference Writer is unavailable")
+        scope = PreferenceScope(command.scope)
+        command_id = prepared.preference_command_id or self.preference_writer.id_source.new_id(
+            "cmd"
+        )
+        preparation = self.preference_writer.prepare(
+            scope,
+            state.revision or 0,
+            command_id,
+            prepared.preference_operations,
+            lifecycle_operations=prepared.preference_lifecycle_operations,
+        )
+        result = self.preference_writer.apply(preparation)
+        if self.session is not None:
+            if scope is PreferenceScope.GLOBAL:
+                self.session.generic_global_preferences = result.document
+                loaded = self.global_store.load()
+                if loaded.value is not None:
+                    self.session.global_preferences = loaded.value.preferences
+                self.session.global_preferences_revision = result.document.revision
+            else:
+                self.session.generic_workspace_preferences = result.document
+                loaded = self.project_store.load_preferences(self.workspace_id)
+                if loaded.value is not None:
+                    self.session.workspace_preferences = loaded.value.preferences
+                self.session.preferences_revision = result.document.revision
+                self.session.workspace_preferences_presence = StatePresence.PRESENT
+        return result.document.revision
+
     def _commit_target(
         self,
         state: _TargetState,
         command: ConfigurationCommand,
         candidate: Preferences | Profile | None,
+        prepared: PreparedConfigurationChange | None = None,
     ) -> int | None:
+        if (
+            prepared is not None
+            and self._uses_generic_preferences(command)
+            and (prepared.preference_operations or prepared.preference_lifecycle_operations)
+        ):
+            return self._commit_generic_preferences(state, command, prepared)
         if command.scope == "session":
             if not isinstance(candidate, Preferences):
                 raise ConfigurationStateError("session Preferences 状态无效")
@@ -435,7 +492,10 @@ class ConfigPatchService:
         self.session.profile_presence = state.presence
 
     def preflight(self, command: ConfigurationCommand) -> ConfigurationChangeResult:
-        plan = self.prepare(command)
+        plan = self.prepare(
+            command,
+            preference_mode=self._uses_generic_preferences(self._command(command)),
+        )
         status = (
             ConfigurationChangeStatus.APPLIED
             if plan.changed
@@ -443,15 +503,43 @@ class ConfigPatchService:
         )
         return self._result(plan.command, status, plan.expected_revision)
 
-    def prepare(self, command: ConfigurationCommand) -> PreparedConfigurationChange:
+    def prepare(
+        self,
+        command: ConfigurationCommand,
+        *,
+        preference_mode: bool | None = None,
+        preference_command_id: str | None = None,
+    ) -> PreparedConfigurationChange:
         """Read and freeze the exact optimistic-concurrency evidence for one write."""
 
         plan = self._prepare(command)
+        use_generic_preferences = (
+            self._uses_generic_preferences(plan.command)
+            if preference_mode is None
+            else preference_mode and self._uses_generic_preferences(plan.command)
+        )
         before_digest = configuration_state_digest(plan.state.presence, plan.state.base)
-        after_digest = configuration_state_digest(plan.after_presence, plan.candidate)
+        after_presence = (
+            self._generic_after_presence(plan.command, plan.after_presence)
+            if use_generic_preferences
+            else plan.after_presence
+        )
+        after_digest = configuration_state_digest(after_presence, plan.candidate)
         expected_applied_revision = (
             plan.state.revision + 1 if plan.changed and plan.state.revision is not None else None
         )
+        preference_operations: tuple[PreferenceOperation, ...] = ()
+        preference_lifecycle_operations: tuple[PreferenceLifecycleOperation, ...] = ()
+        resolved_preference_command_id = None
+        if use_generic_preferences:
+            (
+                preference_operations,
+                preference_lifecycle_operations,
+            ) = self._generic_preference_operations(plan.command, plan.state)
+            if plan.changed:
+                resolved_preference_command_id = (
+                    preference_command_id or self.preference_writer.id_source.new_id("cmd")
+                )
         return PreparedConfigurationChange(
             command=plan.command,
             expected_revision=plan.state.revision,
@@ -460,9 +548,160 @@ class ConfigPatchService:
             after_digest=after_digest,
             expected_applied_revision=expected_applied_revision,
             inverse_command=plan.inverse_command,
+            preference_operations=preference_operations,
+            preference_lifecycle_operations=preference_lifecycle_operations,
+            preference_command_id=resolved_preference_command_id,
             changed=plan.changed,
             preview_lines=tuple(render_configuration_preview(plan.command)),
         )
+
+    def _uses_generic_preferences(self, command: ConfigurationCommand) -> bool:
+        return (
+            self.preference_writer is not None
+            and command.target == "preferences"
+            and command.scope in {"global", "workspace"}
+        )
+
+    def _generic_after_presence(
+        self, command: ConfigurationCommand, presence: StatePresence
+    ) -> StatePresence:
+        if (
+            self._uses_generic_preferences(command)
+            and command.operation == "reset"
+            and command.scope == "workspace"
+        ):
+            return StatePresence.PRESENT
+        return presence
+
+    def _generic_document(self, scope: PreferenceScope):
+        if self.preference_writer is None:  # pragma: no cover - guarded by caller
+            raise ConfigurationStateError("generic Preference Writer is unavailable")
+        load = self.preference_writer._load_authority(scope)
+        if load.value is None or getattr(load.status, "value", load.status) != "ok":
+            raise ConfigurationStateError("generic Preferences cannot be safely loaded")
+        from morrow.application.preferences.writer import PreferenceWriter
+
+        return PreferenceWriter._document_from_value(scope, load.value)
+
+    @staticmethod
+    def _generic_statement(path: str, value: object) -> str:
+        if path == "language":
+            return f"回答时默认使用 {value}。"
+        if path == "response_detail":
+            try:
+                return {
+                    "concise": "回答默认保持简洁。",
+                    "balanced": "回答默认在简洁与细节之间保持平衡。",
+                    "detailed": "回答默认提供详细说明。",
+                }[str(value)]
+            except KeyError as exc:
+                raise ConfigurationValidationError("response_detail 值无效") from exc
+        return str(value)
+
+    @staticmethod
+    def _generic_target(document, path: str, statement: str, *, active_only: bool = False):
+        for entry in document.entries:
+            if entry.status is PreferenceStatus.DELETED:
+                continue
+            if active_only and entry.status is not PreferenceStatus.ACTIVE:
+                continue
+            if path == "language" and entry.statement.startswith("回答时默认使用 "):
+                return entry
+            if path == "response_detail" and entry.statement in {
+                "回答默认保持简洁。",
+                "回答默认在简洁与细节之间保持平衡。",
+                "回答默认提供详细说明。",
+            }:
+                return entry
+            if path == "instructions" and entry.statement.casefold() == statement.casefold():
+                return entry
+        return None
+
+    def _generic_preference_operations(
+        self,
+        command: ConfigurationCommand,
+        state: _TargetState,
+    ) -> tuple[tuple[PreferenceOperation, ...], tuple[PreferenceLifecycleOperation, ...]]:
+        scope = PreferenceScope(command.scope)
+        document = self._generic_document(scope)
+        path = command.path
+        if path is None:
+            if command.operation == "reset":
+                targets = tuple(
+                    entry.preference_id
+                    for entry in document.entries
+                    if entry.status is not PreferenceStatus.DELETED
+                )
+                if len(targets) > 8:
+                    raise ConfigurationValidationError(
+                        "generic Preference reset exceeds batch limit"
+                    )
+                return (
+                    tuple(
+                        PreferenceOperation(
+                            operation="remove",
+                            scope=scope,
+                            preference_id=preference_id,
+                        )
+                        for preference_id in targets
+                    ),
+                    (),
+                )
+            raise ConfigurationValidationError("generic Preference path is missing")
+
+        if command.operation in {"set", "append"}:
+            statement = self._generic_statement(path, command.value)
+            target = self._generic_target(document, path, statement)
+            if target is not None and target.status is PreferenceStatus.ACTIVE:
+                if command.operation == "append" or target.statement == statement:
+                    return (), ()
+                return (
+                    (
+                        PreferenceOperation(
+                            operation="replace",
+                            scope=scope,
+                            preference_id=target.preference_id,
+                            statement=statement,
+                        ),
+                    ),
+                    (),
+                )
+            if target is not None and target.status is PreferenceStatus.DISABLED:
+                if command.operation == "append":
+                    return (), (
+                        PreferenceLifecycleOperation(
+                            operation="enable",
+                            scope=scope,
+                            preference_id=target.preference_id,
+                        ),
+                    )
+                raise ConfigurationConflictError(
+                    "disabled Preference requires an explicit lifecycle decision"
+                )
+            return (
+                (PreferenceOperation(operation="add", scope=scope, statement=statement),),
+                (),
+            )
+
+        if command.operation in {"unset", "remove"}:
+            statement = self._generic_statement(
+                path,
+                command.value if path == "instructions" else getattr(state.base, path, ""),
+            )
+            target = self._generic_target(document, path, statement, active_only=True)
+            return (
+                ()
+                if target is None
+                else (
+                    PreferenceOperation(
+                        operation="remove",
+                        scope=scope,
+                        preference_id=target.preference_id,
+                    ),
+                ),
+                (),
+            )
+        raise ConfigurationValidationError("generic Preference operation is unsupported")
 
     def current_state(self, command: ConfigurationCommand) -> tuple[int | None, StatePresence, str]:
         """Return only revision/presence/digest evidence for Saga finalization and recovery."""
@@ -499,6 +738,13 @@ class ConfigPatchService:
                 or prepared.command.scope == "session"
             )
         ):
+            if prepared.preference_command_id and self.preference_writer is not None:
+                existing = self.preference_writer.journal.get_preference_write_batch_by_command(
+                    self.preference_writer.workspace_id,
+                    prepared.preference_command_id,
+                )
+                if existing is not None:
+                    self.preference_writer.apply(existing)
             self._sync_projection(prepared.command, state)
             return self._result(
                 prepared.command,
@@ -508,7 +754,15 @@ class ConfigPatchService:
         if state.revision != prepared.expected_revision or current_digest != prepared.before_digest:
             raise ConfigurationConflictError("配置版本或内容已变化，请重新预览")
         plan = self._prepare_from_state(prepared.command, state)
-        recomputed_after = configuration_state_digest(plan.after_presence, plan.candidate)
+        generic_prepared = bool(
+            prepared.preference_operations or prepared.preference_lifecycle_operations
+        )
+        recomputed_after = configuration_state_digest(
+            self._generic_after_presence(plan.command, plan.after_presence)
+            if generic_prepared
+            else plan.after_presence,
+            plan.candidate,
+        )
         if recomputed_after != prepared.after_digest or plan.changed != prepared.changed:
             raise ConfigurationConflictError("配置预览已失效，请重新预览")
         if not plan.changed:
@@ -517,7 +771,7 @@ class ConfigPatchService:
                 ConfigurationChangeStatus.UNCHANGED,
                 state.revision,
             )
-        revision = self._commit_target(state, plan.command, plan.candidate)
+        revision = self._commit_target(state, plan.command, plan.candidate, prepared=prepared)
         if (
             prepared.expected_applied_revision is not None
             and revision != prepared.expected_applied_revision
@@ -526,7 +780,10 @@ class ConfigPatchService:
         return self._result(prepared.command, ConfigurationChangeStatus.APPLIED, revision)
 
     def apply_command(self, command: ConfigurationCommand) -> ConfigurationChangeResult:
-        prepared = self.prepare(command)
+        prepared = self.prepare(
+            command,
+            preference_mode=self._uses_generic_preferences(self._command(command)),
+        )
         return self.apply_prepared(prepared, operation_id=prepared.after_digest)
 
     def _apply_patch(self, patch: ConfigPatch) -> tuple[ConfigurationChangeResult, ...]:

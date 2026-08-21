@@ -1,6 +1,6 @@
 # Subplan 57 — Atomic Preference Writer and Direct Lifecycle
 
-> Status: planned; not active
+> Status: active
 > Branch: `feat/stage5-preference-writer`
 > Prerequisite: Subplan 56 merged and v13 checksum frozen
 > Owns: YAML-authoritative Writer, recovery saga, direct management tool/commands

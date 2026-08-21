@@ -6,6 +6,7 @@ import json
 from collections.abc import Callable
 from typing import Literal
 
+from morrow.adapters.state.preference_migration import legacy_entries_from_preferences
 from morrow.core.context import ContextCheckpoint
 from morrow.core.domain import canonical_json_bytes
 from morrow.core.models import (
@@ -16,7 +17,7 @@ from morrow.core.models import (
     ToolDefinition,
     ToolMessage,
 )
-from morrow.core.preferences import merge_preferences
+from morrow.core.preferences import merge_preference_entries, merge_preferences
 from morrow.runtime.conversation import ConversationSnapshot, PublicTurnView
 from morrow.runtime.policy import RunPolicy
 from morrow.runtime.session import Session
@@ -108,12 +109,50 @@ class ContextBuilder:
             state = None
             profile = None
         elif projection is None:
-            effective = self.merge_preferences(
-                session.global_preferences, session.workspace_preferences, session.preferences
-            )
+            if (
+                session.generic_global_preferences is not None
+                or session.generic_workspace_preferences is not None
+                or session.generic_session_preferences
+            ):
+                generic_entries = merge_preference_entries(
+                    session.generic_global_preferences.entries
+                    if session.generic_global_preferences is not None
+                    else (),
+                    session.generic_workspace_preferences.entries
+                    if session.generic_workspace_preferences is not None
+                    else (),
+                    session.generic_session_preferences
+                    + (
+                        ()
+                        if session.generic_global_preferences is not None
+                        else legacy_entries_from_preferences(
+                            "global", session.global_preferences.model_dump(mode="python")
+                        )
+                    )
+                    + (
+                        ()
+                        if session.generic_workspace_preferences is not None
+                        else legacy_entries_from_preferences(
+                            "workspace", session.workspace_preferences.model_dump(mode="python")
+                        )
+                    )
+                    + legacy_entries_from_preferences(
+                        "session",
+                        session.preferences.model_dump(mode="python"),
+                        allow_session=True,
+                    ),
+                )
+                preference_state = {
+                    "entries": [entry.model_dump(mode="json") for entry in generic_entries]
+                }
+            else:
+                effective = self.merge_preferences(
+                    session.global_preferences, session.workspace_preferences, session.preferences
+                )
+                preference_state = effective.model_dump(exclude_none=True)
             profile = session.profile
             state = {
-                "preferences": effective.model_dump(exclude_none=True),
+                "preferences": preference_state,
                 "profile": profile.model_dump(exclude_none=True) if profile else None,
             }
         else:

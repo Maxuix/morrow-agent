@@ -724,6 +724,11 @@ PRODUCTION_TOOL_DECLARATIONS: tuple[ToolRecoveryDeclaration, ...] = (
         MissingCompletionPolicy.REQUIRES_RECONCILIATION,
     ),
     _declaration(
+        "manage_preferences",
+        EffectClass.RECONCILEABLE_STRUCTURED_STATE_WRITE,
+        MissingCompletionPolicy.REQUIRES_RECONCILIATION,
+    ),
+    _declaration(
         "apply_patch",
         EffectClass.RECONCILEABLE_FILE_WRITE,
         MissingCompletionPolicy.REQUIRES_RECONCILIATION,

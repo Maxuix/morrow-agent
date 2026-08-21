@@ -7,6 +7,7 @@ import getpass
 import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Literal
 
 import typer
 from prompt_toolkit import PromptSession
@@ -16,8 +17,16 @@ from morrow.adapters.local.sandbox import default_sandbox_backend
 from morrow.adapters.registry import PRESETS
 from morrow.adapters.state.journal import SqliteOperationalJournal
 from morrow.adapters.state.operational import OperationalStore
+from morrow.adapters.state.preference_yaml import PreferenceYamlStore
 from morrow.application.backup import BackupBundleError
 from morrow.application.doctor import OperationalDoctor
+from morrow.application.preferences.queries import PreferenceQueries
+from morrow.application.preferences.tool import (
+    ManagePreferenceOperation,
+    ManagePreferencesArguments,
+    PreferenceManagementService,
+)
+from morrow.application.preferences.writer import PreferenceWriter
 from morrow.bootstrap import (
     build_application,
     build_operational_api,
@@ -50,6 +59,7 @@ artifact_app = typer.Typer(help="Artifact 查看与保留。")
 recovery_app = typer.Typer(help="恢复报告与决策。")
 grant_app = typer.Typer(help="Foreground AgentRun 的手动权限授予与撤销。")
 state_app = typer.Typer(help="Operational Store 诊断、事件与备份。")
+preferences_app = typer.Typer(help="Generic Preference 查询与直接生命周期管理。")
 app.add_typer(provider_app, name="provider")
 app.add_typer(model_app, name="model")
 app.add_typer(workspace_app, name="workspace")
@@ -59,6 +69,7 @@ app.add_typer(artifact_app, name="artifact")
 app.add_typer(recovery_app, name="recovery")
 app.add_typer(grant_app, name="grant")
 app.add_typer(state_app, name="state")
+app.add_typer(preferences_app, name="preferences")
 app.add_typer(learning_app, name="learning")
 app.add_typer(memory_app, name="memory")
 
@@ -442,10 +453,18 @@ def _state_services(
         handle=handle,
         write=write,
     )
+    preference_writer = PreferenceWriter(
+        PreferenceYamlStore(application.data_root.root),
+        operational.journal,
+        workspace_id,
+        id_source=application.id_source,
+        clock=operational.journal.now,
+    )
     api = build_operational_api(
         application,
         workspace_id,
         operational,
+        preference_writer=preference_writer,
         learning_provider=learning_provider,
         learning_model=learning_model,
     )
@@ -461,6 +480,32 @@ def _state_services(
 def _close_state(handle) -> None:
     if handle is not None:
         handle.close()
+
+
+def _preference_service(
+    *,
+    state_root: Path | None,
+    workspace_id: str | None,
+    directory: Path,
+    write: bool,
+):
+    application, handle, api, _doctor, _backup = _state_services(
+        state_root=state_root,
+        workspace_id=workspace_id,
+        directory=directory,
+        write=write,
+    )
+    yaml_store = PreferenceYamlStore(application.data_root.root)
+    journal = SqliteOperationalJournal(handle)
+    writer = PreferenceWriter(
+        yaml_store,
+        journal,
+        api.workspace_id,
+        id_source=application.id_source,
+        clock=journal.now,
+    )
+    queries = PreferenceQueries(yaml_store, api.workspace_id)
+    return application, handle, writer, queries, PreferenceManagementService(writer, queries)
 
 
 def _emit_model(value, *, as_json: bool = False) -> None:
@@ -503,6 +548,293 @@ def _emit_page(page, *, render, as_json: bool = False) -> None:
         typer.echo(render(item))
     if page.next_cursor is not None:
         typer.echo(f"next_cursor: {page.next_cursor}")
+
+
+@preferences_app.command("list")
+def preferences_list(
+    scope: Literal["global", "workspace"] = typer.Option("workspace", "--scope"),
+    status: Literal["active", "disabled", "deleted"] | None = typer.Option(None, "--status"),
+    include_deleted: bool = typer.Option(False, "--include-deleted"),
+    workspace_id: str | None = typer.Option(None, "--workspace-id"),
+    directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
+    as_json: bool = typer.Option(False, "--json"),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+) -> None:
+    handle = None
+    try:
+        _application, handle, _writer, queries, _service = _preference_service(
+            state_root=state_root,
+            workspace_id=workspace_id,
+            directory=directory,
+            write=False,
+        )
+        values = queries.list(scope, status=status, include_deleted=include_deleted)
+        if as_json:
+            typer.echo(
+                json.dumps(
+                    [entry.model_dump(mode="json") for entry in values],
+                    ensure_ascii=False,
+                    sort_keys=True,
+                )
+            )
+        else:
+            for entry in values:
+                typer.echo(f"{entry.preference_id}\t{entry.status.value}\t{entry.statement}")
+    except Exception as exc:
+        _cli_error(exc)
+        raise typer.Exit(code=2) from None
+    finally:
+        _close_state(handle)
+
+
+@preferences_app.command("write")
+def preferences_write(
+    operation: Literal["add", "replace", "remove", "enable", "disable"],
+    statement: str | None = typer.Option(None, "--statement"),
+    preference_id: str | None = typer.Option(None, "--preference-id"),
+    scope: Literal["global", "workspace"] = typer.Option("workspace", "--scope"),
+    expected_revision: int | None = typer.Option(None, "--expected-revision", min=0),
+    command_id: str | None = typer.Option(None, "--command-id"),
+    workspace_id: str | None = typer.Option(None, "--workspace-id"),
+    directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
+    as_json: bool = typer.Option(False, "--json"),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+) -> None:
+    _preference_write_command(
+        operation=operation,
+        statement=statement,
+        preference_id=preference_id,
+        scope=scope,
+        expected_revision=expected_revision,
+        command_id=command_id,
+        workspace_id=workspace_id,
+        directory=directory,
+        as_json=as_json,
+        state_root=state_root,
+    )
+
+
+@preferences_app.command("show")
+def preferences_show(
+    preference_id: str,
+    scope: Literal["global", "workspace"] = typer.Option("workspace", "--scope"),
+    include_deleted: bool = typer.Option(False, "--include-deleted"),
+    workspace_id: str | None = typer.Option(None, "--workspace-id"),
+    directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
+    as_json: bool = typer.Option(False, "--json"),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+) -> None:
+    handle = None
+    try:
+        _application, handle, _writer, queries, _service = _preference_service(
+            state_root=state_root,
+            workspace_id=workspace_id,
+            directory=directory,
+            write=False,
+        )
+        value = queries.get(scope, preference_id, include_deleted=include_deleted)
+        if value is None:
+            raise ValueError("Preference 不存在")
+        _emit_model(value, as_json=as_json)
+    except Exception as exc:
+        _cli_error(exc)
+        raise typer.Exit(code=2) from None
+    finally:
+        _close_state(handle)
+
+
+def _preference_write_command(
+    *,
+    operation: Literal["add", "replace", "remove", "enable", "disable"],
+    statement: str | None,
+    preference_id: str | None,
+    scope: Literal["global", "workspace"],
+    expected_revision: int | None,
+    command_id: str | None,
+    workspace_id: str | None,
+    directory: Path,
+    as_json: bool,
+    state_root: Path | None,
+) -> None:
+    handle = None
+    try:
+        _application, handle, _writer, _queries, service = _preference_service(
+            state_root=state_root,
+            workspace_id=workspace_id,
+            directory=directory,
+            write=True,
+        )
+        arguments = ManagePreferencesArguments(
+            scope=scope,
+            operations=(
+                ManagePreferenceOperation(
+                    operation=operation,
+                    statement=statement,
+                    preference_id=preference_id,
+                ),
+            ),
+            expected_revision=expected_revision,
+        )
+        value = service.apply(arguments, command_id=command_id)
+        if as_json:
+            typer.echo(json.dumps(value, ensure_ascii=False, sort_keys=True))
+        else:
+            typer.echo(
+                f"Preference 已{operation}：scope={value['scope']}；revision={value['revision']}。"
+            )
+    except Exception as exc:
+        _cli_error(exc)
+        raise typer.Exit(code=2) from None
+    finally:
+        _close_state(handle)
+
+
+@preferences_app.command("add")
+def preferences_add(
+    statement: str,
+    scope: Literal["global", "workspace"] = typer.Option("workspace", "--scope"),
+    expected_revision: int | None = typer.Option(None, "--expected-revision", min=0),
+    command_id: str | None = typer.Option(None, "--command-id"),
+    workspace_id: str | None = typer.Option(None, "--workspace-id"),
+    directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
+    as_json: bool = typer.Option(False, "--json"),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+) -> None:
+    _preference_write_command(
+        operation="add",
+        statement=statement,
+        preference_id=None,
+        scope=scope,
+        expected_revision=expected_revision,
+        command_id=command_id,
+        workspace_id=workspace_id,
+        directory=directory,
+        as_json=as_json,
+        state_root=state_root,
+    )
+
+
+@preferences_app.command("replace")
+def preferences_replace(
+    preference_id: str,
+    statement: str,
+    scope: Literal["global", "workspace"] = typer.Option("workspace", "--scope"),
+    expected_revision: int | None = typer.Option(None, "--expected-revision", min=0),
+    command_id: str | None = typer.Option(None, "--command-id"),
+    workspace_id: str | None = typer.Option(None, "--workspace-id"),
+    directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
+    as_json: bool = typer.Option(False, "--json"),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+) -> None:
+    _preference_write_command(
+        operation="replace",
+        statement=statement,
+        preference_id=preference_id,
+        scope=scope,
+        expected_revision=expected_revision,
+        command_id=command_id,
+        workspace_id=workspace_id,
+        directory=directory,
+        as_json=as_json,
+        state_root=state_root,
+    )
+
+
+def _preference_lifecycle_command(
+    operation: Literal["remove", "enable", "disable"],
+    preference_id: str,
+    scope: Literal["global", "workspace"],
+    expected_revision: int | None,
+    command_id: str | None,
+    workspace_id: str | None,
+    directory: Path,
+    as_json: bool,
+    state_root: Path | None,
+) -> None:
+    _preference_write_command(
+        operation=operation,
+        statement=None,
+        preference_id=preference_id,
+        scope=scope,
+        expected_revision=expected_revision,
+        command_id=command_id,
+        workspace_id=workspace_id,
+        directory=directory,
+        as_json=as_json,
+        state_root=state_root,
+    )
+
+
+@preferences_app.command("remove")
+def preferences_remove(
+    preference_id: str,
+    scope: Literal["global", "workspace"] = typer.Option("workspace", "--scope"),
+    expected_revision: int | None = typer.Option(None, "--expected-revision", min=0),
+    command_id: str | None = typer.Option(None, "--command-id"),
+    workspace_id: str | None = typer.Option(None, "--workspace-id"),
+    directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
+    as_json: bool = typer.Option(False, "--json"),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+) -> None:
+    _preference_lifecycle_command(
+        "remove",
+        preference_id,
+        scope,
+        expected_revision,
+        command_id,
+        workspace_id,
+        directory,
+        as_json,
+        state_root,
+    )
+
+
+@preferences_app.command("enable")
+def preferences_enable(
+    preference_id: str,
+    scope: Literal["global", "workspace"] = typer.Option("workspace", "--scope"),
+    expected_revision: int | None = typer.Option(None, "--expected-revision", min=0),
+    command_id: str | None = typer.Option(None, "--command-id"),
+    workspace_id: str | None = typer.Option(None, "--workspace-id"),
+    directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
+    as_json: bool = typer.Option(False, "--json"),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+) -> None:
+    _preference_lifecycle_command(
+        "enable",
+        preference_id,
+        scope,
+        expected_revision,
+        command_id,
+        workspace_id,
+        directory,
+        as_json,
+        state_root,
+    )
+
+
+@preferences_app.command("disable")
+def preferences_disable(
+    preference_id: str,
+    scope: Literal["global", "workspace"] = typer.Option("workspace", "--scope"),
+    expected_revision: int | None = typer.Option(None, "--expected-revision", min=0),
+    command_id: str | None = typer.Option(None, "--command-id"),
+    workspace_id: str | None = typer.Option(None, "--workspace-id"),
+    directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
+    as_json: bool = typer.Option(False, "--json"),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+) -> None:
+    _preference_lifecycle_command(
+        "disable",
+        preference_id,
+        scope,
+        expected_revision,
+        command_id,
+        workspace_id,
+        directory,
+        as_json,
+        state_root,
+    )
 
 
 def _cli_error(exc: Exception) -> None:

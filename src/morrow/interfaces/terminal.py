@@ -358,6 +358,23 @@ async def run_repl(
                     orchestrator, terminal, prompt_session, result.value
                 ):
                     return _closed_input(terminal)
+            if result.action == "preference_preview":
+                confirmation = await _confirm(
+                    terminal, prompt_session, "确认执行这项 Preference 生命周期操作？"
+                )
+                if confirmation == "closed":
+                    return _closed_input(terminal)
+                if confirmation != "yes":
+                    terminal.console.print("已取消，未写入状态。")
+                    continue
+                try:
+                    value = _command_service(orchestrator).apply_preferences(result.value)
+                except (ValueError, RuntimeError) as exc:
+                    terminal.console.print(f"Preference 操作失败：{exc}")
+                else:
+                    terminal.console.print(
+                        f"Preference 已写入：scope={value['scope']}；revision={value['revision']}。"
+                    )
 
 
 async def _run_learning_review(orchestrator, terminal: Terminal, review_id: str, *, retry=False):

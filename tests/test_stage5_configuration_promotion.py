@@ -7,8 +7,10 @@ import pytest
 from morrow.adapters.credentials.keyring import MemoryCredentialStore
 from morrow.adapters.state.journal import SqliteOperationalJournal
 from morrow.adapters.state.operational import OperationalStore
+from morrow.adapters.state.preference_yaml import PreferenceYamlStore
 from morrow.application.api import OperationalApplicationService
 from morrow.application.configuration import ConfigurationCommand
+from morrow.application.preferences.writer import PreferenceWriter
 from morrow.bootstrap import build_application
 from morrow.core.application import ApplicationError, ApplicationErrorCode
 from morrow.core.domain import (
@@ -157,6 +159,7 @@ def _promotion_subjects(
     *,
     profile_candidate: bool = False,
     candidate_scope: LearningScope = LearningScope.WORKSPACE,
+    generic_preferences: bool = False,
 ):
     app = build_application(
         state_root=tmp_path / "state",
@@ -292,7 +295,21 @@ def _promotion_subjects(
         now=NOW,
     )
     journal.put_learning_candidate(workspace_id, candidate)
-    service = ConfigPatchService(app.project_store, app.global_store, workspace_id)
+    preference_writer = None
+    if generic_preferences:
+        preference_writer = PreferenceWriter(
+            PreferenceYamlStore(app.data_root.root),
+            journal,
+            workspace_id,
+            id_source=FixedIdSource(),
+            clock=journal.now,
+        )
+    service = ConfigPatchService(
+        app.project_store,
+        app.global_store,
+        workspace_id,
+        preference_writer=preference_writer,
+    )
     api = OperationalApplicationService(
         journal=journal,
         workspace_id=workspace_id,
@@ -338,6 +355,46 @@ def test_preference_candidate_saga_applies_yaml_and_replays_without_duplicate_ac
             journal.get_learning_candidate(identity.workspace_id, candidate.candidate_id).status
             is LearningCandidateStatus.ACCEPTED
         )
+    finally:
+        handle.close()
+
+
+def test_preference_candidate_bridge_writes_generic_batch_and_keeps_history(tmp_path):
+    app, identity, handle, journal, api, candidate = _promotion_subjects(
+        tmp_path, generic_preferences=True
+    )
+    try:
+        from morrow.core.learning_commands import AcceptLearningCandidateCommand
+
+        result = api.accept_learning_candidate(
+            AcceptLearningCandidateCommand(
+                workspace_id=identity.workspace_id,
+                candidate_id=candidate.candidate_id,
+                expected_row_version=1,
+                command_id="cmd_generic_candidate",
+            )
+        )
+
+        generic = PreferenceYamlStore(app.data_root.root).load_workspace(identity.workspace_id)
+        batches = journal.list_preference_write_batches(identity.workspace_id)
+        assert result.value.outcome == "activated"
+        assert generic.source_schema_version == 3
+        assert generic.value is not None
+        assert generic.value.entries[0].statement == "回答时默认使用 中文。"
+        assert len(batches) == 1
+        assert batches[0].status.value == "finalized"
+        assert batches[0].command_id == "cmd_generic_candidate"
+        assert journal.get_learning_candidate(
+            identity.workspace_id, candidate.candidate_id
+        ).status is (LearningCandidateStatus.ACCEPTED)
+        undone = api.undo_learning_activation(
+            result.value.activation_id, command_id="cmd_generic_undo"
+        )
+        assert undone.value.outcome == "reversed"
+        assert len(journal.list_preference_write_batches(identity.workspace_id)) == 2
+        after_undo = PreferenceYamlStore(app.data_root.root).load_workspace(identity.workspace_id)
+        assert after_undo.value is not None
+        assert all(entry.status.value == "deleted" for entry in after_undo.value.entries)
     finally:
         handle.close()
 

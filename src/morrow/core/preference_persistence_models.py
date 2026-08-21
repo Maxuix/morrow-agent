@@ -22,6 +22,7 @@ from morrow.core.preference_models import (
     PREFERENCE_PROPOSAL_ID_PREFIX,
     PREFERENCE_REVIEW_JOB_ID_PREFIX,
     PREFERENCE_WRITE_BATCH_ID_PREFIX,
+    PreferenceLifecycleOperation,
     PreferenceOperation,
     PreferenceOperationKind,
     PreferenceScope,
@@ -274,6 +275,7 @@ class PreferenceWriteBatch(ProtocolModel):
     scope: PreferenceScope
     command_id: str
     operations: tuple[PreferenceOperation, ...]
+    lifecycle_operations: tuple[PreferenceLifecycleOperation, ...] = ()
     allocated_add_ids: tuple[str, ...] = ()
     proposal_ids: tuple[str, ...] = ()
     expected_document_revision: int = Field(ge=0)
@@ -311,9 +313,12 @@ class PreferenceWriteBatch(ProtocolModel):
 
     @model_validator(mode="after")
     def valid_batch(self) -> PreferenceWriteBatch:
-        if not 1 <= len(self.operations) <= PREFERENCE_MAX_OPERATIONS:
+        operation_count = len(self.operations) + len(self.lifecycle_operations)
+        if not 1 <= operation_count <= PREFERENCE_MAX_OPERATIONS:
             raise ValueError("Preference write batch must contain one to eight operations")
         if any(operation.scope is not self.scope for operation in self.operations):
+            raise ValueError("Preference write batch must use one scope")
+        if any(operation.scope is not self.scope for operation in self.lifecycle_operations):
             raise ValueError("Preference write batch must use one scope")
         if self.scope is PreferenceScope.SESSION:
             raise ValueError("durable Preference write batches cannot use session scope")

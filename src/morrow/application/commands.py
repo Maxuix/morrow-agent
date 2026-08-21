@@ -5,6 +5,11 @@ from __future__ import annotations
 from morrow.application.command_types import CommandResult, RecoveryCommandRequest
 from morrow.application.configuration import ConfigurationCommand, render_configuration_preview
 from morrow.application.learning.interaction import LearningCommandMixin
+from morrow.application.preferences.tool import (
+    ManagePreferenceOperation,
+    ManagePreferencesArguments,
+    PreferenceManagementService,
+)
 from morrow.application.tasks import TaskCommandError, TaskCommandResult
 from morrow.core.capabilities import AccessScope, ApprovalMode, ProcessIsolation
 from morrow.core.domain import SessionHealth, TaskRunStatus
@@ -24,6 +29,7 @@ class CommandService(LearningCommandMixin):
         task_service=None,
         api=None,
         id_source=None,
+        preference_service: PreferenceManagementService | None = None,
     ) -> None:
         self.session = session
         self.identity = identity
@@ -32,6 +38,7 @@ class CommandService(LearningCommandMixin):
         self.task_service = task_service
         self.api = api
         self.id_source = id_source
+        self.preference_service = preference_service
 
     def _ensure_workspace_writable(self, *, preferences: bool = False) -> None:
         if self.session.read_only:
@@ -60,6 +67,81 @@ class CommandService(LearningCommandMixin):
         return self.config_service.apply_command(
             ConfigurationCommand(scope=scope, target="preferences", operation="reset")
         )
+
+    def apply_preferences(self, arguments: ManagePreferencesArguments):
+        if self.preference_service is None:
+            raise RuntimeError("Preference 服务尚未就绪")
+        if arguments.scope == "workspace":
+            self._ensure_workspace_writable(preferences=True)
+        return self.preference_service.apply_with_session_sync(
+            arguments,
+            command_id=self.id_source.new_id("cmd") if self.id_source is not None else None,
+        )
+
+    def _preference_command(self, parts: list[str]) -> CommandResult:
+        if self.preference_service is None:
+            return CommandResult(["Preference 服务尚未就绪。"])
+        if len(parts) == 1 or (len(parts) > 1 and parts[1] == "list"):
+            scope = parts[2] if len(parts) > 2 else "workspace"
+            try:
+                entries = self.preference_service.queries.list(scope)
+            except Exception as exc:
+                return CommandResult([f"Preference 查询失败：{exc}"])
+            lines = [f"{scope} Preferences：{len(entries)} 条"]
+            lines.extend(
+                f"{entry.preference_id}\t{entry.status.value}\t{entry.statement}"
+                for entry in entries
+            )
+            return CommandResult(lines)
+        operation = parts[1].casefold()
+        if operation == "show":
+            if len(parts) != 4:
+                return CommandResult(["用法：/preferences show [global|workspace] [preference_id]"])
+            scope, preference_id = parts[2], parts[3]
+            try:
+                entry = self.preference_service.queries.get(
+                    scope, preference_id, include_deleted=True
+                )
+            except Exception as exc:
+                return CommandResult([f"Preference 查询失败：{exc}"])
+            return CommandResult(
+                [
+                    f"{entry.preference_id}\t{entry.status.value}\t{entry.statement}"
+                    if entry is not None
+                    else "Preference 不存在。"
+                ]
+            )
+        if operation not in {"add", "replace", "remove", "enable", "disable"}:
+            return CommandResult(
+                [
+                    "用法：/preferences [list [scope]|show scope id|"
+                    "add scope statement|replace scope id statement|remove/enable/disable scope id]"
+                ]
+            )
+        if len(parts) < 4:
+            return CommandResult([f"/preferences {operation} 需要作用域和目标。"])
+        scope = parts[2]
+        if operation == "add":
+            statement = " ".join(parts[3:])
+            item = ManagePreferenceOperation(operation=operation, statement=statement)
+        elif operation == "replace":
+            if len(parts) < 5:
+                return CommandResult(["/preferences replace 需要 preference_id 和 statement。"])
+            item = ManagePreferenceOperation(
+                operation=operation,
+                preference_id=parts[3],
+                statement=" ".join(parts[4:]),
+            )
+        else:
+            if len(parts) != 4:
+                return CommandResult([f"/preferences {operation} 需要一个 preference_id。"])
+            item = ManagePreferenceOperation(operation=operation, preference_id=parts[3])
+        try:
+            arguments = ManagePreferencesArguments(scope=scope, operations=(item,))
+            preview = self.preference_service.preflight(arguments)
+        except Exception as exc:
+            return CommandResult([f"Preference 操作无效：{exc}"])
+        return CommandResult(list(preview), action="preference_preview", value=arguments)
 
     def arm_full_access_grant(self) -> None:
         profile = self.session.permission_profile
@@ -208,6 +290,8 @@ class CommandService(LearningCommandMixin):
             return self._learn_command(parts)
         if command == "/memory":
             return self._memory_command(parts)
+        if command in {"/preference", "/preferences"}:
+            return self._preference_command(parts)
         if command == "/task":
             return self._task_command(parts)
         if command == "/accept":

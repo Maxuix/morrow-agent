@@ -266,10 +266,67 @@ def reduce_preference_lifecycle(
     )
 
 
+def reduce_preference_operations(
+    document: PreferenceDocument,
+    operations: Iterable[PreferenceOperation] = (),
+    lifecycle_operations: Iterable[PreferenceLifecycleOperation] = (),
+    *,
+    now: datetime | None = None,
+    allocate_id: PreferenceIdAllocator | None = None,
+) -> PreferenceDocument:
+    """Apply one bounded mixed batch and advance the document exactly once.
+
+    The ordinary reducer already validates and applies add/replace/remove operations
+    atomically.  Lifecycle operations are then applied to that immutable working
+    result, while this wrapper restores the single document revision promised by a
+    batch.  Entry revisions still reflect every operation in the batch.
+    """
+
+    regular = tuple(operations)
+    lifecycle = tuple(lifecycle_operations)
+    if not regular and not lifecycle:
+        raise PreferenceOperationError(
+            "operation_count", "Preference batch must contain operations"
+        )
+    if len(regular) + len(lifecycle) > PREFERENCE_MAX_OPERATIONS:
+        raise PreferenceOperationError(
+            "operation_count", "Preference batch must contain one to eight operations"
+        )
+    targets = [
+        operation.preference_id for operation in regular if operation.preference_id is not None
+    ] + [operation.preference_id for operation in lifecycle]
+    if len(targets) != len(set(targets)):
+        raise PreferenceOperationError(
+            "duplicate_target", "Preference targets may appear only once in a batch"
+        )
+
+    timestamp = _timestamp(now)
+    working = document
+    if regular:
+        working = reduce_preference_document(
+            working, regular, now=timestamp, allocate_id=allocate_id
+        )
+    for operation in lifecycle:
+        working = reduce_preference_lifecycle(working, operation, now=timestamp)
+    try:
+        return PreferenceDocument(
+            schema_version=document.schema_version,
+            scope=document.scope,
+            revision=document.revision + 1,
+            updated_at=timestamp,
+            entries=working.entries,
+        )
+    except ValueError as exc:
+        raise PreferenceOperationError(
+            "invalid_result", "Preference batch produced invalid state"
+        ) from exc
+
+
 __all__ = [
     "PreferenceIdAllocator",
     "PreferenceOperationError",
     "exact_preference_key",
     "reduce_preference_document",
     "reduce_preference_lifecycle",
+    "reduce_preference_operations",
 ]

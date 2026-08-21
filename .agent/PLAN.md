@@ -1,7 +1,7 @@
 # Stage 5 Preference Learning v2 Refactor Plan
 
-> Status: S56 complete after the offline gate and required review/fix pass
-> Active subplan: none; S57 is the next planned subplan
+> Status: S57 implementation active after S56 merged and its gates passed
+> Active subplan: 57 — Atomic Preference Writer and Direct Lifecycle
 > Planning baseline: `c6031d2` on local `main`
 > Target state: generic atomic Preferences, semantic Reviewer, durable asynchronous Review,
 > reviewable Inbox, deterministic Writer, and next-AgentRun injection

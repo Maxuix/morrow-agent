@@ -21,13 +21,25 @@ from morrow.core.store import StorageError, StorageErrorCode
 class PreferenceWriteBatchJournalMixin:
     """Writer-batch persistence surface mixed into the public journal."""
 
+    @staticmethod
+    def _operations_payload(batch: PreferenceWriteBatch) -> object:
+        operations = [operation.model_dump(mode="json") for operation in batch.operations]
+        if not batch.lifecycle_operations:
+            return operations
+        return {
+            "operations": operations,
+            "lifecycle_operations": [
+                operation.model_dump(mode="json") for operation in batch.lifecycle_operations
+            ],
+        }
+
     def put_preference_write_batch(
         self, workspace_id: str, batch: PreferenceWriteBatch
     ) -> PreferenceWriteBatch:
         if batch.workspace_id != workspace_id:
             raise _workspace_error("write batch")
         operations_json, operations_bytes = _canonical_json(
-            [operation.model_dump(mode="json") for operation in batch.operations],
+            self._operations_payload(batch),
             maximum=196608,
             label="write batch operations",
         )
@@ -108,6 +120,96 @@ class PreferenceWriteBatchJournalMixin:
         if str(row[1]) != workspace_id:
             raise _workspace_error("write batch")
         return _batch_from_row(row)
+
+    def get_preference_write_batch_by_command(
+        self, workspace_id: str, command_id: str
+    ) -> PreferenceWriteBatch | None:
+        row = self.backend.read_one(
+            f"SELECT {_BATCH_COLUMNS} FROM preference_write_batches "
+            "WHERE workspace_id = ? AND command_id = ?",
+            (workspace_id, command_id),
+        )
+        return _batch_from_row(row) if row is not None else None
+
+    def save_preference_write_batch(
+        self,
+        workspace_id: str,
+        batch: PreferenceWriteBatch,
+        *,
+        expected_row_version: int,
+    ) -> PreferenceWriteBatch:
+        if batch.workspace_id != workspace_id:
+            raise _workspace_error("write batch")
+        operations_json, operations_bytes = _canonical_json(
+            self._operations_payload(batch),
+            maximum=196608,
+            label="write batch operations",
+        )
+        allocated_json, _ = _canonical_json(
+            list(batch.allocated_add_ids), maximum=4096, label="allocated Preference IDs"
+        )
+        proposal_json, _ = _canonical_json(
+            list(batch.proposal_ids), maximum=8192, label="proposal IDs"
+        )
+
+        def work() -> PreferenceWriteBatch:
+            existing = self.get_preference_write_batch(workspace_id, batch.batch_id)
+            if existing is None:
+                raise StorageError(StorageErrorCode.NOT_FOUND, "Preference write batch is missing")
+            immutable = (
+                "batch_id",
+                "workspace_id",
+                "scope",
+                "command_id",
+                "operations",
+                "lifecycle_operations",
+                "allocated_add_ids",
+                "proposal_ids",
+                "expected_document_revision",
+                "before_document_revision",
+                "before_document_digest",
+                "after_document_revision",
+                "after_document_digest",
+                "before_document_json",
+                "after_document_json",
+                "created_at",
+            )
+            if any(getattr(existing, name) != getattr(batch, name) for name in immutable):
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE, "Preference batch identity is immutable"
+                )
+            if (
+                existing.row_version != expected_row_version
+                or batch.row_version != expected_row_version + 1
+            ):
+                raise StorageError(StorageErrorCode.UNAVAILABLE, "Preference write batch is stale")
+            self.backend.executor().execute(
+                "UPDATE preference_write_batches SET operations_json = ?, operations_bytes = ?, "
+                "allocated_add_ids_json = ?, proposal_ids_json = ?, status = ?, recovery_code = ?, "
+                "row_version = ?, prepared_at_unix = ?, applied_at_unix = ?, finalized_at_unix = ? "
+                "WHERE batch_id = ? AND workspace_id = ? AND row_version = ?",
+                (
+                    operations_json,
+                    operations_bytes,
+                    allocated_json,
+                    proposal_json,
+                    batch.status.value,
+                    batch.recovery_code,
+                    batch.row_version,
+                    _optional_unix(batch.prepared_at),
+                    _optional_unix(batch.applied_at),
+                    _optional_unix(batch.finalized_at),
+                    batch.batch_id,
+                    workspace_id,
+                    expected_row_version,
+                ),
+            )
+            loaded = self.get_preference_write_batch(workspace_id, batch.batch_id)
+            if loaded is None or loaded.row_version != batch.row_version:
+                raise StorageError(StorageErrorCode.UNAVAILABLE, "Preference write batch is stale")
+            return loaded
+
+        return self.backend.transact(work)
 
     def list_preference_write_batches(
         self,

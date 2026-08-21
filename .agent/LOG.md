@@ -1983,3 +1983,28 @@
 - Focused S56 tests passed 61; the final offline gate passed `855 passed, 2 deselected`. Ruff
   format/check, compileall, root CLI help, and working/index diff checks passed. No Provider, network,
   credential, or Live test path was used.
+
+## 2026-08-21 — Subplan 56 merged; Subplan 57 activated
+
+- Committed the S56 closeout at `fdce537`, fast-forwarded local `main`, and retired
+  `feat/stage5-preference-foundation`. The two untracked research files remain preserved and were not
+  staged. Local `main` is ahead of its configured upstream; no push was attempted.
+- Created `feat/stage5-preference-writer` from the verified `main` and activated S57. The first task
+  is the deterministic same-scope Writer prepare/apply/finalize foundation; Reviewer, Worker,
+  foreground enqueue, and automatic publication remain disabled.
+
+## 2026-08-21 — Subplan 57 implementation checkpoint prepared
+
+- Implemented the same-scope YAML-authoritative Preference Writer with bounded multi-operation
+  batches, stable add IDs, revision/value-digest OCC, prepare/apply/finalize phases, crash retry,
+  drift quarantine, lifecycle enable/disable, queries, and direct `manage_preferences` approval.
+- Added first-write legacy Candidate translation, generic projections through Context/AgentRun
+  snapshots, full global aggregate preservation, workspace v3 publication, historical AgentRun
+  decoding, CLI/REPL Preference management, and a durable recovery declaration for
+  `manage_preferences`. Existing Profile/Provider behavior and legacy compatibility paths remain.
+- Candidate acceptance and undo now use the same generic Writer batch while retaining Candidate,
+  Evidence, decision, and activation history. The generic authority is exposed to a new Session only
+  after a v2/v3 document exists; the legacy bridge remains available before that point.
+- Focused Writer/configuration/Promotion/CLI tests passed; the complete offline gate passed
+  `867 passed, 2 deselected`; Ruff format/check and architecture tests passed. No Provider, network,
+  credential, or Live test path was used. The two untracked research files remain untouched.

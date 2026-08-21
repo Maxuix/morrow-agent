@@ -32,6 +32,8 @@ from morrow.core.models import (
     UserMessage,
 )
 from morrow.core.permissions import PermissionSnapshot
+from morrow.core.preference_documents import PreferenceDocument
+from morrow.core.preference_models import PreferenceEntry
 from morrow.runtime.conversation import ConversationAppend, ConversationLog
 
 if TYPE_CHECKING:
@@ -158,6 +160,9 @@ class Session:
     preferences: Preferences = field(default_factory=Preferences)
     global_preferences: Preferences = field(default_factory=Preferences)
     workspace_preferences: Preferences = field(default_factory=Preferences)
+    generic_global_preferences: PreferenceDocument | None = None
+    generic_workspace_preferences: PreferenceDocument | None = None
+    generic_session_preferences: tuple[PreferenceEntry, ...] = ()
     log: ConversationLog = field(default_factory=ConversationLog)
     # Process-local unsaved history, or an in-flight durable turn.
     dirty: bool = False
@@ -232,6 +237,7 @@ class Session:
         self.session_id = session_id
         self.log.reset()
         self.preferences = Preferences()
+        self.generic_session_preferences = ()
         self.dirty = False
         self.health = SessionHealth.OK
         self.latest_run_id = None

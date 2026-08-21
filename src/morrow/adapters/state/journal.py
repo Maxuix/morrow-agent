@@ -85,6 +85,10 @@ from morrow.core.permissions import (
     CapabilityGrant,
     PermissionSnapshot,
 )
+from morrow.core.preference_models import (
+    PreferenceWriteBatch,
+    PreferenceWriteBatchStatus,
+)
 from morrow.core.recovery import RecoveryReceipt, RecoveryReport
 from morrow.core.store import StorageError, StorageErrorCode
 
@@ -191,6 +195,45 @@ class SqliteOperationalJournal:
         """Expose the bounded v13 Preference repository to application services."""
 
         return self._preference_journal
+
+    def put_preference_write_batch(
+        self, workspace_id: str, batch: PreferenceWriteBatch
+    ) -> PreferenceWriteBatch:
+        return self._preference_journal.put_preference_write_batch(workspace_id, batch)
+
+    def get_preference_write_batch(
+        self, workspace_id: str, batch_id: str
+    ) -> PreferenceWriteBatch | None:
+        return self._preference_journal.get_preference_write_batch(workspace_id, batch_id)
+
+    def get_preference_write_batch_by_command(
+        self, workspace_id: str, command_id: str
+    ) -> PreferenceWriteBatch | None:
+        return self._preference_journal.get_preference_write_batch_by_command(
+            workspace_id, command_id
+        )
+
+    def save_preference_write_batch(
+        self,
+        workspace_id: str,
+        batch: PreferenceWriteBatch,
+        *,
+        expected_row_version: int,
+    ) -> PreferenceWriteBatch:
+        return self._preference_journal.save_preference_write_batch(
+            workspace_id, batch, expected_row_version=expected_row_version
+        )
+
+    def list_preference_write_batches(
+        self,
+        workspace_id: str,
+        *,
+        status: PreferenceWriteBatchStatus | None = None,
+        limit: int = 100,
+    ) -> tuple[PreferenceWriteBatch, ...]:
+        return self._preference_journal.list_preference_write_batches(
+            workspace_id, status=status, limit=limit
+        )
 
     def transact[T](self, work: Callable[[SqliteOperationalJournal], T]) -> T:
         return self._backend.transact(lambda: work(self))

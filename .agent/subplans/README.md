@@ -32,7 +32,7 @@ history at `20fb43e`; its retired task file is no longer kept in the active subp
 | 54 | `54-stage5-reviewer-acceptance.md` | completed |
 | 55 | `55-stage5-simulated-user-remediation.md` | completed |
 | 56 | `56-stage5-preference-foundation.md` | completed |
-| 57 | `57-stage5-preference-writer.md` | planned |
+| 57 | `57-stage5-preference-writer.md` | active |
 | 58 | `58-stage5-preference-reviewer-inbox.md` | planned |
 | 59 | `59-stage5-review-worker.md` | planned |
 | 60 | `60-stage5-preference-context.md` | planned |

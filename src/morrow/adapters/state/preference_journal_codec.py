@@ -10,7 +10,7 @@ from typing import Any
 
 from morrow.core.domain import canonical_json_bytes
 from morrow.core.preference_documents import PreferenceReviewSnapshot
-from morrow.core.preference_models import PreferenceOperation
+from morrow.core.preference_models import PreferenceLifecycleOperation, PreferenceOperation
 from morrow.core.preference_persistence_models import (
     PreferenceEvidence,
     PreferenceProposal,
@@ -236,9 +236,20 @@ def _batch_from_row(row: tuple[object, ...]) -> PreferenceWriteBatch:
         operations_payload = _load_json(
             row[4], row[5], maximum=196608, label="write batch operations"
         )
-        if not isinstance(operations_payload, list):
-            raise ValueError("operations must be a list")
-        operations = tuple(PreferenceOperation.model_validate(item) for item in operations_payload)
+        lifecycle_payload: list[object] = []
+        if isinstance(operations_payload, list):
+            operation_payload = operations_payload
+        elif isinstance(operations_payload, dict):
+            operation_payload = operations_payload.get("operations")
+            lifecycle_payload = operations_payload.get("lifecycle_operations", [])
+            if not isinstance(operation_payload, list) or not isinstance(lifecycle_payload, list):
+                raise ValueError("write batch operations envelope is invalid")
+        else:
+            raise ValueError("operations must be a list or envelope")
+        operations = tuple(PreferenceOperation.model_validate(item) for item in operation_payload)
+        lifecycle_operations = tuple(
+            PreferenceLifecycleOperation.model_validate(item) for item in lifecycle_payload
+        )
         allocated = _load_json(
             row[6], len(str(row[6]).encode("utf-8")), maximum=4096, label="allocated IDs"
         )
@@ -251,6 +262,7 @@ def _batch_from_row(row: tuple[object, ...]) -> PreferenceWriteBatch:
             scope=str(row[2]),
             command_id=str(row[3]),
             operations=operations,
+            lifecycle_operations=lifecycle_operations,
             allocated_add_ids=tuple(allocated),
             proposal_ids=tuple(proposals),
             expected_document_revision=int(row[8]),

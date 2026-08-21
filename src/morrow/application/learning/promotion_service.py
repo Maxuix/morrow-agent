@@ -26,7 +26,7 @@ from morrow.core.learning_commands import (
     AcceptLearningCandidateCommand,
     EditAndAcceptLearningCandidateCommand,
 )
-from morrow.core.learning_payloads import CandidatePayload
+from morrow.core.learning_payloads import CandidatePayload, PreferenceCandidatePayload
 from morrow.services.preferences import (
     ConfigPatchService,
     ConfigurationConflictError,
@@ -111,6 +111,7 @@ class ConfigurationPromotionService(
             final_payload=final_payload,
             scope=command.scope,
             edit=edit,
+            preference_command_id=command_id,
         )
         operation = self._prepare_sqlite(
             command=command,
@@ -139,6 +140,7 @@ class ConfigurationPromotionService(
             final_payload=final_payload,
             scope=scope,
             edit=edit,
+            preference_command_id=None,
         )
 
     def _prepare_candidate(
@@ -148,12 +150,17 @@ class ConfigurationPromotionService(
         final_payload: CandidatePayload,
         scope: str | None,
         edit: bool,
+        preference_command_id: str | None,
     ) -> PreparedConfigurationChange:
         self._validate_candidate_shape(candidate, final_payload, scope=scope, edit=edit)
         selected_scope = self._scope(scope or candidate.proposed_scope.value)
         command = self._command_for_candidate(candidate, final_payload, selected_scope)
         try:
-            prepared = self.config_service.prepare(command)  # type: ignore[union-attr]
+            prepared = self.config_service.prepare(  # type: ignore[union-attr]
+                command,
+                preference_mode=isinstance(final_payload, PreferenceCandidatePayload),
+                preference_command_id=preference_command_id,
+            )
         except (
             ConfigurationValidationError,
             ConfigurationNotFoundError,

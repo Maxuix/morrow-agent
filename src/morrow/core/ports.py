@@ -29,6 +29,7 @@ from morrow.core.preference_models import (
     PreferenceReviewJob,
     PreferenceReviewJobStatus,
     PreferenceWriteBatch,
+    PreferenceWriteBatchStatus,
 )
 
 
@@ -146,6 +147,30 @@ class PreferencePersistencePort(Protocol):
     def put_preference_write_batch(
         self, workspace_id: str, batch: PreferenceWriteBatch
     ) -> PreferenceWriteBatch: ...
+
+    def get_preference_write_batch(
+        self, workspace_id: str, batch_id: str
+    ) -> PreferenceWriteBatch | None: ...
+
+    def get_preference_write_batch_by_command(
+        self, workspace_id: str, command_id: str
+    ) -> PreferenceWriteBatch | None: ...
+
+    def save_preference_write_batch(
+        self,
+        workspace_id: str,
+        batch: PreferenceWriteBatch,
+        *,
+        expected_row_version: int,
+    ) -> PreferenceWriteBatch: ...
+
+    def list_preference_write_batches(
+        self,
+        workspace_id: str,
+        *,
+        status: PreferenceWriteBatchStatus | None = None,
+        limit: int = 100,
+    ) -> tuple[PreferenceWriteBatch, ...]: ...
 
 
 class Clock(Protocol):

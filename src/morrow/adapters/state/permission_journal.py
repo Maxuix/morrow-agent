@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 
+from morrow.adapters.state.preference_migration import decode_legacy_agent_run_preferences
+from morrow.adapters.state.preference_projection import preferences_from_entries
 from morrow.adapters.state.transaction import SqliteJournalBackend
 from morrow.core.capabilities import AccessScope, ApprovalMode, ProcessIsolation
 from morrow.core.domain import (
@@ -552,16 +554,46 @@ class SqliteRunPermissionJournal:
 
 
 def _agent_from_row(row: tuple[object, ...]) -> DurableAgentRun:
-    snapshot = AgentRunSnapshot.model_validate(json.loads(str(row[4])))
-    return DurableAgentRun(
-        agent_run_id=str(row[0]),
-        turn_id=str(row[1]),
-        session_id=str(row[2]),
-        resume_of_agent_run_id=str(row[3]) if row[3] is not None else None,
-        snapshot=snapshot,
-        created_at=_from_unix(row[5]),
-        permission_snapshot_id=str(row[6]) if row[6] is not None else None,
-    )
+    try:
+        raw = json.loads(str(row[4]))
+        if not isinstance(raw, Mapping):
+            raise ValueError("AgentRun snapshot must be a mapping")
+        snapshot_data = dict(raw)
+        if _has_legacy_preference_shape(snapshot_data):
+            entries = decode_legacy_agent_run_preferences(snapshot_data)
+            for key in (
+                "schema_version",
+                "created_at",
+                "preference_entries",
+                "global_preferences",
+                "workspace_preferences",
+                "session_preferences",
+            ):
+                snapshot_data.pop(key, None)
+            snapshot_data["preferences"] = preferences_from_entries(entries)
+        snapshot = AgentRunSnapshot.model_validate(snapshot_data)
+        return DurableAgentRun(
+            agent_run_id=str(row[0]),
+            turn_id=str(row[1]),
+            session_id=str(row[2]),
+            resume_of_agent_run_id=str(row[3]) if row[3] is not None else None,
+            snapshot=snapshot,
+            created_at=_from_unix(row[5]),
+            permission_snapshot_id=str(row[6]) if row[6] is not None else None,
+        )
+    except (TypeError, ValueError, IndexError, OverflowError) as exc:
+        raise StorageError(
+            StorageErrorCode.NEEDS_REPAIR, "operational AgentRun snapshot is invalid"
+        ) from exc
+
+
+def _has_legacy_preference_shape(raw: Mapping[str, object]) -> bool:
+    if "preference_entries" in raw or any(
+        key in raw for key in ("global_preferences", "workspace_preferences", "session_preferences")
+    ):
+        return True
+    preferences = raw.get("preferences")
+    return isinstance(preferences, Mapping) and "entries" in preferences
 
 
 def _grant_from_row(row: tuple[object, ...]) -> CapabilityGrant:

@@ -21,6 +21,7 @@ from morrow.core.domain import (
     sha256_digest,
 )
 from morrow.core.models import StatePresence, ToolEffect
+from morrow.core.preference_models import PreferenceLifecycleOperation, PreferenceOperation
 from morrow.runtime.policy import ToolApproval, ToolExecutionPolicy
 from morrow.runtime.tools import RegisteredTool, ToolErrorCode, ToolExecutionError, make_tool
 
@@ -194,6 +195,9 @@ class PreparedConfigurationChange(BaseModel):
     after_digest: str
     expected_applied_revision: int | None = Field(default=None, ge=1)
     inverse_command: ConfigurationCommand | None = None
+    preference_operations: tuple[PreferenceOperation, ...] = ()
+    preference_lifecycle_operations: tuple[PreferenceLifecycleOperation, ...] = ()
+    preference_command_id: str | None = None
     changed: bool
     preview_lines: tuple[str, ...] = Field(max_length=16)
     preparation_version: int = Field(default=1, ge=1, le=1)

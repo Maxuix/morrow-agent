@@ -154,6 +154,7 @@ def test_effect_class_is_independent_of_tool_effect():
 def test_production_declarations_cover_the_frozen_inventory():
     assert PRODUCTION_TOOL_NAMES == {
         "update_configuration",
+        "manage_preferences",
         "list_directory",
         "read_file",
         "find_files",

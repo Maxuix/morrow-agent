@@ -17,6 +17,8 @@ from morrow.adapters.registry import AdapterRegistry
 from morrow.adapters.state.artifacts import FilesystemArtifactStore
 from morrow.adapters.state.journal import SqliteOperationalJournal
 from morrow.adapters.state.operational import OperationalStore, OperationalStoreSession
+from morrow.adapters.state.preference_yaml import PreferenceYamlStore
+from morrow.adapters.state.preference_yaml_types import PreferenceYamlLoadStatus
 from morrow.adapters.state.yaml import (
     GlobalConfigYamlStore,
     ProjectStateYamlStore,
@@ -41,6 +43,12 @@ from morrow.application.local_tools import (
     make_write_file_tool,
 )
 from morrow.application.orchestrator import SessionOrchestrator
+from morrow.application.preferences.queries import PreferenceQueries
+from morrow.application.preferences.tool import (
+    PreferenceManagementService,
+    make_preference_management_tool,
+)
+from morrow.application.preferences.writer import PreferenceWriter
 from morrow.application.recovery import RecoveryService
 from morrow.application.tasks import TaskService
 from morrow.application.turns import SessionPersistence
@@ -55,6 +63,7 @@ from morrow.core.domain import DurableSession, SessionLifecycle
 from morrow.core.execution import missing_declarations
 from morrow.core.models import Preferences, StatePresence
 from morrow.core.permissions import UNCONFINED_HOST_WARNING_DIGEST, CapabilityName
+from morrow.core.preference_models import PreferenceScope
 from morrow.core.store import (
     StorageError,
     StorageErrorCode,
@@ -117,6 +126,7 @@ class SessionApplication:
     api: OperationalApplicationService | None = None
     doctor: OperationalDoctor | None = None
     backup: OperationalBackupService | None = None
+    preference_service: PreferenceManagementService | None = None
 
 
 @dataclass(frozen=True)
@@ -138,6 +148,7 @@ def _default_tool_executor(
     run_policy,
     *,
     config_service=None,
+    preference_service: PreferenceManagementService | None = None,
     approval_port=None,
     capability_policy=None,
     files: WorkspaceFileService,
@@ -153,6 +164,8 @@ def _default_tool_executor(
     registry = ToolRegistry()
     if config_service is not None:
         registry.register(make_configuration_tool(config_service))
+    if preference_service is not None:
+        registry.register(make_preference_management_tool(preference_service))
     for tool in make_read_search_tools(files, search):
         registry.register(tool)
     registry.register(make_apply_patch_tool(mutation, changes))
@@ -284,11 +297,17 @@ def build_operational_api(
     tasks: TaskService | None = None,
     persistence=None,
     config_service: ConfigPatchService | None = None,
+    preference_writer: PreferenceWriter | None = None,
     learning_provider=None,
     learning_model=None,
 ) -> OperationalApplicationService:
     """Compose the shared command/query boundary over operational domain services."""
 
+    resolved_config_service = config_service or ConfigPatchService(
+        app.project_store, app.global_store, workspace_id
+    )
+    if preference_writer is not None:
+        resolved_config_service.preference_writer = preference_writer
     learning_reviewer = (
         ModelLearningReviewer(learning_provider) if learning_provider is not None else None
     )
@@ -305,8 +324,7 @@ def build_operational_api(
         clock=services.journal.now,
         learning_reviewer=learning_reviewer,
         learning_model=learning_model,
-        config_service=config_service
-        or ConfigPatchService(app.project_store, app.global_store, workspace_id),
+        config_service=resolved_config_service,
     )
 
 
@@ -326,6 +344,31 @@ def build_session_application(
     preferences_result = inspection.preferences
     global_result = app.global_store.load()
     config = global_result.value
+    generic_preferences = PreferenceYamlStore(app.data_root.root)
+    generic_global_load = generic_preferences.load_global()
+    generic_workspace_load = generic_preferences.load_workspace(identity.workspace_id)
+    generic_global = (
+        PreferenceWriter._document_from_value(PreferenceScope.GLOBAL, generic_global_load.value)
+        if generic_preferences.global_path.exists()
+        and generic_global_load.status is PreferenceYamlLoadStatus.OK
+        and generic_global_load.value is not None
+        else None
+    )
+    generic_workspace = (
+        PreferenceWriter._document_from_value(
+            PreferenceScope.WORKSPACE, generic_workspace_load.value
+        )
+        if generic_preferences.workspace_path(identity.workspace_id).exists()
+        and generic_workspace_load.status is PreferenceYamlLoadStatus.OK
+        and generic_workspace_load.value is not None
+        else None
+    )
+    generic_authority_active = (
+        generic_preferences.global_path.exists() and generic_global_load.source_schema_version == 2
+    ) or (
+        generic_preferences.workspace_path(identity.workspace_id).exists()
+        and generic_workspace_load.source_schema_version == 3
+    )
     permission_profile = permission_profile or PermissionProfile()
     workspace_capability = WorkspaceCapability(
         workspace_id=identity.workspace_id,
@@ -343,6 +386,8 @@ def build_session_application(
         workspace_preferences=preferences_result.value.preferences
         if preferences_result.value
         else Preferences(),
+        generic_global_preferences=generic_global,
+        generic_workspace_preferences=generic_workspace,
         read_only=inspection.read_only,
         workspace_preferences_read_only=inspection.preferences_read_only,
         permission_profile=permission_profile,
@@ -413,34 +458,55 @@ def build_session_application(
         run_policy=run_policy,
         estimate_request_chars=estimate_request_chars,
     )
-    tool_executor = (
-        _default_tool_executor(
-            run_policy,
-            config_service=config_service,
-            approval_port=approval_port,
-            capability_policy=capability_policy,
-            files=files,
-            search=search,
-            mutation=mutation,
-            changes=changes,
-            process=process,
-            git=git,
-            sandbox=sandbox,
-            sandbox_enabled=sandbox_capability.supported,
-            process_isolation=permission_profile.process_isolation,
-        )
-        if adapter_support.tool_protocol == "openai_function"
-        else None
-    )
-    runtime = AgentRuntime(
-        provider,
-        model,
-        context_builder,
-        id_source=app.id_source,
-        tool_executor=tool_executor,
-    )
-    handle = _open_operational_store(app)
+    handle = None
+    preference_service = None
     try:
+        handle = _open_operational_store(app)
+        preference_journal = SqliteOperationalJournal(handle)
+        preference_writer = PreferenceWriter(
+            generic_preferences,
+            preference_journal,
+            identity.workspace_id,
+            id_source=app.id_source,
+            clock=preference_journal.now,
+        )
+        config_service.preference_writer = preference_writer
+        preference_service = PreferenceManagementService(
+            preference_writer,
+            PreferenceQueries(generic_preferences, identity.workspace_id),
+            session=session,
+        )
+        if generic_authority_active:
+            tool_preference_service = preference_service
+        else:
+            tool_preference_service = None
+        tool_executor = (
+            _default_tool_executor(
+                run_policy,
+                config_service=config_service,
+                preference_service=tool_preference_service,
+                approval_port=approval_port,
+                capability_policy=capability_policy,
+                files=files,
+                search=search,
+                mutation=mutation,
+                changes=changes,
+                process=process,
+                git=git,
+                sandbox=sandbox,
+                sandbox_enabled=sandbox_capability.supported,
+                process_isolation=permission_profile.process_isolation,
+            )
+            if adapter_support.tool_protocol == "openai_function"
+            else None
+        )
+        runtime = AgentRuntime(
+            provider,
+            model,
+            context_builder,
+            id_source=app.id_source,
+            tool_executor=tool_executor,
+        )
         operational = build_operational_services(
             app,
             identity.workspace_id,
@@ -486,6 +552,7 @@ def build_session_application(
             tasks=persistence.tasks,
             persistence=persistence,
             config_service=config_service,
+            preference_writer=preference_writer,
             learning_provider=provider,
             learning_model=model,
         )
@@ -523,6 +590,7 @@ def build_session_application(
             task_service=persistence.tasks,
             api=api,
             id_source=app.id_source,
+            preference_service=preference_service,
         )
         orchestrator = SessionOrchestrator(
             session=session,
@@ -551,6 +619,7 @@ def build_session_application(
             api=api,
             doctor=operational.doctor,
             backup=operational.backup,
+            preference_service=preference_service,
         )
     except BaseException:
         handle.close()
