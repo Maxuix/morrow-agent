@@ -1,8 +1,8 @@
 # Stage 5 Preference Learning v2 Refactor Plan
 
-> Status: S57 complete after merge and final offline gates
-> Active subplan: 58 — Semantic Preference Reviewer and Inbox
-> Planning baseline: `c6031d2` on local `main`
+> Status: S58 complete after merge and final offline gates
+> Active subplan: 59 — Durable Asynchronous Review Worker
+> Planning baseline: `252460a` on local `main`
 > Target state: generic atomic Preferences, semantic Reviewer, durable asynchronous Review,
 > reviewable Inbox, deterministic Writer, and next-AgentRun injection
 

@@ -1,6 +1,6 @@
 # Subplan 59 — Durable Asynchronous Review Worker
 
-> Status: planned; not active
+> Status: active
 > Branch: `feat/stage5-review-worker`
 > Prerequisite: Subplan 58 merged
 > Owns: terminal-Turn enqueue, leases/retries, process-local worker, status/notification UX

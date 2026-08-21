@@ -1,6 +1,6 @@
 # Subplan 58 — Semantic Preference Reviewer and Inbox
 
-> Status: active
+> Status: completed
 > Branch: `feat/stage5-preference-reviewer`
 > Prerequisite: Subplan 57 merged
 > Owns: minimal Reviewer protocol, bounded context, proposal validation and decisions

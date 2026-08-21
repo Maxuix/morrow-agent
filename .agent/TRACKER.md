@@ -3,8 +3,7 @@
 ## Current status
 
 The complete Stage 5 Preference Learning v2 implementation plan is finalized after the S56 review
-and independent plan-fix pass. S57 is merged locally and S58 is now active; S57's single Grok review
-invocation was interrupted before a report returned.
+and independent plan-fix pass. S57 and S58 are merged locally; S59 is now active.
 
 ## Last completed work
 
@@ -23,19 +22,18 @@ execution, and next-AgentRun refresh.
 
 ## Active task
 
-S58 review-fix and closeout — the single Grok review returned, three confirmed boundary issues were
-fixed independently, and the full offline gates pass again on `feat/stage5-preference-reviewer`.
+S59.1 — add the atomic terminal-Turn Preference Review enqueue hook on
+`feat/stage5-review-worker`.
 
 ## Next action
 
-Commit the review-fix and adjudication log, excluding the two untracked research files. Then fast-forward
-local `main`, retire this branch, and activate S59 without pushing.
+Inspect the existing terminal Turn commit transaction and ConversationLog/operational journal
+boundaries, then implement only S59.1. Do not begin worker leasing or retry scheduling early.
 
 ## Blockers
 
-No code blocker for S58. S57's one Grok invocation was interrupted before its report returned; the
-local independent review found and fixed concurrent-command replay and unreadable-authority
-resolution gaps. Real-Provider acceptance remains on hold until the later protocol runs.
+No code blocker for S59. Real-Provider acceptance remains on hold; S59 must use scripted offline
+Provider/Reviewer doubles and injected time/scheduling.
 
 ## Preserved workspace state
 
