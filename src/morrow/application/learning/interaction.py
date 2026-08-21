@@ -229,6 +229,7 @@ class LearningCommandMixin:
             scope, resolution = self._parse_learning_options(parts[3:])
             preview = self.api.preview_learning_candidate_decision(
                 view.candidate.candidate_id,
+                edit=(view.candidate.proposed_payload if operation == "edit" else None),
                 scope=scope,
                 conflict_resolution=resolution,
             )

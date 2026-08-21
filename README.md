@@ -138,17 +138,17 @@ Learning Review；交互入口可在前台执行一次 no-tool Reviewer，headle
 Project Knowledge 进入 SQLite 版本化记录；Skill、Workflow 和 Orchestration 候选只保留为候选，
 不会创建文件、工具、权限或运行时规则。`explicit-auto` 被拒绝，`off` 可关闭任务后 Review。
 
-当前模拟用户验收已确认 headless `learning accept/edit/reject` 的确认后路径和全新 Project Knowledge
-首次 Promotion 存在待修复缺陷；在 Subplan 55 完成并复测前，不应把上述命令描述为完整用户闭环。
-问题证据见 `docs/acceptance/stage5-simulated-user-evaluation.md`。
+Subplan 55 已修复并复测 headless `learning accept/edit/reject` 的确认后路径和全新 Project Knowledge
+首次 Promotion；隔离回放中的新进程、重启、Doctor 与 backup verify 均通过。真实模型质量评估仍 pending，
+不将该确定性回放描述为 Live Provider 质量结论。历史问题与回放证据见
+`docs/acceptance/stage5-simulated-user-evaluation.md`。
 
 `state doctor` 对 Review、Evidence、Candidate、决策、Promotion、Knowledge、Memory Selection
 和 AgentRun 冻结引用执行只读检查；`state backup` / `state verify-backup` 只备份隔离的 Operational
 SQLite 与 Artifact bundle，不包含 YAML、workspace index、凭据或 Keychain。跨存储的 Preference/
 Profile 恢复仍需要既有 YAML 状态文件备份；SQLite 中的 activation provenance 不能单独重建 YAML。
 禁止原始 Reviewer 输出、Provider reasoning、密钥和受保护内容进入事件、日志、候选、YAML 或模型上下文。
-当前确定性离线安全门禁已完成；模拟用户验收修复与真实 Provider 质量评估分别 pending。后者仍需
-显式授权和兼容凭据，未授权时不运行。
+当前确定性离线安全门禁与模拟用户回放已完成；真实 Provider 质量评估仍需显式授权和兼容凭据，未授权时不运行。
 
 Artifact cleanup 默认只 dry-run，并以同一 data root 内所有 workspace 的 metadata 与
 reference 为权威。`--apply` 不销毁字节：它只会把经目录、类型、权限、单链接和事务内

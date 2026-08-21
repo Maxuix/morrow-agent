@@ -1,15 +1,12 @@
 # Stage 5 实现与离线验收证据
 
 > 日期：2026-08-21
-> 状态：自动化离线门禁完成；模拟用户验收修复 pending；真实 Provider 质量评估 pending
-> 范围：Subplans 49–54 的可审查 Learning、Promotion、MemorySelection、doctor/backup 和产品入口
+> 状态：Subplans 49–55 的自动化离线门禁与隔离模拟用户回放完成；真实 Provider 质量评估 pending
+> 范围：Subplans 49–55 的可审查 Learning、Promotion、MemorySelection、doctor/backup 和产品入口
 
 本文只记录当前实现能够证明的行为。离线 Fake/脚本 Reviewer 证明确定性边界，不证明真实模型的
-自然语言分类质量。后续[模拟用户测试](stage5-simulated-user-evaluation.md)确认 headless Candidate
-决策和首次 Project Knowledge Promotion 尚有阻断问题，因此本文的旧自动化结果不能再解释为
-“Stage 5 用户闭环可用”。修复范围见
-[Subplan 55](../../.agent/subplans/55-stage5-simulated-user-remediation.md)。Live Provider 评估仍需
-用户显式授权和兼容凭据；本次未尝试网络或真实模型调用。
+自然语言分类质量。修复前问题及修复后回放均记录在[模拟用户测试报告](stage5-simulated-user-evaluation.md)；
+Subplan 55 已关闭 F1/F2/F3。Live Provider 评估仍需用户显式授权和兼容凭据；本次未尝试网络或真实模型调用。
 
 ## 验收矩阵
 
@@ -18,13 +15,21 @@
 | accepted Task → pending Review → bounded Candidate | `tests/test_stage5_learning_application.py`、`tests/test_stage5_learning_evaluation.py` | 通过；零候选是合法结果，单次 Review 最多 3 个候选 |
 | no-tool production Reviewer | `tests/test_stage5_learning_reviewer.py`、`tests/test_stage5_learning_evaluation.py` | 通过；请求/响应有界，最多一次修复，禁止工具和原始 provider 内容落盘 |
 | durable/temporary/negative/quoted/hypothetical/Assistant-only 分类 | `tests/test_stage5_learning_evaluation.py`、`src/morrow/resources/stage5-learning-evaluation.json` | 27/27 纯 evaluator 案例通过；安全负例 5 个，集成 Active 写入 0 |
-| Preference/Profile 显式确认后 Promotion | `tests/test_stage5_configuration_promotion.py`、`tests/test_stage5_learning_cli.py`、模拟用户报告 F1 | 底层 Promotion 自动化通过；headless accept/edit/reject 的确认后路径 pending |
-| Project Knowledge 与 MemorySelection | `tests/test_stage5_project_knowledge.py`、`tests/test_stage5_memory_agent_run.py`、`tests/test_stage5_memory_context.py`、模拟用户报告 F2 | 选择/冻结自动化通过；真实非整秒时钟下的首次 Promotion pending |
+| Preference/Profile 显式确认后 Promotion | `tests/test_stage5_configuration_promotion.py`、`tests/test_stage5_learning_cli.py`、Subplan 55 隔离回放 | 通过；新进程 accept/edit/reject 与 OCC 预览确认均可用 |
+| Project Knowledge 与 MemorySelection | `tests/test_stage5_project_knowledge.py`、`tests/test_stage5_memory_agent_run.py`、`tests/test_stage5_memory_context.py`、Subplan 55 隔离回放 | 通过；非整秒首次 Promotion、重启读取和 Memory revision=1 均通过 |
 | Skill/Workflow/Orchestration future candidate | `tests/test_stage5_project_knowledge.py::test_future_candidate_acceptance_remains_candidate_only` | 通过；只记录 Candidate，不创建文件、工具、权限、Workflow 或运行时规则 |
 | REPL/headless review/retry 与 policy controls | `tests/test_stage5_learning_cli.py`、`tests/test_stage5_learning_cli.py::test_repl_learning_mode_is_explicit_and_rejects_explicit_auto` | 通过；前台执行，无 worker/scheduler，`explicit-auto` 被拒绝 |
-| workspace/restart/crash/OCC/replay | `tests/test_stage5_learning_store.py`、`tests/test_stage5_memory_agent_run.py`、`tests/test_stage5_configuration_promotion.py`、`tests/test_stage4_recovery_crash.py` | 已有自动化通过；Project Knowledge 微秒持久化往返缺口 pending |
+| workspace/restart/crash/OCC/replay | `tests/test_stage5_learning_store.py`、`tests/test_stage5_memory_agent_run.py`、`tests/test_stage5_configuration_promotion.py`、`tests/test_stage4_recovery_crash.py`、Subplan 55 隔离回放 | 通过；新进程状态、Doctor 和 backup verify 均通过 |
 | Doctor 只读完整性检查 | `tests/test_stage5_doctor_backup.py`、`tests/test_stage4_doctor.py`、`tests/test_stage5_memory_inspection.py` | 通过；Review/Evidence/Candidate/Decision/Promotion/Knowledge/Memory 引用和 lease 状态可诊断，数据库 mtime 不变 |
 | 隔离 SQLite backup/restore verification | `tests/test_stage5_doctor_backup.py`、`tests/test_stage4_backup.py` | 通过；Learning/Memory 状态保留，篡改决策摘要会使 verify 失败，YAML/凭据不在 bundle |
+
+## Subplan 55 模拟用户回放
+
+回放在临时状态根使用 3 个 accepted Task 和 5 个候选，真实新进程完成 accept、edit、Project Knowledge
+edit、reject、reject-and-suppress；随后重新读取 Learning/Memory、运行 `state doctor --json`，并创建及验证
+SQLite backup。结果为：`fresh_process=passed`、`knowledge_revisions=1`、`memory_revision=1`、
+`doctor=ok`、`backup=verified`。回放没有访问网络或凭据，详细历史和边界见
+[`stage5-simulated-user-evaluation.md`](stage5-simulated-user-evaluation.md)。
 
 ## Offline quality result
 

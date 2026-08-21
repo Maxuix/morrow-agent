@@ -7,11 +7,13 @@ from datetime import UTC, datetime
 import pytest
 
 from morrow.core.application import ApplicationError, ApplicationErrorCode
-from morrow.core.learning import LearningCandidateType
+from morrow.core.learning import LearningCandidateType, LearningScope
 from morrow.core.learning_commands import (
     ExpireLearningCandidatesCommand,
     RejectLearningCandidateCommand,
 )
+from morrow.core.learning_memory import LearningCandidateDecisionKind, LearningConflictResolution
+from test_stage5_configuration_promotion import _promotion_subjects
 from test_stage5_review_pipeline import ContextReviewer, _accepted, _api
 
 
@@ -46,6 +48,26 @@ async def test_learning_application_exposes_bounded_status_views_and_pure_previe
         assert journal.get_project_knowledge_head_by_key("ws_1", "preference.language") is None
     finally:
         session.close()
+
+
+def test_reject_preview_fails_closed_for_accept_only_arguments(tmp_path):
+    _app, identity, handle, _journal, api, candidate = _promotion_subjects(tmp_path)
+    try:
+        invalid_arguments = (
+            ("edit", candidate.proposed_payload.model_copy(update={"value": "English"})),
+            ("scope", LearningScope.GLOBAL),
+            ("conflict_resolution", LearningConflictResolution.REPLACE),
+        )
+        for name, value in invalid_arguments:
+            with pytest.raises(ApplicationError) as error:
+                api.preview_learning_candidate_decision(
+                    candidate.candidate_id,
+                    decision_intent=LearningCandidateDecisionKind.REJECT,
+                    **{name: value},
+                )
+            assert error.value.code is ApplicationErrorCode.INVALID
+    finally:
+        handle.close()
 
 
 @pytest.mark.asyncio

@@ -2,16 +2,18 @@
 
 ## Current status
 
-Subplan 54's automated offline gate is complete, but the simulated-user evaluation committed at
-`5cfb99f` confirmed two P1 blockers and one P2 preview defect. Subplan 55 is active on its fix
-branch. The optional Live model-quality hold remains pending separately.
+Subplan 54's automated offline gate is complete. Subplan 55's isolated simulated-user remediation
+replay and final review/fix gate passed on its fix branch; the optional Live model-quality hold
+remains pending separately.
 
 ## Last completed task
 
 The Stage 5 simulated-user report is committed at `5cfb99f`. Independent static adjudication
 confirmed F1, F2, and F3 and found one adjacent inverted Project Knowledge edit guard. S55.1
 recorded 9 pre-fix failures. S55.2/S55.3 are implemented and their focused regression sets pass;
-the isolated user-flow replay is now the active task.
+S55.4 now also passes: 3 accepted Tasks, 5 candidates, fresh-process decisions, restart, Doctor, and
+backup verification. S55.5 is now complete: Grok review was resumed and returned one REPL edit-preview
+finding; it was independently verified and fixed once, with no second review.
 
 Subplan 53 is verified and merged at `613ffdb`, including its one-time Grok review-fix pass. It adds
 v12 MemorySelection and rebuildable terms, deterministic selection, frozen AgentRun/context
@@ -23,18 +25,18 @@ recovery, Session projections, and CLI/REPL controls. Subplan 51 is verified and
 
 ## Active task
 
-S55.4 — replay the isolated simulated-user flow and update acceptance evidence.
+Subplan 55 complete; Live model-quality hold pending.
 
 ## Next action
 
-Run the isolated headless CLI flow with a scripted Reviewer, then verify restart, doctor, and backup
-evidence before activating S55.5.
+Commit the verified closeout, fast-forward local `main`, and retire the clean topic branch.
 
 ## Blockers
 
-Stage 5 user acceptance is blocked by F1 (headless Candidate decisions) and F2 (first Project
-Knowledge Promotion). F3 is a confirmed UX defect. Live model quality evidence is pending explicit
-authorization and a compatible credential; remote publication remains outside this planning request.
+F1, F2, F3, the adjacent Project Knowledge edit guard, and the REPL edit-preview mismatch are fixed;
+the isolated replay and complete offline gate passed. Only the independent Live model-quality hold
+remains. Live model-quality evidence is pending explicit authorization and a compatible credential;
+remote publication remains outside this planning request.
 
 Remote publication is outside this planning request. Do not push without explicit authorization.
 
@@ -44,8 +46,8 @@ adopted into version control.
 
 ## Active boundary
 
-- Subplan 54's automated gate is closed; Stage 5 user acceptance is reopened and proposed Subplan 55
-  is planned but not active.
+- Subplan 54's automated gate is closed; Subplan 55 is verified after the passing user-flow replay,
+  resumed Grok review, and final offline gate.
 - First release exposes only `off` and `review_only`; `explicit_auto` remains closed.
 - Automatic trigger is accepted TaskOutcome only; no `completed`/`corrected` Task status is added.
 - No background worker, natural-language acceptance, embedding/vector dependency, Skill write, or

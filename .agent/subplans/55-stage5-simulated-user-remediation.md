@@ -1,6 +1,6 @@
 # Subplan 55 — Stage 5 模拟用户测试修复
 
-> 状态：已规划，尚未开始实施
+> 状态：S55.1–S55.5 已完成；Live model-quality hold pending
 > 输入：`docs/acceptance/stage5-simulated-user-evaluation.md`
 > 基线：本地 `main`，`5cfb99f`
 > 实施分支：`fix/stage5-simulated-user-remediation`
@@ -106,9 +106,10 @@ reject-and-suppress；全新 Project Knowledge 能在真实非整秒时钟下完
 
 ### S55.5 独立 review 与收尾
 
-实现与聚焦门禁通过后，对整个 Subplan 55 执行一次 Grok `/review`，等待完整结果，独立核实并修复
-存在且有采用价值的问题一次；review-fix 后不再发起第二次 Grok review。随后重跑最终门禁，提交已验证
-状态，fast-forward 合并到本地 `main` 并删除 clean topic branch。未经明确授权不 push。
+实现与聚焦门禁通过后，对整个 Subplan 55 执行一次 Grok review，等待完整结果，独立核实并修复
+存在且有采用价值的问题一次；review-fix 后不再发起第二次 Grok review。Grok 确认主修复正确，指出
+REPL `/learn edit` 首屏仍显示 `accept`；修复后补充字段守卫负例和 preview 回归。最终离线门禁已通过，
+接下来提交已验证状态，fast-forward 合并到本地 `main` 并删除 clean topic branch。未经明确授权不 push。
 
 ## 5. 主要文件边界
 

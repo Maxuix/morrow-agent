@@ -232,6 +232,19 @@ def test_repl_learning_accept_can_explicitly_select_global_scope(tmp_path):
         handle.close()
 
 
+def test_repl_learning_edit_preview_is_edit_and_accept(tmp_path):
+    _app, identity, handle, journal, api, candidate = _promotion_subjects(tmp_path)
+    _keep_candidate_proposed(journal, identity.workspace_id, candidate.candidate_id)
+    try:
+        command_service, _session = _command_service(api, tmp_path)
+        result = command_service._learn_command(["/learn", "edit", candidate.candidate_id])
+        assert result.action == "learning_edit_preview"
+        assert "决策：edit_and_accept" in result.lines
+        assert "决策：accept" not in result.lines
+    finally:
+        handle.close()
+
+
 @pytest.mark.parametrize(
     ("never_suggest", "decision_kind"),
     (
@@ -253,9 +266,10 @@ def test_repl_learning_reject_preview_matches_decision_intent(
         assert result.action == "learning_reject_preview"
         assert f"决策：{decision_kind.value}" in result.lines
         assert result.value.never_suggest is never_suggest
-        assert result.value.expected_row_version == api.get_learning_candidate_view(
-            candidate.candidate_id
-        ).candidate.row_version
+        assert (
+            result.value.expected_row_version
+            == api.get_learning_candidate_view(candidate.candidate_id).candidate.row_version
+        )
     finally:
         handle.close()
 
@@ -412,6 +426,36 @@ def test_typer_learning_edit_uses_typed_view_for_preference_and_profile(
         reopened.close()
 
 
+def test_typer_preference_edit_rejects_project_knowledge_fields(tmp_path):
+    _app, identity, handle, journal, api, candidate = _promotion_subjects(tmp_path)
+    _keep_candidate_proposed(journal, identity.workspace_id, candidate.candidate_id)
+    state_root = tmp_path / "state"
+    handle.close()
+
+    result = _invoke_learning_cli(
+        CliRunner(),
+        [
+            "edit",
+            candidate.candidate_id,
+            "--statement",
+            "not a preference field",
+            "--command-id",
+            "cmd_cli_invalid_preference_edit",
+        ],
+        state_root=state_root,
+        workspace_id=identity.workspace_id,
+        directory=identity.path,
+    )
+
+    assert result.exit_code == 2
+    assert "Preference 不能使用 Project Knowledge 字段" in result.output
+    reopened, journal = _reopen_learning_state(state_root)
+    try:
+        assert journal.list_learning_candidate_decisions(identity.workspace_id) == ()
+    finally:
+        reopened.close()
+
+
 @pytest.mark.asyncio
 async def test_typer_project_knowledge_edit_accepts_dedicated_fields(tmp_path):
     session, journal, api, candidate, _reviewer = await _project_candidate(tmp_path)
@@ -450,6 +494,38 @@ async def test_typer_project_knowledge_edit_accepts_dedicated_fields(tmp_path):
         head = journal.list_project_knowledge_heads("ws_1")[0]
         revision = journal.get_project_knowledge_revision("ws_1", head.current_revision_id)
         assert revision.statement.endswith("immutable revisions.")
+    finally:
+        reopened.close()
+
+
+@pytest.mark.asyncio
+async def test_typer_project_knowledge_edit_rejects_generic_fields(tmp_path):
+    session, journal, api, candidate, _reviewer = await _project_candidate(tmp_path)
+    project = tmp_path / "project"
+    project.mkdir()
+    _keep_candidate_proposed(journal, "ws_1", candidate.candidate_id)
+    session.close()
+
+    result = _invoke_learning_cli(
+        CliRunner(),
+        [
+            "edit",
+            candidate.candidate_id,
+            "--path",
+            "statement",
+            "--command-id",
+            "cmd_cli_invalid_knowledge_edit",
+        ],
+        state_root=tmp_path / "state",
+        workspace_id="ws_1",
+        directory=project,
+    )
+
+    assert result.exit_code == 2
+    assert "Project Knowledge 使用专用字段编辑" in result.output
+    reopened, journal = _reopen_learning_state(tmp_path / "state")
+    try:
+        assert journal.list_learning_candidate_decisions("ws_1") == ()
     finally:
         reopened.close()
 

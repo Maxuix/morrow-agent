@@ -2,8 +2,8 @@
 
 > 日期：2026-08-21
 > 测试性质：隔离临时环境中的真实 CLI/REPL 使用评估
-> 代码基线：本地 `main`，`4c0bbe2 docs(plan): close stage5 locally`
-> 结论：发现 2 个阻断性功能问题和 1 个用户体验问题；本报告只记录问题，不在本次评估中修复
+> 代码基线：修复前本地 `main`，`4c0bbe2 docs(plan): close stage5 locally`
+> 结论：原始评估发现的 2 个阻断性功能问题和 1 个用户体验问题已由 Subplan 55 修复，并通过隔离回放；真实 Provider 质量评估仍 pending
 > 修复计划：[`Subplan 55`](../../.agent/subplans/55-stage5-simulated-user-remediation.md)
 
 ## 1. 测试边界
@@ -72,9 +72,11 @@ preferences:
 - `state verify-backup ...` 成功：`database_integrity_ok`、`foreign_keys_ok`、`learning_references_ok`、`memory_references_ok`、`manifest_ok` 均为 true，`credentials_excluded=true`，issues 为空。
 - 新进程重新查询 Learning status、Inbox、Review 和 Preferences，持久化状态可见。
 
-## 3. 问题清单与原因分析
+## 3. 修复前问题清单与原因分析
 
-### F1 — P1：Learning Candidate 的 CLI accept/reject 在确认后必然失败
+以下 F1–F4 保留为修复前的可复现记录；修复后的结果见第 5 节。
+
+### F1 — P1（修复前）：Learning Candidate 的 CLI accept/reject 在确认后必然失败
 
 复现：
 
@@ -100,7 +102,7 @@ AttributeError: 'LearningCandidateView' object has no attribute 'candidate_id'
 
 影响：Preference/Profile/Project Knowledge/未来 Candidate 的终端 accept/reject 入口均不可用，Stage 5 的核心用户闭环被阻断。
 
-### F2 — P1：首次 Project Knowledge Promotion 因微秒时间戳被误判为 identity immutable
+### F2 — P1（修复前）：首次 Project Knowledge Promotion 因微秒时间戳被误判为 identity immutable
 
 复现：通过真实 Promotion 服务接受一个全新的 `ProjectKnowledgeCandidate`，返回：
 
@@ -119,7 +121,7 @@ ApplicationError: knowledge head identity is immutable
 
 影响：新项目知识无法首次激活；已有 Knowledge head 的后续更新路径未在本次模拟中声称通过。
 
-### F3 — P2：Reject 预览显示错误的 decision kind
+### F3 — P2（修复前）：Reject 预览显示错误的 decision kind
 
 运行 `learning reject` 时，确认前的预览显示：
 
@@ -150,3 +152,32 @@ UV_CACHE_DIR=/tmp/morrow-stage5-uv-cache uv run pytest -m 'not live' -q tests/te
 2. 统一 Project Knowledge head 的时间精度：要么在领域对象创建时截断到持久化精度，要么在 identity 比较时比较规范化后的时间；增加非零微秒时钟的首次 Promotion 集成测试。
 3. 为 reject 生成明确的 reject preview/decision kind，并增加终端输出快照测试。
 4. 修复后重新执行本报告中的相同模拟流程，再决定是否可以把 Stage 5 标记为用户可用。
+
+## 5. Subplan 55 修复后隔离回放
+
+在临时状态根中使用脚本 Reviewer 和真实新进程重新执行用户闭环；没有使用网络、Live Provider、API
+Key 或 Keychain。回放结果：
+
+- 3 个 accepted Task 生成并完成 Review，共 5 个候选。
+- 新进程依次完成 Preference accept、Preference edit-and-accept、Project Knowledge
+  edit-and-accept、普通 reject 和 reject-and-suppress；拒绝预览分别显示“将拒绝提议值”和 suppression
+  后果，没有伪装成 accept 或展示 Active after value。
+- 新进程重新读取 Learning status 和 Memory list；首次 Project Knowledge Promotion 保留 1 个
+  revision，Memory workspace revision 为 1。
+- 新进程 `state doctor --json` 返回 `health=ok`；`state backup` 后的 `state verify-backup` 报告
+  SQLite integrity、foreign keys、Learning/Memory references 均通过。
+- 状态根未出现 credentials-like 文件名；原始两份未跟踪 research 文件继续保留。
+
+因此，F1、F2、F3 的用户闭环阻断已关闭。该结果证明本地确定性/脚本 Reviewer 下的交互和持久化闭环，
+不代表真实模型的自然语言分类质量；Live hold 仍按授权和凭据条件保持 pending。
+
+## 6. Subplan 55 review/fix 与最终门禁
+
+按用户要求续接 Grok review session 后，Grok 确认 Candidate typed view/OCC、reject intent、Knowledge
+时间精度、配置 finalization 与事件/安全边界修复正确，并指出 REPL `/learn edit` 首屏先显示 `accept`
+的预览缺陷。该问题经独立核对后修复为首屏 `edit_and_accept`，同时增加 Preference/Project Knowledge
+专用字段拒绝和拒绝预览参数 fail-closed 回归。review-fix 后未再次发起 Grok review。
+
+聚焦 review 回归通过 28 tests；最终 `pytest -m 'not live'` 通过 831 tests、2 skipped、2 deselected。
+Ruff format/check、compileall、root/Learning/Memory CLI help 与 `git diff --check` 均通过。未运行 Live
+Provider、网络或凭据路径；两份未跟踪 research 文件保持原样。

@@ -2,9 +2,8 @@
 
 ## Current stage
 
-Stage 5 automated offline gates are complete, but the simulated-user evaluation at `5cfb99f`
-confirmed two P1 blockers and one P2 preview defect. Subplan 55 is active; the optional Live
-model-quality hold remains pending separately.
+Stage 5 automated offline gates are complete. Subplan 55's simulated-user remediation replay passed;
+the optional Live model-quality hold remains pending separately.
 
 ## Active subplan
 
@@ -16,8 +15,8 @@ Subplan 55 — Stage 5 Simulated-User Remediation, on
 - [x] S55.1 Establish failing regression evidence before production changes.
 - [x] S55.2 Fix Candidate decision CLI and rejection previews.
 - [x] S55.3 Fix Project Knowledge first-promotion timestamp precision.
-- [>] S55.4 Replay the isolated simulated-user flow and update acceptance evidence.
-- [ ] S55.5 Complete the independent review/fix pass and close out the subplan.
+- [x] S55.4 Replay the isolated simulated-user flow and update acceptance evidence.
+- [x] S55.5 Complete the independent review/fix pass and close out the subplan.
 
 ## Validation evidence
 
@@ -36,13 +35,19 @@ activated.
 
 ## Start condition
 
-Subplan 55 is active on `fix/stage5-simulated-user-remediation`; S55.4 is in progress. Preserve
+Subplan 55 is complete on `fix/stage5-simulated-user-remediation`; preserve
 the two untracked `docs/research/stage5-overview-*.md` user files unless the user explicitly asks
 to adopt or commit them.
 
 S55.1 pre-fix regression evidence recorded 9 failures in the focused set. S55.2/S55.3 fixes then
 passed the focused Candidate CLI/Project Knowledge/Store set with 36 tests and the affected
-Learning/Configuration/REPL set with 56 tests. No Live Provider or network test was run.
+Learning/Configuration/REPL set with 56 tests. S55.4's isolated replay passed with 3 accepted Tasks,
+5 candidates, fresh-process decisions, restart reads, Doctor OK, and verified backup. No Live Provider
+or network test was run. S55.5's resumed Grok review confirmed the S55 production fixes, identified
+the REPL edit preview mismatch, and the independent verification fixed it while adding dedicated
+field-guard and reject-preview regressions. The focused review set passed 28 tests; the complete
+offline gate passed 831 tests, 2 skips, and 2 deselected. Repository-wide Ruff format/check,
+compileall, root/Learning/Memory CLI help, and `git diff --check` also passed.
 
 S54.1 validation passed: 790 tests, 2 skips, 1 deselected; Ruff format/check, compileall, root/
 Learning/Memory CLI help, and diff check passed. The production Reviewer checkpoint is committed

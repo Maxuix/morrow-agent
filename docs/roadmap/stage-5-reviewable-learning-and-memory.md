@@ -1,7 +1,7 @@
 # Stage 5：可审查学习与长期记忆
 
-> 状态：Subplans 49–54 的自动化离线门禁已完成；后续模拟用户验收确认 Candidate CLI 与首次 Project Knowledge Promotion 存在 P1，Subplan 55 修复与复测 pending。真实 Provider 质量评估仍 pending，只有在显式授权和兼容凭据可用时才运行
-> 阶段结果：有证据、有作用域的 Candidate、可恢复 Promotion Saga 与模型无直接写权限的安全边界已经落地；但真实 Candidate CLI 和首次 Project Knowledge Promotion 的用户闭环须在 Subplan 55 后重新验收
+> 状态：Subplans 49–55 的自动化离线门禁与隔离模拟用户回放已完成；真实 Provider 质量评估仍 pending，只有在显式授权和兼容凭据可用时才运行
+> 阶段结果：有证据、有作用域的 Candidate、可恢复 Promotion Saga、真实新进程决策闭环与模型无直接写权限的安全边界已经落地；真实模型质量仍待 Live 评估
 > 上级文档：[开发路线总览](../ROADMAP.md)
 > 上一阶段：[Stage 4：Task、Session、Artifact 与持久化](stage-4-task-session-and-persistence.md)
 > 下一阶段：[Stage 6：Skills 与扩展生命周期](stage-6-skills-and-extensions.md)

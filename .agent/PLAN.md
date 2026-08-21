@@ -1,6 +1,6 @@
 # Stage 5 Reviewable Learning and Long-Term Memory Plan
 
-> Status: Subplan 55 is active; S55.1 failing-regression work is in progress
+> Status: Subplan 55 complete; Live model-quality hold remains pending
 > Active subplan: Subplan 55 — Stage 5 Simulated-User Remediation
 > Baseline: `5cfb99f` on local `main`
 > Target schema: Operational Store v9 → v10 → v11 → v12

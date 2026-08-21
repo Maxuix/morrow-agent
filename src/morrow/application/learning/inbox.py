@@ -212,18 +212,29 @@ class LearningApplicationService:
         if candidate is None:
             raise ApplicationError(ApplicationErrorCode.NOT_FOUND, "Learning Candidate is missing")
         selected_intent = self._decision_intent(decision_intent)
-        scope_was_explicit = scope is not None
-        selected_scope = self._scope(scope or candidate.proposed_scope)
-        selected_resolution = self._conflict_resolution(conflict_resolution)
-        payload = self._edited_payload(candidate, edit)
-        semantic_key = self._payload_semantic_key(candidate, payload)
-        fingerprint = self._candidate_fingerprint(candidate, payload, selected_scope, semantic_key)
-        after = self._preview_value(candidate, payload, selected_scope, semantic_key)
-
-        if selected_intent in {
+        is_rejection = selected_intent in {
             LearningCandidateDecisionKind.REJECT,
             LearningCandidateDecisionKind.REJECT_AND_SUPPRESS,
-        }:
+        }
+        if is_rejection:
+            if edit is not None or scope is not None or conflict_resolution is not None:
+                raise ApplicationError(
+                    ApplicationErrorCode.INVALID,
+                    "Reject preview does not support edit, scope, or conflict resolution",
+                )
+            scope_was_explicit = False
+            selected_scope = candidate.proposed_scope
+            selected_resolution = LearningConflictResolution.NONE
+            payload = candidate.proposed_payload
+        else:
+            scope_was_explicit = scope is not None
+            selected_scope = self._scope(scope or candidate.proposed_scope)
+            selected_resolution = self._conflict_resolution(conflict_resolution)
+            payload = self._edited_payload(candidate, edit)
+        semantic_key = self._payload_semantic_key(candidate, payload)
+        after = self._preview_value(candidate, payload, selected_scope, semantic_key)
+
+        if is_rejection:
             available = True
             reason = None
             if candidate.status is not LearningCandidateStatus.PROPOSED:
@@ -246,6 +257,7 @@ class LearningApplicationService:
                 configuration_preview=(),
             )
 
+        fingerprint = self._candidate_fingerprint(candidate, payload, selected_scope, semantic_key)
         configuration_preview: tuple[str, ...] = ()
         if candidate.candidate_type in {
             LearningCandidateType.PREFERENCE,

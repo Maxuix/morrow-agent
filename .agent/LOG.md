@@ -1873,3 +1873,29 @@
   56 tests respectively. No Live Provider, network, or credential access was attempted.
 - S55.4 is active; the isolated headless simulated-user flow, restart checks, doctor, and backup
   evidence remain to be rerun before Stage 5 user acceptance can be restored.
+
+## 2026-08-21 — Subplan 55 S55.4 replay verified; S55.5 active
+
+- Replayed the isolated user flow in a temporary state root with a scripted Reviewer and three accepted
+  Tasks. The replay produced five candidates and used separate fresh CLI processes for Preference accept,
+  Preference edit, Project Knowledge edit, ordinary reject, and reject-and-suppress.
+- Fresh-process Learning/Memory reads, first Project Knowledge revision, Memory revision 1, `state doctor`
+  health `ok`, and SQLite backup verification all passed. No network, Live Provider, credential, or user
+  state was accessed; the two untracked research files remain preserved.
+- Updated the simulated-user report, Stage 5 acceptance report, roadmap, README, and execution state to
+  close the F1/F2/F3 remediation claim. S55.5's one independent review/fix pass and final offline gate
+  remain active.
+
+## 2026-08-21 — Subplan 55 S55.5 review/fix and final gate verified
+
+- Resumed the requested Grok review session and received its read-only report. It confirmed the typed
+  Candidate/OCC, explicit reject intent, persisted Project Knowledge timestamp, configuration finalization,
+  and event/safety boundary repairs; it identified that the first REPL `/learn edit` preview still showed
+  `accept`.
+- Independently verified and fixed the REPL preview to show `edit_and_accept`; added Preference and Project
+  Knowledge field-guard negatives plus a fail-closed API regression for reject previews receiving accept-only
+  arguments. No second Grok review was run.
+- Focused review regression set passed 28 tests. The complete offline gate passed 831 tests, 2 skipped,
+  and 2 deselected. Ruff format/check, compileall, root/Learning/Memory CLI help, and `git diff --check`
+  passed. No Live Provider, network, or credential path was run; the two untracked research files remain
+  preserved.
