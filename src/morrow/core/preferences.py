@@ -1,8 +1,24 @@
-"""Pure preference merge rules shared across application and services."""
+"""Preference projection helpers shared across application and services.
+
+The legacy three-layer merge remains available during the staged cutover.  The
+generic reducer is re-exported here as the small core-facing Preference API so
+callers do not depend on the implementation module.
+"""
 
 from __future__ import annotations
 
 from morrow.core.models import Preferences
+from morrow.core.preference_models import (
+    PreferenceDocument,
+    PreferenceLifecycleOperation,
+    PreferenceOperation,
+)
+from morrow.core.preference_operations import (
+    PreferenceOperationError,
+    exact_preference_key,
+    reduce_preference_document,
+    reduce_preference_lifecycle,
+)
 
 
 def merge_preferences(
@@ -30,3 +46,33 @@ def merge_preferences(
         response_detail=pick("response_detail"),
         instructions=instructions,
     )
+
+
+def reduce_preference_batch(
+    document: PreferenceDocument,
+    operations: tuple[PreferenceOperation, ...],
+    *,
+    now=None,
+    allocate_id=None,
+) -> PreferenceDocument:
+    """Apply a generic same-scope batch without exposing persistence details."""
+
+    return reduce_preference_document(document, operations, now=now, allocate_id=allocate_id)
+
+
+def reduce_preference_lifecycle_command(
+    document: PreferenceDocument,
+    operation: PreferenceLifecycleOperation,
+    *,
+    now=None,
+) -> PreferenceDocument:
+    return reduce_preference_lifecycle(document, operation, now=now)
+
+
+__all__ = [
+    "PreferenceOperationError",
+    "exact_preference_key",
+    "merge_preferences",
+    "reduce_preference_batch",
+    "reduce_preference_lifecycle_command",
+]

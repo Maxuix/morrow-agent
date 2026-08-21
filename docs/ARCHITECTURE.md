@@ -1,12 +1,16 @@
 # Morrow 架构基线
 
-> 状态：阶段 2、阶段 3 已完成（当前声明平台为 macOS；Linux 原生运行仍 unsupported）；阶段 4 已落地 Operational Store v9 的 Session/Task 历史、工具/审批日志、恢复分类、TaskOutcome、Artifact Store、ContextCheckpoint、Session Fork、统一应用 API、application events、doctor、备份 bundle、CapabilityGrant 与 Full Access Manual；Stage 5 Subplans 49–54 已落地 LearningPolicy、accepted Outcome → Candidate Pipeline、Inbox/Project Knowledge、Profile/Preferences Promotion Saga、v12 MemorySelection、AgentRun freeze/recovery reuse、RunContextProjection、no-tool production Reviewer、离线安全评估、Learning doctor 与隔离 SQLite backup；后续模拟用户验收确认 Candidate CLI 与首次 Project Knowledge Promotion 仍需 Subplan 55 修复；真实 Provider 质量评估仍是显式授权的 hold point；Subplan 48 已完成运行时、持久化、SQLite 与应用组装边界重构
+> 状态：阶段 2、阶段 3 已完成（当前声明平台为 macOS；Linux 原生运行仍 unsupported）；阶段 4 已落地 Operational Store v9 的 Session/Task 历史、工具/审批日志、恢复分类、TaskOutcome、Artifact Store、ContextCheckpoint、Session Fork、统一应用 API、application events、doctor、备份 bundle、CapabilityGrant 与 Full Access Manual；Stage 5 Subplans 49–55 已落地 LearningPolicy、accepted Outcome → Candidate Pipeline、Inbox/Project Knowledge、Profile/Preferences Promotion Saga、v12 MemorySelection、AgentRun freeze/recovery reuse、RunContextProjection、no-tool production Reviewer、离线安全评估、Learning doctor、隔离 SQLite backup 与模拟用户修复；S56 已加入 generic Preference foundation、迁移编解码和 Operational Store v13 预留，但 Reviewer/Writer/Worker 尚未切换；真实 Provider 质量评估仍是显式授权的 hold point；Subplan 48 已完成运行时、持久化、SQLite 与应用组装边界重构
 
 本文锁定当前依赖方向、数据所有权和安全边界。阶段 3 的能力策略、配置工具、工作空间读搜、冲突安全文件变更、审批后 Host 命令、只读 Git 和当前 macOS 原生沙箱
 已经交付；Linux 原生运行尚未声明支持。Stage 4 已落地数据根 SQLite Operational Store 的
 身份/迁移/备份基础、v2 无工具 Session 历史、v3 工具执行/审批日志、v4 恢复分类与
 崩溃对账，以及 v5 TaskRun 生命周期、转移审计、版本化 TaskOutcome、v6 Artifact 元数据/引用与受控字节发布、v7 确定性 ContextCheckpoint 与不可变 Session lineage、v8 有界 application event/command receipt、v9 按 AgentRun 冻结的权限证据与可撤销 grant。Stage 5 Subplans 49–54 已增加 LearningPolicy、Review、Evidence、Candidate、Suppression 的有界领域与 v10–v12 SQLite 持久化；accepted TaskOutcome 的同事务 Review 请求、一次性 lease Runner、Evidence/Context 安全边界和候选去重/抑制；Inbox、Candidate 决策、Project Knowledge 生命周期；公开 prepared 配置契约、SQLite/YAML Promotion Saga、激活来源、恢复/撤销和 CLI/REPL 入口；确定性 MemorySelection、AgentRun 冻结/恢复复用、RunContextProjection；以及 no-tool production Reviewer、离线评估、只读 Learning doctor 和隔离 backup 引用校验。真实 Provider 质量目标仍保持 pending，不被离线证据冒充。Stage 6 的 Skills/MCP，
 以及 Stage 7–10 的 Workflow、GUI、后台自动化和产品化均尚未开始。
+
+S56 额外冻结 generic Preference 契约、v1/v2 decode-only 迁移、workspace Preference v3 目标文档和
+Operational Store v13 的 Review/Evidence/Proposal/Writer saga 表；这些基础设施尚未接入新的前台或
+后台执行路径。后续子计划必须保持 v13 DDL 与 checksum 不变。
 
 ## 分层与依赖方向
 
@@ -215,7 +219,7 @@ workspace Preferences 损坏只隔离该层。旧 `handoff.yaml(.bak)` 不属于
 `config.yaml` 是聚合文档，Provider 与全局 Preferences 的写入必须在同一事务锁内保留对方字段。
 `workspace-index.yaml` 由独立 WorkspaceIndexStore 管理。
 
-### Operational Store 与 Artifact 布局（v12）
+### Operational Store 与 Artifact 布局（v12 baseline；S56 预留 v13 Preference 表）
 
 数据根（`--state-root` 或 `~/.morrow`）下的保留路径：
 

@@ -1,10 +1,37 @@
 # Stage 5：可审查学习与长期记忆
 
-> 状态：Subplans 49–55 的自动化离线门禁与隔离模拟用户回放已完成；真实 Provider 质量评估仍 pending，只有在显式授权和兼容凭据可用时才运行
-> 阶段结果：有证据、有作用域的 Candidate、可恢复 Promotion Saga、真实新进程决策闭环与模型无直接写权限的安全边界已经落地；真实模型质量仍待 Live 评估
+> 状态：Subplans 49–55 的 v12 基线已完成；真实 Provider 已验证 coding/持久化但否定现有自然语言 Preference 质量；Preference Learning v2 重构已规划、尚未实施
+> 阶段结果：Candidate、Promotion Saga、Project Knowledge、Memory 与安全边界已经落地；固定字段/关键词门禁 Preference 路径将由通用原子规则、后台语义 Reviewer、确定性 Writer 和下一 AgentRun 刷新替代
+
+## 2026-08-21 S56 foundation 已实施
+
+S56 已加入独立的 generic `PreferenceEntry`、add/replace/remove 与 enable/disable 契约、纯
+同 scope batch reducer、v1/v2 legacy decode-only 迁移编解码、workspace Preference v3 目标文档、
+历史 AgentRun 兼容 decoder，以及 Operational Store v13 的 Review job、单一当前用户 Evidence、
+Proposal 和 Writer saga 表。YAML 仍是 Active Preference 权威；本阶段没有启用 Reviewer、前台/后台
+Review enqueue、Writer 自动发布或 Worker。后续子计划必须保持 v13 DDL/checksum 不变。
 > 上级文档：[开发路线总览](../ROADMAP.md)
 > 上一阶段：[Stage 4：Task、Session、Artifact 与持久化](stage-4-task-session-and-persistence.md)
 > 下一阶段：[Stage 6：Skills 与扩展生命周期](stage-6-skills-and-extensions.md)
+
+## 2026-08-21 Preference 路径方向修订
+
+本文后续章节记录已经交付的 Stage 5 v12 基线。以下旧约束不再作为 Preference 新实现规范：
+
+- `language`、`response_detail`、`instructions` 固定字段；
+- 通过持久化/临时/引用关键词给用户消息做语义门禁；
+- 在交互前台等待 Learning Review；
+- 仅保证新 Session 读取更新后的 Preference 投影。
+
+新的实施权威是 `.agent/PLAN.md` 与 Subplans 56–61：完整用户消息由独立、无工具的 Reviewer 在
+后台输出 0～N 个 `add / replace / remove` 通用操作；确定性校验后进入 Inbox；用户接受后由同作用域
+原子 Writer 写入通用 `PreferenceEntry`；每个新 AgentRun（包括恢复 Session 的下一 Turn）重新加载
+Active Preferences。Profile、Project Knowledge、YAML/SQLite 单一权威和能力安全边界不随此修订改变。
+
+Preference v2 中，用户明确要求立即管理偏好时使用受审批的 `manage_preferences`；后台推断只能进入
+Inbox，不能自动写入。该工具复用现有 configuration-write 审批与恢复语义，不修改 bundled capability
+policy 或公开 `AgentEvent` 类型。下文 §3.2、§4.4、§6.1 的固定字段/前台 Preference 描述均只代表
+v12 历史基线；若与本节冲突，以本节和新实施计划为准。
 
 ## 一、阶段目标
 
@@ -50,8 +77,9 @@ TaskRun 显式进入 accepted
 
 - TaskOutcome 在显式 acceptance、显式 snapshot 或既有终态关闭里程碑生成；只有 accepted Outcome
   默认触发 Stage 5 Review。
-- LearningReview 可以晚于最终回答执行，但 Stage 5 当前没有后台 Worker：交互入口使用提交后的有界前台
-  Review，headless 入口显式执行，不得承诺不可见的未来处理。
+- 已交付的 v12 基线没有后台 Worker：交互入口使用提交后的有界前台 Review，headless 入口显式执行。
+  Preference v2 将按本文顶部的方向修订改为 SQLite 持久队列与进程内异步 Worker，并保留显式
+  run-pending 入口；它不承诺本阶段未实现的 daemon。
 - LearningReview 失败不影响 TaskOutcome 和任务完成状态。
 - LearningReview 不直接写 Active Preference、Profile、Knowledge 或 Skill。
 - 同一 TaskOutcome 可以重新审查，但候选必须去重并保留 review 版本。

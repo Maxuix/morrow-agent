@@ -18,6 +18,7 @@ from morrow.adapters.state.migrations import (
     V10,
     V11,
     V12_NAME,
+    V13_NAME,
     MigrationRegistry,
     SchemaMigration,
 )
@@ -169,7 +170,7 @@ def test_memory_selection_models_are_bounded_and_deterministic():
         )
 
 
-def test_v11_store_upgrades_to_v12_without_rewriting_v11(tmp_path):
+def test_v11_store_upgrades_to_v13_without_rewriting_v11(tmp_path):
     legacy = _store(tmp_path, registry=_v11_registry())
     legacy.initialize().close()
     upgraded = _store(tmp_path)
@@ -177,10 +178,10 @@ def test_v11_store_upgrades_to_v12_without_rewriting_v11(tmp_path):
     report = upgraded.migrate()
 
     assert report.from_version == 11
-    assert report.to_version == 12
-    assert report.applied == (V12_NAME,)
+    assert report.to_version == 13
+    assert report.applied == (V12_NAME, V13_NAME)
     with upgraded.open(StoreOpenMode.READ_WRITE) as session:
-        assert session.schema_version == 12
+        assert session.schema_version == 13
         tables = session.run_read(
             lambda executor: executor.execute(
                 "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ("

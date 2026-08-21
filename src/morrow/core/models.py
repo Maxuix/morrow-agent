@@ -14,8 +14,14 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from morrow.core.state_schema import (
+    GLOBAL_CONFIG_LEGACY_SCHEMA_VERSION,
+    WORKSPACE_INDEX_SCHEMA_VERSION,
+    WORKSPACE_PROFILE_SCHEMA_VERSION,
+)
+
 CURRENT_SCHEMA_VERSION = 1
-WORKSPACE_DOCUMENT_SCHEMA_VERSION = 2
+WORKSPACE_DOCUMENT_SCHEMA_VERSION = WORKSPACE_PROFILE_SCHEMA_VERSION
 
 TOOL_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
@@ -318,7 +324,7 @@ class ProviderConfig(MorrowModel):
 
 
 class GlobalConfig(MorrowModel):
-    schema_version: int = CURRENT_SCHEMA_VERSION
+    schema_version: int = GLOBAL_CONFIG_LEGACY_SCHEMA_VERSION
     revision: int = 0
     updated_at: datetime = Field(default_factory=utc_now)
     preferences: Preferences = Field(default_factory=Preferences)
@@ -342,7 +348,7 @@ class WorkspaceIndexEntry(MorrowModel):
 
 
 class WorkspaceIndex(MorrowModel):
-    schema_version: int = CURRENT_SCHEMA_VERSION
+    schema_version: int = WORKSPACE_INDEX_SCHEMA_VERSION
     revision: int = 0
     updated_at: datetime = Field(default_factory=utc_now)
     workspaces: dict[str, WorkspaceIndexEntry] = Field(default_factory=dict)
@@ -355,7 +361,7 @@ class StatePresence(StrEnum):
 
 
 class WorkspaceDocument(MorrowModel):
-    schema_version: Literal[WORKSPACE_DOCUMENT_SCHEMA_VERSION] = WORKSPACE_DOCUMENT_SCHEMA_VERSION
+    schema_version: Literal[WORKSPACE_PROFILE_SCHEMA_VERSION] = WORKSPACE_PROFILE_SCHEMA_VERSION
     revision: int = Field(default=0, ge=0)
     updated_at: datetime = Field(default_factory=utc_now)
     state: Literal["present", "cleared"] = "present"

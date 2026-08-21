@@ -1,0 +1,19 @@
+schema_version: 1
+revision: 7
+updated_at: 2026-01-01T00:00:00+00:00
+preferences:
+  language: 中文
+  response_detail: concise
+  instructions:
+    - 回答默认保持简洁。
+    - 保留代码格式。
+providers:
+  demo:
+    adapter: openai_compatible
+    base_url: https://example.invalid/v1
+    models:
+      small:
+        api_model_id: small
+active_model:
+  provider_id: demo
+  model_id: small

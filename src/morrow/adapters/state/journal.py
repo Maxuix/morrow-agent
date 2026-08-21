@@ -17,6 +17,7 @@ from morrow.adapters.state.learning_memory_journal import SqliteLearningMemoryJo
 from morrow.adapters.state.memory_selection_journal import SqliteMemorySelectionJournal
 from morrow.adapters.state.operational import OperationalStoreSession, SqliteExecutor
 from morrow.adapters.state.permission_journal import SqliteRunPermissionJournal
+from morrow.adapters.state.preference_journal import SqlitePreferenceJournal
 from morrow.adapters.state.recovery_journal import SqliteRecoveryJournal
 from morrow.adapters.state.task_journal import SqliteTaskJournal
 from morrow.adapters.state.tool_journal import SqliteToolJournal
@@ -171,6 +172,7 @@ class SqliteOperationalJournal:
         self._learning_memory_journal = SqliteLearningMemoryJournal(self._backend)
         self._configuration_promotion_journal = SqliteConfigurationPromotionJournal(self._backend)
         self._memory_selection_journal = SqliteMemorySelectionJournal(self._backend)
+        self._preference_journal = SqlitePreferenceJournal(self._backend)
 
     def now(self) -> datetime:
         return self._backend.now()
@@ -183,6 +185,12 @@ class SqliteOperationalJournal:
 
     def transaction_is_active(self) -> bool:
         return self._backend.transaction.active
+
+    @property
+    def preference_journal(self) -> SqlitePreferenceJournal:
+        """Expose the bounded v13 Preference repository to application services."""
+
+        return self._preference_journal
 
     def transact[T](self, work: Callable[[SqliteOperationalJournal], T]) -> T:
         return self._backend.transact(lambda: work(self))

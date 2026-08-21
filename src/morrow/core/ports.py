@@ -23,6 +23,13 @@ from morrow.core.models import (
     WorkspaceResolution,
 )
 from morrow.core.permissions import CapabilityGrant, PermissionSnapshot
+from morrow.core.preference_models import (
+    PreferenceEvidence,
+    PreferenceProposal,
+    PreferenceReviewJob,
+    PreferenceReviewJobStatus,
+    PreferenceWriteBatch,
+)
 
 
 class ModelProvider(Protocol):
@@ -107,6 +114,38 @@ class ProjectStateStore(Protocol):
     def clear_preferences(
         self, workspace_id: str, expected_revision: int | None = None
     ) -> StateWriteResult: ...
+
+
+class PreferencePersistencePort(Protocol):
+    """Bounded v13 persistence surface; YAML remains the Active authority."""
+
+    def put_preference_review_job(
+        self, workspace_id: str, job: PreferenceReviewJob
+    ) -> PreferenceReviewJob: ...
+
+    def put_preference_evidence(
+        self, workspace_id: str, evidence: PreferenceEvidence
+    ) -> PreferenceEvidence: ...
+
+    def get_preference_review_job(
+        self, workspace_id: str, job_id: str
+    ) -> PreferenceReviewJob | None: ...
+
+    def list_preference_review_jobs(
+        self,
+        workspace_id: str,
+        *,
+        status: PreferenceReviewJobStatus | None = None,
+        limit: int = 100,
+    ) -> tuple[PreferenceReviewJob, ...]: ...
+
+    def put_preference_proposal(
+        self, workspace_id: str, proposal: PreferenceProposal
+    ) -> PreferenceProposal: ...
+
+    def put_preference_write_batch(
+        self, workspace_id: str, batch: PreferenceWriteBatch
+    ) -> PreferenceWriteBatch: ...
 
 
 class Clock(Protocol):

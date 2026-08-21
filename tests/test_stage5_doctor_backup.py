@@ -92,7 +92,7 @@ async def test_stage5_sqlite_backup_preserves_learning_state_in_isolation(tmp_pa
         assert verified.learning_references_ok
         manifest = json.loads((bundle / "manifest.json").read_text(encoding="utf-8"))
         assert candidate.candidate_id
-        assert manifest["schema_version"] == 12
+        assert manifest["schema_version"] == 13
         assert not any(
             path.name in {"config.yaml", "workspace-index.yaml", "credentials", "keyring"}
             for path in bundle.rglob("*")
