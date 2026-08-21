@@ -4,7 +4,7 @@
 
 Stage 5 offline implementation and acceptance are complete; the optional Live model-quality hold
 remains pending explicit authorization and a compatible credential. Subplan 54 is closed on
-`feat/stage5-reviewer-acceptance`, based on verified local `main` at `613ffdb`.
+local `main` at `6043d08`.
 
 ## Active subplan
 

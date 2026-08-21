@@ -358,9 +358,10 @@ For each subplan:
    no commits absent from `main`, then delete it.
 6. Activate the next subplan only after the previous gate passes.
 
-Stage 5 is complete only when Subplan 54 passes, all verified work is on `main`, the current
-architecture describes the implemented authority, and the Stage 5 roadmap/acceptance evidence no
-longer claims future behavior as current behavior.
+Stage 5 offline implementation is complete: Subplan 54 passed, all verified work is on local
+`main` at `6043d08`, the current architecture describes the implemented authority, and the Stage 5
+roadmap/acceptance evidence no longer claims future behavior as current behavior. The optional Live
+model-quality hold remains pending explicit authorization and a compatible credential.
 
 ## Non-goals
 

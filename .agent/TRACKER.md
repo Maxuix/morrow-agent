@@ -3,12 +3,12 @@
 ## Current status
 
 The user authorized a complete executable Stage 5 plan. Subplan 54's offline implementation,
-single final Grok review/fix pass, and final quality gate are complete on
-`feat/stage5-reviewer-acceptance`; the optional Live model-quality hold remains pending.
+single final Grok review/fix pass, and final quality gate are complete on local `main` at `6043d08`;
+the optional Live model-quality hold remains pending.
 
 ## Last completed task
 
-Subplan 54 is verified on its topic branch, including the no-tool production Reviewer, policy and
+Subplan 54 is verified and merged on local `main`, including the no-tool production Reviewer, policy and
 foreground UX, candidate-only future types, deterministic offline evaluation, doctor/backup
 acceptance, and the required single final Grok review/fix pass. The final non-live gate passed
 `816 passed, 2 skipped, 2 deselected`; Ruff, compileall, CLI help, and `git diff --check` passed.
@@ -22,13 +22,13 @@ recovery, Session projections, and CLI/REPL controls. Subplan 51 is verified and
 
 ## Active task
 
-Commit the verified S54 closeout, fast-forward local `main`, verify the topic branch has no unique
-commits, and retire the topic branch.
+No active implementation task remains for Stage 5; the verified S54 topic branch was fast-forwarded
+to local `main` and retired.
 
 ## Next action
 
-Stage 5 implementation is closed offline. Complete the local Git handoff; do not run Live evaluation
-or publish remotely without explicit authorization.
+Stage 5 implementation is closed offline. Do not run Live evaluation or publish remotely without
+explicit authorization.
 
 ## Blockers
 
