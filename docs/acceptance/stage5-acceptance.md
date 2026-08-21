@@ -46,7 +46,8 @@ raw Reviewer 输出或合成凭据值。
 
 本次没有显式 Live 执行授权，也没有在当前请求中选择兼容 Provider credential，因此未运行
 `pytest -m live`、未联网、未写入用户真实 Learning store/YAML/project。真实模型质量评估保持 pending，
-不将离线 26/26 结果描述为真实模型质量通过。
+不将离线 26/26 结果描述为真实模型质量通过。详细 hold-point 记录见
+[`stage5-live-evaluation-hold.md`](stage5-live-evaluation-hold.md)。
 
 ## Offline command record
 

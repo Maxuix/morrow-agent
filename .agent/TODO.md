@@ -16,8 +16,8 @@ Subplan 54 — Production Reviewer, Evaluation, and Stage 5 Acceptance.
 - [x] S54.3 Validate future candidate-only behavior without activating Skills or Workflows.
 - [x] S54.4 Build the versioned adversarial offline evaluation dataset and quality report.
 - [x] S54.5 Complete Stage 5 doctor, backup, end-to-end acceptance, and documentation evidence.
-- [>] S54.6 Record the live evaluation hold point; run it only with explicit authorization.
-- [ ] S54.7 Run the final independent review/fix pass, gates, merge, and Stage 5 closeout.
+- [x] S54.6 Record the live evaluation hold point; run it only with explicit authorization.
+- [>] S54.7 Run the final independent review/fix pass, gates, merge, and Stage 5 closeout.
 
 ## Validation evidence
 
@@ -47,7 +47,7 @@ gates passed. The S54.2 checkpoint is `9ef6f01`. S54.3 validation passed: 794 te
 deselected; the same quality and CLI gates passed. Checkpoint `4ff41a4`. S54.4 validation passed:
 10 focused tests; the complete offline gate passed 804 tests, 2 skips, and 1 deselected. Ruff
 format/check, compileall, root/Learning/Memory CLI help, and `git diff --check` passed. Checkpoint
-`6f77940`; S54.5 is now active.
+`6f77940`; S54.5 is now complete.
 
 S54.5 validation passed: the doctor/backup acceptance set passed 23 tests; the complete offline gate
 passed 808 tests, 2 skips, and 1 deselected. Ruff format/check, compileall, root/Learning/Memory CLI
@@ -55,3 +55,7 @@ help, and `git diff --check` passed. Learning doctor checks are split by Review/
 Candidate/Suppression, and Promotion/Knowledge domains; acceptance evidence is in
 `docs/acceptance/stage5-acceptance.md`. S54.6 is now active; the Live hold is pending because no
 explicit Live authorization or compatible credential was supplied.
+
+S54.6 hold-point evidence is recorded in `docs/acceptance/stage5-live-evaluation-hold.md` and linked
+from the Stage 5 acceptance report. No live Provider, network request, or `pytest -m live` execution
+was attempted; real-model quality targets remain pending. S54.7 is now active.

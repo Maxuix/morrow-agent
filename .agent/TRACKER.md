@@ -17,14 +17,14 @@ recovery, Session projections, and CLI/REPL controls. Subplan 51 is verified and
 
 ## Active task
 
-Record S54.6's Live evaluation hold point without network or Provider execution; preserve the
-offline acceptance evidence and prepare the final S54 review/closeout.
+Run the one required final Grok review for the complete S54 branch, independently fix feasible
+findings once, and complete the final offline/quality gate and closeout.
 
 ## Next action
 
-Record that the predeclared Live Provider targets remain pending because no explicit authorization or
-compatible credential is present; then run the one required final Grok review for the complete S54
-branch, independently fix feasible findings once, and rerun the final offline/quality gate.
+Wait for the full Grok `/review` result, independently verify each finding, apply feasible fixes once
+without a second review, rerun the final gates, and then fast-forward local `main` and retire the
+topic branch.
 
 ## Blockers
 
