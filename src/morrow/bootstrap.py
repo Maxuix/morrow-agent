@@ -43,7 +43,9 @@ from morrow.application.local_tools import (
     make_write_file_tool,
 )
 from morrow.application.orchestrator import SessionOrchestrator
+from morrow.application.preferences.inbox import PreferenceInbox
 from morrow.application.preferences.queries import PreferenceQueries
+from morrow.application.preferences.reviewer import PreferenceReviewRunner
 from morrow.application.preferences.tool import (
     PreferenceManagementService,
     make_preference_management_tool,
@@ -300,6 +302,9 @@ def build_operational_api(
     preference_writer: PreferenceWriter | None = None,
     learning_provider=None,
     learning_model=None,
+    preference_reviewer=None,
+    preference_model=None,
+    preference_v2_enabled: bool | None = None,
 ) -> OperationalApplicationService:
     """Compose the shared command/query boundary over operational domain services."""
 
@@ -310,6 +315,29 @@ def build_operational_api(
         resolved_config_service.preference_writer = preference_writer
     learning_reviewer = (
         ModelLearningReviewer(learning_provider) if learning_provider is not None else None
+    )
+    preference_inbox = (
+        PreferenceInbox(
+            journal=services.journal,
+            workspace_id=workspace_id,
+            writer=preference_writer,
+            id_source=app.id_source,
+            clock=services.journal.now,
+        )
+        if preference_writer is not None
+        else None
+    )
+    preference_review_runner = (
+        PreferenceReviewRunner(
+            journal=services.journal,
+            workspace_id=workspace_id,
+            id_source=app.id_source,
+            clock=services.journal.now,
+            reviewer=preference_reviewer,
+            model=preference_model,
+        )
+        if preference_reviewer is not None
+        else None
     )
     return OperationalApplicationService(
         journal=services.journal,
@@ -325,6 +353,13 @@ def build_operational_api(
         learning_reviewer=learning_reviewer,
         learning_model=learning_model,
         config_service=resolved_config_service,
+        preference_inbox=preference_inbox,
+        preference_review_runner=preference_review_runner,
+        preference_v2_enabled=(
+            preference_writer is not None
+            if preference_v2_enabled is None
+            else preference_v2_enabled
+        ),
     )
 
 

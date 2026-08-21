@@ -10,13 +10,13 @@ Subplan 58 — Semantic Preference Reviewer and Inbox.
 
 ## Tasks
 
-- `[ ]` S58.1 Build the frozen bounded Review context and persist reproducible source evidence.
-- `[ ]` S58.2 Add the minimal no-tool Preference Reviewer and deterministic scripted test double.
-- `[ ]` S58.3 Validate and persist independent Preference proposals with exact OCC/safety rules.
-- `[ ]` S58.4 Add Preference Inbox list/show/preview and accept/edit/reject decision flows through S57.
-- `[ ]` S58.5 Disable new fixed-field Preference emission from the broad legacy Reviewer while preserving
+- `[x]` S58.1 Build the frozen bounded Review context and persist reproducible source evidence.
+- `[x]` S58.2 Add the minimal no-tool Preference Reviewer and deterministic scripted test double.
+- `[x]` S58.3 Validate and persist independent Preference proposals with exact OCC/safety rules.
+- `[x]` S58.4 Add Preference Inbox list/show/preview and accept/edit/reject decision flows through S57.
+- `[x]` S58.5 Disable new fixed-field Preference emission from the broad legacy Reviewer while preserving
   non-Preference and historical behavior.
-- `[ ]` Run the focused S58 validation and implementation checkpoint.
+- `[>]` Run the focused S58 validation and implementation checkpoint.
 - `[ ]` Run exactly one Grok `/review`, independently adjudicate findings, and rerun the affected gates.
 - `[ ]` Commit closeout, fast-forward `main`, retire the branch, and activate S59.
 

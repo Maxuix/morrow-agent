@@ -46,12 +46,14 @@ class LearningCandidatePipeline:
         id_source: IdSource,
         clock: Callable[[], datetime],
         events,
+        preference_v2_enabled: bool = False,
     ) -> None:
         self.journal = journal
         self.workspace_id = workspace_id
         self.id_source = id_source
         self.clock = clock
         self.events = events
+        self.preference_v2_enabled = preference_v2_enabled
 
     def persist(
         self,
@@ -225,8 +227,9 @@ class LearningCandidatePipeline:
             for item in activations
         )
 
-    @staticmethod
-    def _eligible_draft(draft, evidence_by_id, outcome):
+    def _eligible_draft(self, draft, evidence_by_id, outcome):
+        if self.preference_v2_enabled and draft.candidate_type is LearningCandidateType.PREFERENCE:
+            return None
         if draft.temporary_or_durable != "durable":
             return None
         selected = [evidence_by_id.get(item) for item in draft.evidence_ids]

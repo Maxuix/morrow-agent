@@ -210,6 +210,18 @@ _PERSISTENCE_EXPORTS = frozenset(
         "preference_operation_fingerprint",
     }
 )
+_REVIEW_EXPORTS = frozenset(
+    {
+        "PreferenceDialogueMessage",
+        "PreferenceReviewContext",
+        "PreferenceReviewContextError",
+        "PreferenceReviewOperation",
+        "PreferenceReviewOperations",
+        "PreferenceReviewOutput",
+        "PreferenceReviewerError",
+        "PreferenceReviewerOutput",
+    }
+)
 
 
 def __getattr__(name: str):
@@ -221,6 +233,10 @@ def __getattr__(name: str):
         from morrow.core import preference_persistence_models
 
         return getattr(preference_persistence_models, name)
+    if name in _REVIEW_EXPORTS:
+        from morrow.core import preference_review
+
+        return getattr(preference_review, name)
     raise AttributeError(name)
 
 
@@ -244,4 +260,4 @@ __all__ = [
     "PreferenceScope",
     "PreferenceStatus",
     "normalize_preference_statement",
-] + sorted(_DOCUMENT_EXPORTS | _PERSISTENCE_EXPORTS)
+] + sorted(_DOCUMENT_EXPORTS | _PERSISTENCE_EXPORTS | _REVIEW_EXPORTS)

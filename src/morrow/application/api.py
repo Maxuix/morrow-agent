@@ -17,6 +17,11 @@ from morrow.application.learning.memory import MemoryApplicationService
 from morrow.application.learning.policy import LearningPolicyService, LearningPolicyStatus
 from morrow.application.learning.requests import LearningReviewRequestService
 from morrow.application.learning.runner import LearningReviewRunner, LearningReviewRunResult
+from morrow.application.preferences.inbox import PreferenceInbox
+from morrow.application.preferences.reviewer import (
+    PreferenceReviewRunner,
+    PreferenceReviewRunResult,
+)
 from morrow.application.recovery import RecoveryService
 from morrow.application.tasks import TaskService
 from morrow.application.turns import TurnSubmitResult
@@ -82,6 +87,9 @@ class OperationalApplicationService:
         learning_reviewer: LearningReviewerPort | None = None,
         learning_model=None,
         config_service=None,
+        preference_inbox: PreferenceInbox | None = None,
+        preference_review_runner: PreferenceReviewRunner | None = None,
+        preference_v2_enabled: bool = False,
     ) -> None:
         self.journal = journal
         try:
@@ -132,7 +140,10 @@ class OperationalApplicationService:
             clock=self.clock,
             reviewer=learning_reviewer,
             model=learning_model,
+            preference_v2_enabled=preference_v2_enabled,
         )
+        self.preference_inbox = preference_inbox
+        self.preference_review_runner = preference_review_runner
 
     # Queries -----------------------------------------------------------------
 
@@ -328,6 +339,38 @@ class OperationalApplicationService:
 
     def list_learning_activations(self, *, target: str | None = None, path: str | None = None):
         return self.learning.list_learning_activations(target=target, path=path)
+
+    def list_preference_proposal_views(self, **kwargs):
+        return self._preference_inbox().list(**kwargs)
+
+    def get_preference_proposal_view(self, proposal_id: str):
+        return self._preference_inbox().get(proposal_id)
+
+    def preview_preference_proposal(self, proposal_id: str, **kwargs):
+        return self._preference_inbox().preview(proposal_id, **kwargs)
+
+    def accept_preference_proposal(self, proposal_id: str, **kwargs):
+        return self._preference_inbox().accept(proposal_id, **kwargs)
+
+    def edit_and_accept_preference_proposal(self, proposal_id: str, statement: str, **kwargs):
+        return self._preference_inbox().edit_and_accept(proposal_id, statement, **kwargs)
+
+    def accept_preference_proposals(self, proposal_ids, **kwargs):
+        return self._preference_inbox().accept_many(proposal_ids, **kwargs)
+
+    def reject_preference_proposal(self, proposal_id: str, **kwargs):
+        return self._preference_inbox().reject(proposal_id, **kwargs)
+
+    def reject_and_suppress_preference_proposal(self, proposal_id: str, **kwargs):
+        return self._preference_inbox().reject_and_suppress(proposal_id, **kwargs)
+
+    async def run_preference_review(self, job_id: str, **kwargs) -> PreferenceReviewRunResult:
+        runner = self.preference_review_runner
+        if runner is None:
+            raise ApplicationError(
+                ApplicationErrorCode.UNAVAILABLE, "Preference Review runner is unavailable"
+            )
+        return await runner.run(job_id, **kwargs)
 
     def list_project_knowledge(self, **kwargs):
         return self.memory.list_knowledge(**kwargs)
@@ -1315,6 +1358,13 @@ class OperationalApplicationService:
         if value < 0:
             raise ApplicationError(ApplicationErrorCode.INVALID, "query cursor is invalid")
         return value
+
+    def _preference_inbox(self) -> PreferenceInbox:
+        if self.preference_inbox is None:
+            raise ApplicationError(
+                ApplicationErrorCode.UNAVAILABLE, "Preference Inbox is unavailable"
+            )
+        return self.preference_inbox
 
     def _translate(self, call):
         return self.command_context._translate(call)

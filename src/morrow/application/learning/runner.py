@@ -60,6 +60,7 @@ class LearningReviewRunner:
         reviewer: LearningReviewerPort | None = None,
         model: ModelRef | None = None,
         timeout_seconds: float = 15.0,
+        preference_v2_enabled: bool = False,
     ) -> None:
         if timeout_seconds <= 0 or timeout_seconds > 120:
             raise ValueError("learning Reviewer timeout is outside the supported range")
@@ -88,6 +89,7 @@ class LearningReviewRunner:
             id_source=id_source,
             clock=clock,
             events=self.events,
+            preference_v2_enabled=preference_v2_enabled,
         )
 
     async def run(

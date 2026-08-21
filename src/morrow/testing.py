@@ -19,6 +19,7 @@ from morrow.core.models import (
     ToolDefinition,
     UserMessage,
 )
+from morrow.core.preference_review import PreferenceReviewContext, PreferenceReviewOutput
 
 
 def make_run_policy(*, request_char_limit: int | None = None, **overrides):
@@ -93,6 +94,32 @@ class ScriptedLearningReviewer:
         self.calls.append(context)
         if not self.responses:
             return CandidateDraftBatch()
+        response = self.responses[min(self._index, len(self.responses) - 1)]
+        self._index += 1
+        if isinstance(response, BaseException):
+            raise response
+        return response
+
+
+class ScriptedPreferenceReviewer:
+    """Test-only deterministic no-tool Preference Reviewer."""
+
+    def __init__(self, responses: Sequence[PreferenceReviewOutput | BaseException] = ()) -> None:
+        self.responses = list(responses)
+        self.calls: list[PreferenceReviewContext] = []
+        self._index = 0
+
+    async def review(
+        self,
+        context: PreferenceReviewContext,
+        *,
+        model: ModelRef,
+        timeout_seconds: float,
+    ) -> PreferenceReviewOutput:
+        del model, timeout_seconds
+        self.calls.append(context)
+        if not self.responses:
+            return PreferenceReviewOutput()
         response = self.responses[min(self._index, len(self.responses) - 1)]
         self._index += 1
         if isinstance(response, BaseException):

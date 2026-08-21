@@ -45,6 +45,7 @@ from morrow.core.permissions import (
 from morrow.core.recovery import RecoveryResolution
 from morrow.core.store import StorageError, StorageErrorCode, StoreOpenMode
 from morrow.interfaces.learning_cli import learning_app, memory_app
+from morrow.interfaces.preferences_cli import preference_inbox_app
 from morrow.interfaces.terminal import Terminal, TerminalApprovalPort, run_repl
 from morrow.runtime.durable_log import restore_conversation_log
 from morrow.services.workspace import WorkspaceError, WorkspaceWriterLock
@@ -70,6 +71,7 @@ app.add_typer(recovery_app, name="recovery")
 app.add_typer(grant_app, name="grant")
 app.add_typer(state_app, name="state")
 app.add_typer(preferences_app, name="preferences")
+preferences_app.add_typer(preference_inbox_app, name="inbox")
 app.add_typer(learning_app, name="learning")
 app.add_typer(memory_app, name="memory")
 

@@ -8,6 +8,7 @@ from morrow.adapters.state.preference_journal_codec import (
     _missing,
     _optional_unix,
     _proposal_from_row,
+    _stale,
     _unix,
     _workspace_error,
 )
@@ -135,6 +136,103 @@ class PreferenceProposalJournalMixin:
         return tuple(
             _proposal_from_row(row) for row in self.backend.read_all(sql, tuple(parameters))
         )
+
+    def save_preference_proposal(
+        self,
+        workspace_id: str,
+        proposal: PreferenceProposal,
+        *,
+        expected_row_version: int,
+    ) -> PreferenceProposal:
+        """Save one Inbox decision with immutable proposal identity and OCC."""
+
+        if proposal.workspace_id != workspace_id:
+            raise _workspace_error("proposal")
+        if proposal.operation.evidence_ids != (proposal.evidence_id,):
+            raise StorageError(
+                StorageErrorCode.UNAVAILABLE, "Preference proposal Evidence is not exact"
+            )
+        if preference_operation_fingerprint(proposal.operation) != proposal.fingerprint:
+            raise StorageError(
+                StorageErrorCode.UNAVAILABLE, "Preference proposal fingerprint is invalid"
+            )
+        final_json = final_bytes = None
+        if proposal.final_operation is not None:
+            if proposal.final_operation.evidence_ids != (proposal.evidence_id,):
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE, "edited operation Evidence is not exact"
+                )
+            final_json, final_bytes = _canonical_json(
+                proposal.final_operation.model_dump(mode="json"),
+                maximum=8192,
+                label="final operation",
+            )
+
+        def work() -> PreferenceProposal:
+            existing = self.get_preference_proposal(workspace_id, proposal.proposal_id)
+            if existing is None:
+                raise _missing("proposal")
+            if (
+                existing.row_version != expected_row_version
+                or proposal.row_version != expected_row_version + 1
+            ):
+                raise _stale("proposal")
+            immutable = (
+                "proposal_id",
+                "workspace_id",
+                "job_id",
+                "evidence_id",
+                "operation",
+                "fingerprint",
+                "expected_target_revision",
+                "expected_document_revision",
+                "created_at",
+            )
+            if any(getattr(existing, name) != getattr(proposal, name) for name in immutable):
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE, "Preference proposal identity is immutable"
+                )
+            if existing.status is not PreferenceProposalStatus.PROPOSED:
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE, "Preference proposal is already resolved"
+                )
+            if proposal.status is PreferenceProposalStatus.PROPOSED:
+                if proposal.final_operation is not None or proposal.resolved_at is not None:
+                    raise StorageError(
+                        StorageErrorCode.UNAVAILABLE, "proposed Preference cannot have a decision"
+                    )
+            elif proposal.decision_command_id is None or proposal.resolved_at is None:
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE,
+                    "resolved Preference proposal lacks decision metadata",
+                )
+            self.backend.executor().execute(
+                """
+                UPDATE preference_proposals
+                SET status = ?, final_operation_json = ?, final_operation_bytes = ?,
+                    decision_command_id = ?, decision_reason = ?, row_version = ?,
+                    resolved_at_unix = ?
+                WHERE proposal_id = ? AND workspace_id = ? AND row_version = ?
+                """,
+                (
+                    proposal.status.value,
+                    final_json,
+                    final_bytes,
+                    proposal.decision_command_id,
+                    proposal.decision_reason,
+                    proposal.row_version,
+                    _optional_unix(proposal.resolved_at),
+                    proposal.proposal_id,
+                    workspace_id,
+                    expected_row_version,
+                ),
+            )
+            loaded = self.get_preference_proposal(workspace_id, proposal.proposal_id)
+            if loaded is None or loaded.row_version != proposal.row_version:
+                raise _stale("proposal")
+            return loaded
+
+        return self.backend.transact(work)
 
 
 __all__ = ["PreferenceProposalJournalMixin"]

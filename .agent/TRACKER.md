@@ -23,13 +23,13 @@ execution, and next-AgentRun refresh.
 
 ## Active task
 
-S57 closeout — all S57.1–S57.6 code paths are implemented, committed, merged, and retired; S58 is
-active for the semantic Reviewer and Inbox.
+S58 implementation checkpoint — S58.1–S58.5 are implemented and the required offline gates pass on
+`feat/stage5-preference-reviewer`; commit the checkpoint before the single Grok review.
 
 ## Next action
 
-Read the S58 subplan and start its dedicated branch from the verified local `main`; do not begin
-S59 work early. Preserve the two untracked research files.
+Commit only the tracked S58 implementation and execution-state files, excluding the two untracked
+research files. Then invoke exactly one Grok `/review`; do not begin S59 work early.
 
 ## Blockers
 

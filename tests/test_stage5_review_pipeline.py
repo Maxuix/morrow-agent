@@ -11,6 +11,7 @@ import morrow.interfaces.cli as cli_module
 from morrow.adapters.state.journal import SqliteOperationalJournal
 from morrow.adapters.state.operational import OperationalStore
 from morrow.application.api import OperationalApplicationService
+from morrow.application.learning.candidate_pipeline import LearningCandidatePipeline
 from morrow.application.learning.context import LearningContextBuilder
 from morrow.core.application import (
     ApplicationCommandResult,
@@ -135,6 +136,28 @@ def _accepted(api, journal, *, with_user_turn=False, user_content="以后默认�
         command_id="cmd_accept",
         expected_row_version=ready.row_version,
     )
+
+
+def test_preference_v2_flag_blocks_new_legacy_preference_drafts():
+    pipeline = LearningCandidatePipeline(
+        journal=object(),
+        workspace_id="ws_1",
+        id_source=FixedIdSource(),
+        clock=lambda: NOW,
+        events=None,
+        preference_v2_enabled=True,
+    )
+    draft = LearningCandidateDraft(
+        candidate_type=LearningCandidateType.PREFERENCE,
+        operation="set",
+        semantic_key="preference.language",
+        proposed_scope=LearningScope.WORKSPACE,
+        proposed_payload=PreferenceCandidatePayload(path="language", value="zh-CN"),
+        evidence_ids=("lev_one",),
+        temporary_or_durable="durable",
+    )
+
+    assert pipeline._eligible_draft(draft, {}, None) is None
 
 
 def test_accept_atomically_requests_one_review_and_replays_without_duplicates(tmp_path):

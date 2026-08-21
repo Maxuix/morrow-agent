@@ -235,6 +235,56 @@ class SqliteOperationalJournal:
             workspace_id, status=status, limit=limit
         )
 
+    def put_preference_review_job(self, workspace_id: str, job):
+        return self._preference_journal.put_preference_review_job(workspace_id, job)
+
+    def get_preference_review_job(self, workspace_id: str, job_id: str):
+        return self._preference_journal.get_preference_review_job(workspace_id, job_id)
+
+    def list_preference_review_jobs(self, workspace_id: str, *, status=None, limit: int = 100):
+        return self._preference_journal.list_preference_review_jobs(
+            workspace_id, status=status, limit=limit
+        )
+
+    def count_preference_review_jobs(self, workspace_id: str, *, status=None):
+        return self._preference_journal.count_preference_review_jobs(workspace_id, status=status)
+
+    def put_preference_evidence(self, workspace_id: str, evidence):
+        return self._preference_journal.put_preference_evidence(workspace_id, evidence)
+
+    def get_preference_evidence(self, workspace_id: str, evidence_id: str):
+        return self._preference_journal.get_preference_evidence(workspace_id, evidence_id)
+
+    def list_preference_evidence(
+        self, workspace_id: str, *, job_id: str | None = None, limit: int = 100
+    ):
+        return self._preference_journal.list_preference_evidence(
+            workspace_id, job_id=job_id, limit=limit
+        )
+
+    def put_preference_job_with_evidence(self, workspace_id: str, job, evidence):
+        return self._preference_journal.put_preference_job_with_evidence(
+            workspace_id, job, evidence
+        )
+
+    def put_preference_proposal(self, workspace_id: str, proposal):
+        return self._preference_journal.put_preference_proposal(workspace_id, proposal)
+
+    def get_preference_proposal(self, workspace_id: str, proposal_id: str):
+        return self._preference_journal.get_preference_proposal(workspace_id, proposal_id)
+
+    def list_preference_proposals(
+        self, workspace_id: str, *, status=None, job_id=None, limit: int = 100
+    ):
+        return self._preference_journal.list_preference_proposals(
+            workspace_id, status=status, job_id=job_id, limit=limit
+        )
+
+    def save_preference_proposal(self, workspace_id: str, proposal, *, expected_row_version: int):
+        return self._preference_journal.save_preference_proposal(
+            workspace_id, proposal, expected_row_version=expected_row_version
+        )
+
     def transact[T](self, work: Callable[[SqliteOperationalJournal], T]) -> T:
         return self._backend.transact(lambda: work(self))
 
