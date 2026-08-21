@@ -1856,3 +1856,20 @@
   offline implementation and safety evidence remain valid but do not count as real-model quality.
 - S54.7 is active; the complete S54 branch now requires exactly one final Grok `/review`, one
   independent review/fix pass, and a final offline/quality gate.
+
+## 2026-08-21 — Subplan 55 S55.1–S55.3 verified; S55.4 active
+
+- Created `fix/stage5-simulated-user-remediation` and added regression-first coverage using real
+  `LearningCandidateView` projections and Typer `CliRunner`. The pre-fix focused set recorded 9
+  failures across typed Candidate decisions, rejection intent, Project Knowledge edit fields,
+  stale OCC handling, and non-zero-microsecond first promotion.
+- Fixed headless Candidate accept/edit/reject to use the typed view and preview OCC token, corrected
+  the Project Knowledge edit-field guard, and added explicit reject/reject-and-suppress preview
+  intent with truthful Typer and REPL rendering. Configuration edit finalization now constructs its
+  final proposal before Pydantic validation of the immutable decision.
+- Fixed first Project Knowledge promotion to use the journal's persisted head after insertion and
+  compare immutable `created_at` at SQLite's existing integer-second precision. Focused CLI,
+  Project Knowledge, Store, Learning application, configuration, and terminal tests pass: 36 and
+  56 tests respectively. No Live Provider, network, or credential access was attempted.
+- S55.4 is active; the isolated headless simulated-user flow, restart checks, doctor, and backup
+  evidence remain to be rerun before Stage 5 user acceptance can be restored.

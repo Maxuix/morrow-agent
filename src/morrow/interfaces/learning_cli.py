@@ -23,6 +23,7 @@ from morrow.core.learning_commands import (
     RejectLearningCandidateCommand,
 )
 from morrow.core.learning_memory import (
+    LearningCandidateDecisionKind,
     LearningConflictResolution,
     ProjectKnowledgeCategory,
     ProjectKnowledgeStatus,
@@ -32,6 +33,7 @@ from morrow.core.learning_payloads import (
     ProfileCandidatePayload,
     ProjectKnowledgeCandidatePayload,
 )
+from morrow.core.learning_views import LearningCandidateView
 
 learning_app = typer.Typer(help="Learning Inbox、Review 与候选决策。")
 memory_app = typer.Typer(help="Project Knowledge 生命周期与历史。")
@@ -56,11 +58,11 @@ def _command_id(api, command_id: str | None) -> str:
     return command_id or api.id_source.new_id("cmd")
 
 
-def _candidate_or_error(api, candidate_id: str):
-    candidate = api.get_learning_candidate_view(candidate_id)
-    if candidate is None:
+def _candidate_or_error(api, candidate_id: str) -> LearningCandidateView:
+    view = api.get_learning_candidate_view(candidate_id)
+    if view is None:
         raise ApplicationError(ApplicationErrorCode.NOT_FOUND, "Learning Candidate is missing")
-    return candidate
+    return view
 
 
 def _confirm_or_exit(question: str) -> None:
@@ -81,6 +83,14 @@ def _emit_promotion_result(value, *, as_json: bool) -> None:
         )
         return
     _cli_helpers()[2](value, as_json=as_json)
+
+
+def _emit_learning_decision_preview(preview) -> None:
+    _cli_helpers()[2](preview)
+    if preview.decision_kind is LearningCandidateDecisionKind.REJECT:
+        typer.echo("动作：将拒绝提议值；不会创建 Active after value。")
+    elif preview.decision_kind is LearningCandidateDecisionKind.REJECT_AND_SUPPRESS:
+        typer.echo("动作：将拒绝提议值，并创建 suppression；以后不再建议同类候选。")
 
 
 def _run_state_command(
@@ -325,18 +335,18 @@ def learning_accept(
     state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
 ) -> None:
     def action(api) -> None:
-        candidate = _candidate_or_error(api, candidate_id)
+        view = _candidate_or_error(api, candidate_id)
         preview = api.preview_learning_candidate_decision(
-            candidate_id,
+            view.candidate.candidate_id,
             scope=scope,
             conflict_resolution=conflict_resolution,
         )
-        _cli_helpers()[2](preview)
+        _emit_learning_decision_preview(preview)
         _confirm_or_exit("确认接受这项 Learning Candidate？")
         command = AcceptLearningCandidateCommand(
             workspace_id=api.workspace_id,
-            candidate_id=candidate.candidate_id,
-            expected_row_version=candidate.row_version,
+            candidate_id=preview.candidate.candidate_id,
+            expected_row_version=preview.expected_row_version,
             command_id=_command_id(api, command_id),
             scope=scope,
             conflict_resolution=conflict_resolution,
@@ -375,8 +385,8 @@ def learning_edit(
     state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
 ) -> None:
     def action(api) -> None:
-        candidate = _candidate_or_error(api, candidate_id)
-        payload = candidate.candidate.proposed_payload
+        view = _candidate_or_error(api, candidate_id)
+        payload = view.candidate.proposed_payload
         if isinstance(payload, PreferenceCandidatePayload):
             if any(item is not None for item in (statement, semantic_key, category)):
                 raise ApplicationError(
@@ -425,12 +435,6 @@ def learning_edit(
                 raise ApplicationError(
                     ApplicationErrorCode.INVALID, "Project Knowledge 使用专用字段编辑"
                 )
-            if any(value is not None for value in (statement, semantic_key, category)):
-                raise ApplicationError(
-                    ApplicationErrorCode.INVALID,
-                    "当前 CLI 仅支持 Project Knowledge 的字段编辑；其他类型可用原值确认候选接受",
-                )
-            final_payload = payload
             final_payload = payload.model_copy(
                 update={
                     key: value
@@ -443,17 +447,17 @@ def learning_edit(
                 }
             )
         preview = api.preview_learning_candidate_decision(
-            candidate_id,
+            view.candidate.candidate_id,
             edit=final_payload,
             scope=scope,
             conflict_resolution=conflict_resolution,
         )
-        _cli_helpers()[2](preview)
+        _emit_learning_decision_preview(preview)
         _confirm_or_exit("确认保存编辑后的 Learning Candidate？")
         command = EditAndAcceptLearningCandidateCommand(
             workspace_id=api.workspace_id,
-            candidate_id=candidate.candidate_id,
-            expected_row_version=candidate.row_version,
+            candidate_id=preview.candidate.candidate_id,
+            expected_row_version=preview.expected_row_version,
             command_id=_command_id(api, command_id),
             scope=scope,
             conflict_resolution=conflict_resolution,
@@ -486,13 +490,22 @@ def learning_reject(
     state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
 ) -> None:
     def action(api) -> None:
-        candidate = _candidate_or_error(api, candidate_id)
-        _cli_helpers()[2](api.preview_learning_candidate_decision(candidate_id))
+        view = _candidate_or_error(api, candidate_id)
+        decision_intent = (
+            LearningCandidateDecisionKind.REJECT_AND_SUPPRESS
+            if never_suggest
+            else LearningCandidateDecisionKind.REJECT
+        )
+        preview = api.preview_learning_candidate_decision(
+            view.candidate.candidate_id,
+            decision_intent=decision_intent,
+        )
+        _emit_learning_decision_preview(preview)
         _confirm_or_exit("确认拒绝这项 Learning Candidate？")
         command = RejectLearningCandidateCommand(
             workspace_id=api.workspace_id,
-            candidate_id=candidate.candidate_id,
-            expected_row_version=candidate.row_version,
+            candidate_id=preview.candidate.candidate_id,
+            expected_row_version=preview.expected_row_version,
             command_id=_command_id(api, command_id),
             never_suggest=never_suggest,
             reason=reason,

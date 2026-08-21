@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import pytest
 
+from morrow.adapters.state.journal import SqliteOperationalJournal
+from morrow.adapters.state.operational import OperationalStore
 from morrow.core.application import ApplicationError, ApplicationErrorCode
 from morrow.core.domain import DurableConversationRecord, DurableTurn, TaskRunStatus
 from morrow.core.learning import (
@@ -23,6 +25,7 @@ from morrow.core.learning_commands import (
     MarkProjectKnowledgeDisputedCommand,
 )
 from morrow.core.learning_memory import (
+    LearningCandidateDecisionKind,
     LearningConflictResolution,
     ProjectKnowledgeCategory,
     ProjectKnowledgeStatus,
@@ -35,6 +38,7 @@ from morrow.core.learning_payloads import (
     WorkflowFeedbackCandidatePayload,
 )
 from morrow.core.models import ModelRef
+from morrow.core.store import StoreOpenMode
 from test_stage5_review_pipeline import NOW, _accepted, _api
 
 
@@ -186,6 +190,42 @@ async def test_project_knowledge_accept_confirm_replace_and_replay_are_atomic(tm
 
     finally:
         session.close()
+
+
+@pytest.mark.asyncio
+async def test_project_knowledge_first_promotion_round_trips_nonzero_microsecond_timestamp(
+    tmp_path,
+):
+    session, _journal, api, candidate, _reviewer = await _project_candidate(tmp_path)
+    precise = NOW.replace(microsecond=654321)
+    object.__setattr__(api.command_context, "clock", lambda: precise)
+    accepted = api.accept_learning_candidate(_accept_command(candidate, "cmd_knw_precise"))
+    session.close()
+
+    store = OperationalStore(tmp_path / "state", maintenance_timeout=0)
+    with store.open(StoreOpenMode.READ_WRITE) as reopened:
+        journal = SqliteOperationalJournal(reopened)
+        decision = journal.list_learning_candidate_decisions(
+            "ws_1", candidate_id=candidate.candidate_id
+        )[-1]
+        assert decision.kind is LearningCandidateDecisionKind.ACCEPT
+        assert journal.get_learning_candidate("ws_1", candidate.candidate_id).status.value == (
+            "accepted"
+        )
+        assert accepted.value.outcome == "activated"
+        head = journal.get_project_knowledge_head("ws_1", accepted.value.knowledge_id)
+        assert head is not None
+        assert head.status is ProjectKnowledgeStatus.ACTIVE
+        revision = journal.get_project_knowledge_revision(
+            "ws_1", accepted.value.knowledge_revision_id
+        )
+        assert revision is not None and revision.revision == 1
+        assert journal.list_project_knowledge_evidence("ws_1", revision.knowledge_revision_id)
+        assert journal.get_memory_workspace_state("ws_1").memory_revision == 1
+        assert journal.list_memory_search_terms(
+            "ws_1", knowledge_revision_id=revision.knowledge_revision_id
+        )
+        assert journal.list_application_events("ws_1")[-1].event_type == "memory.record_activated"
 
 
 @pytest.mark.asyncio

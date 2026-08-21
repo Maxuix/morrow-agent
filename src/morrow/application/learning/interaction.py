@@ -21,7 +21,7 @@ from morrow.core.learning_commands import (
     MarkProjectKnowledgeDisputedCommand,
     RejectLearningCandidateCommand,
 )
-from morrow.core.learning_memory import LearningConflictResolution
+from morrow.core.learning_memory import LearningCandidateDecisionKind, LearningConflictResolution
 
 
 class LearningCommandMixin:
@@ -65,6 +65,7 @@ class LearningCommandMixin:
             f"候选：{preview.candidate.candidate_id}；类型：{preview.candidate.candidate_type.value}",
             f"版本：{preview.expected_row_version}；作用域：{preview.scope.value}",
             f"冲突处理：{preview.conflict_resolution.value}；可执行：{'是' if preview.available else '否'}",
+            f"决策：{preview.decision_kind.value}",
         ]
         if preview.reason:
             lines.append(f"原因：{preview.reason}")
@@ -72,7 +73,14 @@ class LearningCommandMixin:
             lines.append(f"冲突：{preview.conflict}")
         if preview.before is not None:
             lines.append("当前值：" + cls._json_line(preview.before.value))
-        lines.append("之后值：" + cls._json_line(preview.after.value))
+        if preview.decision_kind is LearningCandidateDecisionKind.REJECT:
+            lines.append("将拒绝的提议值：" + cls._json_line(preview.after.value))
+            lines.append("不会创建 Active after value。")
+        elif preview.decision_kind is LearningCandidateDecisionKind.REJECT_AND_SUPPRESS:
+            lines.append("将拒绝的提议值：" + cls._json_line(preview.after.value))
+            lines.append("同时创建 suppression；以后不再建议同类候选。")
+        else:
+            lines.append("之后值：" + cls._json_line(preview.after.value))
         lines.extend(preview.configuration_preview)
         return lines
 
@@ -200,13 +208,21 @@ class LearningCommandMixin:
                 return CommandResult(["Learning Candidate 不存在。"])
             if operation == "reject":
                 never_suggest = "--never-suggest" in parts[3:]
-                preview = self.api.preview_learning_candidate_decision(view.candidate.candidate_id)
+                decision_intent = (
+                    LearningCandidateDecisionKind.REJECT_AND_SUPPRESS
+                    if never_suggest
+                    else LearningCandidateDecisionKind.REJECT
+                )
+                preview = self.api.preview_learning_candidate_decision(
+                    view.candidate.candidate_id,
+                    decision_intent=decision_intent,
+                )
                 return CommandResult(
                     self._preview_lines(preview),
                     action="learning_reject_preview",
                     value=LearningCandidateCommandRequest(
-                        candidate_id=view.candidate.candidate_id,
-                        expected_row_version=view.candidate.row_version,
+                        candidate_id=preview.candidate.candidate_id,
+                        expected_row_version=preview.expected_row_version,
                         never_suggest=never_suggest,
                     ),
                 )
@@ -222,8 +238,8 @@ class LearningCommandMixin:
                     "learning_edit_preview" if operation == "edit" else "learning_accept_preview"
                 ),
                 value=LearningCandidateCommandRequest(
-                    candidate_id=view.candidate.candidate_id,
-                    expected_row_version=view.candidate.row_version,
+                    candidate_id=preview.candidate.candidate_id,
+                    expected_row_version=preview.expected_row_version,
                     scope=scope,
                     conflict_resolution=resolution,
                 ),

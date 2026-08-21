@@ -3,15 +3,15 @@
 ## Current status
 
 Subplan 54's automated offline gate is complete, but the simulated-user evaluation committed at
-`5cfb99f` confirmed two P1 blockers and one P2 preview defect. Subplan 55 is planned but has not been
-authorized for implementation. The optional Live model-quality hold remains pending separately.
+`5cfb99f` confirmed two P1 blockers and one P2 preview defect. Subplan 55 is active on its fix
+branch. The optional Live model-quality hold remains pending separately.
 
 ## Last completed task
 
 The Stage 5 simulated-user report is committed at `5cfb99f`. Independent static adjudication
-confirmed F1, F2, and F3 and found one adjacent inverted Project Knowledge edit guard. A bounded
-Subplan 55 now specifies failing regressions, fixes, isolated user-flow replay, one independent
-review/fix pass, and final gates; no production code was changed while drafting it.
+confirmed F1, F2, and F3 and found one adjacent inverted Project Knowledge edit guard. S55.1
+recorded 9 pre-fix failures. S55.2/S55.3 are implemented and their focused regression sets pass;
+the isolated user-flow replay is now the active task.
 
 Subplan 53 is verified and merged at `613ffdb`, including its one-time Grok review-fix pass. It adds
 v12 MemorySelection and rebuildable terms, deterministic selection, frozen AgentRun/context
@@ -23,12 +23,12 @@ recovery, Session projections, and CLI/REPL controls. Subplan 51 is verified and
 
 ## Active task
 
-No implementation task is active. Proposed Subplan 55 awaits a user request to implement it.
+S55.4 — replay the isolated simulated-user flow and update acceptance evidence.
 
 ## Next action
 
-If implementation is authorized, create `fix/stage5-simulated-user-remediation` from `5cfb99f`,
-activate only S55.1, and first preserve failing regression evidence.
+Run the isolated headless CLI flow with a scripted Reviewer, then verify restart, doctor, and backup
+evidence before activating S55.5.
 
 ## Blockers
 

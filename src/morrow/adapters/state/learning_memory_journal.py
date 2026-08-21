@@ -345,7 +345,7 @@ class SqliteLearningMemoryJournal:
                 existing.workspace_id != head.workspace_id
                 or existing.semantic_key != head.semantic_key
                 or existing.category != head.category
-                or existing.created_at != head.created_at
+                or _unix(existing.created_at) != _unix(head.created_at)
             ):
                 raise StorageError(
                     StorageErrorCode.UNAVAILABLE, "knowledge head identity is immutable"

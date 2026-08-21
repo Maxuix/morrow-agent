@@ -82,6 +82,13 @@ class ConfigurationPromotionFinalizeMixin:
             evidence = self._valid_evidence(txn, candidate)
             self._validate_explicit_evidence(candidate, evidence)
             edited = self._is_edit_operation(operation, candidate, prepared)
+            final_proposal_json = None
+            final_proposal_bytes = None
+            if edited:
+                payload = self._payload_for_decision(candidate, prepared)
+                encoded_payload = canonical_json_bytes(payload)
+                final_proposal_json = encoded_payload.decode("utf-8")
+                final_proposal_bytes = len(encoded_payload)
             decision = LearningCandidateDecision(
                 decision_id=self.context.id_source.new_id("lcd"),
                 workspace_id=self.workspace_id,
@@ -93,21 +100,12 @@ class ConfigurationPromotionFinalizeMixin:
                 ),
                 actor=LearningResolutionActor.USER,
                 original_proposal_digest=candidate.fingerprint,
-                final_proposal_json=None,
+                final_proposal_json=final_proposal_json,
+                final_proposal_bytes=final_proposal_bytes,
                 scope=operation.scope,
                 command_id=operation.command_id,
                 created_at=stamp,
             )
-            if edited:
-                payload = self._payload_for_decision(candidate, prepared)
-                encoded_payload = canonical_json_bytes(payload)
-                decision = decision.model_copy(
-                    update={
-                        "kind": LearningCandidateDecisionKind.EDIT_AND_ACCEPT,
-                        "final_proposal_json": encoded_payload.decode("utf-8"),
-                        "final_proposal_bytes": len(encoded_payload),
-                    }
-                )
             txn.put_learning_candidate_decision(self.workspace_id, decision)
             supersedes = self._superseded_activation(txn, operation, prepared)
             if supersedes is not None:

@@ -514,7 +514,14 @@ async def _handle_learning_edit(orchestrator, terminal, prompt_session, request)
         terminal.console.print("已取消，未写入状态。")
         return False
     try:
-        value = service.edit_learning_candidate(replace(request, final_payload=final_payload))
+        value = service.edit_learning_candidate(
+            replace(
+                request,
+                candidate_id=preview.candidate.candidate_id,
+                expected_row_version=preview.expected_row_version,
+                final_payload=final_payload,
+            )
+        )
     except (ValueError, RuntimeError) as exc:
         terminal.console.print(f"Learning 编辑失败：{exc}")
     else:

@@ -562,6 +562,19 @@ def test_v11_decisions_knowledge_and_memory_state_round_trip(tmp_path):
                 updated_at=NOW,
             ),
         )
+        with pytest.raises(StorageError) as created_at_error:
+            journal.save_project_knowledge_head(
+                "ws_1",
+                head.model_copy(
+                    update={
+                        "created_at": NOW + timedelta(seconds=1),
+                        "updated_at": NOW + timedelta(seconds=1),
+                        "row_version": 2,
+                    }
+                ),
+                expected_row_version=1,
+            )
+        assert created_at_error.value.code is StorageErrorCode.UNAVAILABLE
         revision = journal.put_project_knowledge_revision(
             "ws_1",
             ProjectKnowledgeRevision(

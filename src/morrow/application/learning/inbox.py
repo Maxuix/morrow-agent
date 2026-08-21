@@ -203,6 +203,7 @@ class LearningApplicationService:
         edit: CandidatePayload | dict[str, Any] | None = None,
         scope: LearningScope | str | None = None,
         conflict_resolution: LearningConflictResolution | str | None = None,
+        decision_intent: LearningCandidateDecisionKind | str | None = None,
     ) -> LearningCandidateDecisionPreview:
         self._expire_due_candidates()
         candidate = self.context._query(
@@ -210,6 +211,7 @@ class LearningApplicationService:
         )
         if candidate is None:
             raise ApplicationError(ApplicationErrorCode.NOT_FOUND, "Learning Candidate is missing")
+        selected_intent = self._decision_intent(decision_intent)
         scope_was_explicit = scope is not None
         selected_scope = self._scope(scope or candidate.proposed_scope)
         selected_resolution = self._conflict_resolution(conflict_resolution)
@@ -217,6 +219,33 @@ class LearningApplicationService:
         semantic_key = self._payload_semantic_key(candidate, payload)
         fingerprint = self._candidate_fingerprint(candidate, payload, selected_scope, semantic_key)
         after = self._preview_value(candidate, payload, selected_scope, semantic_key)
+
+        if selected_intent in {
+            LearningCandidateDecisionKind.REJECT,
+            LearningCandidateDecisionKind.REJECT_AND_SUPPRESS,
+        }:
+            available = True
+            reason = None
+            if candidate.status is not LearningCandidateStatus.PROPOSED:
+                available = False
+                reason = "candidate_not_proposed"
+            elif candidate.expires_at <= _now(self.context):
+                available = False
+                reason = "candidate_expired"
+            return LearningCandidateDecisionPreview(
+                candidate=LearningCandidateSummary.from_candidate(candidate),
+                decision_kind=selected_intent,
+                expected_row_version=candidate.row_version,
+                scope=selected_scope,
+                conflict_resolution=selected_resolution,
+                before=None,
+                after=after,
+                available=available,
+                reason=reason,
+                conflict=None,
+                configuration_preview=(),
+            )
+
         configuration_preview: tuple[str, ...] = ()
         if candidate.candidate_type in {
             LearningCandidateType.PREFERENCE,
@@ -839,6 +868,33 @@ class LearningApplicationService:
             raise ApplicationError(
                 ApplicationErrorCode.INVALID, "Learning conflict resolution is invalid"
             ) from exc
+
+    @staticmethod
+    def _decision_intent(
+        value: LearningCandidateDecisionKind | str | None,
+    ) -> LearningCandidateDecisionKind:
+        if value is None:
+            return LearningCandidateDecisionKind.ACCEPT
+        try:
+            selected = (
+                value
+                if isinstance(value, LearningCandidateDecisionKind)
+                else LearningCandidateDecisionKind(value)
+            )
+        except (TypeError, ValueError) as exc:
+            raise ApplicationError(
+                ApplicationErrorCode.INVALID, "Learning decision intent is invalid"
+            ) from exc
+        if selected not in {
+            LearningCandidateDecisionKind.ACCEPT,
+            LearningCandidateDecisionKind.REJECT,
+            LearningCandidateDecisionKind.REJECT_AND_SUPPRESS,
+        }:
+            raise ApplicationError(
+                ApplicationErrorCode.INVALID,
+                "Learning preview only supports accept, reject, or reject_and_suppress",
+            )
+        return selected
 
 
 __all__ = ["LearningApplicationService"]

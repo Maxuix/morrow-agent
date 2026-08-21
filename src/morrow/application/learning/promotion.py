@@ -404,7 +404,7 @@ class LearningPromotionService:
                 created_at=stamp,
                 updated_at=stamp,
             )
-            txn.put_project_knowledge_head(self.workspace_id, head)
+            head = txn.put_project_knowledge_head(self.workspace_id, head)
             revision = self._new_revision(
                 candidate=candidate,
                 decision=decision,

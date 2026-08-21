@@ -3,18 +3,21 @@
 ## Current stage
 
 Stage 5 automated offline gates are complete, but the simulated-user evaluation at `5cfb99f`
-confirmed two P1 blockers and one P2 preview defect. A bounded remediation plan now exists; no
-production fix has started. The optional Live model-quality hold remains pending separately.
+confirmed two P1 blockers and one P2 preview defect. Subplan 55 is active; the optional Live
+model-quality hold remains pending separately.
 
 ## Active subplan
 
-None. Proposed Subplan 55 — Stage 5 Simulated-User Remediation — awaits an implementation request.
+Subplan 55 — Stage 5 Simulated-User Remediation, on
+`fix/stage5-simulated-user-remediation`.
 
 ## Tasks
 
-No implementation task is active. On authorization, copy S55.1–S55.5 from
-`.agent/subplans/55-stage5-simulated-user-remediation.md` into this active-task list and start only
-S55.1.
+- [x] S55.1 Establish failing regression evidence before production changes.
+- [x] S55.2 Fix Candidate decision CLI and rejection previews.
+- [x] S55.3 Fix Project Knowledge first-promotion timestamp precision.
+- [>] S55.4 Replay the isolated simulated-user flow and update acceptance evidence.
+- [ ] S55.5 Complete the independent review/fix pass and close out the subplan.
 
 ## Validation evidence
 
@@ -33,9 +36,13 @@ activated.
 
 ## Start condition
 
-Subplan 53 is fast-forward merged into local `main` at `613ffdb`; Subplan 54 is on its dedicated
-branch. Preserve the two untracked `docs/research/stage5-overview-*.md` user files unless the user
-explicitly asks to adopt or commit them.
+Subplan 55 is active on `fix/stage5-simulated-user-remediation`; S55.4 is in progress. Preserve
+the two untracked `docs/research/stage5-overview-*.md` user files unless the user explicitly asks
+to adopt or commit them.
+
+S55.1 pre-fix regression evidence recorded 9 failures in the focused set. S55.2/S55.3 fixes then
+passed the focused Candidate CLI/Project Knowledge/Store set with 36 tests and the affected
+Learning/Configuration/REPL set with 56 tests. No Live Provider or network test was run.
 
 S54.1 validation passed: 790 tests, 2 skips, 1 deselected; Ruff format/check, compileall, root/
 Learning/Memory CLI help, and diff check passed. The production Reviewer checkpoint is committed
