@@ -52,5 +52,5 @@ one-shot, negative, quoted, and hypothetical user evidence. Only the positive ex
 case produces a Preference Candidate. The other cases complete without a Candidate.
 
 These results establish the deterministic product boundary only. They do not close the optional
-live-model quality target or the remaining Stage 5 doctor, backup, documentation, and end-to-end
-acceptance work.
+live-model quality target. Stage 5 doctor, backup, documentation, and offline end-to-end acceptance
+are recorded in [`stage5-acceptance.md`](stage5-acceptance.md).

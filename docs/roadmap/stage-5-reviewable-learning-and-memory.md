@@ -1,6 +1,6 @@
 # Stage 5：可审查学习与长期记忆
 
-> 状态：Subplans 49–53（LearningPolicy、accepted Outcome → Candidate Pipeline、Inbox/Project Knowledge、Profile/Preferences Promotion Saga、MemorySelection/ContextBuilder）已完成；生产 Reviewer 与评估仍由 Subplan 54 负责
+> 状态：Subplans 49–54 的离线实现与安全验收已完成；包含 no-tool production Reviewer、Learning doctor、隔离 SQLite backup 和文档证据。真实 Provider 质量评估仍 pending，只有在显式授权和兼容凭据可用时才运行
 > 阶段结果：Morrow 能在任务显式 accepted 后提出有来源、有作用域、可拒绝和可撤销的学习候选，并可在明确确认后通过可恢复 Saga 更新 YAML 配置；模型推断不会直接写入长期配置
 > 上级文档：[开发路线总览](../ROADMAP.md)
 > 上一阶段：[Stage 4：Task、Session、Artifact 与持久化](stage-4-task-session-and-persistence.md)
@@ -565,9 +565,10 @@ Stage 5 只定义记录格式；Stage 7/8 才产生和应用这些信号。
 
 ### Subplan 54：生产 Reviewer、评估与真实任务试跑
 
-- 候选准确率基准。
-- 错误学习、一次性指令和 Prompt Injection 测试。
-- 多任务长期试跑。
+- 已交付 bounded no-tool production Reviewer、foreground review/retry 与 `off | review_only` 控制。
+- 已交付版本化离线安全/分类数据集，覆盖错误学习、一次性指令、Prompt Injection、秘密和未来候选类型。
+- 已交付 Learning doctor、隔离 SQLite backup 验证、REPL/headless/restart/crash/workspace acceptance evidence。
+- 真实 Provider 多任务长期试跑是显式授权的 hold point；没有授权或兼容凭据时保持 pending，不将离线结果冒充真实模型质量。
 
 ## 十二、暂不包含
 
@@ -638,7 +639,7 @@ Assistant 多次使用详细回答，但用户从未表达偏好。不得仅根�
 - Workspace 隔离和 Scope 合并测试。
 - Memory Selection 预算与解释测试。
 - Fake Learning Model 的确定性集成测试。
-- Live 模型只在显式授权下用于评估，不成为默认测试。
+- Live 模型只在显式授权下用于评估，不成为默认测试；当前真实 Provider 质量评估 pending。
 - 用户删除、拒绝、never-suggest 和 supersedes 全生命周期测试。
 
 ## 十六、阶段指标
@@ -672,6 +673,6 @@ Assistant 多次使用详细回答，但用户从未表达偏好。不得仅根�
 6. 后续 AgentRun 只选择性注入相关 Active 记录，并能解释选择原因。
 7. A Workspace 的 Knowledge 不会默认进入 B Workspace。
 8. Promotion 跨存储失败不会留下不可恢复半状态。
-9. 候选质量达到阶段预先设定的人工评估门槛，并有真实多任务试跑记录。
+9. 确定性安全边界与跨存储恢复门禁通过；候选质量的真实模型人工评估门槛仍需在 Live hold point 中取得证据，不能由离线脚本替代。
 
 Stage 5 完成后，Morrow 才具备安全生成 Skill Draft 和学习 Workflow 偏好的数据基础。

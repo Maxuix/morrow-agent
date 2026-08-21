@@ -10,6 +10,7 @@ from pathlib import Path
 from morrow.adapters.state.artifacts import FilesystemArtifactStore
 from morrow.adapters.state.journal import SqliteOperationalJournal
 from morrow.adapters.state.operational import OperationalStore
+from morrow.application.learning.learning_doctor import inspect_learning
 from morrow.application.learning.memory_doctor import inspect_memory
 from morrow.core.artifacts import (
     ARTIFACT_FILE_SUFFIX,
@@ -118,6 +119,14 @@ class OperationalDoctor:
             )
             self._inspect_domains(journal, workspace_id, counts, issues)
             self._inspect_permissions(journal, workspace_id, counts, issues)
+            checks.extend(("learning_reviews_and_candidates", "learning_promotions"))
+            inspect_learning(
+                journal,
+                workspace_id,
+                counts,
+                issues,
+                issue_factory=self._issue,
+            )
             checks.extend(
                 ("memory_selections_and_terms", "artifacts_and_references", "application_events")
             )
@@ -148,6 +157,7 @@ class OperationalDoctor:
             health = DoctorHealth.NEEDS_REPAIR
         elif any(
             issue.code in {"open_turn", "interrupted_execution", "artifact_staging"}
+            or issue.code in {"learning_review_lease_expired", "learning_promotion_recovery"}
             for issue in issues
         ):
             health = DoctorHealth.NEEDS_RECOVERY

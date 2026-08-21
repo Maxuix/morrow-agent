@@ -1,11 +1,11 @@
 # Morrow 架构基线
 
-> 状态：阶段 2、阶段 3 已完成（当前声明平台为 macOS；Linux 原生运行仍 unsupported）；阶段 4 已落地 Operational Store v9 的 Session/Task 历史、工具/审批日志、恢复分类、TaskOutcome、Artifact Store、ContextCheckpoint、Session Fork、统一应用 API、application events、doctor、备份 bundle、CapabilityGrant 与 Full Access Manual；Stage 5 Subplan 49 已落地 Operational Store v10 的 LearningPolicy、Review、Evidence、Candidate、Suppression 基础与治理边界，Subplan 50 已落地 accepted Outcome → Candidate 的有界 Review Pipeline，Subplan 51 已落地 Inbox/Project Knowledge 与 v11 审计边界，Subplan 52 已落地 Profile/Preferences Promotion Saga，Subplan 53 已落地 v12 MemorySelection、AgentRun freeze/recovery reuse、RunContextProjection 与查询/诊断入口；Subplan 48 已完成运行时、持久化、SQLite 与应用组装边界重构
+> 状态：阶段 2、阶段 3 已完成（当前声明平台为 macOS；Linux 原生运行仍 unsupported）；阶段 4 已落地 Operational Store v9 的 Session/Task 历史、工具/审批日志、恢复分类、TaskOutcome、Artifact Store、ContextCheckpoint、Session Fork、统一应用 API、application events、doctor、备份 bundle、CapabilityGrant 与 Full Access Manual；Stage 5 Subplans 49–54 已落地 LearningPolicy、accepted Outcome → Candidate Pipeline、Inbox/Project Knowledge、Profile/Preferences Promotion Saga、v12 MemorySelection、AgentRun freeze/recovery reuse、RunContextProjection、no-tool production Reviewer、离线安全评估、Learning doctor 与隔离 SQLite backup；真实 Provider 质量评估仍是显式授权的 hold point；Subplan 48 已完成运行时、持久化、SQLite 与应用组装边界重构
 
 本文锁定当前依赖方向、数据所有权和安全边界。阶段 3 的能力策略、配置工具、工作空间读搜、冲突安全文件变更、审批后 Host 命令、只读 Git 和当前 macOS 原生沙箱
 已经交付；Linux 原生运行尚未声明支持。Stage 4 已落地数据根 SQLite Operational Store 的
 身份/迁移/备份基础、v2 无工具 Session 历史、v3 工具执行/审批日志、v4 恢复分类与
-崩溃对账，以及 v5 TaskRun 生命周期、转移审计、版本化 TaskOutcome、v6 Artifact 元数据/引用与受控字节发布、v7 确定性 ContextCheckpoint 与不可变 Session lineage、v8 有界 application event/command receipt、v9 按 AgentRun 冻结的权限证据与可撤销 grant。Stage 5 Subplan 49 已增加 LearningPolicy、Review、Evidence、Candidate、Suppression 的有界领域与 v10 SQLite 持久化；Subplan 50 已增加 accepted TaskOutcome 的同事务 Review 请求、一次性 lease Runner、Evidence/Context 安全边界和候选去重/抑制；Subplan 51 已增加 Inbox、Candidate 决策、Project Knowledge 生命周期与 v11 持久化；Subplan 52 已增加公开 prepared 配置契约、SQLite/YAML Promotion Saga、激活来源、恢复/撤销和 CLI/REPL 入口；Subplan 53 已增加 v12 MemorySelection、确定性词法选择、AgentRun 冻结/恢复复用、RunContextProjection、Memory Selection 查询及 doctor/backup 引用校验。生产 Reviewer 仍由后续子计划负责。Stage 6 的 Skills/MCP，
+崩溃对账，以及 v5 TaskRun 生命周期、转移审计、版本化 TaskOutcome、v6 Artifact 元数据/引用与受控字节发布、v7 确定性 ContextCheckpoint 与不可变 Session lineage、v8 有界 application event/command receipt、v9 按 AgentRun 冻结的权限证据与可撤销 grant。Stage 5 Subplans 49–54 已增加 LearningPolicy、Review、Evidence、Candidate、Suppression 的有界领域与 v10–v12 SQLite 持久化；accepted TaskOutcome 的同事务 Review 请求、一次性 lease Runner、Evidence/Context 安全边界和候选去重/抑制；Inbox、Candidate 决策、Project Knowledge 生命周期；公开 prepared 配置契约、SQLite/YAML Promotion Saga、激活来源、恢复/撤销和 CLI/REPL 入口；确定性 MemorySelection、AgentRun 冻结/恢复复用、RunContextProjection；以及 no-tool production Reviewer、离线评估、只读 Learning doctor 和隔离 backup 引用校验。真实 Provider 质量目标仍保持 pending，不被离线证据冒充。Stage 6 的 Skills/MCP，
 以及 Stage 7–10 的 Workflow、GUI、后台自动化和产品化均尚未开始。
 
 ## 分层与依赖方向
@@ -119,12 +119,15 @@ Operational 组装路径；接口层不自行复制领域服务构造。
 
 Stage 5 的 `LearningPolicyService` 复用同一个 `ApplicationCommandContext`，只负责 workspace 策略的无写入
 查询和 `off | review_only` 的有界命令；默认 `review_only` 不创建策略行，`explicit_auto` 只保留为不可选
-领域令牌。Subplan 50 的 `LearningReviewRequestService` 在同一 outer transaction 接受 accepted
-TaskOutcome，`LearningReviewRunner` 只在提交后执行一次受限 Review。Subplan 51 的 Inbox、Candidate
-决策和 Project Knowledge 由 SQLite Learning application services 持有；Subplan 52 的
-`ConfigurationPromotionService` 只通过 `ConfigPatchService.prepare/apply_prepared` 写 YAML，先保存
-PromotionOperation，最后在 SQLite 中原子记录 decision、activation、events 和 receipt。它不连接后台
-自动晋升或第二配置权威。
+领域令牌。`LearningReviewRequestService` 在同一 outer transaction 接受 accepted TaskOutcome，
+`LearningReviewRunner` 只在提交后执行一次受限 Review；`ModelLearningReviewer` 使用独立的 no-tool、
+有界消息和严格 Candidate schema，不读完整 Session、工具或凭据。Inbox、Candidate 决策和 Project
+Knowledge 由 SQLite Learning application services 持有；`ConfigurationPromotionService` 只通过
+`ConfigPatchService.prepare/apply_prepared` 写 YAML，先保存 PromotionOperation，最后在 SQLite 中原子
+记录 decision、activation、events 和 receipt。它不连接后台自动晋升或第二配置权威。`OperationalDoctor`
+通过 `learning_doctor` 的域校验入口检查 Review/Candidate/Promotion/Knowledge 链接，Memory doctor
+继续检查 Selection/AgentRun/derived terms；`OperationalBackupService` 在 SQLite online backup 后
+分别验证 Learning 与 Memory 引用，YAML、workspace index、凭据和 Keychain 始终在 bundle 外。
 
 普通前台工作的共享准入条件是 `Session.lifecycle=active` 且 `Session.health=ok`。
 Orchestrator 在调度前刷新 durable lifecycle/health；Task/Turn application service 执行稳定错误映射，
@@ -197,10 +200,10 @@ Service 或 Port：
 | Preferences | global、workspace、process-local session | 配置服务 | global → workspace → session 合并 |
 | 工作空间路径索引 | `workspace-index.yaml` | Workspace 服务 | 独立于项目状态 |
 | 工作空间 Profile | `profile.yaml` | Workspace/配置服务 | 按 workspace_id 隔离 |
-| 当前会话消息 | 进程内 ConversationLog 投影；权威在 Operational Store v10 | AgentLoop 经 ConversationLog 提交 | 未闭合工具在重启后进入 needs_recovery，不自动重放；Checkpoint 不是第二历史权威 |
+| 当前会话消息 | 进程内 ConversationLog 投影；权威在 Operational Store v12 | AgentLoop 经 ConversationLog 提交 | 未闭合工具在重启后进入 needs_recovery，不自动重放；Checkpoint 不是第二历史权威 |
 | Agent 运行策略 | 随包策略 → RunPolicy | composition root | 不属于用户配置 |
 | 运行记录 / Artifact 元数据 | 数据根 `store/operational.sqlite`；Artifact 字节在 `artifacts/` | v11 Session/Task/对话/工具执行/审批/恢复报告/Outcome/Artifact/Checkpoint/PermissionSnapshot/Grant，以及 LearningPolicy/Review/Evidence/Candidate/Suppression/Decision/PromotionOperation/ConfigurationActivation 与应用 receipt/event 服务 | 字节只经有界脱敏、hash/size 校验、fsync 和原子发布；YAML 与凭据权威不变 |
-| LearningPolicy 与 Learning 审计 | Operational Store v11；Profile/Preferences Active 仍由 YAML 持有 | LearningPolicyService、ReviewRequestService、one-shot ReviewRunner、Learning Inbox/Knowledge services 与 ConfigurationPromotionService | 默认 `review_only`；accepted TaskOutcome 在同一事务创建 pending Review，Runner 只读受限 Evidence 并写入候选/审计；显式 Promotion 先保存 operation 再写 YAML；无后台 worker、无自动晋升 |
+| LearningPolicy 与 Learning 审计 | Operational Store v12；Profile/Preferences Active 仍由 YAML 持有 | LearningPolicyService、ReviewRequestService、bounded no-tool Reviewer、one-shot ReviewRunner、Learning Inbox/Knowledge services、ConfigurationPromotionService、doctor/backup verifiers | 默认 `review_only`；accepted TaskOutcome 在同一事务创建 pending Review，Runner 只读受限 Evidence 并写入候选/审计；显式 Promotion 先保存 operation 再写 YAML；无后台 worker、无自动晋升 |
 
 ProjectStateStore 只支持 `profile.yaml` 和 `preferences.yaml`。两者使用版本化文档信封、revision、
 锁、临时文件、文件/目录 `fsync`、原子替换和备份；`state: cleared` 是合法 tombstone。
@@ -212,7 +215,7 @@ workspace Preferences 损坏只隔离该层。旧 `handoff.yaml(.bak)` 不属于
 `config.yaml` 是聚合文档，Provider 与全局 Preferences 的写入必须在同一事务锁内保留对方字段。
 `workspace-index.yaml` 由独立 WorkspaceIndexStore 管理。
 
-### Operational Store 与 Artifact 布局（v10）
+### Operational Store 与 Artifact 布局（v12）
 
 数据根（`--state-root` 或 `~/.morrow`）下的保留路径：
 
@@ -246,10 +249,10 @@ TaskRun 预留字节上限 256 MiB，元数据/Excerpt 上限分别为 32 KiB/8 
 Host/sandbox 缺 `handler_completed` 一律 `outcome_unknown`。YAML 与凭据权威不变。
 
 `OperationalDoctor` 使用 diagnose/read-only 连接检查 schema、SQLite integrity/FK、Conversation grammar、
-Task/Execution、Checkpoint/Fork、Memory Selection/Knowledge/AgentRun/derived terms、Artifact metadata/bytes/reference 和 application-event cursor；报告只包含
+Task/Execution、Review/Evidence/Candidate/Promotion/Knowledge、Memory Selection/AgentRun/derived terms、Artifact metadata/bytes/reference 和 application-event cursor；报告只包含
 有界摘要与计数，绝不自动改写历史。`OperationalBackupService` 使用 SQLite online backup 生成隔离
-bundle，同时写入 Artifact hash/size manifest 和可验证副本；bundle 不读取或复制 YAML/CredentialStore。
-缺失、损坏或变化的 Artifact 以及 backup 中断裂的 Memory 引用在 manifest/restore verification 中显式可见。Doctor 在遍历前验证
+bundle，同时写入 Artifact hash/size manifest，并验证 Learning/Memory 引用和可验证副本；bundle 不读取或复制 YAML/CredentialStore。
+缺失、损坏或变化的 Artifact、backup 中断裂的 Learning/Memory 引用在 manifest/restore verification 中显式可见。Doctor 在遍历前验证
 data-root/`artifacts`/`tmp` 目录链，并区分 managed-unreferenced、unmanaged-removable 和
 unsafe-refused；受管 `tmp/` 本身不是 orphan。
 
@@ -295,7 +298,7 @@ Session/Task/Artifact 列表的 Application page 合同在 CLI 中不被丢弃�
 - 无工具 Session 对话可持久化并在重启后恢复；Artifact 的 missing/corrupt/staging/orphan 状态保持可见，
   只产生 retention/orphan 报告，不自动修复；显式 cleanup 默认 dry-run，apply 只做保字节隔离；
   conversation Fork、工具恢复和确定性 checkpoint 已实现；
-  工作空间/代码 rewind 不属于 Stage 4；Stage 5 当前已完成 Learning 基础、accepted 触发和有界候选 Pipeline、Inbox/Project Knowledge、Profile/Preferences Promotion Saga、MemorySelection 与 ContextBuilder 集成；生产 Reviewer 与评估仍由后续子计划交付。
+  工作空间/代码 rewind 不属于 Stage 4；Stage 5 当前已完成 Learning 基础、accepted 触发和有界候选 Pipeline、Inbox/Project Knowledge、Profile/Preferences Promotion Saga、MemorySelection 与 ContextBuilder 集成、no-tool production Reviewer、离线安全评估和 doctor/backup 验收；真实 Provider 质量评估仍 pending，不声明为已通过。
   当前不存在过渡兼容写入器。
 
 若未来实现需要突破这些边界，先更新架构与当前阶段计划。

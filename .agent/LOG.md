@@ -1795,3 +1795,22 @@
   writes. Focused evaluation tests passed (10 tests). The full offline gate passed `804 passed,
   2 skipped, 1 deselected`; Ruff format/check, compileall, root/Learning/Memory CLI help, and
   `git diff --check` passed. Checkpoint `6f77940`. S54.5 active.
+
+## 2026-08-21 — Subplan 54 S54.5 verified; S54.6 Live hold active
+
+- Added focused, read-only Learning doctor domains for Review/Evidence, Candidate/Suppression, and
+  Promotion/Project Knowledge. `OperationalDoctor` remains an orchestration layer and now reports
+  bounded Learning counts, lease/recovery state, cross-workspace links, candidate decisions,
+  promotion provenance, Knowledge revisions, and memory revision invariants without writing state.
+- Added isolated SQLite backup verification for v10–v12 Learning references. Backup verification now
+  fails closed on broken Review/Evidence/Candidate/Decision/Promotion/Activation/Knowledge links;
+  YAML, workspace index, credentials, and Keychain remain outside the bundle. Added doctor/backup
+  acceptance tests for read-only mtime, drift diagnosis, preserved Knowledge/Memory state, and
+  tampered decision digest rejection.
+- Split the doctor helper into four bounded modules so no new Stage 5 file becomes a god file. Added
+  `docs/acceptance/stage5-acceptance.md` and reconciled README, architecture, roadmap, and offline
+  evaluation status with v12 behavior and the YAML/SQLite authority boundary.
+- Focused doctor/backup regression set passed 23 tests. Complete non-live gate passed `808 passed,
+  2 skipped, 1 deselected`; Ruff format/check, compileall, root/Learning/Memory CLI help, and
+  `git diff --check` passed. No Live Provider or network execution was attempted; the predeclared
+  real-model quality targets remain pending explicit authorization and a compatible credential.

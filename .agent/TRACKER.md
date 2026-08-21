@@ -17,18 +17,19 @@ recovery, Session projections, and CLI/REPL controls. Subplan 51 is verified and
 
 ## Active task
 
-Implement S54.5: complete Stage 5 doctor, backup, end-to-end acceptance, and documentation evidence.
+Record S54.6's Live evaluation hold point without network or Provider execution; preserve the
+offline acceptance evidence and prepare the final S54 review/closeout.
 
 ## Next action
 
-Extend the read-only doctor and isolated backup acceptance over Review/Candidate/Knowledge/Selection
-invariants; then run restart, multi-workspace, crash-boundary, REPL/headless, and documentation
-acceptance checks without changing YAML authority or invoking a live Provider.
+Record that the predeclared Live Provider targets remain pending because no explicit authorization or
+compatible credential is present; then run the one required final Grok review for the complete S54
+branch, independently fix feasible findings once, and rerun the final offline/quality gate.
 
 ## Blockers
 
-No Stage 5 implementation blocker. Remote publication remains outside the current commit-only
-request.
+No Stage 5 implementation blocker. Live model quality evidence is pending explicit authorization and
+a compatible credential; remote publication remains outside the current commit-only request.
 
 Remote publication is outside the current commit-only request. After this plan is committed and
 fast-forwarded, local `main` will be one planning commit ahead of `origin/main` until push is
@@ -98,6 +99,13 @@ adopted into version control.
   Selection budget/freeze boundaries. The report records 26/26 cases passed, 5 safety-negative
   cases, and zero Active writes. Focused tests passed 10; the full offline gate passed 804 tests,
   2 skips, 1 deselected; checkpoint is `6f77940`.
+- S54.5 is complete: read-only Learning doctor coverage is split into focused Review/Evidence,
+  Candidate/Suppression, and Promotion/Knowledge modules; backup verification covers v10–v12
+  Learning references and isolated SQLite bundles exclude YAML/credentials. Product acceptance docs
+  record REPL/headless, restart, crash/OCC, workspace isolation, future-candidate, doctor, and
+  backup evidence. The focused doctor/backup set passed 23 tests; the full offline gate passed
+  `808 passed, 2 skipped, 1 deselected`; Ruff format/check, compileall, CLI help, and diff check
+  passed. S54.6 is active and the Live hold remains pending.
 - S52 is complete: prepared configuration revisions/digests, YAML promotion Saga, Preference/
   Profile whitelist, foreground recovery, activation provenance/undo, Session projection updates,
   recoverable after-state finalization, explicit REPL global scope, and activation memory events.

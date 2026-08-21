@@ -49,6 +49,12 @@ morrow recovery show SESSION_ID --dir PATH
 morrow recovery resolve REPORT_ID RESOLUTION --dir PATH
 morrow state doctor --workspace-id WORKSPACE_ID
 morrow state cleanup --workspace-id WORKSPACE_ID [--apply]
+morrow learning status --workspace-id WORKSPACE_ID
+morrow learning set-mode review-only --workspace-id WORKSPACE_ID
+morrow learning inbox --workspace-id WORKSPACE_ID
+morrow learning review REVIEW_ID --workspace-id WORKSPACE_ID
+morrow learning retry REVIEW_ID --workspace-id WORKSPACE_ID
+morrow memory selection list --workspace-id WORKSPACE_ID
 ```
 
 用于 OpenCode Go Mimo v2.5 的持久化验收环境可使用仓库内包装命令；首次执行会隐藏输入
@@ -123,6 +129,21 @@ Fork child 创建时不继承父 TaskRun，持久化后可创建并拥有自己�
 工作空间/代码回退不属于 Stage 4，任务后可审查的长期偏好与项目知识学习留到
 Stage 5。当前可通过 `morrow memory selection list` / `show <selection-id>` 查看一次 AgentRun
 冻结的 Memory Selection；输出只包含引用、原因、预算和 digest，不默认展开 Knowledge 内容。
+
+Stage 5 的 Learning 默认是 `review-only`：accepted TaskOutcome 会在提交后产生有界、可重试的
+Learning Review；交互入口可在前台执行一次 no-tool Reviewer，headless 入口使用
+`morrow learning review` / `retry`，但不会启动 worker、scheduler 或隐藏重试。候选必须通过
+`morrow learning inbox` 预览，再用显式的 `learning accept/edit/reject` 命令确认；`/accept` 仍然
+只接受 Task 结果，不能接受候选。只有 Preference/Profile 候选会经配置 Promotion Saga 更新 YAML，
+Project Knowledge 进入 SQLite 版本化记录；Skill、Workflow 和 Orchestration 候选只保留为候选，
+不会创建文件、工具、权限或运行时规则。`explicit-auto` 被拒绝，`off` 可关闭任务后 Review。
+
+`state doctor` 对 Review、Evidence、Candidate、决策、Promotion、Knowledge、Memory Selection
+和 AgentRun 冻结引用执行只读检查；`state backup` / `state verify-backup` 只备份隔离的 Operational
+SQLite 与 Artifact bundle，不包含 YAML、workspace index、凭据或 Keychain。跨存储的 Preference/
+Profile 恢复仍需要既有 YAML 状态文件备份；SQLite 中的 activation provenance 不能单独重建 YAML。
+禁止原始 Reviewer 输出、Provider reasoning、密钥和受保护内容进入事件、日志、候选、YAML 或模型上下文。
+当前离线安全验收已完成；真实 Provider 的质量评估仍需显式授权和兼容凭据，未授权时不运行。
 
 Artifact cleanup 默认只 dry-run，并以同一 data root 内所有 workspace 的 metadata 与
 reference 为权威。`--apply` 不销毁字节：它只会把经目录、类型、权限、单链接和事务内
