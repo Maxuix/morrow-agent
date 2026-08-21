@@ -1,9 +1,4 @@
-"""Generic Preference v2 domain contracts.
-
-Document and persistence contracts live in sibling modules.  They are lazily
-re-exported below so the staged public import path remains stable without
-turning this module into a repository-sized god file.
-"""
+"""Generic Preference domain contracts and stable compatibility exports."""
 
 from __future__ import annotations
 

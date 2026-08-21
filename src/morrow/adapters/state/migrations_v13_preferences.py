@@ -57,7 +57,8 @@ V13_STATEMENTS = (
             lease_id IS NOT NULL AND lease_expires_at_unix IS NOT NULL
         )),
         CHECK (status IN ('failed', 'exhausted') OR failure_code IS NULL),
-        CHECK (status IN ('failed', 'exhausted') OR completed_at_unix IS NULL),
+        CHECK (status IN ('pending', 'running') OR completed_at_unix IS NOT NULL),
+        CHECK (status NOT IN ('pending', 'running') OR completed_at_unix IS NULL),
         CHECK (completed_at_unix IS NULL OR completed_at_unix >= created_at_unix)
     )
     """,
@@ -89,7 +90,6 @@ V13_STATEMENTS = (
         ),
         observed_at_unix INTEGER NOT NULL,
         created_at_unix INTEGER NOT NULL,
-        UNIQUE (workspace_id, turn_id),
         CHECK (excerpt_redacted IS NULL OR length(excerpt_redacted) BETWEEN 1 AND 512),
         CHECK ((excerpt_redacted IS NULL AND excerpt_bytes = 0)
             OR (excerpt_redacted IS NOT NULL AND excerpt_bytes > 0)),
@@ -216,6 +216,12 @@ V13_STATEMENTS = (
             SELECT 1 FROM sessions s
             WHERE s.session_id = NEW.session_id AND s.workspace_id != NEW.workspace_id
         ) THEN RAISE(ABORT, 'preference job workspace mismatch') END;
+        SELECT CASE WHEN EXISTS (
+            SELECT 1 FROM turns t
+            WHERE t.turn_id = NEW.turn_id
+              AND NEW.session_id IS NOT NULL
+              AND t.session_id != NEW.session_id
+        ) THEN RAISE(ABORT, 'preference job session mismatch') END;
         SELECT CASE WHEN EXISTS (
             SELECT 1 FROM turns t
             WHERE t.turn_id = NEW.turn_id AND t.session_id IN (

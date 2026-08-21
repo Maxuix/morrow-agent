@@ -1,9 +1,4 @@
-"""YAML authority and migration codec for generic Preferences.
-
-This module is deliberately separate from the legacy configuration facade.  S56
-can decode and prepare v2/v3 documents without changing foreground behavior;
-later Writer work owns when these prepared values are published.
-"""
+"""YAML authority and migration codec for generic Preferences."""
 
 from __future__ import annotations
 

@@ -80,10 +80,6 @@ def _missing(label: str) -> StorageError:
     return StorageError(StorageErrorCode.NOT_FOUND, f"Preference {label} is missing")
 
 
-def _stale(label: str) -> StorageError:
-    return StorageError(StorageErrorCode.UNAVAILABLE, f"Preference {label} row version is stale")
-
-
 def _canonical_json(value: object, *, maximum: int, label: str) -> tuple[str, int]:
     try:
         encoded = canonical_json_bytes(value)

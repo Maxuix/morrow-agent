@@ -1,9 +1,4 @@
-"""Preference projection helpers shared across application and services.
-
-The legacy three-layer merge remains available during the staged cutover.  The
-generic reducer is re-exported here as the small core-facing Preference API so
-callers do not depend on the implementation module.
-"""
+"""Preference projection helpers and the generic reducer-facing API."""
 
 from __future__ import annotations
 

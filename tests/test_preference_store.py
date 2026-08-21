@@ -45,13 +45,16 @@ def _store(tmp_path) -> OperationalStore:
     return OperationalStore(tmp_path / "state", clock=FixedClock(NOW), maintenance_timeout=0)
 
 
-def _job_and_evidence() -> tuple[PreferenceReviewJob, PreferenceEvidence]:
+def _job_and_evidence(
+    *, review_version: int = 1, job_id: str = "prjob_one", evidence_id: str = "pev_one"
+) -> tuple[PreferenceReviewJob, PreferenceEvidence]:
     snapshot = PreferenceReviewSnapshot().serialized_bytes
     job = PreferenceReviewJob(
-        job_id="prjob_one",
+        job_id=job_id,
         workspace_id="ws_1",
         session_id="ses_1",
         turn_id="turn_one",
+        review_version=review_version,
         active_snapshot_json=snapshot.decode("utf-8"),
         active_snapshot_count=0,
         active_snapshot_bytes=len(snapshot),
@@ -61,7 +64,7 @@ def _job_and_evidence() -> tuple[PreferenceReviewJob, PreferenceEvidence]:
     excerpt = "以后回答代码问题先给出可运行代码。"
     evidence_bytes = len(excerpt.encode("utf-8"))
     evidence = PreferenceEvidence(
-        evidence_id="pev_one",
+        evidence_id=evidence_id,
         workspace_id="ws_1",
         job_id=job.job_id,
         turn_id=job.turn_id,
@@ -150,6 +153,45 @@ def test_job_and_exactly_one_current_user_evidence_are_transactional(tmp_path):
         journal.put_preference_evidence(
             "ws_1", evidence.model_copy(update={"evidence_id": "pev_two"})
         )
+    session.close()
+    store.layout.database.exists()
+
+
+def test_review_versions_for_one_turn_have_independent_evidence(tmp_path):
+    store, session, journal = _open_journal(tmp_path)
+    job_one, evidence_one = _job_and_evidence()
+    job_two, evidence_two = _job_and_evidence(
+        review_version=2, job_id="prjob_two", evidence_id="pev_two"
+    )
+    journal.put_preference_job_with_evidence("ws_1", job_one, evidence_one)
+    journal.put_preference_job_with_evidence("ws_1", job_two, evidence_two)
+    assert journal.count_preference_review_jobs("ws_1") == 2
+    assert {item.evidence_id for item in journal.list_preference_evidence("ws_1")} == {
+        "pev_one",
+        "pev_two",
+    }
+    session.close()
+    store.layout.database.exists()
+
+
+def test_terminal_review_jobs_store_completion_timestamps(tmp_path):
+    store, session, journal = _open_journal(tmp_path)
+    job, _ = _job_and_evidence()
+    completed = PreferenceReviewJob.model_validate(
+        job.model_dump(mode="python")
+        | {"job_id": "prjob_completed", "status": "completed", "completed_at": NOW}
+    )
+    cancelled = PreferenceReviewJob.model_validate(
+        job.model_dump(mode="python")
+        | {
+            "job_id": "prjob_cancelled",
+            "review_version": 2,
+            "status": "cancelled",
+            "completed_at": NOW,
+        }
+    )
+    assert journal.put_preference_review_job("ws_1", completed).completed_at == NOW
+    assert journal.put_preference_review_job("ws_1", cancelled).completed_at == NOW
     session.close()
     store.layout.database.exists()
 

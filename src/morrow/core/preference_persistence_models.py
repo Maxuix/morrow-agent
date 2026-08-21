@@ -151,6 +151,18 @@ class PreferenceReviewJob(ProtocolModel):
             PreferenceReviewJobStatus.EXHAUSTED,
         }:
             raise ValueError("failure_code requires a failed or exhausted Review job")
+        terminal_statuses = {
+            PreferenceReviewJobStatus.COMPLETED,
+            PreferenceReviewJobStatus.FAILED,
+            PreferenceReviewJobStatus.EXHAUSTED,
+            PreferenceReviewJobStatus.CANCELLED,
+            PreferenceReviewJobStatus.SUPERSEDED,
+        }
+        if self.status in {PreferenceReviewJobStatus.PENDING, PreferenceReviewJobStatus.RUNNING}:
+            if self.completed_at is not None:
+                raise ValueError("pending or running Preference Review cannot be completed")
+        elif self.status in terminal_statuses and self.completed_at is None:
+            raise ValueError("terminal Preference Review requires completed_at")
         return self
 
 

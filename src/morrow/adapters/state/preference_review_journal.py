@@ -38,16 +38,27 @@ class PreferenceReviewJournalMixin:
         if str(row[0]) != workspace_id:
             raise _workspace_error("turn")
 
-    def _assert_session_scope(self, workspace_id: str, session_id: str | None) -> None:
+    def _assert_session_scope(
+        self, workspace_id: str, session_id: str | None, turn_id: str
+    ) -> None:
         if session_id is None:
             return
         row = self.backend.read_one(
-            "SELECT workspace_id FROM sessions WHERE session_id = ?", (session_id,)
+            """
+            SELECT s.workspace_id, t.session_id
+            FROM turns t JOIN sessions s ON s.session_id = t.session_id
+            WHERE t.turn_id = ?
+            """,
+            (turn_id,),
         )
         if row is None:
-            raise _missing("session")
+            raise _missing("turn")
         if str(row[0]) != workspace_id:
             raise _workspace_error("session")
+        if str(row[1]) != session_id:
+            raise StorageError(
+                StorageErrorCode.UNAVAILABLE, "Preference session does not match its turn"
+            )
 
     def get_preference_review_job(
         self, workspace_id: str, job_id: str
@@ -96,7 +107,7 @@ class PreferenceReviewJournalMixin:
         if job.workspace_id != workspace_id:
             raise _workspace_error("Review job")
         self._assert_turn_scope(workspace_id, job.turn_id)
-        self._assert_session_scope(workspace_id, job.session_id)
+        self._assert_session_scope(workspace_id, job.session_id, job.turn_id)
         snapshot_json, snapshot_bytes = _snapshot_json(job)
 
         def work() -> PreferenceReviewJob:

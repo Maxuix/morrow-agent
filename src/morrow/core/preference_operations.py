@@ -157,7 +157,7 @@ def reduce_preference_document(
             assert operation.statement is not None
             _assert_no_duplicate(entries.values(), operation.statement)
             preference_id = (
-                allocator(document.scope and PreferenceScope(document.scope), index, operation)
+                allocator(PreferenceScope(document.scope), index, operation)
                 if allocator is not None
                 else _default_allocator(
                     PreferenceScope(document.scope), index, operation, existing_ids

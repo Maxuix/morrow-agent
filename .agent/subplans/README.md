@@ -1,8 +1,10 @@
 # Subplans
 
-Stage 4 and the Pre-Stage 5 boundary refactor are complete. The user authorized the Stage 5 master
-plan on 2026-08-20. Subplans 49–54 completed their automated gates, but the later simulated-user
-evaluation reopened Stage 5 acceptance. Subplan 55 is planned and not yet active.
+Stage 4 and the original Stage 5 v12 implementation are complete through Subplan 55. The real-
+Provider evaluation then demonstrated that the fixed-field, marker-gated Preference path has
+unacceptable natural-language recall and stale existing-Session injection. On 2026-08-21 the user
+approved drafting a Preference v2 refactor with a separate asynchronous Reviewer and deterministic
+Writer. Subplan 56 is complete; 57–61 remain planned.
 
 Subplan 35 and the conditional review remediation were accepted on 2026-08-19 and preserved in Git
 history at `20fb43e`; its retired task file is no longer kept in the active subplan directory.
@@ -28,7 +30,13 @@ history at `20fb43e`; its retired task file is no longer kept in the active subp
 | 52 | `52-stage5-configuration-promotion.md` | completed |
 | 53 | `53-stage5-memory-selection-context.md` | completed |
 | 54 | `54-stage5-reviewer-acceptance.md` | completed |
-| 55 | `55-stage5-simulated-user-remediation.md` | planned (implementation not started) |
+| 55 | `55-stage5-simulated-user-remediation.md` | completed |
+| 56 | `56-stage5-preference-foundation.md` | completed |
+| 57 | `57-stage5-preference-writer.md` | planned |
+| 58 | `58-stage5-preference-reviewer-inbox.md` | planned |
+| 59 | `59-stage5-review-worker.md` | planned |
+| 60 | `60-stage5-preference-context.md` | planned |
+| 61 | `61-stage5-preference-closeout.md` | planned |
 
 Completed Stage 3 Subplans 29–34 were removed from the active directory when this master plan was
 created; they remain recoverable in Git history together with their accepted evidence.
@@ -38,11 +46,14 @@ created; they remain recoverable in Git history together with their accepted evi
 - `.agent/PLAN.md` is the living master index and cross-cutting contract.
 - `.agent/TODO.md` contains executable tasks for the one active subplan only.
 - Start one subplan only after its prerequisite gate passes and the user-authorized execution state
-  is updated. For Stage 5, create the branch listed in that subplan from the latest verified `main`.
+  is updated. For Preference v2, create the branch listed in that subplan from the latest verified
+  `main`.
 - Keep production changes inside the active subplan's ownership; do not implement a later slice
   early.
 - When code or validation conflicts with a plan, update the stale plan before continuing.
 - Record accepted decisions, meaningful failures, gates, and transitions in `.agent/LOG.md`.
-- Mark a task complete only after its declared validation succeeds. Before closing a subplan,
-  commit verified progress and activate the next subplan explicitly.
+- Mark a task complete only after its declared validation succeeds. Every S56–S61 implementation
+  result receives exactly one `$grok-delegate` `/review`, followed by one independently adjudicated
+  fix pass and no second review. Before closing a subplan, commit verified progress and activate the
+  next subplan explicitly.
 - Do not recreate completed subplans in this directory; use Git history for old execution detail.

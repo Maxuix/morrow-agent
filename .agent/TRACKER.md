@@ -2,126 +2,52 @@
 
 ## Current status
 
-Subplan 54's automated offline gate is complete. Subplan 55's isolated simulated-user remediation
-replay and final review/fix gate passed on its fix branch; the optional Live model-quality hold
-remains pending separately.
+The complete Stage 5 Preference Learning v2 implementation plan is finalized after one
+`$grok-delegate` review and independent plan-fix pass. S56 is now active on its dedicated branch.
 
-## Last completed task
+## Last completed work
 
-The Stage 5 simulated-user report is committed at `5cfb99f`. Independent static adjudication
-confirmed F1, F2, and F3 and found one adjacent inverted Project Knowledge edit guard. S55.1
-recorded 9 pre-fix failures. S55.2/S55.3 are implemented and their focused regression sets pass;
-S55.4 now also passes: 3 accepted Tasks, 5 candidates, fresh-process decisions, restart, Doctor, and
-backup verification. S55.5 is now complete: Grok review was resumed and returned one REPL edit-preview
-finding; it was independently verified and fixed once, with no second review.
+The original Stage 5 v12 pipeline and Subplan 55 remediation are complete. The subsequent isolated
+real-Provider evaluation is committed at `c6031d2` and records:
 
-Subplan 53 is verified and merged at `613ffdb`, including its one-time Grok review-fix pass. It adds
-v12 MemorySelection and rebuildable terms, deterministic selection, frozen AgentRun/context
-projections, bounded inspection surfaces, doctor/backup invariants, and the S53 acceptance docs.
-Subplan 52 is verified and merged at `7dfe5af`, including its one-time Grok review-fix pass. It adds
-prepared configuration OCC, recoverable YAML promotion/undo, Preference/Profile policy, provenance,
-recovery, Session projections, and CLI/REPL controls. Subplan 51 is verified and merged at
-`548f0bc`, including its one-time Grok review-fix pass.
+- natural-language add/overwrite recall `0/3`;
+- remove recall `0/2`;
+- Mimo Review timeout under the foreground 15-second deadline;
+- successful structured promotion and new-Session injection;
+- stale Preference behavior in one restored existing Session.
+
+The user accepted the refactor direction: generic atomic natural-language rules, a separate no-tool
+semantic Reviewer, deterministic add/replace/remove Writer, Candidate Inbox, durable asynchronous
+execution, and next-AgentRun refresh.
 
 ## Active task
 
-Subplan 55 complete; Live model-quality hold pending.
+S56 implementation, the one required review/fix cycle, and the final offline gates are verified;
+closeout is ready.
 
 ## Next action
 
-Commit the verified closeout, fast-forward local `main`, and retire the clean topic branch.
+Commit the S56 closeout, fast-forward local `main`, retire the clean topic branch, then activate S57.
+Reviewer, Writer, Worker, foreground enqueue, and automatic publication remain disabled.
 
 ## Blockers
 
-F1, F2, F3, the adjacent Project Knowledge edit guard, and the REPL edit-preview mismatch are fixed;
-the isolated replay and complete offline gate passed. Only the independent Live model-quality hold
-remains. Live model-quality evidence is pending explicit authorization and a compatible credential;
-remote publication remains outside this planning request.
+None for S56. Real-Provider acceptance remains on hold until the refactor is implemented and the
+post-implementation protocol runs.
 
-Remote publication is outside this planning request. Do not push without explicit authorization.
+## Preserved workspace state
 
-The two Stage 5 research discussions are untracked user files. They are preserved as input and are
-not part of the implementation plan changes unless the user explicitly requests that they be
-adopted into version control.
+`docs/research/stage5-overview-pipeline.md` and `docs/research/stage5-overview-review.md` are untracked
+user files. They remain untouched and must not be included in plan or implementation commits without
+explicit authorization.
 
-## Active boundary
+## Locked boundary
 
-- Subplan 54's automated gate is closed; Subplan 55 is verified after the passing user-flow replay,
-  resumed Grok review, and final offline gate.
-- First release exposes only `off` and `review_only`; `explicit_auto` remains closed.
-- Automatic trigger is accepted TaskOutcome only; no `completed`/`corrected` Task status is added.
-- No background worker, natural-language acceptance, embedding/vector dependency, Skill write, or
-  Workflow activation is authorized.
-- Profile/Preferences remain YAML authorities; Project Knowledge and learning audit records use the
-  shared Operational Store.
-- S51.1 is verified: v11 upgrade/rollback, decision/Knowledge/memory persistence, corruption and
-  reserved Saga constraint tests passed on `feat/stage5-inbox-knowledge`.
-- S51.2 is implemented and focused query/preview tests pass; the legacy API methods remain
-  compatible while new typed view entry points live under `api.learning` and `api.memory`.
-- S51.3–S51.6 are implemented: candidate decisions/rejection/suppression/expiry, Project Knowledge
-  promotion and lifecycle, replay/OCC/workspace isolation, and preview-confirm CLI/REPL boundaries.
-- S53.1 is implemented on the active branch: v12 MemoryQuery/Selection contracts, immutable
-  selection/item and rebuildable-term tables, repository codecs/guards, v11 upgrade/future/
-  corruption coverage, and legacy migration expectation updates. Focused validation passed with
-  83 tests, Ruff format/check, compileall, and `git diff --check`.
-- S53.2 is implemented: pure bounded mixed-language/code/path tokenizer, deterministic term
-  generation, transactional rebuild/clear on Project Knowledge promotion and lifecycle changes,
-  and bounded lexical candidate retrieval. Full offline validation passed with 760 tests, 2 skips,
-  1 deselection, repository-wide Ruff format/check, compileall, and `git diff --check`.
-- S53.3 is implemented: independent bounded selector with workspace/status/validity/sensitivity
-  filters, explicit/category/lexical candidate sources, deterministic score tuple, category
-  diversity, item/character budgets, explainable reasons, canonical rendering, and selection
-  digests. Full offline validation passed with 763 tests, 2 skips, 1 deselection, Ruff
-  format/check, compileall, and `git diff --check`.
-- S53.4 is implemented: foreground admission now builds and persists one MemorySelection with the
-  AgentRun snapshot, freezes effective global/workspace/session Preferences with source revisions,
-  recovery reuses the exact selection, and restore/recovery fail closed on missing or mismatched
-  selection references. Focused admission/recovery/rollback tests plus the full offline gate passed:
-  767 tests, 2 skips, 1 deselected; Ruff, compileall, CLI help, and diff check passed.
-- S53.5 is implemented: durable Sessions now install a verified RunContextProjection, ContextBuilder
-  consumes the exact frozen Profile/Preferences and canonical untrusted Project Knowledge block,
-  same-Run live changes remain invisible, and new Runs/legacy process-local Sessions retain explicit
-  behavior. Full offline validation passed: 771 tests, 2 skips, 1 deselected; Ruff, compileall,
-  CLI help, and diff check passed.
-- S53 is complete: its one-time Grok review/fix pass found two confirmed bugs, two risks, and one
-  feasible suggestion; all feasible findings were independently fixed once. The final gate passed
-  785 tests, 2 skips, 1 deselected, plus Ruff, compileall, CLI help, and diff check. Local `main`
-  is fast-forwarded to `613ffdb`; the S53 topic branch is retired.
-- S54.1 is complete: `ModelLearningReviewer` now uses explicit no-tool messages, bounded request/
-  response budgets, one total deadline with at most one repair, strict candidate/evidence checks,
-  sanitized provider errors, active-provider composition, and bounded repair metadata in results/
-  events. The full offline gate passed 790 tests, 2 skips, 1 deselected; the checkpoint is `c955bbc`.
-- S54.2 is complete: Learning policy status/mode controls, explicit-auto refusal, review/retry CLI and
-  REPL commands, active-provider headless composition, zero-candidate notifications, and foreground
-  cancellation behavior are covered. Full offline validation passed 792 tests, 2 skips, 1 deselected;
-  the checkpoint is `9ef6f01`.
-- S54.3 is complete: Skill/Workflow/Orchestration future candidate acceptance is covered as a
-  candidate-only outcome; no Knowledge head, memory activation, workspace file, or future runtime
-  state is created. Full offline validation passed 794 tests, 2 skips, 1 deselected; checkpoint is
-  `4ff41a4`.
-- S54.4 is complete: versioned synthetic JSON cases and a deterministic no-Provider evaluator cover
-  durable/temporary/negative/quoted/hypothetical/Assistant-only, injection/secret/hidden-Unicode/
-  capability, duplicate/suppression/workspace, malformed Reviewer, future candidate-only, and
-  Selection budget/freeze boundaries. The report records 27/27 pure-evaluator cases passed, 5
-  safety-negative cases, and zero evaluator writes; the scripted real-runner safety gate also
-  records zero Candidate/Knowledge/Memory Active writes. Focused tests passed 16; the full offline
-  gate passed 804 tests,
-  2 skips, 1 deselected; checkpoint is `6f77940`.
-- S54.5 is complete: read-only Learning doctor coverage is split into focused Review/Evidence,
-  Candidate/Suppression, and Promotion/Knowledge modules; backup verification covers v10–v12
-  Learning references and isolated SQLite bundles exclude YAML/credentials. Product acceptance docs
-  record REPL/headless, restart, crash/OCC, workspace isolation, future-candidate, doctor, and
-  backup evidence. The focused doctor/backup set passed 23 tests; the full offline gate passed
-  `808 passed, 2 skipped, 1 deselected`; Ruff format/check, compileall, CLI help, and diff check
-  passed. S54.6 was then activated; its Live hold remains pending.
-- S52 is complete: prepared configuration revisions/digests, YAML promotion Saga, Preference/
-  Profile whitelist, foreground recovery, activation provenance/undo, Session projection updates,
-  recoverable after-state finalization, explicit REPL global scope, and activation memory events.
-  Grok reported 15 findings; five real recovery/OCC defects and feasible presentation/recovery gaps
-  were independently fixed once. Final offline gate: 752 passed, 2 skipped, 1 deselected; no second
-  review was run.
-- S51 Grok review found four confirmed issues; all four plus edited-payload duplicate/suppression
-  revalidation and replay/presentation polish were independently fixed once. The final gate passed
-  739 tests, Ruff, compileall, CLI help, and `git diff --check`; no second review was run.
-- AgentLoop and ConversationLog ownership, public runtime events, bundled capability policy, and
-  credentials remain unchanged.
+- Main Agent performs the user task; background Reviewer performs Preference semantics; deterministic
+  Writer mutates state only after acceptance/direct approval.
+- YAML remains Active Preference authority; SQLite stores jobs, Evidence, proposals, decisions,
+  write-batch recovery, and events.
+- Profile and Project Knowledge remain separate; Preference injection is not MemorySelection.
+- `manage_preferences` may reuse the existing configuration-write approval/recovery class, but no
+  keyword semantic classifier, fixed Preference taxonomy, auto-activation, daemon, new dependency,
+  bundled capability-policy default change, or public AgentEvent change is authorized.

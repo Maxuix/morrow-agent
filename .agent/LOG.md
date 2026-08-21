@@ -1899,3 +1899,87 @@
   and 2 deselected. Ruff format/check, compileall, root/Learning/Memory CLI help, and `git diff --check`
   passed. No Live Provider, network, or credential path was run; the two untracked research files remain
   preserved.
+
+## 2026-08-21 — Preference Learning v2 refactor planned
+
+- Adjudicated the real-Provider evidence at `c6031d2`: natural-language Preference add/overwrite was
+  `0/3`, remove was `0/2`, Mimo timed out under the foreground 15-second deadline, and a restored
+  Session retained stale Preference behavior after overwrite. The existing fixed-field/marker-gated
+  path is therefore not accepted as a model-quality solution.
+- Locked the replacement architecture: main Agent and no-tool Preference Reviewer are separate;
+  Review is a durable asynchronous job; the Reviewer emits only 0–N generic add/replace/remove
+  operations; deterministic validation creates independent Inbox proposals; and one same-scope
+  recoverable Writer batch changes YAML after user acceptance or direct approved management.
+- Replaced the active master plan and added planned Subplans 56–61 for generic contracts/migrations,
+  Writer, semantic Reviewer/Inbox, async worker, next-AgentRun refresh, and closeout/evaluation.
+  Every subplan and the final integrated implementation require the user-specified one-time
+  `$grok-delegate` `/review` plus independent review-fix without re-review.
+- No production code, Provider, credential, network path, or user state was touched while drafting.
+  The two untracked Stage 5 research files remain preserved.
+
+## 2026-08-21 — Preference v2 plan Grok review adjudicated
+
+- Ran the requested read-only `/review` once through `$grok-delegate` using its default
+  `grok-4.6`/`xhigh` configuration and waited for the complete result. Grok changed no project file,
+  branch, worktree, commit, or remote state.
+- Independently confirmed all five blockers: the S57 legacy Candidate apply gap, missing v13 frozen
+  Active snapshot payload, legacy AgentRun decoder scheduled after the shape cutover, undefined
+  tombstone/duplicate behavior, and unlocked aggregate `config.yaml` migration semantics.
+- Adopted the valuable secondary findings in the same one-time plan-fix: exactly one `pev_` Evidence,
+  same-Turn direct-write suppression, exact legacy mapping strings/IDs, learned-scope bounds,
+  terminal-versus-retryable failures, distinct Review/AgentRun snapshot budgets and ordering, thin
+  dispatch around existing god files, single claim authority per Review table, exact acceptance
+  arithmetic, and a current Stage 5 supersession note.
+- No second Grok review was run. The plan now assigns the legacy Candidate bridge and AgentRun decoder
+  activation to S57, freezes v13 snapshot count/byte/digest fields in S56, and locks full-aggregate
+  global config publication without changing implementation code.
+
+## 2026-08-21 — Subplan 56 activated
+
+- The required non-live baseline initially could not initialize the sandboxed `uv` cache because the
+  existing cache path was not readable. The same command was rerun with the narrowly scoped local
+  cache permission and passed: `833 passed, 2 deselected`.
+- The user explicitly requested implementation of the latest plan. S56 was activated on
+  `feat/stage5-preference-foundation` from local `main` at `c6031d2`. The two untracked research files
+  remain preserved and are excluded from implementation commits.
+
+## 2026-08-21 — Subplan 56 implementation checkpoint verified
+
+- Added independent generic Preference contracts and pure same-scope add/replace/remove plus
+  enable/disable reducers. Exact same-scope duplicate checks include active/disabled entries while
+  deleted tombstones remain terminal and do not block a new add.
+- Added decode-only legacy global/workspace migration codecs with locked mapping sentences and
+  source-derived IDs, a v3 workspace target document, historical AgentRun compatibility decoding,
+  atomic backup/OCC publication helpers, and compatibility fixtures. Existing legacy foreground
+  configuration behavior remains unchanged.
+- Added Operational Store v13 Preference Review job, exactly-one current-user Evidence, Proposal,
+  Evidence-link, WriteBatch, and batch-link tables with bounded JSON, workspace guards, indexes, and
+  rollback-safe registration. YAML remains the only Active Preference authority; no new Review or
+  Worker path is enabled.
+- Focused S56 suite passed 100 tests. Full offline validation passed `853 passed, 2 deselected`;
+  Ruff format/check, compileall, root CLI help, and `git diff --check` passed. No Provider, network,
+  credential, or Live test path was used.
+
+## 2026-08-21 — Subplan 56 structure split and checkpoint gates
+
+- Split the foundation into bounded responsibilities: generic/domain documents, persistence models,
+  strict SQLite codecs plus Review/Proposal/Writer repositories, legacy snapshot compatibility,
+  YAML contracts, atomic I/O, and migration publication. The public journal/YAML classes remain thin
+  facades; no Reviewer, enqueue, Writer, or automatic publication path was enabled.
+- After the split, the focused S56 set passed 59 tests and the full offline gate passed `853 passed,
+  2 deselected`. Ruff format/check, compileall, root CLI help, working/index diff checks, and import
+  smoke tests passed. No Provider, network, credential, or Live test path was used.
+
+## 2026-08-21 — Subplan 56 required review/fix completed
+
+- The single read-only Grok review confirmed the reducer, legacy mapping, YAML OCC path, public API,
+  module boundaries, and inactive Reviewer/enqueue/Writer boundaries. It identified two v13 blockers:
+  terminal Review jobs could not persist `completed_at`, and Evidence was incorrectly unique by
+  `(workspace_id, turn_id)` rather than allowing one row for each job/review version.
+- Independently fixed the frozen DDL and matching job-model invariant, removed the turn-wide Evidence
+  uniqueness, added a Turn/session identity guard, and removed one dead codec helper plus stage-history
+  narration from production docstrings. Added regression coverage for terminal timestamps and two
+  review versions on one Turn. No second Grok review was run.
+- Focused S56 tests passed 61; the final offline gate passed `855 passed, 2 deselected`. Ruff
+  format/check, compileall, root CLI help, and working/index diff checks passed. No Provider, network,
+  credential, or Live test path was used.

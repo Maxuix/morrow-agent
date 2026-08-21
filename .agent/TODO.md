@@ -2,89 +2,34 @@
 
 ## Current stage
 
-Stage 5 automated offline gates are complete. Subplan 55's simulated-user remediation replay passed;
-the optional Live model-quality hold remains pending separately.
+Subplan 56 — Generic Preference Foundation and Migrations.
 
 ## Active subplan
 
-Subplan 55 — Stage 5 Simulated-User Remediation, on
-`fix/stage5-simulated-user-remediation`.
+`feat/stage5-preference-foundation`
 
 ## Tasks
 
-- [x] S55.1 Establish failing regression evidence before production changes.
-- [x] S55.2 Fix Candidate decision CLI and rejection previews.
-- [x] S55.3 Fix Project Knowledge first-promotion timestamp precision.
-- [x] S55.4 Replay the isolated simulated-user flow and update acceptance evidence.
-- [x] S55.5 Complete the independent review/fix pass and close out the subplan.
-
-## Validation evidence
-
-S52's final gate passed: 752 passed, 2 skipped, 1 deselected. S53.1 validation passed: 83 focused
-tests, Ruff format/check, compileall, and diff check. S53.2 validation passed: 760 passed, 2
-skipped, 1 deselected, repository-wide Ruff format/check, compileall, and diff check. S53.3
-validation passed: 763 passed, 2 skipped, 1 deselected, with the same quality gates. S53.4
-validation passed: 767 passed, 2 skipped, 1 deselected; Ruff format/check, compileall, root/Learning/
-Memory CLI help, and diff check also passed. S53.5 validation passed: 771 tests, 2 skips, 1
-deselected; the same quality gates passed. S53.6 validation passed: 777 tests, 2 skips, 1
-deselected; repository-wide Ruff format/check, compileall, root/Learning/Memory CLI help, and
-diff check passed. S53.7 review-fix validation passed 785 tests, 2 skips, and 1 deselected; Ruff
-format/check, compileall, root/Learning/Memory CLI help, and diff check passed. S53 was committed,
-fast-forward merged into local `main` at `613ffdb`, and its topic branch was retired. S54 was then
-activated.
+- `[x]` S56.1 Add generic Preference domain contracts and the pure same-scope batch reducer.
+- `[x]` S56.2 Add versioned YAML codecs, deterministic legacy migration, and compatibility decoders.
+- `[x]` S56.3 Add and register the frozen Operational Store v13 Preference schema and ports.
+- `[x]` S56.4 Add compatibility fixtures, migration matrix evidence, and foundation documentation.
+- `[x]` Run the focused S56 validation and implementation checkpoint.
+- `[x]` Run exactly one Grok review, independently apply confirmed fixes, and rerun gates.
+- `[>]` Commit closeout, fast-forward `main`, retire the branch, and activate S57.
 
 ## Start condition
 
-Subplan 55 is complete on `fix/stage5-simulated-user-remediation`; preserve
-the two untracked `docs/research/stage5-overview-*.md` user files unless the user explicitly asks
-to adopt or commit them.
+- Start from the latest verified local `main` on `feat/stage5-preference-foundation`.
+- Preserve the untracked user files `docs/research/stage5-overview-pipeline.md` and
+  `docs/research/stage5-overview-review.md`; do not stage or modify them without explicit request.
+- Run the baseline non-live gate before production changes and record any pre-existing failure.
+- Do not run a real Provider or access credentials during implementation subplans. The already
+  authorized isolated real-Provider evaluation occurs only after S56–S61, all required Grok reviews,
+  the integrated final review/fix, a passing full offline gate, and a clean implementation commit.
 
-S55.1 pre-fix regression evidence recorded 9 failures in the focused set. S55.2/S55.3 fixes then
-passed the focused Candidate CLI/Project Knowledge/Store set with 36 tests and the affected
-Learning/Configuration/REPL set with 56 tests. S55.4's isolated replay passed with 3 accepted Tasks,
-5 candidates, fresh-process decisions, restart reads, Doctor OK, and verified backup. No Live Provider
-or network test was run. S55.5's resumed Grok review confirmed the S55 production fixes, identified
-the REPL edit preview mismatch, and the independent verification fixed it while adding dedicated
-field-guard and reject-preview regressions. The focused review set passed 28 tests; the complete
-offline gate passed 831 tests, 2 skips, and 2 deselected. Repository-wide Ruff format/check,
-compileall, root/Learning/Memory CLI help, and `git diff --check` also passed.
+## Required execution discipline
 
-S54.1 validation passed: 790 tests, 2 skips, 1 deselected; Ruff format/check, compileall, root/
-Learning/Memory CLI help, and diff check passed. The production Reviewer checkpoint is committed
-as `c955bbc`. S54.2 validation passed: 792 tests, 2 skips, 1 deselected; the same quality and CLI
-gates passed. The S54.2 checkpoint is `9ef6f01`. S54.3 validation passed: 794 tests, 2 skips, 1
-deselected; the same quality and CLI gates passed. Checkpoint `4ff41a4`. S54.4 validation passed:
-10 focused tests; the complete offline gate passed 804 tests, 2 skips, and 1 deselected. Ruff
-format/check, compileall, root/Learning/Memory CLI help, and `git diff --check` passed. Checkpoint
-`6f77940`; S54.5 was then activated.
-
-S54.5 validation passed: the doctor/backup acceptance set passed 23 tests; the complete offline gate
-passed 808 tests, 2 skips, and 1 deselected. Ruff format/check, compileall, root/Learning/Memory CLI
-help, and `git diff --check` passed. Learning doctor checks are split by Review/Evidence,
-Candidate/Suppression, and Promotion/Knowledge domains; acceptance evidence is in
-`docs/acceptance/stage5-acceptance.md`. S54.6 was then activated; the Live hold is pending because no
-explicit Live authorization or compatible credential was supplied.
-
-S54.6 hold-point evidence is recorded in `docs/acceptance/stage5-live-evaluation-hold.md` and linked
-from the Stage 5 acceptance report. No live Provider, network request, or `pytest -m live` execution
-was attempted; real-model quality targets remain pending. S54.7 then completed the required single
-Grok review/fix pass and final gates. Grok reported one confirmed CLI failure-status bug, six
-suggestions, and one nit. The confirmed bug and feasible suggestions were independently verified
-and fixed once; no second Grok review was run. The final non-live gate passed `816 passed, 2 skipped,
-2 deselected`; Ruff format/check, compileall, root/Learning/Memory CLI help, and `git diff --check`
-also passed. The final evaluator report is 27/27 with 5 safety-negative cases; the pure evaluator
-performs zero writes, and the scripted real-runner safety integration observes zero Candidate,
-Knowledge, or Memory Active writes.
-
-The later isolated simulated-user evaluation committed at `5cfb99f` supersedes the user-usability
-claim without invalidating those deterministic safety results. It reproduced headless Candidate
-accept/reject failure, first Project Knowledge Promotion rollback under a non-zero microsecond
-clock, and an incorrect reject preview kind. Static adjudication also confirmed that headless edit
-shares the typed-view bug and that Project Knowledge's dedicated edit guard is inverted.
-
-## Proposed Subplan 55 start condition
-
-- Branch from local `main` at `5cfb99f` as `fix/stage5-simulated-user-remediation`.
-- Start with failing regression tests; do not modify production code before S55.1 evidence exists.
-- Preserve the two untracked `docs/research/stage5-overview-*.md` user files.
-- Do not run Live Provider/network tests or access credentials without a separate explicit request.
+Each S56–S61 subplan uses its dedicated branch, focused tests, one implementation checkpoint, exactly
+one `$grok-delegate` `/review`, one independent adjudication/fix pass without re-review, final gates,
+closeout commit, fast-forward merge, and clean branch retirement.
