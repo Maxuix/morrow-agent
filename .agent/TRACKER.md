@@ -23,13 +23,13 @@ execution, and next-AgentRun refresh.
 
 ## Active task
 
-S58 implementation checkpoint — S58.1–S58.5 are implemented and the required offline gates pass on
-`feat/stage5-preference-reviewer`; commit the checkpoint before the single Grok review.
+S58 review-fix and closeout — the single Grok review returned, three confirmed boundary issues were
+fixed independently, and the full offline gates pass again on `feat/stage5-preference-reviewer`.
 
 ## Next action
 
-Commit only the tracked S58 implementation and execution-state files, excluding the two untracked
-research files. Then invoke exactly one Grok `/review`; do not begin S59 work early.
+Commit the review-fix and adjudication log, excluding the two untracked research files. Then fast-forward
+local `main`, retire this branch, and activate S59 without pushing.
 
 ## Blockers
 

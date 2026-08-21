@@ -38,6 +38,80 @@ _SYSTEM_PROMPT = (
 )
 
 
+def _minimal_output_schema() -> dict[str, object]:
+    evidence = {
+        "type": "array",
+        "items": {
+            "type": "string",
+            "pattern": r"^pev_[A-Za-z0-9_-]{1,127}$",
+        },
+        "minItems": 1,
+        "maxItems": 1,
+        "uniqueItems": True,
+    }
+    scope = {"type": "string", "enum": ["global", "workspace"]}
+    preference_id = {
+        "type": "string",
+        "pattern": r"^pref_[A-Za-z0-9_-]{1,127}$",
+    }
+    statement = {"type": "string", "minLength": 1, "maxLength": 512}
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["operations"],
+        "properties": {
+            "operations": {
+                "type": "array",
+                "maxItems": 8,
+                "items": {
+                    "oneOf": [
+                        {
+                            "type": "object",
+                            "additionalProperties": False,
+                            "required": ["operation", "scope", "statement", "evidence_ids"],
+                            "properties": {
+                                "operation": {"const": "add"},
+                                "scope": scope,
+                                "statement": statement,
+                                "evidence_ids": evidence,
+                            },
+                        },
+                        {
+                            "type": "object",
+                            "additionalProperties": False,
+                            "required": [
+                                "operation",
+                                "scope",
+                                "preference_id",
+                                "statement",
+                                "evidence_ids",
+                            ],
+                            "properties": {
+                                "operation": {"const": "replace"},
+                                "scope": scope,
+                                "preference_id": preference_id,
+                                "statement": statement,
+                                "evidence_ids": evidence,
+                            },
+                        },
+                        {
+                            "type": "object",
+                            "additionalProperties": False,
+                            "required": ["operation", "scope", "preference_id", "evidence_ids"],
+                            "properties": {
+                                "operation": {"const": "remove"},
+                                "scope": scope,
+                                "preference_id": preference_id,
+                                "evidence_ids": evidence,
+                            },
+                        },
+                    ]
+                },
+            }
+        },
+    }
+
+
 class _ReviewerOutputError(ValueError):
     def __init__(self, category: str) -> None:
         super().__init__(category)
@@ -131,7 +205,7 @@ class ModelPreferenceReviewer:
     ) -> tuple[SystemMessage | UserMessage, ...]:
         payload = {
             "schema_version": self.schema_version,
-            "output_schema": PreferenceReviewOutput.model_json_schema(),
+            "output_schema": _minimal_output_schema(),
             "allowed_evidence_ids": [context.evidence_id],
             "operation_budget": context.operation_budget,
             "instruction": (

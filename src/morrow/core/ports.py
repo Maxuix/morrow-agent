@@ -25,6 +25,7 @@ from morrow.core.models import (
 from morrow.core.permissions import CapabilityGrant, PermissionSnapshot
 from morrow.core.preference_models import (
     PreferenceEvidence,
+    PreferenceOperation,
     PreferenceProposal,
     PreferenceProposalStatus,
     PreferenceReviewJob,
@@ -156,6 +157,24 @@ class PreferencePersistencePort(Protocol):
         status: PreferenceProposalStatus | None = None,
         job_id: str | None = None,
         limit: int = 100,
+    ) -> tuple[PreferenceProposal, ...]: ...
+
+    def has_preference_proposal_fingerprint(
+        self,
+        workspace_id: str,
+        fingerprint: str,
+        *,
+        status: PreferenceProposalStatus | None = None,
+    ) -> bool: ...
+
+    def finalize_preference_proposals(
+        self,
+        workspace_id: str,
+        proposal_ids: tuple[str, ...],
+        *,
+        command_id: str,
+        operations: tuple[PreferenceOperation, ...],
+        resolved_at: datetime,
     ) -> tuple[PreferenceProposal, ...]: ...
 
     def save_preference_proposal(

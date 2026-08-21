@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import pytest
+
 from morrow.adapters.state.preference_yaml import PreferenceYamlStore
 from morrow.application.preferences.inbox import PreferenceInbox, PreferenceInboxError
 from morrow.application.preferences.proposals import PreferenceProposalPipeline
-from morrow.application.preferences.writer import PreferenceWriter
+from morrow.application.preferences.writer import PreferenceWriter, PreferenceWriterError
 from morrow.core.preference_persistence_models import PreferenceProposalStatus
 from morrow.core.preference_review import PreferenceReviewOutput
+from morrow.core.store import StorageError, StorageErrorCode
 from morrow.testing import FixedClock, FixedIdSource
 from test_preference_proposals import _journal, _operation, _source
 
@@ -78,6 +81,45 @@ def test_inbox_accept_many_writes_one_same_scope_yaml_revision(tmp_path):
         assert store.layout.database.exists()
 
 
+def test_writer_replay_finalizes_linked_proposals_after_finalize_window(tmp_path):
+    store, session, journal, writer, _preference_inbox, result = _inbox(tmp_path)
+    try:
+        proposal = result.proposals[0]
+        prepared = writer.prepare(
+            proposal.operation.scope,
+            proposal.expected_document_revision,
+            "cmd_recovery",
+            (proposal.operation,),
+            proposal_ids=(proposal.proposal_id,),
+        )
+        original = journal.finalize_preference_proposals
+        state = {"failed": True}
+
+        def fail_once(*args, **kwargs):
+            if state["failed"]:
+                state["failed"] = False
+                raise StorageError(StorageErrorCode.BUSY, "synthetic finalize interruption")
+            return original(*args, **kwargs)
+
+        journal.finalize_preference_proposals = fail_once
+        try:
+            with pytest.raises(PreferenceWriterError):
+                writer.apply(prepared)
+        finally:
+            journal.finalize_preference_proposals = original
+        assert journal.get_preference_proposal("ws_1", proposal.proposal_id).status is (
+            PreferenceProposalStatus.PROPOSED
+        )
+        replayed = writer.apply(prepared)
+        assert replayed.replayed is True
+        assert journal.get_preference_proposal("ws_1", proposal.proposal_id).status is (
+            PreferenceProposalStatus.ACCEPTED
+        )
+    finally:
+        session.close()
+        assert store.layout.database.exists()
+
+
 def test_inbox_exposes_stale_target_and_never_silently_retargets(tmp_path):
     store, session, journal, writer, inbox, result = _inbox(tmp_path)
     try:
@@ -93,6 +135,32 @@ def test_inbox_exposes_stale_target_and_never_silently_retargets(tmp_path):
             assert error.code == "document_revision"
         else:  # pragma: no cover - the stale guard is the assertion
             raise AssertionError("stale proposal was accepted")
+    finally:
+        session.close()
+        assert store.layout.database.exists()
+
+
+def test_inbox_reject_and_suppress_blocks_exact_replay(tmp_path):
+    store, session, journal, _writer, inbox, result = _inbox(tmp_path)
+    try:
+        proposal = result.proposals[0]
+        rejected = inbox.reject_and_suppress(proposal.proposal_id, command_id="cmd_suppress")
+        assert rejected.proposal.status is PreferenceProposalStatus.SUPPRESSED
+        job = journal.get_preference_review_job("ws_1", "prjob_one")
+        evidence = journal.get_preference_evidence("ws_1", "pev_one")
+        assert job is not None and evidence is not None
+        replay = PreferenceProposalPipeline(
+            journal=journal,
+            workspace_id="ws_1",
+            id_source=FixedIdSource(),
+            clock=FixedClock(),
+        ).persist(
+            job,
+            evidence,
+            PreferenceReviewOutput(operations=(proposal.operation,)),
+        )
+        assert replay.proposals == ()
+        assert replay.suppressed_count == 1
     finally:
         session.close()
         assert store.layout.database.exists()

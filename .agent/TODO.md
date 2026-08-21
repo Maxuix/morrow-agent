@@ -16,9 +16,9 @@ Subplan 58 — Semantic Preference Reviewer and Inbox.
 - `[x]` S58.4 Add Preference Inbox list/show/preview and accept/edit/reject decision flows through S57.
 - `[x]` S58.5 Disable new fixed-field Preference emission from the broad legacy Reviewer while preserving
   non-Preference and historical behavior.
-- `[>]` Run the focused S58 validation and implementation checkpoint.
-- `[ ]` Run exactly one Grok `/review`, independently adjudicate findings, and rerun the affected gates.
-- `[ ]` Commit closeout, fast-forward `main`, retire the branch, and activate S59.
+- `[x]` Run the focused S58 validation and implementation checkpoint.
+- `[x]` Run exactly one Grok `/review`, independently adjudicate findings, and rerun the affected gates.
+- `[>]` Commit closeout, fast-forward `main`, retire the branch, and activate S59.
 
 ## Start condition
 

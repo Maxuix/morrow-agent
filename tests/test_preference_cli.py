@@ -9,4 +9,5 @@ def test_preference_inbox_typer_surface_is_separate_from_learning_inbox():
     assert result.exit_code == 0
     assert "accept-many" in result.stdout
     assert "edit-and-accept" in result.stdout
+    assert "review" in result.stdout
     assert "learning" not in result.stdout

@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+from datetime import datetime
+
 from morrow.adapters.state.preference_journal_codec import (
     _PROPOSAL_COLUMNS,
     _canonical_json,
@@ -12,7 +15,7 @@ from morrow.adapters.state.preference_journal_codec import (
     _unix,
     _workspace_error,
 )
-from morrow.core.preference_models import preference_operation_fingerprint
+from morrow.core.preference_models import PreferenceOperation, preference_operation_fingerprint
 from morrow.core.preference_persistence_models import (
     PreferenceProposal,
     PreferenceProposalStatus,
@@ -137,6 +140,21 @@ class PreferenceProposalJournalMixin:
             _proposal_from_row(row) for row in self.backend.read_all(sql, tuple(parameters))
         )
 
+    def has_preference_proposal_fingerprint(
+        self,
+        workspace_id: str,
+        fingerprint: str,
+        *,
+        status: PreferenceProposalStatus | None = None,
+    ) -> bool:
+        sql = "SELECT 1 FROM preference_proposals WHERE workspace_id = ? AND operation_digest = ?"
+        parameters: list[object] = [workspace_id, fingerprint]
+        if status is not None:
+            sql += " AND status = ?"
+            parameters.append(status.value)
+        sql += " LIMIT 1"
+        return self.backend.read_one(sql, tuple(parameters)) is not None
+
     def save_preference_proposal(
         self,
         workspace_id: str,
@@ -231,6 +249,125 @@ class PreferenceProposalJournalMixin:
             if loaded is None or loaded.row_version != proposal.row_version:
                 raise _stale("proposal")
             return loaded
+
+        return self.backend.transact(work)
+
+    def finalize_preference_proposals(
+        self,
+        workspace_id: str,
+        proposal_ids: Sequence[str],
+        *,
+        command_id: str,
+        operations: Sequence[PreferenceOperation],
+        resolved_at: datetime,
+    ) -> tuple[PreferenceProposal, ...]:
+        """Finalize all Writer-linked proposals in one SQLite transaction.
+
+        A finalized Writer batch can be replayed after a process crash.  Rows already carrying the
+        same command and final operation are treated as idempotent; a different decision is stale.
+        """
+
+        proposal_tuple = tuple(proposal_ids)
+        operation_tuple = tuple(operations)
+        if not proposal_tuple or len(proposal_tuple) != len(operation_tuple):
+            raise StorageError(
+                StorageErrorCode.UNAVAILABLE,
+                "Preference write batch proposal mapping is invalid",
+            )
+        if len(set(proposal_tuple)) != len(proposal_tuple):
+            raise StorageError(
+                StorageErrorCode.UNAVAILABLE,
+                "Preference write batch proposals must be unique",
+            )
+
+        def work() -> tuple[PreferenceProposal, ...]:
+            changes: list[
+                tuple[PreferenceProposal, PreferenceProposal, str | None, int | None]
+            ] = []
+            resolved: dict[str, PreferenceProposal] = {}
+            for proposal_id, operation in zip(proposal_tuple, operation_tuple, strict=True):
+                existing = self.get_preference_proposal(workspace_id, proposal_id)
+                if existing is None:
+                    raise _missing("write batch proposal")
+                if existing.status is not PreferenceProposalStatus.PROPOSED:
+                    expected_final = None if operation == existing.operation else operation
+                    expected_status = (
+                        PreferenceProposalStatus.ACCEPTED
+                        if expected_final is None
+                        else PreferenceProposalStatus.EDITED_AND_ACCEPTED
+                    )
+                    if (
+                        existing.status is expected_status
+                        and existing.final_operation == expected_final
+                        and existing.decision_command_id == command_id
+                    ):
+                        resolved[proposal_id] = existing
+                        continue
+                    raise _stale("proposal")
+                if (
+                    operation.scope is not existing.operation.scope
+                    or operation.operation is not existing.operation.operation
+                    or operation.preference_id != existing.operation.preference_id
+                    or operation.evidence_ids != existing.operation.evidence_ids
+                ):
+                    raise StorageError(
+                        StorageErrorCode.UNAVAILABLE,
+                        "Preference write batch operation changed proposal identity",
+                    )
+                final_operation = None if operation == existing.operation else operation
+                status = (
+                    PreferenceProposalStatus.ACCEPTED
+                    if final_operation is None
+                    else PreferenceProposalStatus.EDITED_AND_ACCEPTED
+                )
+                changed = PreferenceProposal.model_validate(
+                    existing.model_dump(mode="python")
+                    | {
+                        "status": status,
+                        "final_operation": final_operation,
+                        "decision_command_id": command_id,
+                        "decision_reason": None,
+                        "resolved_at": resolved_at,
+                        "row_version": existing.row_version + 1,
+                    }
+                )
+                final_json = final_bytes = None
+                if final_operation is not None:
+                    final_json, final_bytes = _canonical_json(
+                        final_operation.model_dump(mode="json"),
+                        maximum=8192,
+                        label="final operation",
+                    )
+                changes.append((existing, changed, final_json, final_bytes))
+
+            executor = self.backend.executor()
+            for existing, changed, final_json, final_bytes in changes:
+                executor.execute(
+                    """
+                    UPDATE preference_proposals
+                    SET status = ?, final_operation_json = ?, final_operation_bytes = ?,
+                        decision_command_id = ?, decision_reason = ?, row_version = ?,
+                        resolved_at_unix = ?
+                    WHERE proposal_id = ? AND workspace_id = ? AND row_version = ?
+                    """,
+                    (
+                        changed.status.value,
+                        final_json,
+                        final_bytes,
+                        changed.decision_command_id,
+                        changed.decision_reason,
+                        changed.row_version,
+                        _optional_unix(changed.resolved_at),
+                        existing.proposal_id,
+                        workspace_id,
+                        existing.row_version,
+                    ),
+                )
+                loaded = self.get_preference_proposal(workspace_id, existing.proposal_id)
+                if loaded is None or loaded.row_version != changed.row_version:
+                    raise _stale("proposal")
+                resolved[existing.proposal_id] = loaded
+            return tuple(resolved[proposal_id] for proposal_id in proposal_tuple)
 
         return self.backend.transact(work)
 

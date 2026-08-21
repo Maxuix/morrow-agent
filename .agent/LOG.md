@@ -2032,3 +2032,25 @@
   verified local `main`; do not implement S59 work early.
 - Local `main` is ahead of configured `origin/main` by 46 commits after the fast-forward merge. No
   push was attempted because the user did not authorize the external remote mutation.
+
+## 2026-08-22 — Subplan 58 implementation, review, and independent fix pass
+
+- Implemented the frozen Preference Review context, one-call no-tool semantic Reviewer, deterministic
+  proposal pipeline, Writer-backed Preference Inbox, dedicated `preferences inbox` CLI surface, and
+  the explicit Preference v2 boundary for the legacy Learning Reviewer. The implementation checkpoint
+  is `2cc6fd5`; the two untracked research files remain untouched and excluded.
+- The single planned Grok review returned a report with no repository changes. It confirmed the main
+  S58 contracts and identified three confirmed boundary issues: Writer-linked proposals could remain
+  proposed after a finalized YAML batch, replay/suppression depended on the oldest 500 rows, and the
+  production/API/CLI composition did not construct `ModelPreferenceReviewer`. It also noted test gaps
+  and optional schema/CLI diagnostics improvements.
+- Independently accepted and fixed those three issues: Writer finalization now updates all linked
+  proposals in one SQLite transaction and replays finalized batches to recover the decision rows;
+  suppression uses an indexed fingerprint existence query and same-job replay is bounded by job scope;
+  bootstrap reuses the active Provider/model for `ModelPreferenceReviewer`, and `preferences inbox
+  review` invokes the manual runner without printing raw context. Added the minimal global/workspace
+  wire schema and preserved CLI error codes. Added runner paraphrase/zero-op, suppression, and
+  finalize-window recovery tests. Rejected only the optional stage-history docstring cleanup.
+- Final independent validation passed `889 passed, 2 deselected`; Ruff format/check, compileall,
+  `morrow learning --help`, `morrow preferences inbox --help`, and `git diff --check` passed. No
+  Provider, credential, Live, or real-network test was run, and no second Grok review was invoked.

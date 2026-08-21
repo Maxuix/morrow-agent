@@ -43,7 +43,7 @@ class PreferenceWriteRecovery:
             if batch.status not in {
                 PreferenceWriteBatchStatus.PREPARED,
                 PreferenceWriteBatchStatus.YAML_APPLIED,
-            }:
+            } and not (batch.status is PreferenceWriteBatchStatus.FINALIZED and batch.proposal_ids):
                 continue
             try:
                 result = self.writer.apply(batch)

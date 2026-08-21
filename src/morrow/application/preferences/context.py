@@ -285,7 +285,9 @@ class PreferenceReviewContextBuilder:
         if not candidates and self.journal is not None and job.session_id is not None:
             load_records = getattr(self.journal, "load_effective_records", None)
             if load_records is None:
-                load_records = self.journal.load_records
+                load_records = getattr(self.journal, "load_records", None)
+            if load_records is None:
+                return ()
             records = load_records(self.workspace_id, job.session_id)
             current_position = next(
                 (

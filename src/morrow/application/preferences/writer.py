@@ -315,6 +315,7 @@ class PreferenceWriter:
             else self._preparation(stored)
         )
         if stored.status is PreferenceWriteBatchStatus.FINALIZED:
+            self._finalize_proposals(stored)
             return PreferenceWriteResult(stored, preparation.after_document, replayed=True)
         if stored.status in {
             PreferenceWriteBatchStatus.NEEDS_RESOLUTION,
@@ -649,9 +650,34 @@ class PreferenceWriter:
         self, batch: PreferenceWriteBatch, document: PreferenceDocument
     ) -> PreferenceWriteResult:
         if batch.status is PreferenceWriteBatchStatus.FINALIZED:
+            self._finalize_proposals(batch)
             return PreferenceWriteResult(batch, document, replayed=True)
         finalized = self._save_phase(batch, _WritePhase.FINALIZED)
+        self._finalize_proposals(finalized)
         return PreferenceWriteResult(finalized, document)
+
+    def _finalize_proposals(self, batch: PreferenceWriteBatch) -> None:
+        if not batch.proposal_ids:
+            return
+        if len(batch.proposal_ids) != len(batch.operations):
+            raise PreferenceWriterError(
+                "proposal_mismatch", "Preference write batch proposals are not one-to-one"
+            )
+        finalize = getattr(self.journal, "finalize_preference_proposals", None)
+        if finalize is None:
+            raise PreferenceWriterError(
+                "unavailable", "Preference proposal finalization is unavailable"
+            )
+        try:
+            finalize(
+                self.workspace_id,
+                batch.proposal_ids,
+                command_id=batch.command_id,
+                operations=batch.operations,
+                resolved_at=_now(self.clock),
+            )
+        except StorageError as exc:
+            raise self._translate_storage(exc) from exc
 
     @staticmethod
     def _translate_storage(exc: StorageError) -> PreferenceWriterError:

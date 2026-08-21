@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from dataclasses import fields, is_dataclass
 from enum import Enum
@@ -31,6 +32,7 @@ def _run_state_command(
     workspace_id: str | None,
     directory: Path,
     write: bool,
+    with_reviewer: bool = False,
     action,
 ) -> None:
     cli_error, close_state, state_services = _cli_helpers()
@@ -41,6 +43,7 @@ def _run_state_command(
             workspace_id=workspace_id,
             directory=directory,
             write=write,
+            with_reviewer=with_reviewer,
         )
         action(api)
     except typer.Exit:
@@ -337,6 +340,35 @@ def preference_inbox_accept_many(
         workspace_id=workspace_id,
         directory=directory,
         write=True,
+        action=action,
+    )
+
+
+@preference_inbox_app.command("review")
+def preference_inbox_review(
+    job_id: str,
+    as_json: bool = typer.Option(False, "--json"),
+    workspace_id: str | None = typer.Option(None, "--workspace-id"),
+    directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+) -> None:
+    def action(api) -> None:
+        result = asyncio.run(api.run_preference_review(job_id))
+        _emit(
+            {
+                "job_id": result.job.job_id,
+                "proposal_ids": result.pipeline.proposal_ids,
+                "proposal_count": len(result.proposals),
+            },
+            as_json=as_json,
+        )
+
+    _run_state_command(
+        state_root=state_root,
+        workspace_id=workspace_id,
+        directory=directory,
+        write=True,
+        with_reviewer=True,
         action=action,
     )
 

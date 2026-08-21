@@ -107,13 +107,8 @@ class PreferenceProposalPipeline:
             raise PreferenceProposalPipelineError(
                 "operation_count", "Preference Review returned too many operations"
             )
-        existing = txn.list_preference_proposals(self.workspace_id, limit=500)
+        existing = txn.list_preference_proposals(self.workspace_id, job_id=job.job_id, limit=500)
         by_job_fingerprint = {item.fingerprint for item in existing if item.job_id == job.job_id}
-        suppressed = {
-            item.fingerprint
-            for item in existing
-            if item.status is PreferenceProposalStatus.SUPPRESSED
-        }
         entries = {entry.preference_id: entry for entry in snapshot.entries}
         proposed_keys = {"global": {}, "workspace": {}}
         for entry in snapshot.entries:
@@ -139,7 +134,11 @@ class PreferenceProposalPipeline:
                 rejections.append(PreferenceProposalRejection(index, code))
                 continue
             fingerprint = preference_operation_fingerprint(operation)
-            if fingerprint in suppressed:
+            if txn.has_preference_proposal_fingerprint(
+                self.workspace_id,
+                fingerprint,
+                status=PreferenceProposalStatus.SUPPRESSED,
+            ):
                 suppressed_count += 1
                 continue
             if fingerprint in by_job_fingerprint:

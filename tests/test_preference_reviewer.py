@@ -6,9 +6,17 @@ from datetime import UTC, datetime
 import pytest
 
 from morrow.adapters.models.preference_reviewer import ModelPreferenceReviewer
+from morrow.application.preferences.reviewer import PreferenceReviewRunner
+from morrow.core.domain import sha256_digest
 from morrow.core.models import ModelErrorCode, ModelRef
 from morrow.core.preference_documents import PreferenceReviewSnapshot
-from morrow.core.preference_review import PreferenceReviewContext, PreferenceReviewerError
+from morrow.core.preference_review import (
+    PreferenceReviewContext,
+    PreferenceReviewerError,
+    PreferenceReviewOutput,
+)
+from morrow.testing import FixedClock, FixedIdSource, ScriptedPreferenceReviewer
+from test_preference_proposals import _journal, _operation, _source
 
 NOW = datetime(2026, 1, 1, tzinfo=UTC)
 MODEL = ModelRef(provider_id="test", model_id="reviewer")
@@ -69,6 +77,7 @@ async def test_preference_reviewer_uses_one_complete_no_tool_schema_request():
     assert "preference-v2" in messages[0].content
     assert '"operations"' in messages[1].content
     assert '"schema_version":"preference-operations-v2"' in messages[1].content
+    assert '"session"' not in messages[1].content
     assert "CandidateDraftBatch" not in messages[1].content
 
 
@@ -125,3 +134,92 @@ async def test_preference_reviewer_enforces_request_budget_before_provider_call(
 
     assert error.value.category == "request_budget"
     assert provider.calls == []
+
+
+@pytest.mark.asyncio
+async def test_preference_review_runner_persists_scripted_paraphrase_operations(tmp_path):
+    store, session, journal = _journal(tmp_path)
+    try:
+        job, evidence = _source(
+            entries=(
+                ("pref_replace", "旧结构", "active", "workspace", 1, 0),
+                ("pref_remove", "旧规则", "active", "workspace", 1, 0),
+            )
+        )
+        message = "这条消息偏好代码示例和清晰结构。"
+        evidence = evidence.model_copy(
+            update={
+                "excerpt_redacted": message,
+                "excerpt_bytes": len(message.encode()),
+                "content_digest": sha256_digest(message),
+            }
+        )
+        journal.put_preference_job_with_evidence("ws_1", job, evidence)
+        reviewer = ScriptedPreferenceReviewer(
+            [
+                PreferenceReviewOutput(
+                    operations=(
+                        _operation("add", statement="代码示例优先，说明只保留关键设计。"),
+                        _operation(
+                            "replace", preference_id="pref_replace", statement="回答保持清晰结构。"
+                        ),
+                        _operation("remove", preference_id="pref_remove"),
+                    )
+                )
+            ]
+        )
+        result = await PreferenceReviewRunner(
+            journal=journal,
+            workspace_id="ws_1",
+            id_source=FixedIdSource(),
+            clock=FixedClock(NOW),
+            reviewer=reviewer,
+            model=MODEL,
+        ).run(
+            job.job_id,
+            current_user_message=message,
+            current_user_record_id="rec_current",
+        )
+        assert len(reviewer.calls) == 1
+        assert len(result.proposals) == 3
+        assert [item.operation.operation.value for item in result.proposals] == [
+            "add",
+            "replace",
+            "remove",
+        ]
+    finally:
+        session.close()
+        assert store.layout.database.exists()
+
+
+@pytest.mark.asyncio
+async def test_preference_review_runner_zero_operations_is_success_without_proposals(tmp_path):
+    store, session, journal = _journal(tmp_path)
+    try:
+        job, evidence = _source()
+        message = "这条消息没有足够信息形成长期规则。"
+        evidence = evidence.model_copy(
+            update={
+                "excerpt_redacted": message,
+                "excerpt_bytes": len(message.encode()),
+                "content_digest": sha256_digest(message),
+            }
+        )
+        journal.put_preference_job_with_evidence("ws_1", job, evidence)
+        result = await PreferenceReviewRunner(
+            journal=journal,
+            workspace_id="ws_1",
+            id_source=FixedIdSource(),
+            clock=FixedClock(NOW),
+            reviewer=ScriptedPreferenceReviewer([PreferenceReviewOutput()]),
+            model=MODEL,
+        ).run(
+            job.job_id,
+            current_user_message=message,
+            current_user_record_id="rec_current",
+        )
+        assert result.proposals == ()
+        assert journal.list_preference_proposals("ws_1", limit=10) == ()
+    finally:
+        session.close()
+        assert store.layout.database.exists()

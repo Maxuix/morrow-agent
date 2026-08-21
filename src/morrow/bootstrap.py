@@ -13,6 +13,7 @@ from morrow.adapters.local.sandbox import (
 )
 from morrow.adapters.models.learning_reviewer import ModelLearningReviewer
 from morrow.adapters.models.openai_compatible import estimate_request_chars, make_openai_compatible
+from morrow.adapters.models.preference_reviewer import ModelPreferenceReviewer
 from morrow.adapters.registry import AdapterRegistry
 from morrow.adapters.state.artifacts import FilesystemArtifactStore
 from morrow.adapters.state.journal import SqliteOperationalJournal
@@ -316,6 +317,9 @@ def build_operational_api(
     learning_reviewer = (
         ModelLearningReviewer(learning_provider) if learning_provider is not None else None
     )
+    resolved_preference_reviewer = preference_reviewer
+    if resolved_preference_reviewer is None and learning_provider is not None:
+        resolved_preference_reviewer = ModelPreferenceReviewer(learning_provider)
     preference_inbox = (
         PreferenceInbox(
             journal=services.journal,
@@ -333,10 +337,10 @@ def build_operational_api(
             workspace_id=workspace_id,
             id_source=app.id_source,
             clock=services.journal.now,
-            reviewer=preference_reviewer,
-            model=preference_model,
+            reviewer=resolved_preference_reviewer,
+            model=preference_model or learning_model,
         )
-        if preference_reviewer is not None
+        if resolved_preference_reviewer is not None
         else None
     )
     return OperationalApplicationService(

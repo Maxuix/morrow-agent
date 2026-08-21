@@ -293,30 +293,13 @@ class PreferenceInbox:
                 exc.code, "Preference proposal could not be applied"
             ) from exc
         saved: list[PreferenceProposal] = []
-        now = self._now()
         for preview in previews:
             current = self.journal.get_preference_proposal(
                 self.workspace_id, preview.proposal.proposal_id
             )
             if current is None:
                 raise PreferenceInboxError("missing_reference", "Preference proposal disappeared")
-            edited = preview.edited
-            resolved = current.model_copy(
-                update={
-                    "status": PreferenceProposalStatus.EDITED_AND_ACCEPTED
-                    if edited
-                    else PreferenceProposalStatus.ACCEPTED,
-                    "final_operation": preview.operation if edited else None,
-                    "decision_command_id": command,
-                    "resolved_at": now,
-                    "row_version": current.row_version + 1,
-                }
-            )
-            saved.append(
-                self.journal.save_preference_proposal(
-                    self.workspace_id, resolved, expected_row_version=current.row_version
-                )
-            )
+            saved.append(current)
         return PreferenceInboxDecisionResult(
             tuple(saved),
             batch_id=result.batch.batch_id,

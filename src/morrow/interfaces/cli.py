@@ -20,6 +20,7 @@ from morrow.adapters.state.operational import OperationalStore
 from morrow.adapters.state.preference_yaml import PreferenceYamlStore
 from morrow.application.backup import BackupBundleError
 from morrow.application.doctor import OperationalDoctor
+from morrow.application.preferences.inbox import PreferenceInboxError
 from morrow.application.preferences.queries import PreferenceQueries
 from morrow.application.preferences.tool import (
     ManagePreferenceOperation,
@@ -842,6 +843,8 @@ def preferences_disable(
 def _cli_error(exc: Exception) -> None:
     if isinstance(exc, ApplicationError):
         typer.echo(f"{exc.code.value}: {exc.message}", err=True)
+    elif isinstance(exc, PreferenceInboxError):
+        typer.echo(f"preference_{exc.code}: {exc}", err=True)
     elif isinstance(exc, (WorkspaceError, StorageError, BackupBundleError, ValueError)):
         typer.echo(str(exc), err=True)
     else:

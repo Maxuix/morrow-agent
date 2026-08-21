@@ -280,6 +280,24 @@ class SqliteOperationalJournal:
             workspace_id, status=status, job_id=job_id, limit=limit
         )
 
+    def has_preference_proposal_fingerprint(
+        self, workspace_id: str, fingerprint: str, *, status=None
+    ):
+        return self._preference_journal.has_preference_proposal_fingerprint(
+            workspace_id, fingerprint, status=status
+        )
+
+    def finalize_preference_proposals(
+        self, workspace_id: str, proposal_ids, *, command_id: str, operations, resolved_at
+    ):
+        return self._preference_journal.finalize_preference_proposals(
+            workspace_id,
+            proposal_ids,
+            command_id=command_id,
+            operations=operations,
+            resolved_at=resolved_at,
+        )
+
     def save_preference_proposal(self, workspace_id: str, proposal, *, expected_row_version: int):
         return self._preference_journal.save_preference_proposal(
             workspace_id, proposal, expected_row_version=expected_row_version
