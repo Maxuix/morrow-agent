@@ -22,14 +22,13 @@ execution, and next-AgentRun refresh.
 
 ## Active task
 
-S59.2 — add the lease-based process-local Review Worker lifecycle on
+S59.3 — add bounded retry, timeout, model fallback, and sanitized terminal failure handling on
 `feat/stage5-review-worker`.
 
 ## Next action
 
-Commit the verified S59.1 enqueue checkpoint, then inspect the existing Review runner and v13 job
-state boundaries before implementing only the worker lifecycle. Keep retry policy and model fallback
-for S59.3.
+Commit the verified S59.2 worker checkpoint, then implement only the injected timeout, retry,
+fallback, and terminal failure boundaries. Keep accepted-Task Learning Review scheduling for S59.4.
 
 ## Blockers
 
@@ -46,6 +45,18 @@ Provider/Reviewer doubles and injected time/scheduling.
   idempotency, and terminal-append rollback when enqueue fails.
 - Validation passed: `891 passed, 2 deselected`; Ruff format/check, compileall, `morrow learning
   --help`, and `git diff --check`.
+
+## S59.2 evidence
+
+- Added v13 claimable-job listing, lease/OCC claim, and immutable identity-preserving job saves.
+  `ReviewWorker` now exposes explicit async `start`, signal-based `wake`, one-job `drain_once`, and
+  cancellation-safe `stop` boundaries; Provider work runs outside SQLite transactions.
+- Worker completion persists deterministic proposals before idempotently closing the Job. One
+  workspace serializes drains through an async lock; an expired RUNNING lease is reclaimable by a
+  replacement worker without sharing Session state.
+- `tests/test_review_worker.py` covers proposal completion, start/stop lease recovery, and same-
+  workspace serialization. Validation passed: `894 passed, 2 deselected`; Ruff format/check,
+  compileall, and `git diff --check` passed. No Provider, network, credential, or Live path was used.
 
 ## Preserved workspace state
 

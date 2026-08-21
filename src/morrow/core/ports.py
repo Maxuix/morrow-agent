@@ -146,6 +146,29 @@ class PreferencePersistencePort(Protocol):
         self, workspace_id: str, turn_id: str, *, review_version: int = 1
     ) -> PreferenceReviewJob | None: ...
 
+    def list_claimable_preference_review_jobs(
+        self, workspace_id: str, *, limit: int = 100
+    ) -> tuple[PreferenceReviewJob, ...]: ...
+
+    def save_preference_review_job(
+        self,
+        workspace_id: str,
+        job: PreferenceReviewJob,
+        *,
+        expected_row_version: int,
+    ) -> PreferenceReviewJob: ...
+
+    def claim_preference_review_job(
+        self,
+        workspace_id: str,
+        job_id: str,
+        *,
+        expected_row_version: int,
+        lease_id: str,
+        lease_expires_at: datetime,
+        started_at: datetime,
+    ) -> PreferenceReviewJob: ...
+
     def list_preference_review_jobs(
         self,
         workspace_id: str,

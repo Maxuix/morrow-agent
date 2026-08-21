@@ -44,6 +44,7 @@ from morrow.application.preferences.tool import (
     PreferenceManagementService,
     make_preference_management_tool,
 )
+from morrow.application.preferences.worker import ReviewWorker, ReviewWorkerResult
 from morrow.application.preferences.writer import (
     PreferenceWritePreparation,
     PreferenceWriter,
@@ -88,4 +89,6 @@ __all__ = [
     "DeterministicPreferenceReviewer",
     "PreferenceReviewRunResult",
     "PreferenceReviewRunner",
+    "ReviewWorker",
+    "ReviewWorkerResult",
 ]

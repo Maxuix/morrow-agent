@@ -2069,3 +2069,15 @@
   idempotency, and rollback of terminal append plus enqueue. The offline suite passed `891 passed,
   2 deselected`; Ruff format/check, compileall, `morrow learning --help`, and `git diff --check`
   passed. No Provider, network, credential, or Live path was used.
+
+## 2026-08-22 — Subplan 59.2 Review Worker lifecycle completed
+
+- Added claimable v13 Preference Review job listing, row-version OCC lease claims, immutable job
+  saves, and a process-local async `ReviewWorker` with explicit `start`, `wake`, `drain_once`, and
+  `stop` boundaries. Reviewer calls remain outside SQLite transactions; proposal persistence and
+  successful Job finalization are idempotent, while cancellation leaves a lease recoverable by
+  expiry.
+- Added worker tests for successful proposal completion, start/stop plus expired-lease recovery,
+  and same-workspace serialization. S59.2 validation passed: `894 passed, 2 deselected`, Ruff
+  format/check, compileall, and `git diff --check`. No Provider, network, credential, or Live path
+  was used.

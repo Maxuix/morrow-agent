@@ -253,6 +253,35 @@ class SqliteOperationalJournal:
             workspace_id, status=status, limit=limit
         )
 
+    def list_claimable_preference_review_jobs(self, workspace_id: str, *, limit: int = 100):
+        return self._preference_journal.list_claimable_preference_review_jobs(
+            workspace_id, limit=limit
+        )
+
+    def save_preference_review_job(self, workspace_id: str, job, *, expected_row_version: int):
+        return self._preference_journal.save_preference_review_job(
+            workspace_id, job, expected_row_version=expected_row_version
+        )
+
+    def claim_preference_review_job(
+        self,
+        workspace_id: str,
+        job_id: str,
+        *,
+        expected_row_version: int,
+        lease_id: str,
+        lease_expires_at,
+        started_at,
+    ):
+        return self._preference_journal.claim_preference_review_job(
+            workspace_id,
+            job_id,
+            expected_row_version=expected_row_version,
+            lease_id=lease_id,
+            lease_expires_at=lease_expires_at,
+            started_at=started_at,
+        )
+
     def count_preference_review_jobs(self, workspace_id: str, *, status=None):
         return self._preference_journal.count_preference_review_jobs(workspace_id, status=status)
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from morrow.adapters.state.preference_journal_codec import (
     _EVIDENCE_COLUMNS,
     _JOB_COLUMNS,
@@ -10,6 +12,7 @@ from morrow.adapters.state.preference_journal_codec import (
     _missing,
     _optional_unix,
     _snapshot_json,
+    _stale,
     _unix,
     _workspace_error,
 )
@@ -106,6 +109,23 @@ class PreferenceReviewJournalMixin:
         parameters.append(limit)
         return tuple(_job_from_row(row) for row in self.backend.read_all(sql, tuple(parameters)))
 
+    def list_claimable_preference_review_jobs(
+        self, workspace_id: str, *, limit: int = 100
+    ) -> tuple[PreferenceReviewJob, ...]:
+        if not 1 <= limit <= 500:
+            raise StorageError(StorageErrorCode.UNAVAILABLE, "Preference Review page is invalid")
+        now_unix = int(self.backend.now().timestamp())
+        rows = self.backend.read_all(
+            f"SELECT {_JOB_COLUMNS} FROM preference_review_jobs "
+            "WHERE workspace_id = ? AND ("
+            "status = 'pending' OR "
+            "(status = 'running' AND lease_expires_at_unix IS NOT NULL "
+            "AND lease_expires_at_unix <= ?)"
+            ") ORDER BY created_at_unix ASC, job_id ASC LIMIT ?",
+            (workspace_id, now_unix, limit),
+        )
+        return tuple(_job_from_row(row) for row in rows)
+
     def count_preference_review_jobs(
         self, workspace_id: str, *, status: PreferenceReviewJobStatus | None = None
     ) -> int:
@@ -168,6 +188,182 @@ class PreferenceReviewJournalMixin:
             return loaded
 
         return self.backend.transact(work)
+
+    def save_preference_review_job(
+        self,
+        workspace_id: str,
+        job: PreferenceReviewJob,
+        *,
+        expected_row_version: int,
+    ) -> PreferenceReviewJob:
+        if job.workspace_id != workspace_id:
+            raise _workspace_error("Review job")
+        _snapshot_json(job)
+
+        def work() -> PreferenceReviewJob:
+            existing = self.get_preference_review_job(workspace_id, job.job_id)
+            if existing is None:
+                raise _missing("Review job")
+            if (
+                existing.row_version != expected_row_version
+                or job.row_version != expected_row_version + 1
+            ):
+                raise _stale("Review job")
+            immutable = (
+                "workspace_id",
+                "session_id",
+                "turn_id",
+                "review_version",
+                "source_global_revision",
+                "source_workspace_revision",
+                "active_snapshot_json",
+                "active_snapshot_count",
+                "active_snapshot_bytes",
+                "active_snapshot_digest",
+                "created_at",
+            )
+            if any(getattr(existing, name) != getattr(job, name) for name in immutable):
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE, "Preference Review job identity is immutable"
+                )
+            self.backend.executor().execute(
+                """
+                UPDATE preference_review_jobs
+                SET status = ?, reviewer_provider_id = ?, reviewer_model_id = ?,
+                    reviewer_prompt_version = ?, reviewer_schema_version = ?, lease_id = ?,
+                    lease_expires_at_unix = ?, attempt_count = ?, row_version = ?,
+                    started_at_unix = ?, completed_at_unix = ?, failure_code = ?
+                WHERE job_id = ? AND workspace_id = ? AND row_version = ?
+                """,
+                (
+                    job.status.value,
+                    job.reviewer_provider_id,
+                    job.reviewer_model_id,
+                    job.reviewer_prompt_version,
+                    job.reviewer_schema_version,
+                    job.lease_id,
+                    _optional_unix(job.lease_expires_at),
+                    job.attempt_count,
+                    job.row_version,
+                    _optional_unix(job.started_at),
+                    _optional_unix(job.completed_at),
+                    job.failure_code.value if job.failure_code is not None else None,
+                    job.job_id,
+                    workspace_id,
+                    expected_row_version,
+                ),
+            )
+            loaded = self.get_preference_review_job(workspace_id, job.job_id)
+            if loaded is None or loaded.row_version != job.row_version:
+                raise _stale("Review job")
+            return loaded
+
+        return self.backend.transact(work)
+
+    def claim_preference_review_job(
+        self,
+        workspace_id: str,
+        job_id: str,
+        *,
+        expected_row_version: int,
+        lease_id: str,
+        lease_expires_at: datetime,
+        started_at: datetime,
+    ) -> PreferenceReviewJob:
+        def work() -> PreferenceReviewJob:
+            existing = self.get_preference_review_job(workspace_id, job_id)
+            if existing is None:
+                raise _missing("Review job")
+            now = self.backend.now()
+            if existing.row_version != expected_row_version:
+                raise _stale("Review job")
+            if existing.status is PreferenceReviewJobStatus.RUNNING and (
+                existing.lease_expires_at is not None and existing.lease_expires_at > now
+            ):
+                raise StorageError(StorageErrorCode.BUSY, "Preference Review job is leased")
+            if existing.status in {
+                PreferenceReviewJobStatus.COMPLETED,
+                PreferenceReviewJobStatus.FAILED,
+                PreferenceReviewJobStatus.EXHAUSTED,
+                PreferenceReviewJobStatus.CANCELLED,
+                PreferenceReviewJobStatus.SUPERSEDED,
+            }:
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE, "Preference Review job is not claimable"
+                )
+            if existing.attempt_count >= 3:
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE,
+                    "Preference Review retry limit is exhausted",
+                )
+            if lease_expires_at <= started_at:
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE, "Preference Review lease is invalid"
+                )
+            claimed = existing.model_copy(
+                update={
+                    "status": PreferenceReviewJobStatus.RUNNING,
+                    "lease_id": lease_id,
+                    "lease_expires_at": lease_expires_at,
+                    "attempt_count": existing.attempt_count + 1,
+                    "row_version": existing.row_version + 1,
+                    "started_at": started_at,
+                    "completed_at": None,
+                    "failure_code": None,
+                }
+            )
+            return self._save_preference_review_job_in_txn(
+                workspace_id, claimed, expected_row_version=expected_row_version
+            )
+
+        return self.backend.transact(work)
+
+    def _save_preference_review_job_in_txn(
+        self,
+        workspace_id: str,
+        job: PreferenceReviewJob,
+        *,
+        expected_row_version: int,
+    ) -> PreferenceReviewJob:
+        existing = self.get_preference_review_job(workspace_id, job.job_id)
+        if existing is None:
+            raise _missing("Review job")
+        if (
+            existing.row_version != expected_row_version
+            or job.row_version != expected_row_version + 1
+        ):
+            raise _stale("Review job")
+        self.backend.executor().execute(
+            """
+            UPDATE preference_review_jobs
+            SET status = ?, reviewer_provider_id = ?, reviewer_model_id = ?,
+                reviewer_prompt_version = ?, reviewer_schema_version = ?, lease_id = ?,
+                lease_expires_at_unix = ?, attempt_count = ?, row_version = ?,
+                started_at_unix = ?, completed_at_unix = ?, failure_code = ?
+            WHERE job_id = ? AND workspace_id = ? AND row_version = ?
+            """,
+            (
+                job.status.value,
+                job.reviewer_provider_id,
+                job.reviewer_model_id,
+                job.reviewer_prompt_version,
+                job.reviewer_schema_version,
+                job.lease_id,
+                _optional_unix(job.lease_expires_at),
+                job.attempt_count,
+                job.row_version,
+                _optional_unix(job.started_at),
+                _optional_unix(job.completed_at),
+                job.failure_code.value if job.failure_code is not None else None,
+                job.job_id,
+                workspace_id,
+                expected_row_version,
+            ),
+        )
+        loaded = self.get_preference_review_job(workspace_id, job.job_id)
+        if loaded is None:
+            raise _stale("Review job")
+        return loaded
 
     def put_preference_evidence(
         self, workspace_id: str, evidence: PreferenceEvidence
