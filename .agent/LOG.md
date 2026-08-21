@@ -2020,3 +2020,13 @@
   without a visible state. Direct request validation and tool error classification were tightened.
 - Added a regression test for the unreadable-authority state. The focused Writer suite passed `12`
   tests after the fix; final offline, Ruff, compile, CLI, and diff gates remain to be run.
+
+## 2026-08-21 — Subplan 57 closeout and Subplan 58 activation
+
+- Final S57 validation passed: `869 passed, 2 deselected` for the complete offline suite, `60 passed`
+  for the affected Writer/configuration/Promotion set, Ruff format/check, compileall, CLI help, and
+  `git diff --check`. No Live, Provider, network, or credential path was used.
+- Committed the independent fix pass as `4ad7bbf` (`fix(preferences): harden writer recovery
+  boundaries`). The two untracked research files remain untouched and excluded.
+- S57 is complete and S58 is activated in the execution state. The next branch must start from the
+  verified local `main`; do not implement S59 work early.

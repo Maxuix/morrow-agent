@@ -1,7 +1,7 @@
 # Stage 5 Preference Learning v2 Refactor Plan
 
-> Status: S57 implementation active after S56 merged and its gates passed
-> Active subplan: 57 — Atomic Preference Writer and Direct Lifecycle
+> Status: S57 complete after merge and final offline gates
+> Active subplan: 58 — Semantic Preference Reviewer and Inbox
 > Planning baseline: `c6031d2` on local `main`
 > Target state: generic atomic Preferences, semantic Reviewer, durable asynchronous Review,
 > reviewable Inbox, deterministic Writer, and next-AgentRun injection

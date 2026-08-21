@@ -2,39 +2,37 @@
 
 ## Current stage
 
-Subplan 57 — Atomic Preference Writer and Direct Lifecycle.
+Subplan 58 — Semantic Preference Reviewer and Inbox.
 
 ## Active subplan
 
-`feat/stage5-preference-writer`
+`feat/stage5-preference-reviewer`
 
 ## Tasks
 
-- `[x]` S57.1 Implement prepare/apply/finalize for one same-scope YAML-authoritative Writer batch.
-- `[x]` S57.2 Implement crash recovery, drift detection, retry, and visible resolution states.
-- `[x]` S57.3 Add generic enable/disable lifecycle and bounded Preference query projections.
-- `[x]` S57.4 Add approved direct management tool, CLI/REPL surfaces, and Session-local projection reset.
-- `[x]` S57.5 Translate legacy Preference Candidates through the generic Writer without mutating history.
-- `[x]` S57.6 Activate first-write migration, full-aggregate preservation, and legacy AgentRun decoding.
-- `[x]` Run focused S57 validation and implementation checkpoint.
-- `[x]` Invoke exactly one Grok `/review`; the user interrupted before its report returned, so no
-  Grok finding was accepted and the independent local review/fix pass was completed instead.
-- `[ ]` Commit closeout, fast-forward `main`, retire the branch, and activate S58.
+- `[ ]` S58.1 Build the frozen bounded Review context and persist reproducible source evidence.
+- `[ ]` S58.2 Add the minimal no-tool Preference Reviewer and deterministic scripted test double.
+- `[ ]` S58.3 Validate and persist independent Preference proposals with exact OCC/safety rules.
+- `[ ]` S58.4 Add Preference Inbox list/show/preview and accept/edit/reject decision flows through S57.
+- `[ ]` S58.5 Disable new fixed-field Preference emission from the broad legacy Reviewer while preserving
+  non-Preference and historical behavior.
+- `[ ]` Run the focused S58 validation and implementation checkpoint.
+- `[ ]` Run exactly one Grok `/review`, independently adjudicate findings, and rerun the affected gates.
+- `[ ]` Commit closeout, fast-forward `main`, retire the branch, and activate S59.
 
 ## Start condition
 
-- Start from the latest verified local `main` on `feat/stage5-preference-writer`; S56 is merged at
-  `fdce537` and v13 DDL/checksum is frozen.
+- Start from the latest verified local `main` after S57 merged and its offline gates passed; v13
+  DDL/checksum and S57 Writer authority are frozen.
 - Preserve the untracked user files `docs/research/stage5-overview-pipeline.md` and
   `docs/research/stage5-overview-review.md`; do not stage or modify them without explicit request.
-- Do not run a real Provider or access credentials during implementation subplans. The authorized
-  isolated real-Provider evaluation occurs only after S56–S61, all required reviews, the integrated
-  final review/fix, a passing full offline gate, and a clean implementation commit.
+- Do not run a real Provider or access credentials during implementation subplans. Use scripted
+  Reviewer/Provider doubles for offline validation.
 
 ## Required execution discipline
 
-Use one logical S57 task at a time on this dedicated branch. Keep v13 migration statements immutable,
-run focused tests after each behavior change, commit one verified implementation checkpoint, perform
-exactly one `$grok-delegate` `/review`, independently fix confirmed/valuable findings without a
-second review, run final gates, commit closeout, fast-forward merge, retire the branch, and activate
-S58.
+Use one logical S58 task at a time on its dedicated branch. Keep S57 Writer authority and v13 DDL
+immutable, run focused tests after each behavior change, commit one verified implementation
+checkpoint, perform exactly one `$grok-delegate` `/review`, independently fix confirmed/valuable
+findings without a second review, run final gates, commit closeout, fast-forward merge, retire the
+branch, and activate S59.
