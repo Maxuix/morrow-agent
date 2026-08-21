@@ -7,6 +7,7 @@ import pytest
 
 from morrow.adapters.state.journal import SqliteOperationalJournal
 from morrow.adapters.state.operational import OperationalStore
+from morrow.application.preferences.context import PreferenceReviewContextError
 from morrow.application.preferences.worker import ReviewWorker
 from morrow.application.turns import SessionPersistence
 from morrow.core.domain import DurableSession
@@ -32,6 +33,18 @@ def _open(tmp_path):
     store = OperationalStore(tmp_path / "state", clock=clock, maintenance_timeout=0)
     handle = store.initialize()
     return store, handle, SqliteOperationalJournal(handle), clock
+
+
+@pytest.mark.parametrize("timeout_seconds", (0, 121, float("nan"), float("inf"), True))
+def test_worker_rejects_unbounded_timeout(timeout_seconds):
+    with pytest.raises(ValueError):
+        ReviewWorker(
+            journal=None,
+            workspace_id="ws_1",
+            id_source=FixedIdSource(),
+            clock=lambda: NOW,
+            timeout_seconds=timeout_seconds,
+        )
 
 
 def _persistence(journal, handle, *, workspace_id: str, session_id: str, ids):
@@ -116,6 +129,18 @@ class SerialReviewer:
             self.first_started.set()
             await self.release_first.wait()
         return PreferenceReviewOutput()
+
+
+class RaisingRunner:
+    reviewer = ScriptedPreferenceReviewer()
+    model = MODEL
+
+    def __init__(self, error: BaseException) -> None:
+        self.error = error
+
+    async def run(self, job_id: str):
+        del job_id
+        raise self.error
 
 
 @pytest.mark.asyncio
@@ -251,6 +276,93 @@ async def test_worker_serializes_jobs_within_one_workspace(tmp_path):
         assert first_result.status == "completed"
         assert second_result.status == "completed"
         assert reviewer.calls == 2
+    finally:
+        handle.close()
+        assert store.layout.database.exists()
+
+
+@pytest.mark.asyncio
+async def test_worker_retries_provider_failures_and_exhausts_after_three_attempts(tmp_path):
+    store, handle, journal, clock = _open(tmp_path)
+    try:
+        job, _session, _persistence = await _enqueue(journal, handle)
+        reviewer = ScriptedPreferenceReviewer(
+            [
+                RuntimeError("provider one"),
+                RuntimeError("provider two"),
+                RuntimeError("provider three"),
+            ]
+        )
+        worker = ReviewWorker(
+            journal=journal,
+            workspace_id="ws_1",
+            id_source=FixedIdSource(),
+            clock=clock.now,
+            reviewer=reviewer,
+            model=MODEL,
+            lease_seconds=30,
+        )
+
+        first = await worker.drain_once()
+        assert first.status == "deferred"
+        assert first.error_code == "provider_unavailable"
+        stored = journal.get_preference_review_job("ws_1", job.job_id)
+        assert stored is not None
+        assert stored.status.value == "running"
+        assert stored.attempt_count == 1
+        assert stored.lease_expires_at == clock.value + timedelta(seconds=5)
+
+        clock.value += timedelta(seconds=5)
+        second = await worker.drain_once()
+        assert second.status == "deferred"
+        stored = journal.get_preference_review_job("ws_1", job.job_id)
+        assert stored is not None
+        assert stored.attempt_count == 2
+        assert stored.lease_expires_at == clock.value + timedelta(seconds=15)
+
+        clock.value += timedelta(seconds=15)
+        third = await worker.drain_once()
+        assert third.status == "exhausted"
+        assert third.error_code == "provider_unavailable"
+        stored = journal.get_preference_review_job("ws_1", job.job_id)
+        assert stored is not None
+        assert stored.status.value == "exhausted"
+        assert stored.attempt_count == 3
+        assert stored.failure_code.value == "provider_unavailable"
+        assert stored.lease_id is None
+        assert len(reviewer.calls) == 3
+    finally:
+        handle.close()
+        assert store.layout.database.exists()
+
+
+@pytest.mark.asyncio
+async def test_worker_marks_context_budget_as_terminal_without_retry(tmp_path):
+    store, handle, journal, clock = _open(tmp_path)
+    try:
+        job, _session, _persistence = await _enqueue(journal, handle)
+        worker = ReviewWorker(
+            journal=journal,
+            workspace_id="ws_1",
+            id_source=FixedIdSource(),
+            clock=clock.now,
+            runner=RaisingRunner(
+                PreferenceReviewContextError("context_budget", "bounded context is too large")
+            ),
+            model=MODEL,
+        )
+
+        result = await worker.drain_once()
+
+        assert result.status == "failed"
+        assert result.error_code == "context_budget"
+        stored = journal.get_preference_review_job("ws_1", job.job_id)
+        assert stored is not None
+        assert stored.status.value == "failed"
+        assert stored.failure_code.value == "context_budget"
+        assert stored.attempt_count == 1
+        assert stored.lease_id is None
+        assert journal.list_claimable_preference_review_jobs("ws_1") == ()
     finally:
         handle.close()
         assert store.layout.database.exists()

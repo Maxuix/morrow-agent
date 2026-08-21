@@ -22,13 +22,14 @@ execution, and next-AgentRun refresh.
 
 ## Active task
 
-S59.3 — add bounded retry, timeout, model fallback, and sanitized terminal failure handling on
-`feat/stage5-review-worker`.
+S59.4 — move accepted-Task Learning Review execution off the foreground path while preserving
+legacy non-Preference behavior on `feat/stage5-review-worker`.
 
 ## Next action
 
-Commit the verified S59.2 worker checkpoint, then implement only the injected timeout, retry,
-fallback, and terminal failure boundaries. Keep accepted-Task Learning Review scheduling for S59.4.
+Commit the verified S59.3 retry checkpoint, then add a shared process-local queue service that
+routes Preference jobs to `ReviewWorker` and legacy Learning Reviews to their existing runner.
+Remove only the interactive accepted-Task wait; explicit Learning commands remain foreground.
 
 ## Blockers
 
@@ -57,6 +58,17 @@ Provider/Reviewer doubles and injected time/scheduling.
 - `tests/test_review_worker.py` covers proposal completion, start/stop lease recovery, and same-
   workspace serialization. Validation passed: `894 passed, 2 deselected`; Ruff format/check,
   compileall, and `git diff --check` passed. No Provider, network, credential, or Live path was used.
+
+## S59.3 evidence
+
+- Preference Review uses a validated default 60-second timeout, finite bounded timeout inputs, and
+  deterministic 5/15-second lease backoff. Retryable provider, timeout, malformed-output,
+  lease-loss, cancellation, and persistence failures are retried at most three attempts; terminal
+  context/request-budget, safety, and frozen-snapshot failures become sanitized `failed` rows.
+- Third retryable failure becomes `exhausted` with a v13 allowlisted failure code. Failure handling
+  never stores provider messages, exceptions, or tracebacks. Tests cover retry scheduling,
+  exhaustion, terminal context budget, and timeout validation. Validation passed: `901 passed,
+  2 deselected`; Ruff format/check, compileall, CLI help, and `git diff --check` passed.
 
 ## Preserved workspace state
 

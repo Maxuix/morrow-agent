@@ -3,21 +3,32 @@
 from __future__ import annotations
 
 import asyncio
+import math
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
+from pydantic import ValidationError
+
+from morrow.application.preferences.context import PreferenceReviewContextError
+from morrow.application.preferences.proposals import PreferenceProposalPipelineError
 from morrow.application.preferences.reviewer import (
     PreferenceReviewRunner,
     PreferenceReviewRunResult,
 )
-from morrow.core.models import ModelRef
+from morrow.core.models import ModelErrorCode, ModelRef
 from morrow.core.ports import IdSource
 from morrow.core.preference_persistence_models import (
+    PreferenceReviewFailureCode,
     PreferenceReviewJob,
     PreferenceReviewJobStatus,
 )
+from morrow.core.preference_review import PreferenceReviewerError
 from morrow.core.store import StorageError, StorageErrorCode
+
+PREFERENCE_REVIEW_MAX_ATTEMPTS = 3
+PREFERENCE_REVIEW_RETRY_BACKOFF_SECONDS = (5, 15)
+PREFERENCE_REVIEW_DEFAULT_TIMEOUT_SECONDS = 60.0
 
 
 def _utc(clock: Callable[[], datetime]) -> datetime:
@@ -56,9 +67,17 @@ class ReviewWorker:
         runner: PreferenceReviewRunner | None = None,
         reviewer=None,
         model: ModelRef | None = None,
-        timeout_seconds: float = 60.0,
+        timeout_seconds: float = PREFERENCE_REVIEW_DEFAULT_TIMEOUT_SECONDS,
         lease_seconds: int = 120,
     ) -> None:
+        if (
+            isinstance(timeout_seconds, bool)
+            or not isinstance(timeout_seconds, (int, float))
+            or not math.isfinite(timeout_seconds)
+            or timeout_seconds <= 0
+            or timeout_seconds > 120
+        ):
+            raise ValueError("Preference Review timeout is outside the supported range")
         if isinstance(lease_seconds, bool) or not isinstance(lease_seconds, int):
             raise ValueError("Preference Review lease is invalid")
         if lease_seconds <= 0 or lease_seconds > 3_600:
@@ -128,13 +147,14 @@ class ReviewWorker:
                 return ReviewWorkerResult(status="idle")
             candidate = candidates[0]
             try:
+                started_at = _utc(self.clock)
                 claimed = self.repository.claim_preference_review_job(
                     self.workspace_id,
                     candidate.job_id,
                     expected_row_version=candidate.row_version,
                     lease_id=self.id_source.new_id("lease"),
-                    lease_expires_at=_utc(self.clock) + timedelta(seconds=self.lease_seconds),
-                    started_at=_utc(self.clock),
+                    lease_expires_at=started_at + timedelta(seconds=self.lease_seconds),
+                    started_at=started_at,
                 )
             except StorageError as exc:
                 return ReviewWorkerResult(status="busy", error_code=exc.code.value)
@@ -144,17 +164,36 @@ class ReviewWorker:
                 result = await self.runner.run(claimed.job_id)
                 completed = self._complete(claimed, result)
             except asyncio.CancelledError:
+                try:
+                    self._record_failure(claimed, PreferenceReviewFailureCode.CANCELLED)
+                except Exception:
+                    pass
                 raise
             except Exception as exc:
-                current = self.repository.get_preference_review_job(
-                    self.workspace_id, claimed.job_id
-                )
+                failure_code = self._failure_code(exc)
+                try:
+                    current = self._record_failure(claimed, failure_code)
+                except Exception:
+                    current = self._current_or_claimed(claimed)
+                    return ReviewWorkerResult(
+                        status="deferred",
+                        job=current,
+                        error_code=PreferenceReviewFailureCode.PERSISTENCE.value,
+                    )
+                terminal = current.status in {
+                    PreferenceReviewJobStatus.FAILED,
+                    PreferenceReviewJobStatus.EXHAUSTED,
+                }
                 return ReviewWorkerResult(
-                    status="deferred",
-                    job=current or claimed,
-                    error_code=(
-                        exc.code.value if isinstance(exc, StorageError) else "review_failed"
+                    status=(
+                        "exhausted"
+                        if current.status is PreferenceReviewJobStatus.EXHAUSTED
+                        else "failed"
+                        if terminal
+                        else "deferred"
                     ),
+                    job=current,
+                    error_code=failure_code.value,
                 )
             return ReviewWorkerResult(
                 status="completed",
@@ -163,6 +202,110 @@ class ReviewWorker:
                 duplicate_count=result.pipeline.duplicate_count,
                 suppressed_count=result.pipeline.suppressed_count,
             )
+
+    def _current_or_claimed(self, claimed: PreferenceReviewJob) -> PreferenceReviewJob:
+        try:
+            current = self.repository.get_preference_review_job(self.workspace_id, claimed.job_id)
+        except Exception:
+            current = None
+        return current or claimed
+
+    def _record_failure(
+        self,
+        claimed: PreferenceReviewJob,
+        code: PreferenceReviewFailureCode,
+    ) -> PreferenceReviewJob:
+        current = self.repository.get_preference_review_job(self.workspace_id, claimed.job_id)
+        if current is None:
+            raise StorageError(StorageErrorCode.NOT_FOUND, "Preference Review job is missing")
+        now = _utc(self.clock)
+        if (
+            current.status is not PreferenceReviewJobStatus.RUNNING
+            or current.lease_id != claimed.lease_id
+            or current.lease_expires_at is None
+            or current.lease_expires_at <= now
+        ):
+            return current
+
+        retryable = code in {
+            PreferenceReviewFailureCode.TIMEOUT,
+            PreferenceReviewFailureCode.PROVIDER_UNAVAILABLE,
+            PreferenceReviewFailureCode.MALFORMED_OUTPUT,
+            PreferenceReviewFailureCode.LEASE_LOST,
+            PreferenceReviewFailureCode.CANCELLED,
+            PreferenceReviewFailureCode.PERSISTENCE,
+        }
+        if retryable and current.attempt_count < PREFERENCE_REVIEW_MAX_ATTEMPTS:
+            delay = self._retry_delay(current.attempt_count)
+            updated = current.model_copy(
+                update={
+                    "lease_expires_at": now + timedelta(seconds=delay),
+                    "failure_code": None,
+                    "row_version": current.row_version + 1,
+                }
+            )
+        else:
+            status = (
+                PreferenceReviewJobStatus.EXHAUSTED
+                if retryable
+                else PreferenceReviewJobStatus.FAILED
+            )
+            updated = current.model_copy(
+                update={
+                    "status": status,
+                    "lease_id": None,
+                    "lease_expires_at": None,
+                    "completed_at": max(now, current.created_at),
+                    "failure_code": code,
+                    "row_version": current.row_version + 1,
+                }
+            )
+        return self.repository.save_preference_review_job(
+            self.workspace_id,
+            updated,
+            expected_row_version=current.row_version,
+        )
+
+    @staticmethod
+    def _retry_delay(attempt_count: int) -> int:
+        index = max(0, min(attempt_count - 1, len(PREFERENCE_REVIEW_RETRY_BACKOFF_SECONDS) - 1))
+        return PREFERENCE_REVIEW_RETRY_BACKOFF_SECONDS[index]
+
+    @staticmethod
+    def _failure_code(exc: BaseException) -> PreferenceReviewFailureCode:
+        if isinstance(exc, PreferenceReviewContextError):
+            if exc.code == "context_budget":
+                return PreferenceReviewFailureCode.CONTEXT_BUDGET
+            if exc.code == "safety_rejected":
+                return PreferenceReviewFailureCode.SAFETY_REJECTED
+            return PreferenceReviewFailureCode.SNAPSHOT_INVALID
+        if isinstance(exc, PreferenceReviewerError):
+            if exc.category in {"request_budget", "response_budget", "request_measurement"}:
+                return PreferenceReviewFailureCode.REQUEST_BUDGET
+            if exc.category == "context_validation":
+                return PreferenceReviewFailureCode.SNAPSHOT_INVALID
+            if exc.code is ModelErrorCode.TIMEOUT:
+                return PreferenceReviewFailureCode.TIMEOUT
+            if exc.code is ModelErrorCode.INVALID_RESPONSE:
+                return PreferenceReviewFailureCode.MALFORMED_OUTPUT
+            return PreferenceReviewFailureCode.PROVIDER_UNAVAILABLE
+        if isinstance(exc, PreferenceProposalPipelineError):
+            if exc.code == "malformed_output":
+                return PreferenceReviewFailureCode.MALFORMED_OUTPUT
+            if exc.code in {"missing_reference", "source_mismatch", "evidence_invalid"}:
+                return PreferenceReviewFailureCode.SNAPSHOT_INVALID
+            return PreferenceReviewFailureCode.PERSISTENCE
+        if isinstance(exc, ValidationError):
+            return PreferenceReviewFailureCode.MALFORMED_OUTPUT
+        if isinstance(exc, TimeoutError):
+            return PreferenceReviewFailureCode.TIMEOUT
+        if isinstance(exc, StorageError):
+            if exc.code is StorageErrorCode.BUSY:
+                return PreferenceReviewFailureCode.LEASE_LOST
+            return PreferenceReviewFailureCode.PERSISTENCE
+        if isinstance(exc, (ValueError, TypeError)):
+            return PreferenceReviewFailureCode.SNAPSHOT_INVALID
+        return PreferenceReviewFailureCode.PROVIDER_UNAVAILABLE
 
     async def _run(self) -> None:
         while not self._stopping:

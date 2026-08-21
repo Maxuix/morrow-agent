@@ -8,6 +8,7 @@ pipeline for offline/manual execution.
 from __future__ import annotations
 
 import asyncio
+import math
 from dataclasses import dataclass
 
 from morrow.application.preferences.context import PreferenceReviewContextBuilder
@@ -60,11 +61,15 @@ class PreferenceReviewRunner:
         clock,
         reviewer=None,
         model: ModelRef | None = None,
-        timeout_seconds: float = 15.0,
+        timeout_seconds: float = 60.0,
         context_builder: PreferenceReviewContextBuilder | None = None,
         pipeline: PreferenceProposalPipeline | None = None,
     ) -> None:
-        if not isinstance(timeout_seconds, (int, float)) or isinstance(timeout_seconds, bool):
+        if (
+            isinstance(timeout_seconds, bool)
+            or not isinstance(timeout_seconds, (int, float))
+            or not math.isfinite(timeout_seconds)
+        ):
             raise ValueError("Preference Review timeout is invalid")
         if timeout_seconds <= 0 or timeout_seconds > 120:
             raise ValueError("Preference Review timeout is outside the supported range")

@@ -2081,3 +2081,14 @@
   and same-workspace serialization. S59.2 validation passed: `894 passed, 2 deselected`, Ruff
   format/check, compileall, and `git diff --check`. No Provider, network, credential, or Live path
   was used.
+
+## 2026-08-22 — Subplan 59.3 retry and failure boundaries completed
+
+- Preference Review now validates a finite bounded timeout with a 60-second default. Retryable
+  provider, timeout, malformed-output, lease-loss, cancellation, and persistence failures use
+  deterministic 5/15-second lease backoff and at most three attempts; terminal context/request
+  budget, safety, and frozen-snapshot failures close as sanitized `failed` rows.
+- A third retryable failure closes as `exhausted` with only the v13 allowlisted failure code;
+  provider messages and tracebacks never enter the Job. Added regression coverage for retry,
+  exhaustion, terminal context budget, and timeout validation. S59.3 validation passed `901
+  passed, 2 deselected`, Ruff format/check, compileall, CLI help, and `git diff --check`.
