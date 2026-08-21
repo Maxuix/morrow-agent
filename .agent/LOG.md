@@ -2092,3 +2092,27 @@
   provider messages and tracebacks never enter the Job. Added regression coverage for retry,
   exhaustion, terminal context budget, and timeout validation. S59.3 validation passed `901
   passed, 2 deselected`, Ruff format/check, compileall, CLI help, and `git diff --check`.
+
+## 2026-08-22 — Subplan 59.4/59.5 Review Worker implementation checkpoint
+
+- Moved accepted-Task legacy Learning Review execution off the interactive foreground path. The
+  accepted Task transaction still owns creation of the pending `LearningReview`; after commit the
+  API only wakes the shared process-local `ReviewWorker`. The worker routes Preference jobs through
+  the leased Preference runner and pending legacy reviews through `LearningReviewRunner` without
+  pre-claiming the legacy row. Explicit `/learn review` and `/learn retry` remain foreground paths.
+- Added sanitized Preference Review job query projections and bounded list/show/status/retry
+  surfaces. Retry resets only failed/exhausted jobs with an allowlisted retryable failure code to a
+  fresh pending attempt budget; the immutable frozen snapshot and idempotent proposal pipeline are
+  reused, so retry does not duplicate proposals.
+- Added a bounded one-shot `preferences inbox run-pending` command that reports post-run pending and
+  running counts and explicitly emits `daemon: false`. The REPL drains process-local notices only
+  for new proposals or exhausted retries; zero-operation Review completion is quiet. Reviewer
+  context, raw output, provider details, and exceptions remain outside public AgentEvents and query
+  projections.
+- Corrected focused validation passed: `66 passed`; full offline validation passed: `910 passed,
+  2 deselected`; Ruff format/check, compileall, `morrow learning --help`, and `git diff --check`
+  passed. The S59 plan refers to `tests/test_turn_lifecycle.py` and `tests/test_cli.py`, neither of
+  which exists in this repository; the actual corresponding test files were used.
+- The required single Grok `/review` could not be invoked because no Grok tool or skill is exposed
+  in the current thread (`ALL_TOOLS` contains no Grok capability). No review result is being claimed;
+  the implementation checkpoint remains ready for review if that capability is restored.

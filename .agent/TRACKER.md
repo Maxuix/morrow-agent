@@ -22,14 +22,16 @@ execution, and next-AgentRun refresh.
 
 ## Active task
 
-S59.4 — move accepted-Task Learning Review execution off the foreground path while preserving
-legacy non-Preference behavior on `feat/stage5-review-worker`.
+S59 implementation checkpoint is complete on `feat/stage5-review-worker`. S59.4 and S59.5 are
+implemented and locally verified; the planned Grok review is pending because that capability is not
+exposed in the current thread.
 
 ## Next action
 
-Commit the verified S59.3 retry checkpoint, then add a shared process-local queue service that
-routes Preference jobs to `ReviewWorker` and legacy Learning Reviews to their existing runner.
-Remove only the interactive accepted-Task wait; explicit Learning commands remain foreground.
+Keep the verified S59 implementation checkpoint ready for the single planned Grok review. If the
+capability becomes available, invoke it once and independently adjudicate its findings; otherwise
+record the unavailable-tool blocker rather than claiming a review. Do not stage the two untracked
+research documents.
 
 ## Blockers
 
@@ -69,6 +71,31 @@ Provider/Reviewer doubles and injected time/scheduling.
   never stores provider messages, exceptions, or tracebacks. Tests cover retry scheduling,
   exhaustion, terminal context budget, and timeout validation. Validation passed: `901 passed,
   2 deselected`; Ruff format/check, compileall, CLI help, and `git diff --check` passed.
+
+## S59.4 evidence
+
+- `OperationalApplicationService.task_accept` wakes the process-local worker only after the atomic
+  accepted-Task transaction commits. The REPL now reports accepted-Task Learning Review as queued and
+  continues; explicit `/learn review` and `/learn retry` remain foreground commands.
+- `ReviewWorker` serializes one workspace while routing Preference jobs to the leased Preference
+  runner and pending legacy Learning Reviews to `LearningReviewRunner`, which remains the sole legacy
+  claim authority. Bootstrap and REPL composition start/stop the same worker lifecycle.
+- `tests/test_stage5_review_pipeline.py` covers post-commit wakeup and legacy Learning routing. The
+  accepted-Task path no longer waits on a Reviewer.
+
+## S59.5 evidence
+
+- Added bounded Preference job list/show/status projections that omit frozen snapshot JSON and
+  Reviewer/provider metadata, plus retry support limited to retryable terminal failure codes.
+- Added explicit `preferences inbox jobs|job|status|retry|run-pending` surfaces. `run-pending` is a
+  bounded one-shot drain and reports remaining pending/running work with `daemon: false`; no hidden
+  daemon or external scheduler was added.
+- Added process-local sanitized notices for new Preference proposals and exhausted retries. Zero-op
+  completion remains quiet, and no Reviewer detail is emitted through `AgentEvent`.
+- Corrected focused validation passed: `66 passed`; full offline validation passed: `910 passed,
+  2 deselected`; Ruff format/check, compileall, `morrow learning --help`, and `git diff --check`
+  passed. The plan's referenced `tests/test_turn_lifecycle.py` and `tests/test_cli.py` do not exist
+  in this tree; the corresponding existing tests were used instead.
 
 ## Preserved workspace state
 

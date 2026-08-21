@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import math
+from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -16,6 +17,7 @@ from morrow.application.preferences.reviewer import (
     PreferenceReviewRunner,
     PreferenceReviewRunResult,
 )
+from morrow.core.learning import LearningReviewStatus
 from morrow.core.models import ModelErrorCode, ModelRef
 from morrow.core.ports import IdSource
 from morrow.core.preference_persistence_models import (
@@ -29,6 +31,16 @@ from morrow.core.store import StorageError, StorageErrorCode
 PREFERENCE_REVIEW_MAX_ATTEMPTS = 3
 PREFERENCE_REVIEW_RETRY_BACKOFF_SECONDS = (5, 15)
 PREFERENCE_REVIEW_DEFAULT_TIMEOUT_SECONDS = 60.0
+PREFERENCE_REVIEW_RETRYABLE_FAILURES = frozenset(
+    {
+        PreferenceReviewFailureCode.TIMEOUT,
+        PreferenceReviewFailureCode.PROVIDER_UNAVAILABLE,
+        PreferenceReviewFailureCode.MALFORMED_OUTPUT,
+        PreferenceReviewFailureCode.LEASE_LOST,
+        PreferenceReviewFailureCode.CANCELLED,
+        PreferenceReviewFailureCode.PERSISTENCE,
+    }
+)
 
 
 def _utc(clock: Callable[[], datetime]) -> datetime:
@@ -48,14 +60,25 @@ class ReviewWorkerResult:
     duplicate_count: int = 0
     suppressed_count: int = 0
     error_code: str | None = None
+    learning_review_id: str | None = None
 
     @property
     def job_id(self) -> str | None:
         return self.job.job_id if self.job is not None else None
 
 
+@dataclass(frozen=True)
+class ReviewWorkerNotice:
+    """Sanitized process-local notice safe for rendering between foreground prompts."""
+
+    kind: str
+    job_id: str
+    proposal_count: int = 0
+    error_code: str | None = None
+
+
 class ReviewWorker:
-    """Run one workspace's durable Preference queue without becoming a scheduler."""
+    """Run one workspace's durable Review queues without becoming a scheduler."""
 
     def __init__(
         self,
@@ -67,6 +90,7 @@ class ReviewWorker:
         runner: PreferenceReviewRunner | None = None,
         reviewer=None,
         model: ModelRef | None = None,
+        learning_runner=None,
         timeout_seconds: float = PREFERENCE_REVIEW_DEFAULT_TIMEOUT_SECONDS,
         lease_seconds: int = 120,
     ) -> None:
@@ -84,10 +108,12 @@ class ReviewWorker:
             raise ValueError("Preference Review lease is outside the supported range")
         self.journal = journal
         self.repository = getattr(journal, "preference_journal", journal)
+        self.learning_repository = journal
         self.workspace_id = workspace_id
         self.id_source = id_source
         self.clock = clock
         self.lease_seconds = lease_seconds
+        self.learning_runner = learning_runner
         self.runner = runner or PreferenceReviewRunner(
             journal=journal,
             workspace_id=workspace_id,
@@ -101,6 +127,7 @@ class ReviewWorker:
         self._wake_event = asyncio.Event()
         self._task: asyncio.Task[None] | None = None
         self._stopping = False
+        self._notices: deque[ReviewWorkerNotice] = deque()
 
     @property
     def running(self) -> bool:
@@ -137,71 +164,168 @@ class ReviewWorker:
             pass
 
     async def drain_once(self) -> ReviewWorkerResult:
-        """Claim and execute at most one pending or expired Preference Review job."""
+        """Claim and execute at most one pending or expired Review item."""
 
         async with self._workspace_lock:
             candidates = self.repository.list_claimable_preference_review_jobs(
                 self.workspace_id, limit=1
             )
-            if not candidates:
-                return ReviewWorkerResult(status="idle")
-            candidate = candidates[0]
-            try:
-                started_at = _utc(self.clock)
-                claimed = self.repository.claim_preference_review_job(
+            if candidates:
+                result = await self._drain_preference(candidates[0])
+                self._record_notice(result)
+                return result
+            if self.learning_runner is not None and hasattr(
+                self.learning_repository, "list_learning_reviews"
+            ):
+                pending = self.learning_repository.list_learning_reviews(
                     self.workspace_id,
-                    candidate.job_id,
-                    expected_row_version=candidate.row_version,
-                    lease_id=self.id_source.new_id("lease"),
-                    lease_expires_at=started_at + timedelta(seconds=self.lease_seconds),
-                    started_at=started_at,
+                    status=LearningReviewStatus.PENDING,
+                    limit=1,
                 )
-            except StorageError as exc:
-                return ReviewWorkerResult(status="busy", error_code=exc.code.value)
+                if pending:
+                    return await self._drain_learning(pending[0].review_id)
+            return ReviewWorkerResult(status="idle")
 
+    async def run_pending(self, *, limit: int = 100) -> tuple[ReviewWorkerResult, ...]:
+        """Run a bounded one-shot drain; no task is left running after this returns."""
+
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 500:
+            raise ValueError("Review pending-run limit is invalid")
+        results: list[ReviewWorkerResult] = []
+        for _ in range(limit):
+            result = await self.drain_once()
+            if result.status == "idle":
+                break
+            results.append(result)
+            if result.status != "completed":
+                break
+        return tuple(results)
+
+    def retry(self, job_id: str) -> PreferenceReviewJob:
+        """Reset one retryable terminal job to pending without running a hidden background task."""
+
+        current = self.repository.get_preference_review_job(self.workspace_id, job_id)
+        if current is None:
+            raise StorageError(StorageErrorCode.NOT_FOUND, "Preference Review job is missing")
+        if current.status not in {
+            PreferenceReviewJobStatus.FAILED,
+            PreferenceReviewJobStatus.EXHAUSTED,
+        }:
+            raise ValueError("only a failed or exhausted Preference Review can be retried")
+        if current.failure_code not in PREFERENCE_REVIEW_RETRYABLE_FAILURES:
+            raise ValueError("Preference Review failure is not retryable")
+        pending = current.model_copy(
+            update={
+                "status": PreferenceReviewJobStatus.PENDING,
+                "lease_id": None,
+                "lease_expires_at": None,
+                "attempt_count": 0,
+                "started_at": None,
+                "completed_at": None,
+                "failure_code": None,
+                "row_version": current.row_version + 1,
+            }
+        )
+        return self.repository.save_preference_review_job(
+            self.workspace_id,
+            pending,
+            expected_row_version=current.row_version,
+        )
+
+    def drain_notices(self) -> tuple[ReviewWorkerNotice, ...]:
+        """Return and clear notices without exposing Reviewer context or raw model output."""
+
+        notices = tuple(self._notices)
+        self._notices.clear()
+        return notices
+
+    async def _drain_preference(self, candidate: PreferenceReviewJob) -> ReviewWorkerResult:
+        """Claim and execute one Preference job while holding the workspace gate."""
+
+        try:
+            started_at = _utc(self.clock)
+            claimed = self.repository.claim_preference_review_job(
+                self.workspace_id,
+                candidate.job_id,
+                expected_row_version=candidate.row_version,
+                lease_id=self.id_source.new_id("lease"),
+                lease_expires_at=started_at + timedelta(seconds=self.lease_seconds),
+                started_at=started_at,
+            )
+        except StorageError as exc:
+            return ReviewWorkerResult(status="busy", error_code=exc.code.value)
+
+        try:
+            claimed = self._record_reviewer(claimed)
+            result = await self.runner.run(claimed.job_id)
+            completed = self._complete(claimed, result)
+        except asyncio.CancelledError:
             try:
-                claimed = self._record_reviewer(claimed)
-                result = await self.runner.run(claimed.job_id)
-                completed = self._complete(claimed, result)
-            except asyncio.CancelledError:
-                try:
-                    self._record_failure(claimed, PreferenceReviewFailureCode.CANCELLED)
-                except Exception:
-                    pass
-                raise
-            except Exception as exc:
-                failure_code = self._failure_code(exc)
-                try:
-                    current = self._record_failure(claimed, failure_code)
-                except Exception:
-                    current = self._current_or_claimed(claimed)
-                    return ReviewWorkerResult(
-                        status="deferred",
-                        job=current,
-                        error_code=PreferenceReviewFailureCode.PERSISTENCE.value,
-                    )
-                terminal = current.status in {
-                    PreferenceReviewJobStatus.FAILED,
-                    PreferenceReviewJobStatus.EXHAUSTED,
-                }
+                self._record_failure(claimed, PreferenceReviewFailureCode.CANCELLED)
+            except Exception:
+                pass
+            raise
+        except Exception as exc:
+            failure_code = self._failure_code(exc)
+            try:
+                current = self._record_failure(claimed, failure_code)
+            except Exception:
+                current = self._current_or_claimed(claimed)
                 return ReviewWorkerResult(
-                    status=(
-                        "exhausted"
-                        if current.status is PreferenceReviewJobStatus.EXHAUSTED
-                        else "failed"
-                        if terminal
-                        else "deferred"
-                    ),
+                    status="deferred",
                     job=current,
-                    error_code=failure_code.value,
+                    error_code=PreferenceReviewFailureCode.PERSISTENCE.value,
                 )
+            terminal = current.status in {
+                PreferenceReviewJobStatus.FAILED,
+                PreferenceReviewJobStatus.EXHAUSTED,
+            }
+            return ReviewWorkerResult(
+                status=(
+                    "exhausted"
+                    if current.status is PreferenceReviewJobStatus.EXHAUSTED
+                    else "failed"
+                    if terminal
+                    else "deferred"
+                ),
+                job=current,
+                error_code=failure_code.value,
+            )
+        return ReviewWorkerResult(
+            status="completed",
+            job=completed,
+            proposal_count=len(result.proposals),
+            duplicate_count=result.pipeline.duplicate_count,
+            suppressed_count=result.pipeline.suppressed_count,
+        )
+
+    async def _drain_learning(self, review_id: str) -> ReviewWorkerResult:
+        """Run one legacy Learning Review; its runner owns claim and attempt mutation."""
+
+        try:
+            result = await self.learning_runner.run(review_id)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            return ReviewWorkerResult(
+                status="deferred",
+                learning_review_id=review_id,
+                error_code="learning_review_unavailable",
+            )
+        review = result.review
+        if review.status is LearningReviewStatus.COMPLETED:
             return ReviewWorkerResult(
                 status="completed",
-                job=completed,
-                proposal_count=len(result.proposals),
-                duplicate_count=result.pipeline.duplicate_count,
-                suppressed_count=result.pipeline.suppressed_count,
+                learning_review_id=review.review_id,
+                proposal_count=len(result.candidate_ids),
+                duplicate_count=result.duplicate_count,
+                suppressed_count=result.suppressed_count,
             )
+        return ReviewWorkerResult(
+            status="failed" if review.status is LearningReviewStatus.FAILED else "deferred",
+            learning_review_id=review.review_id,
+            error_code=(review.failure_code.value if review.failure_code is not None else None),
+        )
 
     def _current_or_claimed(self, claimed: PreferenceReviewJob) -> PreferenceReviewJob:
         try:
@@ -227,14 +351,7 @@ class ReviewWorker:
         ):
             return current
 
-        retryable = code in {
-            PreferenceReviewFailureCode.TIMEOUT,
-            PreferenceReviewFailureCode.PROVIDER_UNAVAILABLE,
-            PreferenceReviewFailureCode.MALFORMED_OUTPUT,
-            PreferenceReviewFailureCode.LEASE_LOST,
-            PreferenceReviewFailureCode.CANCELLED,
-            PreferenceReviewFailureCode.PERSISTENCE,
-        }
+        retryable = code in PREFERENCE_REVIEW_RETRYABLE_FAILURES
         if retryable and current.attempt_count < PREFERENCE_REVIEW_MAX_ATTEMPTS:
             delay = self._retry_delay(current.attempt_count)
             updated = current.model_copy(
@@ -316,6 +433,27 @@ class ReviewWorker:
                 if result.status != "completed":
                     break
 
+    def _record_notice(self, result: ReviewWorkerResult) -> None:
+        job_id = result.job_id
+        if job_id is None:
+            return
+        if result.status == "completed" and result.proposal_count:
+            self._notices.append(
+                ReviewWorkerNotice(
+                    kind="proposals",
+                    job_id=job_id,
+                    proposal_count=result.proposal_count,
+                )
+            )
+        elif result.status == "exhausted":
+            self._notices.append(
+                ReviewWorkerNotice(
+                    kind="exhausted",
+                    job_id=job_id,
+                    error_code=result.error_code,
+                )
+            )
+
     def _record_reviewer(self, claimed: PreferenceReviewJob) -> PreferenceReviewJob:
         current = self.repository.get_preference_review_job(self.workspace_id, claimed.job_id)
         self._assert_lease(current, claimed)
@@ -380,4 +518,12 @@ class ReviewWorker:
             raise StorageError(StorageErrorCode.BUSY, "Preference Review lease is lost")
 
 
-__all__ = ["ReviewWorker", "ReviewWorkerResult"]
+__all__ = [
+    "PREFERENCE_REVIEW_DEFAULT_TIMEOUT_SECONDS",
+    "PREFERENCE_REVIEW_MAX_ATTEMPTS",
+    "PREFERENCE_REVIEW_RETRYABLE_FAILURES",
+    "PREFERENCE_REVIEW_RETRY_BACKOFF_SECONDS",
+    "ReviewWorker",
+    "ReviewWorkerNotice",
+    "ReviewWorkerResult",
+]

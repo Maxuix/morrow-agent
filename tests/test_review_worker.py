@@ -7,6 +7,7 @@ import pytest
 
 from morrow.adapters.state.journal import SqliteOperationalJournal
 from morrow.adapters.state.operational import OperationalStore
+from morrow.application.api import OperationalApplicationService
 from morrow.application.preferences.context import PreferenceReviewContextError
 from morrow.application.preferences.worker import ReviewWorker
 from morrow.application.turns import SessionPersistence
@@ -194,6 +195,46 @@ async def test_worker_claims_runs_and_finalizes_proposals(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_worker_emits_only_sanitized_proposal_notice(tmp_path):
+    store, handle, journal, clock = _open(tmp_path)
+    try:
+        job, _session, _persistence = await _enqueue(journal, handle)
+        evidence = journal.get_preference_evidence_for_job("ws_1", job.job_id)
+        assert evidence is not None
+        reviewer = ScriptedPreferenceReviewer(
+            [
+                PreferenceReviewOutput(
+                    operations=(
+                        PreferenceOperation(
+                            operation="add",
+                            scope="workspace",
+                            statement="先给出可运行代码。",
+                            evidence_ids=(evidence.evidence_id,),
+                        ),
+                    )
+                )
+            ]
+        )
+        worker = ReviewWorker(
+            journal=journal,
+            workspace_id="ws_1",
+            id_source=FixedIdSource(),
+            clock=clock.now,
+            reviewer=reviewer,
+            model=MODEL,
+        )
+
+        result = await worker.drain_once()
+
+        assert result.status == "completed"
+        assert worker.drain_notices()[0].kind == "proposals"
+        assert worker.drain_notices() == ()
+    finally:
+        handle.close()
+        assert store.layout.database.exists()
+
+
+@pytest.mark.asyncio
 async def test_worker_stop_leaves_lease_for_expiry_reclaim(tmp_path):
     store, handle, journal, clock = _open(tmp_path)
     try:
@@ -363,6 +404,81 @@ async def test_worker_marks_context_budget_as_terminal_without_retry(tmp_path):
         assert stored.attempt_count == 1
         assert stored.lease_id is None
         assert journal.list_claimable_preference_review_jobs("ws_1") == ()
+    finally:
+        handle.close()
+        assert store.layout.database.exists()
+
+
+@pytest.mark.asyncio
+async def test_worker_manual_retry_resets_only_retryable_terminal_jobs(tmp_path):
+    store, handle, journal, clock = _open(tmp_path)
+    try:
+        job, _session, _persistence = await _enqueue(journal, handle)
+        worker = ReviewWorker(
+            journal=journal,
+            workspace_id="ws_1",
+            id_source=FixedIdSource(),
+            clock=clock.now,
+            runner=RaisingRunner(RuntimeError("provider unavailable")),
+            model=MODEL,
+            lease_seconds=30,
+        )
+
+        await worker.drain_once()
+        clock.value += timedelta(seconds=5)
+        await worker.drain_once()
+        clock.value += timedelta(seconds=15)
+        exhausted = await worker.drain_once()
+        assert exhausted.status == "exhausted"
+        assert worker.drain_notices()[0].kind == "exhausted"
+
+        pending = worker.retry(job.job_id)
+        assert pending.status.value == "pending"
+        assert pending.attempt_count == 0
+        assert pending.failure_code is None
+        assert pending.completed_at is None
+
+        terminal_worker = ReviewWorker(
+            journal=journal,
+            workspace_id="ws_1",
+            id_source=FixedIdSource(),
+            clock=clock.now,
+            runner=RaisingRunner(PreferenceReviewContextError("context_budget", "bounded")),
+            model=MODEL,
+        )
+        failed = await terminal_worker.drain_once()
+        assert failed.status == "failed"
+        with pytest.raises(ValueError, match="not retryable"):
+            terminal_worker.retry(job.job_id)
+    finally:
+        handle.close()
+        assert store.layout.database.exists()
+
+
+@pytest.mark.asyncio
+async def test_preference_review_job_queries_omit_frozen_context_and_reviewer_details(tmp_path):
+    store, handle, journal, clock = _open(tmp_path)
+    try:
+        job, _session, _persistence = await _enqueue(journal, handle)
+        api = OperationalApplicationService(
+            journal=journal,
+            workspace_id="ws_1",
+            id_source=FixedIdSource(),
+            clock=clock.now,
+        )
+
+        page = api.list_preference_review_jobs(limit=10)
+        view = page.items[0]
+        shown = api.get_preference_review_job_view(job.job_id)
+        status = api.preference_review_status()
+
+        assert view.job_id == job.job_id
+        assert shown is not None
+        assert shown.evidence_id is not None
+        assert not hasattr(view, "active_snapshot_json")
+        assert not hasattr(view, "reviewer_provider_id")
+        assert status.pending == 1
+        assert status.total == 1
     finally:
         handle.close()
         assert store.layout.database.exists()

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import nullcontext
+from types import SimpleNamespace
 
 import pytest
 
@@ -233,6 +234,112 @@ async def test_clean_primary_eof_exits_once(monkeypatch):
     )
     assert code == 0
     assert terminal.prompt_count == 1
+
+
+@pytest.mark.asyncio
+async def test_repl_starts_and_stops_the_process_local_review_worker(monkeypatch):
+    class WorkerLifecycle:
+        def __init__(self) -> None:
+            self.started = 0
+            self.stopped = 0
+
+        async def start(self) -> None:
+            self.started += 1
+
+        async def stop(self) -> None:
+            self.stopped += 1
+
+    terminal = ScriptedTerminal([EOFError()])
+    install_terminal(monkeypatch, terminal)
+    worker = WorkerLifecycle()
+
+    code = await terminal_module.run_repl(
+        OrchestratorStub({"/exit": "exit"}),
+        session=Session(session_id="s"),
+        review_worker=worker,
+    )
+
+    assert code == 0
+    assert worker.started == 1
+    assert worker.stopped == 1
+
+
+@pytest.mark.asyncio
+async def test_repl_renders_only_worker_proposal_and_exhaustion_notices(monkeypatch):
+    class WorkerWithNotices:
+        def __init__(self) -> None:
+            self.started = 0
+            self.stopped = 0
+            self.read = False
+
+        async def start(self) -> None:
+            self.started += 1
+
+        async def stop(self) -> None:
+            self.stopped += 1
+
+        def drain_notices(self):
+            if self.read:
+                return ()
+            self.read = True
+            return (
+                SimpleNamespace(kind="proposals", proposal_count=2, job_id="prjob_1"),
+                SimpleNamespace(
+                    kind="exhausted", proposal_count=0, job_id="prjob_2", error_code="timeout"
+                ),
+            )
+
+    terminal = ScriptedTerminal([EOFError()])
+    install_terminal(monkeypatch, terminal)
+    worker = WorkerWithNotices()
+
+    code = await terminal_module.run_repl(
+        OrchestratorStub({"/exit": "exit"}),
+        session=Session(session_id="s"),
+        review_worker=worker,
+    )
+
+    assert code == 0
+    joined = "\n".join(terminal.console.lines)
+    assert "2 个新 proposal" in joined
+    assert "重试已耗尽" in joined
+    assert "timeout" in joined
+    assert worker.started == 1
+    assert worker.stopped == 1
+
+
+@pytest.mark.asyncio
+async def test_pending_learning_review_notice_does_not_run_it_in_foreground(monkeypatch):
+    class PendingOrchestrator(OrchestratorStub):
+        async def stream(self, text):
+            if text == "/accept":
+                yield DispatchResult(
+                    action="learning_review_pending",
+                    value=SimpleNamespace(learning_review_id="lrv_1"),
+                )
+                return
+            async for item in super().stream(text):
+                yield item
+
+    class CommandServiceSpy:
+        def __init__(self) -> None:
+            self.run_calls = 0
+
+        async def run_learning_review(self, review_id):
+            self.run_calls += 1
+            raise AssertionError(review_id)
+
+    terminal = ScriptedTerminal(["/accept", "/exit"])
+    install_terminal(monkeypatch, terminal)
+    commands = CommandServiceSpy()
+    code = await terminal_module.run_repl(
+        PendingOrchestrator({"/exit": "exit"}, command_service=commands),
+        session=Session(session_id="s"),
+    )
+
+    assert code == 0
+    assert commands.run_calls == 0
+    assert any("继续处理前台输入" in line for line in terminal.console.lines)
 
 
 @pytest.mark.asyncio

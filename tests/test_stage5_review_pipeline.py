@@ -13,6 +13,7 @@ from morrow.adapters.state.operational import OperationalStore
 from morrow.application.api import OperationalApplicationService
 from morrow.application.learning.candidate_pipeline import LearningCandidatePipeline
 from morrow.application.learning.context import LearningContextBuilder
+from morrow.application.preferences.worker import ReviewWorker
 from morrow.core.application import (
     ApplicationCommandResult,
     ApplicationError,
@@ -40,7 +41,7 @@ from morrow.core.learning import (
 from morrow.core.learning_payloads import LearningCandidateDraft
 from morrow.core.learning_ports import LEARNING_CONTEXT_MAX_RENDERED_CHARS
 from morrow.core.models import ModelRef
-from morrow.testing import FixedClock, FixedIdSource
+from morrow.testing import FixedClock, FixedIdSource, ScriptedLearningReviewer
 
 NOW = datetime(2026, 1, 1, tzinfo=UTC)
 
@@ -83,7 +84,7 @@ class EmptyReviewer:
         return CandidateDraftBatch()
 
 
-def _api(tmp_path, *, reviewer=None):
+def _api(tmp_path, *, reviewer=None, review_worker=None):
     store = OperationalStore(tmp_path / "state", clock=FixedClock(NOW), maintenance_timeout=0)
     session = store.initialize()
     journal = SqliteOperationalJournal(session)
@@ -95,6 +96,7 @@ def _api(tmp_path, *, reviewer=None):
         clock=lambda: NOW,
         learning_reviewer=reviewer,
         learning_model=ModelRef(provider_id="test", model_id="reviewer"),
+        review_worker=review_worker,
     )
     return session, journal, api
 
@@ -136,6 +138,55 @@ def _accepted(api, journal, *, with_user_turn=False, user_content="以后默认�
         command_id="cmd_accept",
         expected_row_version=ready.row_version,
     )
+
+
+class WakeRecorder:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def wake(self) -> None:
+        self.calls += 1
+
+
+def test_task_accept_wakes_only_after_the_atomic_learning_request(tmp_path):
+    wake = WakeRecorder()
+    session, journal, api = _api(tmp_path, review_worker=wake)
+    try:
+        accepted = _accepted(api, journal)
+        assert accepted.value.status is TaskRunStatus.ACCEPTED
+        assert wake.calls == 1
+        review = api.list_learning_reviews(
+            task_outcome_id=api.list_outcomes(accepted.value.task_run_id)[0].outcome_id
+        ).items[0]
+        assert review.status is LearningReviewStatus.PENDING
+    finally:
+        session.close()
+
+
+@pytest.mark.asyncio
+async def test_worker_routes_legacy_learning_review_without_foreground_execution(tmp_path):
+    session, journal, api = _api(tmp_path, reviewer=ScriptedLearningReviewer())
+    try:
+        accepted = _accepted(api, journal)
+        outcome = api.list_outcomes(accepted.value.task_run_id)[0]
+        review = api.list_learning_reviews(task_outcome_id=outcome.outcome_id).items[0]
+        worker = ReviewWorker(
+            journal=journal,
+            workspace_id="ws_1",
+            id_source=FixedIdSource(),
+            clock=journal.now,
+            learning_runner=api.learning_review_runner,
+            model=ModelRef(provider_id="test", model_id="reviewer"),
+        )
+
+        result = await worker.drain_once()
+
+        assert result.status == "completed"
+        assert result.learning_review_id == review.review_id
+        assert result.job is None
+        assert api.get_learning_review(review.review_id).status is LearningReviewStatus.COMPLETED
+    finally:
+        session.close()
 
 
 def test_preference_v2_flag_blocks_new_legacy_preference_drafts():

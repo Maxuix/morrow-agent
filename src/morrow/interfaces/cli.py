@@ -224,6 +224,7 @@ def _run_workspace(
             terminal=terminal,
             prompt_session=prompt_session,
             resume_current_turn=session_app.persistence.pending_resume,
+            review_worker=session_app.review_worker,
         )
     )
 

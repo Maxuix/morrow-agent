@@ -18,6 +18,10 @@ from morrow.application.learning.policy import LearningPolicyService, LearningPo
 from morrow.application.learning.requests import LearningReviewRequestService
 from morrow.application.learning.runner import LearningReviewRunner, LearningReviewRunResult
 from morrow.application.preferences.inbox import PreferenceInbox
+from morrow.application.preferences.jobs import (
+    PreferenceReviewJobView,
+    PreferenceReviewStatusView,
+)
 from morrow.application.preferences.reviewer import (
     PreferenceReviewRunner,
     PreferenceReviewRunResult,
@@ -57,6 +61,7 @@ from morrow.core.permissions import (
     PermissionSnapshot,
 )
 from morrow.core.ports import IdSource
+from morrow.core.preference_persistence_models import PreferenceReviewJobStatus
 from morrow.core.recovery import RecoveryReport, RecoveryResolution
 from morrow.runtime.ids import RandomIdSource
 
@@ -89,6 +94,7 @@ class OperationalApplicationService:
         config_service=None,
         preference_inbox: PreferenceInbox | None = None,
         preference_review_runner: PreferenceReviewRunner | None = None,
+        review_worker=None,
         preference_v2_enabled: bool = False,
     ) -> None:
         self.journal = journal
@@ -144,6 +150,7 @@ class OperationalApplicationService:
         )
         self.preference_inbox = preference_inbox
         self.preference_review_runner = preference_review_runner
+        self.review_worker = review_worker
 
     # Queries -----------------------------------------------------------------
 
@@ -342,6 +349,89 @@ class OperationalApplicationService:
 
     def list_preference_proposal_views(self, **kwargs):
         return self._preference_inbox().list(**kwargs)
+
+    def list_preference_review_jobs(
+        self,
+        *,
+        status: PreferenceReviewJobStatus | str | None = None,
+        cursor: str | None = None,
+        limit: int = 50,
+    ) -> QueryPage[PreferenceReviewJobView]:
+        selected_status = self._preference_review_status(status)
+        offset = self._offset(cursor, limit)
+        items = self._query(
+            lambda: self.journal.list_preference_review_jobs(
+                self.workspace_id,
+                status=selected_status,
+                limit=min(500, offset + limit),
+            )
+        )
+        page = tuple(
+            PreferenceReviewJobView.from_job(item) for item in items[offset : offset + limit]
+        )
+        return QueryPage(page, str(offset + len(page)) if offset + len(page) < len(items) else None)
+
+    list_preference_review_job_views = list_preference_review_jobs
+
+    def get_preference_review_job_view(self, job_id: str) -> PreferenceReviewJobView | None:
+        job = self._query(lambda: self.journal.get_preference_review_job(self.workspace_id, job_id))
+        if job is None:
+            return None
+        evidence = self._query(
+            lambda: self.journal.get_preference_evidence_for_job(self.workspace_id, job_id)
+        )
+        return PreferenceReviewJobView.from_job(
+            job,
+            evidence_id=evidence.evidence_id if evidence is not None else None,
+        )
+
+    get_preference_review_job = get_preference_review_job_view
+
+    def preference_review_status(self) -> PreferenceReviewStatusView:
+        counts = {
+            status: self._query(
+                lambda status=status: self.journal.count_preference_review_jobs(
+                    self.workspace_id,
+                    status=status,
+                )
+            )
+            for status in PreferenceReviewJobStatus
+        }
+        return PreferenceReviewStatusView(
+            pending=counts[PreferenceReviewJobStatus.PENDING],
+            running=counts[PreferenceReviewJobStatus.RUNNING],
+            completed=counts[PreferenceReviewJobStatus.COMPLETED],
+            failed=counts[PreferenceReviewJobStatus.FAILED],
+            exhausted=counts[PreferenceReviewJobStatus.EXHAUSTED],
+            cancelled=counts[PreferenceReviewJobStatus.CANCELLED],
+            superseded=counts[PreferenceReviewJobStatus.SUPERSEDED],
+        )
+
+    def retry_preference_review_job(self, job_id: str) -> PreferenceReviewJobView:
+        worker = self.review_worker
+        if worker is None or not hasattr(worker, "retry"):
+            raise ApplicationError(
+                ApplicationErrorCode.UNAVAILABLE, "Preference Review worker is unavailable"
+            )
+        updated = self._translate(lambda: worker.retry(job_id))
+        try:
+            worker.wake()
+        except Exception:
+            pass
+        return PreferenceReviewJobView.from_job(updated)
+
+    async def run_pending_preference_reviews(self, *, limit: int = 100):
+        worker = self.review_worker
+        if worker is None or not hasattr(worker, "run_pending"):
+            raise ApplicationError(
+                ApplicationErrorCode.UNAVAILABLE, "Preference Review worker is unavailable"
+            )
+        try:
+            return await worker.run_pending(limit=limit)
+        except ApplicationError:
+            raise
+        except Exception as exc:
+            raise self.command_context._translate_exception(exc) from exc
 
     def get_preference_proposal_view(self, proposal_id: str):
         return self._preference_inbox().get(proposal_id)
@@ -1227,7 +1317,13 @@ class OperationalApplicationService:
             )
             return ApplicationCommandResult(result.task, receipt)
 
-        return self._translate(lambda: self.journal.transact(work))
+        result = self._translate(lambda: self.journal.transact(work))
+        if operation == "task_accept" and self.review_worker is not None:
+            try:
+                self.review_worker.wake()
+            except Exception:
+                pass
+        return result
 
     def _artifact_retention(self, artifact_id, *, retention, command_id, expected_row_version):
         if self.artifacts is None:
@@ -1365,6 +1461,23 @@ class OperationalApplicationService:
                 ApplicationErrorCode.UNAVAILABLE, "Preference Inbox is unavailable"
             )
         return self.preference_inbox
+
+    @staticmethod
+    def _preference_review_status(
+        status: PreferenceReviewJobStatus | str | None,
+    ) -> PreferenceReviewJobStatus | None:
+        if status is None:
+            return None
+        try:
+            return (
+                status
+                if isinstance(status, PreferenceReviewJobStatus)
+                else PreferenceReviewJobStatus(status)
+            )
+        except (TypeError, ValueError) as exc:
+            raise ApplicationError(
+                ApplicationErrorCode.INVALID, "Review job status is invalid"
+            ) from exc
 
     def _translate(self, call):
         return self.command_context._translate(call)

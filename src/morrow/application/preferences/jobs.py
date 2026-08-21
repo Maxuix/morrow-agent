@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 from morrow.adapters.state.preference_migration import legacy_entries_from_preferences
@@ -22,7 +22,9 @@ from morrow.core.preference_models import (
 )
 from morrow.core.preference_persistence_models import (
     PreferenceEvidence,
+    PreferenceReviewFailureCode,
     PreferenceReviewJob,
+    PreferenceReviewJobStatus,
 )
 from morrow.core.store import StorageError, StorageErrorCode
 from morrow.runtime.conversation import ConversationSnapshot, TurnTerminalRecord
@@ -43,6 +45,88 @@ class PreferenceReviewEnqueueResult:
     job: PreferenceReviewJob | None = None
     evidence: PreferenceEvidence | None = None
     reason: str | None = None
+
+
+@dataclass(frozen=True)
+class PreferenceReviewJobView:
+    """Sanitized query projection for one durable Preference Review job.
+
+    The frozen snapshot and Reviewer/provider metadata remain internal to the worker boundary.  A
+    status surface needs enough information to resume or diagnose a job without turning the CLI or
+    application query API into a second context or model-details channel.
+    """
+
+    job_id: str
+    session_id: str | None
+    turn_id: str
+    review_version: int
+    status: PreferenceReviewJobStatus
+    source_global_revision: int
+    source_workspace_revision: int
+    active_snapshot_count: int
+    active_snapshot_bytes: int
+    attempt_count: int
+    row_version: int
+    created_at: datetime
+    started_at: datetime | None
+    completed_at: datetime | None
+    lease_expires_at: datetime | None
+    failure_code: PreferenceReviewFailureCode | None
+    evidence_id: str | None = None
+
+    @classmethod
+    def from_job(
+        cls,
+        job: PreferenceReviewJob,
+        *,
+        evidence_id: str | None = None,
+    ) -> PreferenceReviewJobView:
+        return cls(
+            job_id=job.job_id,
+            session_id=job.session_id,
+            turn_id=job.turn_id,
+            review_version=job.review_version,
+            status=job.status,
+            source_global_revision=job.source_global_revision,
+            source_workspace_revision=job.source_workspace_revision,
+            active_snapshot_count=job.active_snapshot_count,
+            active_snapshot_bytes=job.active_snapshot_bytes,
+            attempt_count=job.attempt_count,
+            row_version=job.row_version,
+            created_at=job.created_at,
+            started_at=job.started_at,
+            completed_at=job.completed_at,
+            lease_expires_at=job.lease_expires_at,
+            failure_code=job.failure_code,
+            evidence_id=evidence_id,
+        )
+
+
+@dataclass(frozen=True)
+class PreferenceReviewStatusView:
+    """Bounded aggregate status for the Preference Review queue."""
+
+    pending: int = 0
+    running: int = 0
+    completed: int = 0
+    failed: int = 0
+    exhausted: int = 0
+    cancelled: int = 0
+    superseded: int = 0
+    total: int = field(init=False)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "total",
+            self.pending
+            + self.running
+            + self.completed
+            + self.failed
+            + self.exhausted
+            + self.cancelled
+            + self.superseded,
+        )
 
 
 class PreferenceReviewJobEnqueuer:
@@ -214,6 +298,8 @@ PreferenceReviewJobService = PreferenceReviewJobEnqueuer
 
 __all__ = [
     "PreferenceReviewEnqueueResult",
+    "PreferenceReviewJobView",
+    "PreferenceReviewStatusView",
     "PreferenceReviewJobEnqueuer",
     "PreferenceReviewJobService",
 ]

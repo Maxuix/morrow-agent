@@ -11,7 +11,10 @@ from pathlib import Path
 import typer
 
 from morrow.core.application import ApplicationError, ApplicationErrorCode
-from morrow.core.preference_persistence_models import PreferenceProposalStatus
+from morrow.core.preference_persistence_models import (
+    PreferenceProposalStatus,
+    PreferenceReviewJobStatus,
+)
 
 preference_inbox_app = typer.Typer(help="Semantic Preference proposals: list, preview, and decide.")
 
@@ -108,6 +111,166 @@ def _emit_page(page, *, as_json: bool) -> None:
         )
     if page.next_cursor is not None:
         typer.echo(f"next_cursor: {page.next_cursor}")
+
+
+def _emit_review_job_page(page, *, as_json: bool) -> None:
+    if as_json:
+        typer.echo(
+            json.dumps(
+                {
+                    "items": [_jsonable(item) for item in page.items],
+                    "next_cursor": page.next_cursor,
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            )
+        )
+        return
+    for item in page.items:
+        failure = item.failure_code.value if item.failure_code is not None else "-"
+        typer.echo(
+            f"{item.job_id}\t{item.status.value}\tattempt={item.attempt_count}\tfailure={failure}"
+        )
+    if page.next_cursor is not None:
+        typer.echo(f"next_cursor: {page.next_cursor}")
+
+
+def _review_result_payload(result) -> dict[str, object]:
+    return {
+        "status": result.status,
+        "job_id": result.job_id,
+        "learning_review_id": result.learning_review_id,
+        "proposal_count": result.proposal_count,
+        "duplicate_count": result.duplicate_count,
+        "suppressed_count": result.suppressed_count,
+        "error_code": result.error_code,
+    }
+
+
+@preference_inbox_app.command("jobs")
+def preference_inbox_jobs(
+    status: PreferenceReviewJobStatus | None = typer.Option(None, "--status"),
+    cursor: str | None = typer.Option(None, "--cursor"),
+    limit: int = typer.Option(50, "--limit", min=1, max=100),
+    as_json: bool = typer.Option(False, "--json"),
+    workspace_id: str | None = typer.Option(None, "--workspace-id"),
+    directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+) -> None:
+    _run_state_command(
+        state_root=state_root,
+        workspace_id=workspace_id,
+        directory=directory,
+        write=False,
+        action=lambda api: _emit_review_job_page(
+            api.list_preference_review_jobs(status=status, cursor=cursor, limit=limit),
+            as_json=as_json,
+        ),
+    )
+
+
+@preference_inbox_app.command("job")
+def preference_inbox_job(
+    job_id: str,
+    as_json: bool = typer.Option(False, "--json"),
+    workspace_id: str | None = typer.Option(None, "--workspace-id"),
+    directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+) -> None:
+    def action(api) -> None:
+        value = api.get_preference_review_job_view(job_id)
+        if value is None:
+            raise ApplicationError(
+                ApplicationErrorCode.NOT_FOUND, "Preference Review job is missing"
+            )
+        _emit(value, as_json=as_json)
+
+    _run_state_command(
+        state_root=state_root,
+        workspace_id=workspace_id,
+        directory=directory,
+        write=False,
+        action=action,
+    )
+
+
+@preference_inbox_app.command("status")
+def preference_inbox_status(
+    as_json: bool = typer.Option(False, "--json"),
+    workspace_id: str | None = typer.Option(None, "--workspace-id"),
+    directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+) -> None:
+    def action(api) -> None:
+        _emit(api.preference_review_status(), as_json=as_json)
+
+    _run_state_command(
+        state_root=state_root,
+        workspace_id=workspace_id,
+        directory=directory,
+        write=False,
+        action=action,
+    )
+
+
+@preference_inbox_app.command("retry")
+def preference_inbox_retry(
+    job_id: str,
+    as_json: bool = typer.Option(False, "--json"),
+    workspace_id: str | None = typer.Option(None, "--workspace-id"),
+    directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+) -> None:
+    _run_state_command(
+        state_root=state_root,
+        workspace_id=workspace_id,
+        directory=directory,
+        write=True,
+        action=lambda api: _emit(api.retry_preference_review_job(job_id), as_json=as_json),
+    )
+
+
+@preference_inbox_app.command("run-pending")
+def preference_inbox_run_pending(
+    limit: int = typer.Option(100, "--limit", min=1, max=500),
+    as_json: bool = typer.Option(False, "--json"),
+    workspace_id: str | None = typer.Option(None, "--workspace-id"),
+    directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+) -> None:
+    def action(api) -> None:
+        results = asyncio.run(api.run_pending_preference_reviews(limit=limit))
+        status = api.preference_review_status()
+        payload = {
+            "attempted": len(results),
+            "results": [_review_result_payload(result) for result in results],
+            "status": status,
+            "daemon": False,
+        }
+        if as_json:
+            _emit(payload, as_json=True)
+            return
+        typer.echo(f"attempted: {len(results)}")
+        for result in results:
+            summary = _review_result_payload(result)
+            typer.echo(
+                f"{summary['status']}\t{summary['job_id'] or summary['learning_review_id'] or '-'}"
+                f"\tproposals={summary['proposal_count']}"
+                f"\terror={summary['error_code'] or '-'}"
+            )
+        typer.echo(
+            f"pending: {status.pending}\trunning: {status.running}\t"
+            f"exhausted: {status.exhausted}\tdaemon: false"
+        )
+
+    _run_state_command(
+        state_root=state_root,
+        workspace_id=workspace_id,
+        directory=directory,
+        write=True,
+        with_reviewer=True,
+        action=action,
+    )
 
 
 def _confirm_or_exit(question: str, *, yes: bool) -> None:

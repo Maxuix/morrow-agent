@@ -13,11 +13,12 @@ Subplan 59 — Durable Asynchronous Review Worker.
 - `[x]` S59.1 Add the atomic terminal-Turn Preference Review enqueue hook.
 - `[x]` S59.2 Add the lease-based process-local Review Worker lifecycle.
 - `[x]` S59.3 Add bounded retry, timeout, model fallback, and sanitized terminal failure handling.
-- `[>]` S59.4 Move accepted-Task Learning Review execution off the foreground path while preserving
+- `[x]` S59.4 Move accepted-Task Learning Review execution off the foreground path while preserving
   legacy non-Preference behavior.
-- `[ ]` S59.5 Add truthful job/run-pending status and non-blocking notification surfaces.
+- `[x]` S59.5 Add truthful job/run-pending status and non-blocking notification surfaces.
 - `[x]` Run the focused S59 validation and implementation checkpoint.
-- `[ ]` Run exactly one Grok `/review`, independently adjudicate findings, and rerun the affected gates.
+- `[!]` Run exactly one Grok `/review`, independently adjudicate findings, and rerun the affected gates
+  (the Grok capability is not exposed in this thread; no review was invoked).
 - `[ ]` Commit closeout, fast-forward `main`, retire the branch, and activate S60.
 
 ## Start condition

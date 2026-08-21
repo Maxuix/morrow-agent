@@ -51,6 +51,7 @@ from morrow.application.preferences.tool import (
     PreferenceManagementService,
     make_preference_management_tool,
 )
+from morrow.application.preferences.worker import ReviewWorker
 from morrow.application.preferences.writer import PreferenceWriter
 from morrow.application.recovery import RecoveryService
 from morrow.application.tasks import TaskService
@@ -130,6 +131,7 @@ class SessionApplication:
     doctor: OperationalDoctor | None = None
     backup: OperationalBackupService | None = None
     preference_service: PreferenceManagementService | None = None
+    review_worker: ReviewWorker | None = None
 
 
 @dataclass(frozen=True)
@@ -343,7 +345,7 @@ def build_operational_api(
         if resolved_preference_reviewer is not None
         else None
     )
-    return OperationalApplicationService(
+    service = OperationalApplicationService(
         journal=services.journal,
         workspace_id=workspace_id,
         id_source=app.id_source,
@@ -365,6 +367,17 @@ def build_operational_api(
             else preference_v2_enabled
         ),
     )
+    service.review_worker = ReviewWorker(
+        journal=services.journal,
+        workspace_id=workspace_id,
+        id_source=app.id_source,
+        clock=services.journal.now,
+        runner=preference_review_runner,
+        reviewer=resolved_preference_reviewer,
+        model=preference_model or learning_model,
+        learning_runner=service.learning_review_runner,
+    )
+    return service
 
 
 def build_session_application(
@@ -659,6 +672,7 @@ def build_session_application(
             doctor=operational.doctor,
             backup=operational.backup,
             preference_service=preference_service,
+            review_worker=api.review_worker,
         )
     except BaseException:
         handle.close()

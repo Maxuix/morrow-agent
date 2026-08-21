@@ -153,6 +153,32 @@ async def run_repl(
     terminal: Terminal | None = None,
     prompt_session: PromptSession | None = None,
     resume_current_turn: bool = False,
+    review_worker=None,
+) -> int:
+    if review_worker is not None:
+        await review_worker.start()
+    try:
+        return await _run_repl_loop(
+            orchestrator,
+            session=session,
+            terminal=terminal,
+            prompt_session=prompt_session,
+            resume_current_turn=resume_current_turn,
+            review_worker=review_worker,
+        )
+    finally:
+        if review_worker is not None:
+            await review_worker.stop()
+
+
+async def _run_repl_loop(
+    orchestrator,
+    *,
+    session=None,
+    terminal: Terminal | None = None,
+    prompt_session: PromptSession | None = None,
+    resume_current_turn: bool = False,
+    review_worker=None,
 ) -> int:
     terminal = terminal or Terminal()
     prompt_session = prompt_session or PromptSession()
@@ -168,6 +194,7 @@ async def run_repl(
                 if session is not None:
                     terminal.show_run_summary(session)
         while True:
+            _show_review_notices(terminal, review_worker)
             try:
                 text = await terminal.prompt(prompt_session)
             except EOFError:
@@ -291,11 +318,7 @@ async def run_repl(
                     else:
                         terminal.console.print("已准备下一次前台 AgentRun 的 Host 权限授予。")
             if result.action == "learning_review_pending":
-                review_id = getattr(result.value, "learning_review_id", None)
-                if review_id is None:
-                    terminal.console.print("Learning Review 请求无效。")
-                    continue
-                await _run_learning_review(orchestrator, terminal, review_id)
+                terminal.console.print("Learning Review 已排队，继续处理前台输入。")
             if result.action in {"learning_review_run", "learning_review_retry"}:
                 await _run_learning_review(
                     orchestrator,
@@ -420,6 +443,32 @@ async def _run_learning_review(orchestrator, terminal: Terminal, review_id: str,
                 )
             else:
                 terminal.console.print(f"Learning Review {review.status.value}：没有生成候选。")
+
+
+def _show_review_notices(terminal: Terminal, review_worker) -> None:
+    """Render only bounded worker outcomes; zero-operation completions remain silent."""
+
+    if review_worker is None:
+        return
+    drain = getattr(review_worker, "drain_notices", None)
+    if drain is None:
+        return
+    try:
+        notices = drain()
+    except Exception:
+        return
+    for notice in notices:
+        if notice.kind == "proposals":
+            terminal.console.print(
+                f"Preference Review 已生成 {notice.proposal_count} 个新 proposal；"
+                "可用 `morrow preferences inbox list` 查看。"
+            )
+        elif notice.kind == "exhausted":
+            detail = f"（{notice.error_code}）" if notice.error_code else ""
+            terminal.console.print(
+                f"Preference Review 重试已耗尽{detail}；job {notice.job_id} 可用 "
+                "`morrow preferences inbox retry` 重试。"
+            )
 
 
 async def _consume_dispatch(orchestrator, text: str, terminal: Terminal) -> DispatchResult:
