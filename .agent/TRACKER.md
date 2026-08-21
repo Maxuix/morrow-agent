@@ -2,16 +2,17 @@
 
 ## Current status
 
-The user authorized a complete executable Stage 5 plan. Subplan 54's offline implementation,
-single final Grok review/fix pass, and final quality gate are complete on local `main` at `6043d08`;
-the optional Live model-quality hold remains pending.
+Subplan 54's automated offline gate is complete, but the simulated-user evaluation committed at
+`5cfb99f` confirmed two P1 blockers and one P2 preview defect. Subplan 55 is planned but has not been
+authorized for implementation. The optional Live model-quality hold remains pending separately.
 
 ## Last completed task
 
-Subplan 54 is verified and merged on local `main`, including the no-tool production Reviewer, policy and
-foreground UX, candidate-only future types, deterministic offline evaluation, doctor/backup
-acceptance, and the required single final Grok review/fix pass. The final non-live gate passed
-`816 passed, 2 skipped, 2 deselected`; Ruff, compileall, CLI help, and `git diff --check` passed.
+The Stage 5 simulated-user report is committed at `5cfb99f`. Independent static adjudication
+confirmed F1, F2, and F3 and found one adjacent inverted Project Knowledge edit guard. A bounded
+Subplan 55 now specifies failing regressions, fixes, isolated user-flow replay, one independent
+review/fix pass, and final gates; no production code was changed while drafting it.
+
 Subplan 53 is verified and merged at `613ffdb`, including its one-time Grok review-fix pass. It adds
 v12 MemorySelection and rebuildable terms, deterministic selection, frozen AgentRun/context
 projections, bounded inspection surfaces, doctor/backup invariants, and the S53 acceptance docs.
@@ -22,22 +23,20 @@ recovery, Session projections, and CLI/REPL controls. Subplan 51 is verified and
 
 ## Active task
 
-No active implementation task remains for Stage 5; the verified S54 topic branch was fast-forwarded
-to local `main` and retired.
+No implementation task is active. Proposed Subplan 55 awaits a user request to implement it.
 
 ## Next action
 
-Stage 5 implementation is closed offline. Do not run Live evaluation or publish remotely without
-explicit authorization.
+If implementation is authorized, create `fix/stage5-simulated-user-remediation` from `5cfb99f`,
+activate only S55.1, and first preserve failing regression evidence.
 
 ## Blockers
 
-No Stage 5 implementation blocker. Live model quality evidence is pending explicit authorization and
-a compatible credential; remote publication remains outside the current commit-only request.
+Stage 5 user acceptance is blocked by F1 (headless Candidate decisions) and F2 (first Project
+Knowledge Promotion). F3 is a confirmed UX defect. Live model quality evidence is pending explicit
+authorization and a compatible credential; remote publication remains outside this planning request.
 
-Remote publication is outside the current commit-only request. After this plan is committed and
-fast-forwarded, local `main` will be one planning commit ahead of `origin/main` until push is
-explicitly authorized.
+Remote publication is outside this planning request. Do not push without explicit authorization.
 
 The two Stage 5 research discussions are untracked user files. They are preserved as input and are
 not part of the implementation plan changes unless the user explicitly requests that they be
@@ -45,7 +44,8 @@ adopted into version control.
 
 ## Active boundary
 
-- Stage 5 planning is authorized; Subplan 54 is closed from verified local `main` after Subplan 53.
+- Subplan 54's automated gate is closed; Stage 5 user acceptance is reopened and proposed Subplan 55
+  is planned but not active.
 - First release exposes only `off` and `review_only`; `explicit_auto` remains closed.
 - Automatic trigger is accepted TaskOutcome only; no `completed`/`corrected` Task status is added.
 - No background worker, natural-language acceptance, embedding/vector dependency, Skill write, or

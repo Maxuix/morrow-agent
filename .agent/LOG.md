@@ -1815,6 +1815,21 @@
   `git diff --check` passed. No Live Provider or network execution was attempted; the predeclared
   real-model quality targets remain pending explicit authorization and a compatible credential.
 
+## 2026-08-21 — Stage 5 simulated-user report adjudicated; remediation planned
+
+- Reviewed `docs/acceptance/stage5-simulated-user-evaluation.md` at `5cfb99f` against the current
+  Candidate CLI, preview service, Project Knowledge Promotion, SQLite journal, and regression suite.
+  F1, F2, and F3 are confirmed. F1 affects headless accept, edit, and reject because all three read
+  fields from the wrong level of `LearningCandidateView`; Project Knowledge's dedicated edit option
+  guard is also inverted and was added to the remediation scope.
+- Added proposed Subplan 55 with regression-first tasks, typed preview/OCC contracts, persisted-time
+  normalization, isolated simulated-user replay, one independent Grok review/fix pass, and final
+  non-live gates. No production fix, Live Provider call, network request, or credential access was
+  performed while drafting the plan.
+- Reopened Stage 5 user acceptance in plan/roadmap/acceptance state. Subplan 54's deterministic and
+  offline safety evidence remains valid, but it no longer supports a user-ready claim until S55
+  passes and the simulated flow is rerun.
+
 ## 2026-08-21 — Subplan 54 S54.7 final review/fix and offline closeout
 
 - The required final Grok `/review` was completed once for the complete S54 branch. It reported one

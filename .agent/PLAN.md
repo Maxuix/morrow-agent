@@ -1,8 +1,8 @@
 # Stage 5 Reviewable Learning and Long-Term Memory Plan
 
-> Status: offline implementation and acceptance complete; optional Live model-quality hold pending
-> Active subplan: none; Subplan 54 — Production Reviewer, Evaluation, and Stage 5 Acceptance — is closed
-> Baseline: `613ffdb` on verified local `main`
+> Status: simulated-user acceptance found confirmed blockers; remediation is planned but not implemented
+> Active subplan: none; proposed Subplan 55 awaits an implementation request
+> Baseline: `5cfb99f` on local `main`
 > Target schema: Operational Store v9 → v10 → v11 → v12
 
 ## Objective
@@ -283,6 +283,10 @@ subplan. A later subplan cannot edit an already-committed migration checksum.
    Add the no-tool production Reviewer adapter, finish UX/policy controls, adversarial and quality
    datasets, doctor/backup/docs/acceptance evidence, real multi-task trial hold point, and full
    offline/quality closeout.
+7. **Subplan 55 — Simulated-user remediation**
+   Repair the typed Candidate decision CLI, truthful reject previews, and Project Knowledge
+   timestamp precision exposed by the isolated simulated-user evaluation; rerun that user flow and
+   reconcile Stage 5 acceptance evidence before restoring the user-ready claim.
 
 Subplans are sequential. Do not implement later-slice production logic early. The only intentional
 forward reservation is the complete v11 table set needed so its checksum never changes while
@@ -358,10 +362,12 @@ For each subplan:
    no commits absent from `main`, then delete it.
 6. Activate the next subplan only after the previous gate passes.
 
-Stage 5 offline implementation is complete: Subplan 54 passed, all verified work is on local
-`main` at `6043d08`, the current architecture describes the implemented authority, and the Stage 5
-roadmap/acceptance evidence no longer claims future behavior as current behavior. The optional Live
-model-quality hold remains pending explicit authorization and a compatible credential.
+Subplan 54's automated offline gate is complete, but the later simulated-user evaluation at
+`5cfb99f` confirmed two P1 defects and one P2 preview defect. Stage 5 user acceptance is therefore
+reopened. It may be restored only after proposed Subplan 55 passes, its isolated simulated-user flow
+is rerun, all verified work is on `main`, and the roadmap/acceptance evidence matches the observed
+product behavior. The optional Live model-quality hold remains pending explicit authorization and a
+compatible credential.
 
 ## Non-goals
 

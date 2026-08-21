@@ -1,6 +1,6 @@
 # Morrow 架构基线
 
-> 状态：阶段 2、阶段 3 已完成（当前声明平台为 macOS；Linux 原生运行仍 unsupported）；阶段 4 已落地 Operational Store v9 的 Session/Task 历史、工具/审批日志、恢复分类、TaskOutcome、Artifact Store、ContextCheckpoint、Session Fork、统一应用 API、application events、doctor、备份 bundle、CapabilityGrant 与 Full Access Manual；Stage 5 Subplans 49–54 已落地 LearningPolicy、accepted Outcome → Candidate Pipeline、Inbox/Project Knowledge、Profile/Preferences Promotion Saga、v12 MemorySelection、AgentRun freeze/recovery reuse、RunContextProjection、no-tool production Reviewer、离线安全评估、Learning doctor 与隔离 SQLite backup；真实 Provider 质量评估仍是显式授权的 hold point；Subplan 48 已完成运行时、持久化、SQLite 与应用组装边界重构
+> 状态：阶段 2、阶段 3 已完成（当前声明平台为 macOS；Linux 原生运行仍 unsupported）；阶段 4 已落地 Operational Store v9 的 Session/Task 历史、工具/审批日志、恢复分类、TaskOutcome、Artifact Store、ContextCheckpoint、Session Fork、统一应用 API、application events、doctor、备份 bundle、CapabilityGrant 与 Full Access Manual；Stage 5 Subplans 49–54 已落地 LearningPolicy、accepted Outcome → Candidate Pipeline、Inbox/Project Knowledge、Profile/Preferences Promotion Saga、v12 MemorySelection、AgentRun freeze/recovery reuse、RunContextProjection、no-tool production Reviewer、离线安全评估、Learning doctor 与隔离 SQLite backup；后续模拟用户验收确认 Candidate CLI 与首次 Project Knowledge Promotion 仍需 Subplan 55 修复；真实 Provider 质量评估仍是显式授权的 hold point；Subplan 48 已完成运行时、持久化、SQLite 与应用组装边界重构
 
 本文锁定当前依赖方向、数据所有权和安全边界。阶段 3 的能力策略、配置工具、工作空间读搜、冲突安全文件变更、审批后 Host 命令、只读 Git 和当前 macOS 原生沙箱
 已经交付；Linux 原生运行尚未声明支持。Stage 4 已落地数据根 SQLite Operational Store 的
@@ -298,7 +298,7 @@ Session/Task/Artifact 列表的 Application page 合同在 CLI 中不被丢弃�
 - 无工具 Session 对话可持久化并在重启后恢复；Artifact 的 missing/corrupt/staging/orphan 状态保持可见，
   只产生 retention/orphan 报告，不自动修复；显式 cleanup 默认 dry-run，apply 只做保字节隔离；
   conversation Fork、工具恢复和确定性 checkpoint 已实现；
-  工作空间/代码 rewind 不属于 Stage 4；Stage 5 当前已完成 Learning 基础、accepted 触发和有界候选 Pipeline、Inbox/Project Knowledge、Profile/Preferences Promotion Saga、MemorySelection 与 ContextBuilder 集成、no-tool production Reviewer、离线安全评估和 doctor/backup 验收；真实 Provider 质量评估仍 pending，不声明为已通过。
+  工作空间/代码 rewind 不属于 Stage 4；Stage 5 当前已完成 Learning 基础、accepted 触发和有界候选 Pipeline、Inbox/Project Knowledge、Profile/Preferences Promotion Saga、MemorySelection 与 ContextBuilder 集成、no-tool production Reviewer、确定性离线安全评估和 doctor/backup 门禁；模拟用户验收暴露的 Candidate CLI 与首次 Project Knowledge Promotion 缺陷仍 pending，因此不声明用户闭环已通过；真实 Provider 质量评估同样 pending。
   当前不存在过渡兼容写入器。
 
 若未来实现需要突破这些边界，先更新架构与当前阶段计划。

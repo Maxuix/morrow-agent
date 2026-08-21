@@ -4,6 +4,7 @@
 > 测试性质：隔离临时环境中的真实 CLI/REPL 使用评估
 > 代码基线：本地 `main`，`4c0bbe2 docs(plan): close stage5 locally`
 > 结论：发现 2 个阻断性功能问题和 1 个用户体验问题；本报告只记录问题，不在本次评估中修复
+> 修复计划：[`Subplan 55`](../../.agent/subplans/55-stage5-simulated-user-remediation.md)
 
 ## 1. 测试边界
 

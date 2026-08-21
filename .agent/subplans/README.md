@@ -1,7 +1,8 @@
 # Subplans
 
 Stage 4 and the Pre-Stage 5 boundary refactor are complete. The user authorized the Stage 5 master
-plan on 2026-08-20. Subplans 49–53 are verified; Subplan 54 is the active final Stage 5 slice.
+plan on 2026-08-20. Subplans 49–54 completed their automated gates, but the later simulated-user
+evaluation reopened Stage 5 acceptance. Subplan 55 is planned and not yet active.
 
 Subplan 35 and the conditional review remediation were accepted on 2026-08-19 and preserved in Git
 history at `20fb43e`; its retired task file is no longer kept in the active subplan directory.
@@ -27,6 +28,7 @@ history at `20fb43e`; its retired task file is no longer kept in the active subp
 | 52 | `52-stage5-configuration-promotion.md` | completed |
 | 53 | `53-stage5-memory-selection-context.md` | completed |
 | 54 | `54-stage5-reviewer-acceptance.md` | completed |
+| 55 | `55-stage5-simulated-user-remediation.md` | planned (implementation not started) |
 
 Completed Stage 3 Subplans 29–34 were removed from the active directory when this master plan was
 created; they remain recoverable in Git history together with their accepted evidence.

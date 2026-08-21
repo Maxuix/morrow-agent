@@ -2,23 +2,19 @@
 
 ## Current stage
 
-Stage 5 offline implementation and acceptance are complete; the optional Live model-quality hold
-remains pending explicit authorization and a compatible credential. Subplan 54 is closed on
-local `main` at `6043d08`.
+Stage 5 automated offline gates are complete, but the simulated-user evaluation at `5cfb99f`
+confirmed two P1 blockers and one P2 preview defect. A bounded remediation plan now exists; no
+production fix has started. The optional Live model-quality hold remains pending separately.
 
 ## Active subplan
 
-None. Subplan 54 — Production Reviewer, Evaluation, and Stage 5 Acceptance — is complete.
+None. Proposed Subplan 55 — Stage 5 Simulated-User Remediation — awaits an implementation request.
 
 ## Tasks
 
-- [x] S54.1 Implement the bounded no-tool production Reviewer adapter and safe composition.
-- [x] S54.2 Complete Learning policy, status, review/retry, and foreground UX surfaces.
-- [x] S54.3 Validate future candidate-only behavior without activating Skills or Workflows.
-- [x] S54.4 Build the versioned adversarial offline evaluation dataset and quality report.
-- [x] S54.5 Complete Stage 5 doctor, backup, end-to-end acceptance, and documentation evidence.
-- [x] S54.6 Record the live evaluation hold point; run it only with explicit authorization.
-- [x] S54.7 Run the final independent review/fix pass, gates, merge, and Stage 5 closeout.
+No implementation task is active. On authorization, copy S55.1–S55.5 from
+`.agent/subplans/55-stage5-simulated-user-remediation.md` into this active-task list and start only
+S55.1.
 
 ## Validation evidence
 
@@ -67,3 +63,16 @@ and fixed once; no second Grok review was run. The final non-live gate passed `8
 also passed. The final evaluator report is 27/27 with 5 safety-negative cases; the pure evaluator
 performs zero writes, and the scripted real-runner safety integration observes zero Candidate,
 Knowledge, or Memory Active writes.
+
+The later isolated simulated-user evaluation committed at `5cfb99f` supersedes the user-usability
+claim without invalidating those deterministic safety results. It reproduced headless Candidate
+accept/reject failure, first Project Knowledge Promotion rollback under a non-zero microsecond
+clock, and an incorrect reject preview kind. Static adjudication also confirmed that headless edit
+shares the typed-view bug and that Project Knowledge's dedicated edit guard is inverted.
+
+## Proposed Subplan 55 start condition
+
+- Branch from local `main` at `5cfb99f` as `fix/stage5-simulated-user-remediation`.
+- Start with failing regression tests; do not modify production code before S55.1 evidence exists.
+- Preserve the two untracked `docs/research/stage5-overview-*.md` user files.
+- Do not run Live Provider/network tests or access credentials without a separate explicit request.
