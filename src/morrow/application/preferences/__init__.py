@@ -17,6 +17,11 @@ from morrow.application.preferences.inbox import (
     PreferenceInboxError,
     PreferenceProposalView,
 )
+from morrow.application.preferences.jobs import (
+    PreferenceReviewEnqueueResult,
+    PreferenceReviewJobEnqueuer,
+    PreferenceReviewJobService,
+)
 from morrow.application.preferences.proposals import (
     PreferenceProposalPipeline,
     PreferenceProposalPipelineError,
@@ -77,6 +82,9 @@ __all__ = [
     "PreferenceInboxDecisionResult",
     "PreferenceDecisionPreview",
     "PreferenceProposalView",
+    "PreferenceReviewEnqueueResult",
+    "PreferenceReviewJobEnqueuer",
+    "PreferenceReviewJobService",
     "DeterministicPreferenceReviewer",
     "PreferenceReviewRunResult",
     "PreferenceReviewRunner",

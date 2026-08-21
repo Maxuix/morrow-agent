@@ -2054,3 +2054,18 @@
 - Final independent validation passed `889 passed, 2 deselected`; Ruff format/check, compileall,
   `morrow learning --help`, `morrow preferences inbox --help`, and `git diff --check` passed. No
   Provider, credential, Live, or real-network test was run, and no second Grok review was invoked.
+
+## 2026-08-22 — Subplan 59.1 atomic terminal Review enqueue completed
+
+- Added `PreferenceReviewJobEnqueuer` and connected it to the existing terminal Turn commit
+  transaction. The hook uses the v13 `(workspace_id, turn_id, review_version)` replay key, writes
+  one pending `PreferenceReviewJob` plus one current-user `PreferenceEvidence` row atomically,
+  persists the complete bounded Active global/workspace snapshot, and performs no model, YAML, or
+  notification work.
+- Eligibility excludes slash/control input, LearningPolicy `off`, safety-rejected user content,
+  and a successful `manage_preferences` execution in the same Turn. Existing job/evidence rows are
+  returned on terminal replay; missing or changed replay evidence is treated as store repair.
+- Added focused integration coverage for snapshot metadata, context reconstruction, replay
+  idempotency, and rollback of terminal append plus enqueue. The offline suite passed `891 passed,
+  2 deselected`; Ruff format/check, compileall, `morrow learning --help`, and `git diff --check`
+  passed. No Provider, network, credential, or Live path was used.

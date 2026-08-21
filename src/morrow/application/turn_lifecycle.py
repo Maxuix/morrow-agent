@@ -9,6 +9,7 @@ from typing import Literal
 
 from morrow.adapters.state.preference_migration import legacy_entries_from_preferences
 from morrow.adapters.state.preference_projection import preferences_from_entries
+from morrow.application.preferences.jobs import PreferenceReviewJobEnqueuer
 from morrow.application.recovery import RecoveryService
 from morrow.application.tasks import TaskOutcomeAssembler, TaskService
 from morrow.core.application import ApplicationError, ApplicationErrorCode
@@ -121,6 +122,7 @@ class TurnSubmissionCoordinator:
         tasks: TaskService,
         clock: Callable[[], datetime],
         state: DurableTurnState,
+        preference_reviews: PreferenceReviewJobEnqueuer | None = None,
     ) -> None:
         self.journal = journal
         self.workspace_id = workspace_id
@@ -131,6 +133,7 @@ class TurnSubmissionCoordinator:
         self.tasks = tasks
         self.clock = clock
         self.state = state
+        self.preference_reviews = preference_reviews
         self.memory_selector = MemorySelector(id_source=id_source, clock=clock)
 
     def commit(
@@ -147,6 +150,14 @@ class TurnSubmissionCoordinator:
 
         def work(txn: TurnLifecycleJournalPort) -> bool:
             writer.persist_with_records(planned)
+            if self.preference_reviews is not None:
+                self.preference_reviews.enqueue_terminal_turn(
+                    txn,
+                    session=session,
+                    turn_id=self.state.turn_id,
+                    conversation=planned.snapshot,
+                    terminal=terminal,
+                )
             clear_task = self._apply_task_terminal_in_txn(txn, session, terminal)
             self._close_open_receipt_in_txn(txn, session)
             return clear_task

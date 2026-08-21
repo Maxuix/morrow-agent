@@ -6,11 +6,14 @@ from typing import Protocol
 
 from morrow.core.journal import (
     SessionRestoreJournalPort,
+    ToolExecutionJournalPort,
     TransactionalJournalPort,
     TurnLifecycleJournalPort,
 )
 from morrow.core.learning_memory_ports import LearningMemoryJournalPort
+from morrow.core.learning_ports import LearningJournalPort
 from morrow.core.memory_selection import MemorySearchTerm, MemorySelection
+from morrow.core.ports import PreferencePersistencePort
 
 
 class MemorySelectionJournalPort(TransactionalJournalPort, Protocol):
@@ -48,6 +51,9 @@ class MemoryRunProjectionJournalPort(
 class MemorySelectionAdmissionPort(
     TurnLifecycleJournalPort,
     MemoryRunProjectionJournalPort,
+    LearningJournalPort,
+    PreferencePersistencePort,
+    ToolExecutionJournalPort,
     Protocol,
 ):
     """Composite read/write surface for one atomic foreground admission."""

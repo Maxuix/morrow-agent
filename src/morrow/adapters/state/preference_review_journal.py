@@ -72,6 +72,22 @@ class PreferenceReviewJournalMixin:
             raise _workspace_error("Review job")
         return _job_from_row(row)
 
+    def get_preference_review_job_for_turn(
+        self, workspace_id: str, turn_id: str, *, review_version: int = 1
+    ) -> PreferenceReviewJob | None:
+        """Load the one replay key owned by a terminal Turn."""
+
+        if isinstance(review_version, bool) or not isinstance(review_version, int):
+            raise StorageError(StorageErrorCode.UNAVAILABLE, "Preference Review version is invalid")
+        if review_version < 1:
+            raise StorageError(StorageErrorCode.UNAVAILABLE, "Preference Review version is invalid")
+        row = self.backend.read_one(
+            f"SELECT {_JOB_COLUMNS} FROM preference_review_jobs "
+            "WHERE workspace_id = ? AND turn_id = ? AND review_version = ?",
+            (workspace_id, turn_id, review_version),
+        )
+        return _job_from_row(row) if row is not None else None
+
     def list_preference_review_jobs(
         self,
         workspace_id: str,
@@ -234,6 +250,16 @@ class PreferenceReviewJournalMixin:
         if str(row[1]) != workspace_id:
             raise _workspace_error("Evidence")
         return _evidence_from_row(row)
+
+    def get_preference_evidence_for_job(
+        self, workspace_id: str, job_id: str
+    ) -> PreferenceEvidence | None:
+        row = self.backend.read_one(
+            f"SELECT {_EVIDENCE_COLUMNS} FROM preference_evidence "
+            "WHERE workspace_id = ? AND job_id = ?",
+            (workspace_id, job_id),
+        )
+        return _evidence_from_row(row) if row is not None else None
 
     def list_preference_evidence(
         self, workspace_id: str, *, job_id: str | None = None, limit: int = 100

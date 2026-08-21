@@ -1,0 +1,219 @@
+"""Durable Preference Review job creation at the terminal Turn boundary."""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import UTC, datetime
+
+from morrow.adapters.state.preference_migration import legacy_entries_from_preferences
+from morrow.application.preferences.context import snapshot_from_documents
+from morrow.core.domain import sha256_digest
+from morrow.core.execution import ToolExecutionDisposition
+from morrow.core.learning import LearningMode
+from morrow.core.learning_safety import learning_safety_codes, normalize_learning_text
+from morrow.core.models import UserMessage
+from morrow.core.ports import IdSource
+from morrow.core.preference_documents import PreferenceDocument
+from morrow.core.preference_models import (
+    PREFERENCE_EVIDENCE_ID_PREFIX,
+    PREFERENCE_MAX_EXCERPT_CHARS,
+    PREFERENCE_REVIEW_JOB_ID_PREFIX,
+)
+from morrow.core.preference_persistence_models import (
+    PreferenceEvidence,
+    PreferenceReviewJob,
+)
+from morrow.core.store import StorageError, StorageErrorCode
+from morrow.runtime.conversation import ConversationSnapshot, TurnTerminalRecord
+from morrow.runtime.session import Session
+
+
+def _utc(clock: Callable[[], datetime]) -> datetime:
+    value = clock()
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
+@dataclass(frozen=True)
+class PreferenceReviewEnqueueResult:
+    """Bounded result used by the terminal hook and deterministic tests."""
+
+    job: PreferenceReviewJob | None = None
+    evidence: PreferenceEvidence | None = None
+    reason: str | None = None
+
+
+class PreferenceReviewJobEnqueuer:
+    """Create one durable Review job without calling a model or touching YAML."""
+
+    def __init__(
+        self,
+        *,
+        workspace_id: str,
+        id_source: IdSource,
+        clock: Callable[[], datetime],
+        review_version: int = 1,
+    ) -> None:
+        if isinstance(review_version, bool) or not isinstance(review_version, int):
+            raise ValueError("Preference Review version is invalid")
+        if review_version < 1:
+            raise ValueError("Preference Review version is invalid")
+        self.workspace_id = workspace_id
+        self.id_source = id_source
+        self.clock = clock
+        self.review_version = review_version
+
+    def enqueue_terminal_turn(
+        self,
+        txn,
+        *,
+        session: Session,
+        turn_id: str | None,
+        conversation: ConversationSnapshot,
+        terminal: TurnTerminalRecord,
+    ) -> PreferenceReviewEnqueueResult:
+        """Enqueue the closed current User Turn on the caller's active transaction."""
+
+        if turn_id is None:
+            return PreferenceReviewEnqueueResult(reason="turn_missing")
+        if not session.session_id.strip():
+            return PreferenceReviewEnqueueResult(reason="session_missing")
+        turn = txn.get_turn(self.workspace_id, turn_id)
+        if turn is None or turn.session_id != session.session_id:
+            return PreferenceReviewEnqueueResult(reason="turn_missing")
+
+        turns = conversation.public_turns(require_closed=True)
+        if not turns or turns[-1].terminal != terminal:
+            return PreferenceReviewEnqueueResult(reason="terminal_not_current")
+        current = turns[-1]
+        if not isinstance(current.user.message, UserMessage):
+            return PreferenceReviewEnqueueResult(reason="user_message_missing")
+        content = current.user.message.content
+
+        # The terminal replay key is checked before mutable policy/suppression state so a replay
+        # returns the original durable result rather than creating a second version.
+        existing = txn.get_preference_review_job_for_turn(
+            self.workspace_id,
+            turn_id,
+            review_version=self.review_version,
+        )
+        if existing is not None:
+            evidence = txn.get_preference_evidence_for_job(self.workspace_id, existing.job_id)
+            if evidence is None:
+                raise StorageError(
+                    StorageErrorCode.NEEDS_REPAIR,
+                    "Preference Review job has no Evidence",
+                )
+            if evidence.turn_id != turn_id or evidence.content_digest != sha256_digest(content):
+                raise StorageError(
+                    StorageErrorCode.NEEDS_REPAIR,
+                    "Preference Review replay source changed",
+                )
+            return PreferenceReviewEnqueueResult(job=existing, evidence=evidence, reason="replayed")
+
+        if content.lstrip().startswith("/"):
+            return PreferenceReviewEnqueueResult(reason="control_command")
+        if txn.get_effective_learning_policy(self.workspace_id).mode is LearningMode.OFF:
+            return PreferenceReviewEnqueueResult(reason="learning_policy_off")
+        if learning_safety_codes(content):
+            return PreferenceReviewEnqueueResult(reason="safety_rejected")
+        if self._has_successful_preference_write(
+            txn, self.workspace_id, session.session_id, turn_id
+        ):
+            return PreferenceReviewEnqueueResult(reason="preference_write_completed")
+
+        global_document, workspace_document = _active_documents(session, now=_utc(self.clock))
+        snapshot = snapshot_from_documents(global_document, workspace_document)
+        encoded_snapshot = snapshot.serialized_bytes
+        stamp = _utc(self.clock)
+        excerpt = _excerpt(content)
+        job = PreferenceReviewJob(
+            job_id=self.id_source.new_id(PREFERENCE_REVIEW_JOB_ID_PREFIX),
+            workspace_id=self.workspace_id,
+            session_id=session.session_id,
+            turn_id=turn_id,
+            review_version=self.review_version,
+            source_global_revision=snapshot.global_document_revision,
+            source_workspace_revision=snapshot.workspace_document_revision,
+            active_snapshot_json=encoded_snapshot.decode("utf-8"),
+            active_snapshot_count=len(snapshot.entries),
+            active_snapshot_bytes=len(encoded_snapshot),
+            active_snapshot_digest=snapshot.digest,
+            created_at=stamp,
+        )
+        evidence = PreferenceEvidence(
+            evidence_id=self.id_source.new_id(PREFERENCE_EVIDENCE_ID_PREFIX),
+            workspace_id=self.workspace_id,
+            job_id=job.job_id,
+            turn_id=turn_id,
+            excerpt_redacted=excerpt,
+            excerpt_bytes=len(excerpt.encode("utf-8")),
+            content_digest=sha256_digest(content),
+            observed_at=stamp,
+            created_at=stamp,
+        )
+        stored_job, stored_evidence = txn.put_preference_job_with_evidence(
+            self.workspace_id, job, evidence
+        )
+        return PreferenceReviewEnqueueResult(job=stored_job, evidence=stored_evidence)
+
+    @staticmethod
+    def _has_successful_preference_write(
+        txn, workspace_id: str, session_id: str, turn_id: str
+    ) -> bool:
+        executions = txn.list_session_executions(workspace_id, session_id)
+        return any(
+            execution.turn_id == turn_id
+            and execution.tool_name == "manage_preferences"
+            and execution.disposition is ToolExecutionDisposition.SUCCEEDED
+            for execution in executions
+        )
+
+
+def _active_documents(
+    session: Session, *, now: datetime
+) -> tuple[PreferenceDocument, PreferenceDocument]:
+    global_document = session.generic_global_preferences
+    if global_document is None:
+        global_document = PreferenceDocument(
+            scope="global",
+            revision=session.global_preferences_revision,
+            updated_at=now,
+            entries=legacy_entries_from_preferences(
+                "global", session.global_preferences.model_dump(mode="python")
+            ),
+        )
+    workspace_document = session.generic_workspace_preferences
+    if workspace_document is None:
+        workspace_document = PreferenceDocument(
+            scope="workspace",
+            revision=session.preferences_revision,
+            updated_at=now,
+            entries=legacy_entries_from_preferences(
+                "workspace", session.workspace_preferences.model_dump(mode="python")
+            ),
+        )
+    return global_document, workspace_document
+
+
+def _excerpt(content: str) -> str:
+    normalized = " ".join(content.split())
+    return normalize_learning_text(
+        normalized[:PREFERENCE_MAX_EXCERPT_CHARS].rstrip(),
+        label="Preference evidence excerpt",
+        maximum=PREFERENCE_MAX_EXCERPT_CHARS,
+    )
+
+
+# Keep the service-shaped name available to callers while the implementation remains an explicit
+# enqueue collaborator at the Turn boundary.
+PreferenceReviewJobService = PreferenceReviewJobEnqueuer
+
+
+__all__ = [
+    "PreferenceReviewEnqueueResult",
+    "PreferenceReviewJobEnqueuer",
+    "PreferenceReviewJobService",
+]

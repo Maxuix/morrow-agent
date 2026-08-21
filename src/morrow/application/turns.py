@@ -6,6 +6,7 @@ from datetime import datetime
 
 from morrow.adapters.state.journal import SqliteOperationalJournal
 from morrow.adapters.state.operational import OperationalStoreSession
+from morrow.application.preferences.jobs import PreferenceReviewJobEnqueuer
 from morrow.application.recovery import RecoveryService
 from morrow.application.tasks import TaskService
 from morrow.application.tool_persistence import (
@@ -78,6 +79,11 @@ class SessionPersistence:
             id_source=id_source,
             clock=self._now,
         )
+        self.preference_reviews = PreferenceReviewJobEnqueuer(
+            workspace_id=workspace_id,
+            id_source=id_source,
+            clock=self._now,
+        )
         self.turn_submission = TurnSubmissionCoordinator(
             journal,
             workspace_id=workspace_id,
@@ -88,6 +94,7 @@ class SessionPersistence:
             tasks=self.tasks,
             clock=self._now,
             state=self.turn_state,
+            preference_reviews=self.preference_reviews,
         )
         self.session_restore = SessionRestoreCoordinator(
             journal,

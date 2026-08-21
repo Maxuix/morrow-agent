@@ -22,18 +22,30 @@ execution, and next-AgentRun refresh.
 
 ## Active task
 
-S59.1 — add the atomic terminal-Turn Preference Review enqueue hook on
+S59.2 — add the lease-based process-local Review Worker lifecycle on
 `feat/stage5-review-worker`.
 
 ## Next action
 
-Inspect the existing terminal Turn commit transaction and ConversationLog/operational journal
-boundaries, then implement only S59.1. Do not begin worker leasing or retry scheduling early.
+Commit the verified S59.1 enqueue checkpoint, then inspect the existing Review runner and v13 job
+state boundaries before implementing only the worker lifecycle. Keep retry policy and model fallback
+for S59.3.
 
 ## Blockers
 
 No code blocker for S59. Real-Provider acceptance remains on hold; S59 must use scripted offline
 Provider/Reviewer doubles and injected time/scheduling.
+
+## S59.1 evidence
+
+- Terminal Turn enqueue is now inside the existing terminal SQLite transaction. It creates one
+  `(workspace_id, turn_id, review_version)` job and one current-user Evidence row, freezes the
+  bounded global/workspace Preference snapshot, suppresses slash/control, policy-off, safety-
+  rejected, and successful `manage_preferences` Turns, and returns replay-safe existing rows.
+- `tests/test_preference_review_jobs.py` covers frozen metadata, context reconstruction, replay
+  idempotency, and terminal-append rollback when enqueue fails.
+- Validation passed: `891 passed, 2 deselected`; Ruff format/check, compileall, `morrow learning
+  --help`, and `git diff --check`.
 
 ## Preserved workspace state
 

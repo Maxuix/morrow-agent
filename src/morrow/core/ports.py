@@ -122,6 +122,10 @@ class ProjectStateStore(Protocol):
 class PreferencePersistencePort(Protocol):
     """Bounded v13 persistence surface; YAML remains the Active authority."""
 
+    def put_preference_job_with_evidence(
+        self, workspace_id: str, job: PreferenceReviewJob, evidence: PreferenceEvidence
+    ) -> tuple[PreferenceReviewJob, PreferenceEvidence]: ...
+
     def put_preference_review_job(
         self, workspace_id: str, job: PreferenceReviewJob
     ) -> PreferenceReviewJob: ...
@@ -130,8 +134,16 @@ class PreferencePersistencePort(Protocol):
         self, workspace_id: str, evidence: PreferenceEvidence
     ) -> PreferenceEvidence: ...
 
+    def get_preference_evidence_for_job(
+        self, workspace_id: str, job_id: str
+    ) -> PreferenceEvidence | None: ...
+
     def get_preference_review_job(
         self, workspace_id: str, job_id: str
+    ) -> PreferenceReviewJob | None: ...
+
+    def get_preference_review_job_for_turn(
+        self, workspace_id: str, turn_id: str, *, review_version: int = 1
     ) -> PreferenceReviewJob | None: ...
 
     def list_preference_review_jobs(

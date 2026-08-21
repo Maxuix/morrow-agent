@@ -241,6 +241,13 @@ class SqliteOperationalJournal:
     def get_preference_review_job(self, workspace_id: str, job_id: str):
         return self._preference_journal.get_preference_review_job(workspace_id, job_id)
 
+    def get_preference_review_job_for_turn(
+        self, workspace_id: str, turn_id: str, *, review_version: int = 1
+    ):
+        return self._preference_journal.get_preference_review_job_for_turn(
+            workspace_id, turn_id, review_version=review_version
+        )
+
     def list_preference_review_jobs(self, workspace_id: str, *, status=None, limit: int = 100):
         return self._preference_journal.list_preference_review_jobs(
             workspace_id, status=status, limit=limit
@@ -254,6 +261,9 @@ class SqliteOperationalJournal:
 
     def get_preference_evidence(self, workspace_id: str, evidence_id: str):
         return self._preference_journal.get_preference_evidence(workspace_id, evidence_id)
+
+    def get_preference_evidence_for_job(self, workspace_id: str, job_id: str):
+        return self._preference_journal.get_preference_evidence_for_job(workspace_id, job_id)
 
     def list_preference_evidence(
         self, workspace_id: str, *, job_id: str | None = None, limit: int = 100
