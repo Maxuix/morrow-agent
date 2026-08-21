@@ -215,6 +215,9 @@ def _tool_error(error: Exception) -> ToolExecutionError:
     if code in {
         "invalid_scope",
         "invalid_status",
+        "invalid_revision",
+        "invalid_command",
+        "invalid_request",
         "invalid_operation",
         "operation_count",
         "mixed_scope",

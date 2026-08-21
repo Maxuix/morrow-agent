@@ -2,9 +2,9 @@
 
 ## Current status
 
-The complete Stage 5 Preference Learning v2 implementation plan is finalized after one
-`$grok-delegate` review and independent plan-fix pass. S57 is now active on its dedicated branch
-after S56 merged at `fdce537`.
+The complete Stage 5 Preference Learning v2 implementation plan is finalized after the S56 review
+and independent plan-fix pass. S57 implementation is complete on its dedicated branch after S56
+merged at `fdce537`; its single Grok review invocation was interrupted before a report returned.
 
 ## Last completed work
 
@@ -23,18 +23,20 @@ execution, and next-AgentRun refresh.
 
 ## Active task
 
-S57 implementation checkpoint — all S57.1–S57.6 code paths are implemented; focused and full offline
-validation are passing before the required one-time review.
+S57 closeout — all S57.1–S57.6 code paths are implemented; the independent review/fix pass and
+focused validation are complete, with final offline gates pending.
 
 ## Next action
 
-Commit the verified S57 implementation checkpoint, run exactly one `$grok-delegate` `/review`, apply
-confirmed/valuable fixes independently, and rerun the affected gates.
+Run the final offline gates, commit S57 closeout, fast-forward local `main`, retire the clean topic
+branch, and activate S58. Do not invoke Grok a second time; its one invocation was interrupted
+before returning findings.
 
 ## Blockers
 
-None for S57. Real-Provider acceptance remains on hold until the refactor is implemented and the
-post-implementation protocol runs.
+No code blocker for S57. The one Grok invocation was interrupted before its report returned; the
+local independent review found and fixed concurrent-command replay and unreadable-authority
+resolution gaps. Real-Provider acceptance remains on hold until the later protocol runs.
 
 ## Preserved workspace state
 

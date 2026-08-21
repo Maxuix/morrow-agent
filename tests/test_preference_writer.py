@@ -8,6 +8,10 @@ from morrow.adapters.credentials.keyring import MemoryCredentialStore
 from morrow.adapters.state.journal import SqliteOperationalJournal
 from morrow.adapters.state.operational import OperationalStore
 from morrow.adapters.state.preference_yaml import PreferenceYamlStore
+from morrow.adapters.state.preference_yaml_types import (
+    PreferenceYamlLoad,
+    PreferenceYamlLoadStatus,
+)
 from morrow.application.preferences.bridge import (
     candidate_operations,
     preferences_from_entries,
@@ -168,6 +172,34 @@ def test_recovery_finishes_when_yaml_applied_before_sqlite_finalize(tmp_path, mo
 
     result = PreferenceWriteRecovery(writer).recover_batch(prepared.batch.batch_id)
     assert result.batch.status is PreferenceWriteBatchStatus.FINALIZED
+    session.close()
+    operational.layout.database.exists()
+
+
+def test_unreadable_authority_is_persisted_as_needs_resolution(tmp_path, monkeypatch):
+    yaml_store, operational, session, journal, writer = _writer(tmp_path)
+    prepared = writer.prepare(
+        "workspace",
+        0,
+        "cmd_unreadable",
+        (PreferenceOperation(operation="add", scope="workspace", statement="先验证状态。"),),
+    )
+    unreadable = PreferenceYamlLoad(
+        PreferenceYamlLoadStatus.CORRUPT,
+        None,
+        0,
+        3,
+        error="corrupt",
+    )
+    monkeypatch.setattr(writer, "_load_authority", lambda _scope: unreadable)
+
+    with pytest.raises(PreferenceWriterError, match="recovery"):
+        writer.apply(prepared)
+
+    stored = journal.preference_journal.get_preference_write_batch("ws_1", prepared.batch.batch_id)
+    assert stored is not None
+    assert stored.status is PreferenceWriteBatchStatus.NEEDS_RESOLUTION
+    assert stored.recovery_code == "authority_unreadable"
     session.close()
     operational.layout.database.exists()
 

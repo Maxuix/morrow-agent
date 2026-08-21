@@ -2008,3 +2008,15 @@
 - Focused Writer/configuration/Promotion/CLI tests passed; the complete offline gate passed
   `867 passed, 2 deselected`; Ruff format/check and architecture tests passed. No Provider, network,
   credential, or Live test path was used. The two untracked research files remain untouched.
+
+## 2026-08-21 — Subplan 57 independent review and fix pass
+
+- The single global `grok-delegate` invocation was started on the current branch, but the user
+  interrupted the turn before Grok returned its reviewer report. No second invocation was made and
+  no Grok finding was treated as accepted.
+- Independent local review found two valuable Writer boundary fixes: a concurrent same-command
+  insert now re-reads the authoritative batch and returns replay/conflict semantics, and an
+  unreadable YAML authority is persisted as `needs_resolution` instead of remaining retryable
+  without a visible state. Direct request validation and tool error classification were tightened.
+- Added a regression test for the unreadable-authority state. The focused Writer suite passed `12`
+  tests after the fix; final offline, Ruff, compile, CLI, and diff gates remain to be run.

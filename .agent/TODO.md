@@ -16,8 +16,9 @@ Subplan 57 — Atomic Preference Writer and Direct Lifecycle.
 - `[x]` S57.4 Add approved direct management tool, CLI/REPL surfaces, and Session-local projection reset.
 - `[x]` S57.5 Translate legacy Preference Candidates through the generic Writer without mutating history.
 - `[x]` S57.6 Activate first-write migration, full-aggregate preservation, and legacy AgentRun decoding.
-- `[>]` Run focused S57 validation and implementation checkpoint.
-- `[ ]` Run exactly one Grok review, independently apply confirmed fixes, and rerun gates.
+- `[x]` Run focused S57 validation and implementation checkpoint.
+- `[x]` Invoke exactly one Grok `/review`; the user interrupted before its report returned, so no
+  Grok finding was accepted and the independent local review/fix pass was completed instead.
 - `[ ]` Commit closeout, fast-forward `main`, retire the branch, and activate S58.
 
 ## Start condition

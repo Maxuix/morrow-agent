@@ -20,7 +20,7 @@ from morrow.adapters.state.preference_yaml_types import (
     PreferenceYamlConflict,
     PreferenceYamlLoadStatus,
 )
-from morrow.core.domain import canonical_json_bytes
+from morrow.core.domain import canonical_json_bytes, validate_prefixed_id
 from morrow.core.ports import IdSource
 from morrow.core.preference_documents import (
     GlobalConfigV2,
@@ -139,7 +139,7 @@ def _load_document_json(value: str | None, *, label: str) -> PreferenceDocument:
 def _scope_value(scope: PreferenceScope | str) -> PreferenceScope:
     try:
         return scope if isinstance(scope, PreferenceScope) else PreferenceScope(scope)
-    except ValueError as exc:
+    except (TypeError, ValueError) as exc:
         raise PreferenceWriterError("invalid_scope", "Preference scope is invalid") from exc
 
 
@@ -176,9 +176,31 @@ class PreferenceWriter:
             raise PreferenceWriterError(
                 "invalid_scope", "durable Preference writes cannot use session scope"
             )
+        if (
+            isinstance(expected_revision, bool)
+            or not isinstance(expected_revision, int)
+            or expected_revision < 0
+        ):
+            raise PreferenceWriterError(
+                "invalid_revision", "Preference document revision is invalid"
+            )
+        try:
+            validate_prefixed_id(command_id, "cmd")
+        except (TypeError, ValueError) as exc:
+            raise PreferenceWriterError(
+                "invalid_command", "Preference command ID is invalid"
+            ) from exc
         operation_tuple = tuple(operations)
         lifecycle_tuple = tuple(lifecycle_operations)
         proposal_tuple = tuple(proposal_ids)
+        if any(not isinstance(operation, PreferenceOperation) for operation in operation_tuple):
+            raise PreferenceWriterError("invalid_operation", "Preference operation is invalid")
+        if any(
+            not isinstance(operation, PreferenceLifecycleOperation) for operation in lifecycle_tuple
+        ):
+            raise PreferenceWriterError(
+                "invalid_operation", "Preference lifecycle operation is invalid"
+            )
         if not operation_tuple and not lifecycle_tuple:
             raise PreferenceWriterError(
                 "operation_count", "Preference batch must contain one to eight operations"
@@ -232,28 +254,49 @@ class PreferenceWriter:
                 "invalid_operation", "Preference operation is invalid"
             ) from exc
         timestamp = _now(self.clock)
-        batch = PreferenceWriteBatch(
-            batch_id=self.id_source.new_id(PREFERENCE_WRITE_BATCH_ID_PREFIX),
-            workspace_id=self.workspace_id,
-            scope=durable_scope,
-            command_id=command_id,
-            operations=operation_tuple,
-            lifecycle_operations=lifecycle_tuple,
-            allocated_add_ids=tuple(allocated),
-            proposal_ids=proposal_tuple,
-            expected_document_revision=expected_revision,
-            before_document_revision=before.revision,
-            before_document_digest=_document_digest(before),
-            after_document_revision=after.revision,
-            after_document_digest=_document_digest(after),
-            before_document_json=_document_json(before),
-            after_document_json=_document_json(after),
-            created_at=timestamp,
-            prepared_at=timestamp,
-        )
+        try:
+            batch = PreferenceWriteBatch(
+                batch_id=self.id_source.new_id(PREFERENCE_WRITE_BATCH_ID_PREFIX),
+                workspace_id=self.workspace_id,
+                scope=durable_scope,
+                command_id=command_id,
+                operations=operation_tuple,
+                lifecycle_operations=lifecycle_tuple,
+                allocated_add_ids=tuple(allocated),
+                proposal_ids=proposal_tuple,
+                expected_document_revision=expected_revision,
+                before_document_revision=before.revision,
+                before_document_digest=_document_digest(before),
+                after_document_revision=after.revision,
+                after_document_digest=_document_digest(after),
+                before_document_json=_document_json(before),
+                after_document_json=_document_json(after),
+                created_at=timestamp,
+                prepared_at=timestamp,
+            )
+        except (TypeError, ValueError) as exc:
+            raise PreferenceWriterError(
+                "invalid_request", "Preference write request is invalid"
+            ) from exc
         try:
             stored = self.journal.put_preference_write_batch(self.workspace_id, batch)
         except StorageError as exc:
+            raced = self.journal.get_preference_write_batch_by_command(
+                self.workspace_id, command_id
+            )
+            if raced is not None:
+                if not self._same_request(
+                    raced,
+                    durable_scope,
+                    expected_revision,
+                    operation_tuple,
+                    proposal_tuple,
+                    lifecycle_tuple,
+                ):
+                    raise PreferenceWriterConflict(
+                        "command ID was reused with a different write"
+                    ) from exc
+                return self._preparation(raced)
             raise self._translate_storage(exc) from exc
         return PreferenceWritePreparation(stored, before, after)
 
@@ -281,6 +324,7 @@ class PreferenceWriter:
 
         current_load = self._load_authority(stored.scope)
         if current_load.status is not PreferenceYamlLoadStatus.OK or current_load.value is None:
+            self._save_needs_resolution(stored, "authority_unreadable")
             raise PreferenceWriterNeedsResolution("Preference YAML cannot be read for recovery")
         current = self._document_from_value(stored.scope, current_load.value)
         if self._matches(current, preparation.after_document, stored.after_document_digest):
@@ -308,6 +352,7 @@ class PreferenceWriter:
 
         verified_load = self._load_authority(stored.scope)
         if verified_load.status is not PreferenceYamlLoadStatus.OK or verified_load.value is None:
+            self._save_needs_resolution(stored, "post_publish_unreadable")
             raise PreferenceWriterNeedsResolution("Preference YAML cannot be verified")
         verified = self._document_from_value(stored.scope, verified_load.value)
         if not self._matches(verified, preparation.after_document, stored.after_document_digest):
