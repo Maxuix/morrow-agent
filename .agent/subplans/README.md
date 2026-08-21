@@ -26,7 +26,7 @@ history at `20fb43e`; its retired task file is no longer kept in the active subp
 | 51 | `51-stage5-inbox-project-knowledge.md` | completed |
 | 52 | `52-stage5-configuration-promotion.md` | completed |
 | 53 | `53-stage5-memory-selection-context.md` | completed |
-| 54 | `54-stage5-reviewer-acceptance.md` | active (S54.7 final review / closeout) |
+| 54 | `54-stage5-reviewer-acceptance.md` | completed |
 
 Completed Stage 3 Subplans 29–34 were removed from the active directory when this master plan was
 created; they remain recoverable in Git history together with their accepted evidence.

@@ -477,6 +477,12 @@ def _emit_model(value, *, as_json: bool = False) -> None:
         typer.echo(str(payload))
 
 
+def _emit_learning_review_result(result) -> None:
+    _emit_model(result)
+    if result.review.status is not LearningReviewStatus.COMPLETED:
+        raise typer.Exit(code=2)
+
+
 def _emit_page(page, *, render, as_json: bool = False) -> None:
     if as_json:
         typer.echo(
@@ -877,12 +883,9 @@ def learning_review(
             write=True,
             with_reviewer=True,
         )
-        _emit_model(
+        _emit_learning_review_result(
             asyncio.run(
-                api.run_learning_review(
-                    review_id,
-                    expected_row_version=expected_row_version,
-                )
+                api.run_learning_review(review_id, expected_row_version=expected_row_version)
             )
         )
     except Exception as exc:
@@ -911,12 +914,9 @@ def learning_retry(
             write=True,
             with_reviewer=True,
         )
-        _emit_model(
+        _emit_learning_review_result(
             asyncio.run(
-                api.retry_learning_review(
-                    review_id,
-                    expected_row_version=expected_row_version,
-                )
+                api.retry_learning_review(review_id, expected_row_version=expected_row_version)
             )
         )
     except Exception as exc:

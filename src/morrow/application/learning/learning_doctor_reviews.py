@@ -34,7 +34,8 @@ def inspect_reviews(
                 issue_factory(
                     "learning_review_subject",
                     DoctorSeverity.ERROR,
-                    "Learning Review does not point to the same-workspace TaskRun and Outcome",
+                    f"Learning Review {review.review_id} does not point to the same-workspace "
+                    "TaskRun and Outcome",
                 )
             )
         if review.status is LearningReviewStatus.RUNNING:
@@ -43,7 +44,7 @@ def inspect_reviews(
                     issue_factory(
                         "learning_review_lease",
                         DoctorSeverity.ERROR,
-                        "running Learning Review has no lease",
+                        f"running Learning Review {review.review_id} has no lease",
                     )
                 )
             elif review.lease_expires_at <= now:
@@ -51,7 +52,8 @@ def inspect_reviews(
                     issue_factory(
                         "learning_review_lease_expired",
                         DoctorSeverity.WARNING,
-                        "running Learning Review lease has expired and needs foreground recovery",
+                        f"Learning Review {review.review_id} lease has expired and needs "
+                        "foreground recovery",
                     )
                 )
         elif review.lease_id is not None or review.lease_expires_at is not None:
@@ -59,7 +61,7 @@ def inspect_reviews(
                 issue_factory(
                     "learning_review_lease",
                     DoctorSeverity.ERROR,
-                    "non-running Learning Review still owns a lease",
+                    f"non-running Learning Review {review.review_id} still owns a lease",
                 )
             )
         if review.status in {LearningReviewStatus.COMPLETED, LearningReviewStatus.FAILED} and (
@@ -69,7 +71,7 @@ def inspect_reviews(
                 issue_factory(
                     "learning_review_completion",
                     DoctorSeverity.ERROR,
-                    "terminal Learning Review has no completion timestamp",
+                    f"terminal Learning Review {review.review_id} has no completion timestamp",
                 )
             )
         if review.supersedes_review_id is not None:
@@ -83,16 +85,16 @@ def inspect_reviews(
                     issue_factory(
                         "learning_review_supersedes",
                         DoctorSeverity.ERROR,
-                        "Learning Review supersedes an invalid review version",
+                        f"Learning Review {review.review_id} supersedes an invalid review version",
                     )
                 )
-    for versions_for_outcome in versions.values():
+    for outcome_id, versions_for_outcome in versions.items():
         if len(versions_for_outcome) != len(set(versions_for_outcome)):
             issues.append(
                 issue_factory(
                     "learning_review_version",
                     DoctorSeverity.ERROR,
-                    "Learning Review versions are not unique for an Outcome",
+                    f"Learning Review versions are not unique for Outcome {outcome_id}",
                 )
             )
 
@@ -117,7 +119,8 @@ def inspect_evidence(
                 issue_factory(
                     "learning_evidence_link",
                     DoctorSeverity.ERROR,
-                    "Learning Evidence points outside its Review workspace or TaskRun",
+                    f"Learning Evidence {item.evidence_id} points outside its Review workspace "
+                    "or TaskRun",
                 )
             )
     for review_id, review in reviews_by_id.items():
@@ -129,7 +132,7 @@ def inspect_evidence(
                 issue_factory(
                     "learning_review_evidence_duplicate",
                     DoctorSeverity.ERROR,
-                    "Learning Review contains duplicate Evidence links",
+                    f"Learning Review {review_id} contains duplicate Evidence links",
                 )
             )
         if any(item.origin_review_id != review.review_id for item in linked):
@@ -137,7 +140,7 @@ def inspect_evidence(
                 issue_factory(
                     "learning_review_evidence_owner",
                     DoctorSeverity.ERROR,
-                    "Learning Review links Evidence owned by another Review",
+                    f"Learning Review {review_id} links Evidence owned by another Review",
                 )
             )
 

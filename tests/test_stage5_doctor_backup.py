@@ -70,6 +70,8 @@ async def test_doctor_detects_candidate_evidence_and_suppression_target_drift(tm
         assert report.health.value == "needs_repair"
         assert "learning_candidate_evidence" in codes
         assert "learning_suppression_target" in codes
+        assert any(candidate.candidate_id in issue.summary for issue in report.issues)
+        assert any("lsp_doctor" in issue.summary for issue in report.issues)
     finally:
         session.close()
 

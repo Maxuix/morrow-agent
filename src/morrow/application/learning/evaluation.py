@@ -1,8 +1,8 @@
 """Deterministic offline safety evaluation for the Stage 5 Learning boundary.
 
 The evaluator consumes versioned synthetic cases and returns only bounded reason codes and
-counts.  It deliberately does not call a Provider or a journal, and it does not treat a
-successful candidate classification as an Active write.
+counts. It deliberately does not call a Provider or a journal. Its write count is the evaluator's
+own no-write guarantee; the product pipeline's Active-write safety is covered by integration tests.
 """
 
 from __future__ import annotations
@@ -35,6 +35,7 @@ class LearningEvaluationFamily(StrEnum):
     PROJECT_FACT = "project_fact"
     ONE_SHOT = "one_shot"
     NEGATION = "negation"
+    CORRECTION = "correction"
     QUOTED = "quoted"
     HYPOTHETICAL = "hypothetical"
     ASSISTANT_ONLY = "assistant_only"
@@ -101,6 +102,7 @@ class LearningEvaluationCase(ProtocolModel):
         "direct",
         "one_shot",
         "negation",
+        "correction",
         "quoted",
         "hypothetical",
         "assistant",
@@ -174,7 +176,10 @@ class LearningEvaluationCaseResult(ProtocolModel):
     reason_code: str
     candidate_type: LearningCandidateType | None = None
     candidate_count: int = Field(ge=0, le=3)
-    active_write_count: Literal[0] = 0
+    active_write_count: Literal[0] = Field(
+        default=0,
+        description="The pure evaluator itself performs no Active writes; see integration gates.",
+    )
     safety_codes: tuple[LearningSafetyCode, ...] = ()
 
 
@@ -184,7 +189,11 @@ class LearningEvaluationReport(ProtocolModel):
     passed_count: int = Field(ge=0, le=LEARNING_EVALUATION_MAX_CASES)
     failed_count: int = Field(ge=0, le=LEARNING_EVALUATION_MAX_CASES)
     safety_negative_count: int = Field(ge=0, le=LEARNING_EVALUATION_MAX_CASES)
-    safety_negative_active_write_failures: int = Field(ge=0, le=0)
+    safety_negative_active_write_failures: int = Field(
+        ge=0,
+        le=0,
+        description="Pure evaluator write failures; product Active writes are tested separately.",
+    )
     maximum_candidate_count: int = Field(ge=0, le=3)
     cases: tuple[LearningEvaluationCaseResult, ...]
 
@@ -216,8 +225,6 @@ def load_learning_evaluation_dataset(path=None) -> LearningEvaluationDataset:
             raise ValueError("evaluation dataset could not be read") from exc
     try:
         value = json.loads(raw)
-        # JSON arrays naturally decode as lists; the nested Reviewer payload is revalidated
-        # strictly by ``_parse_reviewer_output`` below.
         return LearningEvaluationDataset.model_validate(value)
     except (json.JSONDecodeError, TypeError, ValidationError) as exc:
         raise ValueError("evaluation dataset is invalid") from exc
@@ -414,8 +421,6 @@ def _parse_reviewer_output(raw: dict[str, object] | str | None):
     if not isinstance(value, dict):
         return None, True
     try:
-        # The Provider response is JSON, so arrays arrive as lists. CandidateDraftBatch still
-        # rejects extras, invalid discriminators, unsafe payloads, and all other schema errors.
         return CandidateDraftBatch.model_validate(value), False
     except ValidationError:
         return None, True

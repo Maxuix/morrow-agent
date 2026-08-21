@@ -1,7 +1,7 @@
 # Stage 5 Reviewable Learning and Long-Term Memory Plan
 
-> Status: authorized; Stage 5 implementation is in progress
-> Active subplan: 54 — Production Reviewer, Evaluation, and Stage 5 Acceptance
+> Status: offline implementation and acceptance complete; optional Live model-quality hold pending
+> Active subplan: none; Subplan 54 — Production Reviewer, Evaluation, and Stage 5 Acceptance — is closed
 > Baseline: `613ffdb` on verified local `main`
 > Target schema: Operational Store v9 → v10 → v11 → v12
 
@@ -29,7 +29,7 @@ configuration authority, or promising a hidden worker that does not exist.
 
 1. The current user request and later explicit decisions.
 2. Current code and validation just run.
-3. This master plan and the one active Stage 5 subplan.
+3. This master plan and the one active Stage 5 subplan when implementation is in progress.
 4. `docs/roadmap/stage-5-reviewable-learning-and-memory.md` after its code-alignment corrections.
 5. The two Stage 5 research discussions as design input, not a parallel implementation spec.
 

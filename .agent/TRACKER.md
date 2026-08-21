@@ -2,11 +2,16 @@
 
 ## Current status
 
-The user authorized a complete executable Stage 5 plan. Subplan 53 is merged at `613ffdb` and
-Subplan 54 is now active on `feat/stage5-reviewer-acceptance`.
+The user authorized a complete executable Stage 5 plan. Subplan 54's offline implementation,
+single final Grok review/fix pass, and final quality gate are complete on
+`feat/stage5-reviewer-acceptance`; the optional Live model-quality hold remains pending.
 
 ## Last completed task
 
+Subplan 54 is verified on its topic branch, including the no-tool production Reviewer, policy and
+foreground UX, candidate-only future types, deterministic offline evaluation, doctor/backup
+acceptance, and the required single final Grok review/fix pass. The final non-live gate passed
+`816 passed, 2 skipped, 2 deselected`; Ruff, compileall, CLI help, and `git diff --check` passed.
 Subplan 53 is verified and merged at `613ffdb`, including its one-time Grok review-fix pass. It adds
 v12 MemorySelection and rebuildable terms, deterministic selection, frozen AgentRun/context
 projections, bounded inspection surfaces, doctor/backup invariants, and the S53 acceptance docs.
@@ -17,14 +22,13 @@ recovery, Session projections, and CLI/REPL controls. Subplan 51 is verified and
 
 ## Active task
 
-Run the one required final Grok review for the complete S54 branch, independently fix feasible
-findings once, and complete the final offline/quality gate and closeout.
+Commit the verified S54 closeout, fast-forward local `main`, verify the topic branch has no unique
+commits, and retire the topic branch.
 
 ## Next action
 
-Wait for the full Grok `/review` result, independently verify each finding, apply feasible fixes once
-without a second review, rerun the final gates, and then fast-forward local `main` and retire the
-topic branch.
+Stage 5 implementation is closed offline. Complete the local Git handoff; do not run Live evaluation
+or publish remotely without explicit authorization.
 
 ## Blockers
 
@@ -41,7 +45,7 @@ adopted into version control.
 
 ## Active boundary
 
-- Stage 5 planning is authorized; Subplan 54 is active from verified local `main` after Subplan 53.
+- Stage 5 planning is authorized; Subplan 54 is closed from verified local `main` after Subplan 53.
 - First release exposes only `off` and `review_only`; `explicit_auto` remains closed.
 - Automatic trigger is accepted TaskOutcome only; no `completed`/`corrected` Task status is added.
 - No background worker, natural-language acceptance, embedding/vector dependency, Skill write, or
@@ -96,8 +100,10 @@ adopted into version control.
 - S54.4 is complete: versioned synthetic JSON cases and a deterministic no-Provider evaluator cover
   durable/temporary/negative/quoted/hypothetical/Assistant-only, injection/secret/hidden-Unicode/
   capability, duplicate/suppression/workspace, malformed Reviewer, future candidate-only, and
-  Selection budget/freeze boundaries. The report records 26/26 cases passed, 5 safety-negative
-  cases, and zero Active writes. Focused tests passed 10; the full offline gate passed 804 tests,
+  Selection budget/freeze boundaries. The report records 27/27 pure-evaluator cases passed, 5
+  safety-negative cases, and zero evaluator writes; the scripted real-runner safety gate also
+  records zero Candidate/Knowledge/Memory Active writes. Focused tests passed 16; the full offline
+  gate passed 804 tests,
   2 skips, 1 deselected; checkpoint is `6f77940`.
 - S54.5 is complete: read-only Learning doctor coverage is split into focused Review/Evidence,
   Candidate/Suppression, and Promotion/Knowledge modules; backup verification covers v10–v12
@@ -105,7 +111,7 @@ adopted into version control.
   record REPL/headless, restart, crash/OCC, workspace isolation, future-candidate, doctor, and
   backup evidence. The focused doctor/backup set passed 23 tests; the full offline gate passed
   `808 passed, 2 skipped, 1 deselected`; Ruff format/check, compileall, CLI help, and diff check
-  passed. S54.6 is active and the Live hold remains pending.
+  passed. S54.6 was then activated; its Live hold remains pending.
 - S52 is complete: prepared configuration revisions/digests, YAML promotion Saga, Preference/
   Profile whitelist, foreground recovery, activation provenance/undo, Session projection updates,
   recoverable after-state finalization, explicit REPL global scope, and activation memory events.

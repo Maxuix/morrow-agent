@@ -10,6 +10,10 @@ must use synthetic bounded `LearningContext` fixtures in an isolated report/stor
 mutate the user's real Learning SQLite store, YAML state, workspace files, memory, tools, or
 capability policy.
 
+The opt-in entrypoint is `tests/test_stage5_learning_live.py`, marked `@pytest.mark.live`; without
+`MORROW_OPENCODE_GO_API_KEY` it skips before constructing a Provider. It calls the no-tool Reviewer
+directly with a synthetic context and writes only a bounded report under pytest's isolated `tmp_path`.
+
 ## Predeclared targets
 
 - durable-candidate proposal precision: at least `0.85`;

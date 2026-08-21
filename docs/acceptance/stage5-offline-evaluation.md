@@ -1,7 +1,7 @@
 # Stage 5 Offline Safety Evaluation
 
 > Date: 2026-08-21
-> Status: deterministic offline evidence for Subplan 54.4
+> Status: final deterministic offline evidence for Subplan 54
 > Scope: synthetic Reviewer output and Learning safety/promotion boundaries
 
 This report measures bounded deterministic behavior. It does not claim that a real model will
@@ -12,7 +12,7 @@ hold point requiring explicit authorization and a compatible credential.
 
 - Dataset: `src/morrow/resources/stage5-learning-evaluation.json`
 - Version: `stage5-offline-v1`
-- Cases: 26
+- Cases: 27
 - Families: explicit Preference/Profile, deterministic Project Knowledge, one-shot, negation,
   quotation, hypothesis, Assistant-only behavior, prompt injection, synthetic secret, prohibited
   personal data, hidden Unicode, capability authorization, inferred identity, duplicate,
@@ -23,13 +23,14 @@ hold point requiring explicit authorization and a compatible credential.
 
 ## Result
 
-The deterministic report returned:
+The pure deterministic report returned:
 
 | Gate | Result |
 |---|---:|
-| Cases passed | 26 / 26 |
+| Cases passed | 27 / 27 |
 | Safety-negative cases | 5 |
-| Safety-negative Active writes | 0 |
+| Pure evaluator writes | 0 (by design; no journal/provider boundary) |
+| Integrated safety-negative Active writes | 0 (`test_safety_negative_scripted_reviewers_create_no_active_state`) |
 | Maximum accepted Reviewer candidate count | 1 (policy maximum remains 3) |
 | Invented/cross-workspace evidence | rejected |
 | Future Skill/Workflow/Orchestration activation | candidate-only or rejected |
@@ -44,12 +45,16 @@ synthetic credential-shaped value.
 
 ```text
 UV_CACHE_DIR=/tmp/morrow-stage5-uv-cache uv run pytest -q tests/test_stage5_learning_evaluation.py
-  -> 10 passed
+  -> 16 passed
 ```
 
 The same test module also drives the real Review runner with scripted typed output for positive,
 one-shot, negative, quoted, and hypothetical user evidence. Only the positive explicit durable
-case produces a Preference Candidate. The other cases complete without a Candidate.
+case produces a Preference Candidate. The other cases complete without a Candidate. A separate
+parametrized integration gate sends scripted durable drafts for injection, secret, personal-data,
+hidden-Unicode, and capability cases through the real Review runner and observes zero Candidate,
+Knowledge, or Memory Active state. Memory budget/freeze behavior is covered by the real selector and
+AgentRun tests in `tests/test_stage5_memory_selector.py` and `tests/test_stage5_memory_agent_run.py`.
 
 These results establish the deterministic product boundary only. They do not close the optional
 live-model quality target. Stage 5 doctor, backup, documentation, and offline end-to-end acceptance

@@ -28,7 +28,8 @@ def inspect_candidates(
                 issue_factory(
                     "learning_decision_candidate",
                     DoctorSeverity.ERROR,
-                    "Learning Candidate decision points to a missing or foreign Candidate",
+                    f"Learning Candidate decision {decision.decision_id} points to a missing "
+                    "or foreign Candidate",
                 )
             )
             continue
@@ -37,7 +38,8 @@ def inspect_candidates(
                 issue_factory(
                     "learning_decision_digest",
                     DoctorSeverity.ERROR,
-                    "Learning Candidate decision does not match the original proposal",
+                    f"Learning Candidate decision {decision.decision_id} does not match the "
+                    f"original proposal for Candidate {candidate.candidate_id}",
                 )
             )
         decisions_by_candidate[candidate.candidate_id].append(decision)
@@ -64,7 +66,8 @@ def inspect_candidates(
                 issue_factory(
                     "learning_candidate_review",
                     DoctorSeverity.ERROR,
-                    "Learning Candidate points to a missing or foreign Review",
+                    f"Learning Candidate {candidate.candidate_id} points to a missing or foreign "
+                    "Review",
                 )
             )
         linked = journal.list_learning_candidate_evidence(workspace_id, candidate.candidate_id)
@@ -74,7 +77,8 @@ def inspect_candidates(
                 issue_factory(
                     "learning_candidate_evidence",
                     DoctorSeverity.ERROR,
-                    "Learning Candidate Evidence links do not match the Candidate",
+                    f"Learning Candidate {candidate.candidate_id} Evidence links do not match "
+                    "the Candidate",
                 )
             )
         if any(item.workspace_id != workspace_id for item in linked):
@@ -82,7 +86,8 @@ def inspect_candidates(
                 issue_factory(
                     "learning_candidate_workspace",
                     DoctorSeverity.ERROR,
-                    "Learning Candidate links Evidence from another workspace",
+                    f"Learning Candidate {candidate.candidate_id} links Evidence from another "
+                    "workspace",
                 )
             )
         for reference_id in (*candidate.conflict_refs, candidate.duplicate_of_id):
@@ -91,7 +96,8 @@ def inspect_candidates(
                     issue_factory(
                         "learning_candidate_reference",
                         DoctorSeverity.ERROR,
-                        "Learning Candidate references a missing Candidate",
+                        f"Learning Candidate {candidate.candidate_id} references missing "
+                        f"Candidate {reference_id}",
                     )
                 )
         decisions_for_candidate = decisions_by_candidate.get(candidate.candidate_id, ())
@@ -103,7 +109,7 @@ def inspect_candidates(
                 issue_factory(
                     "learning_candidate_decision_status",
                     DoctorSeverity.ERROR,
-                    "Learning Candidate status has no matching decision",
+                    f"Learning Candidate {candidate.candidate_id} status has no matching decision",
                 )
             )
         if candidate.status is LearningCandidateStatus.PROPOSED and decisions_for_candidate:
@@ -111,7 +117,8 @@ def inspect_candidates(
                 issue_factory(
                     "learning_candidate_decision_status",
                     DoctorSeverity.WARNING,
-                    "proposed Learning Candidate already has a terminal decision",
+                    f"proposed Learning Candidate {candidate.candidate_id} already has a terminal "
+                    "decision",
                 )
             )
 
@@ -145,7 +152,8 @@ def inspect_suppressions(
                 issue_factory(
                     "learning_suppression_target",
                     DoctorSeverity.ERROR,
-                    "Learning suppression target is missing or inconsistent",
+                    f"Learning suppression {suppression.suppression_id} target Candidate "
+                    f"{suppression.source_candidate_id} is missing or inconsistent",
                 )
             )
 

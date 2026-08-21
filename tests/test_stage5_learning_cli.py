@@ -6,12 +6,18 @@ from contextlib import nullcontext
 from types import SimpleNamespace
 
 import pytest
+import typer
 from typer.testing import CliRunner
 
 from morrow.application.commands import CommandService
 from morrow.application.orchestrator import DispatchResult
 from morrow.core.application import ApplicationError
-from morrow.core.learning import LearningMode, LearningScope
+from morrow.core.learning import (
+    LearningMode,
+    LearningReviewFailureCode,
+    LearningReviewStatus,
+    LearningScope,
+)
 from morrow.interfaces import cli as cli_module
 from morrow.interfaces import learning_cli
 from morrow.interfaces import terminal as terminal_module
@@ -29,6 +35,12 @@ class CommandOrchestrator:
     async def stream(self, text):
         result = self.command_service.execute(text)
         yield DispatchResult(lines=result.lines, action=result.action, value=result.value)
+
+
+class FailingReviewer:
+    async def review(self, context, *, model, timeout_seconds):
+        del context, model, timeout_seconds
+        raise RuntimeError("synthetic provider failure")
 
 
 def _command_service(api, tmp_path):
@@ -124,6 +136,19 @@ def test_learning_and_memory_typer_surfaces_are_registered():
     assert "disable" in memory.stdout
 
 
+def test_headless_learning_review_failure_uses_nonzero_exit():
+    result = SimpleNamespace(
+        review=SimpleNamespace(
+            status=LearningReviewStatus.FAILED,
+        )
+    )
+
+    with pytest.raises(typer.Exit) as error:
+        cli_module._emit_learning_review_result(result)
+
+    assert error.value.exit_code == 2
+
+
 def test_memory_show_passes_requested_revision_to_application_service():
     class FakeApi:
         def __init__(self):
@@ -189,5 +214,29 @@ async def test_repl_learning_review_runs_in_foreground_and_reports_zero_candidat
         assert code == 0
         assert any("没有生成候选" in line for line in terminal.console.lines)
         assert api.get_learning_review(review.review_id).status.value == "completed"
+    finally:
+        session.close()
+
+
+@pytest.mark.asyncio
+async def test_repl_learning_review_reports_failure_and_retry_hint(tmp_path, monkeypatch):
+    session, journal, api = _api(tmp_path, reviewer=FailingReviewer())
+    try:
+        accepted = _accepted(api, journal, with_user_turn=True)
+        outcome = api.list_outcomes(accepted.value.task_run_id)[0]
+        review = api.list_learning_reviews(task_outcome_id=outcome.outcome_id).items[0]
+        command_service, repl_session = _command_service(api, tmp_path)
+        terminal = ScriptedTerminal([f"/learn review {review.review_id}", "/exit"])
+        _install_scripted_terminal(monkeypatch, terminal)
+
+        code = await terminal_module.run_repl(
+            CommandOrchestrator(command_service, repl_session), session=repl_session
+        )
+
+        assert code == 0
+        assert any("未完成" in line and "retry" in line for line in terminal.console.lines)
+        failed = api.get_learning_review(review.review_id)
+        assert failed.status.value == "failed"
+        assert failed.failure_code is LearningReviewFailureCode.PROVIDER_UNAVAILABLE
     finally:
         session.close()

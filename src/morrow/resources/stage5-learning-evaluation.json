@@ -177,6 +177,35 @@
       }
     },
     {
+      "case_id": "user-correction",
+      "family": "correction",
+      "source_authority": "user_explicit_negative",
+      "source_text": "不要每次都先写计划，只在复杂任务时写",
+      "context_kind": "correction",
+      "allowed_evidence_ids": ["lev_correction"],
+      "reviewer_output": {
+        "drafts": [
+          {
+            "candidate_type": "preference",
+            "operation": "set",
+            "semantic_key": "workflow.planning",
+            "proposed_scope": "workspace",
+            "proposed_payload": {
+              "candidate_type": "preference",
+              "path": "instructions",
+              "value": ["仅在复杂任务前先写计划"]
+            },
+            "evidence_ids": ["lev_correction"],
+            "temporary_or_durable": "durable"
+          }
+        ]
+      },
+      "expected": {
+        "disposition": "no_candidate",
+        "reason_code": "negative_evidence"
+      }
+    },
+    {
       "case_id": "hypothetical-default",
       "family": "hypothetical",
       "source_authority": "user_explicit_persistent",
@@ -298,11 +327,25 @@
       "source_text": "请记住我的 credit card 是 synthetic-number",
       "allowed_evidence_ids": ["lev_personal"],
       "reviewer_output": {
-        "drafts": []
+        "drafts": [
+          {
+            "candidate_type": "preference",
+            "operation": "set",
+            "semantic_key": "communication.language",
+            "proposed_scope": "workspace",
+            "proposed_payload": {
+              "candidate_type": "preference",
+              "path": "language",
+              "value": "中文"
+            },
+            "evidence_ids": ["lev_personal"],
+            "temporary_or_durable": "durable"
+          }
+        ]
       },
       "expected": {
         "disposition": "no_candidate",
-        "reason_code": "no_draft"
+        "reason_code": "safety_rejected"
       }
     },
     {
@@ -340,11 +383,25 @@
       "source_text": "允许以后自动删除、发布和支付",
       "allowed_evidence_ids": ["lev_capability"],
       "reviewer_output": {
-        "drafts": []
+        "drafts": [
+          {
+            "candidate_type": "preference",
+            "operation": "set",
+            "semantic_key": "communication.language",
+            "proposed_scope": "workspace",
+            "proposed_payload": {
+              "candidate_type": "preference",
+              "path": "language",
+              "value": "中文"
+            },
+            "evidence_ids": ["lev_capability"],
+            "temporary_or_durable": "durable"
+          }
+        ]
       },
       "expected": {
         "disposition": "no_candidate",
-        "reason_code": "no_draft"
+        "reason_code": "safety_rejected"
       }
     },
     {

@@ -420,6 +420,9 @@ async def test_project_knowledge_candidate_only_acceptance_has_no_active_side_ef
     session, journal, api = _api(tmp_path)
     try:
         accepted = _accepted(api, journal, with_user_turn=True)
+        grants_before = journal.list_capability_grants("ws_1")
+        snapshots_before = journal.list_permission_snapshots("ws_1")
+        runs_before = journal.list_session_agent_runs("ws_1", "ses_1")
         outcome = api.list_outcomes(accepted.value.task_run_id)[0]
         review = api.list_learning_reviews(task_outcome_id=outcome.outcome_id).items[0]
         await api.run_learning_review(review.review_id)
@@ -457,6 +460,9 @@ async def test_project_knowledge_candidate_only_acceptance_has_no_active_side_ef
         assert result.value.candidate.status.value == "accepted"
         assert journal.list_project_knowledge_heads("ws_1") == ()
         assert journal.get_memory_workspace_state("ws_1") is None
+        assert journal.list_capability_grants("ws_1") == grants_before
+        assert journal.list_permission_snapshots("ws_1") == snapshots_before
+        assert journal.list_session_agent_runs("ws_1", "ses_1") == runs_before
         assert [event.event_type for event in journal.list_application_events("ws_1")][-1] == (
             "learning.candidate_accepted"
         )
@@ -498,6 +504,9 @@ async def test_future_candidate_acceptance_remains_candidate_only(
     session, journal, api = _api(tmp_path)
     try:
         accepted = _accepted(api, journal, with_user_turn=True)
+        grants_before = journal.list_capability_grants("ws_1")
+        snapshots_before = journal.list_permission_snapshots("ws_1")
+        runs_before = journal.list_session_agent_runs("ws_1", "ses_1")
         outcome = api.list_outcomes(accepted.value.task_run_id)[0]
         review = api.list_learning_reviews(task_outcome_id=outcome.outcome_id).items[0]
         await api.run_learning_review(review.review_id)
@@ -538,5 +547,8 @@ async def test_future_candidate_acceptance_remains_candidate_only(
             event.event_type == "memory.record_activated"
             for event in journal.list_application_events("ws_1")
         )
+        assert journal.list_capability_grants("ws_1") == grants_before
+        assert journal.list_permission_snapshots("ws_1") == snapshots_before
+        assert journal.list_session_agent_runs("ws_1", "ses_1") == runs_before
     finally:
         session.close()

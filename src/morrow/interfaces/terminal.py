@@ -14,6 +14,7 @@ from morrow.application.commands import (
 )
 from morrow.application.orchestrator import DispatchResult
 from morrow.core.capabilities import CommandToolFact
+from morrow.core.learning import LearningReviewStatus
 from morrow.core.learning_payloads import ProjectKnowledgeCandidatePayload
 from morrow.core.models import AgentEvent, ToolApprovalDecision, ToolApprovalRequest
 from morrow.core.permissions import UNCONFINED_HOST_APPROVAL_LANGUAGE
@@ -384,16 +385,24 @@ async def _run_learning_review(orchestrator, terminal: Terminal, review_id: str,
     except (ValueError, RuntimeError) as exc:
         terminal.console.print(f"Learning Review 处理失败：{exc}")
     else:
-        candidate_count = len(review_result.candidate_ids)
-        if candidate_count:
+        review = review_result.review
+        if review.status is not LearningReviewStatus.COMPLETED:
+            failure = (
+                review.failure_code.value if review.failure_code is not None else "not_completed"
+            )
             terminal.console.print(
-                f"Learning Review {review_result.review.status.value}：新增候选 "
-                f"{candidate_count} 个；可用 /learn inbox 查看。"
+                f"Learning Review {review_id} 未完成：{review.status.value}（{failure}）。"
+                f"可使用 /learn retry {review_id} 重试。"
             )
         else:
-            terminal.console.print(
-                f"Learning Review {review_result.review.status.value}：没有生成候选。"
-            )
+            candidate_count = len(review_result.candidate_ids)
+            if candidate_count:
+                terminal.console.print(
+                    f"Learning Review {review.status.value}：新增候选 "
+                    f"{candidate_count} 个；可用 /learn inbox 查看。"
+                )
+            else:
+                terminal.console.print(f"Learning Review {review.status.value}：没有生成候选。")
 
 
 async def _consume_dispatch(orchestrator, text: str, terminal: Terminal) -> DispatchResult:

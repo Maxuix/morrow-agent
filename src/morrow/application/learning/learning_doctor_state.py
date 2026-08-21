@@ -32,7 +32,8 @@ def inspect_promotions(
                 issue_factory(
                     "learning_promotion_candidate",
                     DoctorSeverity.ERROR,
-                    "configuration Promotion references a missing or foreign Candidate",
+                    f"configuration Promotion {operation.operation_id} references a missing or "
+                    "foreign Candidate",
                 )
             )
             continue
@@ -47,7 +48,8 @@ def inspect_promotions(
                 issue_factory(
                     "learning_promotion_target",
                     DoctorSeverity.ERROR,
-                    "configuration Promotion target does not match Candidate type",
+                    f"configuration Promotion {operation.operation_id} target does not match "
+                    f"Candidate {candidate.candidate_id} type",
                 )
             )
         if (
@@ -62,7 +64,8 @@ def inspect_promotions(
                 issue_factory(
                     "learning_promotion_recovery",
                     DoctorSeverity.WARNING,
-                    "unfinalized configuration Promotion is not linked to a promoting Candidate",
+                    f"unfinalized configuration Promotion {operation.operation_id} is not linked "
+                    f"to promoting Candidate {candidate.candidate_id}",
                 )
             )
         if (
@@ -73,7 +76,8 @@ def inspect_promotions(
                 issue_factory(
                     "learning_promotion_state",
                     DoctorSeverity.ERROR,
-                    "finalized configuration Promotion has no applied revision",
+                    f"finalized configuration Promotion {operation.operation_id} has no applied "
+                    "revision",
                 )
             )
     seen_activation_ids: set[str] = set()
@@ -83,7 +87,7 @@ def inspect_promotions(
                 issue_factory(
                     "learning_activation_duplicate",
                     DoctorSeverity.ERROR,
-                    "configuration Activation ID is duplicated",
+                    f"configuration Activation {activation.activation_id} is duplicated",
                 )
             )
         seen_activation_ids.add(activation.activation_id)
@@ -106,7 +110,7 @@ def inspect_promotions(
                 issue_factory(
                     "learning_activation_link",
                     DoctorSeverity.ERROR,
-                    "configuration Activation links are inconsistent",
+                    f"configuration Activation {activation.activation_id} links are inconsistent",
                 )
             )
         if activation.status is ConfigurationActivationStatus.ACTIVE and (
@@ -116,7 +120,8 @@ def inspect_promotions(
                 issue_factory(
                     "learning_activation_state",
                     DoctorSeverity.ERROR,
-                    "active configuration Activation has no finalized Promotion",
+                    f"active configuration Activation {activation.activation_id} has no finalized "
+                    "Promotion",
                 )
             )
 
@@ -146,7 +151,7 @@ def inspect_knowledge(
                     issue_factory(
                         "learning_knowledge_current_revision",
                         DoctorSeverity.ERROR,
-                        "active Project Knowledge head has no current revision",
+                        f"active Project Knowledge head {head.knowledge_id} has no current revision",
                     )
                 )
             continue
@@ -156,7 +161,8 @@ def inspect_knowledge(
                 issue_factory(
                     "learning_knowledge_current_revision",
                     DoctorSeverity.ERROR,
-                    "Project Knowledge head points to an invalid current revision",
+                    f"Project Knowledge head {head.knowledge_id} points to an invalid current "
+                    "revision",
                 )
             )
             continue
@@ -168,7 +174,8 @@ def inspect_knowledge(
                 issue_factory(
                     "learning_knowledge_provenance",
                     DoctorSeverity.ERROR,
-                    "Project Knowledge revision points to a missing Candidate",
+                    f"Project Knowledge revision {revision.knowledge_revision_id} points to a "
+                    "missing Candidate",
                 )
             )
         if (
@@ -179,7 +186,8 @@ def inspect_knowledge(
                 issue_factory(
                     "learning_knowledge_provenance",
                     DoctorSeverity.ERROR,
-                    "Project Knowledge revision points to a missing decision",
+                    f"Project Knowledge revision {revision.knowledge_revision_id} points to a "
+                    "missing decision",
                 )
             )
         links = journal.list_project_knowledge_evidence(
@@ -193,7 +201,8 @@ def inspect_knowledge(
                     issue_factory(
                         "learning_knowledge_evidence",
                         DoctorSeverity.ERROR,
-                        "Project Knowledge revision points to missing Evidence",
+                        f"Project Knowledge revision {revision.knowledge_revision_id} points to "
+                        f"missing Evidence {link.evidence_id}",
                     )
                 )
     state = journal.get_memory_workspace_state(workspace_id)
@@ -203,7 +212,7 @@ def inspect_knowledge(
             issue_factory(
                 "learning_memory_revision",
                 DoctorSeverity.ERROR,
-                "active Project Knowledge has no Memory workspace revision",
+                f"active Project Knowledge has no Memory workspace revision for {workspace_id}",
             )
         )
 
