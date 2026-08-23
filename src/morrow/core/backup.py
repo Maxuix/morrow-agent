@@ -99,6 +99,7 @@ class BackupVerificationReport(ProtocolModel):
     artifacts_ok: bool
     memory_references_ok: bool = True
     learning_references_ok: bool = True
+    preference_references_ok: bool = True
     credentials_excluded: bool = True
     issues: tuple[str, ...] = ()
 
@@ -111,5 +112,6 @@ class BackupVerificationReport(ProtocolModel):
             and self.artifacts_ok
             and self.memory_references_ok
             and self.learning_references_ok
+            and self.preference_references_ok
             and self.credentials_excluded
         )

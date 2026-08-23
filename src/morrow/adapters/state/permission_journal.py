@@ -570,7 +570,7 @@ def _agent_from_row(row: tuple[object, ...]) -> DurableAgentRun:
                 "session_preferences",
             ):
                 snapshot_data.pop(key, None)
-            snapshot_data["preferences"] = preferences_from_entries(entries)
+            snapshot_data["legacy_preferences"] = preferences_from_entries(entries)
         snapshot = AgentRunSnapshot.model_validate(snapshot_data)
         return DurableAgentRun(
             agent_run_id=str(row[0]),

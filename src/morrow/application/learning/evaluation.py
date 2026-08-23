@@ -1,4 +1,4 @@
-"""Deterministic offline safety evaluation for the Stage 5 Learning boundary.
+"""Legacy v12 deterministic evaluation for non-Preference Learning compatibility.
 
 The evaluator consumes versioned synthetic cases and returns only bounded reason codes and
 counts. It deliberately does not call a Provider or a journal. Its write count is the evaluator's
@@ -24,7 +24,7 @@ from morrow.core.learning_safety import scan_learning_text
 from morrow.core.models import ProtocolModel
 
 LEARNING_EVALUATION_DATASET_VERSION = "stage5-offline-v1"
-LEARNING_EVALUATION_RESOURCE = "stage5-learning-evaluation.json"
+LEARNING_EVALUATION_RESOURCE = "stage5-legacy-learning-evaluation.json"
 LEARNING_EVALUATION_MAX_CASES = 64
 LEARNING_EVALUATION_MAX_OUTPUT_BYTES = 32 * 1024
 

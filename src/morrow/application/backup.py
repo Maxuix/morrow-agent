@@ -15,6 +15,7 @@ from morrow.adapters.state.journal import SqliteOperationalJournal
 from morrow.adapters.state.operational import OperationalStore, restrict_path
 from morrow.application.learning.learning_backup import verify_learning_references
 from morrow.application.learning.memory_backup import verify_memory_references
+from morrow.application.preferences.backup import verify_preference_references
 from morrow.core.artifacts import ArtifactIntegrityError, ArtifactState
 from morrow.core.backup import (
     ArtifactBackupEntry,
@@ -123,6 +124,7 @@ class OperationalBackupService:
         artifacts_ok = False
         memory_references_ok = False
         learning_references_ok = False
+        preference_references_ok = False
         manifest = None
         if not database.is_file() or database.is_symlink():
             issues.append("database_missing")
@@ -142,6 +144,10 @@ class OperationalBackupService:
                 issues.extend(memory_issues)
                 learning_references_ok, learning_issues = verify_learning_references(connection)
                 issues.extend(learning_issues)
+                preference_references_ok, preference_issues = verify_preference_references(
+                    connection
+                )
+                issues.extend(preference_issues)
             except sqlite3.Error:
                 issues.append("database_unreadable")
             finally:
@@ -241,6 +247,7 @@ class OperationalBackupService:
             artifacts_ok=artifacts_ok,
             memory_references_ok=memory_references_ok,
             learning_references_ok=learning_references_ok,
+            preference_references_ok=preference_references_ok,
             credentials_excluded=self._credentials_excluded(root),
             issues=tuple(dict.fromkeys(issues)),
         )

@@ -448,7 +448,7 @@ def test_tool_execution_can_link_a_command_artifact(tmp_path):
                 session_id="ses_1",
                 snapshot=AgentRunSnapshot(
                     profile=Profile(name="demo"),
-                    preferences=Preferences(),
+                    legacy_preferences=Preferences(),
                     model=ModelRef(provider_id="p", model_id="m"),
                     provider_id="p",
                     run_policy_digest=digest,

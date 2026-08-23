@@ -32,6 +32,7 @@ def test_historical_agent_run_snapshot_projects_legacy_preferences_without_rewri
 
     run = _agent_from_row(row)
 
-    assert run.snapshot.preferences.language == "中文"
-    assert run.snapshot.preferences.instructions == ["只解释关键设计。"]
+    assert run.snapshot.legacy_preferences is not None
+    assert run.snapshot.legacy_preferences.language == "中文"
+    assert run.snapshot.legacy_preferences.instructions == ["只解释关键设计。"]
     assert json.loads(str(row[4])) == raw

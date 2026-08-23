@@ -10,7 +10,7 @@ hold point requiring explicit authorization and a compatible credential.
 
 ## Dataset and evaluator
 
-- Dataset: `src/morrow/resources/stage5-learning-evaluation.json`
+- Legacy v12 baseline dataset: `src/morrow/resources/stage5-legacy-learning-evaluation.json`
 - Version: `stage5-offline-v1`
 - Cases: 27
 - Families: explicit Preference/Profile, deterministic Project Knowledge, one-shot, negation,

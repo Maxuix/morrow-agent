@@ -156,11 +156,15 @@ class ContextBuilder:
                 "profile": profile.model_dump(exclude_none=True) if profile else None,
             }
         else:
-            effective = projection.snapshot.preferences
             profile = projection.snapshot.profile
             state = {"profile": profile.model_dump(exclude_none=True) if profile else None}
-            if projection.snapshot.preference_projection_digest is None:
-                state["preferences"] = effective.model_dump(exclude_none=True)
+            if (
+                projection.snapshot.preference_projection_digest is None
+                and projection.snapshot.legacy_preferences is not None
+            ):
+                state["legacy_preferences"] = projection.snapshot.legacy_preferences.model_dump(
+                    exclude_none=True
+                )
         messages = [
             SystemMessage(content=render_system_boundary(tools)),
         ]

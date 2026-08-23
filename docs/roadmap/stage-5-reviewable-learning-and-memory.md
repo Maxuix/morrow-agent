@@ -1,22 +1,22 @@
 # Stage 5：可审查学习与长期记忆
 
-> 状态：Subplans 49–55 的 v12 基线已完成；真实 Provider 已验证 coding/持久化但否定现有自然语言 Preference 质量；Preference Learning v2 重构已规划、尚未实施
-> 阶段结果：Candidate、Promotion Saga、Project Knowledge、Memory 与安全边界已经落地；固定字段/关键词门禁 Preference 路径将由通用原子规则、后台语义 Reviewer、确定性 Writer 和下一 AgentRun 刷新替代
+> 状态：Preference Learning v2 实现完成；最终集成审查与 post-implementation user/live acceptance pending
+> 阶段结果：通用原子 Preference、异步 no-tool Reviewer、可审查 Inbox、确定性 Writer、下一 AgentRun 冻结注入、Project Knowledge/Memory 和 v13 诊断/备份边界均已落地
 
-## 2026-08-21 S56 foundation 已实施
+## 2026-08-23 Preference v2 已实施
 
-S56 已加入独立的 generic `PreferenceEntry`、add/replace/remove 与 enable/disable 契约、纯
-同 scope batch reducer、v1/v2 legacy decode-only 迁移编解码、workspace Preference v3 目标文档、
-历史 AgentRun 兼容 decoder，以及 Operational Store v13 的 Review job、单一当前用户 Evidence、
-Proposal 和 Writer saga 表。YAML 仍是 Active Preference 权威；本阶段没有启用 Reviewer、前台/后台
-Review enqueue、Writer 自动发布或 Worker。后续子计划必须保持 v13 DDL/checksum 不变。
+S56–S61 已实现 generic `PreferenceEntry`、同 scope 原子 Writer、v1/v2 decode-only 迁移、
+Operational Store v13 Review/Evidence/Proposal/Writer saga、终态 Turn 同事务 enqueue、进程内异步
+Worker、no-tool Reviewer、独立 Inbox、直接 `manage_preferences` 管理，以及每个新 AgentRun 的
+64-entry/8-KiB 冻结注入。YAML 仍是 Active Preference 唯一权威；SQLite 保存队列、证据与审计，
+不形成第二运行时 Active 值。没有 daemon 或自动接受候选。
 > 上级文档：[开发路线总览](../ROADMAP.md)
 > 上一阶段：[Stage 4：Task、Session、Artifact 与持久化](stage-4-task-session-and-persistence.md)
 > 下一阶段：[Stage 6：Skills 与扩展生命周期](stage-6-skills-and-extensions.md)
 
 ## 2026-08-21 Preference 路径方向修订
 
-本文后续章节记录已经交付的 Stage 5 v12 基线。以下旧约束不再作为 Preference 新实现规范：
+本文后续章节保留 Stage 5 v12 历史背景。以下旧约束不是当前 Preference 规范：
 
 - `language`、`response_detail`、`instructions` 固定字段；
 - 通过持久化/临时/引用关键词给用户消息做语义门禁；
@@ -31,7 +31,7 @@ Active Preferences。Profile、Project Knowledge、YAML/SQLite 单一权威和�
 Preference v2 中，用户明确要求立即管理偏好时使用受审批的 `manage_preferences`；后台推断只能进入
 Inbox，不能自动写入。该工具复用现有 configuration-write 审批与恢复语义，不修改 bundled capability
 policy 或公开 `AgentEvent` 类型。下文 §3.2、§4.4、§6.1 的固定字段/前台 Preference 描述均只代表
-v12 历史基线；若与本节冲突，以本节和新实施计划为准。
+v12 历史基线；当前行为以本节和已实现代码为准。
 
 ## 一、阶段目标
 
@@ -78,7 +78,7 @@ TaskRun 显式进入 accepted
 - TaskOutcome 在显式 acceptance、显式 snapshot 或既有终态关闭里程碑生成；只有 accepted Outcome
   默认触发 Stage 5 Review。
 - 已交付的 v12 基线没有后台 Worker：交互入口使用提交后的有界前台 Review，headless 入口显式执行。
-  Preference v2 将按本文顶部的方向修订改为 SQLite 持久队列与进程内异步 Worker，并保留显式
+  Preference v2 已改为 SQLite 持久队列与进程内异步 Worker，并保留显式
   run-pending 入口；它不承诺本阶段未实现的 daemon。
 - LearningReview 失败不影响 TaskOutcome 和任务完成状态。
 - LearningReview 不直接写 Active Preference、Profile、Knowledge 或 Skill。
@@ -86,13 +86,14 @@ TaskRun 显式进入 accepted
 
 ### 3.2 明确配置请求继续走直接配置路径
 
-现有 `update_configuration` 和 `/config` 解决的是用户当下明确要求：
+当前 `manage_preferences` 和 `/preferences` 解决用户明确要求立即管理原子 Preference；
+`update_configuration` 只管理 Workspace Profile。旧 `/config edit` fixed-field 入口已退役：
 
 > “以后默认用中文回答。”
 
 这种请求在预览、确认和配置服务校验后可以直接写入，不需要伪装成任务后学习。
 
-如果这类请求已由 `update_configuration` 成功处理，任务后的 LearningReview 只记录或去重 Evidence，
+如果这类请求已由 `manage_preferences` 成功处理，任务后的 Preference Review enqueue 会被抑制或去重，
 不得再次写入同一配置或制造一个重复候选。
 
 Stage 5 新增的是推断型或任务后发现：
@@ -217,9 +218,9 @@ ConfigurationActivation
 - created_at
 ```
 
-当前代码中的 `Preferences` 只支持 `language`、`response_detail` 和 `instructions`；Profile 只支持现有
-`ConfigPatchService` 字段。Stage 5 候选晋升严格受这份白名单约束。项目命令、工程约定和架构事实归入
-Project Knowledge，不能塞进 `Preferences.instructions` 充当通用记忆。
+当前 Active Preference 是独立 `PreferenceEntry`：ID、statement、scope、status、revision 和 Evidence
+引用，不使用固定字段 taxonomy。Profile 继续使用既有字段白名单；项目命令、工程约定和架构事实归入
+Project Knowledge，不能伪装成通用 Preference。
 
 跨 SQLite/YAML 晋升必须先持久化 operation，再写 YAML，最后完成 Candidate/activation/event/receipt；
 崩溃后只能在精确 before revision/digest 时重试，或在精确 expected applied revision/after digest 时
@@ -254,12 +255,12 @@ ProjectKnowledgeRecord
 
 | 模式 | 行为 |
 |---|---|
-| `off` | 不运行任务后 LearningReview；显式 `/config` 仍可用 |
+| `off` | 不运行任务后 Review；显式 `/preferences` 仍可用 |
 | `review_only` | 生成候选，全部等待用户审查；建议默认 |
 | `explicit_auto` | 预留、不可选择和持久化；Stage 5 第一版不自动激活 Candidate |
 
 第一版默认 `review_only`，允许用户显式关闭为 `off`。公开命令必须拒绝 `explicit_auto`，也不提供“所有
-高置信推断自动写入”模式。现有明确配置请求继续走 `update_configuration` 的预览、审批和配置服务路径。
+高置信推断自动写入”模式。明确 Preference 管理继续走 `manage_preferences` 的预览、审批和 Writer 路径。
 
 ### 5.2 未来 `explicit_auto` 开放条件（本阶段不启用）
 

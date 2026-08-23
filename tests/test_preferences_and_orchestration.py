@@ -109,17 +109,12 @@ def test_command_service_routes_deterministic_edits_to_one_patch_path(tmp_path):
         commands.execute("/workspace edit summary a demo"),
     ]
 
-    assert all(result.action == "config_preview" for result in results)
+    assert results[0].action is None
+    assert results[1].action == "config_preview"
     assert {path.name: path.read_bytes() if path.exists() else None for path in paths} == before
-    assert results[0].lines == [
-        "配置预览：",
-        "作用域：workspace",
-        "目标：preferences",
-        "- set language = 中文",
-    ]
+    assert results[0].lines == ["固定字段 /config edit 已退役；请使用 /preferences 管理原子规则。"]
     assert results[1].lines[-1] == "- set summary = a demo"
-    for result in results:
-        patch_service.apply(result.value)
+    patch_service.apply(results[1].value)
 
 
 def test_dirty_session_transition_requires_discard_and_removed_commands_are_unknown(tmp_path):

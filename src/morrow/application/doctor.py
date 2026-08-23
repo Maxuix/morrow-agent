@@ -32,6 +32,11 @@ from morrow.core.domain import (
 from morrow.core.execution import ToolExecutionState
 from morrow.core.permissions import capability_grant_digest
 from morrow.core.preference_models import PreferenceScope, PreferenceStatus
+from morrow.core.preference_persistence_models import (
+    PreferenceProposalStatus,
+    PreferenceReviewJobStatus,
+    PreferenceWriteBatchStatus,
+)
 from morrow.core.store import DIRECTORY_MODE, FILE_MODE, StorageError, StoreHealth, StoreOpenMode
 from morrow.runtime.conversation import ConversationSnapshot
 from morrow.runtime.durable_log import conversation_record_from_durable
@@ -126,6 +131,8 @@ class OperationalDoctor:
             self._inspect_domains(journal, workspace_id, counts, issues)
             checks.extend(("preference_yaml", "preference_run_projections"))
             self._inspect_preferences(journal, workspace_id, counts, issues)
+            checks.append("preference_v13_links_and_lifecycle")
+            self._inspect_preference_records(journal, workspace_id, counts, issues)
             self._inspect_permissions(journal, workspace_id, counts, issues)
             checks.extend(("learning_reviews_and_candidates", "learning_promotions"))
             inspect_learning(
@@ -327,6 +334,71 @@ class OperationalDoctor:
                             "AgentRun frozen Preference projection digest is invalid",
                         )
                     )
+
+    def _inspect_preference_records(self, journal, workspace_id, counts, issues) -> None:
+        jobs = journal.list_preference_review_jobs(workspace_id, limit=500)
+        evidence = journal.list_preference_evidence(workspace_id, limit=500)
+        proposals = journal.list_preference_proposals(workspace_id, limit=500)
+        batches = journal.list_preference_write_batches(workspace_id, limit=500)
+        counts["preference_review_jobs"] = len(jobs)
+        counts["preference_evidence"] = len(evidence)
+        counts["preference_proposals"] = len(proposals)
+        counts["preference_write_batches"] = len(batches)
+
+        evidence_by_job = {item.job_id: item for item in evidence}
+        for job in jobs:
+            linked = evidence_by_job.get(job.job_id)
+            if linked is None or linked.turn_id != job.turn_id:
+                issues.append(
+                    self._issue(
+                        "preference_job_evidence",
+                        DoctorSeverity.ERROR,
+                        "Preference Review job lacks its current-user Evidence",
+                    )
+                )
+            if job.status is PreferenceReviewJobStatus.RUNNING:
+                counts["preference_review_jobs_running"] += 1
+            if job.status in {
+                PreferenceReviewJobStatus.FAILED,
+                PreferenceReviewJobStatus.EXHAUSTED,
+            }:
+                counts["preference_review_jobs_failed"] += 1
+
+        for proposal in proposals:
+            linked_job = journal.get_preference_review_job(workspace_id, proposal.job_id)
+            linked_evidence = journal.get_preference_evidence(workspace_id, proposal.evidence_id)
+            if (
+                linked_job is None
+                or linked_evidence is None
+                or linked_evidence.job_id != proposal.job_id
+            ):
+                issues.append(
+                    self._issue(
+                        "preference_proposal_links",
+                        DoctorSeverity.ERROR,
+                        "Preference proposal links are inconsistent",
+                    )
+                )
+            if proposal.status is PreferenceProposalStatus.PROPOSED:
+                counts["preference_proposals_open"] += 1
+
+        for batch in batches:
+            for proposal_id in batch.proposal_ids:
+                proposal = journal.get_preference_proposal(workspace_id, proposal_id)
+                if proposal is None or proposal.operation.scope is not batch.scope:
+                    issues.append(
+                        self._issue(
+                            "preference_batch_proposal_links",
+                            DoctorSeverity.ERROR,
+                            "Preference write batch proposal links are inconsistent",
+                        )
+                    )
+            if batch.status in {
+                PreferenceWriteBatchStatus.PREPARED,
+                PreferenceWriteBatchStatus.YAML_APPLIED,
+                PreferenceWriteBatchStatus.NEEDS_RESOLUTION,
+            }:
+                counts["preference_write_batches_recovery"] += 1
 
     def _inspect_artifacts(self, journal, workspace_id, counts, issues) -> None:
         metadata = journal.list_artifacts(workspace_id)

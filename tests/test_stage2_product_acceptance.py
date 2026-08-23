@@ -135,19 +135,19 @@ async def test_real_repl_configuration_uses_shared_terminal_approval_and_dirty_h
                         id="config-call",
                         name="update_configuration",
                         arguments=(
-                            '{"scope":"session","target":"preferences",'
-                            '"operation":"set","path":"language","value":"中文"}'
+                            '{"scope":"workspace","target":"profile",'
+                            '"operation":"set","path":"name","value":"中文项目"}'
                         ),
                     ),
                 )
             ),
-            AssistantMessage(content="本次会话将使用中文。"),
+            AssistantMessage(content="工作空间名称已更新。"),
         ]
     )
     prompt_session = object()
     output = StringIO()
     terminal = _PromptingTerminal(
-        ["请把这次回复改成中文", "y", "/exit", "y"],
+        ["请把工作空间名称改成中文项目", "y", "/exit", "y"],
         Console(file=output, force_terminal=False, color_system=None, width=120),
     )
     approval = terminal_module.TerminalApprovalPort(terminal, prompt_session)
@@ -167,7 +167,8 @@ async def test_real_repl_configuration_uses_shared_terminal_approval_and_dirty_h
     )
 
     assert exit_code == 0
-    assert session_app.session.preferences.language == "中文"
+    assert session_app.session.profile is not None
+    assert session_app.session.profile.name == "中文项目"
     assert session_app.session.dirty is False
     assert session_app.session.persisted is True
     assert session_app.session.log.snapshot().records

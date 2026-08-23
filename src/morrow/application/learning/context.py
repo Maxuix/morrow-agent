@@ -26,7 +26,7 @@ from morrow.core.learning_ports import (
 from morrow.core.learning_safety import normalize_learning_text
 from morrow.core.ports import IdSource
 
-_PERSISTENT_MARKERS = (
+_LEGACY_PERSISTENT_MARKERS = (
     "以后",
     "默认",
     "总是",
@@ -37,7 +37,7 @@ _PERSISTENT_MARKERS = (
     "from now",
     "remember",
 )
-_NEGATIVE_MARKERS = (
+_LEGACY_NEGATIVE_MARKERS = (
     "不要记住",
     "不要保存",
     "不要默认",
@@ -52,7 +52,7 @@ _NEGATIVE_MARKERS = (
     "do not always",
     "don't always",
 )
-_NON_DURABLE_MARKERS = (
+_LEGACY_NON_DURABLE_MARKERS = (
     "这次",
     "本次",
     "临时",
@@ -61,7 +61,7 @@ _NON_DURABLE_MARKERS = (
     "for this answer",
     "just this time",
 )
-_UNTRUSTED_CONTEXT_MARKERS = (
+_LEGACY_UNTRUSTED_CONTEXT_MARKERS = (
     "示例",
     "例如",
     "文档中",
@@ -89,7 +89,10 @@ def _utc(clock: Callable[[], datetime]) -> datetime:
 
 
 class LearningEvidenceExtractor:
-    """Read only the accepted Task's narrow durable projections."""
+    """Read accepted-Task evidence for the legacy non-Preference Learning pipeline.
+
+    Preference v2 reads its own current-user Evidence and has no keyword classifier.
+    """
 
     def __init__(
         self,
@@ -126,7 +129,9 @@ class LearningEvidenceExtractor:
                 content = record.payload.get("content")
                 if not isinstance(content, str) or not content.strip():
                     continue
-                authority, explicitness, polarity = self._classify_user_text(content)
+                authority, explicitness, polarity = self._classify_legacy_learning_user_text(
+                    content
+                )
                 evidence.append(
                     self._text_evidence(
                         review,
@@ -254,7 +259,7 @@ class LearningEvidenceExtractor:
         )
 
     @staticmethod
-    def _classify_user_text(
+    def _classify_legacy_learning_user_text(
         text: str,
     ) -> tuple[
         LearningEvidenceAuthority,
@@ -262,25 +267,25 @@ class LearningEvidenceExtractor:
         LearningEvidencePolarity,
     ]:
         lowered = text.casefold()
-        if any(marker.casefold() in lowered for marker in _NEGATIVE_MARKERS):
+        if any(marker.casefold() in lowered for marker in _LEGACY_NEGATIVE_MARKERS):
             return (
                 LearningEvidenceAuthority.USER_EXPLICIT_PERSISTENT,
                 LearningEvidenceExplicitness.EXPLICIT,
                 LearningEvidencePolarity.NEGATIVE,
             )
-        if any(marker.casefold() in lowered for marker in _NON_DURABLE_MARKERS):
+        if any(marker.casefold() in lowered for marker in _LEGACY_NON_DURABLE_MARKERS):
             return (
                 LearningEvidenceAuthority.BEHAVIORAL_SIGNAL,
                 LearningEvidenceExplicitness.BEHAVIORAL,
                 LearningEvidencePolarity.NEUTRAL,
             )
-        if any(marker.casefold() in lowered for marker in _UNTRUSTED_CONTEXT_MARKERS):
+        if any(marker.casefold() in lowered for marker in _LEGACY_UNTRUSTED_CONTEXT_MARKERS):
             return (
                 LearningEvidenceAuthority.UNTRUSTED_EXTERNAL_CONTENT,
                 LearningEvidenceExplicitness.INFERRED,
                 LearningEvidencePolarity.NEUTRAL,
             )
-        if any(marker.casefold() in lowered for marker in _PERSISTENT_MARKERS):
+        if any(marker.casefold() in lowered for marker in _LEGACY_PERSISTENT_MARKERS):
             return (
                 LearningEvidenceAuthority.USER_EXPLICIT_PERSISTENT,
                 LearningEvidenceExplicitness.EXPLICIT,

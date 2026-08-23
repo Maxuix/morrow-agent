@@ -14,7 +14,6 @@ from morrow.application.tasks import TaskCommandError, TaskCommandResult
 from morrow.core.capabilities import AccessScope, ApprovalMode, ProcessIsolation
 from morrow.core.domain import SessionHealth, TaskRunStatus
 from morrow.core.permissions import UNCONFINED_HOST_WARNING
-from morrow.core.preferences import merge_preferences
 from morrow.core.recovery import RecoveryReportStatus, RecoveryResolution
 
 
@@ -342,37 +341,10 @@ class CommandService(LearningCommandMixin):
                     value=parts[2],
                 )
             if len(parts) > 4 and parts[1] == "edit":
-                if parts[2] == "workspace" and (
-                    self.session.read_only or self.session.workspace_preferences_read_only
-                ):
-                    return CommandResult(["工作空间 Preferences 不可安全加载，无法编辑。"])
-                try:
-                    command = ConfigurationCommand(
-                        scope=parts[2],
-                        target="preferences",
-                        operation="set",
-                        path=parts[3],
-                        value=" ".join(parts[4:]),
-                    )
-                    return CommandResult(
-                        render_configuration_preview(command),
-                        action="config_preview",
-                        value=command,
-                    )
-                except (ValueError, RuntimeError) as exc:
-                    return CommandResult([f"配置保存失败：{exc}"])
-            effective = merge_preferences(
-                self.session.global_preferences,
-                self.session.workspace_preferences,
-                self.session.preferences,
-            )
-            return CommandResult(
-                [
-                    f"language：{effective.language or '默认'}",
-                    f"response_detail：{effective.response_detail or '默认'}",
-                    f"instructions：{len(effective.instructions)} 条",
-                ]
-            )
+                return CommandResult(
+                    ["固定字段 /config edit 已退役；请使用 /preferences 管理原子规则。"]
+                )
+            return CommandResult(["Preferences 已迁移到 /preferences；Profile 使用 /workspace。"])
         return CommandResult([f"未知命令：{command}"])
 
     def _task_command(self, parts: list[str]) -> CommandResult:

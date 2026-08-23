@@ -58,7 +58,7 @@ def test_context_builder_uses_frozen_preferences_and_memory(tmp_path):
         after = builder.build(session)
 
         assert after.messages == before.messages
-        assert session.run_context_projection.snapshot.preferences.language == "zh"
+        assert "回答时默认使用 zh。" in preference_before.content
         assert session.run_context_projection.snapshot.profile.name == "frozen profile"
     finally:
         handle.close()
@@ -156,7 +156,10 @@ def test_next_turn_reloads_changed_knowledge_and_preferences(tmp_path):
         assert next_result.kind == "accepted"
         next_projection = session.run_context_projection
         assert next_projection is not None
-        assert next_projection.snapshot.preferences.language == "fr"
+        assert any(
+            item.statement == "回答时默认使用 fr。"
+            for item in next_projection.snapshot.frozen_preferences
+        )
         assert next_projection.memory_selection.source_memory_revision == 1
         assert next_projection.selected_knowledge[0].revision.revision == 2
         next_pack = make_context_builder().build(session)

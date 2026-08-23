@@ -1,6 +1,6 @@
 # Morrow 架构基线
 
-> 状态：阶段 2、阶段 3 已完成（当前声明平台为 macOS；Linux 原生运行仍 unsupported）；阶段 4 已落地 Operational Store v9 的 Session/Task 历史、工具/审批日志、恢复分类、TaskOutcome、Artifact Store、ContextCheckpoint、Session Fork、统一应用 API、application events、doctor、备份 bundle、CapabilityGrant 与 Full Access Manual；Stage 5 Subplans 49–55 已落地 LearningPolicy、accepted Outcome → Candidate Pipeline、Inbox/Project Knowledge、Profile/Preferences Promotion Saga、v12 MemorySelection、AgentRun freeze/recovery reuse、RunContextProjection、no-tool production Reviewer、离线安全评估、Learning doctor、隔离 SQLite backup 与模拟用户修复；S56 已加入 generic Preference foundation、迁移编解码和 Operational Store v13 预留，但 Reviewer/Writer/Worker 尚未切换；真实 Provider 质量评估仍是显式授权的 hold point；Subplan 48 已完成运行时、持久化、SQLite 与应用组装边界重构
+> 状态：阶段 2–4 已完成（macOS；Linux 原生运行仍 unsupported）；Stage 5 Preference v2 实现完成，最终集成审查与 post-implementation user/live acceptance pending；Stage 6+ 尚未开始
 
 本文锁定当前依赖方向、数据所有权和安全边界。阶段 3 的能力策略、配置工具、工作空间读搜、冲突安全文件变更、审批后 Host 命令、只读 Git 和当前 macOS 原生沙箱
 已经交付；Linux 原生运行尚未声明支持。Stage 4 已落地数据根 SQLite Operational Store 的
@@ -8,9 +8,9 @@
 崩溃对账，以及 v5 TaskRun 生命周期、转移审计、版本化 TaskOutcome、v6 Artifact 元数据/引用与受控字节发布、v7 确定性 ContextCheckpoint 与不可变 Session lineage、v8 有界 application event/command receipt、v9 按 AgentRun 冻结的权限证据与可撤销 grant。Stage 5 Subplans 49–54 已增加 LearningPolicy、Review、Evidence、Candidate、Suppression 的有界领域与 v10–v12 SQLite 持久化；accepted TaskOutcome 的同事务 Review 请求、一次性 lease Runner、Evidence/Context 安全边界和候选去重/抑制；Inbox、Candidate 决策、Project Knowledge 生命周期；公开 prepared 配置契约、SQLite/YAML Promotion Saga、激活来源、恢复/撤销和 CLI/REPL 入口；确定性 MemorySelection、AgentRun 冻结/恢复复用、RunContextProjection；以及 no-tool production Reviewer、离线评估、只读 Learning doctor 和隔离 backup 引用校验。真实 Provider 质量目标仍保持 pending，不被离线证据冒充。Stage 6 的 Skills/MCP，
 以及 Stage 7–10 的 Workflow、GUI、后台自动化和产品化均尚未开始。
 
-S56 额外冻结 generic Preference 契约、v1/v2 decode-only 迁移、workspace Preference v3 目标文档和
-Operational Store v13 的 Review/Evidence/Proposal/Writer saga 表；这些基础设施尚未接入新的前台或
-后台执行路径。后续子计划必须保持 v13 DDL 与 checksum 不变。
+S56–S61 已冻结并接通 generic Preference 契约、decode-only legacy 迁移、workspace Preference v3、
+Operational Store v13 Review/Evidence/Proposal/Writer saga、异步 Worker、Inbox、Writer 和下一
+AgentRun 注入。v13 DDL 与 checksum 保持不变。
 
 ## 分层与依赖方向
 
@@ -63,12 +63,12 @@ Session 持有的进程内 `ConversationLog` 是唯一聊天历史权威，`Sess
 Snapshot 生成 Chat 或 Structured 投影，按完整 Cycle/turn 控制预算；它不写事实源、不调用摘要模型。
 
 生产组合只在 Adapter 声明 OpenAI function-tool 支持时启用 `list_directory`、`read_file`、
-`find_files`、`search_text`、`apply_patch`、`write_file`、`show_changes`、`run_command`、`git_status`、`git_diff` 和 `update_configuration`；
+`find_files`、`search_text`、`apply_patch`、`write_file`、`show_changes`、`run_command`、`git_status`、`git_diff`、`update_configuration` 和 `manage_preferences`；
 支持原生沙箱时再加入当前运行、始终需审批的 `promote_sandbox_changes`。读搜工具通过冻结的
 `WorkspacePathResolver`、`WorkspaceFileService` 与 `WorkspaceSearchService` 访问当前工作空间，
 并对调用路径及工作区内解析后的文件符号链接目标应用同一受保护策略；变更工具通过
 `WorkspaceMutationService`、`FileSystemAdapter` 与进程内 `ChangeSetService` 执行 SHA-256 冲突检查、
-原子发布和实际 Diff。`update_configuration` 是配置服务的薄工具适配器，三类工具仍遵循同一标准 ToolCycle。随包
+原子发布和实际 Diff。`update_configuration` 只管理 Workspace Profile；`manage_preferences` 是原子 Preference Writer 的受审批薄适配器。所有工具遵循同一标准 ToolCycle。随包
 `agent-policy.toml` 解析为任务固定的 RunPolicy。模型请求白名单、流片段组装与 reasoning/SDK 元数据
 隔离归 Provider Adapter。
 
@@ -79,8 +79,8 @@ Runtime 已提供与具体领域无关的 `PermissionProfile`、`WorkspaceCapabi
 脱敏的预览；权限、原因和副作用元数据不会进入 Provider wire。`ToolRunContext` 与严格 `ToolFact`
 只在进程内保留最近一次完成运行的事实，不写入 ConversationLog 或持久状态；可选
 `RunMetricsSnapshot` 只保留有界 JSON-safe 计数，默认启用但可在 composition root 关闭，同样不持久化、不上传。
-配置工具、Slash 命令与
-Profile/Preferences 的校验和写入统一委托给 `ConfigPatchService`。文件读取与搜索不跟随目录符号链接，
+Profile 配置工具和 `/workspace` 委托给 `ConfigPatchService`；Preference 工具、CLI/REPL 与 Inbox
+统一委托给 `PreferenceWriter`。文件读取与搜索不跟随目录符号链接，
 并把 `.git`、`.morrow`、凭据路径及常见 PEM 私钥内容作为受保护资源；文件变更拒绝符号链接路径、
 混合换行源文件、陈旧 SHA-256、模糊/多匹配编辑和受保护凭据内容，并通过同目录临时文件、文件 `fsync`、
 原子替换和父目录句柄保护发布；结果在领域服务内按当前 ToolCall 预算语义截断。Git 工具通过
@@ -131,7 +131,7 @@ Knowledge 由 SQLite Learning application services 持有；`ConfigurationPromot
 记录 decision、activation、events 和 receipt。它不连接后台自动晋升或第二配置权威。`OperationalDoctor`
 通过 `learning_doctor` 的域校验入口检查 Review/Candidate/Promotion/Knowledge 链接，Memory doctor
 继续检查 Selection/AgentRun/derived terms；`OperationalBackupService` 在 SQLite online backup 后
-分别验证 Learning 与 Memory 引用，YAML、workspace index、凭据和 Keychain 始终在 bundle 外。
+分别验证 Learning、Memory 与 Preference v13 引用，YAML、workspace index、凭据和 Keychain 始终在 bundle 外。
 
 普通前台工作的共享准入条件是 `Session.lifecycle=active` 且 `Session.health=ok`。
 Orchestrator 在调度前刷新 durable lifecycle/health；Task/Turn application service 执行稳定错误映射，
@@ -168,7 +168,8 @@ Service 或 Port：
 `run_command` 通过注入的 `ProcessExecutionService` 执行审批后的 Host 命令，或在 Auto Sandboxed 中执行原生快照命令；
 `promote_sandbox_changes` 通过注入的 `SandboxSnapshotService`、`WorkspaceMutationService` 与
 `ChangeSetService` 推广并记录当前运行的有界文本变更；
-`update_configuration` 通过注入的 `ConfigPatchService` 访问既有配置状态。旧的 `lookup_record` 与 `calculate` 仅保留在显式测试 fixture 中。
+`update_configuration` 通过注入的 `ConfigPatchService` 管理 Profile；`manage_preferences` 通过注入的
+`PreferenceManagementService` 调用同一原子 Writer。旧的 `lookup_record` 与 `calculate` 仅保留在显式测试 fixture 中。
 未来 Git、网络等有状态或有副作用工具必须沿用同一注册与 ToolCycle 协议，并把实际能力委托给相应 Service/Port。模型请求中的 ToolDefinition 保持标准化；
 本地风险与审批元数据不得泄露为 Provider 私有协议。
 
@@ -201,13 +202,13 @@ Service 或 Port：
 |---|---|---|---|
 | Provider 非敏感配置 | 全局 `config.yaml` | Provider 服务 | 只保存 credential ref |
 | 凭据 | CredentialStore / 环境变量 | Provider 服务 | 不进入日志、事件或模型上下文 |
-| Preferences | global、workspace、process-local session | 配置服务 | global → workspace → session 合并 |
+| Preferences | global/workspace YAML；process-local session entries | `PreferenceWriter`（明确管理或 Inbox 接受） | Active 原子规则在新 AgentRun 前加载并冻结；不授予能力 |
 | 工作空间路径索引 | `workspace-index.yaml` | Workspace 服务 | 独立于项目状态 |
 | 工作空间 Profile | `profile.yaml` | Workspace/配置服务 | 按 workspace_id 隔离 |
-| 当前会话消息 | 进程内 ConversationLog 投影；权威在 Operational Store v12 | AgentLoop 经 ConversationLog 提交 | 未闭合工具在重启后进入 needs_recovery，不自动重放；Checkpoint 不是第二历史权威 |
+| 当前会话消息 | 进程内 ConversationLog 投影；权威在 Operational Store v13 | AgentLoop 经 ConversationLog 提交 | 未闭合工具在重启后进入 needs_recovery，不自动重放；Checkpoint 不是第二历史权威 |
 | Agent 运行策略 | 随包策略 → RunPolicy | composition root | 不属于用户配置 |
 | 运行记录 / Artifact 元数据 | 数据根 `store/operational.sqlite`；Artifact 字节在 `artifacts/` | v11 Session/Task/对话/工具执行/审批/恢复报告/Outcome/Artifact/Checkpoint/PermissionSnapshot/Grant，以及 LearningPolicy/Review/Evidence/Candidate/Suppression/Decision/PromotionOperation/ConfigurationActivation 与应用 receipt/event 服务 | 字节只经有界脱敏、hash/size 校验、fsync 和原子发布；YAML 与凭据权威不变 |
-| LearningPolicy 与 Learning 审计 | Operational Store v12；Profile/Preferences Active 仍由 YAML 持有 | LearningPolicyService、ReviewRequestService、bounded no-tool Reviewer、one-shot ReviewRunner、Learning Inbox/Knowledge services、ConfigurationPromotionService、doctor/backup verifiers | 默认 `review_only`；accepted TaskOutcome 在同一事务创建 pending Review，Runner 只读受限 Evidence 并写入候选/审计；显式 Promotion 先保存 operation 再写 YAML；无后台 worker、无自动晋升 |
+| Learning 与 Preference v2 审计 | Operational Store v13；Profile/Preferences Active 仍由 YAML 持有 | no-tool Reviewers、`ReviewWorker`、Inbox/Writer、Knowledge/Promotion、doctor/backup verifiers | 普通终态 Turn 同事务 enqueue；进程内 Worker lease/retry；推断只进 Inbox，无 daemon、无自动晋升 |
 
 ProjectStateStore 只支持 `profile.yaml` 和 `preferences.yaml`。两者使用版本化文档信封、revision、
 锁、临时文件、文件/目录 `fsync`、原子替换和备份；`state: cleared` 是合法 tombstone。
@@ -219,7 +220,7 @@ workspace Preferences 损坏只隔离该层。旧 `handoff.yaml(.bak)` 不属于
 `config.yaml` 是聚合文档，Provider 与全局 Preferences 的写入必须在同一事务锁内保留对方字段。
 `workspace-index.yaml` 由独立 WorkspaceIndexStore 管理。
 
-### Operational Store 与 Artifact 布局（v12 baseline；S56 预留 v13 Preference 表）
+### Operational Store 与 Artifact 布局（v13）
 
 数据根（`--state-root` 或 `~/.morrow`）下的保留路径：
 
@@ -233,7 +234,7 @@ workspace Preferences 损坏只隔离该层。旧 `handoff.yaml(.bak)` 不属于
 ```
 
 `DataRoot` 暴露 `store_path`、`artifacts_path`、`backups_path` 与 `operational_lock_path`。
-`build_session_application()` 会打开或创建 v10 Operational Store，并把对话经 ConversationLog
+`build_session_application()` 会打开或创建当前 v13 Operational Store，并把对话经 ConversationLog
 提交到 Session / TaskRun / Turn / AgentRun / conversation / receipt 表。v3 起有 tool_executions
 与 approvals；v4 增加 recovery_reports / recovery_receipts；v5 增加完整 TaskRun 状态、转移审计、
 TaskOutcome 版本和 Task 命令回执；v6 增加 Artifact 元数据、引用、pin 状态和 `artifact_refs_json`；v7 增加不可变
@@ -243,7 +244,8 @@ TaskOutcome 版本和 Task 命令回执；v6 增加 Artifact 元数据、引用�
 `learning_policies`、`learning_reviews`、`learning_evidence`、`learning_candidates`、Evidence link
 和 `learning_suppressions`，v11 增加 Candidate decisions、Project Knowledge、`promotion_operations`
 和 `configuration_activations`；v12 增加 `memory_selections`、`memory_selection_items` 和
-`memory_search_terms`，Selection 只引用不可变 Project Knowledge revision，AgentRunSnapshot 保存
+`memory_search_terms`；v13 增加 Preference Review job、Evidence、Proposal、WriteBatch 及链接表。
+Selection 只引用不可变 Project Knowledge revision，AgentRunSnapshot 保存
 selection/digest/memory revision，运行时由 `RunContextProjection` 重建。Promotion 只保存审计/恢复/来源
 记录，不形成 YAML Active 状态副本。
 命令输出 Artifact 只接收既有有界脱敏结果，不保存 raw stream；单个 Artifact 上限 64 MiB，单个
@@ -255,8 +257,8 @@ Host/sandbox 缺 `handler_completed` 一律 `outcome_unknown`。YAML 与凭据�
 `OperationalDoctor` 使用 diagnose/read-only 连接检查 schema、SQLite integrity/FK、Conversation grammar、
 Task/Execution、Review/Evidence/Candidate/Promotion/Knowledge、Memory Selection/AgentRun/derived terms、Artifact metadata/bytes/reference 和 application-event cursor；报告只包含
 有界摘要与计数，绝不自动改写历史。`OperationalBackupService` 使用 SQLite online backup 生成隔离
-bundle，同时写入 Artifact hash/size manifest，并验证 Learning/Memory 引用和可验证副本；bundle 不读取或复制 YAML/CredentialStore。
-缺失、损坏或变化的 Artifact、backup 中断裂的 Learning/Memory 引用在 manifest/restore verification 中显式可见。Doctor 在遍历前验证
+bundle，同时写入 Artifact hash/size manifest，并验证 Learning/Memory/Preference v13 引用和可验证副本；bundle 不读取或复制 YAML/CredentialStore。
+缺失、损坏或变化的 Artifact、backup 中断裂的 Learning/Memory/Preference 引用在 manifest/restore verification 中显式可见。Doctor 在遍历前验证
 data-root/`artifacts`/`tmp` 目录链，并区分 managed-unreferenced、unmanaged-removable 和
 unsafe-refused；受管 `tmp/` 本身不是 orphan。
 
@@ -302,7 +304,7 @@ Session/Task/Artifact 列表的 Application page 合同在 CLI 中不被丢弃�
 - 无工具 Session 对话可持久化并在重启后恢复；Artifact 的 missing/corrupt/staging/orphan 状态保持可见，
   只产生 retention/orphan 报告，不自动修复；显式 cleanup 默认 dry-run，apply 只做保字节隔离；
   conversation Fork、工具恢复和确定性 checkpoint 已实现；
-  工作空间/代码 rewind 不属于 Stage 4；Stage 5 当前已完成 Learning 基础、accepted 触发和有界候选 Pipeline、Inbox/Project Knowledge、Profile/Preferences Promotion Saga、MemorySelection 与 ContextBuilder 集成、no-tool production Reviewer、确定性离线安全评估和 doctor/backup 门禁；模拟用户验收暴露的 Candidate CLI 与首次 Project Knowledge Promotion 缺陷仍 pending，因此不声明用户闭环已通过；真实 Provider 质量评估同样 pending。
+  工作空间/代码 rewind 不属于 Stage 4；Stage 5 已实现 Learning 基础、Project Knowledge/MemorySelection、通用 Preference v2 的异步 Review/Inbox/Writer/AgentRun 注入和 v13 doctor/backup 门禁。实现完成不等于用户验收完成；最终集成审查、post-implementation 模拟用户与真实 Provider 质量评估仍 pending。
   当前不存在过渡兼容写入器。
 
 若未来实现需要突破这些边界，先更新架构与当前阶段计划。

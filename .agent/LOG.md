@@ -2191,3 +2191,20 @@
   integrated quality gates.
 - Local `main` remains ahead of `origin/main`; no push was attempted because no external remote
   mutation was authorized. The two untracked research files remain untouched and excluded.
+
+## 2026-08-23 — Subplan 61 implementation checkpoint
+
+- Retired fixed-field Preferences from the public configuration tool and `/config edit`, isolated
+  historical command validation, removed the fixed effective Preference from newly created
+  AgentRun snapshots, and left only explicitly named migration/history compatibility paths.
+- Extended doctor and backup verification across Preference v13 links, snapshot integrity,
+  lease/retry lifecycle, proposal/write-batch cardinality, and the separate YAML/credential restore
+  boundary. Added isolated migration and restore acceptance.
+- Added the versioned `preference-v2-natural-language-v1` corpus and scripted no-write evaluator
+  with frozen scoring arithmetic. The existing v12 corpus is preserved under an explicit legacy
+  resource name; no real Provider or credential path was executed.
+- Reconciled architecture, roadmap, README, Stage 5 acceptance/hold documentation, and CLI help,
+  while keeping post-implementation simulated-user/live acceptance pending.
+- Focused S61 acceptance passed `37` tests and full offline validation passed `932 passed, 2
+  deselected`. Ruff format/check, compileall, `morrow --help`, Preferences/Learning/Memory help, and
+  `git diff --check` passed. The two untracked research documents remain untouched and excluded.

@@ -273,6 +273,8 @@ class ModelEvent(MorrowModel):
 
 
 class Preferences(MorrowModel):
+    """Legacy fixed-field projection used only for v1/v2 decode and compatibility state."""
+
     language: str | None = None
     response_detail: Literal["concise", "balanced", "detailed"] | None = None
     instructions: list[str] = Field(default_factory=list)

@@ -34,7 +34,7 @@ def _digest(label: str = "x") -> str:
 def _snapshot(**overrides) -> AgentRunSnapshot:
     values = {
         "profile": Profile(name="demo"),
-        "preferences": Preferences(language="中文"),
+        "legacy_preferences": Preferences(language="中文"),
         "model": ModelRef(provider_id="p", model_id="m"),
         "provider_id": "p",
         "source_revisions": (

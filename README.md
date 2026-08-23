@@ -72,7 +72,7 @@ scripts/morrow-mimo model current
 `--replace-credential` 轮换存储凭据。
 
 REPL 常用命令包括 `/workspace`、`/workspace edit summary ...`、`/workspace reset`、`/status`、
-`/config`、`/config edit workspace language 中文`、`/config reset workspace`、`/task`、`/accept`、
+`/preferences`、`/config reset workspace`、`/task`、`/accept`、
 `/grant`、`/recovery`、`/new` 和 `/exit`。默认启动会创建新的 Session；若要继续已有 Session，
 使用 `--session-id SESSION_ID` 或 `session resume SESSION_ID`。检测到已有可恢复 Session 时，启动会
 显示其 ID；恢复后如有未完成的安全对账，先用 `/recovery` 查看并处理，再继续同一回合。
@@ -81,17 +81,18 @@ REPL 常用命令包括 `/workspace`、`/workspace edit summary ...`、`/workspa
 `morrow --dir PATH --session-id SESSION_ID` 继续模型回合。
 所有确定性编辑和自然语言配置都会先显示作用域、目标、操作、字段和值，确认后才写入。
 自然语言配置只在用户明确要求保存、写入、记住或更新时调用标准
-`update_configuration` 工具；本次回答风格、问题、解释、假设、引用和否定句不会持久化。
+`manage_preferences` 工具；`update_configuration` 只管理 Workspace Profile。本次回答风格、
+问题、解释、假设、引用和否定句不会持久化。
 `session`、`workspace`、`global` 分别表示本次会话、当前工作空间和全局 Preferences；Profile 只允许
 在当前工作空间修改。每个工具调用独立确认和提交，多个调用不会组成跨调用事务；前一个调用成功、后一个
 调用被拒绝或失败时，前一个结果保留并分别报告 `applied`、`unchanged` 或失败状态。
 
 普通对话统一经过 Agent Loop。支持 OpenAI-compatible function calling 的 Adapter 会向模型提供
-`list_directory`、`read_file`、`find_files`、`search_text`、`apply_patch`、`write_file`、`show_changes`、`run_command`、`git_status`、`git_diff` 和
-`update_configuration`；支持原生沙箱的 Auto Sandboxed 组合额外启用 `promote_sandbox_changes`。不支持 function calling 的 Adapter 不会启用这些工具，但 `/config` 等确定性命令仍可用。终端以 `↳ 工具步骤 n/m：工具名`
+`list_directory`、`read_file`、`find_files`、`search_text`、`apply_patch`、`write_file`、`show_changes`、`run_command`、`git_status`、`git_diff`、
+`update_configuration`（仅 Profile）和 `manage_preferences`；支持原生沙箱的 Auto Sandboxed 组合额外启用 `promote_sandbox_changes`。不支持 function calling 的 Adapter 不会启用这些工具，但 `/workspace`、`/preferences` 等确定性命令仍可用。终端以 `↳ 工具步骤 n/m：工具名`
 展示活动；有副作用的
 配置调用和 Host 命令在工具执行前由终端审批。审批拒绝、审批通道不可用或审批等待超时都会安全地形成普通工具结果，
-模型可以继续恢复；随包策略的工具超时仍为 120 秒。`/config edit` 保持标量 `set/unset` 语法，列表的
+模型可以继续恢复；随包策略的工具超时仍为 120 秒。旧 `/config edit` fixed-field 入口已退役，
 `append/remove` 由自然语言工具提供。达到模型、工具、时间、上下文、结果或循环上限时，任务以稳定的
 `stop_code` 结束。
 
@@ -130,11 +131,11 @@ Fork child 创建时不继承父 TaskRun，持久化后可创建并拥有自己�
 Stage 5。当前可通过 `morrow memory selection list` / `show <selection-id>` 查看一次 AgentRun
 冻结的 Memory Selection；输出只包含引用、原因、预算和 digest，不默认展开 Knowledge 内容。
 
-Stage 5 的 Learning 默认是 `review-only`：accepted TaskOutcome 会在提交后产生有界、可重试的
-Learning Review；交互入口可在前台执行一次 no-tool Reviewer，headless 入口使用
-`morrow learning review` / `retry`，但不会启动 worker、scheduler 或隐藏重试。候选必须通过
-`morrow learning inbox` 预览，再用显式的 `learning accept/edit/reject` 命令确认；`/accept` 仍然
-只接受 Task 结果，不能接受候选。只有 Preference/Profile 候选会经配置 Promotion Saga 更新 YAML，
+Stage 5 的 Learning 默认是 `review-only`：每个合格的已完成普通 Turn 会在同一事务写入
+Preference Review job 与当前用户 Evidence，提交后只唤醒进程内 Worker；Provider 超时/重试不阻塞
+前台 Turn。Preference proposals 通过 `preferences inbox` 审查，接受后由同 scope 原子 Writer 写 YAML；
+明确管理使用 `/preferences` 或受审批的 `manage_preferences`。`/accept` 仍只接受 Task 结果。
+既有 Profile 候选会经配置 Promotion Saga 更新 YAML，
 Project Knowledge 进入 SQLite 版本化记录；Skill、Workflow 和 Orchestration 候选只保留为候选，
 不会创建文件、工具、权限或运行时规则。`explicit-auto` 被拒绝，`off` 可关闭任务后 Review。
 
@@ -143,9 +144,9 @@ Subplan 55 已修复并复测 headless `learning accept/edit/reject` 的确认�
 不将该确定性回放描述为 Live Provider 质量结论。历史问题与回放证据见
 `docs/acceptance/stage5-simulated-user-evaluation.md`。
 
-`state doctor` 对 Review、Evidence、Candidate、决策、Promotion、Knowledge、Memory Selection
+`state doctor` 对 v13 Preference Review/Evidence/Proposal/Writer、既有 Learning Review、Candidate、决策、Promotion、Knowledge、Memory Selection
 和 AgentRun 冻结引用执行只读检查；`state backup` / `state verify-backup` 只备份隔离的 Operational
-SQLite 与 Artifact bundle，不包含 YAML、workspace index、凭据或 Keychain。跨存储的 Preference/
+SQLite 与 Artifact bundle，并验证 `preference_references_ok`；不包含 YAML、workspace index、凭据或 Keychain。跨存储的 Preference/
 Profile 恢复仍需要既有 YAML 状态文件备份；SQLite 中的 activation provenance 不能单独重建 YAML。
 禁止原始 Reviewer 输出、Provider reasoning、密钥和受保护内容进入事件、日志、候选、YAML 或模型上下文。
 当前确定性离线安全门禁与模拟用户回放已完成；真实 Provider 质量评估仍需显式授权和兼容凭据，未授权时不运行。

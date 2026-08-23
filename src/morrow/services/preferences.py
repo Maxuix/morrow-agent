@@ -6,9 +6,6 @@ from dataclasses import dataclass
 from typing import Any
 
 from morrow.application.configuration import (
-    ALLOWED_PATHS as _ALLOWED_PATHS,
-)
-from morrow.application.configuration import (
     ConfigurationChangeResult,
     ConfigurationChangeStatus,
     ConfigurationCommand,
@@ -16,6 +13,7 @@ from morrow.application.configuration import (
     configuration_state_digest,
     render_configuration_preview,
 )
+from morrow.application.legacy_configuration import LEGACY_ALLOWED_PATHS
 from morrow.core.models import (
     ConfigPatch,
     ConfigPatchOperation,
@@ -32,7 +30,7 @@ from morrow.core.preference_models import (
     PreferenceStatus,
 )
 
-ALLOWED_PATHS = _ALLOWED_PATHS
+ALLOWED_PATHS = LEGACY_ALLOWED_PATHS
 
 
 class ConfigurationValidationError(ValueError):
@@ -250,6 +248,14 @@ class ConfigPatchService:
                 base: Preferences | Profile = Profile(name=command.value)
             except ValueError as exc:
                 raise ConfigurationValidationError("配置值不符合字段类型或约束") from exc
+            return self._OperationPlan(
+                command,
+                state,
+                base,
+                True,
+                StatePresence.PRESENT,
+                None,
+            )
         else:
             base = state.base
         candidate, changed = self._candidate(command, base)

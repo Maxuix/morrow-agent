@@ -22,19 +22,38 @@ execution, and next-AgentRun refresh.
 
 ## Active task
 
-S60 is merged and retired. S61.1 is active on `refactor/stage5-preference-v2-closeout`; the immediate
-work is to inventory and remove obsolete fixed-field and marker-classifier active paths while
-preserving explicitly named migration/history decoders.
+S61 implementation and pre-review gates are complete on
+`refactor/stage5-preference-v2-closeout`. The single planned read-only Grok review is now active;
+confirmed findings will receive one independent fix pass without a second S61 review.
 
 ## Next action
 
-Trace active callers and tests for legacy fixed-field Preference models/classifiers, then remove only
-dead supported-path residue and add boundary tests before starting S61.2.
+Create the verified implementation checkpoint, run exactly one S61 `$grok-delegate` review, then
+adjudicate once and rerun the affected/full gates before branch closeout.
 
 ## Blockers
 
 No code blocker for S61. The opt-in real-Provider corpus and post-implementation user acceptance
 remain on hold until the master plan's clean-tree condition is met.
+
+## S61 implementation evidence
+
+- Public `update_configuration` now manages only Workspace Profile; `/config edit` is retired and
+  generic Preferences use `manage_preferences`/`/preferences`. Fixed-field validation is isolated
+  in an explicitly named legacy compatibility module, marker classification remains legacy-only,
+  and new AgentRun snapshots no longer freeze a fixed effective Preference projection.
+- Doctor and SQLite backup verification now cover v13 Preference job/Evidence/proposal/write-batch
+  links, snapshot digests/budgets, retry/lease lifecycle, and isolated YAML/credential boundaries.
+- Added the frozen `preference-v2-natural-language-v1` 22-case corpus and pure scripted scoring
+  harness. It records the 11/12, 90%, 6 target hits, zero safety writes, and 9/10 adherence gates
+  without running or claiming real-Provider quality.
+- Added migration/restore acceptance and reconciled architecture, roadmap, README, CLI help,
+  acceptance, and hold documentation. The old v12 evaluator is explicitly preserved as a legacy
+  baseline under its renamed resource.
+- Focused S61 acceptance passed `37` tests; configuration regressions passed `34`; affected
+  Preference/Stage 5 regressions passed `231` with one explicit live skip. Full offline validation
+  passed `932 passed, 2 deselected`. Ruff format/check, compileall, four CLI help commands, and
+  `git diff --check` passed. No Live, Provider, credential, or network path ran.
 
 ## S60 implementation evidence
 

@@ -8,7 +8,6 @@ from datetime import datetime
 from typing import Literal
 
 from morrow.adapters.state.preference_migration import legacy_entries_from_preferences
-from morrow.adapters.state.preference_projection import preferences_from_entries
 from morrow.application.preferences.jobs import PreferenceReviewJobEnqueuer
 from morrow.application.preferences.run_projection import select_run_preferences
 from morrow.application.recovery import RecoveryService
@@ -50,7 +49,6 @@ from morrow.core.models import (
 )
 from morrow.core.ports import IdSource
 from morrow.core.preference_documents import PreferenceDocument
-from morrow.core.preferences import merge_preference_entries
 from morrow.core.recovery import RecoveryReport, RecoveryReportStatus
 from morrow.core.store import StorageError, StorageErrorCode
 from morrow.runtime.conversation import (
@@ -666,12 +664,6 @@ def build_agent_run_snapshot(
             "session", session.preferences.model_dump(mode="python"), allow_session=True
         )
     )
-    effective_entries = merge_preference_entries(
-        global_entries,
-        workspace_entries,
-        session_entries,
-    )
-    effective_preferences = preferences_from_entries(effective_entries)
     preference_projection = select_run_preferences(
         global_entries,
         workspace_entries,
@@ -726,7 +718,6 @@ def build_agent_run_snapshot(
     tool_payload = [tool.model_dump(mode="json") for tool in tools]
     return AgentRunSnapshot(
         profile=session.profile,
-        preferences=effective_preferences,
         model=model,
         provider_id=model.provider_id,
         source_revisions=revisions,

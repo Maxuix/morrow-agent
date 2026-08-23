@@ -203,19 +203,12 @@ def test_update_configuration_arguments_reject_invalid_combinations(payload):
             "path": None,
             "value": None,
         },
-        {
-            "scope": "session",
-            "target": "preferences",
-            "operation": "unset",
-            "path": "language",
-            "value": None,
-        },
     ],
 )
 def test_update_configuration_arguments_treat_null_unused_fields_as_omitted(payload):
     arguments = UpdateConfigurationArguments.model_validate(payload, strict=True)
 
-    assert arguments.to_command().operation in {"reset", "unset"}
+    assert arguments.to_command().operation == "reset"
 
 
 def test_update_configuration_arguments_are_flat_and_sensitive_targets_are_absent():
@@ -470,7 +463,7 @@ async def test_configuration_tool_approves_and_returns_only_bounded_result(tmp_p
     assert tool.execution_policy.effect.value == "persistent_write"
     assert tool.definition.function.name == "update_configuration"
     assert "保存" in tool.definition.function.description
-    assert "一次性" in tool.definition.function.description
+    assert "manage_preferences" in tool.definition.function.description
 
     registry = ToolRegistry()
     registry.register(tool)
@@ -484,10 +477,10 @@ async def test_configuration_tool_approves_and_returns_only_bounded_result(tmp_p
             arguments=json.dumps(
                 {
                     "scope": "workspace",
-                    "target": "preferences",
+                    "target": "profile",
                     "operation": "set",
-                    "path": "language",
-                    "value": "中文",
+                    "path": "summary",
+                    "value": "bounded profile",
                 }
             ),
         )
@@ -497,17 +490,16 @@ async def test_configuration_tool_approves_and_returns_only_bounded_result(tmp_p
     result = json.loads(outcome.envelope)["result"]
     assert result == {
         "operation": "set",
-        "path": "language",
-        "revision": 1,
+        "path": "summary",
+        "revision": 2,
         "scope": "workspace",
         "status": "applied",
-        "target": "preferences",
+        "target": "profile",
     }
     assert not any(key in result for key in ("providers", "profile", "path_on_disk", "arguments"))
     assert len(approval.requests) == 1
-    assert (
-        app.project_store.load_preferences(identity.workspace_id).value.preferences.language
-        == "中文"
+    assert app.project_store.load_profile(identity.workspace_id).value.profile.summary == (
+        "bounded profile"
     )
 
 
@@ -525,10 +517,10 @@ async def test_configuration_tool_denial_unavailability_and_preflight_failure_do
         arguments=json.dumps(
             {
                 "scope": "workspace",
-                "target": "preferences",
+                "target": "profile",
                 "operation": "set",
-                "path": "language",
-                "value": "中文",
+                "path": "summary",
+                "value": "must not write",
             }
         ),
     )
@@ -538,7 +530,7 @@ async def test_configuration_tool_denial_unavailability_and_preflight_failure_do
     unavailable = await ToolExecutor(registry.snapshot(), make_run_policy()).execute(call)
     assert denied.error_code == ToolErrorCode.APPROVAL_REJECTED
     assert unavailable.error_code == ToolErrorCode.APPROVAL_UNAVAILABLE
-    assert app.project_store.load_preferences(identity.workspace_id).value is None
+    assert app.project_store.load_profile(identity.workspace_id).value.profile.summary is None
 
     profile_path = app.data_root.workspaces_path / identity.workspace_id / "profile.yaml"
     profile_path.write_text("schema_version: 99\nrevision: 3\n", encoding="utf-8")
@@ -646,16 +638,16 @@ async def test_mixed_work_and_configuration_calls_share_one_public_turn(tmp_path
                     _configuration_call(
                         "config",
                         {
-                            "scope": "session",
-                            "target": "preferences",
+                            "scope": "workspace",
+                            "target": "profile",
                             "operation": "set",
-                            "path": "language",
-                            "value": "中文",
+                            "path": "name",
+                            "value": "Pro workspace",
                         },
                     ),
                 )
             ),
-            AssistantMessage(content="已查询方案并设置本次回复语言。"),
+            AssistantMessage(content="已查询方案并更新工作空间简介。"),
         ]
     )
     approval = _Approval(approved=True)
@@ -668,12 +660,12 @@ async def test_mixed_work_and_configuration_calls_share_one_public_turn(tmp_path
     )
 
     items = [
-        item
-        async for item in session_app.orchestrator.stream("查询 Pro 方案，并把本次回复改成中文")
+        item async for item in session_app.orchestrator.stream("查询 Pro 方案，并更新工作空间简介")
     ]
 
     assert items[-1].action is None
-    assert session_app.session.preferences.language == "中文"
+    assert session_app.session.profile is not None, session_app.session.messages
+    assert session_app.session.profile.name == "Pro workspace"
     assert len(approval.requests) == 1
     assert [message.role for message in session_app.session.messages] == [
         "user",
@@ -695,7 +687,10 @@ async def test_configuration_tool_cancellation_does_not_reach_handler(tmp_path):
     call = FunctionToolCall(
         id="c1",
         name="update_configuration",
-        arguments='{"scope":"session","target":"preferences","operation":"set","path":"language","value":"中文"}',
+        arguments=(
+            '{"scope":"workspace","target":"profile","operation":"set",'
+            '"path":"summary","value":"cancelled"}'
+        ),
     )
     task = asyncio.create_task(executor.execute(call))
     await approval.started.wait()
@@ -718,11 +713,11 @@ async def test_terminal_approval_timeout_cancels_prompt_and_returns_ordinary_tim
                     _configuration_call(
                         "timeout",
                         {
-                            "scope": "session",
-                            "target": "preferences",
+                            "scope": "workspace",
+                            "target": "profile",
                             "operation": "set",
-                            "path": "language",
-                            "value": "中文",
+                            "path": "summary",
+                            "value": "审批超时",
                         },
                     ),
                 )
@@ -743,7 +738,7 @@ async def test_terminal_approval_timeout_cancels_prompt_and_returns_ordinary_tim
             ModelRef(provider_id="p", model_id="m"),
             builder,
             tool_executor=executor,
-        ).run_task(session, "请修改本次会话语言")
+        ).run_task(session, "请更新工作空间简介")
     ]
 
     tool_messages = [message for message in session.messages if message.role == "tool"]
@@ -765,16 +760,16 @@ async def test_production_composition_uses_one_agent_loop_and_refreshes_state_pr
                     _configuration_call(
                         "c1",
                         {
-                            "scope": "session",
-                            "target": "preferences",
+                            "scope": "workspace",
+                            "target": "profile",
                             "operation": "set",
-                            "path": "language",
-                            "value": "中文",
+                            "path": "name",
+                            "value": "中文项目",
                         },
                     ),
                 )
             ),
-            AssistantMessage(content="已更新本次会话偏好。"),
+            AssistantMessage(content="已更新工作空间简介。"),
         ]
     )
     approval = _Approval(True)
@@ -786,11 +781,12 @@ async def test_production_composition_uses_one_agent_loop_and_refreshes_state_pr
         approval_port=approval,
     )
 
-    items = [item async for item in session_app.orchestrator.stream("请把这次回复改成中文")]
+    items = [item async for item in session_app.orchestrator.stream("请更新工作空间简介")]
     events = [item for item in items if isinstance(item, AgentEvent)]
 
     assert events[-1].payload["finish_reason"] == FinishReason.STOP.value
-    assert session_app.session.preferences.language == "中文"
+    assert session_app.session.profile is not None
+    assert session_app.session.profile.name == "中文项目"
     assert session_app.session.dirty is False
     assert session_app.session.persisted is True
     assert [message.role for message in session_app.session.messages] == [
@@ -812,7 +808,7 @@ async def test_production_composition_uses_one_agent_loop_and_refreshes_state_pr
         "git_status",
         "git_diff",
     }
-    assert "中文" in str(provider.stream_calls[1])
+    assert "中文项目" in str(provider.stream_calls[1])
     assert len(approval.requests) == 1
     assert '"scope"' not in str(approval.requests[0])
     assert not any(
@@ -835,10 +831,10 @@ async def test_multiple_configuration_calls_are_serial_and_partially_persistent(
                         "c1",
                         {
                             "scope": "workspace",
-                            "target": "preferences",
+                            "target": "profile",
                             "operation": "set",
-                            "path": "language",
-                            "value": "中文",
+                            "path": "name",
+                            "value": "已写入",
                         },
                     ),
                     _configuration_call(
@@ -846,8 +842,8 @@ async def test_multiple_configuration_calls_are_serial_and_partially_persistent(
                         {
                             "scope": "workspace",
                             "target": "profile",
-                            "operation": "set",
-                            "path": "summary",
+                            "operation": "append",
+                            "path": "goals",
                             "value": "不会写入",
                         },
                     ),
@@ -872,11 +868,9 @@ async def test_multiple_configuration_calls_are_serial_and_partially_persistent(
     assert len(tool_messages) == 2
     assert json.loads(tool_messages[0].content)["result"]["status"] == "applied"
     assert json.loads(tool_messages[1].content)["error"]["code"] == "approval_rejected"
-    assert (
-        app.project_store.load_preferences(identity.workspace_id).value.preferences.language
-        == "中文"
-    )
-    assert app.project_store.load_profile(identity.workspace_id).value.profile.summary is None
+    profile = app.project_store.load_profile(identity.workspace_id).value.profile
+    assert profile.name == "已写入"
+    assert profile.goals == []
     assert session_app.session.log.unresolved_call_ids == ()
     assert any(isinstance(item, DispatchResult) for item in items)
 
@@ -894,21 +888,21 @@ async def test_configuration_cancellation_after_first_call_closes_only_pending_c
                     _configuration_call(
                         "c1",
                         {
-                            "scope": "session",
-                            "target": "preferences",
+                            "scope": "workspace",
+                            "target": "profile",
                             "operation": "set",
-                            "path": "language",
-                            "value": "中文",
+                            "path": "name",
+                            "value": "已写入",
                         },
                     ),
                     _configuration_call(
                         "c2",
                         {
-                            "scope": "session",
-                            "target": "preferences",
-                            "operation": "set",
-                            "path": "response_detail",
-                            "value": "detailed",
+                            "scope": "workspace",
+                            "target": "profile",
+                            "operation": "append",
+                            "path": "goals",
+                            "value": "待取消",
                         },
                     ),
                 )
@@ -925,7 +919,7 @@ async def test_configuration_cancellation_after_first_call_closes_only_pending_c
     )
 
     async def collect():
-        return [item async for item in session_app.orchestrator.stream("执行两项会话配置")]
+        return [item async for item in session_app.orchestrator.stream("执行两项工作空间配置")]
 
     task = asyncio.create_task(collect())
     await approval.second_started.wait()
@@ -933,8 +927,9 @@ async def test_configuration_cancellation_after_first_call_closes_only_pending_c
     items = await task
     events = [item for item in items if isinstance(item, AgentEvent)]
     assert events[-1].payload["finish_reason"] == FinishReason.CANCELLED.value
-    assert session_app.session.preferences.language == "中文"
-    assert session_app.session.preferences.response_detail is None
+    assert session_app.session.profile is not None
+    assert session_app.session.profile.name == "已写入"
+    assert session_app.session.profile.goals == []
     tool_messages = [message for message in session_app.session.messages if message.role == "tool"]
     assert json.loads(tool_messages[0].content)["result"]["status"] == "applied"
     assert json.loads(tool_messages[1].content)["error"]["code"] == "cancelled"

@@ -149,11 +149,14 @@ def test_new_turn_freezes_selection_and_effective_preferences_atomically(tmp_pat
         assert selection.selected_items[0].record_revision_id == "krv_1"
         assert run.snapshot.memory_selection_digest == selection.selection_digest
         assert run.snapshot.memory_snapshot_revision == selection.source_memory_revision
-        assert run.snapshot.preferences == Preferences(
-            language="zh",
-            response_detail="detailed",
-            instructions=["global rule", "workspace rule", "session rule"],
-        )
+        assert {item.statement for item in run.snapshot.frozen_preferences} == {
+            "global rule",
+            "回答时默认使用 en。",
+            "workspace rule",
+            "回答默认提供详细说明。",
+            "session rule",
+            "回答时默认使用 zh。",
+        }
         revisions = {item.kind: item for item in run.snapshot.source_revisions}
         assert revisions["global_config"].revision == 2
         assert revisions["workspace_profile"].revision == 4

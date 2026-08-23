@@ -516,7 +516,7 @@ class AgentRunSnapshot(ProtocolModel):
     """Immutable non-secret AgentRun evidence. Not a configuration authority."""
 
     profile: Profile | None = None
-    preferences: Preferences = Field(default_factory=Preferences)
+    legacy_preferences: Preferences | None = None
     model: ModelRef
     provider_id: str
     source_revisions: tuple[SourceRevisionRef, ...] = ()

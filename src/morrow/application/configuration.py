@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import math
 from enum import StrEnum
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from morrow.application.legacy_configuration import validate_legacy_configuration_fields
 from morrow.core.capabilities import (
     OperationIntent,
     OperationKind,
@@ -29,93 +29,27 @@ ConfigurationScope = Literal["session", "workspace", "global"]
 ConfigurationTarget = Literal["preferences", "profile"]
 ConfigurationOperation = Literal["set", "unset", "append", "remove", "reset"]
 
-PREFERENCE_PATHS = frozenset({"language", "response_detail", "instructions"})
-PROFILE_PATHS = frozenset({"name", "summary", "goals", "tech_stack", "constraints", "conventions"})
-ALLOWED_PATHS: dict[tuple[str, str], frozenset[str]] = {
-    ("session", "preferences"): PREFERENCE_PATHS,
-    ("workspace", "preferences"): PREFERENCE_PATHS,
-    ("global", "preferences"): PREFERENCE_PATHS,
-    ("workspace", "profile"): PROFILE_PATHS,
-}
-LIST_PATHS = frozenset({"instructions", "goals", "tech_stack", "constraints", "conventions"})
 
-
-def _is_json_value(value: object) -> bool:
-    if value is None or isinstance(value, (str, bool, int)):
-        return True
-    if isinstance(value, float):
-        return math.isfinite(value)
-    if isinstance(value, list):
-        return all(_is_json_value(item) for item in value)
-    if isinstance(value, dict):
-        return all(isinstance(key, str) and _is_json_value(item) for key, item in value.items())
-    return False
-
-
-def _validate_configuration_fields(model: BaseModel, *, validate_values: bool = True) -> None:
-    scope = model.scope
-    target = model.target
-    operation = model.operation
-    path = model.path
-    fields = model.model_fields_set
-    allowed = ALLOWED_PATHS.get((scope, target))
-    if allowed is None:
-        raise ValueError("不允许修改此作用域或目标")
-    if operation == "reset":
-        if path is not None or model.value is not None:
-            raise ValueError("reset 不接受 path 或 value")
-        return
-    if path is None or not path.strip():
-        raise ValueError("此操作需要 path")
-    if path not in allowed:
-        raise ValueError(f"不允许修改字段: {path}")
-    if target == "profile" and path == "name" and operation == "unset":
-        raise ValueError("Profile 的 name 不能取消设置")
-    if operation == "unset":
-        if model.value is not None:
-            raise ValueError("unset 不接受 value")
-        if path in LIST_PATHS:
-            raise ValueError("列表字段只能使用 append 或 remove")
-        return
-    if "value" not in fields:
-        raise ValueError(f"{operation} 操作需要 value")
-    if not _is_json_value(model.value):
-        raise ValueError("value 必须是有限的 JSON 值")
-    is_list = path in LIST_PATHS
-    if validate_values and not is_list and path in {"language", "name", "summary"}:
-        if not isinstance(model.value, str) or not model.value.strip():
-            raise ValueError(f"{path} 必须是非空字符串")
-        maximum = 128 if path == "language" else 2_048
-        if len(model.value) > maximum:
-            raise ValueError(f"{path} 超出长度限制")
-    if (
-        validate_values
-        and is_list
-        and (not isinstance(model.value, str) or not model.value.strip())
-    ):
-        raise ValueError(f"{path} 的值必须是非空字符串")
-    if validate_values and is_list and isinstance(model.value, str) and len(model.value) > 512:
-        raise ValueError(f"{path} 的值超出长度限制")
-    if operation in {"append", "remove"} and not is_list:
-        raise ValueError("标量字段只能使用 set 或 unset")
-    if operation == "set" and is_list:
-        raise ValueError("列表字段只能使用 append 或 remove")
+def _validate_profile_fields(model: BaseModel, *, validate_values: bool = True) -> None:
+    if model.scope != "workspace" or model.target != "profile":
+        raise ValueError("update_configuration 只支持 workspace Profile")
+    validate_legacy_configuration_fields(model, validate_values=validate_values)
 
 
 class UpdateConfigurationArguments(BaseModel):
-    """Flat, strict Provider arguments for one configuration operation."""
+    """Flat, strict Provider arguments for workspace Profile operations."""
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    scope: ConfigurationScope
-    target: ConfigurationTarget
+    scope: Literal["workspace"]
+    target: Literal["profile"]
     operation: ConfigurationOperation
     path: str | None = None
     value: Any = None
 
     @model_validator(mode="after")
     def valid_operation(self) -> UpdateConfigurationArguments:
-        _validate_configuration_fields(self)
+        _validate_profile_fields(self)
         return self
 
     def to_command(self) -> ConfigurationCommand:
@@ -146,7 +80,7 @@ class ConfigurationCommand(BaseModel):
     def valid_operation(self) -> ConfigurationCommand:
         # The application service owns value/type validation so legacy callers can receive the
         # stable ConfigurationValidationError instead of a construction-time Pydantic error.
-        _validate_configuration_fields(self, validate_values=False)
+        validate_legacy_configuration_fields(self, validate_values=False)
         return self
 
 
@@ -238,11 +172,9 @@ def render_configuration_preview(command: ConfigurationCommand) -> list[str]:
 
 
 CONFIGURATION_TOOL_DESCRIPTION = (
-    "仅当用户明确要求把配置保存、写入、记住或更新到指定作用域时调用此工具；普通对话、"
-    "本次回答风格、问题、解释、示例、假设、引用和否定句不应调用。一次性回复偏好不持久化。"
-    "scope=session 表示本次会话 Preferences，scope=workspace 表示当前工作空间的 Preferences 或 Profile，"
-    "scope=global 表示所有工作空间共享的 Preferences。缺少作用域、目标、操作或必需 path/value 时先澄清，"
-    "不要猜测。Provider、凭据、活动模型、workspace identity、权限、安全策略和其他敏感目标不在此工具范围内。"
+    "仅当用户明确要求保存或更新当前 workspace Profile 时调用；Preference 使用独立的 "
+    "manage_preferences 工具。缺少操作或必需 path/value 时先澄清，不要猜测。Provider、凭据、"
+    "活动模型、workspace identity、权限、安全策略和其他敏感目标不在此工具范围内。"
 )
 
 

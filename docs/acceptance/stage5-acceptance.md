@@ -1,8 +1,8 @@
 # Stage 5 实现与离线验收证据
 
 > 日期：2026-08-21
-> 状态：Subplans 49–55 的自动化离线门禁与隔离模拟用户回放完成；真实 Provider 质量评估 pending
-> 范围：Subplans 49–55 的可审查 Learning、Promotion、MemorySelection、doctor/backup 和产品入口
+> 状态：Preference v2 实现完成；最终集成审查与 post-implementation user/live acceptance pending
+> 范围：Stage 5 Learning、通用 Preference v2、Promotion、MemorySelection、doctor/backup 和产品入口
 
 本文只记录当前实现能够证明的行为。离线 Fake/脚本 Reviewer 证明确定性边界，不证明真实模型的
 自然语言分类质量。修复前问题及修复后回放均记录在[模拟用户测试报告](stage5-simulated-user-evaluation.md)；
@@ -14,7 +14,7 @@ Subplan 55 已关闭 F1/F2/F3。Live Provider 评估仍需用户显式授权和�
 |---|---|---|
 | accepted Task → pending Review → bounded Candidate | `tests/test_stage5_learning_application.py`、`tests/test_stage5_learning_evaluation.py` | 通过；零候选是合法结果，单次 Review 最多 3 个候选 |
 | no-tool production Reviewer | `tests/test_stage5_learning_reviewer.py`、`tests/test_stage5_learning_evaluation.py` | 通过；请求/响应有界，最多一次修复，禁止工具和原始 provider 内容落盘 |
-| durable/temporary/negative/quoted/hypothetical/Assistant-only 分类 | `tests/test_stage5_learning_evaluation.py`、`src/morrow/resources/stage5-learning-evaluation.json` | 27/27 纯 evaluator 案例通过；安全负例 5 个，集成 Active 写入 0 |
+| legacy v12 durable/temporary/negative/quoted/hypothetical/Assistant-only 分类 | `tests/test_stage5_learning_evaluation.py`、`src/morrow/resources/stage5-legacy-learning-evaluation.json` | 27/27 纯 evaluator 案例通过；安全负例 5 个，集成 Active 写入 0；Preference v2 使用下方独立语料与门槛 |
 | Preference/Profile 显式确认后 Promotion | `tests/test_stage5_configuration_promotion.py`、`tests/test_stage5_learning_cli.py`、Subplan 55 隔离回放 | 通过；新进程 accept/edit/reject 与 OCC 预览确认均可用 |
 | Project Knowledge 与 MemorySelection | `tests/test_stage5_project_knowledge.py`、`tests/test_stage5_memory_agent_run.py`、`tests/test_stage5_memory_context.py`、Subplan 55 隔离回放 | 通过；非整秒首次 Promotion、重启读取和 Memory revision=1 均通过 |
 | Skill/Workflow/Orchestration future candidate | `tests/test_stage5_project_knowledge.py::test_future_candidate_acceptance_remains_candidate_only` | 通过；只记录 Candidate，不创建文件、工具、权限、Workflow 或运行时规则 |
@@ -57,6 +57,27 @@ Review runner 的 5 个安全负例集成门禁观察到 0 个 Candidate、Knowl
 `pytest -m live`、未联网、未写入用户真实 Learning store/YAML/project。真实模型质量评估保持 pending，
 不将离线 27/27 结果描述为真实模型质量通过。详细 hold-point 记录见
 [`stage5-live-evaluation-hold.md`](stage5-live-evaluation-hold.md)。
+
+## Preference v2 implementation evidence
+
+- 普通终态 Turn 在同一 SQLite 事务持久化 v13 Review job 与唯一当前用户 Evidence；进程内
+  `ReviewWorker` 使用 lease、最多三次尝试和有界退避，Provider 工作不占用 SQLite 事务。
+- no-tool Reviewer 只接收完整当前用户消息、有界 recent dialogue 和冻结 Active Preference snapshot，
+  输出 0–8 个 `add/replace/remove`；推断结果只进入独立 Inbox，不能自动写 YAML。
+- 明确管理通过受审批的 `manage_preferences`，Inbox 接受与直接管理共享同 scope 原子 Writer；
+  `update_configuration` 仅管理 Workspace Profile，旧 `/config edit` fixed-field 入口已退役。
+- 每个新 AgentRun 在 SQLite 准入事务前重载 global/workspace YAML，冻结 64-entry/8-KiB 低权限
+  Preference 投影；同一 Run 和 recovery 只重用冻结内容。Preference 注入与 Project Knowledge
+  MemorySelection 分别可观察。
+- `tests/test_preference_evaluation.py` 的 versioned v2 corpus 包含 22 个自然语言 contract cases，
+  其中恰好 12 个 positive intents、8 个 target cases；scripted evaluator 不调用 Provider、不写 Active
+  状态，也不声称语义准确率。
+- Doctor 检查 v13 job/Evidence/proposal/write-batch 与 YAML/AgentRun 投影；SQLite backup verification
+  独立报告 `preference_references_ok`。YAML 与凭据按权威边界不进入 SQLite bundle。
+
+Stage 5 当前只能标记为“implementation complete”。旧真实 Provider 证据（natural-language `0/3`、
+remove `0/2`、Mimo timeout、恢复 Session stale projection）是 v2 重构的 baseline，不被覆盖。最终集成
+review、模拟用户和新 real-Provider corpus 未运行前，不标记 user/live acceptance complete。
 
 ## Offline command record
 
