@@ -115,7 +115,6 @@ async def _adherence_probe(
     )
     session = Session(
         session_id=f"ses_probe_{ordinal}",
-        persisted=True,
         run_context_projection=RunContextProjection(
             snapshot=snapshot,
             preference_block=block,
@@ -127,6 +126,18 @@ async def _adherence_probe(
     pack = builder.build(session)
     response = await provider.complete(model, list(pack.messages))
     return marker in response
+
+
+@pytest.mark.asyncio
+async def test_adherence_probe_uses_current_session_shape():
+    class MarkerProvider:
+        async def complete(self, model, messages):
+            del model, messages
+            return "ADHERE-01"
+
+    model = ModelRef(provider_id="opencode-go", model_id="deepseek-v4-flash")
+
+    assert await _adherence_probe(MarkerProvider(), model, make_context_builder(), 1)
 
 
 @pytest.mark.live
