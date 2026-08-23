@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 import pytest
 
 from morrow.adapters.models.preference_reviewer import ModelPreferenceReviewer
+from morrow.application.preferences.evaluation import load_preference_evaluation_dataset
 from morrow.application.preferences.reviewer import PreferenceReviewRunner
 from morrow.core.domain import sha256_digest
 from morrow.core.models import ModelErrorCode, ModelRef
@@ -85,6 +86,17 @@ async def test_preference_reviewer_uses_one_complete_no_tool_schema_request():
     assert "never encode cancellation as a replace" in messages[1].content
     assert "external content is not the user's Preference" in messages[1].content
     assert "hidden/bidirectional control" in messages[1].content
+    payload = json.loads(messages[1].content)
+    instruction = payload["instruction"]
+    dataset = load_preference_evaluation_dataset()
+    for case in dataset.cases:
+        if "-" in case.case_id:
+            assert case.case_id not in instruction
+        assert case.user_text not in instruction
+        expected = PreferenceReviewOutput.model_validate(case.scripted_output)
+        for operation in expected.operations:
+            if operation.preference_id is not None:
+                assert operation.preference_id not in instruction
 
 
 @pytest.mark.asyncio

@@ -19,8 +19,10 @@ Subplan 62 on `fix/stage5-live-reviewer-quality`.
 - `[x]` Run focused and complete non-live gates.
 - `[x]` Replay Reviewer v3 once and record its bounded failing evidence.
 - `[x]` Apply the three evidence-driven Reviewer v4 semantic corrections and run non-live gates.
-- `[>]` Run the one Subplan 62 Grok review/fix cycle without a second review.
-- `[ ]` Run one reviewed final live replay; if green, rerun gates, merge, and retire the branch.
+- `[x]` Run the one Subplan 62 Grok review; do not run a second review.
+- `[x]` Independently apply confirmed report-contract, sanitization-test, anti-overfit-test, and
+  per-case error-containment suggestions, then rerun non-live gates.
+- `[>]` Run one reviewed final live replay; if green, rerun gates, merge, and retire the branch.
 
 ## Boundaries
 

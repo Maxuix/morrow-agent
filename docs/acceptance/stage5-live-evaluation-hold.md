@@ -55,10 +55,12 @@ runs the Preference v2 corpus and ten actual frozen-ContextBuilder adherence pro
 complete post-implementation run is recorded below. Offline scripted contracts cannot satisfy these
 semantic quality thresholds.
 
-When authorization and a compatible credential are available, the live report records only the
-dataset version, bounded aggregate numerators/denominators, precision/target ratios, attempts,
-latency, and final pass state. It excludes user text, model output, credentials, and Preference
-statements, and must not claim a pass if any target above lacks evidence.
+When authorization and a compatible credential are available, the live report records bounded
+dataset/prompt/schema/provider/model identifiers, aggregate numerators/denominators,
+precision/target ratios, attempts, latency, final pass state, and sanitized signatures for failed
+cases only. A failed signature contains case ID, operation kind, scope, synthetic target ID, match
+count, and a stable Reviewer-error flag. It excludes user text, statements, raw model output,
+reasoning, exception text, and credentials, and must not claim a pass if any target lacks evidence.
 
 ## 2026-08-23 Preference v2 result
 
