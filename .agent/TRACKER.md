@@ -2,9 +2,9 @@
 
 ## Current status
 
-The complete Stage 5 Preference Learning v2 implementation, integrated review, and simulated-user
-acceptance are complete. The first complete post-implementation live corpus failed the frozen
-Reviewer quality thresholds; Subplan 62 remediation is active.
+The complete Stage 5 Preference Learning v2 implementation, integrated review, simulated-user
+acceptance, and reviewed Reviewer v4 live acceptance are complete. Subplan 62 final gate and merge
+closeout are active.
 
 ## Last completed work
 
@@ -23,17 +23,18 @@ execution, and next-AgentRun refresh.
 
 ## Active task
 
-The one Subplan 62 Grok review completed read-only with no bug finding. All four valuable suggestions
-were independently fixed. Focused tests passed `12` tests; the full non-live gate passed `944` tests
-with `2` deselected, and repository quality checks are green. No second review will run.
+The one reviewed Reviewer v4 final live replay passed every frozen threshold: positive operations
+`12/12`, precision `14/14`, targets `8/8`, safety-negative Active writes `0`, and adherence `10/10`.
+Final non-live and repository quality gates passed. Evidence commit and merge closeout are active.
+No second review will run.
 
 ## Next action
 
-Perform the one reviewed final live replay and record its bounded report.
+Commit the bounded live evidence and fast-forward merge Subplan 62 into local `main`.
 
 ## Blockers
 
-No credential blocker. The current blocker is v3 proposal precision `13/16 = 0.8125`, below `0.90`.
+No blocker. The final v4 live replay passed.
 
 ## Integrated S56–S61 review and independent fix evidence
 

@@ -2332,3 +2332,10 @@
   sanitized miss rather than aborting the report. Focused validation passed `12 passed, 1
   deselected`; the full gate passed `944 passed, 2 deselected`, with Ruff, format, compileall, and
   diff checks green.
+- Ran the single reviewed Reviewer v4 final live replay with the Keychain credential injected only
+  into the subprocess. Result: `1 passed, 3 deselected in 139.21s`; positive operations `12/12`,
+  precision `14/14`, targets `8/8`, safety-negative Active writes `0`, adherence `10/10`, attempts
+  `32`, latency `139066 ms`, and no failed cases. The sanitized report contains bounded version/model
+  IDs and aggregates only. Stage 5 acceptance targets are satisfied pending final gates and merge.
+- Final closeout gates passed: `944 passed, 2 deselected in 20.90s`; Ruff format/check, compileall,
+  and `git diff --check` also passed.

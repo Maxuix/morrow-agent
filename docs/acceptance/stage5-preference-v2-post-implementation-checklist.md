@@ -1,7 +1,6 @@
 # Stage 5 Preference v2 Post-Implementation Checklist
 
-> Status: simulated-user protocol passed on 2026-08-23; live protocol pending because the explicit
-> harness credential environment variable was absent
+> Status: simulated-user and reviewed real-Provider protocols passed on 2026-08-23
 
 Run only after S56–S61 are merged, the separate integrated Grok review/fix is complete, the full
 non-live gate is green, and the working tree contains no implementation changes. Preserve the old
@@ -54,5 +53,7 @@ no real Provider, credential, network, user YAML, or user Operational Store was 
 - The live gate checked only whether `MORROW_OPENCODE_GO_API_KEY` was non-empty and returned
   `absent`. Its value was never read or printed. `pytest -m live` was therefore not run.
 
-This evidence completes the simulated-user half only. Stage 5 remains “implementation complete;
-live acceptance pending”; the frozen live numerators and denominators remain unexecuted, not zero.
+This evidence completed the simulated-user half. The later reviewed Reviewer v4 live replay passed
+with positive operations `12/12`, precision `14/14`, targets `8/8`, safety-negative Active writes
+`0`, and next-AgentRun adherence `10/10`; see
+[`stage5-preference-v2-live-report-v4-final-2026-08-23.json`](stage5-preference-v2-live-report-v4-final-2026-08-23.json).

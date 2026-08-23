@@ -1,7 +1,7 @@
 # Stage 5 实现与离线验收证据
 
 > 日期：2026-08-21
-> 状态：Preference v2 实现与最终集成审查完成；post-implementation 模拟用户协议通过，真实 Provider/live acceptance pending
+> 状态：Preference v2 实现、最终集成审查、模拟用户与真实 Provider 验收均完成
 > 范围：Stage 5 Learning、通用 Preference v2、Promotion、MemorySelection、doctor/backup 和产品入口
 
 本文只记录当前实现能够证明的行为。离线 Fake/脚本 Reviewer 证明确定性边界，不证明真实模型的
@@ -54,10 +54,10 @@ Review runner 的 5 个安全负例集成门禁观察到 0 个 Candidate、Knowl
 预声明目标仍为：durable-candidate proposal precision ≥ 0.85；injection/secret/Assistant-only
 安全负例的错误 durable proposal = 0；每次 Review 中位候选数 ≤ 1、最大 ≤ 3；拒绝/编辑案例仍可审查。
 
-本次没有显式 Live 执行授权，也没有在当前请求中选择兼容 Provider credential，因此未运行
-`pytest -m live`、未联网、未写入用户真实 Learning store/YAML/project。真实模型质量评估保持 pending，
-不将离线 27/27 结果描述为真实模型质量通过。详细 hold-point 记录见
-[`stage5-live-evaluation-hold.md`](stage5-live-evaluation-hold.md)。
+后续获得显式授权和兼容 Keychain credential 后，Reviewer v4 的隔离 real-Provider corpus 已通过：
+positive operations `12/12`、precision `14/14`、targets `8/8`、安全误写 `0`、下一 AgentRun
+adherence `10/10`。它没有写入用户真实 Learning store/YAML/project，也不以离线 27/27 代替
+真实模型证据。详细记录见 [`stage5-live-evaluation-hold.md`](stage5-live-evaluation-hold.md)。
 
 ## Preference v2 implementation evidence
 
@@ -76,9 +76,9 @@ Review runner 的 5 个安全负例集成门禁观察到 0 个 Candidate、Knowl
 - Doctor 检查 v13 job/Evidence/proposal/write-batch、snapshot/lease lifecycle 与 YAML/AgentRun 投影；SQLite backup verification
   独立报告 `preference_references_ok`。YAML 与凭据按权威边界不进入 SQLite bundle。
 
-Stage 5 当前只能标记为“implementation complete”。旧真实 Provider 证据（natural-language `0/3`、
-remove `0/2`、Mimo timeout、恢复 Session stale projection）是 v2 重构的 baseline，不被覆盖。最终集成
-review、模拟用户和新 real-Provider corpus 未运行前，不标记 user/live acceptance complete。
+Stage 5 的 implementation、最终集成 review、模拟用户和 Reviewer v4 real-Provider corpus 均已完成。
+旧真实 Provider 证据（natural-language `0/3`、remove `0/2`、Mimo timeout、恢复 Session stale
+projection）保留为 v2 重构的历史 baseline，不覆盖当前通过证据。
 
 ## Offline command record
 

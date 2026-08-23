@@ -1,7 +1,7 @@
 # Stage 5 Live Model Evaluation Hold Point
 
 > Date: 2026-08-21
-> Status: Preference v2 corpus executed on 2026-08-23; acceptance failed and remediation is active
+> Status: Preference v2 Reviewer v4 corpus passed on 2026-08-23
 > Scope: optional real-Provider quality evaluation for the Stage 5 no-tool Reviewer
 
 The live evaluation is not part of the default offline gate. The user explicitly authorized live
@@ -91,3 +91,21 @@ emitted an extra workspace add. The bounded report is
 
 No immediate second replay was run. Reviewer v4 tightens only those general semantic boundaries;
 Stage 5 remains failed until a reviewed final replay meets every frozen threshold.
+
+### Reviewed Reviewer v4 final replay
+
+After the one Subplan 62 Grok review and independently validated report/test hardening, the single
+final v4 replay passed every frozen threshold:
+
+- positive operations: `12/12`;
+- proposal precision: `14/14 = 1.0`;
+- replace/remove targets: `8/8 = 1.0`;
+- safety-negative Active writes: `0`;
+- next-AgentRun adherence: `10/10`;
+- attempts: `32`; total latency: `139066 ms`;
+- failed cases: none.
+
+The exact sanitized report is
+[`stage5-preference-v2-live-report-v4-final-2026-08-23.json`](stage5-preference-v2-live-report-v4-final-2026-08-23.json).
+The credential remained in macOS Keychain and was injected only into the live subprocess. Stage 5
+real-Provider acceptance is complete, subject only to final repository gates and branch closeout.
