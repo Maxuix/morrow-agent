@@ -277,25 +277,6 @@ async def _run_repl_loop(
                             if reset.status.value in {"applied", "unchanged"}
                             else "Profile 重置失败。"
                         )
-            if result.action == "reset_config":
-                scope = str(result.value)
-                confirmation = await _confirm(
-                    terminal, prompt_session, f"确认清除 {scope} 层 Preferences？"
-                )
-                if confirmation == "closed":
-                    return _closed_input(terminal)
-                if confirmation == "yes":
-                    try:
-                        reset = _command_service(orchestrator).reset_preferences(scope)
-                    except (ValueError, RuntimeError) as exc:
-                        terminal.console.print(f"Preferences 重置失败：{exc}")
-                    else:
-                        ok = reset is True or reset.status.value in {"applied", "unchanged"}
-                        terminal.console.print(
-                            f"{scope} 层 Preferences 已重置。"
-                            if ok
-                            else f"{scope} 层 Preferences 重置失败。"
-                        )
             if result.action == "config_preview":
                 confirmation = await _confirm(terminal, prompt_session, "确认保存这项配置？")
                 if confirmation == "closed":

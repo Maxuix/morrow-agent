@@ -45,7 +45,8 @@ Review runner 的 5 个安全负例集成门禁观察到 0 个 Candidate、Knowl
   `workspace-index.yaml`、CredentialStore 或 Keychain。
 - Preference/Profile 的 YAML authority 仍在独立状态文件中；SQLite activation provenance 不能单独
   重建 YAML，跨存储恢复必须继续使用既有 YAML 状态文件备份。
-- Learning Review 是前台、显式、一次性的；没有后台 worker、自动 retry、`explicit_auto` 或
+- Legacy accepted-Task Learning Review 与 Preference Review 均由进程内 `ReviewWorker` 在提交后处理；
+  SQLite job/lease/retry 是 durable authority，但本阶段没有 daemon、`explicit_auto` 或
   natural-language candidate acceptance。
 
 ## Live hold point
@@ -72,7 +73,7 @@ Review runner 的 5 个安全负例集成门禁观察到 0 个 Candidate、Knowl
 - `tests/test_preference_evaluation.py` 的 versioned v2 corpus 包含 22 个自然语言 contract cases，
   其中恰好 12 个 positive intents、8 个 target cases；scripted evaluator 不调用 Provider、不写 Active
   状态，也不声称语义准确率。
-- Doctor 检查 v13 job/Evidence/proposal/write-batch 与 YAML/AgentRun 投影；SQLite backup verification
+- Doctor 检查 v13 job/Evidence/proposal/write-batch、snapshot/lease lifecycle 与 YAML/AgentRun 投影；SQLite backup verification
   独立报告 `preference_references_ok`。YAML 与凭据按权威边界不进入 SQLite bundle。
 
 Stage 5 当前只能标记为“implementation complete”。旧真实 Provider 证据（natural-language `0/3`、

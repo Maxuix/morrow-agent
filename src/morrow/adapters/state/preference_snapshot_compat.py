@@ -89,4 +89,26 @@ def decode_legacy_agent_run_preferences(raw: object) -> tuple[PreferenceEntry, .
     return tuple(result)
 
 
-__all__ = ["decode_legacy_agent_run_preferences"]
+def decode_agent_run_snapshot(raw: object):
+    """Decode every persisted AgentRun shape through one read-only compatibility boundary."""
+
+    from morrow.adapters.state.preference_projection import preferences_from_entries
+    from morrow.core.domain import AgentRunSnapshot
+
+    data = _mapping(raw)
+    legacy_keys = {
+        "preference_entries",
+        "global_preferences",
+        "workspace_preferences",
+        "session_preferences",
+        "preferences",
+    }
+    if any(key in data for key in legacy_keys):
+        entries = decode_legacy_agent_run_preferences(data)
+        for key in ("schema_version", "created_at", *legacy_keys):
+            data.pop(key, None)
+        data["legacy_preferences"] = preferences_from_entries(entries)
+    return AgentRunSnapshot.model_validate(data)
+
+
+__all__ = ["decode_agent_run_snapshot", "decode_legacy_agent_run_preferences"]

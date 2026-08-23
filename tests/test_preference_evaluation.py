@@ -67,7 +67,10 @@ def test_live_score_thresholds_and_arithmetic_are_frozen():
         latency_ms_total=12_000,
     )
     assert passing.proposal_precision == 0.9
+    assert passing.target_accuracy == 6 / 7
     assert passing.passed
+
+    assert not passing.model_copy(update={"target_cases_total": 8}).passed
 
     for update in (
         {"positive_operations_correct": 10},

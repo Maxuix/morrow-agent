@@ -56,17 +56,6 @@ class CommandService(LearningCommandMixin):
             ConfigurationCommand(scope="workspace", target="profile", operation="reset")
         )
 
-    def reset_preferences(self, scope: str):
-        if self.config_service is None:
-            raise RuntimeError("配置服务尚未就绪")
-        if scope == "workspace":
-            self._ensure_workspace_writable(preferences=True)
-        elif scope not in {"session", "global"}:
-            raise ValueError(f"未知 Preferences 作用域：{scope}")
-        return self.config_service.apply_command(
-            ConfigurationCommand(scope=scope, target="preferences", operation="reset")
-        )
-
     def apply_preferences(self, arguments: ManagePreferencesArguments):
         if self.preference_service is None:
             raise RuntimeError("Preference 服务尚未就绪")
@@ -330,19 +319,9 @@ class CommandService(LearningCommandMixin):
         if command == "/config":
             if not self.config_service:
                 return CommandResult(["配置服务尚未就绪。"])
-            if len(parts) > 2 and parts[1] == "reset":
-                if parts[2] == "workspace" and (
-                    self.session.read_only or self.session.workspace_preferences_read_only
-                ):
-                    return CommandResult(["工作空间 Preferences 不可安全加载，无法重置。"])
+            if len(parts) > 1 and parts[1] in {"edit", "reset"}:
                 return CommandResult(
-                    [f"将清除 {parts[2]} 层 Preferences 覆盖。"],
-                    action="reset_config",
-                    value=parts[2],
-                )
-            if len(parts) > 4 and parts[1] == "edit":
-                return CommandResult(
-                    ["固定字段 /config edit 已退役；请使用 /preferences 管理原子规则。"]
+                    ["Preferences 的 /config edit/reset 已退役；请使用 /preferences 管理原子规则。"]
                 )
             return CommandResult(["Preferences 已迁移到 /preferences；Profile 使用 /workspace。"])
         return CommandResult([f"未知命令：{command}"])

@@ -74,3 +74,59 @@ def test_backup_verification_detects_tampered_preference_snapshot(tmp_path):
         assert "preference_job_snapshot" in broken.issues
     finally:
         handle.close()
+
+
+def test_preference_doctor_integrity_helper_detects_snapshot_tampering(tmp_path):
+    _store, handle, _journal = _state(tmp_path)
+    try:
+        handle.run_write(
+            lambda executor: executor.execute(
+                "UPDATE preference_review_jobs SET active_snapshot_digest = ? WHERE job_id = ?",
+                ("f" * 64, "prjob_one"),
+            )
+        )
+
+        ok, codes = handle.run_read(OperationalDoctor._preference_v13_checks)
+
+        assert not ok
+        assert "preference_job_snapshot" in codes
+    finally:
+        handle.close()
+
+
+def test_preference_doctor_integrity_helper_detects_bad_lease(tmp_path):
+    _store, handle, _journal = _state(tmp_path)
+    try:
+
+        def tamper(executor):
+            executor.execute("PRAGMA ignore_check_constraints = ON")
+            executor.execute(
+                "UPDATE preference_review_jobs SET status = 'running' WHERE job_id = ?",
+                ("prjob_one",),
+            )
+
+        handle.run_write(tamper)
+
+        ok, codes = handle.run_read(OperationalDoctor._preference_v13_checks)
+
+        assert not ok
+        assert "preference_job_lease_state" in codes
+    finally:
+        handle.close()
+
+
+def test_doctor_requires_exactly_one_preference_evidence_per_job(tmp_path):
+    store, handle, _journal = _state(tmp_path)
+    try:
+        handle.run_write(
+            lambda executor: executor.execute(
+                "DELETE FROM preference_evidence WHERE job_id = ?", ("prjob_one",)
+            )
+        )
+
+        report = OperationalDoctor(store).inspect("ws_1")
+
+        assert report.health.value == "needs_repair"
+        assert any(issue.code == "preference_job_evidence_cardinality" for issue in report.issues)
+    finally:
+        handle.close()

@@ -22,14 +22,14 @@ execution, and next-AgentRun refresh.
 
 ## Active task
 
-S61 implementation and pre-review gates are complete on
-`refactor/stage5-preference-v2-closeout`. The single planned read-only Grok review is now active;
-confirmed findings will receive one independent fix pass without a second S61 review.
+S61 implementation, its single planned read-only Grok review, the independent fix pass, and final
+gates are complete on `refactor/stage5-preference-v2-closeout`. Branch closeout and the separate
+S56–S61 integrated review remain.
 
 ## Next action
 
-Create the verified implementation checkpoint, run exactly one S61 `$grok-delegate` review, then
-adjudicate once and rerun the affected/full gates before branch closeout.
+Commit the S61 review fix, fast-forward local `main`, retire the branch, then activate the separate
+integrated S56–S61 review/fix/gate pass required by the master plan.
 
 ## Blockers
 
@@ -54,6 +54,26 @@ remain on hold until the master plan's clean-tree condition is met.
   Preference/Stage 5 regressions passed `231` with one explicit live skip. Full offline validation
   passed `932 passed, 2 deselected`. Ruff format/check, compileall, four CLI help commands, and
   `git diff --check` passed. No Live, Provider, credential, or network path ran.
+
+## S61 Grok review and independent fix evidence
+
+- The single planned `$grok-delegate` review ran read-only with `grok-4.6` at `xhigh`, changed no
+  files, and left the two user research documents untouched. No second S61 review was invoked.
+- Confirmed and fixed a one-way compatibility break where historical Stage 4/S60 AgentRun JSON
+  still contained top-level `preferences`. All journal and backup AgentRun parsing now shares one
+  read-only compatibility decoder, preserves stored JSON, and retains S60 frozen projections.
+- Doctor now reuses the complete v13 Preference reference verifier for snapshot digest/budget,
+  lease/retry, exact Evidence cardinality, proposal, and write-batch integrity. Added tamper tests
+  for snapshot, lease, and missing Evidence.
+- Added the missing opt-in Preference v2 real-Provider harness: 22 natural-language Reviewer cases,
+  aggregate precision/target/attempt/latency scoring, and ten adherence probes through an actual
+  frozen `ContextBuilder` Preference block. It remains live-marked and was not run.
+- Target accuracy is a ratio threshold of at least `6/7`, so `6/8` no longer passes. Public
+  `/config edit` and `/config reset` fixed-field paths are both retired; legacy accepted-Task prose
+  and report privacy claims were corrected.
+- Post-fix focused validation passed `33 passed, 1 deselected`; full offline validation passed
+  `938 passed, 2 deselected`. Ruff format/check, compileall, four CLI help commands, and
+  `git diff --check` passed.
 
 ## S60 implementation evidence
 

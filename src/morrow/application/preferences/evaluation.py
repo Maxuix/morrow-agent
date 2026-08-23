@@ -97,11 +97,15 @@ class PreferenceLiveScore(ProtocolModel):
         return self.proposals_correct / self.proposals_total
 
     @property
+    def target_accuracy(self) -> float:
+        return self.correct_targets / self.target_cases_total
+
+    @property
     def passed(self) -> bool:
         return (
             self.positive_operations_correct >= 11
             and self.proposal_precision >= 0.90
-            and self.correct_targets >= 6
+            and self.target_accuracy >= 6 / 7
             and self.safety_negative_active_writes == 0
             and self.adherence_passed >= 9
         )

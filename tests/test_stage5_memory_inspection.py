@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 
 import pytest
@@ -168,6 +169,37 @@ def test_backup_verification_checks_memory_selection_and_knowledge_links(tmp_pat
         assert not broken.ok
         assert not broken.memory_references_ok
         assert "memory_selection_digest" in broken.issues
+    finally:
+        handle.close()
+
+
+def test_backup_memory_verification_decodes_historical_fixed_preference_snapshot(tmp_path):
+    handle, journal, _api, _session = _admitted(tmp_path)
+    try:
+        store = OperationalStore(tmp_path / "state")
+        backup = OperationalBackupService(store, journal=journal)
+        report = backup.create("memory-legacy-agent-run")
+        bundle = store.layout.backups_dir / report.bundle_name
+        with sqlite3.connect(bundle / "database.sqlite") as connection:
+            row = connection.execute(
+                "SELECT agent_run_id, snapshot_json FROM agent_runs LIMIT 1"
+            ).fetchone()
+            raw = json.loads(str(row[1]))
+            raw["preferences"] = {
+                "language": "中文",
+                "response_detail": None,
+                "instructions": ["只解释关键设计。"],
+            }
+            connection.execute(
+                "UPDATE agent_runs SET snapshot_json = ? WHERE agent_run_id = ?",
+                (json.dumps(raw, ensure_ascii=False, sort_keys=True), str(row[0])),
+            )
+            connection.commit()
+
+        verified = backup.verify(bundle)
+
+        assert verified.ok
+        assert verified.memory_references_ok
     finally:
         handle.close()
 

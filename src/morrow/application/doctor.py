@@ -14,6 +14,7 @@ from morrow.adapters.state.preference_yaml import PreferenceYamlStore
 from morrow.adapters.state.preference_yaml_types import PreferenceYamlLoadStatus
 from morrow.application.learning.learning_doctor import inspect_learning
 from morrow.application.learning.memory_doctor import inspect_memory
+from morrow.application.preferences.backup import verify_preference_references
 from morrow.application.preferences.run_projection import render_frozen_run_preferences
 from morrow.application.preferences.writer import PreferenceWriter
 from morrow.core.artifacts import (
@@ -133,6 +134,16 @@ class OperationalDoctor:
             self._inspect_preferences(journal, workspace_id, counts, issues)
             checks.append("preference_v13_links_and_lifecycle")
             self._inspect_preference_records(journal, workspace_id, counts, issues)
+            preference_ok, preference_codes = handle.run_read(self._preference_v13_checks)
+            if not preference_ok:
+                issues.extend(
+                    self._issue(
+                        code,
+                        DoctorSeverity.ERROR,
+                        "Preference v13 integrity check failed",
+                    )
+                    for code in preference_codes
+                )
             self._inspect_permissions(journal, workspace_id, counts, issues)
             checks.extend(("learning_reviews_and_candidates", "learning_promotions"))
             inspect_learning(
@@ -193,6 +204,24 @@ class OperationalDoctor:
         foreign_rows = executor.execute("PRAGMA foreign_key_check")
         integrity = str(integrity_rows[0][0]) if integrity_rows else "missing"
         return integrity, foreign_rows
+
+    @staticmethod
+    def _preference_v13_checks(executor):
+        class Cursor:
+            def __init__(self, rows):
+                self.rows = rows
+
+            def fetchall(self):
+                return self.rows
+
+            def fetchone(self):
+                return self.rows[0] if self.rows else None
+
+        class Connection:
+            def execute(self, sql, parameters=()):
+                return Cursor(executor.execute(sql, parameters))
+
+        return verify_preference_references(Connection())
 
     def _inspect_domains(self, journal, workspace_id, counts, issues) -> None:
         sessions = journal.list_sessions(workspace_id)

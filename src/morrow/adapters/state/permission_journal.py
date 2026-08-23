@@ -6,12 +6,10 @@ import json
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 
-from morrow.adapters.state.preference_migration import decode_legacy_agent_run_preferences
-from morrow.adapters.state.preference_projection import preferences_from_entries
+from morrow.adapters.state.preference_snapshot_compat import decode_agent_run_snapshot
 from morrow.adapters.state.transaction import SqliteJournalBackend
 from morrow.core.capabilities import AccessScope, ApprovalMode, ProcessIsolation
 from morrow.core.domain import (
-    AgentRunSnapshot,
     DurableAgentRun,
     DurableTaskRun,
     DurableTurn,
@@ -558,20 +556,7 @@ def _agent_from_row(row: tuple[object, ...]) -> DurableAgentRun:
         raw = json.loads(str(row[4]))
         if not isinstance(raw, Mapping):
             raise ValueError("AgentRun snapshot must be a mapping")
-        snapshot_data = dict(raw)
-        if _has_legacy_preference_shape(snapshot_data):
-            entries = decode_legacy_agent_run_preferences(snapshot_data)
-            for key in (
-                "schema_version",
-                "created_at",
-                "preference_entries",
-                "global_preferences",
-                "workspace_preferences",
-                "session_preferences",
-            ):
-                snapshot_data.pop(key, None)
-            snapshot_data["legacy_preferences"] = preferences_from_entries(entries)
-        snapshot = AgentRunSnapshot.model_validate(snapshot_data)
+        snapshot = decode_agent_run_snapshot(raw)
         return DurableAgentRun(
             agent_run_id=str(row[0]),
             turn_id=str(row[1]),
@@ -585,15 +570,6 @@ def _agent_from_row(row: tuple[object, ...]) -> DurableAgentRun:
         raise StorageError(
             StorageErrorCode.NEEDS_REPAIR, "operational AgentRun snapshot is invalid"
         ) from exc
-
-
-def _has_legacy_preference_shape(raw: Mapping[str, object]) -> bool:
-    if "preference_entries" in raw or any(
-        key in raw for key in ("global_preferences", "workspace_preferences", "session_preferences")
-    ):
-        return True
-    preferences = raw.get("preferences")
-    return isinstance(preferences, Mapping) and "entries" in preferences
 
 
 def _grant_from_row(row: tuple[object, ...]) -> CapabilityGrant:

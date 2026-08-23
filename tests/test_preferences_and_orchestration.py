@@ -112,7 +112,9 @@ def test_command_service_routes_deterministic_edits_to_one_patch_path(tmp_path):
     assert results[0].action is None
     assert results[1].action == "config_preview"
     assert {path.name: path.read_bytes() if path.exists() else None for path in paths} == before
-    assert results[0].lines == ["固定字段 /config edit 已退役；请使用 /preferences 管理原子规则。"]
+    assert results[0].lines == [
+        "Preferences 的 /config edit/reset 已退役；请使用 /preferences 管理原子规则。"
+    ]
     assert results[1].lines[-1] == "- set summary = a demo"
     patch_service.apply(results[1].value)
 
@@ -325,9 +327,8 @@ async def test_corrupt_workspace_preferences_is_an_isolated_non_overwritable_emp
                 operations=[ConfigPatchOperation(op="set", path="language", value="English")],
             )
         )
-    with pytest.raises(RuntimeError):
-        commands.reset_preferences("workspace")
     assert commands.execute("/config reset workspace").action is None
+    assert "已退役" in commands.execute("/config reset workspace").lines[0]
     assert commands.execute("/config edit workspace language English").action is None
     commands.config_service.apply(
         ConfigPatch(

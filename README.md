@@ -72,7 +72,7 @@ scripts/morrow-mimo model current
 `--replace-credential` 轮换存储凭据。
 
 REPL 常用命令包括 `/workspace`、`/workspace edit summary ...`、`/workspace reset`、`/status`、
-`/preferences`、`/config reset workspace`、`/task`、`/accept`、
+`/preferences`、`/task`、`/accept`、
 `/grant`、`/recovery`、`/new` 和 `/exit`。默认启动会创建新的 Session；若要继续已有 Session，
 使用 `--session-id SESSION_ID` 或 `session resume SESSION_ID`。检测到已有可恢复 Session 时，启动会
 显示其 ID；恢复后如有未完成的安全对账，先用 `/recovery` 查看并处理，再继续同一回合。

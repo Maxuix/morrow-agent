@@ -2208,3 +2208,22 @@
 - Focused S61 acceptance passed `37` tests and full offline validation passed `932 passed, 2
   deselected`. Ruff format/check, compileall, `morrow --help`, Preferences/Learning/Memory help, and
   `git diff --check` passed. The two untracked research documents remain untouched and excluded.
+
+## 2026-08-23 — Subplan 61 Grok review and independent fix pass
+
+- The one planned `$grok-delegate` review completed read-only with `grok-4.6` at `xhigh`; it made no
+  project changes. It confirmed a production compatibility break in historical AgentRun snapshots,
+  a second incompatible backup parse, missing doctor integrity coverage, an absent v2 live harness,
+  and an absolute target threshold that allowed `6/8` to pass. No second S61 review was run.
+- Added one shared read-only AgentRun snapshot decoder for classic fixed projections, S60 frozen
+  projections, and current snapshots. Journal restore and Memory backup verification both use it;
+  stored JSON is never rewritten. Added production-shape and backup regressions.
+- Doctor now runs the complete v13 Preference verifier in diagnose mode and reports only bounded
+  reason codes. Added snapshot, lease, and exact Evidence-cardinality tamper coverage.
+- Replaced the old opt-in Learning smoke with the planned Preference v2 corpus scorer and ten actual
+  frozen-ContextBuilder adherence probes. Reports contain aggregate counters only. The live test was
+  not executed and no Provider, credential, or network path was used.
+- Changed target passing to accuracy `>= 6/7`, retired public `/config reset` alongside `/config
+  edit`, and corrected stale worker/report documentation. Focused validation passed `33 passed, 1
+  deselected`; final offline validation passed `938 passed, 2 deselected`. Ruff format/check,
+  compileall, all required CLI help, and `git diff --check` passed.

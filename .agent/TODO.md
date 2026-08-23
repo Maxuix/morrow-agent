@@ -15,8 +15,8 @@ Subplan 61 — Preference v2 Closeout and Quality Gates.
 - `[x]` S61.3 Add the versioned offline corpus and opt-in real-Provider scoring harness.
 - `[x]` S61.4 Reconcile architecture, roadmap, README, acceptance, help, and migration docs.
 - `[x]` S61.5 Run focused/full gates and create the implementation checkpoint.
-- `[>]` Run exactly one S61 Grok `/review`, independently fix confirmed findings, and rerun gates.
-- `[ ]` Commit closeout, fast-forward `main`, retire the branch, then run the separate integrated
+- `[x]` Run exactly one S61 Grok `/review`, independently fix confirmed findings, and rerun gates.
+- `[>]` Commit closeout, fast-forward `main`, retire the branch, then run the separate integrated
   S56–S61 review required by the master plan.
 
 ## Start condition

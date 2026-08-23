@@ -50,9 +50,11 @@ schema-led cases. Arithmetic is frozen before execution in `PreferenceLiveScore`
 - next-AgentRun adherence: at least `9/10`;
 - attempts and total latency are reported as bounded counts, not pass substitutions.
 
-This corpus has not been run in S61. Offline scripted contracts cannot satisfy these semantic
-quality thresholds.
+The opt-in harness is `tests/test_stage5_learning_live.py`; despite its historical filename it now
+runs the Preference v2 corpus and ten actual frozen-ContextBuilder adherence probes. This corpus has
+not been run in S61. Offline scripted contracts cannot satisfy these semantic quality thresholds.
 
-When authorization and a compatible credential are available, the live report must record only
-bounded provider/model/prompt/schema versions, case IDs, counts, reason codes, and manually
-reviewable sanitized Candidate drafts. It must not claim a pass if any target above lacks evidence.
+When authorization and a compatible credential are available, the live report records only the
+dataset version, bounded aggregate numerators/denominators, precision/target ratios, attempts,
+latency, and final pass state. It excludes user text, model output, credentials, and Preference
+statements, and must not claim a pass if any target above lacks evidence.
