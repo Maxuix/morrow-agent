@@ -3,7 +3,7 @@
 ## Current status
 
 The complete Stage 5 Preference Learning v2 implementation plan is finalized after the S56 review
-and independent plan-fix pass. S57 and S58 are merged locally; S59 is now active.
+and independent plan-fix pass. S57–S59 are merged locally; S60 is now active.
 
 ## Last completed work
 
@@ -22,19 +22,20 @@ execution, and next-AgentRun refresh.
 
 ## Active task
 
-The single planned Grok review and independent fix pass completed on
-`feat/stage5-review-worker`. All affected and full offline gates pass; S59 is ready for its closeout
-commit and fast-forward merge. No second Grok review was run.
+S59 is complete and fast-forward merged to local `main` at `f855c64`. Its single Grok review,
+independent fix pass, affected gates, and final full offline gates all completed without a second
+review. S60 is activated from that verified baseline.
 
 ## Next action
 
-Commit the verified S59 closeout, fast-forward local `main`, retire the clean topic branch, and
-activate S60. Do not stage the two untracked research documents.
+Create `fix/stage5-preference-context-refresh` from verified local `main`, inspect the current
+AgentRun admission/recovery projection, and begin S60.1 without staging the two untracked research
+documents.
 
 ## Blockers
 
-No code blocker for S59. Real-Provider acceptance remains on hold; S59 must use scripted offline
-Provider/Reviewer doubles and injected time/scheduling.
+No code blocker for S60. Real-Provider acceptance remains on hold; S60 must use deterministic offline
+projection, recovery, safety, and rendering tests.
 
 ## S59 review and independent fix evidence
 

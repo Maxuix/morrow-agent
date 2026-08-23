@@ -2135,3 +2135,12 @@
   deselected`; Ruff format/check, compileall, `morrow learning --help`, and `git diff --check`
   passed. No Provider, credential, Live, or real-network path ran. The two untracked research files
   remain untouched and excluded.
+
+## 2026-08-23 — Subplan 59 closeout and Subplan 60 activation
+
+- Committed the S59 independent fix pass as `f855c64` (`fix(preferences): close asynchronous review
+  lifecycle gaps`) and fast-forward merged `feat/stage5-review-worker` into local `main`.
+- Activated S60 from the verified `f855c64` baseline. Its scope is next-AgentRun Preference reload,
+  exact same-Run freeze/recovery, deterministic bounded rendering, and typed observability.
+- Local `main` remains ahead of configured `origin/main`; no push was attempted because the user did
+  not authorize an external remote mutation. The two untracked research files remain untouched.

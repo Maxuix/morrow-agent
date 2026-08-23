@@ -2,29 +2,26 @@
 
 ## Current stage
 
-Subplan 59 — Durable Asynchronous Review Worker.
+Subplan 60 — Fresh Preference Context and Observability.
 
 ## Active subplan
 
-`feat/stage5-review-worker`
+`fix/stage5-preference-context-refresh`
 
 ## Tasks
 
-- `[x]` S59.1 Add the atomic terminal-Turn Preference Review enqueue hook.
-- `[x]` S59.2 Add the lease-based process-local Review Worker lifecycle.
-- `[x]` S59.3 Add bounded retry, timeout, model fallback, and sanitized terminal failure handling.
-- `[x]` S59.4 Move accepted-Task Learning Review execution off the foreground path while preserving
-  legacy non-Preference behavior.
-- `[x]` S59.5 Add truthful job/run-pending status and non-blocking notification surfaces.
-- `[x]` Run the focused S59 validation and implementation checkpoint.
-- `[x]` Run exactly one Grok `/review`, independently adjudicate findings, and rerun the affected
-  gates (confirmed findings fixed; no second review invoked).
-- `[>]` Commit closeout, fast-forward `main`, retire the branch, and activate S60.
+- `[ ]` S60.1 Reload current Preference documents at each new AgentRun admission.
+- `[ ]` S60.2 Persist and recover the exact frozen per-run Preference projection.
+- `[ ]` S60.3 Add deterministic bounded lower-authority context rendering and safety tests.
+- `[ ]` S60.4 Add typed Preference refresh/omission status and doctor diagnostics.
+- `[ ]` Run the focused S60 validation and implementation checkpoint.
+- `[ ]` Run exactly one Grok `/review`, independently adjudicate findings, and rerun affected gates.
+- `[ ]` Commit closeout, fast-forward `main`, retire the branch, and activate S61.
 
 ## Start condition
 
-- Start from the verified local `main` after S58 merged and its final offline gates passed; v13
-  DDL/checksum, S57 Writer authority, and S58 Reviewer/Inbox contracts are frozen.
+- Start from verified local `main` at `f855c64` after S59 merged and its final offline gates passed;
+  v13 Review persistence, S57 Writer authority, and S58 Reviewer/Inbox contracts are frozen.
 - Preserve the untracked user files `docs/research/stage5-overview-pipeline.md` and
   `docs/research/stage5-overview-review.md`; do not stage or modify them without explicit request.
 - Do not run a real Provider or access credentials during implementation subplans. Use injected
@@ -32,9 +29,9 @@ Subplan 59 — Durable Asynchronous Review Worker.
 
 ## Required execution discipline
 
-Use one logical S59 task at a time on its dedicated branch. Keep ConversationLog as the only history
-writer, keep PreferenceReviewJob as the SQLite queue authority, and do not add a daemon or external
-scheduler. Run focused tests after each behavior change, commit one verified implementation
-checkpoint, perform exactly one `$grok-delegate` `/review`, independently fix confirmed/valuable
-findings without a second review, run final gates, commit closeout, fast-forward merge, retire the
-branch, and activate S60.
+Use one logical S60 task at a time on its dedicated branch. Reload Preferences only at a new
+AgentRun boundary, preserve same-Run freeze/recovery, keep Preference injection distinct from
+Project Knowledge, and do not change capability authority. Run focused tests after each behavior
+change, commit one verified implementation checkpoint, perform exactly one `$grok-delegate`
+`/review`, independently fix confirmed/valuable findings without a second review, run final gates,
+commit closeout, fast-forward merge, retire the branch, and activate S61.
