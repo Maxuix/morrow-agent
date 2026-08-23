@@ -2179,3 +2179,15 @@
   deselected`; Ruff format/check, compileall, `morrow --help`, and `git diff --check` passed. No
   Live, Provider, credential, or real-network path ran. The two untracked research documents remain
   untouched and excluded.
+
+## 2026-08-23 — Subplan 60 closeout and Subplan 61 activation
+
+- Committed the S60 independent fix pass as `1a8e38b` (`fix(preferences): separate doctor projection
+  diagnostics`) and fast-forward merged `fix/stage5-preference-context-refresh` into local `main`.
+  The merged branch had no commits absent from `main` and was deleted cleanly.
+- Activated S61 from the verified `1a8e38b` baseline on
+  `refactor/stage5-preference-v2-closeout`. Its scope is legacy active-path retirement, v13/YAML
+  doctor and backup coverage, the versioned semantic evaluation corpus, product documentation, and
+  integrated quality gates.
+- Local `main` remains ahead of `origin/main`; no push was attempted because no external remote
+  mutation was authorized. The two untracked research files remain untouched and excluded.

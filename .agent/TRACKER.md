@@ -3,7 +3,7 @@
 ## Current status
 
 The complete Stage 5 Preference Learning v2 implementation plan is finalized after the S56 review
-and independent plan-fix pass. S57–S59 are merged locally; S60 is now active.
+and independent plan-fix pass. S57–S60 are merged locally; S61 is now active.
 
 ## Last completed work
 
@@ -22,19 +22,19 @@ execution, and next-AgentRun refresh.
 
 ## Active task
 
-S60.1–S60.4, the implementation checkpoint, the single Grok review, and the independent fix pass
-are complete on `fix/stage5-preference-context-refresh`. Every new AgentRun reloads YAML before
-SQLite admission, freezes and validates a bounded generic lower-authority projection, and exposes
-live/injected/memory diagnostics separately. Final S60 gates are green.
+S60 is merged and retired. S61.1 is active on `refactor/stage5-preference-v2-closeout`; the immediate
+work is to inventory and remove obsolete fixed-field and marker-classifier active paths while
+preserving explicitly named migration/history decoders.
 
 ## Next action
 
-Commit the verified S60 closeout, fast-forward local `main`, retire the branch, and activate S61.
+Trace active callers and tests for legacy fixed-field Preference models/classifiers, then remove only
+dead supported-path residue and add boundary tests before starting S61.2.
 
 ## Blockers
 
-No code blocker for S60. Real-Provider acceptance remains on hold; S60 must use deterministic offline
-projection, recovery, safety, and rendering tests.
+No code blocker for S61. The opt-in real-Provider corpus and post-implementation user acceptance
+remain on hold until the master plan's clean-tree condition is met.
 
 ## S60 implementation evidence
 

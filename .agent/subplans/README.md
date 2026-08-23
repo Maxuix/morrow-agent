@@ -4,7 +4,7 @@ Stage 4 and the original Stage 5 v12 implementation are complete through Subplan
 Provider evaluation then demonstrated that the fixed-field, marker-gated Preference path has
 unacceptable natural-language recall and stale existing-Session injection. On 2026-08-21 the user
 approved drafting a Preference v2 refactor with a separate asynchronous Reviewer and deterministic
-Writer. Subplans 56–59 are complete; Subplan 60 is now active and 61 remains planned.
+Writer. Subplans 56–60 are complete; Subplan 61 is now active.
 
 Subplan 35 and the conditional review remediation were accepted on 2026-08-19 and preserved in Git
 history at `20fb43e`; its retired task file is no longer kept in the active subplan directory.
@@ -35,8 +35,8 @@ history at `20fb43e`; its retired task file is no longer kept in the active subp
 | 57 | `57-stage5-preference-writer.md` | completed |
 | 58 | `58-stage5-preference-reviewer-inbox.md` | completed |
 | 59 | `59-stage5-review-worker.md` | completed |
-| 60 | `60-stage5-preference-context.md` | active |
-| 61 | `61-stage5-preference-closeout.md` | planned |
+| 60 | `60-stage5-preference-context.md` | completed |
+| 61 | `61-stage5-preference-closeout.md` | active |
 
 Completed Stage 3 Subplans 29–34 were removed from the active directory when this master plan was
 created; they remain recoverable in Git history together with their accepted evidence.
