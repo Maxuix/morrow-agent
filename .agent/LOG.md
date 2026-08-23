@@ -2227,3 +2227,14 @@
   edit`, and corrected stale worker/report documentation. Focused validation passed `33 passed, 1
   deselected`; final offline validation passed `938 passed, 2 deselected`. Ruff format/check,
   compileall, all required CLI help, and `git diff --check` passed.
+
+## 2026-08-23 — Subplan 61 closeout and integrated review activation
+
+- Committed the S61 review fix as `8833910` (`fix(preferences): close s61 review findings`) and
+  fast-forward merged `refactor/stage5-preference-v2-closeout` into local `main`. The merged branch
+  had no commits absent from `main` and was deleted cleanly.
+- Activated `refactor/stage5-preference-v2-integrated-closeout` from the verified `8833910`
+  baseline for the one separate S56–S61 integrated Grok review, one independent fix pass, and final
+  complete offline gate.
+- Local `main` is ahead of `origin/main`; no push was attempted. The two untracked research files
+  remain untouched and excluded.

@@ -2,11 +2,11 @@
 
 ## Current stage
 
-Subplan 61 — Preference v2 Closeout and Quality Gates.
+Preference v2 S56–S61 integrated closeout.
 
 ## Active subplan
 
-`refactor/stage5-preference-v2-closeout`
+`refactor/stage5-preference-v2-integrated-closeout`
 
 ## Tasks
 
@@ -16,8 +16,12 @@ Subplan 61 — Preference v2 Closeout and Quality Gates.
 - `[x]` S61.4 Reconcile architecture, roadmap, README, acceptance, help, and migration docs.
 - `[x]` S61.5 Run focused/full gates and create the implementation checkpoint.
 - `[x]` Run exactly one S61 Grok `/review`, independently fix confirmed findings, and rerun gates.
-- `[>]` Commit closeout, fast-forward `main`, retire the branch, then run the separate integrated
-  S56–S61 review required by the master plan.
+- `[x]` Commit S61 closeout, fast-forward `main`, and retire the S61 branch.
+- `[>]` Run exactly one integrated S56–S61 Grok `/review` against the merged implementation.
+- `[ ]` Independently fix confirmed integrated findings once; do not re-review the fixes.
+- `[ ]` Run the complete non-live and repository quality gates.
+- `[ ]` Commit and fast-forward the integrated closeout to local `main`, retire the branch, and
+  leave simulated-user/real-Provider acceptance pending.
 
 ## Start condition
 

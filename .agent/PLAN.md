@@ -1,8 +1,8 @@
 # Stage 5 Preference Learning v2 Refactor Plan
 
-> Status: S61 active
-> Active subplan: 61 — Preference v2 Closeout and Quality Gates
-> Planning baseline: `1a8e38b` on local `main`
+> Status: S56–S61 integrated review active
+> Active work: final integrated review, one fix pass, and complete offline gate
+> Planning baseline: `8833910` on local `main`
 > Target state: generic atomic Preferences, semantic Reviewer, durable asynchronous Review,
 > reviewable Inbox, deterministic Writer, and next-AgentRun injection
 

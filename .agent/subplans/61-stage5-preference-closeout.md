@@ -1,6 +1,6 @@
 # Subplan 61 — Preference v2 Closeout and Quality Gates
 
-> Status: active
+> Status: completed
 > Branch: `refactor/stage5-preference-v2-closeout`
 > Prerequisite: Subplan 60 merged
 > Owns: legacy public-surface retirement, doctor/backup, evaluation harness, docs and full gate

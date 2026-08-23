@@ -2,8 +2,8 @@
 
 ## Current status
 
-The complete Stage 5 Preference Learning v2 implementation plan is finalized after the S56 review
-and independent plan-fix pass. S57–S60 are merged locally; S61 is now active.
+The complete Stage 5 Preference Learning v2 implementation through S61 is merged locally. The
+separate integrated S56–S61 review/fix/gate pass is active.
 
 ## Last completed work
 
@@ -22,19 +22,18 @@ execution, and next-AgentRun refresh.
 
 ## Active task
 
-S61 implementation, its single planned read-only Grok review, the independent fix pass, and final
-gates are complete on `refactor/stage5-preference-v2-closeout`. Branch closeout and the separate
-S56–S61 integrated review remain.
+S61 is merged at `8833910` and its branch is retired. The one separate integrated S56–S61 read-only
+Grok review is active on `refactor/stage5-preference-v2-integrated-closeout`.
 
 ## Next action
 
-Commit the S61 review fix, fast-forward local `main`, retire the branch, then activate the separate
-integrated S56–S61 review/fix/gate pass required by the master plan.
+Run exactly one integrated `$grok-delegate` review, independently adjudicate/fix once without a
+second review, then run the complete offline gate and merge the integrated closeout.
 
 ## Blockers
 
-No code blocker for S61. The opt-in real-Provider corpus and post-implementation user acceptance
-remain on hold until the master plan's clean-tree condition is met.
+No code blocker. The opt-in real-Provider corpus and post-implementation user acceptance remain on
+hold until this integrated closeout is merged and the tree is clean apart from preserved user files.
 
 ## S61 implementation evidence
 
