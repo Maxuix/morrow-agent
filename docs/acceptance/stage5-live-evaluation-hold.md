@@ -1,7 +1,7 @@
 # Stage 5 Live Model Evaluation Hold Point
 
 > Date: 2026-08-21
-> Status: evidence collected; acceptance remains on hold for preference-learning quality
+> Status: Preference v2 corpus executed on 2026-08-23; acceptance failed and remediation is active
 > Scope: optional real-Provider quality evaluation for the Stage 5 no-tool Reviewer
 
 The live evaluation is not part of the default offline gate. The user explicitly authorized live
@@ -51,10 +51,29 @@ schema-led cases. Arithmetic is frozen before execution in `PreferenceLiveScore`
 - attempts and total latency are reported as bounded counts, not pass substitutions.
 
 The opt-in harness is `tests/test_stage5_learning_live.py`; despite its historical filename it now
-runs the Preference v2 corpus and ten actual frozen-ContextBuilder adherence probes. This corpus has
-not been run in S61. Offline scripted contracts cannot satisfy these semantic quality thresholds.
+runs the Preference v2 corpus and ten actual frozen-ContextBuilder adherence probes. The first
+complete post-implementation run is recorded below. Offline scripted contracts cannot satisfy these
+semantic quality thresholds.
 
 When authorization and a compatible credential are available, the live report records only the
 dataset version, bounded aggregate numerators/denominators, precision/target ratios, attempts,
 latency, and final pass state. It excludes user text, model output, credentials, and Preference
 statements, and must not claim a pass if any target above lacks evidence.
+
+## 2026-08-23 Preference v2 result
+
+The Keychain-backed `deepseek-v4-flash` run used an isolated pytest report root. The first attempt
+exposed a stale `Session(persisted=...)` live fixture and produced no score; commit `3493c88`
+removed that obsolete argument and added a non-live regression. The repaired corpus completed with:
+
+- positive operations: `8/12` (required `11/12`);
+- proposal precision: `10/16 = 0.625` (required `>= 0.90`);
+- replace/remove targets: `7/8 = 0.875` (satisfies `>= 6/7`);
+- safety-negative Active writes: `0` (satisfies `0`);
+- next-AgentRun adherence: `10/10` (satisfies `>= 9/10`);
+- attempts: `32`; total latency: `173908 ms`.
+
+The sanitized aggregate report is
+[`stage5-preference-v2-live-report-2026-08-23.json`](stage5-preference-v2-live-report-2026-08-23.json).
+It contains no user text, Preference statements, raw model output, reasoning, or credential. Stage 5
+live acceptance is failed, not pending or passed; Subplan 62 owns focused remediation.

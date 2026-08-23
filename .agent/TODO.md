@@ -2,47 +2,28 @@
 
 ## Current stage
 
-Stage 5 Preference v2 post-implementation acceptance.
+Stage 5 Preference v2 live Reviewer quality remediation.
 
 ## Active subplan
 
-None. Real-Provider acceptance is on hold pending the explicit harness credential.
+Subplan 62 on `fix/stage5-live-reviewer-quality`.
 
 ## Tasks
 
-- `[x]` S61.1 Retire obsolete active fixed-field and marker-classifier Preference paths.
-- `[x]` S61.2 Complete v13/YAML doctor, backup, and isolated restore acceptance.
-- `[x]` S61.3 Add the versioned offline corpus and opt-in real-Provider scoring harness.
-- `[x]` S61.4 Reconcile architecture, roadmap, README, acceptance, help, and migration docs.
-- `[x]` S61.5 Run focused/full gates and create the implementation checkpoint.
-- `[x]` Run exactly one S61 Grok `/review`, independently fix confirmed findings, and rerun gates.
-- `[x]` Commit S61 closeout, fast-forward `main`, and retire the S61 branch.
-- `[x]` Run exactly one integrated S56–S61 Grok `/review` against the merged implementation.
-- `[x]` Independently fix confirmed integrated findings once; do not re-review the fixes.
-- `[x]` Run the complete non-live and repository quality gates.
-- `[x]` Commit and fast-forward the integrated closeout to local `main`, retire the branch, and
-  leave simulated-user/real-Provider acceptance pending.
-- `[x]` Run the isolated simulated-user protocol and record bounded evidence.
-- `[x]` Verify whether the explicit live credential gate is satisfied without reading the secret.
-- `[!]` If satisfied, run the versioned live corpus in an isolated report root; otherwise record
-  live acceptance as pending.
-- `[x]` Review acceptance evidence and run final non-live gates.
-- `[x]` Commit the bounded evidence, fast-forward it to local `main`, and close the branch.
+- `[x]` Persist the compatible Provider credential in macOS Keychain and verify connectivity without
+  exposing the secret.
+- `[x]` Repair the stale live adherence harness and add a non-live regression test.
+- `[x]` Run the complete frozen live corpus and record its bounded failing aggregate score.
+- `[x]` Add sanitized per-case diagnostics and identify the Reviewer semantic failure modes.
+- `[x]` Improve the no-tool Reviewer prompt/schema contract and add offline regressions.
+- `[x]` Run focused and complete non-live gates.
+- `[>]` Replay the frozen live corpus once and record bounded evidence.
+- `[ ]` Run the one Subplan 62 Grok review/fix cycle, rerun gates, merge, and retire the branch.
 
-## Start condition
+## Boundaries
 
-- Start from verified local `main` at `1a8e38b` after S60 merged and its final offline gates passed;
-  v13 Review persistence, Writer/Reviewer/Inbox, and next-AgentRun injection contracts are frozen.
-- Preserve the untracked user files `docs/research/stage5-overview-pipeline.md` and
-  `docs/research/stage5-overview-review.md`; do not stage or modify them without explicit request.
-- Do not run a real Provider or access credentials during implementation subplans. Use injected
-  scripted Providers/Reviewers, clocks, futures, and schedulers.
-
-## Required execution discipline
-
-Use one logical S61 task at a time on its dedicated branch. Preserve the frozen v13, Writer,
-Reviewer, worker, and AgentRun boundaries while retiring only proven-dead compatibility code. Keep
-doctor/backup output bounded and read-only; do not run the opt-in real-Provider corpus. Commit one
-verified implementation checkpoint, perform exactly one `$grok-delegate` `/review`, independently
-fix confirmed/valuable findings without a second review, run final gates, commit closeout,
-fast-forward merge, and retire the branch before the separate integrated review.
+- Preserve Writer, Inbox, YAML authority, durable Review, ContextBuilder, capability policy, and
+  public event contracts.
+- Do not persist credentials, raw Provider output, reasoning, statements, or user text in reports.
+- Do not replace semantic Review with keyword classification or add Provider calls.
+- Preserve the two untracked user research files.

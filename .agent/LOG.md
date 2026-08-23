@@ -2291,3 +2291,23 @@
 - Committed the bounded evidence as `9e4403c`, fast-forwarded it with activation commit `2fd568a`
   into local `main`, and deleted the clean acceptance branch. No push was attempted; live
   acceptance remains the only open Stage 5 acceptance item.
+
+## 2026-08-23 — Preference v2 live corpus and remediation activation
+
+- The user persisted the compatible OpenCode Go credential in macOS Keychain. The product Provider
+  connection test succeeded without exposing the credential.
+- The first corpus attempt exposed a stale `Session(persisted=...)` test fixture before scoring.
+  Removed the obsolete argument, added a non-live adherence-probe regression, and passed the full
+  offline gate with `942 passed, 2 deselected`; committed and merged as `3493c88`.
+- The repaired `deepseek-v4-flash` corpus completed in an isolated report root: positive operations
+  `8/12`, proposal precision `10/16`, targets `7/8`, safety-negative Active writes `0`, adherence
+  `10/10`, attempts `32`, latency `173908 ms`. No raw output, text, statements, reasoning, or
+  credential was persisted.
+- The frozen live thresholds did not pass. Activated Subplan 62 on
+  `fix/stage5-live-reviewer-quality`; Stage 5 acceptance remains open.
+- Static diagnosis found the v2 semantic instruction only asked whether a durable Preference change
+  existed; it did not define operation cardinality, add/replace/remove selection, global scope,
+  target ambiguity, or negative categories. Added an explicit bounded v3 semantic contract while
+  retaining one no-tool call and the v2 output schema. Added case-ID/operation-signature-only live
+  diagnostics. Focused tests passed `10 passed, 1 deselected`; the complete non-live gate passed
+  `942 passed, 2 deselected`, with Ruff, format, compileall, and diff checks green.

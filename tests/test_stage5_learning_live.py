@@ -87,6 +87,14 @@ def _matched_operations(actual, expected) -> int:
     return matches
 
 
+def _sanitized_signature(operation: PreferenceOperation) -> dict[str, str | None]:
+    return {
+        "operation": operation.operation.value,
+        "scope": operation.scope.value,
+        "preference_id": operation.preference_id,
+    }
+
+
 async def _adherence_probe(
     provider, model: ModelRef, builder: ContextBuilder, ordinal: int
 ) -> bool:
@@ -164,6 +172,7 @@ async def test_live_preference_v2_scores_natural_language_and_next_run_adherence
     proposals_total = 0
     correct_targets = 0
     attempts = 0
+    case_results = []
     started = time.monotonic()
     for case in dataset.cases:
         output = await reviewer.review(_context(case), model=model, timeout_seconds=60.0)
@@ -178,6 +187,15 @@ async def test_live_preference_v2_scores_natural_language_and_next_run_adherence
             actual_targets = {item.preference_id for item in output.operations}
             expected_targets = {item.preference_id for item in expected.operations}
             correct_targets += actual_targets == expected_targets
+        case_results.append(
+            {
+                "case_id": case.case_id,
+                "expected": [_sanitized_signature(item) for item in expected.operations],
+                "actual": [_sanitized_signature(item) for item in output.operations],
+                "matched_operations": matches,
+                "complete_match": matches == len(expected.operations) == len(output.operations),
+            }
+        )
 
     builder = make_context_builder()
     adherence_passed = sum(
@@ -200,6 +218,7 @@ async def test_live_preference_v2_scores_natural_language_and_next_run_adherence
         "proposal_precision": score.proposal_precision,
         "target_accuracy": score.target_accuracy,
         "passed": score.passed,
+        "cases": case_results,
     }
     (tmp_path / "preference-v2-live-report.json").write_text(
         json.dumps(report, ensure_ascii=False, sort_keys=True),

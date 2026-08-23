@@ -2,9 +2,9 @@
 
 ## Current status
 
-The complete Stage 5 Preference Learning v2 implementation and integrated review are complete.
-Post-implementation simulated-user acceptance passed; live acceptance remains pending because the
-explicit harness credential environment variable was absent.
+The complete Stage 5 Preference Learning v2 implementation, integrated review, and simulated-user
+acceptance are complete. The first complete post-implementation live corpus failed the frozen
+Reviewer quality thresholds; Subplan 62 remediation is active.
 
 ## Last completed work
 
@@ -23,18 +23,17 @@ execution, and next-AgentRun refresh.
 
 ## Active task
 
-None. Simulated-user acceptance evidence is merged into local `main`; live acceptance is an
-explicit hold point.
+The bounded Reviewer v3 semantic contract and sanitized per-case diagnostic report are implemented.
+Focused tests passed `10` tests and the full non-live gate passed `942` tests with `2` deselected.
 
 ## Next action
 
-Provide the explicit compatible harness credential and authorization, then run the versioned live
-corpus in an isolated report root.
+Replay the frozen live corpus once with the Keychain credential and record the sanitized result.
 
 ## Blockers
 
-`MORROW_OPENCODE_GO_API_KEY` was absent. The versioned real-Provider harness cannot run without an
-explicit compatible credential, so live acceptance remains pending.
+No credential blocker. The current blocker is the measured live quality gap: positive operations
+`8/12` and proposal precision `10/16`, below the frozen `11/12` and `0.90` thresholds.
 
 ## Integrated S56–S61 review and independent fix evidence
 

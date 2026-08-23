@@ -74,11 +74,14 @@ async def test_preference_reviewer_uses_one_complete_no_tool_schema_request():
     assert len(provider.calls) == 1
     messages = provider.calls[0][1]
     assert [message.role for message in messages] == ["system", "user"]
-    assert "preference-v2" in messages[0].content
+    assert "preference-v3" in messages[0].content
     assert '"operations"' in messages[1].content
     assert '"schema_version":"preference-operations-v2"' in messages[1].content
     assert '"session"' not in messages[1].content
     assert "CandidateDraftBatch" not in messages[1].content
+    assert "one operation for every independent" in messages[1].content
+    assert "Use global only" in messages[1].content
+    assert "quotations" in messages[1].content
 
 
 @pytest.mark.asyncio
