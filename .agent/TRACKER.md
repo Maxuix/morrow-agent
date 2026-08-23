@@ -2,9 +2,9 @@
 
 ## Current status
 
-The complete Stage 5 Preference Learning v2 implementation through S61 and the separate integrated
-S56–S61 review/fix/gate pass are complete. Post-implementation simulated-user and live acceptance
-remain pending.
+The complete Stage 5 Preference Learning v2 implementation and integrated review are complete.
+The user authorized the post-implementation acceptance protocol; isolated simulated-user acceptance
+is active, followed by the explicit live credential gate.
 
 ## Last completed work
 
@@ -23,18 +23,18 @@ execution, and next-AgentRun refresh.
 
 ## Active task
 
-The one separate integrated S56–S61 read-only Grok review, independent fix pass, and complete
-offline gate are merged locally at `720df62`; the integrated branch is retired.
+Acceptance is active on `test/stage5-preference-v2-acceptance` from verified local `main` at
+`4e48b1c`. No implementation behavior is being expanded.
 
 ## Next action
 
-Stop at the explicit post-implementation simulated-user/live acceptance hold point. No
-implementation subplan is active.
+Run the fresh-state simulated-user test groups, record bounded evidence, then check only whether the
+live harness credential environment variable exists.
 
 ## Blockers
 
-No code blocker. The opt-in real-Provider corpus and post-implementation user acceptance require a
-separate explicit acceptance run and remain pending.
+No simulated-user blocker. Live execution requires `MORROW_OPENCODE_GO_API_KEY` to be explicitly
+present for the harness; absence keeps real-Provider acceptance pending.
 
 ## Integrated S56–S61 review and independent fix evidence
 

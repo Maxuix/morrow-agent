@@ -2266,3 +2266,12 @@
   points; neither was run during this closeout.
 - Local `main` remains ahead of `origin/main`; no push was attempted. The two untracked research
   files remain untouched and excluded.
+
+## 2026-08-23 — Preference v2 post-implementation acceptance activation
+
+- The user explicitly authorized continuing beyond the implementation hold point. Activated
+  `test/stage5-preference-v2-acceptance` from verified local `main` at `4e48b1c`.
+- The acceptance order is locked: isolated simulated-user protocol first, then the opt-in live
+  corpus only if its explicit environment credential is present. Credential values will not be
+  read, printed, persisted, or copied.
+- The two untracked research files remain untouched and excluded.

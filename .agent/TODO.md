@@ -2,11 +2,11 @@
 
 ## Current stage
 
-No active implementation subplan. Preference v2 implementation closeout is complete.
+Stage 5 Preference v2 post-implementation acceptance.
 
 ## Active subplan
 
-None after the verified integrated branch is merged and retired.
+`test/stage5-preference-v2-acceptance`
 
 ## Tasks
 
@@ -22,6 +22,11 @@ None after the verified integrated branch is merged and retired.
 - `[x]` Run the complete non-live and repository quality gates.
 - `[x]` Commit and fast-forward the integrated closeout to local `main`, retire the branch, and
   leave simulated-user/real-Provider acceptance pending.
+- `[>]` Run the isolated simulated-user protocol and record bounded evidence.
+- `[ ]` Verify whether the explicit live credential gate is satisfied without reading the secret.
+- `[ ]` If satisfied, run the versioned live corpus in an isolated report root; otherwise record
+  live acceptance as pending.
+- `[ ]` Independently review acceptance evidence, run final non-live gates, and close the branch.
 
 ## Start condition
 
