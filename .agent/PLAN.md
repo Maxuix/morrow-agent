@@ -1,6 +1,6 @@
 # Stage 5 Preference Learning v2 Refactor Plan
 
-> Status: S60 implementation checkpoint complete; review pending
+> Status: S60 final gates passed; closeout pending
 > Active subplan: 60 — Fresh Preference Context and Observability
 > Planning baseline: `f855c64` on local `main`
 > Target state: generic atomic Preferences, semantic Reviewer, durable asynchronous Review,

@@ -111,7 +111,7 @@ class _AcceptedTurn:
 
 @dataclass(frozen=True, slots=True)
 class PreferenceRunSources:
-    """Valid YAML documents loaded before an AgentRun admission transaction."""
+    """Pre-transaction YAML sources, including empty layers for degraded reads."""
 
     global_document: PreferenceDocument
     workspace_document: PreferenceDocument

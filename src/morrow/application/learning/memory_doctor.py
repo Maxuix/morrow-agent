@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from morrow.application.learning.memory_run_projection import load_run_context_projection
+from morrow.application.learning.memory_run_projection import load_frozen_memory_selection
 from morrow.application.learning.memory_selector import memory_selection_digest
 from morrow.application.learning.memory_terms import terms_for_project_knowledge_revision
 from morrow.core.doctor import DoctorIssue, DoctorSeverity
@@ -60,7 +60,7 @@ def inspect_memory(
                 continue
             counts["memory_agent_runs"] += 1
             try:
-                load_run_context_projection(journal, workspace_id, run.agent_run_id)
+                load_frozen_memory_selection(journal, workspace_id, run.snapshot)
             except StorageError:
                 issues.append(
                     issue_factory(

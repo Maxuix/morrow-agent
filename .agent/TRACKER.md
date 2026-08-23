@@ -22,15 +22,14 @@ execution, and next-AgentRun refresh.
 
 ## Active task
 
-S60.1–S60.4 and the implementation checkpoint are complete on
-`fix/stage5-preference-context-refresh`. Every new AgentRun reloads YAML before SQLite admission,
-freezes and validates a bounded generic lower-authority projection, and exposes live/injected/memory
-diagnostics separately. The single planned Grok review is next.
+S60.1–S60.4, the implementation checkpoint, the single Grok review, and the independent fix pass
+are complete on `fix/stage5-preference-context-refresh`. Every new AgentRun reloads YAML before
+SQLite admission, freezes and validates a bounded generic lower-authority projection, and exposes
+live/injected/memory diagnostics separately. Final S60 gates are green.
 
 ## Next action
 
-Commit the verified S60 implementation checkpoint, then invoke exactly one Grok review and
-independently adjudicate its findings without a second review.
+Commit the verified S60 closeout, fast-forward local `main`, retire the branch, and activate S61.
 
 ## Blockers
 
@@ -55,6 +54,15 @@ projection, recovery, safety, and rendering tests.
 - Focused S60 validation passed `112` tests before the final doctor tamper regression; the complete
   offline suite passed `924 passed, 2 deselected`. Ruff format/check, compileall, `morrow --help`,
   and `git diff --check` passed. No Live, Provider, credential, or network path ran.
+- The one planned Grok review completed read-only and changed no project files. It confirmed the
+  reload/freeze/recovery boundaries and found one correctness bug: Memory doctor reused the combined
+  Preference+Memory projection and mislabeled a Preference digest failure as
+  `memory_agent_run_projection`.
+- The independent fix keeps Memory doctor on its own frozen MemorySelection reference check and
+  adds a mixed valid-Memory/tampered-Preference regression. Restored-Session next-Turn coverage,
+  exact cross-scope render ordering, and hostile-Preference tool-list coverage were also strengthened.
+- Final S60 focused validation passed `98` tests; full offline validation passed `926 passed, 2
+  deselected`. Ruff format/check, compileall, `morrow --help`, and `git diff --check` passed.
 
 ## S59 review and independent fix evidence
 

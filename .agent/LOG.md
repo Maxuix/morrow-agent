@@ -2161,3 +2161,21 @@
   validation passed `924 passed, 2 deselected`; Ruff format/check, compileall, `morrow --help`, and
   `git diff --check` passed. No Live, Provider, credential, or real-network path ran; the two
   untracked research documents remain untouched.
+
+## 2026-08-23 — Subplan 60 Grok review and independent fix pass
+
+- The single planned `$grok-delegate` review ran read-only with `grok-4.6` at `xhigh` and changed no
+  project files. Its report confirmed the AgentRun admission reload, frozen recovery, deterministic
+  rendering, degraded YAML, authority, and cross-store race boundaries.
+- Independent adjudication confirmed one correctness bug: Memory doctor called the combined
+  Preference+Memory run projection, so a tampered Preference digest could also be reported as
+  `memory_agent_run_projection`. Memory doctor now validates only its frozen MemorySelection link;
+  the existing selection checks continue to own Memory content integrity.
+- Added a mixed valid-Memory/tampered-Preference doctor regression and strengthened tests for the
+  next Turn on the restored Session object, exact non-equal cross-scope render ordering, and an
+  adversarial Preference that cannot add tools to `ContextPack`. Clarified that degraded reads use
+  empty pre-transaction Preference layers.
+- Final focused S60 validation passed `98` tests. Full offline validation passed `926 passed, 2
+  deselected`; Ruff format/check, compileall, `morrow --help`, and `git diff --check` passed. No
+  Live, Provider, credential, or real-network path ran. The two untracked research documents remain
+  untouched and excluded.

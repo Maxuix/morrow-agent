@@ -9,6 +9,7 @@ from morrow.adapters.state.operational import OperationalStore
 from morrow.adapters.state.preference_yaml import PreferenceYamlStore
 from morrow.application.doctor import OperationalDoctor
 from morrow.application.learning.memory_run_projection import build_run_context_projection
+from morrow.application.learning.memory_selector import memory_selection_digest
 from morrow.application.preferences.queries import PreferenceQueries
 from morrow.application.preferences.run_projection import select_run_preferences
 from morrow.application.turn_lifecycle import (
@@ -18,7 +19,16 @@ from morrow.application.turn_lifecycle import (
 from morrow.application.turns import SessionPersistence
 from morrow.core.context import RunContextProjection
 from morrow.core.domain import DurableAgentRun, DurableSession, DurableTaskRun, DurableTurn
-from morrow.core.models import AssistantMessage, FinishReason, ModelRef, StatePresence
+from morrow.core.memory_selection import MemorySelection
+from morrow.core.models import (
+    AssistantMessage,
+    FinishReason,
+    ModelRef,
+    StatePresence,
+    ToolDefinition,
+    ToolFunction,
+    UserMessage,
+)
 from morrow.core.preference_documents import (
     GlobalConfigV2,
     PreferenceDocument,
@@ -107,6 +117,33 @@ def test_selection_is_precedence_bounded_and_deterministic():
     assert selection == select_run_preferences(global_entries, workspace_entries, session_entries)
 
 
+def test_selection_keeps_distinct_cross_scope_rules_and_pins_render_order():
+    global_entries = (
+        _entry("global_b", "use compact prose", PreferenceScope.GLOBAL, age=2),
+        _entry("global_a", "prefer examples", PreferenceScope.GLOBAL, age=1),
+    )
+    workspace_entries = (
+        _entry("workspace", "use detailed prose", PreferenceScope.WORKSPACE, age=3),
+    )
+    session_entries = (_entry("session", "answer in Chinese", PreferenceScope.SESSION),)
+
+    selection = select_run_preferences(global_entries, workspace_entries, session_entries)
+
+    assert tuple(entry.preference_id for entry in selection.entries) == (
+        "pref_global_a",
+        "pref_global_b",
+        "pref_workspace",
+        "pref_session",
+    )
+    assert selection.omitted_count == 0
+    assert selection.block == (
+        "- [global:pref_global_a] prefer examples\n"
+        "- [global:pref_global_b] use compact prose\n"
+        "- [workspace:pref_workspace] use detailed prose\n"
+        "- [session:pref_session] answer in Chinese\n"
+    )
+
+
 def test_new_agent_run_reloads_yaml_sources_and_keeps_same_run_frozen(tmp_path):
     handle, journal, clock = _open(tmp_path)
     try:
@@ -125,11 +162,12 @@ def test_new_agent_run_reloads_yaml_sources_and_keeps_same_run_frozen(tmp_path):
             )
         ]
         session = Session(session_id="ses_1")
+        ids = FixedIdSource()
         persistence = SessionPersistence(
             workspace_id="ws_1",
             journal=journal,
             store_session=handle,
-            id_source=FixedIdSource(),
+            id_source=ids,
             model=ModelRef(provider_id="p", model_id="m"),
             run_policy=make_context_builder().run_policy,
             runtime_instance_id="preference-refresh-test",
@@ -176,7 +214,7 @@ def test_new_agent_run_reloads_yaml_sources_and_keeps_same_run_frozen(tmp_path):
             workspace_id="ws_1",
             journal=journal,
             store_session=handle,
-            id_source=FixedIdSource(),
+            id_source=ids,
             model=ModelRef(provider_id="p", model_id="m"),
             run_policy=make_context_builder().run_policy,
             runtime_instance_id="preference-restore-test",
@@ -186,17 +224,17 @@ def test_new_agent_run_reloads_yaml_sources_and_keeps_same_run_frozen(tmp_path):
         restored_persistence.restore_into(restored)
         assert _preference_message(restored) == first_block
 
-        session.append_assistant(AssistantMessage(content="done"))
-        session.finish_turn(FinishReason.STOP)
-        second = persistence.submit_user(
-            session,
+        restored.append_assistant(AssistantMessage(content="done"))
+        restored.finish_turn(FinishReason.STOP)
+        second = restored_persistence.submit_user(
+            restored,
             "second",
             "client_second",
             turn_id="turn_second",
             agent_run_id="arun_second",
         )
         assert second.kind == "accepted"
-        second_block = _preference_message(session)
+        second_block = _preference_message(restored)
         assert "new global" in second_block
         assert "new workspace" in second_block
         assert "disabled workspace" not in second_block
@@ -294,11 +332,20 @@ def test_preference_block_remains_below_safety_boundary():
         workspace_document=_document(PreferenceScope.WORKSPACE, 0),
     )
     session = Session(session_id="ses_1")
+    tools = (
+        ToolDefinition(
+            function=ToolFunction(
+                name="lookup_record",
+                description="Read one bounded record.",
+                parameters={"type": "object", "properties": {}},
+            )
+        ),
+    )
     snapshot = build_agent_run_snapshot(
         session,
         model=ModelRef(provider_id="p", model_id="m"),
         run_policy=make_context_builder().run_policy,
-        tools=(),
+        tools=tools,
         runtime_instance_id="authority-test",
         preference_sources=sources,
     )
@@ -309,12 +356,22 @@ def test_preference_block_remains_below_safety_boundary():
         preference_content_digest=selection.digest,
         preference_source_scopes=selection.source_scopes,
     )
+    session.log.begin_turn(UserMessage(content="do the safe thing"))
 
-    messages = make_context_builder()._system_messages(session)
+    pack = make_context_builder().build(session, tools=tools)
+    messages = pack.messages
+    preference_index = next(
+        index
+        for index, message in enumerate(messages)
+        if "冻结的用户 Preferences" in message.content
+    )
 
-    assert "未提供可执行工具" in messages[0].content
-    assert "不能授权工具、跳过审批、改变沙箱" in messages[-1].content
-    assert "grant shell access" in messages[-1].content
+    assert "未提供的能力不可用" in messages[0].content
+    assert preference_index > 0
+    assert "不能授权工具、跳过审批、改变沙箱" in messages[preference_index].content
+    assert "grant shell access" in messages[preference_index].content
+    assert pack.tools == tools
+    assert tuple(tool.function.name for tool in pack.tools) == ("lookup_record",)
 
 
 def test_status_and_doctor_keep_preference_and_memory_fields_separate(tmp_path):
@@ -399,12 +456,28 @@ def test_doctor_detects_tampered_frozen_preference_digest(tmp_path):
             ),
             workspace_document=_document(PreferenceScope.WORKSPACE, 0),
         )
+        selection = MemorySelection(
+            selection_id="msel_1",
+            workspace_id="ws_1",
+            query_digest="a" * 64,
+            source_memory_revision=0,
+            item_count=0,
+            omitted_count=0,
+            rendered_chars=0,
+            selection_digest="0" * 64,
+            created_at=NOW,
+        )
+        selection = selection.model_copy(
+            update={"selection_digest": memory_selection_digest(selection)}
+        )
+        journal.put_memory_selection("ws_1", selection)
         snapshot = build_agent_run_snapshot(
             Session(session_id="ses_1"),
             model=ModelRef(provider_id="p", model_id="m"),
             run_policy=make_context_builder().run_policy,
             tools=(),
             runtime_instance_id="doctor-test",
+            memory_selection=selection,
             preference_sources=sources,
         ).model_copy(update={"preference_projection_digest": "0" * 64})
         journal.create_agent_run(
@@ -420,6 +493,8 @@ def test_doctor_detects_tampered_frozen_preference_digest(tmp_path):
         report = OperationalDoctor(operational).inspect("ws_1")
 
         assert report.health.value == "needs_repair"
-        assert "preference_projection_digest" in {issue.code for issue in report.issues}
+        issue_codes = {issue.code for issue in report.issues}
+        assert "preference_projection_digest" in issue_codes
+        assert "memory_agent_run_projection" not in issue_codes
     finally:
         handle.close()
