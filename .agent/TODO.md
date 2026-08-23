@@ -20,7 +20,7 @@ None after the verified integrated branch is merged and retired.
 - `[x]` Run exactly one integrated S56–S61 Grok `/review` against the merged implementation.
 - `[x]` Independently fix confirmed integrated findings once; do not re-review the fixes.
 - `[x]` Run the complete non-live and repository quality gates.
-- `[>]` Commit and fast-forward the integrated closeout to local `main`, retire the branch, and
+- `[x]` Commit and fast-forward the integrated closeout to local `main`, retire the branch, and
   leave simulated-user/real-Provider acceptance pending.
 
 ## Start condition

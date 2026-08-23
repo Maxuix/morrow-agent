@@ -2255,3 +2255,14 @@
 - Focused integrated validation passed `70` tests. Final offline validation passed `941 passed, 2
   deselected`; Ruff format/check, compileall, all required CLI help, and `git diff --check` passed.
   No Live, Provider, credential, or network path ran.
+
+## 2026-08-23 — Preference v2 implementation closeout
+
+- Committed the integrated review fix as `720df62` (`fix(preferences): close integrated v2 review
+  findings`) and fast-forward merged the integrated branch into local `main`. The branch had no
+  commits absent from `main` and was deleted cleanly.
+- Preference v2 implementation is complete through S61 and the required separate integrated review.
+  Post-implementation simulated-user and real-Provider acceptance remain explicit pending hold
+  points; neither was run during this closeout.
+- Local `main` remains ahead of `origin/main`; no push was attempted. The two untracked research
+  files remain untouched and excluded.

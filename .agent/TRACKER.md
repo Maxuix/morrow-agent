@@ -24,12 +24,12 @@ execution, and next-AgentRun refresh.
 ## Active task
 
 The one separate integrated S56–S61 read-only Grok review, independent fix pass, and complete
-offline gate are finished on `refactor/stage5-preference-v2-integrated-closeout`.
+offline gate are merged locally at `720df62`; the integrated branch is retired.
 
 ## Next action
 
-Commit and merge the verified integrated closeout, retire its branch, and stop at the explicit
-post-implementation simulated-user/live acceptance hold point.
+Stop at the explicit post-implementation simulated-user/live acceptance hold point. No
+implementation subplan is active.
 
 ## Blockers
 

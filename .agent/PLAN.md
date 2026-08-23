@@ -2,7 +2,7 @@
 
 > Status: implementation complete; post-implementation user/live acceptance pending
 > Active work: none; the next hold point requires explicit simulated-user/live acceptance work
-> Planning baseline: `8833910` on local `main`
+> Completed baseline: `720df62` on local `main`
 > Target state: generic atomic Preferences, semantic Reviewer, durable asynchronous Review,
 > reviewable Inbox, deterministic Writer, and next-AgentRun injection
 
