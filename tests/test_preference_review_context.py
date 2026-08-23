@@ -5,13 +5,53 @@ from datetime import UTC, datetime
 
 import pytest
 
-from morrow.application.preferences.context import PreferenceReviewContextBuilder
+from morrow.application.preferences.context import (
+    PreferenceReviewContextBuilder,
+    snapshot_from_documents,
+)
 from morrow.core.domain import DurableConversationRecord, sha256_digest
-from morrow.core.preference_documents import PreferenceReviewSnapshot
+from morrow.core.preference_documents import PreferenceDocument, PreferenceReviewSnapshot
+from morrow.core.preference_models import PreferenceEntry, PreferenceScope, PreferenceStatus
 from morrow.core.preference_persistence_models import PreferenceEvidence, PreferenceReviewJob
 from morrow.core.preference_review import PreferenceReviewContextError
 
 NOW = datetime(2026, 1, 1, tzinfo=UTC)
+
+
+def test_review_snapshot_keeps_disabled_entries_but_excludes_deleted_tombstones():
+    active = PreferenceEntry(
+        preference_id="pref_active",
+        statement="Active rule.",
+        scope=PreferenceScope.GLOBAL,
+        created_at=NOW,
+        updated_at=NOW,
+    )
+    disabled = PreferenceEntry(
+        preference_id="pref_disabled",
+        statement="Disabled duplicate guard.",
+        scope=PreferenceScope.WORKSPACE,
+        status=PreferenceStatus.DISABLED,
+        created_at=NOW,
+        updated_at=NOW,
+    )
+    deleted = PreferenceEntry(
+        preference_id="pref_deleted",
+        statement="Deleted tombstone.",
+        scope=PreferenceScope.WORKSPACE,
+        status=PreferenceStatus.DELETED,
+        created_at=NOW,
+        updated_at=NOW,
+    )
+
+    snapshot = snapshot_from_documents(
+        PreferenceDocument(scope="global", revision=1, entries=(active,)),
+        PreferenceDocument(scope="workspace", revision=2, entries=(disabled, deleted)),
+    )
+
+    assert [entry.preference_id for entry in snapshot.entries] == [
+        "pref_active",
+        "pref_disabled",
+    ]
 
 
 def _source():

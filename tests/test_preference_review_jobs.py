@@ -169,3 +169,41 @@ async def test_oversized_snapshot_skips_review_without_rolling_back_turn(tmp_pat
     finally:
         handle.close()
         store.layout.database.exists()
+
+
+@pytest.mark.asyncio
+async def test_invalid_evidence_excerpt_skips_review_without_rolling_back_turn(tmp_path):
+    store, handle, journal, clock = _open(tmp_path)
+    try:
+        session = Session(session_id="ses_1")
+        persistence = SessionPersistence(
+            workspace_id="ws_1",
+            journal=journal,
+            store_session=handle,
+            id_source=FixedIdSource(),
+            model=ModelRef(provider_id="p", model_id="m"),
+            run_policy=make_context_builder().run_policy,
+            runtime_instance_id="review-evidence-validation-test",
+            clock=clock,
+        )
+        persistence.attach(session)
+        loop = AgentLoop(
+            ScriptedModelProvider(["完成。"]),
+            ModelRef(provider_id="p", model_id="m"),
+            make_context_builder(),
+            id_source=FixedIdSource(),
+        )
+
+        events = [item async for item in loop.run_task(session, "ordinary\u0001request")]
+
+        assert events[-1].type == "turn.completed"
+        assert journal.list_preference_review_jobs("ws_1") == ()
+        assert not session.log.has_active_turn
+        assert [record.kind for record in journal.load_records("ws_1", "ses_1")] == [
+            "message",
+            "message",
+            "terminal",
+        ]
+    finally:
+        handle.close()
+        store.layout.database.exists()

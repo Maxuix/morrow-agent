@@ -2,8 +2,9 @@
 
 ## Current status
 
-The complete Stage 5 Preference Learning v2 implementation through S61 is merged locally. The
-separate integrated S56–S61 review/fix/gate pass is active.
+The complete Stage 5 Preference Learning v2 implementation through S61 and the separate integrated
+S56–S61 review/fix/gate pass are complete. Post-implementation simulated-user and live acceptance
+remain pending.
 
 ## Last completed work
 
@@ -22,18 +23,34 @@ execution, and next-AgentRun refresh.
 
 ## Active task
 
-S61 is merged at `8833910` and its branch is retired. The one separate integrated S56–S61 read-only
-Grok review is active on `refactor/stage5-preference-v2-integrated-closeout`.
+The one separate integrated S56–S61 read-only Grok review, independent fix pass, and complete
+offline gate are finished on `refactor/stage5-preference-v2-integrated-closeout`.
 
 ## Next action
 
-Run exactly one integrated `$grok-delegate` review, independently adjudicate/fix once without a
-second review, then run the complete offline gate and merge the integrated closeout.
+Commit and merge the verified integrated closeout, retire its branch, and stop at the explicit
+post-implementation simulated-user/live acceptance hold point.
 
 ## Blockers
 
-No code blocker. The opt-in real-Provider corpus and post-implementation user acceptance remain on
-hold until this integrated closeout is merged and the tree is clean apart from preserved user files.
+No code blocker. The opt-in real-Provider corpus and post-implementation user acceptance require a
+separate explicit acceptance run and remain pending.
+
+## Integrated S56–S61 review and independent fix evidence
+
+- The one planned integrated `$grok-delegate` review ran read-only with `grok-4.6` at `xhigh` over
+  `c6031d2..8833910`; it changed no project files. No second integrated review was invoked.
+- Deleted tombstones are now excluded from frozen Review snapshots while disabled entries remain
+  available for duplicate checks, preventing historical removes from permanently exhausting Review
+  snapshot budgets.
+- Evidence/excerpt validation failure at terminal enqueue now fails closed by skipping supplemental
+  Review without rolling back a completed foreground Turn. Storage consistency failures still
+  retain transaction rollback semantics.
+- The legacy fixed-field workspace facade now refuses to replace an existing v3 generic document,
+  preserving generic IDs, disabled/deleted lifecycle, and non-taxonomy statements. Acceptance docs
+  now describe the SQLite queue and in-process worker truthfully.
+- Integrated focused validation passed `70` tests. Final offline validation passed `941 passed, 2
+  deselected`; Ruff format/check, compileall, four CLI help commands, and `git diff --check` passed.
 
 ## S61 implementation evidence
 

@@ -652,28 +652,12 @@ class ProjectStateYamlStore:
             return StateWriteResult(
                 status=StateWriteStatus.REVISION_CONFLICT, revision=generic.revision
             )
-        try:
-            entries = legacy_entries_from_preferences(
-                PreferenceScope.WORKSPACE,
-                value.model_dump(mode="python"),
-                timestamp=generic.value.updated_at,
-            )
-            written = self.preference_store.write_workspace(
-                workspace_id,
-                WorkspacePreferenceDocumentV3(
-                    revision=generic.revision,
-                    state="present",
-                    entries=entries,
-                ),
-                expected_revision=generic.revision,
-            )
-        except PreferenceYamlConflict:
-            return StateWriteResult(
-                status=StateWriteStatus.REVISION_CONFLICT, revision=generic.revision
-            )
-        except (OSError, RuntimeError, ValueError) as exc:
-            return StateWriteResult(status=StateWriteStatus.FAILED, error=type(exc).__name__)
-        return self._legacy_preferences_write_result(written)
+        del workspace_id, value
+        return StateWriteResult(
+            status=StateWriteStatus.FAILED,
+            revision=generic.revision,
+            error="legacy_preference_write_retired",
+        )
 
     def _clear_document(
         self,

@@ -2238,3 +2238,20 @@
   complete offline gate.
 - Local `main` is ahead of `origin/main`; no push was attempted. The two untracked research files
   remain untouched and excluded.
+
+## 2026-08-23 — S56–S61 integrated Grok review and independent fix pass
+
+- The one separate integrated `$grok-delegate` review completed read-only with `grok-4.6` at
+  `xhigh` over the complete S56–S61 implementation. It changed no files and found two cross-subplan
+  bugs plus two valuable closeout suggestions. No second integrated review was run.
+- Excluded deleted tombstones from Reviewer snapshots while retaining active/disabled entries, so
+  accumulated logical removes cannot permanently exhaust the 256-entry/192-KiB enqueue budget.
+- Isolated excerpt/Evidence validation from the terminal transaction outcome: invalid supplemental
+  Review evidence now skips Review while preserving the completed foreground Turn. Added a control-
+  character regression proving the Assistant completion remains durable.
+- Refused legacy fixed-field whole-document writes once workspace Preferences are v3 generic,
+  preventing ID churn and loss of generic/disabled/deleted entries. Corrected the remaining stale
+  acceptance matrix row to the SQLite queue + in-process worker/no-daemon contract.
+- Focused integrated validation passed `70` tests. Final offline validation passed `941 passed, 2
+  deselected`; Ruff format/check, compileall, all required CLI help, and `git diff --check` passed.
+  No Live, Provider, credential, or network path ran.

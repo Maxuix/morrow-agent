@@ -1,7 +1,7 @@
 # Stage 5 Preference Learning v2 Refactor Plan
 
-> Status: S56–S61 integrated review active
-> Active work: final integrated review, one fix pass, and complete offline gate
+> Status: implementation complete; post-implementation user/live acceptance pending
+> Active work: none; the next hold point requires explicit simulated-user/live acceptance work
 > Planning baseline: `8833910` on local `main`
 > Target state: generic atomic Preferences, semantic Reviewer, durable asynchronous Review,
 > reviewable Inbox, deterministic Writer, and next-AgentRun injection

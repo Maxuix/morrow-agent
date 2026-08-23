@@ -1,6 +1,6 @@
 # Stage 5：可审查学习与长期记忆
 
-> 状态：Preference Learning v2 实现完成；最终集成审查与 post-implementation user/live acceptance pending
+> 状态：Preference Learning v2 实现与最终集成审查完成；post-implementation user/live acceptance pending
 > 阶段结果：通用原子 Preference、异步 no-tool Reviewer、可审查 Inbox、确定性 Writer、下一 AgentRun 冻结注入、Project Knowledge/Memory 和 v13 诊断/备份边界均已落地
 
 ## 2026-08-23 Preference v2 已实施

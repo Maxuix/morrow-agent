@@ -232,34 +232,37 @@ class PreferenceReviewJobEnqueuer:
             snapshot = snapshot_from_documents(global_document, workspace_document)
         except ValueError:
             return PreferenceReviewEnqueueResult(reason="snapshot_budget")
-        encoded_snapshot = snapshot.serialized_bytes
-        stamp = _utc(self.clock)
-        excerpt = _excerpt(content)
-        job = PreferenceReviewJob(
-            job_id=self.id_source.new_id(PREFERENCE_REVIEW_JOB_ID_PREFIX),
-            workspace_id=self.workspace_id,
-            session_id=session.session_id,
-            turn_id=turn_id,
-            review_version=self.review_version,
-            source_global_revision=snapshot.global_document_revision,
-            source_workspace_revision=snapshot.workspace_document_revision,
-            active_snapshot_json=encoded_snapshot.decode("utf-8"),
-            active_snapshot_count=len(snapshot.entries),
-            active_snapshot_bytes=len(encoded_snapshot),
-            active_snapshot_digest=snapshot.digest,
-            created_at=stamp,
-        )
-        evidence = PreferenceEvidence(
-            evidence_id=self.id_source.new_id(PREFERENCE_EVIDENCE_ID_PREFIX),
-            workspace_id=self.workspace_id,
-            job_id=job.job_id,
-            turn_id=turn_id,
-            excerpt_redacted=excerpt,
-            excerpt_bytes=len(excerpt.encode("utf-8")),
-            content_digest=sha256_digest(content),
-            observed_at=stamp,
-            created_at=stamp,
-        )
+        try:
+            encoded_snapshot = snapshot.serialized_bytes
+            stamp = _utc(self.clock)
+            excerpt = _excerpt(content)
+            job = PreferenceReviewJob(
+                job_id=self.id_source.new_id(PREFERENCE_REVIEW_JOB_ID_PREFIX),
+                workspace_id=self.workspace_id,
+                session_id=session.session_id,
+                turn_id=turn_id,
+                review_version=self.review_version,
+                source_global_revision=snapshot.global_document_revision,
+                source_workspace_revision=snapshot.workspace_document_revision,
+                active_snapshot_json=encoded_snapshot.decode("utf-8"),
+                active_snapshot_count=len(snapshot.entries),
+                active_snapshot_bytes=len(encoded_snapshot),
+                active_snapshot_digest=snapshot.digest,
+                created_at=stamp,
+            )
+            evidence = PreferenceEvidence(
+                evidence_id=self.id_source.new_id(PREFERENCE_EVIDENCE_ID_PREFIX),
+                workspace_id=self.workspace_id,
+                job_id=job.job_id,
+                turn_id=turn_id,
+                excerpt_redacted=excerpt,
+                excerpt_bytes=len(excerpt.encode("utf-8")),
+                content_digest=sha256_digest(content),
+                observed_at=stamp,
+                created_at=stamp,
+            )
+        except ValueError:
+            return PreferenceReviewEnqueueResult(reason="evidence_invalid")
         stored_job, stored_evidence = txn.put_preference_job_with_evidence(
             self.workspace_id, job, evidence
         )

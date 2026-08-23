@@ -2,11 +2,11 @@
 
 ## Current stage
 
-Preference v2 S56–S61 integrated closeout.
+No active implementation subplan. Preference v2 implementation closeout is complete.
 
 ## Active subplan
 
-`refactor/stage5-preference-v2-integrated-closeout`
+None after the verified integrated branch is merged and retired.
 
 ## Tasks
 
@@ -17,10 +17,10 @@ Preference v2 S56–S61 integrated closeout.
 - `[x]` S61.5 Run focused/full gates and create the implementation checkpoint.
 - `[x]` Run exactly one S61 Grok `/review`, independently fix confirmed findings, and rerun gates.
 - `[x]` Commit S61 closeout, fast-forward `main`, and retire the S61 branch.
-- `[>]` Run exactly one integrated S56–S61 Grok `/review` against the merged implementation.
-- `[ ]` Independently fix confirmed integrated findings once; do not re-review the fixes.
-- `[ ]` Run the complete non-live and repository quality gates.
-- `[ ]` Commit and fast-forward the integrated closeout to local `main`, retire the branch, and
+- `[x]` Run exactly one integrated S56–S61 Grok `/review` against the merged implementation.
+- `[x]` Independently fix confirmed integrated findings once; do not re-review the fixes.
+- `[x]` Run the complete non-live and repository quality gates.
+- `[>]` Commit and fast-forward the integrated closeout to local `main`, retire the branch, and
   leave simulated-user/real-Provider acceptance pending.
 
 ## Start condition

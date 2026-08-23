@@ -1,7 +1,7 @@
 # Stage 5 实现与离线验收证据
 
 > 日期：2026-08-21
-> 状态：Preference v2 实现完成；最终集成审查与 post-implementation user/live acceptance pending
+> 状态：Preference v2 实现与最终集成审查完成；post-implementation user/live acceptance pending
 > 范围：Stage 5 Learning、通用 Preference v2、Promotion、MemorySelection、doctor/backup 和产品入口
 
 本文只记录当前实现能够证明的行为。离线 Fake/脚本 Reviewer 证明确定性边界，不证明真实模型的
@@ -18,7 +18,7 @@ Subplan 55 已关闭 F1/F2/F3。Live Provider 评估仍需用户显式授权和�
 | Preference/Profile 显式确认后 Promotion | `tests/test_stage5_configuration_promotion.py`、`tests/test_stage5_learning_cli.py`、Subplan 55 隔离回放 | 通过；新进程 accept/edit/reject 与 OCC 预览确认均可用 |
 | Project Knowledge 与 MemorySelection | `tests/test_stage5_project_knowledge.py`、`tests/test_stage5_memory_agent_run.py`、`tests/test_stage5_memory_context.py`、Subplan 55 隔离回放 | 通过；非整秒首次 Promotion、重启读取和 Memory revision=1 均通过 |
 | Skill/Workflow/Orchestration future candidate | `tests/test_stage5_project_knowledge.py::test_future_candidate_acceptance_remains_candidate_only` | 通过；只记录 Candidate，不创建文件、工具、权限、Workflow 或运行时规则 |
-| REPL/headless review/retry 与 policy controls | `tests/test_stage5_learning_cli.py`、`tests/test_stage5_learning_cli.py::test_repl_learning_mode_is_explicit_and_rejects_explicit_auto` | 通过；前台执行，无 worker/scheduler，`explicit-auto` 被拒绝 |
+| REPL/headless review/retry 与 policy controls | `tests/test_stage5_learning_cli.py`、`tests/test_review_worker.py`、`tests/test_preference_review_jobs.py` | 通过；SQLite queue 是 durable authority，进程内 worker 在提交后 wake，显式 run-pending 可恢复；无 daemon，`explicit-auto` 被拒绝 |
 | workspace/restart/crash/OCC/replay | `tests/test_stage5_learning_store.py`、`tests/test_stage5_memory_agent_run.py`、`tests/test_stage5_configuration_promotion.py`、`tests/test_stage4_recovery_crash.py`、Subplan 55 隔离回放 | 通过；新进程状态、Doctor 和 backup verify 均通过 |
 | Doctor 只读完整性检查 | `tests/test_stage5_doctor_backup.py`、`tests/test_stage4_doctor.py`、`tests/test_stage5_memory_inspection.py` | 通过；Review/Evidence/Candidate/Decision/Promotion/Knowledge/Memory 引用和 lease 状态可诊断，数据库 mtime 不变 |
 | 隔离 SQLite backup/restore verification | `tests/test_stage5_doctor_backup.py`、`tests/test_stage4_backup.py` | 通过；Learning/Memory 状态保留，篡改决策摘要会使 verify 失败，YAML/凭据不在 bundle |

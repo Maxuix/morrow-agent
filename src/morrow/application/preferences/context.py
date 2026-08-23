@@ -11,6 +11,7 @@ from morrow.core.preference_documents import (
     PreferenceDocument,
     PreferenceReviewSnapshot,
 )
+from morrow.core.preference_models import PreferenceStatus
 from morrow.core.preference_persistence_models import PreferenceEvidence, PreferenceReviewJob
 from morrow.core.preference_review import (
     PREFERENCE_REVIEW_MAX_RECENT_MESSAGES,
@@ -44,6 +45,7 @@ def snapshot_from_documents(
         )
         for document in (global_document, workspace_document)
         for entry in document.entries
+        if entry.status is not PreferenceStatus.DELETED
     )
     return PreferenceReviewSnapshot(
         entries=entries,

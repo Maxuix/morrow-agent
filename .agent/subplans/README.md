@@ -4,7 +4,7 @@ Stage 4 and the original Stage 5 v12 implementation are complete through Subplan
 Provider evaluation then demonstrated that the fixed-field, marker-gated Preference path has
 unacceptable natural-language recall and stale existing-Session injection. On 2026-08-21 the user
 approved drafting a Preference v2 refactor with a separate asynchronous Reviewer and deterministic
-Writer. Subplans 56–61 are complete; the separate integrated review is active.
+Writer. Subplans 56–61 and the separate integrated review/fix/gate pass are complete.
 
 Subplan 35 and the conditional review remediation were accepted on 2026-08-19 and preserved in Git
 history at `20fb43e`; its retired task file is no longer kept in the active subplan directory.

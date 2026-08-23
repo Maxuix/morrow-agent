@@ -5,9 +5,11 @@ import shutil
 from morrow.adapters.state.journal import SqliteOperationalJournal
 from morrow.adapters.state.operational import OperationalStore
 from morrow.adapters.state.preference_yaml import PreferenceYamlStore
+from morrow.adapters.state.yaml import ProjectStateYamlStore
 from morrow.application.backup import OperationalBackupService
 from morrow.application.configuration import UpdateConfigurationArguments
 from morrow.core.domain import AgentRunSnapshot
+from morrow.core.models import Preferences, StateWriteStatus
 from morrow.core.preference_documents import (
     GlobalConfigV2,
     PreferenceEntriesPayload,
@@ -96,3 +98,27 @@ def test_isolated_restore_keeps_yaml_authority_and_sqlite_audit_separate(tmp_pat
             assert restored_journal.get_preference_evidence_for_job("ws_1", "prjob_one")
     finally:
         source_handle.close()
+
+
+def test_legacy_workspace_facade_refuses_to_replace_generic_v3_document(tmp_path):
+    root = tmp_path / "state"
+    generic = PreferenceYamlStore(root)
+    generic.write_workspace(
+        "ws_1",
+        WorkspacePreferenceDocumentV3(
+            entries=(_entry("pref_generic", "Keep this generic rule.", PreferenceScope.WORKSPACE),)
+        ),
+        expected_revision=0,
+    )
+    path = generic.workspace_path("ws_1")
+    before = path.read_bytes()
+
+    result = ProjectStateYamlStore(root).write_preferences(
+        "ws_1", Preferences(language="中文"), expected_revision=1
+    )
+
+    assert result.status is StateWriteStatus.FAILED
+    assert result.error == "legacy_preference_write_retired"
+    assert path.read_bytes() == before
+    loaded = generic.load_workspace("ws_1")
+    assert loaded.value.entries[0].preference_id == "pref_generic"
