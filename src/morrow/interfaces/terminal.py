@@ -214,6 +214,11 @@ async def _run_repl_loop(
                 await asyncio.gather(dispatch_task, return_exceptions=True)
                 terminal.console.print("\n已取消当前操作。")
                 continue
+            if review_worker is not None:
+                try:
+                    review_worker.wake()
+                except Exception:
+                    pass
             if result.action == "exit":
                 exit_code = await _exit(session, terminal, prompt_session)
                 if exit_code is not None:

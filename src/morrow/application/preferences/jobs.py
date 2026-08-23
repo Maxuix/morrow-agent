@@ -51,9 +51,8 @@ class PreferenceReviewEnqueueResult:
 class PreferenceReviewJobView:
     """Sanitized query projection for one durable Preference Review job.
 
-    The frozen snapshot and Reviewer/provider metadata remain internal to the worker boundary.  A
-    status surface needs enough information to resume or diagnose a job without turning the CLI or
-    application query API into a second context or model-details channel.
+    The frozen snapshot remains internal to the worker boundary. Bounded Reviewer identifiers and
+    aggregate outcome fields support diagnosis without exposing model context or output.
     """
 
     job_id: str
@@ -72,6 +71,12 @@ class PreferenceReviewJobView:
     completed_at: datetime | None
     lease_expires_at: datetime | None
     failure_code: PreferenceReviewFailureCode | None
+    reviewer_provider_id: str | None
+    reviewer_model_id: str | None
+    reviewer_prompt_version: str
+    reviewer_schema_version: str
+    proposal_count: int = 0
+    notification_state: str = "quiet"
     evidence_id: str | None = None
 
     @classmethod
@@ -80,7 +85,15 @@ class PreferenceReviewJobView:
         job: PreferenceReviewJob,
         *,
         evidence_id: str | None = None,
+        proposal_count: int = 0,
     ) -> PreferenceReviewJobView:
+        notification_state = (
+            "proposals_available"
+            if proposal_count
+            else "retry_exhausted"
+            if job.status is PreferenceReviewJobStatus.EXHAUSTED
+            else "quiet"
+        )
         return cls(
             job_id=job.job_id,
             session_id=job.session_id,
@@ -98,6 +111,12 @@ class PreferenceReviewJobView:
             completed_at=job.completed_at,
             lease_expires_at=job.lease_expires_at,
             failure_code=job.failure_code,
+            reviewer_provider_id=job.reviewer_provider_id,
+            reviewer_model_id=job.reviewer_model_id,
+            reviewer_prompt_version=job.reviewer_prompt_version,
+            reviewer_schema_version=job.reviewer_schema_version,
+            proposal_count=proposal_count,
+            notification_state=notification_state,
             evidence_id=evidence_id,
         )
 
@@ -209,7 +228,10 @@ class PreferenceReviewJobEnqueuer:
             return PreferenceReviewEnqueueResult(reason="preference_write_completed")
 
         global_document, workspace_document = _active_documents(session, now=_utc(self.clock))
-        snapshot = snapshot_from_documents(global_document, workspace_document)
+        try:
+            snapshot = snapshot_from_documents(global_document, workspace_document)
+        except ValueError:
+            return PreferenceReviewEnqueueResult(reason="snapshot_budget")
         encoded_snapshot = snapshot.serialized_bytes
         stamp = _utc(self.clock)
         excerpt = _excerpt(content)

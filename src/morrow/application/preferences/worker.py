@@ -93,6 +93,7 @@ class ReviewWorker:
         learning_runner=None,
         timeout_seconds: float = PREFERENCE_REVIEW_DEFAULT_TIMEOUT_SECONDS,
         lease_seconds: int = 120,
+        retry_scheduler: Callable[[float, Callable[[], None]], object] | None = None,
     ) -> None:
         if (
             isinstance(timeout_seconds, bool)
@@ -113,6 +114,7 @@ class ReviewWorker:
         self.id_source = id_source
         self.clock = clock
         self.lease_seconds = lease_seconds
+        self.retry_scheduler = retry_scheduler
         self.learning_runner = learning_runner
         self.runner = runner or PreferenceReviewRunner(
             journal=journal,
@@ -128,6 +130,7 @@ class ReviewWorker:
         self._task: asyncio.Task[None] | None = None
         self._stopping = False
         self._notices: deque[ReviewWorkerNotice] = deque()
+        self._retry_handles: dict[str, object] = {}
 
     @property
     def running(self) -> bool:
@@ -155,6 +158,11 @@ class ReviewWorker:
         self._wake_event.set()
         task = self._task
         self._task = None
+        for handle in self._retry_handles.values():
+            cancel = getattr(handle, "cancel", None)
+            if callable(cancel):
+                cancel()
+        self._retry_handles.clear()
         if task is None or task.done():
             return
         task.cancel()
@@ -171,7 +179,11 @@ class ReviewWorker:
                 self.workspace_id, limit=1
             )
             if candidates:
-                result = await self._drain_preference(candidates[0])
+                candidate = candidates[0]
+                if candidate.attempt_count >= PREFERENCE_REVIEW_MAX_ATTEMPTS:
+                    result = self._exhaust_expired(candidate)
+                else:
+                    result = await self._drain_preference(candidate)
                 self._record_notice(result)
                 return result
             if self.learning_runner is not None and hasattr(
@@ -186,6 +198,28 @@ class ReviewWorker:
                     return await self._drain_learning(pending[0].review_id)
             return ReviewWorkerResult(status="idle")
 
+    async def run_job(self, job_id: str) -> ReviewWorkerResult:
+        """Claim and execute one explicit durable Preference job through the worker lifecycle."""
+
+        async with self._workspace_lock:
+            candidate = self.repository.get_preference_review_job(self.workspace_id, job_id)
+            if candidate is None:
+                raise StorageError(StorageErrorCode.NOT_FOUND, "Preference Review job is missing")
+            now = _utc(self.clock)
+            claimable = candidate.status is PreferenceReviewJobStatus.PENDING or (
+                candidate.status is PreferenceReviewJobStatus.RUNNING
+                and candidate.lease_expires_at is not None
+                and candidate.lease_expires_at <= now
+            )
+            if not claimable:
+                raise ValueError("Preference Review job is not claimable")
+            if candidate.attempt_count >= PREFERENCE_REVIEW_MAX_ATTEMPTS:
+                result = self._exhaust_expired(candidate)
+            else:
+                result = await self._drain_preference(candidate)
+            self._record_notice(result)
+            return result
+
     async def run_pending(self, *, limit: int = 100) -> tuple[ReviewWorkerResult, ...]:
         """Run a bounded one-shot drain; no task is left running after this returns."""
 
@@ -194,11 +228,9 @@ class ReviewWorker:
         results: list[ReviewWorkerResult] = []
         for _ in range(limit):
             result = await self.drain_once()
-            if result.status == "idle":
+            if result.status in {"idle", "busy"}:
                 break
             results.append(result)
-            if result.status != "completed":
-                break
         return tuple(results)
 
     def retry(self, job_id: str) -> PreferenceReviewJob:
@@ -230,6 +262,32 @@ class ReviewWorker:
             self.workspace_id,
             pending,
             expected_row_version=current.row_version,
+        )
+
+    def _exhaust_expired(self, current: PreferenceReviewJob) -> ReviewWorkerResult:
+        now = _utc(self.clock)
+        exhausted = current.model_copy(
+            update={
+                "status": PreferenceReviewJobStatus.EXHAUSTED,
+                "lease_id": None,
+                "lease_expires_at": None,
+                "completed_at": max(now, current.created_at),
+                "failure_code": PreferenceReviewFailureCode.LEASE_LOST,
+                "row_version": current.row_version + 1,
+            }
+        )
+        try:
+            saved = self.repository.save_preference_review_job(
+                self.workspace_id,
+                exhausted,
+                expected_row_version=current.row_version,
+            )
+        except StorageError as exc:
+            return ReviewWorkerResult(status="busy", error_code=exc.code.value)
+        return ReviewWorkerResult(
+            status="exhausted",
+            job=saved,
+            error_code=PreferenceReviewFailureCode.LEASE_LOST.value,
         )
 
     def drain_notices(self) -> tuple[ReviewWorkerNotice, ...]:
@@ -429,9 +487,36 @@ class ReviewWorker:
             await self._wake_event.wait()
             self._wake_event.clear()
             while not self._stopping:
-                result = await self.drain_once()
-                if result.status != "completed":
+                try:
+                    result = await self.drain_once()
+                except Exception:
                     break
+                if result.status == "deferred" and result.job is not None:
+                    self._schedule_retry(result.job)
+                if result.status in {"idle", "busy"}:
+                    break
+
+    def _schedule_retry(self, job: PreferenceReviewJob) -> None:
+        lease_expires_at = job.lease_expires_at
+        if lease_expires_at is None:
+            return
+        delay = max(0.0, (lease_expires_at - _utc(self.clock)).total_seconds())
+        previous = self._retry_handles.pop(job.job_id, None)
+        cancel = getattr(previous, "cancel", None)
+        if callable(cancel):
+            cancel()
+
+        def wake() -> None:
+            self._retry_handles.pop(job.job_id, None)
+            self.wake()
+
+        scheduler = self.retry_scheduler
+        handle = (
+            scheduler(delay, wake)
+            if scheduler is not None
+            else asyncio.get_running_loop().call_later(delay, wake)
+        )
+        self._retry_handles[job.job_id] = handle
 
     def _record_notice(self, result: ReviewWorkerResult) -> None:
         job_id = result.job_id

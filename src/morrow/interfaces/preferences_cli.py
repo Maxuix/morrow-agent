@@ -517,14 +517,7 @@ def preference_inbox_review(
 ) -> None:
     def action(api) -> None:
         result = asyncio.run(api.run_preference_review(job_id))
-        _emit(
-            {
-                "job_id": result.job.job_id,
-                "proposal_ids": result.pipeline.proposal_ids,
-                "proposal_count": len(result.proposals),
-            },
-            as_json=as_json,
-        )
+        _emit(_review_result_payload(result), as_json=as_json)
 
     _run_state_command(
         state_root=state_root,

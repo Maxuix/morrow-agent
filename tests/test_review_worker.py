@@ -11,6 +11,7 @@ from morrow.application.api import OperationalApplicationService
 from morrow.application.preferences.context import PreferenceReviewContextError
 from morrow.application.preferences.worker import ReviewWorker
 from morrow.application.turns import SessionPersistence
+from morrow.core.application import ApplicationError, ApplicationErrorCode
 from morrow.core.domain import DurableSession
 from morrow.core.models import ModelRef
 from morrow.core.preference_models import PreferenceOperation
@@ -456,10 +457,191 @@ async def test_worker_manual_retry_resets_only_retryable_terminal_jobs(tmp_path)
 
 
 @pytest.mark.asyncio
-async def test_preference_review_job_queries_omit_frozen_context_and_reviewer_details(tmp_path):
+async def test_run_pending_continues_after_retryable_failure(tmp_path):
+    store, handle, journal, clock = _open(tmp_path)
+    try:
+        ids = FixedIdSource()
+        loop_ids = FixedIdSource()
+        first, _session, _persistence = await _enqueue(journal, handle, ids=ids, loop_ids=loop_ids)
+        second, _session, _persistence = await _enqueue(
+            journal,
+            handle,
+            session_id="ses_2",
+            ids=ids,
+            loop_ids=loop_ids,
+        )
+        reviewer = ScriptedPreferenceReviewer(
+            [RuntimeError("provider unavailable"), PreferenceReviewOutput()]
+        )
+        worker = ReviewWorker(
+            journal=journal,
+            workspace_id="ws_1",
+            id_source=FixedIdSource(),
+            clock=clock.now,
+            reviewer=reviewer,
+            model=MODEL,
+        )
+
+        results = await worker.run_pending()
+
+        assert [result.status for result in results] == ["deferred", "completed"]
+        assert journal.get_preference_review_job("ws_1", first.job_id).status.value == "running"
+        assert journal.get_preference_review_job("ws_1", second.job_id).status.value == "completed"
+        assert len(reviewer.calls) == 2
+    finally:
+        handle.close()
+        assert store.layout.database.exists()
+
+
+@pytest.mark.asyncio
+async def test_background_worker_schedules_retry_with_injected_scheduler(tmp_path):
+    store, handle, journal, clock = _open(tmp_path)
+    worker = None
+    try:
+        job, _session, _persistence = await _enqueue(journal, handle)
+        reviewer = ScriptedPreferenceReviewer(
+            [RuntimeError("provider unavailable"), PreferenceReviewOutput()]
+        )
+        scheduled = []
+
+        class Handle:
+            def cancel(self):
+                return None
+
+        def schedule(delay, callback):
+            scheduled.append((delay, callback))
+            return Handle()
+
+        worker = ReviewWorker(
+            journal=journal,
+            workspace_id="ws_1",
+            id_source=FixedIdSource(),
+            clock=clock.now,
+            reviewer=reviewer,
+            model=MODEL,
+            retry_scheduler=schedule,
+        )
+        await worker.start()
+        for _ in range(20):
+            if scheduled:
+                break
+            await asyncio.sleep(0)
+
+        assert scheduled[0][0] == 5
+        clock.value += timedelta(seconds=5)
+        scheduled[0][1]()
+        for _ in range(20):
+            stored = journal.get_preference_review_job("ws_1", job.job_id)
+            if stored is not None and stored.status.value == "completed":
+                break
+            await asyncio.sleep(0)
+
+        stored = journal.get_preference_review_job("ws_1", job.job_id)
+        assert stored is not None
+        assert stored.status.value == "completed"
+        assert len(reviewer.calls) == 2
+    finally:
+        if worker is not None:
+            await worker.stop()
+        handle.close()
+        assert store.layout.database.exists()
+
+
+@pytest.mark.asyncio
+async def test_explicit_review_uses_worker_claim_and_completion(tmp_path):
     store, handle, journal, clock = _open(tmp_path)
     try:
         job, _session, _persistence = await _enqueue(journal, handle)
+        reviewer = ScriptedPreferenceReviewer([PreferenceReviewOutput()])
+        worker = ReviewWorker(
+            journal=journal,
+            workspace_id="ws_1",
+            id_source=FixedIdSource(),
+            clock=clock.now,
+            reviewer=reviewer,
+            model=MODEL,
+        )
+        api = OperationalApplicationService(
+            journal=journal,
+            workspace_id="ws_1",
+            id_source=FixedIdSource(),
+            clock=clock.now,
+            review_worker=worker,
+        )
+
+        result = await api.run_preference_review(job.job_id)
+
+        assert result.status == "completed"
+        stored = journal.get_preference_review_job("ws_1", job.job_id)
+        assert stored is not None
+        assert stored.status.value == "completed"
+        assert stored.attempt_count == 1
+        assert len(reviewer.calls) == 1
+        with pytest.raises(ApplicationError) as caught:
+            await api.run_preference_review(job.job_id)
+        assert caught.value.code is ApplicationErrorCode.INVALID
+    finally:
+        handle.close()
+        assert store.layout.database.exists()
+
+
+@pytest.mark.asyncio
+async def test_expired_final_attempt_is_marked_exhausted(tmp_path):
+    store, handle, journal, clock = _open(tmp_path)
+    try:
+        job, _session, _persistence = await _enqueue(journal, handle)
+        worker = ReviewWorker(
+            journal=journal,
+            workspace_id="ws_1",
+            id_source=FixedIdSource(),
+            clock=clock.now,
+            runner=RaisingRunner(RuntimeError("provider unavailable")),
+            model=MODEL,
+        )
+        await worker.drain_once()
+        clock.value += timedelta(seconds=5)
+        await worker.drain_once()
+        clock.value += timedelta(seconds=15)
+        current = journal.get_preference_review_job("ws_1", job.job_id)
+        assert current is not None
+        journal.claim_preference_review_job(
+            "ws_1",
+            job.job_id,
+            expected_row_version=current.row_version,
+            lease_id="lease_crashed",
+            lease_expires_at=clock.value + timedelta(seconds=10),
+            started_at=clock.value,
+        )
+        clock.value += timedelta(seconds=10)
+
+        result = await worker.drain_once()
+
+        assert result.status == "exhausted"
+        assert result.error_code == "lease_lost"
+        stored = journal.get_preference_review_job("ws_1", job.job_id)
+        assert stored is not None
+        assert stored.status.value == "exhausted"
+        assert stored.failure_code.value == "lease_lost"
+    finally:
+        handle.close()
+        assert store.layout.database.exists()
+
+
+@pytest.mark.asyncio
+async def test_preference_review_job_queries_expose_bounded_observability(tmp_path):
+    store, handle, journal, clock = _open(tmp_path)
+    try:
+        job, _session, _persistence = await _enqueue(journal, handle)
+        reviewer = ScriptedPreferenceReviewer([PreferenceReviewOutput()])
+        worker = ReviewWorker(
+            journal=journal,
+            workspace_id="ws_1",
+            id_source=FixedIdSource(),
+            clock=clock.now,
+            reviewer=reviewer,
+            model=MODEL,
+        )
+        await worker.drain_once()
         api = OperationalApplicationService(
             journal=journal,
             workspace_id="ws_1",
@@ -476,8 +658,13 @@ async def test_preference_review_job_queries_omit_frozen_context_and_reviewer_de
         assert shown is not None
         assert shown.evidence_id is not None
         assert not hasattr(view, "active_snapshot_json")
-        assert not hasattr(view, "reviewer_provider_id")
-        assert status.pending == 1
+        assert view.reviewer_provider_id == MODEL.provider_id
+        assert view.reviewer_model_id == MODEL.model_id
+        assert view.reviewer_prompt_version
+        assert view.reviewer_schema_version
+        assert view.proposal_count == 0
+        assert view.notification_state == "quiet"
+        assert status.completed == 1
         assert status.total == 1
     finally:
         handle.close()

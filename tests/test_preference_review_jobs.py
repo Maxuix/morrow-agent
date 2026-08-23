@@ -132,3 +132,40 @@ async def test_terminal_enqueue_failure_rolls_back_history_and_job(tmp_path, mon
     finally:
         handle.close()
         store.layout.database.exists()
+
+
+@pytest.mark.asyncio
+async def test_oversized_snapshot_skips_review_without_rolling_back_turn(tmp_path, monkeypatch):
+    store, handle, journal, clock = _open(tmp_path)
+    try:
+        session = Session(session_id="ses_1")
+        persistence = SessionPersistence(
+            workspace_id="ws_1",
+            journal=journal,
+            store_session=handle,
+            id_source=FixedIdSource(),
+            model=ModelRef(provider_id="p", model_id="m"),
+            run_policy=make_context_builder().run_policy,
+            runtime_instance_id="review-budget-test",
+            clock=clock,
+        )
+        persistence.attach(session)
+        monkeypatch.setattr(
+            "morrow.application.preferences.jobs.snapshot_from_documents",
+            lambda *_args: (_ for _ in ()).throw(ValueError("snapshot too large")),
+        )
+        loop = AgentLoop(
+            ScriptedModelProvider(["完成。"]),
+            ModelRef(provider_id="p", model_id="m"),
+            make_context_builder(),
+            id_source=FixedIdSource(),
+        )
+
+        events = [item async for item in loop.run_task(session, "请完成这个请求。")]
+
+        assert events[-1].type == "turn.completed"
+        assert journal.list_preference_review_jobs("ws_1") == ()
+        assert not session.log.has_active_turn
+    finally:
+        handle.close()
+        store.layout.database.exists()

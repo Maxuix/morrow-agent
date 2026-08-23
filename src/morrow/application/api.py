@@ -22,10 +22,7 @@ from morrow.application.preferences.jobs import (
     PreferenceReviewJobView,
     PreferenceReviewStatusView,
 )
-from morrow.application.preferences.reviewer import (
-    PreferenceReviewRunner,
-    PreferenceReviewRunResult,
-)
+from morrow.application.preferences.reviewer import PreferenceReviewRunner
 from morrow.application.recovery import RecoveryService
 from morrow.application.tasks import TaskService
 from morrow.application.turns import TurnSubmitResult
@@ -367,7 +364,7 @@ class OperationalApplicationService:
             )
         )
         page = tuple(
-            PreferenceReviewJobView.from_job(item) for item in items[offset : offset + limit]
+            self._preference_review_job_view(item) for item in items[offset : offset + limit]
         )
         return QueryPage(page, str(offset + len(page)) if offset + len(page) < len(items) else None)
 
@@ -380,9 +377,8 @@ class OperationalApplicationService:
         evidence = self._query(
             lambda: self.journal.get_preference_evidence_for_job(self.workspace_id, job_id)
         )
-        return PreferenceReviewJobView.from_job(
-            job,
-            evidence_id=evidence.evidence_id if evidence is not None else None,
+        return self._preference_review_job_view(
+            job, evidence_id=evidence.evidence_id if evidence is not None else None
         )
 
     get_preference_review_job = get_preference_review_job_view
@@ -454,13 +450,32 @@ class OperationalApplicationService:
     def reject_and_suppress_preference_proposal(self, proposal_id: str, **kwargs):
         return self._preference_inbox().reject_and_suppress(proposal_id, **kwargs)
 
-    async def run_preference_review(self, job_id: str, **kwargs) -> PreferenceReviewRunResult:
-        runner = self.preference_review_runner
-        if runner is None:
+    async def run_preference_review(self, job_id: str):
+        worker = self.review_worker
+        if worker is None or not hasattr(worker, "run_job"):
             raise ApplicationError(
-                ApplicationErrorCode.UNAVAILABLE, "Preference Review runner is unavailable"
+                ApplicationErrorCode.UNAVAILABLE, "Preference Review worker is unavailable"
             )
-        return await runner.run(job_id, **kwargs)
+        try:
+            return await worker.run_job(job_id)
+        except ApplicationError:
+            raise
+        except Exception as exc:
+            raise self.command_context._translate_exception(exc) from exc
+
+    def _preference_review_job_view(
+        self, job, *, evidence_id: str | None = None
+    ) -> PreferenceReviewJobView:
+        proposals = self._query(
+            lambda: self.journal.list_preference_proposals(
+                self.workspace_id, job_id=job.job_id, limit=100
+            )
+        )
+        return PreferenceReviewJobView.from_job(
+            job,
+            evidence_id=evidence_id,
+            proposal_count=len(proposals),
+        )
 
     def list_project_knowledge(self, **kwargs):
         return self.memory.list_knowledge(**kwargs)

@@ -265,6 +265,35 @@ async def test_repl_starts_and_stops_the_process_local_review_worker(monkeypatch
 
 
 @pytest.mark.asyncio
+async def test_repl_wakes_review_worker_after_dispatch_completes(monkeypatch):
+    class WorkerLifecycle:
+        def __init__(self) -> None:
+            self.wakes = 0
+
+        async def start(self) -> None:
+            return None
+
+        def wake(self) -> None:
+            self.wakes += 1
+
+        async def stop(self) -> None:
+            return None
+
+    terminal = ScriptedTerminal(["ordinary turn", EOFError()])
+    install_terminal(monkeypatch, terminal)
+    worker = WorkerLifecycle()
+
+    code = await terminal_module.run_repl(
+        OrchestratorStub({"ordinary turn": None, "/exit": "exit"}),
+        session=Session(session_id="s"),
+        review_worker=worker,
+    )
+
+    assert code == 0
+    assert worker.wakes == 2
+
+
+@pytest.mark.asyncio
 async def test_repl_renders_only_worker_proposal_and_exhaustion_notices(monkeypatch):
     class WorkerWithNotices:
         def __init__(self) -> None:

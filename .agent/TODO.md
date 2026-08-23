@@ -17,9 +17,9 @@ Subplan 59 — Durable Asynchronous Review Worker.
   legacy non-Preference behavior.
 - `[x]` S59.5 Add truthful job/run-pending status and non-blocking notification surfaces.
 - `[x]` Run the focused S59 validation and implementation checkpoint.
-- `[!]` Run exactly one Grok `/review`, independently adjudicate findings, and rerun the affected gates
-  (the Grok capability is not exposed in this thread; no review was invoked).
-- `[ ]` Commit closeout, fast-forward `main`, retire the branch, and activate S60.
+- `[x]` Run exactly one Grok `/review`, independently adjudicate findings, and rerun the affected
+  gates (confirmed findings fixed; no second review invoked).
+- `[>]` Commit closeout, fast-forward `main`, retire the branch, and activate S60.
 
 ## Start condition
 

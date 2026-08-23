@@ -22,21 +22,40 @@ execution, and next-AgentRun refresh.
 
 ## Active task
 
-S59 implementation checkpoint is complete on `feat/stage5-review-worker`. S59.4 and S59.5 are
-implemented and locally verified; the planned Grok review is pending because that capability is not
-exposed in the current thread.
+The single planned Grok review and independent fix pass completed on
+`feat/stage5-review-worker`. All affected and full offline gates pass; S59 is ready for its closeout
+commit and fast-forward merge. No second Grok review was run.
 
 ## Next action
 
-Keep the verified S59 implementation checkpoint ready for the single planned Grok review. If the
-capability becomes available, invoke it once and independently adjudicate its findings; otherwise
-record the unavailable-tool blocker rather than claiming a review. Do not stage the two untracked
-research documents.
+Commit the verified S59 closeout, fast-forward local `main`, retire the clean topic branch, and
+activate S60. Do not stage the two untracked research documents.
 
 ## Blockers
 
 No code blocker for S59. Real-Provider acceptance remains on hold; S59 must use scripted offline
 Provider/Reviewer doubles and injected time/scheduling.
+
+## S59 review and independent fix evidence
+
+- The single Grok review completed read-only with model `grok-4.6` at `xhigh`; it changed no project
+  files. Independent source and plan checks confirmed three execution defects: ordinary terminal
+  Turns did not wake the worker after commit, one non-completed result stopped a whole drain, and the
+  explicit Preference review command bypassed worker claim/finalization.
+- Fixed all three through a post-dispatch non-blocking wake, drain continuation across deferred and
+  terminal outcomes, and a worker-owned explicit `run_job` path. Added injected retry scheduling so
+  lease backoff wakes without another user action.
+- Also fixed two confirmed durable edge cases: oversized Active snapshots now skip supplemental
+  Review without rolling back a completed foreground Turn, and an expired third-attempt lease is
+  finalized as visible `exhausted/lease_lost` instead of remaining permanently claimable.
+- Status projections now expose the plan-required bounded Reviewer IDs, prompt/schema versions,
+  proposal count, and derived notification state while still excluding frozen context and raw model
+  output. The independent model override/fallback already exists in composition; adding persistent
+  config would cross the frozen config-schema boundary. The optional worker-module split is deferred
+  as a dedicated refactor, not a correctness fix.
+- Affected S59 regression passed `77` tests. Final offline validation passed `917 passed, 2
+  deselected`; Ruff format/check, compileall, `morrow learning --help`, and `git diff --check`
+  passed. No Provider, credential, Live, or real-network path ran.
 
 ## S59.1 evidence
 

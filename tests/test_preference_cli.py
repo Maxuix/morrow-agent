@@ -56,3 +56,35 @@ def test_preference_inbox_run_pending_reports_durable_remaining_work(monkeypatch
     assert payload["attempted"] == 1
     assert payload["results"][0]["status"] == "deferred"
     assert payload["status"]["pending"] == 1
+
+
+def test_preference_inbox_review_reports_worker_result(monkeypatch):
+    class FakeApi:
+        async def run_preference_review(self, job_id):
+            assert job_id == "prjob_1"
+            return ReviewWorkerResult(status="completed", proposal_count=2)
+
+    monkeypatch.setattr(
+        cli_module,
+        "_state_services",
+        lambda **_kwargs: (None, "handle", FakeApi(), None, None),
+    )
+    monkeypatch.setattr(cli_module, "_close_state", lambda _handle: None)
+
+    result = CliRunner().invoke(
+        cli_module.app,
+        [
+            "preferences",
+            "inbox",
+            "review",
+            "prjob_1",
+            "--json",
+            "--workspace-id",
+            "ws_1",
+        ],
+    )
+
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "completed"
+    assert payload["proposal_count"] == 2

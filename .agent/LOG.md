@@ -2116,3 +2116,22 @@
 - The required single Grok `/review` could not be invoked because no Grok tool or skill is exposed
   in the current thread (`ALL_TOOLS` contains no Grok capability). No review result is being claimed;
   the implementation checkpoint remains ready for review if that capability is restored.
+
+## 2026-08-23 — Subplan 59 Grok review and independent fix pass
+
+- The user exposed the global `grok-delegate` skill. The one planned read-only review completed with
+  `grok-4.6` at `xhigh` and made no project changes. Independent adjudication confirmed missing
+  post-Turn worker wakeup, drain termination after one non-completed result, and manual Preference
+  Review bypassing worker claim/finalization. No second Grok review was invoked.
+- Fixed ordinary post-dispatch wakeup, continued bounded drains after deferred/failed/exhausted
+  outcomes, routed explicit job execution through the worker, and added injected lease-backoff wake
+  scheduling. Also finalized expired third-attempt leases, skipped over-budget supplemental Review
+  snapshots without rolling back foreground Turns, and exposed only the bounded Reviewer/job fields
+  required by the plan's status contract.
+- The independent Preference model override and active-model fallback already exist at composition;
+  a persistent override would require an out-of-scope config schema change. The suggested worker
+  module split is deferred as an optional structural refactor.
+- Affected S59 validation passed `77` tests. Final offline validation passed `917 passed, 2
+  deselected`; Ruff format/check, compileall, `morrow learning --help`, and `git diff --check`
+  passed. No Provider, credential, Live, or real-network path ran. The two untracked research files
+  remain untouched and excluded.
