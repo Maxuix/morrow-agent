@@ -346,3 +346,9 @@ async def test_corrupt_workspace_preferences_is_an_isolated_non_overwritable_emp
     assert app.provider_service.list().providers == {}
     result = await orchestrator.dispatch("ordinary chat")
     assert result.events[-1].payload["finish_reason"] == "stop"
+    status = session_app.api.preference_context_status(session_id=session.session_id)
+    assert status.workspace_preferences.load_status == "corrupt"
+    assert status.workspace_preferences.active == 0
+    assert status.refresh_status == "degraded"
+    assert status.refresh_error == "workspace_corrupt"
+    assert status.injected_count == 0

@@ -78,11 +78,13 @@ class PreferenceYamlStore(PreferenceYamlMigrationMixin):
         root: Path,
         *,
         failure_injector: Callable[[str], None] | None = None,
+        create: bool = True,
     ) -> None:
         self.root = root
-        self.root.mkdir(parents=True, exist_ok=True)
         self.locks = root / "locks"
-        self.locks.mkdir(parents=True, exist_ok=True)
+        if create:
+            self.root.mkdir(parents=True, exist_ok=True)
+            self.locks.mkdir(parents=True, exist_ok=True)
         self.failure_injector = failure_injector
 
     @property

@@ -10,8 +10,12 @@ from pathlib import Path
 from morrow.adapters.state.artifacts import FilesystemArtifactStore
 from morrow.adapters.state.journal import SqliteOperationalJournal
 from morrow.adapters.state.operational import OperationalStore
+from morrow.adapters.state.preference_yaml import PreferenceYamlStore
+from morrow.adapters.state.preference_yaml_types import PreferenceYamlLoadStatus
 from morrow.application.learning.learning_doctor import inspect_learning
 from morrow.application.learning.memory_doctor import inspect_memory
+from morrow.application.preferences.run_projection import render_frozen_run_preferences
+from morrow.application.preferences.writer import PreferenceWriter
 from morrow.core.artifacts import (
     ARTIFACT_FILE_SUFFIX,
     ARTIFACT_TEMP_SUFFIX,
@@ -22,10 +26,12 @@ from morrow.core.doctor import DoctorHealth, DoctorIssue, DoctorReport, DoctorSe
 from morrow.core.domain import (
     WORKSPACE_ID_PREFIX,
     SessionLifecycle,
+    sha256_digest,
     validate_prefixed_id,
 )
 from morrow.core.execution import ToolExecutionState
 from morrow.core.permissions import capability_grant_digest
+from morrow.core.preference_models import PreferenceScope, PreferenceStatus
 from morrow.core.store import DIRECTORY_MODE, FILE_MODE, StorageError, StoreHealth, StoreOpenMode
 from morrow.runtime.conversation import ConversationSnapshot
 from morrow.runtime.durable_log import conversation_record_from_durable
@@ -118,6 +124,8 @@ class OperationalDoctor:
                 )
             )
             self._inspect_domains(journal, workspace_id, counts, issues)
+            checks.extend(("preference_yaml", "preference_run_projections"))
+            self._inspect_preferences(journal, workspace_id, counts, issues)
             self._inspect_permissions(journal, workspace_id, counts, issues)
             checks.extend(("learning_reviews_and_candidates", "learning_promotions"))
             inspect_learning(
@@ -275,6 +283,48 @@ class OperationalDoctor:
                             "checkpoint_scope",
                             DoctorSeverity.ERROR,
                             "checkpoint is outside its Session",
+                        )
+                    )
+
+    def _inspect_preferences(self, journal, workspace_id, counts, issues) -> None:
+        store = PreferenceYamlStore(self.data_root, create=False)
+        loads = (
+            (PreferenceScope.GLOBAL, store.load_global()),
+            (PreferenceScope.WORKSPACE, store.load_workspace(workspace_id)),
+        )
+        for scope, load in loads:
+            label = f"preference_{scope.value}"
+            counts[f"{label}_revision"] = load.revision
+            if load.status is not PreferenceYamlLoadStatus.OK or load.value is None:
+                issues.append(
+                    self._issue(
+                        f"{label}_{load.status.value}",
+                        DoctorSeverity.ERROR,
+                        f"{scope.value} Preference YAML is unavailable",
+                    )
+                )
+                continue
+            document = PreferenceWriter._document_from_value(scope, load.value)
+            for status in PreferenceStatus:
+                counts[f"{label}_{status.value}"] = sum(
+                    entry.status is status for entry in document.entries
+                )
+
+        for session in journal.list_sessions(workspace_id):
+            for run in journal.list_session_agent_runs(workspace_id, session.session_id):
+                snapshot = run.snapshot
+                if snapshot.preference_projection_digest is None:
+                    continue
+                counts["preference_run_projections"] += 1
+                counts["preference_injected"] += len(snapshot.frozen_preferences)
+                counts["preference_omitted"] += snapshot.preference_omitted_count
+                block = render_frozen_run_preferences(snapshot.frozen_preferences)
+                if sha256_digest(block) != snapshot.preference_projection_digest:
+                    issues.append(
+                        self._issue(
+                            "preference_projection_digest",
+                            DoctorSeverity.ERROR,
+                            "AgentRun frozen Preference projection digest is invalid",
                         )
                     )
 

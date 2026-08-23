@@ -554,6 +554,30 @@ def _emit_page(page, *, render, as_json: bool = False) -> None:
         typer.echo(f"next_cursor: {page.next_cursor}")
 
 
+@preferences_app.command("status")
+def preferences_status(
+    session_id: str | None = typer.Option(None, "--session-id"),
+    workspace_id: str | None = typer.Option(None, "--workspace-id"),
+    directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
+    as_json: bool = typer.Option(False, "--json"),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+) -> None:
+    handle = None
+    try:
+        _application, handle, api, _doctor, _backup = _state_services(
+            state_root=state_root,
+            workspace_id=workspace_id,
+            directory=directory,
+            write=False,
+        )
+        _emit_model(api.preference_context_status(session_id=session_id), as_json=as_json)
+    except Exception as exc:
+        _cli_error(exc)
+        raise typer.Exit(code=2) from None
+    finally:
+        _close_state(handle)
+
+
 @preferences_app.command("list")
 def preferences_list(
     scope: Literal["global", "workspace"] = typer.Option("workspace", "--scope"),

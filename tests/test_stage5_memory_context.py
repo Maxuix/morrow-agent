@@ -45,9 +45,10 @@ def test_context_builder_uses_frozen_preferences_and_memory(tmp_path):
 
         builder = make_context_builder()
         before = builder.build(session)
-        state_before = _system_message(before, "用户状态数据")
+        preference_before = _system_message(before, "冻结的用户 Preferences")
         memory_before = _system_message(before, "冻结的 Project Knowledge")
-        assert '"language": "zh"' in state_before.content
+        assert "回答时默认使用 zh。" in preference_before.content
+        assert "[session:" in preference_before.content
         assert '"semantic_key":"architecture.persistence"' in memory_before.content
         assert "Operational state is persisted in SQLite." in memory_before.content
 
@@ -136,7 +137,7 @@ def test_next_turn_reloads_changed_knowledge_and_preferences(tmp_path):
         )
 
         same_run = make_context_builder().build(session)
-        assert '"language": "zh"' in _system_message(same_run, "用户状态数据").content
+        assert "回答时默认使用 zh。" in _system_message(same_run, "冻结的用户 Preferences").content
         assert (
             "Operational state is persisted in SQLite."
             in _system_message(same_run, "冻结的 Project Knowledge").content
@@ -159,7 +160,8 @@ def test_next_turn_reloads_changed_knowledge_and_preferences(tmp_path):
         assert next_projection.memory_selection.source_memory_revision == 1
         assert next_projection.selected_knowledge[0].revision.revision == 2
         next_pack = make_context_builder().build(session)
-        assert '"language": "fr"' in _system_message(next_pack, "用户状态数据").content
+        assert "回答时默认使用 fr。" in _system_message(next_pack, "冻结的用户 Preferences").content
+        assert "next run rule" in _system_message(next_pack, "冻结的用户 Preferences").content
         assert (
             "SQLite state is frozen per AgentRun."
             in _system_message(next_pack, "冻结的 Project Knowledge").content

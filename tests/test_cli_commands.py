@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import json
 import sys
 from types import SimpleNamespace
 
 from typer.testing import CliRunner
 
+from morrow.application.preferences.queries import (
+    PreferenceContextStatusView,
+    PreferenceScopeStatus,
+)
 from morrow.bootstrap import build_application
 from morrow.core.models import (
     CredentialRef,
@@ -17,6 +22,46 @@ from morrow.core.models import (
 )
 from morrow.interfaces import cli as cli_module
 from morrow.interfaces.cli import app
+
+
+def test_preferences_status_keeps_injection_and_memory_selection_separate(monkeypatch):
+    class FakeApi:
+        def preference_context_status(self, *, session_id):
+            assert session_id == "ses_1"
+            return PreferenceContextStatusView(
+                global_preferences=PreferenceScopeStatus(
+                    revision=2, active=1, disabled=0, deleted=0
+                ),
+                workspace_preferences=PreferenceScopeStatus(
+                    revision=3, active=2, disabled=1, deleted=0
+                ),
+                injected_count=2,
+                injected_digest="a" * 64,
+                omitted_count=1,
+                source_scopes=("global", "workspace"),
+                memory_selection_id="msel_1",
+                memory_selection_revision=4,
+                memory_selection_item_count=0,
+            )
+
+    monkeypatch.setattr(
+        cli_module,
+        "_state_services",
+        lambda **_kwargs: (None, "handle", FakeApi(), None, None),
+    )
+    monkeypatch.setattr(cli_module, "_close_state", lambda _handle: None)
+
+    result = CliRunner().invoke(
+        app,
+        ["preferences", "status", "--session-id", "ses_1", "--json"],
+    )
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["injected_count"] == 2
+    assert payload["omitted_count"] == 1
+    assert payload["memory_selection_id"] == "msel_1"
+    assert payload["memory_selection_item_count"] == 0
 
 
 def test_local_provider_and_model_commands_are_offline(tmp_path):

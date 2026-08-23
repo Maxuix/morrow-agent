@@ -1,6 +1,6 @@
 # Subplan 60 — Fresh Preference Context and Observability
 
-> Status: active
+> Status: implementation checkpoint complete; review pending
 > Branch: `fix/stage5-preference-context-refresh`
 > Prerequisite: Subplan 59 merged
 > Owns: next-AgentRun reload/freeze, bounded rendering, typed diagnostics

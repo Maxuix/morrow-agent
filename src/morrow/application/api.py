@@ -22,6 +22,7 @@ from morrow.application.preferences.jobs import (
     PreferenceReviewJobView,
     PreferenceReviewStatusView,
 )
+from morrow.application.preferences.queries import PreferenceQueries
 from morrow.application.preferences.reviewer import PreferenceReviewRunner
 from morrow.application.recovery import RecoveryService
 from morrow.application.tasks import TaskService
@@ -90,6 +91,7 @@ class OperationalApplicationService:
         learning_model=None,
         config_service=None,
         preference_inbox: PreferenceInbox | None = None,
+        preference_queries: PreferenceQueries | None = None,
         preference_review_runner: PreferenceReviewRunner | None = None,
         review_worker=None,
         preference_v2_enabled: bool = False,
@@ -146,6 +148,7 @@ class OperationalApplicationService:
             preference_v2_enabled=preference_v2_enabled,
         )
         self.preference_inbox = preference_inbox
+        self.preference_queries = preference_queries
         self.preference_review_runner = preference_review_runner
         self.review_worker = review_worker
 
@@ -401,6 +404,36 @@ class OperationalApplicationService:
             exhausted=counts[PreferenceReviewJobStatus.EXHAUSTED],
             cancelled=counts[PreferenceReviewJobStatus.CANCELLED],
             superseded=counts[PreferenceReviewJobStatus.SUPERSEDED],
+        )
+
+    def preference_context_status(self, *, session_id: str | None = None):
+        queries = self.preference_queries
+        if queries is None:
+            raise ApplicationError(
+                ApplicationErrorCode.UNAVAILABLE, "Preference queries are unavailable"
+            )
+        snapshot = None
+        selection = None
+        persistence = self.persistence
+        agent_run_id = getattr(persistence, "current_agent_run_id", None)
+        if agent_run_id is None and session_id is not None:
+            self._require_session(session_id)
+            runs = self._query(
+                lambda: self.journal.list_session_agent_runs(self.workspace_id, session_id)
+            )
+            agent_run_id = runs[-1].agent_run_id if runs else None
+        if agent_run_id is not None:
+            run = self._query(lambda: self.journal.get_agent_run(self.workspace_id, agent_run_id))
+            if run is not None:
+                snapshot = run.snapshot
+                if snapshot.memory_selection_id is not None:
+                    selection = self._query(
+                        lambda: self.journal.get_memory_selection(
+                            self.workspace_id, snapshot.memory_selection_id
+                        )
+                    )
+        return self._query(
+            lambda: queries.context_status(snapshot=snapshot, memory_selection=selection)
         )
 
     def retry_preference_review_job(self, job_id: str) -> PreferenceReviewJobView:

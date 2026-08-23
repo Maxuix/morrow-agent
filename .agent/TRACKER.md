@@ -22,20 +22,39 @@ execution, and next-AgentRun refresh.
 
 ## Active task
 
-S59 is complete and fast-forward merged to local `main` at `f855c64`. Its single Grok review,
-independent fix pass, affected gates, and final full offline gates all completed without a second
-review. S60 is activated from that verified baseline.
+S60.1–S60.4 and the implementation checkpoint are complete on
+`fix/stage5-preference-context-refresh`. Every new AgentRun reloads YAML before SQLite admission,
+freezes and validates a bounded generic lower-authority projection, and exposes live/injected/memory
+diagnostics separately. The single planned Grok review is next.
 
 ## Next action
 
-Create `fix/stage5-preference-context-refresh` from verified local `main`, inspect the current
-AgentRun admission/recovery projection, and begin S60.1 without staging the two untracked research
-documents.
+Commit the verified S60 implementation checkpoint, then invoke exactly one Grok review and
+independently adjudicate its findings without a second review.
 
 ## Blockers
 
 No code blocker for S60. Real-Provider acceptance remains on hold; S60 must use deterministic offline
 projection, recovery, safety, and rendering tests.
+
+## S60 implementation evidence
+
+- Added a pre-transaction Preference reload hook for each new AgentRun. Valid global/workspace YAML
+  replaces restored Session caches; corrupt/future state becomes a degraded empty layer with a
+  bounded reason, so stale rules fail closed while ordinary chat remains available.
+- Added a 64-entry/8-KiB frozen generic projection with deterministic scope precedence, budget
+  selection, render ordering, digest, omitted count, source scopes, and refresh status. Recovery
+  rebuilds only from this frozen projection and quarantines digest mismatch instead of consulting
+  current YAML.
+- Context renders typed `[scope:id]` entries in a dedicated lower-authority system block after the
+  safety boundary. Disabled/deleted entries are omitted, exact duplicates respect scope precedence,
+  and adversarial rules cannot grant tools, skip approval, change sandbox scope, or override policy.
+- Added `preferences status` and application projections separating live YAML counts/revisions,
+  frozen injected count/digest/omissions, and MemorySelection ID/revision/item count. Doctor reads
+  YAML without creating paths and validates frozen projection digests without exposing statements.
+- Focused S60 validation passed `112` tests before the final doctor tamper regression; the complete
+  offline suite passed `924 passed, 2 deselected`. Ruff format/check, compileall, `morrow --help`,
+  and `git diff --check` passed. No Live, Provider, credential, or network path ran.
 
 ## S59 review and independent fix evidence
 

@@ -2144,3 +2144,20 @@
   exact same-Run freeze/recovery, deterministic bounded rendering, and typed observability.
 - Local `main` remains ahead of configured `origin/main`; no push was attempted because the user did
   not authorize an external remote mutation. The two untracked research files remain untouched.
+
+## 2026-08-23 — Subplan 60 implementation checkpoint
+
+- Reloaded global/workspace Preference YAML before each new AgentRun transaction and froze a
+  deterministic 64-entry/8-KiB generic projection with digest, omission count, source scopes, and
+  sanitized refresh state. Invalid YAML now contributes an observable degraded empty layer rather
+  than stale Session-start values or a blocked ordinary chat.
+- Recovery and same-Run context use only the exact frozen projection. Prompt rendering places typed
+  `[scope:id]` rules in a dedicated lower-authority block after safety/capability boundaries;
+  disabled/deleted entries are absent and cross-scope duplicate/budget ordering is deterministic.
+- Added typed `preferences status` fields that keep live YAML, injected Preferences, and Project
+  Knowledge MemorySelection separate. Doctor loads YAML without creating state paths, reports
+  lifecycle counts/revisions, and detects a tampered frozen projection digest.
+- Focused S60 validation passed `112` tests before the final digest-tamper regression. Full offline
+  validation passed `924 passed, 2 deselected`; Ruff format/check, compileall, `morrow --help`, and
+  `git diff --check` passed. No Live, Provider, credential, or real-network path ran; the two
+  untracked research documents remain untouched.

@@ -10,12 +10,12 @@ Subplan 60 — Fresh Preference Context and Observability.
 
 ## Tasks
 
-- `[ ]` S60.1 Reload current Preference documents at each new AgentRun admission.
-- `[ ]` S60.2 Persist and recover the exact frozen per-run Preference projection.
-- `[ ]` S60.3 Add deterministic bounded lower-authority context rendering and safety tests.
-- `[ ]` S60.4 Add typed Preference refresh/omission status and doctor diagnostics.
-- `[ ]` Run the focused S60 validation and implementation checkpoint.
-- `[ ]` Run exactly one Grok `/review`, independently adjudicate findings, and rerun affected gates.
+- `[x]` S60.1 Reload current Preference documents at each new AgentRun admission.
+- `[x]` S60.2 Persist and recover the exact frozen per-run Preference projection.
+- `[x]` S60.3 Add deterministic bounded lower-authority context rendering and safety tests.
+- `[x]` S60.4 Add typed Preference refresh/omission status and doctor diagnostics.
+- `[x]` Run the focused S60 validation and implementation checkpoint.
+- `[>]` Run exactly one Grok `/review`, independently adjudicate findings, and rerun affected gates.
 - `[ ]` Commit closeout, fast-forward `main`, retire the branch, and activate S61.
 
 ## Start condition

@@ -55,6 +55,7 @@ from morrow.application.preferences.worker import ReviewWorker
 from morrow.application.preferences.writer import PreferenceWriter
 from morrow.application.recovery import RecoveryService
 from morrow.application.tasks import TaskService
+from morrow.application.turn_lifecycle import PreferenceRunSources
 from morrow.application.turns import SessionPersistence
 from morrow.core.capabilities import (
     AccessScope,
@@ -67,6 +68,7 @@ from morrow.core.domain import DurableSession, SessionLifecycle
 from morrow.core.execution import missing_declarations
 from morrow.core.models import Preferences, StatePresence
 from morrow.core.permissions import UNCONFINED_HOST_WARNING_DIGEST, CapabilityName
+from morrow.core.preference_documents import PreferenceDocument
 from morrow.core.preference_models import PreferenceScope
 from morrow.core.store import (
     StorageError,
@@ -333,6 +335,11 @@ def build_operational_api(
         if preference_writer is not None
         else None
     )
+    preference_queries = (
+        PreferenceQueries(preference_writer.yaml_store, workspace_id)
+        if preference_writer is not None
+        else None
+    )
     preference_review_runner = (
         PreferenceReviewRunner(
             journal=services.journal,
@@ -360,6 +367,7 @@ def build_operational_api(
         learning_model=learning_model,
         config_service=resolved_config_service,
         preference_inbox=preference_inbox,
+        preference_queries=preference_queries,
         preference_review_runner=preference_review_runner,
         preference_v2_enabled=(
             preference_writer is not None
@@ -415,6 +423,42 @@ def build_session_application(
         and generic_workspace_load.value is not None
         else None
     )
+
+    def load_run_preferences() -> PreferenceRunSources:
+        global_load = generic_preferences.load_global()
+        workspace_load = generic_preferences.load_workspace(identity.workspace_id)
+        errors: list[str] = []
+        if global_load.status is PreferenceYamlLoadStatus.OK and global_load.value is not None:
+            global_document = PreferenceWriter._document_from_value(
+                PreferenceScope.GLOBAL, global_load.value
+            )
+        else:
+            errors.append(f"global_{global_load.status.value}")
+            global_document = PreferenceDocument(
+                scope="global", revision=max(0, global_load.revision), entries=()
+            )
+        if (
+            workspace_load.status is PreferenceYamlLoadStatus.OK
+            and workspace_load.value is not None
+        ):
+            workspace_document = PreferenceWriter._document_from_value(
+                PreferenceScope.WORKSPACE, workspace_load.value
+            )
+            presence = StatePresence(workspace_load.presence or StatePresence.PRESENT.value)
+        else:
+            errors.append(f"workspace_{workspace_load.status.value}")
+            workspace_document = PreferenceDocument(
+                scope="workspace", revision=max(0, workspace_load.revision), entries=()
+            )
+            presence = StatePresence.CLEARED
+        return PreferenceRunSources(
+            global_document=global_document,
+            workspace_document=workspace_document,
+            workspace_presence=presence,
+            refresh_status="degraded" if errors else "ok",
+            refresh_error="+".join(errors) if errors else None,
+        )
+
     generic_authority_active = (
         generic_preferences.global_path.exists() and generic_global_load.source_schema_version == 2
     ) or (
@@ -582,6 +626,7 @@ def build_session_application(
             mutation=mutation,
             artifacts=operational.artifacts,
             recovery=operational.recovery,
+            preference_loader=load_run_preferences,
         )
         if resume_session_id:
             persistence.restore_into(session)

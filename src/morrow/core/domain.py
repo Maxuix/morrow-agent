@@ -43,6 +43,8 @@ DIGEST_PATTERN = re.compile(r"^[a-f0-9]{64}$")
 
 CONVERSATION_RECORD_MAX_BYTES = 256 * 1024
 AGENT_RUN_SNAPSHOT_MAX_BYTES = 64 * 1024
+AGENT_RUN_PREFERENCE_MAX_ENTRIES = 64
+AGENT_RUN_PREFERENCE_MAX_BYTES = 8 * 1024
 ERROR_DETAIL_MAX_BYTES = 4 * 1024
 TASK_OUTCOME_MAX_BYTES = 64 * 1024
 SECRET_NEEDLES = ("api_key", "authorization", "password", "credential")
@@ -487,6 +489,29 @@ class SourceRevisionRef(ProtocolModel):
         return value
 
 
+class FrozenRunPreference(ProtocolModel):
+    """One active generic Preference frozen into an AgentRun snapshot."""
+
+    preference_id: str
+    statement: str = Field(min_length=1, max_length=512)
+    scope: Literal["global", "workspace", "session"]
+    revision: int = Field(ge=1)
+    updated_at: datetime
+
+    @field_validator("preference_id")
+    @classmethod
+    def valid_preference_id(cls, value: str) -> str:
+        return validate_prefixed_id(value, "pref")
+
+    @field_validator("statement")
+    @classmethod
+    def clean_statement(cls, value: str) -> str:
+        normalized = " ".join(value.split())
+        if not normalized:
+            raise ValueError("frozen Preference statement must not be empty")
+        return normalized
+
+
 class AgentRunSnapshot(ProtocolModel):
     """Immutable non-secret AgentRun evidence. Not a configuration authority."""
 
@@ -502,6 +527,12 @@ class AgentRunSnapshot(ProtocolModel):
     memory_selection_id: str | None = None
     memory_selection_digest: str | None = None
     memory_snapshot_revision: int | None = Field(default=None, ge=0)
+    frozen_preferences: tuple[FrozenRunPreference, ...] = ()
+    preference_projection_digest: str | None = None
+    preference_omitted_count: int = Field(default=0, ge=0)
+    preference_source_scopes: tuple[Literal["global", "workspace", "session"], ...] = ()
+    preference_refresh_status: Literal["legacy", "ok", "degraded"] = "legacy"
+    preference_refresh_error: str | None = Field(default=None, max_length=128)
 
     @field_validator("provider_id", "runtime_instance_id")
     @classmethod
@@ -533,6 +564,15 @@ class AgentRunSnapshot(ProtocolModel):
             raise ValueError("memory selection digest must be a SHA-256 hex digest")
         return value
 
+    @field_validator("preference_projection_digest")
+    @classmethod
+    def valid_preference_projection_digest(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if not DIGEST_PATTERN.match(value):
+            raise ValueError("Preference projection digest must be a SHA-256 hex digest")
+        return value
+
     @model_validator(mode="after")
     def enforce_budget_and_redaction(self) -> AgentRunSnapshot:
         memory_fields = (
@@ -544,6 +584,31 @@ class AgentRunSnapshot(ProtocolModel):
             value is not None for value in memory_fields
         ):
             raise ValueError("memory selection snapshot fields must be provided together")
+        if len(self.frozen_preferences) > AGENT_RUN_PREFERENCE_MAX_ENTRIES:
+            raise ValueError("AgentRun contains too many frozen Preferences")
+        preference_ids = [entry.preference_id for entry in self.frozen_preferences]
+        if len(preference_ids) != len(set(preference_ids)):
+            raise ValueError("AgentRun frozen Preference IDs must be unique")
+        if self.preference_projection_digest is None and (
+            self.frozen_preferences
+            or self.preference_omitted_count
+            or self.preference_source_scopes
+        ):
+            raise ValueError("AgentRun Preference projection metadata is incomplete")
+        scopes = tuple(
+            scope
+            for scope in ("global", "workspace", "session")
+            if any(entry.scope == scope for entry in self.frozen_preferences)
+        )
+        if (
+            self.preference_projection_digest is not None
+            and scopes != self.preference_source_scopes
+        ):
+            raise ValueError("AgentRun Preference source scopes do not match frozen entries")
+        if (self.preference_refresh_status == "degraded") != (
+            self.preference_refresh_error is not None
+        ):
+            raise ValueError("AgentRun Preference refresh status and error must match")
         dumped = self.model_dump(mode="json")
         payload = canonical_json_bytes(dumped)
         require_payload_budget(payload, AGENT_RUN_SNAPSHOT_MAX_BYTES, label="AgentRun snapshot")

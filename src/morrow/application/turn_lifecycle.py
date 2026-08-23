@@ -10,6 +10,7 @@ from typing import Literal
 from morrow.adapters.state.preference_migration import legacy_entries_from_preferences
 from morrow.adapters.state.preference_projection import preferences_from_entries
 from morrow.application.preferences.jobs import PreferenceReviewJobEnqueuer
+from morrow.application.preferences.run_projection import select_run_preferences
 from morrow.application.recovery import RecoveryService
 from morrow.application.tasks import TaskOutcomeAssembler, TaskService
 from morrow.core.application import ApplicationError, ApplicationErrorCode
@@ -48,6 +49,7 @@ from morrow.core.models import (
     UserMessage,
 )
 from morrow.core.ports import IdSource
+from morrow.core.preference_documents import PreferenceDocument
 from morrow.core.preferences import merge_preference_entries
 from morrow.core.recovery import RecoveryReport, RecoveryReportStatus
 from morrow.core.store import StorageError, StorageErrorCode
@@ -107,6 +109,17 @@ class _AcceptedTurn:
     agent_run_id: str
 
 
+@dataclass(frozen=True, slots=True)
+class PreferenceRunSources:
+    """Valid YAML documents loaded before an AgentRun admission transaction."""
+
+    global_document: PreferenceDocument
+    workspace_document: PreferenceDocument
+    workspace_presence: StatePresence = StatePresence.PRESENT
+    refresh_status: Literal["ok", "degraded"] = "ok"
+    refresh_error: str | None = None
+
+
 class TurnSubmissionCoordinator:
     """Own atomic Turn admission, submit replay, and terminal Task transitions."""
 
@@ -123,6 +136,7 @@ class TurnSubmissionCoordinator:
         clock: Callable[[], datetime],
         state: DurableTurnState,
         preference_reviews: PreferenceReviewJobEnqueuer | None = None,
+        preference_loader: Callable[[], PreferenceRunSources] | None = None,
     ) -> None:
         self.journal = journal
         self.workspace_id = workspace_id
@@ -134,6 +148,7 @@ class TurnSubmissionCoordinator:
         self.clock = clock
         self.state = state
         self.preference_reviews = preference_reviews
+        self.preference_loader = preference_loader
         self.memory_selector = MemorySelector(id_source=id_source, clock=clock)
 
     def commit(
@@ -218,6 +233,9 @@ class TurnSubmissionCoordinator:
         if session.health is not SessionHealth.OK:
             raise _turn_health_error(session.health)
 
+        preference_sources = (
+            self.preference_loader() if self.preference_loader is not None else None
+        )
         planned = session.log.plan_begin_turn(UserMessage(content=user_input))
         command_id = self.id_source.new_id(COMMAND_ID_PREFIX)
 
@@ -305,6 +323,7 @@ class TurnSubmissionCoordinator:
                 tools=tools,
                 runtime_instance_id=self.runtime_instance_id,
                 memory_selection=selection,
+                preference_sources=preference_sources,
             )
             txn.put_memory_selection(self.workspace_id, selection)
             txn.create_agent_run(
@@ -350,6 +369,12 @@ class TurnSubmissionCoordinator:
         self.state.permission_snapshot_id = None
         self.state.last_client_message_id = client_message_id
         session.run_context_projection = projection
+        if preference_sources is not None:
+            session.generic_global_preferences = preference_sources.global_document
+            session.generic_workspace_preferences = preference_sources.workspace_document
+            session.global_preferences_revision = preference_sources.global_document.revision
+            session.preferences_revision = preference_sources.workspace_document.revision
+            session.workspace_preferences_presence = preference_sources.workspace_presence
         session.log.apply_committed(planned)
         session.dirty = True
         receipt = self.journal.get_receipt(self.workspace_id, session.session_id, client_message_id)
@@ -597,6 +622,7 @@ def build_agent_run_snapshot(
     tools: tuple[ToolDefinition, ...],
     runtime_instance_id: str,
     memory_selection: MemorySelection | None = None,
+    preference_sources: PreferenceRunSources | None = None,
 ) -> AgentRunSnapshot:
     def source_digest(presence: StatePresence, value) -> str:
         if value is not None and not hasattr(value, "model_dump"):
@@ -611,15 +637,23 @@ def build_agent_run_snapshot(
             )
         )
 
+    global_document = preference_sources.global_document if preference_sources is not None else None
+    workspace_document = (
+        preference_sources.workspace_document if preference_sources is not None else None
+    )
     global_entries = (
-        session.generic_global_preferences.entries
+        global_document.entries
+        if global_document is not None
+        else session.generic_global_preferences.entries
         if session.generic_global_preferences is not None
         else legacy_entries_from_preferences(
             "global", session.global_preferences.model_dump(mode="python")
         )
     )
     workspace_entries = (
-        session.generic_workspace_preferences.entries
+        workspace_document.entries
+        if workspace_document is not None
+        else session.generic_workspace_preferences.entries
         if session.generic_workspace_preferences is not None
         else legacy_entries_from_preferences(
             "workspace", session.workspace_preferences.model_dump(mode="python")
@@ -638,14 +672,34 @@ def build_agent_run_snapshot(
         session_entries,
     )
     effective_preferences = preferences_from_entries(effective_entries)
+    preference_projection = select_run_preferences(
+        global_entries,
+        workspace_entries,
+        session_entries,
+    )
+    global_revision = (
+        global_document.revision
+        if global_document is not None
+        else session.global_preferences_revision
+    )
+    workspace_revision = (
+        workspace_document.revision
+        if workspace_document is not None
+        else session.preferences_revision
+    )
+    workspace_presence = (
+        preference_sources.workspace_presence
+        if preference_sources is not None
+        else session.workspace_preferences_presence
+    )
 
     revisions = (
         SourceRevisionRef(
             kind="global_config",
-            revision=session.global_preferences_revision,
+            revision=global_revision,
             content_sha256=source_digest(
                 StatePresence.PRESENT,
-                session.generic_global_preferences or session.global_preferences,
+                global_document or session.generic_global_preferences or session.global_preferences,
             ),
         ),
         SourceRevisionRef(
@@ -655,10 +709,12 @@ def build_agent_run_snapshot(
         ),
         SourceRevisionRef(
             kind="workspace_preferences",
-            revision=session.preferences_revision,
+            revision=workspace_revision,
             content_sha256=source_digest(
-                session.workspace_preferences_presence,
-                session.generic_workspace_preferences or session.workspace_preferences,
+                workspace_presence,
+                workspace_document
+                or session.generic_workspace_preferences
+                or session.workspace_preferences,
             ),
         ),
         SourceRevisionRef(
@@ -684,6 +740,16 @@ def build_agent_run_snapshot(
         memory_selection_digest=memory_selection.selection_digest if memory_selection else None,
         memory_snapshot_revision=(
             memory_selection.source_memory_revision if memory_selection is not None else None
+        ),
+        frozen_preferences=preference_projection.entries,
+        preference_projection_digest=preference_projection.digest,
+        preference_omitted_count=preference_projection.omitted_count,
+        preference_source_scopes=preference_projection.source_scopes,
+        preference_refresh_status=(
+            preference_sources.refresh_status if preference_sources is not None else "legacy"
+        ),
+        preference_refresh_error=(
+            preference_sources.refresh_error if preference_sources is not None else None
         ),
     )
 

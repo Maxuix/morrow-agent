@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from morrow.application.preferences.run_projection import render_frozen_run_preferences
 from morrow.core.context import FrozenProjectKnowledge, RunContextProjection
-from morrow.core.domain import AgentRunSnapshot
+from morrow.core.domain import AgentRunSnapshot, sha256_digest
 from morrow.core.memory_rendering import (
     project_knowledge_block_digest,
     project_knowledge_content_digest,
@@ -60,9 +61,25 @@ def build_run_context_projection(
 ) -> RunContextProjection:
     """Resolve exact immutable Knowledge revisions without consulting live eligibility."""
 
+    preference_block = ""
+    preference_digest = snapshot.preference_projection_digest
+    if preference_digest is not None:
+        preference_block = render_frozen_run_preferences(snapshot.frozen_preferences)
+        if sha256_digest(preference_block) != preference_digest:
+            raise StorageError(
+                StorageErrorCode.NEEDS_REPAIR,
+                "frozen Preference projection digest is invalid",
+            )
+
     selection = load_frozen_memory_selection(txn, workspace_id, snapshot)
     if selection is None:
-        return RunContextProjection(snapshot=snapshot)
+        return RunContextProjection(
+            snapshot=snapshot,
+            preference_block=preference_block,
+            preference_content_digest=preference_digest,
+            preference_omitted_count=snapshot.preference_omitted_count,
+            preference_source_scopes=snapshot.preference_source_scopes,
+        )
     if memory_selection_digest(selection) != selection.selection_digest:
         raise StorageError(StorageErrorCode.NEEDS_REPAIR, "memory selection digest is invalid")
 
@@ -98,6 +115,10 @@ def build_run_context_projection(
         selected_knowledge=tuple(selected),
         memory_block=block,
         memory_content_digest=project_knowledge_block_digest(records),
+        preference_block=preference_block,
+        preference_content_digest=preference_digest,
+        preference_omitted_count=snapshot.preference_omitted_count,
+        preference_source_scopes=snapshot.preference_source_scopes,
     )
 
 

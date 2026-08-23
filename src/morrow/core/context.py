@@ -50,6 +50,10 @@ class RunContextProjection:
     selected_knowledge: tuple[FrozenProjectKnowledge, ...] = ()
     memory_block: str = ""
     memory_content_digest: str | None = None
+    preference_block: str = ""
+    preference_content_digest: str | None = None
+    preference_omitted_count: int = 0
+    preference_source_scopes: tuple[str, ...] = ()
 
 
 class CheckpointOmissionReason(StrEnum):
