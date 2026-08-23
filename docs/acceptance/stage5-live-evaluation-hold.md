@@ -77,3 +77,15 @@ The sanitized aggregate report is
 [`stage5-preference-v2-live-report-2026-08-23.json`](stage5-preference-v2-live-report-2026-08-23.json).
 It contains no user text, Preference statements, raw model output, reasoning, or credential. Stage 5
 live acceptance is failed, not pending or passed; Subplan 62 owns focused remediation.
+
+### Reviewer v3 remediation replay
+
+The one v3 replay improved positive operations to `11/12`, targets to `8/8`, and retained `10/10`
+adherence with zero safety-negative Active writes. Precision improved to `13/16 = 0.8125` but stayed
+below `0.90`. Sanitized case signatures isolated three failures: global cancellation was emitted as
+replace instead of remove; explicit repository-content denial and a hidden-control message each
+emitted an extra workspace add. The bounded report is
+[`stage5-preference-v2-live-report-v3-2026-08-23.json`](stage5-preference-v2-live-report-v3-2026-08-23.json).
+
+No immediate second replay was run. Reviewer v4 tightens only those general semantic boundaries;
+Stage 5 remains failed until a reviewed final replay meets every frozen threshold.

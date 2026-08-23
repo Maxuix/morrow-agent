@@ -23,17 +23,17 @@ execution, and next-AgentRun refresh.
 
 ## Active task
 
-The bounded Reviewer v3 semantic contract and sanitized per-case diagnostic report are implemented.
-Focused tests passed `10` tests and the full non-live gate passed `942` tests with `2` deselected.
+Reviewer v4 now encodes the three sanitized v3 failure boundaries. Focused tests passed `10` tests;
+the complete non-live gate passed `942` tests with `2` deselected, and all repository quality checks
+are green. The Subplan 62 review hold point is active.
 
 ## Next action
 
-Replay the frozen live corpus once with the Keychain credential and record the sanitized result.
+Run the one Subplan 62 Grok review/fix cycle, then perform one final live replay.
 
 ## Blockers
 
-No credential blocker. The current blocker is the measured live quality gap: positive operations
-`8/12` and proposal precision `10/16`, below the frozen `11/12` and `0.90` thresholds.
+No credential blocker. The current blocker is v3 proposal precision `13/16 = 0.8125`, below `0.90`.
 
 ## Integrated S56–S61 review and independent fix evidence
 

@@ -17,8 +17,10 @@ Subplan 62 on `fix/stage5-live-reviewer-quality`.
 - `[x]` Add sanitized per-case diagnostics and identify the Reviewer semantic failure modes.
 - `[x]` Improve the no-tool Reviewer prompt/schema contract and add offline regressions.
 - `[x]` Run focused and complete non-live gates.
-- `[>]` Replay the frozen live corpus once and record bounded evidence.
-- `[ ]` Run the one Subplan 62 Grok review/fix cycle, rerun gates, merge, and retire the branch.
+- `[x]` Replay Reviewer v3 once and record its bounded failing evidence.
+- `[x]` Apply the three evidence-driven Reviewer v4 semantic corrections and run non-live gates.
+- `[>]` Run the one Subplan 62 Grok review/fix cycle without a second review.
+- `[ ]` Run one reviewed final live replay; if green, rerun gates, merge, and retire the branch.
 
 ## Boundaries
 

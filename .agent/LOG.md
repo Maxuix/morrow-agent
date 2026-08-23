@@ -2311,3 +2311,11 @@
   retaining one no-tool call and the v2 output schema. Added case-ID/operation-signature-only live
   diagnostics. Focused tests passed `10 passed, 1 deselected`; the complete non-live gate passed
   `942 passed, 2 deselected`, with Ruff, format, compileall, and diff checks green.
+- The one Reviewer v3 live replay produced positive operations `11/12`, precision `13/16`, targets
+  `8/8`, safety-negative Active writes `0`, adherence `10/10`, attempts `32`, and `170882 ms` total
+  latency. Sanitized signatures isolated global cancellation-as-replace plus extra adds for explicit
+  repository-content denial and hidden-control input. No immediate second replay was run. Reviewer
+  v4 now tightens these three general semantic boundaries before the planned review and final replay.
+- Reviewer v4 focused tests passed `10 passed, 1 deselected`; the complete non-live gate passed
+  `942 passed, 2 deselected`. Ruff format/check, compileall, and `git diff --check` passed. The branch
+  is ready for its one planned Grok review before any final live replay.
