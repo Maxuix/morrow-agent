@@ -1,6 +1,6 @@
 # Subplan 62 — Stage 5 Live Reviewer Quality Remediation
 
-> Status: active
+> Status: completed
 > Branch: `fix/stage5-live-reviewer-quality`
 > Baseline: `3493c88` on local `main`
 
@@ -9,7 +9,8 @@
 The first complete Preference v2 live corpus on 2026-08-23 produced `8/12` correct positive
 operations, `10/16` proposal precision (`0.625`), `7/8` correct targets (`0.875`), zero safety
 negative Active writes, and `10/10` next-AgentRun adherence. The frozen aggregate report contains
-no user text, raw model output, reasoning, or credential. Stage 5 acceptance remains open.
+no user text, raw model output, reasoning, or credential. Reviewer v4 remediation later passed all
+frozen targets and Stage 5 acceptance is complete.
 
 Improve the no-tool semantic Reviewer to meet the frozen live thresholds without changing Writer,
 Inbox, YAML authority, Review durability, capability policy, or public event contracts.

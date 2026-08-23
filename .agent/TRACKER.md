@@ -3,8 +3,7 @@
 ## Current status
 
 The complete Stage 5 Preference Learning v2 implementation, integrated review, simulated-user
-acceptance, and reviewed Reviewer v4 live acceptance are complete. Subplan 62 final gate and merge
-closeout are active.
+acceptance, and reviewed Reviewer v4 live acceptance are complete. Subplan 62 is merged and retired.
 
 ## Last completed work
 
@@ -23,14 +22,11 @@ execution, and next-AgentRun refresh.
 
 ## Active task
 
-The one reviewed Reviewer v4 final live replay passed every frozen threshold: positive operations
-`12/12`, precision `14/14`, targets `8/8`, safety-negative Active writes `0`, and adherence `10/10`.
-Final non-live and repository quality gates passed. Evidence commit and merge closeout are active.
-No second review will run.
+None. Stage 5 is complete and accepted.
 
 ## Next action
 
-Commit the bounded live evidence and fast-forward merge Subplan 62 into local `main`.
+Do not begin Stage 6 until the user explicitly opens it.
 
 ## Blockers
 

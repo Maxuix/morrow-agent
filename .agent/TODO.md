@@ -2,11 +2,11 @@
 
 ## Current stage
 
-Stage 5 Preference v2 live Reviewer quality remediation.
+Stage 5 complete and accepted.
 
 ## Active subplan
 
-Subplan 62 on `fix/stage5-live-reviewer-quality`.
+None.
 
 ## Tasks
 
@@ -24,7 +24,7 @@ Subplan 62 on `fix/stage5-live-reviewer-quality`.
   per-case error-containment suggestions, then rerun non-live gates.
 - `[x]` Run one reviewed final live replay and record its passing bounded evidence.
 - `[x]` Run final non-live and repository quality gates.
-- `[>]` Commit evidence, fast-forward merge, and retire the branch.
+- `[x]` Commit evidence, fast-forward merge, and retire the branch.
 
 ## Boundaries
 

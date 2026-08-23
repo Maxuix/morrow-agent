@@ -2339,3 +2339,6 @@
   IDs and aggregates only. Stage 5 acceptance targets are satisfied pending final gates and merge.
 - Final closeout gates passed: `944 passed, 2 deselected in 20.90s`; Ruff format/check, compileall,
   and `git diff --check` also passed.
+- Committed the final live evidence as `0f0058c`, fast-forwarded Subplan 62 into local `main`, and
+  deleted the clean branch. No push was attempted. Stage 5 is complete and accepted; Stage 6 remains
+  unopened.

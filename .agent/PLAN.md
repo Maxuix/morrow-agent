@@ -1,8 +1,8 @@
 # Stage 5 Preference Learning v2 Refactor Plan
 
-> Status: Stage 5 acceptance passed; Subplan 62 closeout active
-> Active work: final gates, evidence commit, fast-forward merge, and branch retirement
-> Acceptance baseline: `3493c88` on local `main`
+> Status: Stage 5 complete and accepted
+> Active work: none; Stage 6 requires a separate explicit user decision
+> Acceptance baseline: `0f0058c` on local `main`
 > Target state: generic atomic Preferences, semantic Reviewer, durable asynchronous Review,
 > reviewable Inbox, deterministic Writer, and next-AgentRun injection
 
