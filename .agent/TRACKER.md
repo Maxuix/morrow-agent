@@ -23,14 +23,13 @@ execution, and next-AgentRun refresh.
 
 ## Active task
 
-The isolated acceptance suite passed `158` tests on `test/stage5-preference-v2-acceptance` from
-verified local `main` at `4e48b1c`. The final non-live and repository quality gates passed; evidence
-closeout is active.
+None. Simulated-user acceptance evidence is merged into local `main`; live acceptance is an
+explicit hold point.
 
 ## Next action
 
-Commit the bounded acceptance evidence, merge the branch, and keep the real-Provider corpus
-pending.
+Provide the explicit compatible harness credential and authorization, then run the versioned live
+corpus in an isolated report root.
 
 ## Blockers
 

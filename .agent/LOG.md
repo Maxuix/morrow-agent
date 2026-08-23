@@ -2288,3 +2288,6 @@
   live acceptance remains pending.
 - Re-ran the complete non-live suite after the simulated protocol: `941 passed, 2 deselected in
   22.52s`. `ruff format --check`, `ruff check`, `compileall`, and `git diff --check` also passed.
+- Committed the bounded evidence as `9e4403c`, fast-forwarded it with activation commit `2fd568a`
+  into local `main`, and deleted the clean acceptance branch. No push was attempted; live
+  acceptance remains the only open Stage 5 acceptance item.

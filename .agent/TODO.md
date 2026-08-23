@@ -6,7 +6,7 @@ Stage 5 Preference v2 post-implementation acceptance.
 
 ## Active subplan
 
-`test/stage5-preference-v2-acceptance`
+None. Real-Provider acceptance is on hold pending the explicit harness credential.
 
 ## Tasks
 
@@ -27,7 +27,7 @@ Stage 5 Preference v2 post-implementation acceptance.
 - `[!]` If satisfied, run the versioned live corpus in an isolated report root; otherwise record
   live acceptance as pending.
 - `[x]` Review acceptance evidence and run final non-live gates.
-- `[>]` Commit the bounded evidence, fast-forward it to local `main`, and close the branch.
+- `[x]` Commit the bounded evidence, fast-forward it to local `main`, and close the branch.
 
 ## Start condition
 
