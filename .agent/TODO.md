@@ -22,11 +22,12 @@ Stage 5 Preference v2 post-implementation acceptance.
 - `[x]` Run the complete non-live and repository quality gates.
 - `[x]` Commit and fast-forward the integrated closeout to local `main`, retire the branch, and
   leave simulated-user/real-Provider acceptance pending.
-- `[>]` Run the isolated simulated-user protocol and record bounded evidence.
-- `[ ]` Verify whether the explicit live credential gate is satisfied without reading the secret.
-- `[ ]` If satisfied, run the versioned live corpus in an isolated report root; otherwise record
+- `[x]` Run the isolated simulated-user protocol and record bounded evidence.
+- `[x]` Verify whether the explicit live credential gate is satisfied without reading the secret.
+- `[!]` If satisfied, run the versioned live corpus in an isolated report root; otherwise record
   live acceptance as pending.
-- `[ ]` Independently review acceptance evidence, run final non-live gates, and close the branch.
+- `[x]` Review acceptance evidence and run final non-live gates.
+- `[>]` Commit the bounded evidence, fast-forward it to local `main`, and close the branch.
 
 ## Start condition
 

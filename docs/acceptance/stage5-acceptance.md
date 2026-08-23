@@ -1,7 +1,7 @@
 # Stage 5 实现与离线验收证据
 
 > 日期：2026-08-21
-> 状态：Preference v2 实现与最终集成审查完成；post-implementation user/live acceptance pending
+> 状态：Preference v2 实现与最终集成审查完成；post-implementation 模拟用户协议通过，真实 Provider/live acceptance pending
 > 范围：Stage 5 Learning、通用 Preference v2、Promotion、MemorySelection、doctor/backup 和产品入口
 
 本文只记录当前实现能够证明的行为。离线 Fake/脚本 Reviewer 证明确定性边界，不证明真实模型的

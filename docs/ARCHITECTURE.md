@@ -1,6 +1,6 @@
 # Morrow 架构基线
 
-> 状态：阶段 2–4 已完成（macOS；Linux 原生运行仍 unsupported）；Stage 5 Preference v2 实现与最终集成审查完成，post-implementation user/live acceptance pending；Stage 6+ 尚未开始
+> 状态：阶段 2–4 已完成（macOS；Linux 原生运行仍 unsupported）；Stage 5 Preference v2 实现、最终集成审查与模拟用户验收完成，live acceptance pending；Stage 6+ 尚未开始
 
 本文锁定当前依赖方向、数据所有权和安全边界。阶段 3 的能力策略、配置工具、工作空间读搜、冲突安全文件变更、审批后 Host 命令、只读 Git 和当前 macOS 原生沙箱
 已经交付；Linux 原生运行尚未声明支持。Stage 4 已落地数据根 SQLite Operational Store 的
@@ -304,7 +304,7 @@ Session/Task/Artifact 列表的 Application page 合同在 CLI 中不被丢弃�
 - 无工具 Session 对话可持久化并在重启后恢复；Artifact 的 missing/corrupt/staging/orphan 状态保持可见，
   只产生 retention/orphan 报告，不自动修复；显式 cleanup 默认 dry-run，apply 只做保字节隔离；
   conversation Fork、工具恢复和确定性 checkpoint 已实现；
-  工作空间/代码 rewind 不属于 Stage 4；Stage 5 已实现 Learning 基础、Project Knowledge/MemorySelection、通用 Preference v2 的异步 Review/Inbox/Writer/AgentRun 注入和 v13 doctor/backup 门禁。实现完成不等于用户验收完成；post-implementation 模拟用户与真实 Provider 质量评估仍 pending。
+  工作空间/代码 rewind 不属于 Stage 4；Stage 5 已实现 Learning 基础、Project Knowledge/MemorySelection、通用 Preference v2 的异步 Review/Inbox/Writer/AgentRun 注入和 v13 doctor/backup 门禁。模拟用户验收已通过；真实 Provider 质量评估仍 pending。
   当前不存在过渡兼容写入器。
 
 若未来实现需要突破这些边界，先更新架构与当前阶段计划。

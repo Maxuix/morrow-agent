@@ -3,8 +3,8 @@
 ## Current status
 
 The complete Stage 5 Preference Learning v2 implementation and integrated review are complete.
-The user authorized the post-implementation acceptance protocol; isolated simulated-user acceptance
-is active, followed by the explicit live credential gate.
+Post-implementation simulated-user acceptance passed; live acceptance remains pending because the
+explicit harness credential environment variable was absent.
 
 ## Last completed work
 
@@ -23,18 +23,19 @@ execution, and next-AgentRun refresh.
 
 ## Active task
 
-Acceptance is active on `test/stage5-preference-v2-acceptance` from verified local `main` at
-`4e48b1c`. No implementation behavior is being expanded.
+The isolated acceptance suite passed `158` tests on `test/stage5-preference-v2-acceptance` from
+verified local `main` at `4e48b1c`. The final non-live and repository quality gates passed; evidence
+closeout is active.
 
 ## Next action
 
-Run the fresh-state simulated-user test groups, record bounded evidence, then check only whether the
-live harness credential environment variable exists.
+Commit the bounded acceptance evidence, merge the branch, and keep the real-Provider corpus
+pending.
 
 ## Blockers
 
-No simulated-user blocker. Live execution requires `MORROW_OPENCODE_GO_API_KEY` to be explicitly
-present for the harness; absence keeps real-Provider acceptance pending.
+`MORROW_OPENCODE_GO_API_KEY` was absent. The versioned real-Provider harness cannot run without an
+explicit compatible credential, so live acceptance remains pending.
 
 ## Integrated S56–S61 review and independent fix evidence
 

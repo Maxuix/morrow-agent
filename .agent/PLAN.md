@@ -1,6 +1,6 @@
 # Stage 5 Preference Learning v2 Refactor Plan
 
-> Status: post-implementation acceptance active
+> Status: simulated-user acceptance passed; live acceptance pending
 > Active work: isolated simulated-user protocol, then opt-in live corpus when a compatible explicit credential is present
 > Acceptance baseline: `4e48b1c` on local `main`
 > Target state: generic atomic Preferences, semantic Reviewer, durable asynchronous Review,

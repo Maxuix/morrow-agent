@@ -1,6 +1,7 @@
 # Stage 5 Preference v2 Post-Implementation Checklist
 
-> Status: pending; do not mark user/live acceptance complete from offline gates
+> Status: simulated-user protocol passed on 2026-08-23; live protocol pending because the explicit
+> harness credential environment variable was absent
 
 Run only after S56–S61 are merged, the separate integrated Grok review/fix is complete, the full
 non-live gate is green, and the working tree contains no implementation changes. Preserve the old
@@ -36,3 +37,22 @@ non-live gate is green, and the working tree contains no implementation changes.
 Update Stage 5 from “implementation complete; acceptance pending” only after both protocols have
 their evidence committed and independently reviewed. Do not begin Stage 6 merely because S61 code
 and offline tests pass.
+
+## 2026-08-23 execution evidence
+
+The simulated-user protocol ran from local `main` baseline `4e48b1c` on the dedicated
+`test/stage5-preference-v2-acceptance` branch. Every selected test uses isolated pytest state roots;
+no real Provider, credential, network, user YAML, or user Operational Store was used.
+
+- Command scope: Preference CLI/Inbox, direct Writer lifecycle, Review context/jobs/Reviewer,
+  worker lease/retry, migration/restore, restored-Session context refresh, configuration promotion,
+  MemorySelection separation, crash recovery, doctor, and backup verification.
+- Result: `158 passed in 5.22s`.
+- The set covers add/replace/remove/disable/enable, accept/edit/reject/retry, restart/OCC/recovery,
+  timeout/malformed/lease/exhaustion paths, stale targets, crash after YAML apply, doctor, isolated
+  SQLite backup, and separate YAML authority.
+- The live gate checked only whether `MORROW_OPENCODE_GO_API_KEY` was non-empty and returned
+  `absent`. Its value was never read or printed. `pytest -m live` was therefore not run.
+
+This evidence completes the simulated-user half only. Stage 5 remains “implementation complete;
+live acceptance pending”; the frozen live numerators and denominators remain unexecuted, not zero.

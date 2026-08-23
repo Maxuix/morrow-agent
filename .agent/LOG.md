@@ -2275,3 +2275,16 @@
   corpus only if its explicit environment credential is present. Credential values will not be
   read, printed, persisted, or copied.
 - The two untracked research files remain untouched and excluded.
+
+## 2026-08-23 — Preference v2 simulated-user acceptance
+
+- Ran the frozen simulated-user groups across Preference CLI/Inbox/Writer/Reviewer/worker,
+  migration/restart/recovery, next-AgentRun context, MemorySelection isolation, doctor, backup, and
+  crash/OCC boundaries. Result: `158 passed in 5.22s`.
+- All executions used pytest-isolated state roots. No real Provider, credential, network, user YAML,
+  or user Operational Store was accessed.
+- Checked only whether `MORROW_OPENCODE_GO_API_KEY` was non-empty; it was absent. The value was not
+  read or printed, and the live corpus was not run. Simulated-user acceptance is complete while
+  live acceptance remains pending.
+- Re-ran the complete non-live suite after the simulated protocol: `941 passed, 2 deselected in
+  22.52s`. `ruff format --check`, `ruff check`, `compileall`, and `git diff --check` also passed.
