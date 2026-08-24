@@ -12,6 +12,7 @@ from morrow.adapters.skills.managed_store import (
 )
 from morrow.application.skills.recovery import SkillOperationRecord
 from morrow.core.skills.bindings import SkillLifecycleResult, SkillValidationReport
+from morrow.core.skills.drafts import SkillDraftStatus
 from morrow.core.skills.identity import validate_skill_id, validate_skv_id
 from morrow.core.skills.trust import SourceKind
 
@@ -91,7 +92,10 @@ class SkillPackageLifecycleMixin:
         controlled_approval_ref: str | None = None,
     ) -> SkillLifecycleResult:
         """Publish one already-captured package after the caller confirms its preview."""
-        report = report or self._with_conflicts(prepared)
+        self._assert_generated_approval(prepared, controlled_approval_ref)
+        # A preview report is advisory. Recompute it here and again while the
+        # package-store lock is held immediately before publication.
+        report = self._with_conflicts(prepared)
         if not report.valid or report.conflicts:
             raise SkillLifecycleError(
                 "conflict", "Skill package conflicts with an existing identity"
@@ -134,6 +138,7 @@ class SkillPackageLifecycleMixin:
                 version_id=version_id,
                 evidence_refs=evidence_refs,
                 controlled_approval_ref=controlled_approval_ref,
+                before_publish=lambda: self._assert_installable(prepared),
             )
             record = replace(record, phase="package_applied")
             self.operations.save(record)
@@ -155,10 +160,39 @@ class SkillPackageLifecycleMixin:
             )
             self.operations.clear(command_id)
             return result
-        except SkillLifecycleError:
+        except SkillLifecycleError as exc:
+            if exc.code == "conflict" and record.phase == "prepared":
+                self.operations.clear(command_id)
             raise
         except Exception as exc:
             raise SkillLifecycleNeedsResolution() from exc
+
+    def _assert_installable(self, prepared: PreparedLocalSkill) -> None:
+        report = self._with_conflicts(prepared)
+        if not report.valid or report.conflicts:
+            raise SkillLifecycleError(
+                "conflict", "Skill package conflicts with an existing identity"
+            )
+
+    def _assert_generated_approval(
+        self, prepared: PreparedLocalSkill, controlled_approval_ref: str | None
+    ) -> None:
+        if prepared.source_kind is not SourceKind.GENERATED:
+            return
+        if not controlled_approval_ref or self.journal is None or self.workspace_id is None:
+            raise SkillLifecycleError(
+                "approval_required", "Generated Skill installation requires an accepted Draft"
+            )
+        draft = self.journal.get_skill_draft(self.workspace_id, controlled_approval_ref)
+        if (
+            draft is None
+            or draft.status is not SkillDraftStatus.VALIDATED
+            or draft.skill_id != prepared.skill_id
+            or draft.tree_digest != prepared.tree.tree_digest
+        ):
+            raise SkillLifecycleError(
+                "approval_invalid", "Generated Skill approval does not match the package"
+            )
 
     def remove(
         self,
@@ -186,7 +220,9 @@ class SkillPackageLifecycleMixin:
                 "confirmation_required", "Skill package removal requires confirmation"
             )
         validate_skv_id(version_id)
-        entry, resolved_source = self._resolve_entry(skill_id, scope_id, source_kind)
+        entry, resolved_source = self._resolve_entry(
+            skill_id, scope_id, source_kind, allow_conflicted=True
+        )
         version = next(
             (item for item in entry.versions if item.version_id == version_id),
             None,

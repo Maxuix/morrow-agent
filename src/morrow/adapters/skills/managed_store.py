@@ -8,7 +8,7 @@ import shutil
 import stat
 import tempfile
 import unicodedata
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
@@ -200,6 +200,7 @@ class ManagedSkillPackageStore:
         version_id: str,
         evidence_refs: tuple[str, ...] = (),
         controlled_approval_ref: str | None = None,
+        before_publish: Callable[[], None] | None = None,
     ) -> PublishedSkill:
         validate_skv_id(version_id)
         target = self.version_path(
@@ -209,6 +210,8 @@ class ManagedSkillPackageStore:
             scope_id=prepared.scope_id,
         )
         with self.lock:
+            if before_publish is not None:
+                before_publish()
             if os.path.lexists(target):
                 info = os.lstat(target)
                 if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):

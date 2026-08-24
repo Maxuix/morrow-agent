@@ -24,6 +24,7 @@ from morrow.core.capabilities import (
     ToolHandlerOutcome,
     ToolRunContext,
 )
+from morrow.core.domain import ArtifactReference
 from morrow.core.execution import (
     EffectClass,
     MissingCompletionPolicy,
@@ -312,6 +313,8 @@ class ToolExecutionOutcome:
     original_chars: int | None = None
     facts: tuple[ToolFact, ...] = ()
     disposition: ToolExecutionDisposition | None = None
+    artifact_refs: tuple[ArtifactReference, ...] = ()
+    mcp_result_artifact_refs: tuple[ArtifactReference, ...] = ()
 
 
 class ToolExecutor:
@@ -552,12 +555,19 @@ class ToolExecutor:
                 outcome.payload, limit, semantic=semantic
             )
             if envelope is None:
-                return self._error(
+                failed = self._error(
                     call,
                     ToolErrorCode.OUTPUT_BUDGET if semantic else ToolErrorCode.OUTPUT_FAILED,
                     "工具结果预算不足",
                     limit=limit,
                 )
+                if semantic:
+                    failed = replace(
+                        failed,
+                        artifact_refs=outcome.artifact_refs,
+                        mcp_result_artifact_refs=outcome.mcp_result_artifact_refs,
+                    )
+                return failed
             return ToolExecutionOutcome(
                 call_id=call.id,
                 name=call.name,
@@ -566,6 +576,8 @@ class ToolExecutor:
                 truncated=truncated,
                 original_chars=original_chars,
                 facts=outcome.facts,
+                artifact_refs=outcome.artifact_refs,
+                mcp_result_artifact_refs=outcome.mcp_result_artifact_refs,
             )
         except asyncio.CancelledError:
             raise

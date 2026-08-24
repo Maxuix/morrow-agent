@@ -227,6 +227,7 @@ class BackupV2SkillEntry(ProtocolModel):
     skill_id: str
     version_id: str
     source_kind: Literal["imported", "generated"]
+    effective_trust: Literal["builtin", "user", "generated", "imported", "unknown"] = "unknown"
     scope_id: str | None = None
     tree_digest: str
     envelope_sha256: str

@@ -511,6 +511,7 @@ class DurableToolJournalPort(
     TransactionalJournalPort,
     ToolExecutionJournalPort,
     ApprovalJournalPort,
+    McpCatalogJournalPort,
     Protocol,
 ):
     """Atomic execution and approval surface for durable tool cycles."""

@@ -27,6 +27,7 @@ from morrow.core.execution import (
 )
 from morrow.core.faults import FaultInjector, FaultPoint
 from morrow.core.journal import DurableToolJournalPort
+from morrow.core.mcp import McpResultArtifactLink
 from morrow.core.models import AssistantMessage
 from morrow.core.permissions import IsolationLabel, PermissionEvidenceError
 from morrow.core.ports import IdSource
@@ -256,7 +257,10 @@ class DurableToolExecutionCoordinator:
         final_disposition = disposition or (
             ToolExecutionDisposition.SUCCEEDED if result.ok else ToolExecutionDisposition.FAILED
         )
-        artifact_refs: tuple[ArtifactReference, ...] = ()
+        artifact_refs: list[ArtifactReference] = []
+        for reference in (*result.artifact_refs, *result.mcp_result_artifact_refs):
+            if reference not in artifact_refs:
+                artifact_refs.append(reference)
         if self.artifacts is not None and execution.tool_name == "run_command":
             try:
                 artifact = self.artifacts.publish_command_output(
@@ -265,11 +269,11 @@ class DurableToolExecutionCoordinator:
                     task_run_id=execution.task_run_id,
                     tool_execution_id=execution.tool_execution_id,
                 )
-                artifact_refs = (
-                    ArtifactReference(artifact_id=artifact.artifact_id, role="tool_output"),
-                )
+                reference = ArtifactReference(artifact_id=artifact.artifact_id, role="tool_output")
+                if reference not in artifact_refs:
+                    artifact_refs.append(reference)
             except (ArtifactError, StorageError):
-                artifact_refs = ()
+                pass
         completed = transition_execution(
             execution,
             ToolExecutionState.HANDLER_COMPLETED,
@@ -280,10 +284,27 @@ class DurableToolExecutionCoordinator:
             error_code=result.error_code.value if result.error_code is not None else None,
         )
         if artifact_refs:
-            completed = completed.model_copy(update={"artifact_refs": artifact_refs})
-        stored = self.journal.save_execution(
-            self.workspace_id, completed, expected_row_version=execution.row_version
+            completed = completed.model_copy(update={"artifact_refs": tuple(artifact_refs)})
+        links = tuple(
+            McpResultArtifactLink(
+                link_id=self.id_source.new_id("mcp_link"),
+                workspace_id=self.workspace_id,
+                tool_execution_id=execution.tool_execution_id,
+                artifact_id=reference.artifact_id,
+                role=reference.role,
+            )
+            for reference in result.mcp_result_artifact_refs
         )
+
+        def work(txn: DurableToolJournalPort) -> DurableToolExecution:
+            stored_execution = txn.save_execution(
+                self.workspace_id, completed, expected_row_version=execution.row_version
+            )
+            for link in links:
+                txn.put_mcp_result_artifact_link(link)
+            return stored_execution
+
+        stored = self.journal.transact(work)
         self.faults.check(FaultPoint.EXECUTION_AFTER_HANDLER_COMPLETED)
         return stored
 

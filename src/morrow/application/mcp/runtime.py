@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import os
 import stat
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -23,7 +24,7 @@ from morrow.core.capabilities import (
     RiskFlag,
     ToolHandlerOutcome,
 )
-from morrow.core.domain import canonical_json_bytes, sha256_digest
+from morrow.core.domain import ArtifactReference, canonical_json_bytes, sha256_digest
 from morrow.core.execution import (
     EffectClass,
     MissingCompletionPolicy,
@@ -44,6 +45,7 @@ from morrow.core.mcp import (
     McpToolCatalogEntry,
     McpToolCatalogStatus,
     McpToolSnapshot,
+    McpWorkspaceVisibility,
     mcp_server_config_digest,
     normalize_json_schema,
 )
@@ -91,14 +93,30 @@ def executable_identity_digest(executable: str) -> str:
 
     path = Path(executable)
     try:
-        info = path.stat()
+        link_info = path.lstat()
         payload = {
             "path": str(path),
-            "size": info.st_size,
-            "mtime_ns": info.st_mtime_ns,
-            "mode": stat.S_IMODE(info.st_mode),
-            "is_file": path.is_file(),
+            "link_mode": stat.S_IMODE(link_info.st_mode),
+            "link_size": link_info.st_size,
+            "link_mtime_ns": link_info.st_mtime_ns,
+            "link_dev": link_info.st_dev,
+            "link_ino": link_info.st_ino,
+            "is_symlink": stat.S_ISLNK(link_info.st_mode),
         }
+        if stat.S_ISLNK(link_info.st_mode):
+            target = os.readlink(path)
+            payload["link_target"] = target[:4096]
+        info = path.stat()
+        payload.update(
+            {
+                "size": info.st_size,
+                "mtime_ns": info.st_mtime_ns,
+                "mode": stat.S_IMODE(info.st_mode),
+                "dev": info.st_dev,
+                "ino": info.st_ino,
+                "is_file": stat.S_ISREG(info.st_mode),
+            }
+        )
     except OSError:
         payload = {"path": str(path), "missing": True}
     return sha256_digest(canonical_json_bytes(payload))
@@ -207,11 +225,13 @@ class McpRunBridge:
         *,
         client_factory: McpClientFactory,
         normalizer: McpResultNormalizer,
+        expected_executable_digest: str,
     ) -> None:
         self.definition = definition
         self.catalog = catalog
         self.client_factory = client_factory
         self.normalizer = normalizer
+        self.expected_executable_digest = expected_executable_digest
         self.client: McpRuntimeClient | None = None
         self.started = False
         self.degraded = False
@@ -223,6 +243,10 @@ class McpRunBridge:
         if self.degraded:
             raise McpRuntimeError("server_degraded", "start")
         try:
+            if executable_identity_digest(self.definition.executable) != (
+                self.expected_executable_digest
+            ):
+                raise McpRuntimeError("executable_drift", "start")
             value = self.client_factory(self.definition)
             client = await value if inspect.isawaitable(value) else value
             self.client = client
@@ -380,6 +404,7 @@ class LazyMcpRunPool:
             catalog,
             client_factory=self.client_factory,
             normalizer=self.normalizer_factory(server_id),
+            expected_executable_digest=launch.executable_digest,
         )
         try:
             await bridge.start()
@@ -473,6 +498,8 @@ def prepare_mcp_run(
             or catalog.status is not McpCatalogStatus.READY
         ):
             raise McpRuntimeError("catalog_unavailable", "prepare")
+        if definition.workspace_visibility is not McpWorkspaceVisibility.READ_WRITE:
+            raise McpRuntimeError("workspace_visibility_unsupported", "prepare")
         allowed_entries = tuple(
             entry
             for entry in catalog.tools
@@ -724,6 +751,21 @@ def register_mcp_tools(
 ) -> tuple[RegisteredTool, ...]:
     """Register MCP handlers through the same validator/executor seams."""
 
+    def artifact_references(result: McpNormalizedResult) -> tuple[ArtifactReference, ...]:
+        refs: list[ArtifactReference] = []
+        for item in (*result.image_refs, *result.audio_refs):
+            reference = ArtifactReference(artifact_id=item.artifact_id, role=item.role)
+            if reference not in refs:
+                refs.append(reference)
+        for item in result.embedded_resource_refs:
+            reference = ArtifactReference(
+                artifact_id=item.artifact_id,
+                role="embedded_resource",
+            )
+            if reference not in refs:
+                refs.append(reference)
+        return tuple(refs)
+
     registered: list[RegisteredTool] = []
     for binding in prepared.bindings:
         schema = binding.entry.input_schema
@@ -732,7 +774,7 @@ def register_mcp_tools(
         try:
             validator = JsonSchemaArgumentsValidator(schema)
         except (TypeError, ValueError):
-            continue
+            raise McpRuntimeError("schema_invalid", "prepare") from None
 
         async def handler(arguments, context, *, current=binding):
             if not isinstance(arguments, dict):
@@ -746,7 +788,12 @@ def register_mcp_tools(
                     current.entry.remote_name,
                     arguments,
                 )
-                return ToolHandlerOutcome(payload=normalized.model_dump(mode="json"))
+                refs = artifact_references(normalized)
+                return ToolHandlerOutcome(
+                    payload=normalized.model_dump(mode="json"),
+                    artifact_refs=refs,
+                    mcp_result_artifact_refs=refs,
+                )
             except McpRuntimeError as exc:
                 raise ToolExecutionError(
                     ToolErrorCode.EXECUTION_FAILED,

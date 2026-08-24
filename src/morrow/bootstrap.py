@@ -54,6 +54,7 @@ from morrow.application.local_tools import (
     make_show_changes_tool,
     make_write_file_tool,
 )
+from morrow.application.mcp.definitions import McpDefinitionError, McpDefinitionService
 from morrow.application.mcp.results import McpResultNormalizer
 from morrow.application.mcp.runtime import prepare_mcp_run, rehydrate_mcp_run
 from morrow.application.orchestrator import SessionOrchestrator
@@ -101,6 +102,7 @@ from morrow.core.models import (
 from morrow.core.permissions import UNCONFINED_HOST_WARNING_DIGEST, CapabilityName
 from morrow.core.preference_documents import PreferenceDocument
 from morrow.core.preference_models import PreferenceScope
+from morrow.core.skills.scripts import SCRIPT_OUTPUT_FILE_MAX_BYTES
 from morrow.core.skills.trust import SourceKind
 from morrow.core.store import (
     StorageError,
@@ -235,6 +237,8 @@ def build_skill_services(
         workspace_id=workspace_id,
         id_source=app.id_source,
         clock=journal.now if journal is not None else None,
+        available_tools=available_tools,
+        available_mcp_servers=available_mcp_servers,
     )
     queries = SkillQueries(catalog, bindings, journal=journal)
     selection = SkillSelectionService(
@@ -735,7 +739,9 @@ def build_session_application(
 
         def make_skill_script_adapter(root: Path):
             script_files = WorkspaceFileService(WorkspacePathResolver(root))
-            script_sandbox = SandboxSnapshotService(script_files)
+            script_sandbox = SandboxSnapshotService(
+                script_files, max_change_content_bytes=SCRIPT_OUTPUT_FILE_MAX_BYTES
+            )
             return NativeSandboxProcessAdapter(root, script_sandbox, sandbox_backend)
 
         skill_scripts = SkillScriptExecutionService(
@@ -773,10 +779,16 @@ def build_session_application(
             )
 
         def mcp_state():
-            global_definitions = journal.list_mcp_servers("global")
-            workspace_definitions = journal.list_mcp_servers(
-                "workspace", scope_id=identity.workspace_id
+            definition_service = McpDefinitionService(
+                ExtensionYamlStore(app.data_root.root), identity.workspace_id
             )
+            try:
+                global_definitions = definition_service.list("global")
+                workspace_definitions = definition_service.list(
+                    "workspace", scope_id=identity.workspace_id
+                )
+            except McpDefinitionError as exc:
+                raise ValueError("MCP desired state is unavailable") from exc
             definitions_by_id = {item.server_id: item for item in global_definitions}
             definitions_by_id.update({item.server_id: item for item in workspace_definitions})
             definitions = tuple(sorted(definitions_by_id.values(), key=lambda item: item.server_id))
@@ -943,6 +955,7 @@ def build_session_application(
             registry=app.registry,
             agent_policy=app.agent_policy,
             credential_resolver=app.provider_service.credential_resolver,
+            frozen_credential_resolver=app.provider_service.resolve_frozen_credential,
             estimate_request_chars=estimate_request_chars,
             tool_factory=make_tools,
             legacy=legacy_prepared,

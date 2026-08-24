@@ -82,8 +82,17 @@ def capture_referenced_skills(
 
     by_id = {version.version_id: version for version in versions}
     selected = set(referenced_ids)
+    # Managed versions are part of the local recovery authority, even when no
+    # current binding points at an older version. Keep rollback and catalog
+    # rows recoverable after restore.
+    selected.update(
+        version.version_id
+        for version in versions
+        if version.source_kind in {SourceKind.IMPORTED, SourceKind.GENERATED}
+    )
     # An enabled unpinned binding references the deterministic newest managed
-    # version. Include just that version, not every historical package.
+    # version; retain this explicit selection for catalogs that contain a
+    # version row outside the managed roots.
     for scope_id, skill_id in bound_skill_keys:
         candidates = [
             version
@@ -130,6 +139,7 @@ def capture_referenced_skills(
             or envelope.get("source_kind") != version.source_kind.value
             or envelope.get("scope_id") != version.scope_id
             or envelope.get("tree_digest") != version.tree_digest
+            or envelope.get("effective_trust") != version.effective_trust.value
         ):
             raise SkillBackupError("Skill catalog and package envelope disagree")
         envelope_bytes = _envelope_bytes(envelope)
@@ -152,6 +162,7 @@ def capture_referenced_skills(
                 skill_id=version.skill_id,
                 version_id=version.version_id,
                 source_kind=version.source_kind.value,
+                effective_trust=version.effective_trust.value,
                 scope_id=version.scope_id,
                 tree_digest=tree.tree_digest,
                 envelope_sha256=hashlib.sha256(envelope_bytes).hexdigest(),
@@ -185,7 +196,18 @@ def verify_skill_capture(
             envelope = read_envelope(version_root)
             verify_envelope_against_tree(envelope, tree)
             digest, _size = _hash_file(envelope_path)
-            if digest != item.envelope_sha256 or tree.tree_digest != item.tree_digest:
+            if (
+                digest != item.envelope_sha256
+                or tree.tree_digest != item.tree_digest
+                or envelope.get("version_id") != item.version_id
+                or envelope.get("skill_id") != item.skill_id
+                or envelope.get("source_kind") != item.source_kind
+                or envelope.get("scope_id") != item.scope_id
+                or (
+                    item.effective_trust != "unknown"
+                    and envelope.get("effective_trust") != item.effective_trust
+                )
+            ):
                 issues.append("skill_package_changed")
             expected = set(item.file_paths)
             actual = {

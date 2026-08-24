@@ -120,6 +120,7 @@ class SandboxSnapshotService:
         temp_parent: Path | None = None,
         max_files: int = MAX_SNAPSHOT_FILES,
         max_bytes: int = MAX_SNAPSHOT_BYTES,
+        max_change_content_bytes: int = MAX_PROMOTION_BYTES,
     ) -> None:
         self.files = files
         self.sensitive_policy: SensitiveResourcePolicy = files.sensitive_policy
@@ -128,6 +129,9 @@ class SandboxSnapshotService:
         self.temp_parent = temp_parent
         self.max_files = max_files
         self.max_bytes = max_bytes
+        if not 1 <= max_change_content_bytes <= MAX_SNAPSHOT_FILE_BYTES:
+            raise ValueError("sandbox change content budget is invalid")
+        self.max_change_content_bytes = max_change_content_bytes
 
     def reserve_temp_root(self) -> Path:
         return Path(tempfile.mkdtemp(prefix="morrow-sandbox-", dir=self.temp_parent)).resolve(
@@ -418,7 +422,7 @@ class SandboxSnapshotService:
                     _sha256(raw),
                     len(raw),
                     stat.S_IMODE(mode.st_mode),
-                    raw if include_raw and len(raw) <= MAX_PROMOTION_BYTES else None,
+                    raw if include_raw and len(raw) <= self.max_change_content_bytes else None,
                     mode.st_mtime_ns,
                 )
             else:
@@ -452,7 +456,7 @@ class SandboxSnapshotService:
                 eligible = (
                     operation in {"created", "modified"}
                     and not mode_changed
-                    and len(after_raw) <= MAX_PROMOTION_BYTES
+                    and len(after_raw) <= self.max_change_content_bytes
                 )
                 if eligible:
                     content = after_text

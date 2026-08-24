@@ -9,6 +9,7 @@ import pytest
 from morrow.adapters.state.journal import SqliteOperationalJournal
 from morrow.adapters.state.operational import OperationalStore
 from morrow.application.skills.drafts import SkillDraftServiceError
+from morrow.application.skills.lifecycle import SkillLifecycleError
 from morrow.bootstrap import build_application, build_skill_services
 from morrow.core.learning import (
     CandidateDraft,
@@ -23,6 +24,7 @@ from morrow.core.learning import (
 )
 from morrow.core.learning_payloads import SkillCandidatePayload
 from morrow.core.skills.drafts import SkillDraftStatus
+from morrow.core.skills.trust import SourceKind
 from morrow.testing import FixedClock
 from test_stage5_learning_store import _evidence, _review, _seed_subjects
 
@@ -98,6 +100,26 @@ def test_accepted_candidate_creates_bounded_draft_and_replays(tmp_path) -> None:
             services.drafts.create_from_candidate(candidate.candidate_id).draft_id == draft.draft_id
         )
         assert services.queries.list(scope_id="ws_1") == ()
+    finally:
+        handle.close()
+
+
+def test_generated_install_requires_a_validated_draft(tmp_path) -> None:
+    _app, handle, _journal, services = _services(tmp_path)
+    try:
+        source = tmp_path / "generated"
+        source.mkdir()
+        (source / "SKILL.md").write_text(
+            "---\nname: Generated Skill\nversion: 0.1.0\n---\nGenerated.\n",
+            encoding="utf-8",
+        )
+        with pytest.raises(SkillLifecycleError, match="accepted Draft"):
+            services.lifecycle.install(
+                source,
+                source_kind=SourceKind.GENERATED,
+                scope_id="ws_1",
+                confirmed=True,
+            )
     finally:
         handle.close()
 

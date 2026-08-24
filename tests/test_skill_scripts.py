@@ -24,6 +24,7 @@ from morrow.core.capabilities import (
 )
 from morrow.core.models import FunctionToolCall
 from morrow.core.skills.scripts import SkillScriptRequest, SkillScriptStatus
+from morrow.core.skills.selection import SkillSelection
 from morrow.core.skills.trust import SourceKind
 from morrow.runtime.capabilities import CapabilityPolicy
 from morrow.runtime.tools import ToolErrorCode, ToolExecutor, ToolRegistry
@@ -93,6 +94,29 @@ def _request(package, version: str, *, output_paths: tuple[str, ...] = ()):
     )
 
 
+class _SelectionJournal:
+    def __init__(self, selection: SkillSelection) -> None:
+        self.selection = selection
+
+    def get_skill_selection(self, _workspace_id: str, selection_id: str):
+        return self.selection if selection_id == self.selection.selection_id else None
+
+
+def _selection_journal(request: SkillScriptRequest) -> _SelectionJournal:
+    return _SelectionJournal(
+        SkillSelection(
+            selection_id=request.selection_id,
+            agent_run_id="arun_script12345678",
+            skill_id=request.skill_id,
+            version_id=request.version_id,
+            scope="workspace" if request.scope_id else "global",
+            scope_id=request.scope_id,
+            source_kind=request.source_kind,
+            tree_digest=request.tree_digest,
+        )
+    )
+
+
 def test_skill_script_requires_sandbox_and_exact_frozen_package(tmp_path) -> None:
     store, version = _package(tmp_path)
     package = store.read_frozen_package(
@@ -110,6 +134,7 @@ def test_skill_script_requires_sandbox_and_exact_frozen_package(tmp_path) -> Non
     service = SkillScriptExecutionService(
         store,
         workspace_id="ws_script",
+        journal=_selection_journal(request),
         artifacts=artifacts,
         adapter_factory=lambda _root: HostProcessAdapter(),
         sandbox_available=True,
@@ -134,6 +159,26 @@ def test_skill_script_requires_sandbox_and_exact_frozen_package(tmp_path) -> Non
     assert fact.command_class == "skill_script"
 
 
+def test_skill_script_requires_durable_selection_evidence(tmp_path) -> None:
+    store, version = _package(tmp_path)
+    package = store.read_frozen_package(
+        skill_id="script-skill",
+        version_id=version,
+        source_kind=SourceKind.GENERATED,
+        scope_id="ws_script",
+    )
+    request = _request(package, version)
+    service = SkillScriptExecutionService(
+        store,
+        workspace_id="ws_script",
+        adapter_factory=lambda _root: HostProcessAdapter(),
+        sandbox_available=True,
+    )
+    with pytest.raises(SkillScriptExecutionError, match="selection evidence") as error:
+        service.preflight(request, agent_run_id="arun_script12345678")
+    assert error.value.code == "selection_missing"
+
+
 def test_skill_script_rejects_undeclared_output_and_package_drift(tmp_path) -> None:
     store, version = _package(tmp_path)
     package = store.read_frozen_package(
@@ -146,6 +191,7 @@ def test_skill_script_rejects_undeclared_output_and_package_drift(tmp_path) -> N
     service = SkillScriptExecutionService(
         store,
         workspace_id="ws_script",
+        journal=_selection_journal(request),
         adapter_factory=lambda _root: HostProcessAdapter(),
         sandbox_available=True,
     )
@@ -228,13 +274,14 @@ def test_skill_script_rejects_root_escape_symlink_and_input_mutation(tmp_path) -
         source_kind=SourceKind.GENERATED,
         scope_id="ws_script",
     )
+    escape_request = _request(escape_package, escape_version)
     escape_service = SkillScriptExecutionService(
         escape_store,
         workspace_id="ws_script",
+        journal=_selection_journal(escape_request),
         adapter_factory=lambda _root: HostProcessAdapter(),
         sandbox_available=True,
     )
-    escape_request = _request(escape_package, escape_version)
     with pytest.raises(SkillScriptExecutionError, match="outside"):
         _execute(
             escape_service,
@@ -256,13 +303,14 @@ def test_skill_script_rejects_root_escape_symlink_and_input_mutation(tmp_path) -
         source_kind=SourceKind.GENERATED,
         scope_id="ws_script",
     )
+    symlink_request = _request(symlink_package, symlink_version, output_paths=("result.txt",))
     symlink_service = SkillScriptExecutionService(
         symlink_store,
         workspace_id="ws_script",
+        journal=_selection_journal(symlink_request),
         adapter_factory=lambda _root: HostProcessAdapter(),
         sandbox_available=True,
     )
-    symlink_request = _request(symlink_package, symlink_version, output_paths=("result.txt",))
     with pytest.raises(SkillScriptExecutionError, match="regular file"):
         _execute(
             symlink_service,
@@ -286,15 +334,16 @@ def test_skill_script_rejects_root_escape_symlink_and_input_mutation(tmp_path) -
         source_kind=SourceKind.GENERATED,
         scope_id="ws_script",
     )
+    input_request = _request(input_package, input_version).model_copy(
+        update={"input_artifact_ids": ("art_input_1",)}
+    )
     input_service = SkillScriptExecutionService(
         input_store,
         workspace_id="ws_script",
+        journal=_selection_journal(input_request),
         artifacts=_Artifacts(),
         adapter_factory=lambda _root: HostProcessAdapter(),
         sandbox_available=True,
-    )
-    input_request = _request(input_package, input_version).model_copy(
-        update={"input_artifact_ids": ("art_input_1",)}
     )
     with pytest.raises(SkillScriptExecutionError, match="input Artifact"):
         _execute(
@@ -317,6 +366,7 @@ async def test_skill_script_permission_request_is_denied_before_handler(tmp_path
     service = SkillScriptExecutionService(
         store,
         workspace_id="ws_script",
+        journal=_selection_journal(request),
         adapter_factory=lambda _root: HostProcessAdapter(),
         sandbox_available=True,
     )
@@ -359,6 +409,7 @@ def test_skill_script_timeout_is_bounded_and_cleans_temporary_state(tmp_path) ->
     service = SkillScriptExecutionService(
         store,
         workspace_id="ws_script",
+        journal=_selection_journal(request),
         adapter_factory=lambda _root: HostProcessAdapter(),
         sandbox_available=True,
         temp_parent=tmp_path,

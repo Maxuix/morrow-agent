@@ -47,6 +47,8 @@ class SkillLifecycleResolutionMixin:
         skill_id_or_name: str,
         scope_id: str | None,
         source_kind: SourceKind | None,
+        *,
+        allow_conflicted: bool = False,
     ) -> tuple[SkillCatalogEntry, SourceKind]:
         view = self.catalog.scan_scope(scope_id)
         entry = view.entry(skill_id_or_name, scope_id=scope_id)
@@ -63,9 +65,12 @@ class SkillLifecycleResolutionMixin:
             entry = matches[0] if matches else None
         if entry is None:
             raise SkillLifecycleError("not_found", "Skill identity is unavailable")
-        if entry.definition.conflict_status is not SkillConflictStatus.NONE:
+        conflicted = entry.definition.conflict_status is not SkillConflictStatus.NONE
+        if conflicted and not allow_conflicted:
             raise SkillLifecycleError("conflict", "Skill identity conflict is not selectable")
-        if entry.definition.availability is not SkillAvailability.AVAILABLE:
+        if entry.definition.availability is not SkillAvailability.AVAILABLE and not (
+            allow_conflicted and conflicted
+        ):
             raise SkillLifecycleError("unavailable", "Skill is not available")
         sources = {item.source_kind for item in entry.versions}
         if source_kind is None:

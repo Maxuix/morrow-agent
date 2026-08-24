@@ -134,6 +134,7 @@ def test_stage6_v2_copies_only_referenced_managed_skill_and_doctor_detects_drift
     (source / "SKILL.md").write_text(
         "---\nname: Backup Skill\nversion: 1.0.0\n---\n# backup\n", encoding="utf-8"
     )
+    first = services.lifecycle.install(source, confirmed=True)
     installed = services.lifecycle.install(source, confirmed=True)
     services.lifecycle.enable("backup-skill")
 
@@ -141,7 +142,11 @@ def test_stage6_v2_copies_only_referenced_managed_skill_and_doctor_detects_drift
     report = backup.create_v2("stage6-skill")
     bundle = store.layout.backups_dir / report.bundle_name
     manifest = json.loads((bundle / "manifest.json").read_text(encoding="utf-8"))
-    assert [item["version_id"] for item in manifest["skill_versions"]] == [installed.version_id]
+    assert {item["version_id"] for item in manifest["skill_versions"]} == {
+        first.version_id,
+        installed.version_id,
+    }
+    assert (bundle / "skills" / "imported" / "backup-skill" / first.version_id).is_dir()
     assert (bundle / "skills" / "imported" / "backup-skill" / installed.version_id).is_dir()
     assert backup.verify_v2(bundle).ok
 

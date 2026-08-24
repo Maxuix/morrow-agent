@@ -332,25 +332,15 @@ class SkillScriptExecutionService:
                 ) from exc
 
     def _selection(self, request: SkillScriptRequest, agent_run_id: str) -> SkillSelection:
-        selection = None
-        if self.journal is not None:
-            selection = self.journal.get_skill_selection(self.workspace_id, request.selection_id)
+        if self.journal is None:
+            raise SkillScriptExecutionError(
+                "selection_missing", "Skill selection evidence is unavailable"
+            )
+        selection = self.journal.get_skill_selection(self.workspace_id, request.selection_id)
         if selection is None:
-            try:
-                selection = SkillSelection(
-                    selection_id=request.selection_id,
-                    agent_run_id=agent_run_id,
-                    skill_id=request.skill_id,
-                    version_id=request.version_id,
-                    scope="workspace" if request.scope_id else "global",
-                    scope_id=request.scope_id,
-                    source_kind=request.source_kind,
-                    tree_digest=request.tree_digest,
-                )
-            except ValueError as exc:
-                raise SkillScriptExecutionError(
-                    "selection_missing", "Skill selection evidence is unavailable"
-                ) from exc
+            raise SkillScriptExecutionError(
+                "selection_missing", "Skill selection evidence is unavailable"
+            )
         if (
             selection.agent_run_id != agent_run_id
             or selection.skill_id != request.skill_id

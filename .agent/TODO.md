@@ -2,11 +2,11 @@
 
 ## Current stage
 
-Stage 6 implementation and post-closeout independent review complete locally.
+Stage 6 implementation and the full post-closeout review/fix cycle complete locally.
 
 ## Active subplan
 
-No active implementation subplan. Subplan 75 and the requested post-closeout review attempt are complete.
+No active implementation subplan. Subplan 75 and the requested full post-closeout review/fix cycle are complete.
 
 ## Tasks (Subplan 75)
 
@@ -21,6 +21,6 @@ No active implementation subplan. Subplan 75 and the requested post-closeout rev
 
 - Do not implement integrated acceptance closeout, learned routing or unrestricted Skill injection.
 - Do not use real credentials, networked MCP Servers, live Providers or user state.
-- Work is on `codex/feat/stage6-closeout`; preserve the verified Subplan74 merge and do not
+- Work is on local `main`; preserve the verified Stage6 history and do not
   introduce a second backup/doctor authority or rewrite historical evidence.
 - Preserve AgentLoop/ConversationLog, permission policy defaults, public events and Stage 4/5 behavior.

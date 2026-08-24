@@ -2716,3 +2716,19 @@
   not compare envelope `source_kind`, `scope_id`, `effective_trust`, or reject a version-directory
   symlink. Added those checks and a spoofed-envelope regression; targeted tests passed and the final
   offline gate remained `1060 passed, 2 skipped, 2 deselected`.
+
+## 2026-08-25 — Full Stage 6 Grok review rerun and repair completed
+
+- Reran the requested Grok delegate review over the complete Stage 6 implementation surface after
+  the earlier session-creation failure. The report found no P0 and identified P1/P2 gaps around
+  MCP YAML/runtime authority, durable Skill selection and Generated approval, install races,
+  workspace visibility, schema/backup/restore integrity, frozen credentials, executable drift and
+  secret boundaries.
+- Fixed the confirmed findings with fail-closed behavior and regression coverage. The independent
+  follow-up also closed MCP handshake validation and connected binary/embedded result Artifacts to
+  both durable ToolExecution references and the v16 MCP result-link table in one transaction, with
+  workspace identity checks.
+- Final evidence passed: MCP/control/runtime `17 passed`; new Artifact-link/handshake regressions
+  passed; full non-live suite `1065 passed, 2 skipped, 2 deselected`; Ruff format/check, compileall,
+  five CLI help commands and `git diff --check` passed. No live/network/credential path or remote
+  push was run.

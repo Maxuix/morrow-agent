@@ -23,9 +23,9 @@
 | `UV_CACHE_DIR=/private/tmp/morrow-uv-cache uv run --offline pytest -q tests/acceptance/test_stage6_integrated.py` | `2 passed in 1.08s` |
 | `UV_CACHE_DIR=/private/tmp/morrow-uv-cache uv run --offline pytest -q tests/test_skill_catalog.py tests/test_skill_lifecycle.py tests/test_skill_drafts.py tests/test_skill_usage.py tests/test_skill_scripts.py` | `41 passed in 3.56s` |
 | `UV_CACHE_DIR=/private/tmp/morrow-uv-cache uv run --offline pytest -q tests/test_provider.py tests/test_provider_control.py tests/test_agent_run_preparation.py` | `66 passed, 1 skipped in 1.95s`；唯一跳过项是显式 Live Provider checklist，因未提供凭据 |
-| `UV_CACHE_DIR=/private/tmp/morrow-uv-cache uv run --offline pytest -q tests/test_mcp_control.py tests/test_mcp_runtime.py` | `14 passed in 3.19s` |
+| `UV_CACHE_DIR=/private/tmp/morrow-uv-cache uv run --offline pytest -q tests/test_mcp_control.py tests/test_mcp_runtime.py` | `17 passed` |
 | `UV_CACHE_DIR=/private/tmp/morrow-uv-cache uv run --offline pytest -q tests/test_stage6_backup.py tests/test_stage4_backup.py tests/test_stage4_doctor.py tests/test_stage5_doctor_backup.py tests/test_preference_doctor_backup.py tests/test_stage4_cli_operational.py` | `30 passed in 3.15s` |
-| `UV_CACHE_DIR=/private/tmp/morrow-uv-cache uv run --offline pytest -m 'not live'` | `1060 passed, 2 skipped, 2 deselected in 38.06s` |
+| `UV_CACHE_DIR=/private/tmp/morrow-uv-cache uv run --offline pytest -m 'not live'` | `1065 passed, 2 skipped, 2 deselected in 36.34s` |
 | `UV_CACHE_DIR=/private/tmp/morrow-uv-cache uv run --offline ruff format --check .` | `428 files already formatted` |
 | `UV_CACHE_DIR=/private/tmp/morrow-uv-cache uv run --offline ruff check .` | `All checks passed!` |
 | `UV_CACHE_DIR=/private/tmp/morrow-uv-cache uv run --offline python -m compileall -q src tests` | 通过 |
@@ -50,5 +50,5 @@ CLI help 也已通过：`morrow --help`、`morrow skill --help`、`morrow mcp --
 - generated/imported Skill 不会自动启用，Skill 脚本不获得独立于 CapabilityPolicy 的权限；多 Agent Workflow、GUI 和后台任务留在 Stage 7–10。
 - Backup v2 使用已批准的官方 MCP/JSON Schema 依赖，但 CredentialStore、Keychain、真实网络和 Live 质量评估仍不属于 Stage 6 离线验收。
 
-Grok review 已按请求启动一次，但环境在创建审查会话时返回 `FS_PERMISSION_DENIED`，同时代理的模型/设置请求因 DNS 不可达失败，未产生可分析报告，也未修改工作树。
-随后完成了独立的同范围安全复核；确认的 Doctor 信封元数据缺口已修复并通过上述最终门禁，未因此重跑 Grok。
+2026-08-25 已按请求重新执行一次覆盖 Stage6 全部代码的 Grok review。报告未发现 P0；确认的 P1/P2 包括 MCP desired-state 权威、Skill 选择证据、Generated 审批、安装竞态、工作区可见性、Schema/备份/恢复完整性、冻结 Credential、可执行文件漂移和敏感数据边界。上述问题均已按现有架构修复，并补充了握手校验、MCP 二进制 Artifact 的 ToolExecution/v16 关联及跨 workspace 校验。
+修复后重新通过聚焦测试、全量离线测试和质量/CLI 门禁；未运行 live Provider、网络 MCP 或真实凭据路径，也未执行 remote push。

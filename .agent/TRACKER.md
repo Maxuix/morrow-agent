@@ -82,14 +82,14 @@ final offline/quality gates.
 ## Final status
 
 Stage 6 Subplans 63–75 are complete on local `main`; closeout commit `19432fb` is merged and the
-topic branch is retired. The single requested Grok attempt returned no report because the delegate
-could not create a session (`FS_PERMISSION_DENIED`/unreachable proxy); it was not retried. An
-independent audit found and fixed Doctor's managed-envelope metadata gap, with the final offline
-gate still green. The fix and updated evidence are ready for the final Git commit.
+topic branch is retired. The requested full Stage6 Grok review was rerun over the complete Stage6
+code surface; its confirmed P1/P2 findings and the independent handshake/Artifact evidence gaps
+were fixed and committed locally. The final offline, quality and CLI gates are green; no remote
+push is in scope.
 
 ## Next action
 
-Create the final fix commit and verify local `main` is clean; no remote push is in scope.
+No remaining Stage6 implementation action; keep local `main` clean. No remote push is in scope.
 
 ## Last completed work (Subplan 71)
 

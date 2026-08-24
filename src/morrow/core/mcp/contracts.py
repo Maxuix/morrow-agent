@@ -331,6 +331,17 @@ class McpHandshake(ProtocolModel):
     server_version: str | None = Field(default=None, max_length=128)
     protocol_version: str = Field(min_length=1, max_length=64)
 
+    @field_validator("server_name", "server_version", "protocol_version")
+    @classmethod
+    def safe_identity(cls, value: str | None, info) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        limit = 64 if info.field_name == "protocol_version" else 128
+        if not value or _utf8_len(value) > limit or any(ord(char) < 32 for char in value):
+            raise ValueError("MCP handshake identity is invalid")
+        return _reject_secret_value(value, label="MCP handshake identity")
+
 
 class McpDiscovery(ProtocolModel):
     handshake: McpHandshake

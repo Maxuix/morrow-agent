@@ -16,6 +16,7 @@ from morrow.core.mcp import (
     McpCatalogStatus,
     McpServerDefinition,
     McpToolCatalogStatus,
+    McpWorkspaceVisibility,
 )
 from morrow.core.skills.bindings import (
     ExtensionDocument,
@@ -99,6 +100,11 @@ def validate_enable_policy(
 ) -> None:
     """Require an explicit local allowlist and mapping before enabling a Server."""
 
+    if definition.workspace_visibility is not McpWorkspaceVisibility.READ_WRITE:
+        raise McpDefinitionError(
+            "workspace_visibility_unsupported",
+            "MCP stdio execution cannot enforce a restricted workspace visibility",
+        )
     if catalog is None:
         raise McpDefinitionError("catalog_required", "MCP Server must be refreshed before enable")
     if catalog.server_id != definition.server_id:

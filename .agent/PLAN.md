@@ -2,7 +2,8 @@
 
 > Status: Stage 6 implementation complete locally; Subplans 63–75 and the Subplan 65 review repair
 > are complete
-> Post-closeout review: one Grok attempt completed without a report; independent audit and fix are complete
+> Post-closeout review: full Stage6 Grok review completed; confirmed findings and independent boundary
+> gaps are fixed and verified
 > Baseline: local `main` at `0dc4e54`; dependency gate approved by the user on 2026-08-24
 > Design baseline: `docs/reviews/stage-6-skills-and-extensions-final-proposal.md`
 > Roadmap authority: `docs/roadmap/stage-6-skills-and-extensions.md`

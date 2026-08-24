@@ -58,8 +58,12 @@ def _walk_schema(value: Any, *, depth: int = 0) -> None:
             if not isinstance(key, str) or len(key.encode("utf-8")) > 256:
                 raise McpSchemaError("key_size", "MCP schema key is invalid")
             if key in {"$ref", "$dynamicRef"}:
-                if not isinstance(child, str) or not child.startswith("#"):
-                    raise McpSchemaError("remote_ref", "MCP schema may use local refs only")
+                if (
+                    not isinstance(child, str)
+                    or not child.startswith("#/$defs/")
+                    or child.count("/") != 2
+                ):
+                    raise McpSchemaError("local_ref", "MCP schema refs must target local $defs")
             _walk_schema(child, depth=depth + 1)
         return
     if isinstance(value, list):

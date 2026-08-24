@@ -47,6 +47,11 @@ class ProviderService(ProviderControlMixin):
             return configured
         return self.credentials.get(credential_ref.ref) if credential_ref else None
 
+    def resolve_frozen_credential(self, _provider_id: str, credential_ref) -> str | None:
+        """Resolve stored run evidence without allowing a current env override."""
+
+        return self.credentials.get(credential_ref.ref) if credential_ref else None
+
     def _read_credential(self, provider_id: str, credential_ref) -> str | None:
         try:
             return self.credential_resolver(provider_id, credential_ref)

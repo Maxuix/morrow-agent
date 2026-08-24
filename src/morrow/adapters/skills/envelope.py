@@ -79,8 +79,38 @@ def write_envelope(version_dir: Path, payload: dict) -> Path:
     """Atomically publish an envelope under the Morrow-managed version dir."""
     target = version_dir / ENVELOPE_NAME
     tmp = version_dir / f".{ENVELOPE_NAME}.tmp"
-    tmp.write_bytes(_canonical_envelope_bytes(payload))
-    tmp.replace(target)
+    raw = _canonical_envelope_bytes(payload)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = None
+    try:
+        descriptor = os.open(tmp, flags, 0o600)
+        written = 0
+        while written < len(raw):
+            count = os.write(descriptor, raw[written:])
+            if count <= 0:
+                raise OSError("managed-version.json write made no progress")
+            written += count
+        os.fsync(descriptor)
+    except OSError as exc:
+        tmp.unlink(missing_ok=True)
+        raise EnvelopeError("managed-version.json could not be written") from exc
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+    try:
+        os.replace(tmp, target)
+        try:
+            directory_fd = os.open(version_dir, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+        except OSError:
+            directory_fd = None
+        if directory_fd is not None:
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
+    except OSError as exc:
+        tmp.unlink(missing_ok=True)
+        raise EnvelopeError("managed-version.json could not be published") from exc
     return target
 
 

@@ -40,6 +40,7 @@ from morrow.core.domain import (
 )
 from morrow.core.execution import DurableToolExecution, EffectClass, PreparedIntent
 from morrow.core.faults import FaultPoint, InjectedFault, OnceFaultInjector
+from morrow.core.mcp import McpResultArtifactLink
 from morrow.core.models import ModelRef, Preferences, Profile
 from morrow.core.store import DIRECTORY_MODE, FILE_MODE, StorageError, StoreOpenMode
 from morrow.testing import FixedClock, FixedIdSource
@@ -501,5 +502,16 @@ def test_tool_execution_can_link_a_command_artifact(tmp_path):
         assert journal.list_artifact_references("ws_1", artifact.artifact_id) == (
             (artifact.artifact_id, "tool_execution", "tex_1", "tool_output"),
         )
+        mcp_link = McpResultArtifactLink(
+            link_id="mcp_link_1",
+            workspace_id="ws_1",
+            tool_execution_id=execution.tool_execution_id,
+            artifact_id=artifact.artifact_id,
+            role="image",
+        )
+        assert journal.put_mcp_result_artifact_link(mcp_link) == mcp_link
+        listed_links = journal.list_mcp_result_artifact_links("ws_1", execution.tool_execution_id)
+        assert len(listed_links) == 1
+        assert listed_links[0].model_copy(update={"created_at": mcp_link.created_at}) == mcp_link
     finally:
         handle.close()

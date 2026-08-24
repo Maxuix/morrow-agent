@@ -35,8 +35,11 @@ from morrow.core.capabilities import (
     WorkspaceCapability,
 )
 from morrow.core.mcp import (
+    McpArtifactRef,
     McpCwdPolicy,
+    McpEmbeddedResourceRef,
     McpLaunchRisk,
+    McpNormalizedResult,
     McpReviewEvidence,
     McpReviewRisk,
     McpServerDefinition,
@@ -65,6 +68,7 @@ def _definition(
         executable=sys.executable,
         argv=(str(FAKE_SERVER.resolve()),),
         cwd_policy=McpCwdPolicy.MANAGED,
+        workspace_visibility=McpWorkspaceVisibility.READ_WRITE,
         timeout_ms=timeout_ms,
         enabled=True,
         requested_launch_risks=risks,
@@ -271,6 +275,77 @@ def test_mcp_registration_uses_ordinary_tool_executor_and_policy_approval() -> N
     outcome = asyncio.run(exercise())
     assert outcome.ok is True
     assert '"ordinary"' in outcome.envelope
+
+
+def test_mcp_registration_carries_result_artifact_evidence() -> None:
+    definition = _definition()
+    catalog = _catalog(definition)
+    prepared = prepare_mcp_run(
+        (definition,),
+        {definition.server_id: catalog},
+        workspace_id="ws_1",
+        agent_run_id="arun_1",
+        id_source=FixedIdSource(),
+    )
+
+    async def fake_call(_server_id, _remote_name, _arguments):
+        return McpNormalizedResult(
+            image_refs=(
+                McpArtifactRef(
+                    artifact_id="art_image",
+                    role="image",
+                    mime_type="image/png",
+                    byte_size=5,
+                ),
+            ),
+            embedded_resource_refs=(
+                McpEmbeddedResourceRef(
+                    uri="mcp://embedded",
+                    artifact_id="art_embedded",
+                    mime_type="text/plain",
+                    byte_size=8,
+                ),
+            ),
+        )
+
+    prepared.pool.call = fake_call
+    policy = CapabilityPolicy(
+        PermissionProfile(),
+        WorkspaceCapability(workspace_id="ws_1", root=Path("/workspace")),
+    )
+    registry = ToolRegistry()
+    register_mcp_tools(
+        registry,
+        prepared,
+        capability_policy=policy,
+        workspace_id="ws_1",
+        agent_run_id="arun_1",
+    )
+
+    class Approval:
+        async def request(self, _request):
+            return ToolApprovalDecision(approved=True)
+
+    outcome = asyncio.run(
+        ToolExecutor(
+            registry.snapshot(),
+            make_run_policy(),
+            approval_port=Approval(),
+            capability_policy=policy,
+        ).execute(
+            FunctionToolCall(
+                id="call-artifacts",
+                name="mcp__fake__echo",
+                arguments='{"text":"artifacts"}',
+            )
+        )
+    )
+    assert outcome.ok is True
+    assert [(item.artifact_id, item.role) for item in outcome.artifact_refs] == [
+        ("art_image", "image"),
+        ("art_embedded", "embedded_resource"),
+    ]
+    assert outcome.mcp_result_artifact_refs == outcome.artifact_refs
 
 
 def test_timeout_is_terminal_for_one_server_and_never_retried(tmp_path: Path) -> None:

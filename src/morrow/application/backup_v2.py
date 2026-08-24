@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shutil
 import sqlite3
 import stat
@@ -220,7 +221,7 @@ class Stage6BackupService:
                 destination = temporary / relative
                 if item.kind is BackupV2FileKind.DATABASE:
                     destination = temporary / "store" / "operational.sqlite"
-                _copy_verified_file(source, destination)
+                _copy_verified_file(source, destination, expected_digest=item.sha256)
             _fsync_directory(temporary)
             if os.path.lexists(target):
                 raise BackupV2Error("restore target appeared during publication")
@@ -666,7 +667,8 @@ class Stage6BackupService:
             rows = {
                 str(row[0]): row
                 for row in connection.execute(
-                    "SELECT version_id, skill_id, tree_digest, source_kind, scope, scope_id "
+                    "SELECT version_id, skill_id, tree_digest, source_kind, scope, scope_id, "
+                    "effective_trust "
                     "FROM skill_versions"
                 ).fetchall()
             }
@@ -679,6 +681,7 @@ class Stage6BackupService:
                     or row[2] != item.tree_digest
                     or row[3] != item.source_kind
                     or row[5] != (item.scope_id or "")
+                    or (item.effective_trust != "unknown" and row[6] != item.effective_trust)
                 ):
                     issues.append("skill_reference_missing")
                     valid = False
@@ -774,6 +777,7 @@ def _parse_safe_yaml(raw: bytes) -> dict[str, Any]:
     payload = yaml.safe_load(raw.decode("utf-8", errors="strict"))
     if not isinstance(payload, dict):
         raise ValueError("configuration document must be a mapping")
+    _reject_secret_text(raw)
     _reject_secret_values(payload)
     return payload
 
@@ -781,7 +785,8 @@ def _parse_safe_yaml(raw: bytes) -> dict[str, Any]:
 def _reject_secret_values(value: Any, *, key: str = "") -> None:
     key_lower = key.casefold()
     if any(
-        needle in key_lower for needle in ("api_key", "authorization", "password", "secret")
+        needle in key_lower
+        for needle in ("api_key", "authorization", "password", "secret", "token")
     ) or ("credential" in key_lower and key_lower not in {"credential_ref", "credential_refs"}):
         raise ValueError("configuration contains secret material")
     if isinstance(value, dict):
@@ -790,7 +795,26 @@ def _reject_secret_values(value: Any, *, key: str = "") -> None:
     elif isinstance(value, (list, tuple)):
         for child in value:
             _reject_secret_values(child, key=key)
-    elif isinstance(value, str) and value.casefold().startswith("sk-"):
+    elif isinstance(value, str) and _SECRET_VALUE_PATTERN.search(value):
+        raise ValueError("configuration contains secret material")
+
+
+_SECRET_VALUE_PATTERN = re.compile(
+    r"(?ix)(?:\b(?:gh[pousr]|github_pat|xox[baprs])-?[A-Za-z0-9_-]{12,}\b|"
+    r"\bAKIA[0-9A-Z]{16}\b|\bBearer\s+[A-Za-z0-9._~+/=-]{12,}\b|"
+    r"(?<![A-Za-z0-9])sk-[A-Za-z0-9_-]{20,})"
+)
+
+
+_SECRET_ASSIGNMENT_PATTERN = re.compile(
+    r"(?im)(?:api[_-]?key|authorization|password|secret|token)\s*[:=]\s*"
+    r"(?:[\"']?)(?!credential_ref\b|credential_refs\b)[^\s,#\"']+"
+)
+
+
+def _reject_secret_text(raw: bytes) -> None:
+    text = raw.decode("utf-8", errors="strict")
+    if _SECRET_VALUE_PATTERN.search(text) or _SECRET_ASSIGNMENT_PATTERN.search(text):
         raise ValueError("configuration contains secret material")
 
 

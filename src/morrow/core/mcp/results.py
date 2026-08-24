@@ -41,6 +41,7 @@ class McpResourceLocator(ProtocolModel):
     def valid_uri(cls, value: str) -> str:
         if not _URI_PATTERN.fullmatch(value):
             raise ValueError("MCP resource URI is invalid")
+        refuse_secret_material(value, label="MCP resource URI")
         return value
 
     @field_validator("name", "title", "description", "mime_type")
@@ -84,6 +85,7 @@ class McpEmbeddedResourceRef(ProtocolModel):
     def valid_uri(cls, value: str) -> str:
         if not _URI_PATTERN.fullmatch(value):
             raise ValueError("MCP embedded resource URI is invalid")
+        refuse_secret_material(value, label="MCP embedded resource URI")
         return value
 
 

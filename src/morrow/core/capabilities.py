@@ -16,6 +16,7 @@ from typing import Annotated, Literal, Protocol
 
 from pydantic import ConfigDict, Field, field_validator
 
+from morrow.core.domain import ArtifactReference
 from morrow.core.models import ProtocolModel, ToolEffect
 
 _LOCAL_CODE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
@@ -415,6 +416,8 @@ class ToolHandlerOutcome:
 
     payload: object
     facts: tuple[ToolFact, ...] = ()
+    artifact_refs: tuple[ArtifactReference, ...] = ()
+    mcp_result_artifact_refs: tuple[ArtifactReference, ...] = ()
 
     def __post_init__(self) -> None:
         facts = tuple(self.facts)
@@ -423,6 +426,18 @@ class ToolHandlerOutcome:
         ):
             raise TypeError("ToolHandlerOutcome facts must be validated ToolFact values")
         object.__setattr__(self, "facts", facts)
+        artifact_refs = tuple(self.artifact_refs)
+        mcp_result_artifact_refs = tuple(self.mcp_result_artifact_refs)
+        if any(not isinstance(ref, ArtifactReference) for ref in artifact_refs):
+            raise TypeError("ToolHandlerOutcome artifact refs must be validated references")
+        if any(not isinstance(ref, ArtifactReference) for ref in mcp_result_artifact_refs):
+            raise TypeError("ToolHandlerOutcome MCP artifact refs must be validated references")
+        if any(ref not in artifact_refs for ref in mcp_result_artifact_refs):
+            raise ValueError(
+                "ToolHandlerOutcome MCP artifact refs must be included in artifact refs"
+            )
+        object.__setattr__(self, "artifact_refs", artifact_refs)
+        object.__setattr__(self, "mcp_result_artifact_refs", mcp_result_artifact_refs)
 
 
 class SensitiveResourcePolicy(Protocol):

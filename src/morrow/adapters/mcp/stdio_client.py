@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import asyncio
 import os
+import shutil
+import tempfile
 from contextlib import AsyncExitStack
 from pathlib import Path
 
@@ -22,6 +24,7 @@ from morrow.core.mcp import (
     McpHandshake,
     McpRemoteTool,
     McpServerDefinition,
+    McpWorkspaceVisibility,
 )
 
 
@@ -76,12 +79,19 @@ class McpStdioClient:
         self._handshake: McpHandshake | None = None
         self._stderr_task: asyncio.Task[None] | None = None
         self._stderr_read_fd: int | None = None
+        self._managed_cwd: Path | None = None
 
     @property
     def handshake(self) -> McpHandshake | None:
         return self._handshake
 
     def _cwd(self) -> str | None:
+        if self.definition.workspace_visibility is not McpWorkspaceVisibility.READ_WRITE:
+            raise McpAdapterError(
+                "workspace_visibility_unsupported",
+                "launch",
+                "MCP stdio cannot enforce restricted workspace visibility",
+            )
         if self.definition.cwd_policy.value == "workspace":
             if self.workspace_root is None:
                 raise McpAdapterError(
@@ -90,7 +100,9 @@ class McpStdioClient:
             return str(self.workspace_root)
         if self.definition.cwd_policy.value == "absolute":
             return self.definition.cwd
-        return None
+        if self._managed_cwd is None:
+            self._managed_cwd = Path(tempfile.mkdtemp(prefix=".morrow-mcp-"))
+        return str(self._managed_cwd)
 
     def _parameters(self) -> StdioServerParameters:
         return StdioServerParameters(
@@ -253,14 +265,20 @@ class McpStdioClient:
         stack, self._stack = self._stack, None
         self._session = None
         self._handshake = None
-        if stack is None:
-            return
+        managed_cwd, self._managed_cwd = self._managed_cwd, None
         try:
-            await asyncio.wait_for(stack.aclose(), max(1.0, self.definition.timeout_ms / 1000))
-        except TimeoutError as exc:
-            raise McpAdapterError("timeout", "close", "MCP stdio close timed out") from exc
-        except Exception as exc:
-            raise McpAdapterError("close_failed", "close") from exc
+            if stack is not None:
+                try:
+                    await asyncio.wait_for(
+                        stack.aclose(), max(1.0, self.definition.timeout_ms / 1000)
+                    )
+                except TimeoutError as exc:
+                    raise McpAdapterError("timeout", "close", "MCP stdio close timed out") from exc
+                except Exception as exc:
+                    raise McpAdapterError("close_failed", "close") from exc
+        finally:
+            if managed_cwd is not None:
+                shutil.rmtree(managed_cwd, ignore_errors=True)
 
     async def _close_after_failure(self) -> None:
         try:

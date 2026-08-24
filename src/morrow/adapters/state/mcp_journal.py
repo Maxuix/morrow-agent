@@ -585,6 +585,23 @@ class SqliteMcpJournal:
         return self.backend.transact(lambda: self._put_result_artifact_link(link))
 
     def _put_result_artifact_link(self, link: McpResultArtifactLink) -> McpResultArtifactLink:
+        execution = self.backend.read_one(
+            "SELECT workspace_id FROM tool_executions WHERE tool_execution_id = ?",
+            (link.tool_execution_id,),
+        )
+        if execution is None:
+            raise StorageError(StorageErrorCode.NOT_FOUND, "MCP tool execution is missing")
+        artifact = self.backend.read_one(
+            "SELECT workspace_id FROM artifacts WHERE artifact_id = ?",
+            (link.artifact_id,),
+        )
+        if artifact is None:
+            raise StorageError(StorageErrorCode.NOT_FOUND, "MCP result Artifact is missing")
+        if str(execution[0]) != link.workspace_id or str(artifact[0]) != link.workspace_id:
+            raise StorageError(
+                StorageErrorCode.IDENTITY_MISMATCH,
+                "MCP result Artifact and execution workspace do not match",
+            )
         self.backend.executor().execute(
             """
             INSERT INTO mcp_result_artifact_links(

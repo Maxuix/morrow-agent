@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from morrow.adapters.mcp.stdio_client import McpStdioClient
+from morrow.adapters.mcp.stdio_client import McpAdapterError, McpStdioClient
 from morrow.adapters.state.extension_yaml import ExtensionYamlConflict, ExtensionYamlStore
 from morrow.adapters.state.journal import SqliteOperationalJournal
 from morrow.adapters.state.operational import OperationalStore
@@ -26,6 +26,7 @@ from morrow.core.mcp import (
     McpToolCatalogStatus,
     McpToolPolicy,
     McpToolRiskMapping,
+    McpWorkspaceVisibility,
     mcp_local_tool_name,
     normalize_json_schema,
 )
@@ -41,6 +42,7 @@ def _definition(*, policy: bool = True) -> McpServerDefinition:
         executable=sys.executable,
         argv=(str(FAKE_SERVER.resolve()),),
         cwd_policy=McpCwdPolicy.MANAGED,
+        workspace_visibility=McpWorkspaceVisibility.READ_WRITE,
         tool_policy=(
             McpToolPolicy(
                 allowlist=("echo",),
@@ -79,6 +81,13 @@ def test_schema_normalization_selects_dialect_and_rejects_remote_refs() -> None:
         normalize_json_schema({"$ref": "https://example.invalid/schema.json"})
 
 
+def test_handshake_rejects_control_characters_and_secret_material() -> None:
+    with pytest.raises(ValidationError):
+        McpHandshake(server_name="fake\nserver", protocol_version="1")
+    with pytest.raises(ValidationError):
+        McpHandshake(server_name="token=not-a-server-identity", protocol_version="1")
+
+
 def test_fake_stdio_discovery_and_catalog_are_offline_and_deterministic() -> None:
     async def discover():
         return await McpStdioClient(_definition()).discover()
@@ -95,6 +104,15 @@ def test_fake_stdio_discovery_and_catalog_are_offline_and_deterministic() -> Non
         McpToolCatalogStatus.READY
     )
     assert all(len(item.local_name) <= 64 for item in first.tools)
+
+
+def test_stdio_rejects_restricted_workspace_visibility() -> None:
+    definition = _definition().model_copy(
+        update={"workspace_visibility": McpWorkspaceVisibility.NONE}
+    )
+    with pytest.raises(McpAdapterError) as error:
+        asyncio.run(McpStdioClient(definition).discover())
+    assert error.value.code == "workspace_visibility_unsupported"
 
 
 def test_invalid_tool_schema_isolated_from_valid_catalog() -> None:

@@ -12,10 +12,11 @@ from typing import Any, Protocol
 from pydantic import BaseModel, ValidationError
 
 from morrow.core.domain import canonical_json_bytes, sha256_digest
+from morrow.core.mcp.contracts import MCP_MAX_SCHEMA_BYTES
 
 MAX_ARGUMENT_BYTES = 128 * 1024
-MAX_SCHEMA_BYTES = 4 * 1024
-MAX_SCHEMA_DEPTH = 8
+MAX_SCHEMA_BYTES = MCP_MAX_SCHEMA_BYTES
+MAX_SCHEMA_DEPTH = 16
 MAX_VALUE_DEPTH = 32
 MAX_OBJECT_PROPERTIES = 256
 MAX_SCHEMA_PROPERTIES = 64

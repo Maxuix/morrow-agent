@@ -21,7 +21,7 @@ from morrow.core.skills.catalog import (
 from morrow.core.skills.identity import SKV_ID_PREFIX, validate_skv_id
 from morrow.core.skills.trust import SourceKind, TrustEvidence, effective_trust
 
-from .errors import SkillLifecycleError
+from .errors import SkillLifecycleError, SkillLifecycleNeedsResolution
 
 
 class SkillLifecyclePersistenceMixin:
@@ -79,6 +79,15 @@ class SkillLifecyclePersistenceMixin:
                 result = self._result_from_skill_operation(existing)
                 self._memory_receipts[command_id] = (digest, result)
                 return command_id, digest, result.model_copy(update={"status": "replayed"})
+        pending = self.operations.load(command_id)
+        if pending is not None:
+            if pending.request_digest != digest:
+                raise SkillLifecycleError(
+                    "conflict", "command ID was reused with a different request"
+                )
+            raise SkillLifecycleNeedsResolution(
+                "Skill lifecycle operation is pending recovery; run recover first"
+            )
         return command_id, digest, None
 
     @staticmethod

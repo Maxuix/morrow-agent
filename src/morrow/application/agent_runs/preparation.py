@@ -118,6 +118,7 @@ class AgentRunPreparationService:
         registry: AdapterRegistry,
         agent_policy: AgentPolicy,
         credential_resolver: Callable[[str, CredentialRef | None], str | None],
+        frozen_credential_resolver: Callable[[str, CredentialRef | None], str | None] | None = None,
         estimate_request_chars,
         tool_factory: Callable[[RunPolicy], ToolExecutor | None],
         legacy: PreparedAgentRunRuntime | None = None,
@@ -130,6 +131,7 @@ class AgentRunPreparationService:
         self.registry = registry
         self.agent_policy = agent_policy
         self.credential_resolver = credential_resolver
+        self.frozen_credential_resolver = frozen_credential_resolver or credential_resolver
         self.estimate_request_chars = estimate_request_chars
         self.tool_factory = tool_factory
         self.legacy = legacy
@@ -222,13 +224,15 @@ class AgentRunPreparationService:
         frozen CredentialRef makes the run unavailable instead of falling back.
         """
         frozen = snapshot.provider_runtime
-        if frozen is None or snapshot.run_policy is None:
+        if frozen is None and snapshot.run_policy is None:
             if self.legacy is not None:
                 return self.legacy
             raise AgentRunPreparationError("AgentRun has no frozen provider evidence to rehydrate")
+        if frozen is None or snapshot.run_policy is None:
+            raise AgentRunPreparationError("AgentRun frozen evidence is incomplete")
         if run_policy_digest(snapshot.run_policy) != snapshot.run_policy_digest:
             raise AgentRunPreparationError("AgentRun run-policy evidence is inconsistent")
-        credential = self.credential_resolver(frozen.provider_id, frozen.credential_ref)
+        credential = self.frozen_credential_resolver(frozen.provider_id, frozen.credential_ref)
         if not credential:
             raise ProviderUnavailableError(
                 f"frozen credential for provider {frozen.provider_id} is unavailable"

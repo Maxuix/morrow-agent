@@ -213,8 +213,7 @@ def _verify_managed_package(data_root: Path, version) -> bool:
     )
     root = data_root / base / version.source_kind.value / version.skill_id / version.version_id
     try:
-        root_info = os.lstat(root)
-        if stat.S_ISLNK(root_info.st_mode) or not stat.S_ISDIR(root_info.st_mode):
+        if not _safe_directory_chain(data_root, root):
             return False
         tree = build_canonical_tree(root / "package")
         envelope = read_envelope(root)
@@ -229,6 +228,25 @@ def _verify_managed_package(data_root: Path, version) -> bool:
         )
     except (OSError, ValueError, PackageTreeError):
         return False
+
+
+def _safe_directory_chain(root: Path, target: Path) -> bool:
+    """Check every existing component without resolving symlinked parents."""
+
+    root = root.absolute()
+    target = target.absolute()
+    try:
+        relative = target.relative_to(root)
+    except ValueError:
+        return False
+    current = root
+    for part in ("", *relative.parts):
+        if part:
+            current /= part
+        info = os.lstat(current)
+        if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):
+            return False
+    return True
 
 
 __all__ = ["inspect_skills"]
