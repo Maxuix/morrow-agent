@@ -1,6 +1,6 @@
 # Subplan 70 — Provider and Model Control Plane
 
-> Status: pending
+> Status: in progress
 > Branch: `codex/feat/stage6-provider-control`
 > Prerequisite: Subplan 69 complete; per-run preparation from Subplan 64
 

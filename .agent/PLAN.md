@@ -2,8 +2,8 @@
 
 > Status: Stage 6 implementation in progress; Subplans 63–69 and the Subplan 65 review repair are
 > complete locally
-> Active subplan: none; Subplan 70 is pending activation
-> Baseline: local `main` at `73f99db` with verified Subplans 65–69 committed
+> Active subplan: Subplan 70 — Provider and Model Control Plane
+> Baseline: local `main` at `9b352b0` with verified Subplans 65–69 committed
 > Design baseline: `docs/reviews/stage-6-skills-and-extensions-final-proposal.md`
 > Roadmap authority: `docs/roadmap/stage-6-skills-and-extensions.md`
 
@@ -155,7 +155,7 @@ existing seam first inside the active subplan.
 | 67 | Skill selection, context and resources | completed locally; AgentRun selection/context evidence, bounded injection and frozen reads |
 | 68 | Generated Draft and Usage | completed locally; Candidate→Draft review flow, validation reports, Usage and v15 storage |
 | 69 | Skill Script execution | completed locally; dedicated constrained execution and Artifact outputs |
-| 70 | Provider/Model control plane | complete capabilities and provider/model CLI without core branching |
+| 70 | Provider/Model control plane | in progress; complete capabilities and provider/model CLI without core branching |
 | 71 | Dynamic Tool contracts | JSON Schema validator seam and declaration-owned recovery |
 | 72 | MCP control plane and Catalog | stdio definitions, config, discovery, namespacing and v16 evidence |
 | 73 | MCP runtime and security adapter | compound policy, lazy lifecycle, no retry, normalized results and recovery |

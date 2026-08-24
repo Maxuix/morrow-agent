@@ -46,12 +46,12 @@ The verified checkpoint is committed locally as `73f99db`; remote publication is
 
 ## Active task
 
-None. Subplan 69 is complete locally; Subplan 70 — Provider/Model control is the next pending
-subplan.
+Subplan 70 — Provider/Model Control Plane.
 
 ## Next action
 
-Activate Subplan 70 from the verified `main` checkpoint `73f99db` when continuing Stage 6.
+Inspect the existing ProviderConfig, AdapterRegistry, capability snapshot, YAML OCC and CLI seams;
+then define the exact Provider/Model control contracts without changing AgentLoop or Session branches.
 
 ## Dependency gate
 

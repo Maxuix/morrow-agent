@@ -2549,3 +2549,11 @@
 - Focused coverage and existing Process/Permission/Recovery regressions passed; final non-live gate
   passed `1023 passed, 3 skipped, 2 deselected`. Ruff format/check, compileall and `git diff --check`
   passed. Committed as `73f99db`; no remote push.
+
+## 2026-08-24 — Subplan 70 activated
+
+- The user requested continuation of the current Stage 6 plan after Subplan 69 completion. Activated
+  Provider/Model Control Plane from the clean local `main` checkpoint `9b352b0`.
+- Scope is limited to exact Adapter/Model capability snapshots, versioned Provider/Model control,
+  sanitized test/sync projections, second-Adapter isolation and per-new-AgentRun resolution. No
+  AgentLoop/Session/Task branching, silent fallback, dependency addition or live Provider calls.
