@@ -1,10 +1,12 @@
 """Ordered, checksummed Operational Store migrations.
 
-Production currently owns schema v1–v13. Version 10 adds the governed Learning
+Production currently owns schema v1–v14. Version 10 adds the governed Learning
 foundation, version 11 adds immutable decisions plus Project Knowledge, and version
 12 adds immutable MemorySelection records plus rebuildable lexical terms without
 rewriting older evidence or creating a second configuration authority. Version 13
 reserves the generic Preference Review, Evidence, Proposal, and Writer saga state.
+Version 14 adds the immutable Skill catalog foundation (definitions, versions,
+catalog operations, and the reserved AgentRun selection/context tables).
 """
 
 from __future__ import annotations
@@ -13,6 +15,7 @@ import hashlib
 from dataclasses import dataclass
 
 from morrow.adapters.state.migrations_v13_preferences import V13_NAME, V13_STATEMENTS
+from morrow.adapters.state.migrations_v14_skills import V14_NAME, V14_STATEMENTS
 from morrow.core.store import (
     APPLICATION_NAME,
     RESERVED_SCHEMA_VERSIONS,
@@ -1395,6 +1398,8 @@ V12 = SchemaMigration(version=12, name=V12_NAME, statements=V12_STATEMENTS)
 
 V13 = SchemaMigration(version=13, name=V13_NAME, statements=V13_STATEMENTS)
 
+V14 = SchemaMigration(version=14, name=V14_NAME, statements=V14_STATEMENTS)
+
 
 class MigrationRegistry:
     def __init__(self, *, supported_version: int = SUPPORTED_SCHEMA_VERSION) -> None:
@@ -1462,6 +1467,7 @@ def production_registry() -> MigrationRegistry:
     registry.add(V11)
     registry.add(V12)
     registry.add(V13)
+    registry.add(V14)
     return registry
 
 

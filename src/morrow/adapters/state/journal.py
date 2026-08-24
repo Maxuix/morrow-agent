@@ -19,6 +19,7 @@ from morrow.adapters.state.operational import OperationalStoreSession, SqliteExe
 from morrow.adapters.state.permission_journal import SqliteRunPermissionJournal
 from morrow.adapters.state.preference_journal import SqlitePreferenceJournal
 from morrow.adapters.state.recovery_journal import SqliteRecoveryJournal
+from morrow.adapters.state.skill_journal import SqliteSkillJournal
 from morrow.adapters.state.task_journal import SqliteTaskJournal
 from morrow.adapters.state.tool_journal import SqliteToolJournal
 from morrow.adapters.state.transaction import SqliteJournalBackend
@@ -177,6 +178,7 @@ class SqliteOperationalJournal:
         self._configuration_promotion_journal = SqliteConfigurationPromotionJournal(self._backend)
         self._memory_selection_journal = SqliteMemorySelectionJournal(self._backend)
         self._preference_journal = SqlitePreferenceJournal(self._backend)
+        self._skill_journal = SqliteSkillJournal(self._backend)
 
     def now(self) -> datetime:
         return self._backend.now()
@@ -713,6 +715,24 @@ class SqliteOperationalJournal:
         return self._learning_memory_journal.save_memory_workspace_state(
             workspace_id, state, expected_row_version=expected_row_version
         )
+
+    def put_skill_definition(self, definition, *, updated_at) -> None:
+        self._skill_journal.put_definition(definition, updated_at=updated_at)
+
+    def put_skill_version(self, version) -> None:
+        self._skill_journal.put_version(version)
+
+    def record_skill_operation(self, **kwargs) -> None:
+        self._skill_journal.record_operation(**kwargs)
+
+    def get_skill_definition(self, scope_id, skill_id):
+        return self._skill_journal.get_definition(scope_id, skill_id)
+
+    def list_skill_definitions(self):
+        return self._skill_journal.list_definitions()
+
+    def list_skill_versions(self, *, workspace_id=None):
+        return self._skill_journal.list_versions(workspace_id=workspace_id)
 
     def put_memory_selection(
         self, workspace_id: str, selection: MemorySelection
