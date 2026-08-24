@@ -1,6 +1,6 @@
 # Subplan 69 — Skill Script Execution
 
-> Status: pending
+> Status: in progress
 > Branch: `codex/feat/stage6-skill-scripts`
 > Prerequisite: Subplan 68 complete
 

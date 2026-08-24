@@ -6,18 +6,15 @@ Stage 6 implementation in progress.
 
 ## Active subplan
 
-Subplan 68 — Generated Skill Drafts and Usage (completed locally; Subplan 69 is next).
+Subplan 69 — Skill Script Execution (active in the current working tree).
 
-## Tasks (Subplan 68)
+## Tasks (Subplan 69)
 
-- `[x]` Define bounded Draft, validation report and Usage contracts with immutable evidence refs.
-- `[x]` Add the v15 Draft/validation/Usage migration and journal mappings without storing sensitive
-  payloads.
-- `[x]` Implement accepted Candidate→Draft creation, deterministic validation and replay-safe roots.
-- `[x]` Implement revision/edit/revalidate/accept/reject transitions and lifecycle publication;
-  require a separate Binding update after acceptance.
-- `[x]` Record bounded observational SkillUsage and provide insufficient-data comparisons.
-- `[x]` Add focused Draft/Usage/migration tests and run the standard quality gates.
+- `[>]` Define bounded script requests, execution results and output Artifact contracts.
+- `[ ]` Implement frozen package verification, argv/env/root validation and isolated execution.
+- `[ ]` Route capability/approval/cancellation/audit/recovery through existing ToolExecutor seams.
+- `[ ]` Import bounded declared outputs as Artifacts and redact/truncate process summaries.
+- `[ ]` Add focused script/permission/recovery tests and run the standard quality gates.
 
 ## Boundaries
 

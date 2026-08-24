@@ -48,12 +48,12 @@ in scope.
 
 ## Active task
 
-Subplan 69 — Skill Script execution is next; it has not been activated or implemented yet.
+Subplan 69 — Skill Script execution is active.
 
 ## Next action
 
-Activate Subplan 69 and inspect the existing ProcessAdapter, permission and Artifact seams before
-implementing script execution.
+Inspect the existing ProcessAdapter, permission and Artifact seams, then define the bounded script
+request/result contracts before implementing execution.
 
 ## Dependency gate
 

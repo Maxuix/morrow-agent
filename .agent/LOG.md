@@ -2525,3 +2525,11 @@
   2 deselected`; Ruff format/check, compileall, CLI help and `git diff --check`.
 - The topic branch remains unavailable because `.git` refs are read-only. The verified local
   checkpoint was committed on `main` as `8afbcd2`; remote publication is not in scope.
+
+## 2026-08-24 — Subplan 69 activated
+
+- Activated Skill Script execution after the verified Subplan 68 checkpoint `8afbcd2` and state
+  record `10e6826`.
+- Scope is limited to bounded script requests, frozen managed-package verification, dedicated
+  constrained execution, existing permission/approval/audit/recovery seams and Artifact outputs;
+  no general shell, ambient host access or capability widening is allowed.
