@@ -25,7 +25,7 @@
 | `UV_CACHE_DIR=/private/tmp/morrow-uv-cache uv run --offline pytest -q tests/test_provider.py tests/test_provider_control.py tests/test_agent_run_preparation.py` | `66 passed, 1 skipped in 1.95s`；唯一跳过项是显式 Live Provider checklist，因未提供凭据 |
 | `UV_CACHE_DIR=/private/tmp/morrow-uv-cache uv run --offline pytest -q tests/test_mcp_control.py tests/test_mcp_runtime.py` | `14 passed in 3.19s` |
 | `UV_CACHE_DIR=/private/tmp/morrow-uv-cache uv run --offline pytest -q tests/test_stage6_backup.py tests/test_stage4_backup.py tests/test_stage4_doctor.py tests/test_stage5_doctor_backup.py tests/test_preference_doctor_backup.py tests/test_stage4_cli_operational.py` | `30 passed in 3.15s` |
-| `UV_CACHE_DIR=/private/tmp/morrow-uv-cache uv run --offline pytest -m 'not live'` | `1060 passed, 2 skipped, 2 deselected in 38.78s` |
+| `UV_CACHE_DIR=/private/tmp/morrow-uv-cache uv run --offline pytest -m 'not live'` | `1060 passed, 2 skipped, 2 deselected in 38.06s` |
 | `UV_CACHE_DIR=/private/tmp/morrow-uv-cache uv run --offline ruff format --check .` | `428 files already formatted` |
 | `UV_CACHE_DIR=/private/tmp/morrow-uv-cache uv run --offline ruff check .` | `All checks passed!` |
 | `UV_CACHE_DIR=/private/tmp/morrow-uv-cache uv run --offline python -m compileall -q src tests` | 通过 |
@@ -39,6 +39,7 @@ CLI help 也已通过：`morrow --help`、`morrow skill --help`、`morrow mcp --
 - Backup v1 仍可解码和验证；Backup v2 覆盖在线 SQLite、Artifact、脱敏 YAML、被引用的 imported/generated Skill 版本和 MCP 引用。
 - Backup v2 restore 只接受不存在的新目标，并拒绝 bundle 内部目标、符号链接和不安全父目录；CredentialStore/Keychain 永不进入 bundle。
 - Generated Skill 的受控审批引用会留在托管版本信封的有界证据字段中；无审批的 generated 包仍保持 `unknown` Trust，不能借包内声明提升权限。
+- Doctor 会同时核对托管版本目录是否为真实目录，以及信封的 `source_kind`、`scope_id`、`effective_trust` 与 SQLite 目录证据；伪造后自洽的信封会报告 `skill_package_drift`。
 - MCP Server 崩溃、超时、Schema/结果异常和调用失败不自动重试，也不污染主状态；普通 ToolExecutor、审批、Artifact 和恢复分类继续是唯一执行边界。
 - Live Provider/MCP 网络验证、真实凭据和 Linux 原生 Seatbelt 未在本验收中运行；这不是离线通过的替代结论。
 
@@ -48,3 +49,6 @@ CLI help 也已通过：`morrow --help`、`morrow skill --help`、`morrow mcp --
 - Provider/Model 只支持显式控制、能力快照和下一 AgentRun 生效；没有自动路由、静默 fallback 或成本优化器。
 - generated/imported Skill 不会自动启用，Skill 脚本不获得独立于 CapabilityPolicy 的权限；多 Agent Workflow、GUI 和后台任务留在 Stage 7–10。
 - Backup v2 使用已批准的官方 MCP/JSON Schema 依赖，但 CredentialStore、Keychain、真实网络和 Live 质量评估仍不属于 Stage 6 离线验收。
+
+Grok review 已按请求启动一次，但环境在创建审查会话时返回 `FS_PERMISSION_DENIED`，同时代理的模型/设置请求因 DNS 不可达失败，未产生可分析报告，也未修改工作树。
+随后完成了独立的同范围安全复核；确认的 Doctor 信封元数据缺口已修复并通过上述最终门禁，未因此重跑 Grok。

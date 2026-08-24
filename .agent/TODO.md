@@ -2,11 +2,11 @@
 
 ## Current stage
 
-Stage 6 implementation complete locally; post-closeout review pending.
+Stage 6 implementation and post-closeout independent review complete locally.
 
 ## Active subplan
 
-No active implementation subplan. Subplan 75 is complete; post-closeout review is pending.
+No active implementation subplan. Subplan 75 and the requested post-closeout review attempt are complete.
 
 ## Tasks (Subplan 75)
 

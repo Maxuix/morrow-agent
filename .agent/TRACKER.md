@@ -79,16 +79,17 @@ final offline/quality gates.
   `git diff --check` green; `pyproject.toml`/`uv.lock` unchanged; pre-existing migration tests'
   hardcoded version expectations bumped to 14.
 
-## Post-closeout review
+## Final status
 
-Stage 6 Subplans 63–75 are complete on `codex/feat/stage6-closeout` from `main@0dc4e54`; after
-the closeout commit is merged, run the single requested Grok review against the complete Stage 6
-tree. Do not run a second review.
+Stage 6 Subplans 63–75 are complete on local `main`; closeout commit `19432fb` is merged and the
+topic branch is retired. The single requested Grok attempt returned no report because the delegate
+could not create a session (`FS_PERMISSION_DENIED`/unreachable proxy); it was not retried. An
+independent audit found and fixed Doctor's managed-envelope metadata gap, with the final offline
+gate still green. The fix and updated evidence are ready for the final Git commit.
 
 ## Next action
 
-Commit the verified closeout, fast-forward it into local `main`, retire the clean topic branch,
-then run exactly one read-only Grok review and independently analyze its result.
+Create the final fix commit and verify local `main` is clean; no remote push is in scope.
 
 ## Last completed work (Subplan 71)
 

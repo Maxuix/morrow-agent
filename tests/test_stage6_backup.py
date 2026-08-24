@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import random
@@ -150,6 +151,21 @@ def test_stage6_v2_copies_only_referenced_managed_skill_and_doctor_detects_drift
     (package / "package" / "SKILL.md").write_text("# drift\n", encoding="utf-8")
     drift = OperationalDoctor(store).inspect("ws_1")
     assert any(issue.code == "skill_package_drift" for issue in drift.issues)
+
+    envelope_path = package / "managed-version.json"
+    envelope = json.loads(envelope_path.read_text(encoding="utf-8"))
+    envelope["effective_trust"] = "builtin"
+    envelope["source_kind"] = "builtin"
+    envelope["envelope_sha256"] = hashlib.sha256(
+        json.dumps(
+            {key: value for key, value in envelope.items() if key != "envelope_sha256"},
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    envelope_path.write_text(json.dumps(envelope), encoding="utf-8")
+    spoofed = OperationalDoctor(store).inspect("ws_1")
+    assert any(issue.code == "skill_package_drift" for issue in spoofed.issues)
     handle.close()
 
 

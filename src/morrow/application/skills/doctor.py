@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import stat
 from pathlib import Path
 
 from morrow.adapters.skills.envelope import read_envelope, verify_envelope_against_tree
@@ -211,13 +213,19 @@ def _verify_managed_package(data_root: Path, version) -> bool:
     )
     root = data_root / base / version.source_kind.value / version.skill_id / version.version_id
     try:
+        root_info = os.lstat(root)
+        if stat.S_ISLNK(root_info.st_mode) or not stat.S_ISDIR(root_info.st_mode):
+            return False
         tree = build_canonical_tree(root / "package")
         envelope = read_envelope(root)
         verify_envelope_against_tree(envelope, tree)
         return (
             envelope.get("version_id") == version.version_id
             and envelope.get("skill_id") == version.skill_id
+            and envelope.get("source_kind") == version.source_kind.value
+            and envelope.get("scope_id") == version.scope_id
             and envelope.get("tree_digest") == version.tree_digest
+            and envelope.get("effective_trust") == version.effective_trust.value
         )
     except (OSError, ValueError, PackageTreeError):
         return False

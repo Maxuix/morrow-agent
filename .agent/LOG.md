@@ -2705,3 +2705,14 @@
   matrix `30 passed`; full offline `1060 passed, 2 skipped, 2 deselected`; Ruff format/check,
   compileall, five CLI help commands and `git diff --check` passed. No live/network/credential path
   ran and no remote push was performed.
+
+## 2026-08-24 — Stage 6 post-closeout review attempt and independent audit
+
+- Started the single requested Grok review from clean local `main` after Subplan75 merge. The
+  delegate could not create its session (`FS_PERMISSION_DENIED`); its model/settings requests also
+  failed because the environment could not resolve the proxy DNS name. It returned no review report,
+  made no file changes, and was not retried.
+- Independent review of the same requested risk surface found Doctor's managed-package check did
+  not compare envelope `source_kind`, `scope_id`, `effective_trust`, or reject a version-directory
+  symlink. Added those checks and a spoofed-envelope regression; targeted tests passed and the final
+  offline gate remained `1060 passed, 2 skipped, 2 deselected`.

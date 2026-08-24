@@ -65,7 +65,9 @@ facts.
 - The final offline gate passed with `1060 passed, 2 skipped, 2 deselected`; the Stage 6 matrix,
   quality checks, CLI help and exact outcomes are recorded in
   `docs/acceptance/stage6-skills-and-extensions.md`.
-- The only confirmed integration defect was generated Draft acceptance becoming undiscoverable:
-  its controlled approval reference was not retained in `managed-version.json`. The envelope,
+- The closeout acceptance defect was generated Draft acceptance becoming undiscoverable: its
+  controlled approval reference was not retained in `managed-version.json`. The envelope,
   discovery projection and catalog Trust projection now preserve that bounded evidence; unapproved
-  generated packages remain `unknown` Trust. `state backup --version 2` is now explicit in CLI help.
+  generated packages remain `unknown` Trust. The post-closeout independent audit also found and
+  fixed Doctor's missing source/scope/effective-Trust envelope checks. `state backup --version 2`
+  is now explicit in CLI help.
