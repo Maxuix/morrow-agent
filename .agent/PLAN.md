@@ -3,7 +3,7 @@
 > Status: Stage 6 implementation in progress; Subplans 63–68 and the Subplan 65 review repair are
 > complete locally
 > Next subplan: Subplan 69 — Skill Script Execution
-> Baseline: local `main` at `21abd6c` plus verified review-repair working-tree changes
+> Baseline: local `main` at `8afbcd2` with verified Subplans 65–68 committed
 > Design baseline: `docs/reviews/stage-6-skills-and-extensions-final-proposal.md`
 > Roadmap authority: `docs/roadmap/stage-6-skills-and-extensions.md`
 

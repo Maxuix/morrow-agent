@@ -2523,5 +2523,5 @@
   `skill_drafts.accepted_version_id`; added CLI Draft/Usage commands and focused regression tests.
 - Validation passed: focused suite `6 passed`; full non-live suite `1017 passed, 3 skipped,
   2 deselected`; Ruff format/check, compileall, CLI help and `git diff --check`.
-- The topic branch remains unavailable because `.git` refs are read-only. A verified local `main`
-  checkpoint is now ready for commit; remote publication is not in scope.
+- The topic branch remains unavailable because `.git` refs are read-only. The verified local
+  checkpoint was committed on `main` as `8afbcd2`; remote publication is not in scope.

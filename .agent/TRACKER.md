@@ -6,8 +6,8 @@ Subplans 63 (spike), 64 (per-AgentRun preparation) and 65 (Skill package/catalog
 are complete and merged to local `main`; the Subplan 65 review repairs are also complete locally.
 Subplans 67 and 68 are complete locally. Skills remain discoverable and truthfully projectable;
 Subplan 68 adds only bounded generated Draft review and observational Usage on top of accepted Stage
-5 Candidates. The verified checkpoint is ready for a local Git commit; remote publication is not in
-scope.
+5 Candidates. The verified checkpoint is committed locally as `8afbcd2`; remote publication is not
+in scope.
 
 ## Last completed work (Subplan 66)
 
@@ -52,8 +52,8 @@ Subplan 69 — Skill Script execution is next; it has not been activated or impl
 
 ## Next action
 
-Create the verified local Git checkpoint for Subplan 68, then activate Subplan 69 and inspect the
-existing ProcessAdapter, permission and Artifact seams before implementing script execution.
+Activate Subplan 69 and inspect the existing ProcessAdapter, permission and Artifact seams before
+implementing script execution.
 
 ## Dependency gate
 
@@ -68,9 +68,8 @@ dependency decision and explicit approval if new packages are recommended.
 
 ## Notes
 
-- `main` is three local commits ahead of `origin/main` (Subplans 63/64/65); review repairs remain
-  as working-tree changes because `.git` refs are read-only in this workspace. Remote publication
-  was not placed in scope, so no push was made.
+- `main` is five local commits ahead of `origin/main` (through the Subplan 68 checkpoint
+  `8afbcd2`). Remote publication was not placed in scope, so no push was made.
 - The spike test file skips cleanly in the default dev env (`importorskip("mcp")`).
 
 ## Last completed work (Subplan 68)
