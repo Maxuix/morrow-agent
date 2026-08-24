@@ -3,7 +3,7 @@
 > Status: Stage 6 implementation in progress; Subplans 63–72 and the Subplan 65 review repair are
 > complete locally
 > Active subplan: none; Subplan 73 — MCP Runtime and Security Adapter is pending activation
-> Baseline: local `main` at `11f7f6d`; dependency gate approved by the user on 2026-08-24
+> Baseline: local `main` at `c1a7132`; dependency gate approved by the user on 2026-08-24
 > Design baseline: `docs/reviews/stage-6-skills-and-extensions-final-proposal.md`
 > Roadmap authority: `docs/roadmap/stage-6-skills-and-extensions.md`
 

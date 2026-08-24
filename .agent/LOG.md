@@ -2629,3 +2629,5 @@
 - Validation passed: focused MCP/SDK suite `8 passed`; affected migration/binding suite `97 passed`;
   full non-live suite `1044 passed, 2 skipped, 2 deselected`; CLI help, Ruff format/check,
   compileall and `git diff --check`. No live/networked MCP path or remote push was run.
+- Committed as `c1a7132`, fast-forwarded into local `main`, and retained no MCP-specific branch in
+  ToolExecutor or recovery. Remote publication remains out of scope.

@@ -8,7 +8,8 @@ complete.
 Subplan 69 adds constrained Skill script execution, Subplan 70 adds the Provider/Model control
 plane, Subplan 71 adds generic dynamic-tool contracts, and Subplan 72 adds the MCP desired-state
 control plane, stdio Catalog discovery and v16 evidence without widening the existing
-AgentLoop/Session/Task boundaries. The verified Subplan 72 checkpoint is committed locally;
+AgentLoop/Session/Task boundaries. The verified Subplan 72 checkpoint is committed on local `main`
+as `c1a7132`;
 remote publication is not in scope.
 
 ## Last completed work (Subplan 72)
@@ -68,8 +69,8 @@ None. Subplan 72 is complete locally; Subplan 73 remains pending activation.
 
 ## Next action
 
-The verified Subplan 72 checkpoint should be fast-forwarded into `main`; keep MCP unavailable to
-AgentRun execution until Subplan 73 is explicitly activated.
+Subplan 72 is fast-forwarded into local `main` as `c1a7132`; keep MCP unavailable to AgentRun
+execution until Subplan 73 is explicitly activated.
 
 ## Last completed work (Subplan 71)
 
