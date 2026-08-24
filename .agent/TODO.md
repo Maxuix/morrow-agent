@@ -6,21 +6,21 @@ Stage 6 implementation in progress.
 
 ## Active subplan
 
-Subplan 73 — MCP Runtime and Security Adapter.
+Subplan 74 — Backup v2 and Doctor.
 
-## Tasks (Subplan 73)
+## Tasks (Subplan 74)
 
-- `[x]` Freeze enabled Server/Catalog evidence into new AgentRun launch and tool snapshots.
-- `[x]` Add narrowly scoped MCP review evidence and deny-first compound policy evaluation.
-- `[x]` Register MCP tools through the existing validator/recovery seams and ordinary ToolExecutor.
-- `[x]` Implement lazy per-AgentRun pool, cancellation/timeout/crash handling and no-retry behavior.
-- `[x]` Normalize bounded MCP result content and import binary/embedded payloads as Artifacts.
-- `[x]` Add status/doctor facts, Fake runtime/policy/result/recovery tests and standard quality gates.
+- `[>]` Freeze existing bundle v1 behavior and add explicit bundle version decoding.
+- `[ ]` Define and create bundle v2 for SQLite, Artifacts, Extension YAML and referenced managed Skills.
+- `[ ]` Add canonical path, digest, symlink, drift, schema and cross-store reference validation.
+- `[ ]` Implement isolated v2 verification/restore with atomic publication and no partial activation.
+- `[ ]` Extend bounded Doctor checks for Stage 6 tables, evidence, bindings and package drift.
+- `[ ]` Add compatibility, tamper, restore, Doctor and migration acceptance tests plus standard gates.
 
 ## Boundaries
 
-- Do not implement backup v2, doctor closeout, learned routing or unrestricted Skill injection.
+- Do not implement integrated acceptance closeout, learned routing or unrestricted Skill injection.
 - Do not use real credentials, networked MCP Servers, live Providers or user state.
-- Work is on `codex/feat/stage6-mcp-runtime`; preserve the verified Subplan72 commits and do not
-  introduce MCP-specific branches into ToolExecutor or recovery.
+- Work is on `codex/feat/stage6-backup-doctor`; preserve the verified Subplan73 commits and do not
+  introduce a second backup/doctor authority or rewrite historical evidence.
 - Preserve AgentLoop/ConversationLog, permission policy defaults, public events and Stage 4/5 behavior.

@@ -3,7 +3,7 @@
 ## Current status
 
 Subplans 63 (spike), 64 (per-AgentRun preparation), 65 (Skill package/catalog foundation + v14),
-66, 67, 68, 69, 70, 71 and 72 are complete locally; the Subplan 65 review repairs are also
+66, 67, 68, 69, 70, 71, 72 and 73 are complete locally; the Subplan 65 review repairs are also
 complete.
 Subplan 69 adds constrained Skill script execution, Subplan 70 adds the Provider/Model control
 plane, Subplan 71 adds generic dynamic-tool contracts, and Subplan 72 adds the MCP desired-state
@@ -71,11 +71,13 @@ facts. Backup v2, remaining doctor closeout and final acceptance remain pending.
 
 ## Active task
 
-None. Subplan 73 is complete; the next planned child is Subplan 74.
+Subplan 74 — Backup v2 and Doctor, on `codex/feat/stage6-backup-doctor` from
+`main@514a9a6`.
 
 ## Next action
 
-Activate Subplan 74 only when the user requests continuation.
+Inspect the existing v1 Backup/Doctor seams, implement the v2 contract and bounded Stage 6
+integrity checks, then run focused and full offline gates before merging.
 
 ## Last completed work (Subplan 71)
 

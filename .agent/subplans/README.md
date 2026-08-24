@@ -19,7 +19,7 @@ implementation plan. Stage 6 is now planned as Subplans 63–75; implementation 
 | 71 | `71-stage6-dynamic-tool-contracts.md` | completed locally |
 | 72 | `72-stage6-mcp-control-catalog.md` | completed locally |
 | 73 | `73-stage6-mcp-runtime-security.md` | completed locally |
-| 74 | `74-stage6-backup-doctor.md` | pending |
+| 74 | `74-stage6-backup-doctor.md` | in progress |
 | 75 | `75-stage6-acceptance-closeout.md` | pending |
 
 ## Completed retained subplans

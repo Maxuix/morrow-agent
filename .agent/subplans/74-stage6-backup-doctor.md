@@ -1,6 +1,6 @@
 # Subplan 74 — Backup v2 and Doctor
 
-> Status: pending
+> Status: in progress
 > Branch: `codex/feat/stage6-backup-doctor`
 > Prerequisite: Subplan 73 complete
 

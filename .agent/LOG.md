@@ -2657,3 +2657,10 @@
   networked, credentialed MCP path or remote push was run.
 - Committed as `514a9a6`, fast-forwarded into local `main`, verified the topic branch had no commits
   absent from `main`, and deleted the clean topic branch. Remote publication remains out of scope.
+
+## 2026-08-24 — Subplan 74 Backup v2 and Doctor activated
+
+- Created `codex/feat/stage6-backup-doctor` from verified local `main@514a9a6`.
+- Scope is limited to preserving Backup v1 compatibility, adding isolated Backup v2 for referenced
+  Stage 6 state, and extending bounded Doctor integrity checks. Integrated acceptance closeout,
+  live/network/credential paths and Stage 7 behavior remain out of scope.
