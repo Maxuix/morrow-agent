@@ -755,6 +755,12 @@ PRODUCTION_TOOL_DECLARATIONS: tuple[ToolRecoveryDeclaration, ...] = (
         MissingCompletionPolicy.OUTCOME_UNKNOWN,
         isolation=ProcessIsolation.NATIVE_SANDBOX,
     ),
+    _declaration(
+        "run_skill_script",
+        EffectClass.PROCESS_EFFECT_NON_DURABLE,
+        MissingCompletionPolicy.OUTCOME_UNKNOWN,
+        frozen=True,
+    ),
 )
 
 FIXTURE_TOOL_DECLARATIONS: tuple[ToolRecoveryDeclaration, ...] = (

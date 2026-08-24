@@ -66,6 +66,10 @@ from morrow.application.skills.drafts import SkillDraftService
 from morrow.application.skills.lifecycle import SkillLifecycleService
 from morrow.application.skills.queries import SkillQueries
 from morrow.application.skills.resources import SkillResourceService
+from morrow.application.skills.scripts import (
+    SkillScriptExecutionService,
+    make_skill_script_tool,
+)
 from morrow.application.skills.selection import SkillSelectionService
 from morrow.application.skills.usage import SkillUsageService
 from morrow.application.tasks import TaskService
@@ -289,6 +293,7 @@ def _default_tool_executor(
     changes: ChangeSetService,
     process: ProcessExecutionService,
     git: GitInspectionService,
+    skill_scripts: SkillScriptExecutionService | None = None,
     sandbox: SandboxSnapshotService | None = None,
     sandbox_enabled: bool = False,
     process_isolation: ProcessIsolation = ProcessIsolation.HOST,
@@ -304,6 +309,8 @@ def _default_tool_executor(
     registry.register(make_write_file_tool(mutation, changes))
     registry.register(make_show_changes_tool(changes))
     registry.register(make_run_command_tool(process))
+    if skill_scripts is not None:
+        registry.register(make_skill_script_tool(skill_scripts))
     for tool in (make_git_status_tool(git), make_git_diff_tool(git)):
         registry.register(tool)
     if sandbox is not None and process.requires_sandbox and sandbox_enabled:
@@ -702,6 +709,36 @@ def build_session_application(
         else:
             tool_preference_service = None
 
+        operational = build_operational_services(
+            app,
+            identity.workspace_id,
+            handle=handle,
+            write=True,
+            workspace_root=workspace_capability.root,
+        )
+        journal = operational.journal
+        from morrow.adapters.skills.managed_store import ManagedSkillPackageStore
+
+        script_packages = ManagedSkillPackageStore(app.data_root.root)
+
+        def make_skill_script_adapter(root: Path):
+            script_files = WorkspaceFileService(WorkspacePathResolver(root))
+            script_sandbox = SandboxSnapshotService(script_files)
+            return NativeSandboxProcessAdapter(root, script_sandbox, sandbox_backend)
+
+        skill_scripts = SkillScriptExecutionService(
+            script_packages,
+            workspace_id=identity.workspace_id,
+            journal=journal,
+            artifacts=operational.artifacts,
+            adapter_factory=make_skill_script_adapter,
+            sandbox_available=(
+                permission_profile.process_isolation is ProcessIsolation.NATIVE_SANDBOX
+                and sandbox_capability.supported
+            ),
+            secrets=(active_credential,) if active_credential else (),
+        )
+
         def make_tools(policy):
             if policy.provider_tool_support.tool_protocol != "openai_function":
                 return None
@@ -716,6 +753,7 @@ def build_session_application(
                 mutation=mutation,
                 changes=changes,
                 process=process,
+                skill_scripts=skill_scripts,
                 git=git,
                 sandbox=sandbox,
                 sandbox_enabled=sandbox_capability.supported,
@@ -730,17 +768,10 @@ def build_session_application(
             id_source=app.id_source,
             tool_executor=tool_executor,
         )
-        operational = build_operational_services(
-            app,
-            identity.workspace_id,
-            handle=handle,
-            write=True,
-            workspace_root=workspace_capability.root,
-        )
-        journal = operational.journal
         skill_services = build_skill_services(
             app,
             workspace_id=identity.workspace_id,
+            journal=journal,
             available_tools=(
                 tuple(tool.function.name for tool in tool_executor.definitions)
                 if tool_executor is not None

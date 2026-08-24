@@ -27,6 +27,7 @@ from .drafts import (
     SkillValidationFinding,
 )
 from .resources import SkillResourceRequest, SkillResourceResult
+from .scripts import SkillScriptRequest, SkillScriptResult, SkillScriptStatus
 from .selection import SkillOmission, SkillSelection, SkillSelectionPlan
 from .usage import (
     USAGE_ID_PREFIX,
@@ -60,6 +61,9 @@ __all__ = [
     "SkillResourceResult",
     "SkillSelection",
     "SkillSelectionPlan",
+    "SkillScriptRequest",
+    "SkillScriptResult",
+    "SkillScriptStatus",
     "SkillValidationFinding",
     "SkillComparisonStatus",
     "SkillUsage",

@@ -191,6 +191,7 @@ def test_production_inventory_is_exact_and_demo_tools_are_not_exposed(tmp_path):
         "write_file",
         "show_changes",
         "run_command",
+        "run_skill_script",
         "git_status",
         "git_diff",
     }
@@ -261,6 +262,7 @@ def test_supported_auto_sandbox_inventory_adds_only_current_run_promotion(tmp_pa
         "write_file",
         "show_changes",
         "run_command",
+        "run_skill_script",
         "git_status",
         "git_diff",
         "promote_sandbox_changes",

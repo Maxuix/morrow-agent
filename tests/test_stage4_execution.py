@@ -163,6 +163,7 @@ def test_production_declarations_cover_the_frozen_inventory():
         "write_file",
         "show_changes",
         "run_command",
+        "run_skill_script",
         "git_status",
         "git_diff",
         "promote_sandbox_changes",
@@ -179,6 +180,10 @@ def test_production_declarations_cover_the_frozen_inventory():
     sandbox = tool_declaration("run_command", process_isolation=ProcessIsolation.NATIVE_SANDBOX)
     assert sandbox.effect_class is EffectClass.PROCESS_EFFECT_NON_DURABLE
     assert sandbox.missing_handler_completed is MissingCompletionPolicy.OUTCOME_UNKNOWN
+    skill_script = tool_declaration("run_skill_script")
+    assert skill_script.effect_class is EffectClass.PROCESS_EFFECT_NON_DURABLE
+    assert skill_script.missing_handler_completed is MissingCompletionPolicy.OUTCOME_UNKNOWN
+    assert skill_script.requires_frozen_confinement is True
     with pytest.raises(UnknownToolDeclarationError, match="process isolation"):
         tool_declaration("run_command")
     with pytest.raises(UnknownToolDeclarationError, match="no durable declaration"):

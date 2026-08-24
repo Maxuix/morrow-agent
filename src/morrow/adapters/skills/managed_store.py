@@ -8,8 +8,10 @@ import shutil
 import stat
 import tempfile
 import unicodedata
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from types import MappingProxyType
 
 from filelock import FileLock
 
@@ -67,6 +69,20 @@ class FrozenSkillFile:
     tree: CanonicalPackageTree
     manifest: ManifestDocument
     envelope: dict
+
+
+@dataclass(frozen=True, slots=True)
+class FrozenSkillPackage:
+    """All bytes captured by one verified immutable-version scan."""
+
+    skill_id: str
+    version_id: str
+    source_kind: SourceKind
+    scope_id: str | None
+    tree: CanonicalPackageTree
+    manifest: ManifestDocument
+    envelope: Mapping[str, object]
+    contents: Mapping[str, bytes]
 
 
 class SkillPackageError(ValueError):
@@ -358,6 +374,35 @@ class ManagedSkillPackageStore:
         """
 
         normalized = _safe_package_relative_path(relative_path)
+        package = self.read_frozen_package(
+            skill_id=skill_id,
+            version_id=version_id,
+            source_kind=source_kind,
+            scope_id=scope_id,
+            expected_tree_digest=expected_tree_digest,
+        )
+        raw = package.contents.get(normalized)
+        if raw is None or package.tree.file_digest(normalized) is None:
+            raise SkillPackageError("requested Skill resource is unavailable")
+        return FrozenSkillFile(
+            normalized,
+            raw,
+            package.tree,
+            package.manifest,
+            dict(package.envelope),
+        )
+
+    def read_frozen_package(
+        self,
+        *,
+        skill_id: str,
+        version_id: str,
+        source_kind: SourceKind,
+        scope_id: str | None,
+        expected_tree_digest: str | None = None,
+    ) -> FrozenSkillPackage:
+        """Capture every managed package byte after verifying its envelope and tree."""
+
         target = self.version_path(
             skill_id=skill_id,
             version_id=version_id,
@@ -378,11 +423,17 @@ class ManagedSkillPackageStore:
                 raise SkillPackageError("managed Skill envelope identity does not match its path")
             if expected_tree_digest is not None and tree.tree_digest != expected_tree_digest:
                 raise SkillPackageError("managed Skill tree drifted from frozen evidence")
-            raw = contents.get(normalized)
-            if raw is None or tree.file_digest(normalized) is None:
-                raise SkillPackageError("requested Skill resource is unavailable")
             manifest = load_manifest(target / "package", file_bytes=contents)
-            return FrozenSkillFile(normalized, raw, tree, manifest, envelope)
+            return FrozenSkillPackage(
+                skill_id=skill_id,
+                version_id=version_id,
+                source_kind=source_kind,
+                scope_id=scope_id,
+                tree=tree,
+                manifest=manifest,
+                envelope=MappingProxyType(dict(envelope)),
+                contents=MappingProxyType(dict(contents)),
+            )
         except (OSError, ValueError, ManifestError, PackageTreeError) as exc:
             if isinstance(exc, SkillPackageError):
                 raise
@@ -413,6 +464,7 @@ def _now():
 
 __all__ = [
     "FrozenSkillFile",
+    "FrozenSkillPackage",
     "ManagedSkillPackageStore",
     "PreparedLocalSkill",
     "PublishedSkill",
