@@ -240,6 +240,7 @@ class TurnSubmissionCoordinator:
         agent_run_id: str,
         tools: tuple[ToolDefinition, ...] = (),
         prepared_spec: PreparedAgentRunSpec | None = None,
+        prepared_mcp_run=None,
         writer: DurableConversationWriter,
     ) -> TurnSubmitResult:
         digest = request_digest(user_input)
@@ -373,6 +374,19 @@ class TurnSubmissionCoordinator:
                     created_at=stamp,
                 ),
             )
+            if prepared_mcp_run is not None:
+                expected_ids = (
+                    prepared_spec.mcp_run_snapshot_ids if prepared_spec is not None else ()
+                )
+                if prepared_mcp_run.snapshot_ids != expected_ids:
+                    raise StorageError(
+                        StorageErrorCode.UNAVAILABLE,
+                        "prepared MCP snapshot references are inconsistent",
+                    )
+                for launch_snapshot in prepared_mcp_run.launch_snapshots:
+                    txn.put_mcp_launch_snapshot(launch_snapshot)
+                for tool_snapshot in prepared_mcp_run.tool_snapshots:
+                    txn.put_mcp_tool_snapshot(self.workspace_id, tool_snapshot)
             if self.skill_selection is not None:
                 self.skill_selection.sync_catalog(txn, now=stamp)
             for skill_selection in skill_plan.selections:
@@ -805,6 +819,7 @@ def build_agent_run_snapshot(
             canonical_json_bytes(session.permission_profile.model_dump(mode="json"))
         ),
         runtime_instance_id=runtime_instance_id,
+        mcp_run_snapshot_ids=(prepared_spec.mcp_run_snapshot_ids if prepared_spec else ()),
         memory_selection_id=memory_selection.selection_id if memory_selection else None,
         memory_selection_digest=memory_selection.selection_digest if memory_selection else None,
         memory_snapshot_revision=(

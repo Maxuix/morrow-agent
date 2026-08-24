@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -82,6 +83,7 @@ class SessionOrchestrator:
             client_message_id = self.id_source.new_id("cmsg")
         prepared: PreparedAgentRunRuntime | None = None
         startup_error: str | None = None
+        prepared_agent_run_id: str | None = None
         try:
             if self.preparation is not None:
                 durable_runtime = self.session.durable_runtime
@@ -93,8 +95,18 @@ class SessionOrchestrator:
                         # run_task as ordered error events, never here.
                         probe = None
                     if probe is not None and probe.kind == "new":
+                        if self.id_source is not None:
+                            run_id_source = getattr(
+                                getattr(self.runtime, "loop", None), "id_source", None
+                            )
+                            if run_id_source is not None:
+                                prepared_agent_run_id = run_id_source.new_id("arun")
                         try:
-                            prepared = self.preparation.prepare_new()
+                            prepare_new = self.preparation.prepare_new
+                            if "agent_run_id" in inspect.signature(prepare_new).parameters:
+                                prepared = prepare_new(agent_run_id=prepared_agent_run_id)
+                            else:
+                                prepared = prepare_new()
                         except (AgentRunPreparationError, ValueError) as exc:
                             startup_error = _preparation_error_message(exc)
             async for event in self.runtime.run_turn(
@@ -103,11 +115,18 @@ class SessionOrchestrator:
                 client_message_id=client_message_id,
                 prepared=prepared,
                 startup_error=startup_error,
+                agent_run_id=prepared_agent_run_id,
             ):
                 yield event
         finally:
             if prepared is not None:
-                prepared.close()
+                close = getattr(prepared, "aclose", None)
+                if close is None:
+                    prepared.close()
+                else:
+                    result = close()
+                    if inspect.isawaitable(result):
+                        await result
         yield DispatchResult()
 
     async def dispatch(self, text: str) -> DispatchResult:
@@ -134,7 +153,12 @@ class SessionOrchestrator:
                 snapshot = self.session.durable_runtime.get_open_run_snapshot()
                 if snapshot is not None:
                     try:
-                        prepared = self.preparation.rehydrate(snapshot)
+                        rehydrate = self.preparation.rehydrate
+                        agent_run_id = self.session.durable_runtime.current_agent_run_id
+                        if "agent_run_id" in inspect.signature(rehydrate).parameters:
+                            prepared = rehydrate(snapshot, agent_run_id=agent_run_id)
+                        else:
+                            prepared = rehydrate(snapshot)
                     except (AgentRunPreparationError, ValueError) as exc:
                         startup_error = _preparation_error_message(exc)
             async for event in self.runtime.loop.run_task(
@@ -147,7 +171,13 @@ class SessionOrchestrator:
                 yield event
         finally:
             if prepared is not None:
-                prepared.close()
+                close = getattr(prepared, "aclose", None)
+                if close is None:
+                    prepared.close()
+                else:
+                    result = close()
+                    if inspect.isawaitable(result):
+                        await result
 
 
 def _preparation_error_message(error: Exception) -> str:

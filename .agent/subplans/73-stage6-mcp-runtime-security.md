@@ -1,6 +1,6 @@
 # Subplan 73 — MCP Runtime and Security Adapter
 
-> Status: in progress
+> Status: completed locally
 > Branch: `codex/feat/stage6-mcp-runtime`
 > Prerequisite: Subplan 72 complete
 
@@ -65,3 +65,15 @@ run-scoped; calls never auto-retry.
 - A Fake stdio tool completes through ordinary ToolExecution and a crash remains isolated/recoverable.
 - MCP cannot bypass current authority, approval, evidence, result or AgentRun freeze boundaries.
 - No automatic retry, blanket Server grant or second permission engine exists.
+
+## Exit evidence
+
+- Fake stdio calls complete through the ordinary ToolExecutor; launch/tool snapshots, permission
+  review evidence, historical Catalog loading, doctor facts and AgentRun lifecycle wiring are in
+  place.
+- Compound launch/tool policy is deny-first; exact local review evidence can only produce one
+  bounded approval, while outside-workspace, destructive, privilege and Git risks remain denied.
+- Lazy run-scoped pools isolate Server crashes, close on failure/cancellation, refuse unallowlisted
+  calls and mark unreliable post-entry results as outcome-unknown through the generic recovery seam.
+- Focused MCP/runtime/recovery tests and the full offline gate passed: `1051 passed, 2 skipped,
+  2 deselected`; Ruff format/check, compileall and `git diff --check` passed.

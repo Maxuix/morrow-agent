@@ -165,6 +165,14 @@ V16_STATEMENTS = (
     CREATE INDEX mcp_result_artifact_links_execution
         ON mcp_result_artifact_links(workspace_id, tool_execution_id, role)
     """,
+    """
+    ALTER TABLE permission_snapshots
+        ADD COLUMN mcp_review_evidence_json TEXT NOT NULL DEFAULT '[]'
+    """,
+    """
+    ALTER TABLE mcp_run_launch_snapshots
+        ADD COLUMN toolset_digest TEXT
+    """,
 )
 
 __all__ = ["V16_NAME", "V16_STATEMENTS"]

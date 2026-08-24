@@ -2640,3 +2640,18 @@
   approval/recovery seams, lazy per-AgentRun lifecycle, bounded result normalization and no-retry
   behavior. Backup v2, doctor closeout, new dependencies and live/network/credential tests remain
   out of scope.
+
+## 2026-08-24 — Subplan 73 MCP Runtime and Security Adapter completed locally
+
+- Added run-bound launch/tool snapshots with config, executable, Catalog, toolset, allowlist and
+  recovery-declaration evidence; AgentRun creation persists the rows atomically and rehydration
+  reads the historical Catalog revision while rejecting current config/executable/schema drift.
+- Added exact local-interface MCP review evidence, deny-first launch/tool policy composition and
+  ordinary ToolExecutor registration with JSON Schema validation, approval, budget and generic
+  outcome-unknown recovery semantics. No MCP-specific recovery or permission engine was added.
+- Added lazy per-AgentRun stdio pools with reuse, per-Server degradation, cancellation/timeout/
+  crash isolation, no retry, allowlist enforcement, bounded text/structured/link normalization and
+  ArtifactStore import references for binary/embedded content. Doctor reports bounded MCP state.
+- Validation passed: focused MCP/runtime/recovery suite `67 passed`; full offline suite `1051 passed,
+  2 skipped, 2 deselected`; Ruff format/check, compileall and `git diff --check` passed. No live,
+  networked, credentialed MCP path or remote push was run.

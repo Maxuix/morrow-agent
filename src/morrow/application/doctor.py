@@ -145,6 +145,8 @@ class OperationalDoctor:
                     for code in preference_codes
                 )
             self._inspect_permissions(journal, workspace_id, counts, issues)
+            checks.append("mcp_snapshots_and_reviews")
+            self._inspect_mcp(journal, workspace_id, counts, issues)
             checks.extend(("learning_reviews_and_candidates", "learning_promotions"))
             inspect_learning(
                 journal,
@@ -694,6 +696,7 @@ class OperationalDoctor:
                             "PermissionSnapshot grant evidence is inconsistent",
                         )
                     )
+
         for grant in grants:
             for approval in journal.list_approvals_for_grant(workspace_id, grant.grant_id):
                 if grant.revoked_at is not None and approval.resolution.value == "pending":
@@ -719,6 +722,60 @@ class OperationalDoctor:
                         "revoked CapabilityGrant execution remains non-terminal",
                     )
                 )
+
+    def _inspect_mcp(self, journal, workspace_id, counts, issues) -> None:
+        definitions = [
+            *journal.list_mcp_servers("global"),
+            *journal.list_mcp_servers("workspace", scope_id=workspace_id),
+        ]
+        counts["mcp_servers"] = len(definitions)
+        counts["mcp_enabled_servers"] = sum(item.enabled for item in definitions)
+        counts["mcp_catalogs"] = 0
+        for definition in definitions:
+            catalog = journal.get_mcp_catalog(
+                definition.scope,
+                definition.server_id,
+                scope_id=definition.scope_id,
+            )
+            if catalog is not None:
+                counts["mcp_catalogs"] += 1
+            if definition.enabled and (catalog is None or catalog.status.value != "ready"):
+                issues.append(
+                    self._issue(
+                        "mcp_enabled_catalog",
+                        DoctorSeverity.ERROR,
+                        "enabled MCP Server has no ready Catalog",
+                    )
+                )
+        counts["mcp_launch_snapshots"] = 0
+        counts["mcp_tool_snapshots"] = 0
+        counts["mcp_review_evidence"] = 0
+        for session in journal.list_sessions(workspace_id):
+            for run in journal.list_session_agent_runs(workspace_id, session.session_id):
+                launches = journal.list_mcp_launch_snapshots(workspace_id, run.agent_run_id)
+                tools = journal.list_mcp_tool_snapshots(workspace_id, run.agent_run_id)
+                counts["mcp_launch_snapshots"] += len(launches)
+                counts["mcp_tool_snapshots"] += len(tools)
+                launch_ids = {item.launch_snapshot_id for item in launches}
+                if set(run.snapshot.mcp_run_snapshot_ids) != launch_ids:
+                    issues.append(
+                        self._issue(
+                            "mcp_run_snapshot_link",
+                            DoctorSeverity.ERROR,
+                            "AgentRun MCP snapshot references are inconsistent",
+                        )
+                    )
+                if any(item.launch_snapshot_id not in launch_ids for item in tools):
+                    issues.append(
+                        self._issue(
+                            "mcp_tool_snapshot_link",
+                            DoctorSeverity.ERROR,
+                            "MCP tool snapshot references a missing launch snapshot",
+                        )
+                    )
+                permission = journal.get_permission_snapshot_for_run(workspace_id, run.agent_run_id)
+                if permission is not None:
+                    counts["mcp_review_evidence"] += len(permission.mcp_review_evidence)
 
     def _inspect_events(self, journal, workspace_id, counts, issues) -> None:
         after = 0

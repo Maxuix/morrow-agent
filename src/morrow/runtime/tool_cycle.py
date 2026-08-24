@@ -11,8 +11,8 @@ from morrow.core.capabilities import PolicyVerdict, ToolRunContext
 from morrow.core.execution import (
     ApprovalDecisionError,
     DurableToolExecution,
-    EffectClass,
     ExecutionTransitionError,
+    MissingCompletionPolicy,
     ToolExecutionDisposition,
     ToolExecutionState,
 )
@@ -135,6 +135,8 @@ class ToolCycleExecutor:
                 "工具执行超时",
                 result_limit=result_limit,
             )
+            if durable is not None and self._unknown_after_handler_entry(call):
+                handler_disposition = ToolExecutionDisposition.UNKNOWN
         except ToolCancellationRequested:
             result = self.tool_executor.error_outcome(
                 call,
@@ -144,11 +146,7 @@ class ToolCycleExecutor:
             )
             durable = self.reload_durable(session, durable)
             if durable is not None and durable.state is ToolExecutionState.EXECUTING:
-                if (
-                    durable.tool_name == "run_command"
-                    and durable.intent.effect_class is EffectClass.UNCONFINED_EXTERNAL_EFFECT
-                ):
-                    # The opaque Host process may already have taken effect.
+                if self._unknown_after_handler_entry(call):
                     handler_disposition = ToolExecutionDisposition.UNKNOWN
             elif durable is not None and durable.state in {
                 ToolExecutionState.PREPARED,
@@ -169,6 +167,8 @@ class ToolCycleExecutor:
                     durable, now=self.wall_now(session)
                 )
 
+        if result.disposition is not None:
+            handler_disposition = result.disposition
         if durable is not None and durable.state is ToolExecutionState.EXECUTING:
             durable = self._coordinator(session).record_handler_completed(
                 durable,
@@ -177,6 +177,13 @@ class ToolCycleExecutor:
                 disposition=handler_disposition,
             )
         return ToolCallExecution(result, durable)
+
+    def _unknown_after_handler_entry(self, call: FunctionToolCall) -> bool:
+        declaration = self.tool_executor.recovery_declaration(call.name)
+        return declaration.missing_handler_completed in {
+            MissingCompletionPolicy.OUTCOME_UNKNOWN,
+            MissingCompletionPolicy.REQUIRES_RECONCILIATION,
+        }
 
     async def await_with_cancellation(
         self,

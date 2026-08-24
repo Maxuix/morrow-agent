@@ -11,6 +11,7 @@ from morrow.adapters.local.sandbox import (
     NativeSandboxProcessAdapter,
     default_sandbox_backend,
 )
+from morrow.adapters.mcp.stdio_client import McpStdioClient
 from morrow.adapters.models.learning_reviewer import ModelLearningReviewer
 from morrow.adapters.models.openai_compatible import (
     discover_openai_compatible_models,
@@ -53,6 +54,8 @@ from morrow.application.local_tools import (
     make_show_changes_tool,
     make_write_file_tool,
 )
+from morrow.application.mcp.results import McpResultNormalizer
+from morrow.application.mcp.runtime import prepare_mcp_run, rehydrate_mcp_run
 from morrow.application.orchestrator import SessionOrchestrator
 from morrow.application.preferences.inbox import PreferenceInbox
 from morrow.application.preferences.queries import PreferenceQueries
@@ -80,6 +83,7 @@ from morrow.application.tasks import TaskService
 from morrow.application.turn_lifecycle import PreferenceRunSources
 from morrow.application.turns import SessionPersistence
 from morrow.core.agent_runs import exact_model_capabilities
+from morrow.core.artifacts import ArtifactKind
 from morrow.core.capabilities import (
     AccessScope,
     ApprovalMode,
@@ -768,6 +772,107 @@ def build_session_application(
                 process_isolation=permission_profile.process_isolation,
             )
 
+        def mcp_state():
+            global_definitions = journal.list_mcp_servers("global")
+            workspace_definitions = journal.list_mcp_servers(
+                "workspace", scope_id=identity.workspace_id
+            )
+            definitions_by_id = {item.server_id: item for item in global_definitions}
+            definitions_by_id.update({item.server_id: item for item in workspace_definitions})
+            definitions = tuple(sorted(definitions_by_id.values(), key=lambda item: item.server_id))
+            catalogs = {}
+            for definition in definitions:
+                catalog = journal.get_mcp_catalog(
+                    definition.scope,
+                    definition.server_id,
+                    scope_id=definition.scope_id,
+                )
+                if catalog is not None:
+                    catalogs[definition.server_id] = catalog
+            return definitions, catalogs
+
+        def mcp_client_factory(definition):
+            return McpStdioClient(definition, workspace_root=workspace_capability.root)
+
+        def mcp_normalizer_factory(_server_id):
+            def publish(content, mime_type, role):
+                metadata = operational.artifacts.publish_bytes(
+                    content,
+                    kind=ArtifactKind.DIAGNOSTIC_REPORT,
+                    session_id=session.session_id,
+                    task_run_id=persistence.current_task_run_id,
+                    already_redacted=False,
+                )
+                from morrow.core.mcp import McpArtifactRef
+
+                return McpArtifactRef(
+                    artifact_id=metadata.artifact_id,
+                    role=role,
+                    mime_type=mime_type,
+                    byte_size=metadata.byte_size,
+                )
+
+            return McpResultNormalizer(publish_artifact=publish)
+
+        def prepare_mcp(agent_run_id, _policy):
+            definitions, catalogs = mcp_state()
+            if not any(item.enabled for item in definitions):
+                return None
+            return prepare_mcp_run(
+                definitions,
+                catalogs,
+                workspace_id=identity.workspace_id,
+                agent_run_id=agent_run_id,
+                id_source=app.id_source,
+                client_factory=mcp_client_factory,
+                normalizer_factory=mcp_normalizer_factory,
+            )
+
+        def rehydrate_mcp(snapshot, agent_run_id):
+            definitions, _current_catalogs = mcp_state()
+            launch_snapshots = journal.list_mcp_launch_snapshots(
+                identity.workspace_id, agent_run_id
+            )
+            tool_snapshots = journal.list_mcp_tool_snapshots(identity.workspace_id, agent_run_id)
+            if (
+                tuple(item.launch_snapshot_id for item in launch_snapshots)
+                != snapshot.mcp_run_snapshot_ids
+            ):
+                raise ValueError("AgentRun MCP snapshot references are not durable")
+            launches_by_server = {item.server_id: item for item in launch_snapshots}
+            catalogs = {}
+            for definition in definitions:
+                launch = launches_by_server.get(definition.server_id)
+                if launch is None or launch.catalog_revision is None:
+                    continue
+                catalog = journal.get_mcp_catalog(
+                    definition.scope,
+                    definition.server_id,
+                    scope_id=definition.scope_id,
+                    revision=launch.catalog_revision,
+                )
+                if catalog is not None:
+                    catalogs[definition.server_id] = catalog
+            permission_snapshot = journal.get_permission_snapshot_for_run(
+                identity.workspace_id, agent_run_id
+            )
+            reviews = (
+                {item.server_id: item for item in permission_snapshot.mcp_review_evidence}
+                if permission_snapshot is not None
+                else {}
+            )
+            return rehydrate_mcp_run(
+                definitions,
+                catalogs,
+                launch_snapshots,
+                tool_snapshots,
+                workspace_id=identity.workspace_id,
+                agent_run_id=agent_run_id,
+                client_factory=mcp_client_factory,
+                normalizer_factory=mcp_normalizer_factory,
+                reviews=reviews,
+            )
+
         tool_executor = make_tools(run_policy)
         runtime = AgentRuntime(
             provider,
@@ -785,6 +890,7 @@ def build_session_application(
                 if tool_executor is not None
                 else ()
             ),
+            available_mcp_servers=tuple(item.server_id for item in mcp_state()[0] if item.enabled),
         )
         if resume_session_id is not None:
             resumed = journal.get_session(identity.workspace_id, resume_session_id)
@@ -840,6 +946,9 @@ def build_session_application(
             estimate_request_chars=estimate_request_chars,
             tool_factory=make_tools,
             legacy=legacy_prepared,
+            workspace_id=identity.workspace_id,
+            mcp_factory=prepare_mcp,
+            mcp_rehydrate_factory=rehydrate_mcp,
         )
         if resume_session_id:
             persistence.restore_into(session)

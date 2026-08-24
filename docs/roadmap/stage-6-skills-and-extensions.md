@@ -1,7 +1,8 @@
 # Stage 6：Skills 与扩展生命周期
 
-> 状态：实施中（Subplans 63–72 已在本地完成；MCP Runtime/Security 与后续 Subplans 仍待实施）
-> 当前进展：MCP desired state、stdio Catalog discovery、确定性命名空间与 Operational Store v16 已完成；MCP 工具运行时仍保持关闭，等待 Subplan 73。
+> 状态：实施中（Subplans 63–73 已在本地完成；Backup/Doctor 与最终验收仍待实施）
+> 当前进展：MCP desired state、stdio Catalog discovery、确定性命名空间、Operational Store v16、
+> run-scoped lazy runtime、安全策略桥接、结果 Artifact 引用与普通 ToolExecutor 接入已完成。
 > 阶段结果：Morrow 可以发现、加载、测试、版本化和治理 Skills，并以统一安全边界接入 MCP 与更多 Provider
 > 上级文档：[开发路线总览](../ROADMAP.md)
 > 上一阶段：[Stage 5：可审查学习与长期记忆](stage-5-reviewable-learning-and-memory.md)

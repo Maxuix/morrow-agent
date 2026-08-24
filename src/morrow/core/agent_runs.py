@@ -195,6 +195,8 @@ class PreparedAgentRunSpec(ProtocolModel):
     run_policy_digest: str
     tool_schema_digest: str
     tool_count: int = Field(ge=0)
+    # Reference-only MCP evidence; full snapshots live in the MCP journal.
+    mcp_run_snapshot_ids: tuple[str, ...] = ()
     skill_selection_ids: tuple[str, ...] = ()
     skill_selection_id: str | None = Field(default=None, exclude=True)
     skill_context_ids: tuple[str, ...] = ()
@@ -207,6 +209,17 @@ class PreparedAgentRunSpec(ProtocolModel):
     def valid_digest(cls, value: str) -> str:
         if not DIGEST_PATTERN.match(value):
             raise ValueError("prepared digest must be a SHA-256 hex digest")
+        return value
+
+    @field_validator("mcp_run_snapshot_ids")
+    @classmethod
+    def bounded_mcp_snapshot_ids(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        if len(value) > 64 or len(value) != len(set(value)):
+            raise ValueError("MCP run snapshot references must be unique and bounded")
+        if any(
+            not item or len(item) > 256 or any(ch in item for ch in "\x00\r\n") for item in value
+        ):
+            raise ValueError("MCP run snapshot reference is invalid")
         return value
 
     @property

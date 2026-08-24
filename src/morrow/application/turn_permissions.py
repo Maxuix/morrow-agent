@@ -12,6 +12,7 @@ from morrow.core.execution import (
     assert_handler_may_enter,
 )
 from morrow.core.journal import RunPermissionJournalPort
+from morrow.core.mcp import McpReviewEvidence
 from morrow.core.permissions import (
     PERMISSION_POLICY_VERSION,
     CapabilityGrant,
@@ -37,6 +38,7 @@ def build_permission_snapshot(
     turn_id: str,
     agent_run_id: str,
     grant: CapabilityGrant | None = None,
+    mcp_review_evidence: tuple[McpReviewEvidence, ...] = (),
     created_at: datetime,
 ) -> PermissionSnapshot:
     capability = session.workspace_capability
@@ -88,6 +90,7 @@ def build_permission_snapshot(
         grant_digest=grant_digest,
         granted_capabilities=capabilities,
         capability_isolations=isolations,
+        mcp_review_evidence=mcp_review_evidence,
         created_at=created_at,
     )
 
@@ -115,6 +118,7 @@ class RunPermissionCoordinator:
         agent_run_id: str | None,
         task_run_id: str | None,
         turn_id: str | None,
+        mcp_review_evidence: tuple[McpReviewEvidence, ...] = (),
         now: datetime | None = None,
     ) -> PermissionSnapshot:
         if agent_run_id is None:
@@ -151,6 +155,7 @@ class RunPermissionCoordinator:
             turn_id=turn_id,
             agent_run_id=agent_run_id,
             grant=candidates[0] if candidates else None,
+            mcp_review_evidence=mcp_review_evidence,
             created_at=stamp,
         )
         self.journal.freeze_agent_run_permission_snapshot(self.workspace_id, agent_run_id, snapshot)

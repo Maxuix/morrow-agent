@@ -27,6 +27,7 @@ from morrow.core.execution import (
     ToolExecutionDisposition,
 )
 from morrow.core.faults import FaultInjector, FaultPoint, NoOpFaultInjector
+from morrow.core.mcp import McpReviewEvidence
 from morrow.core.models import AssistantMessage, ModelRef, utc_now
 from morrow.core.permissions import PermissionSnapshot
 from morrow.core.ports import Clock, IdSource
@@ -193,6 +194,7 @@ class SessionPersistence:
         session: Session,
         *,
         tools: tuple = (),
+        mcp_review_evidence: tuple[McpReviewEvidence, ...] = (),
         now: datetime | None = None,
     ) -> PermissionSnapshot:
         """Freeze base permissions and any already-explicit run-bound grant once."""
@@ -203,6 +205,7 @@ class SessionPersistence:
             agent_run_id=self.current_agent_run_id,
             task_run_id=self.current_task_run_id,
             turn_id=self.current_turn_id,
+            mcp_review_evidence=mcp_review_evidence,
             now=now,
         )
         self.turn_state.permission_snapshot_id = snapshot.permission_snapshot_id
@@ -236,6 +239,7 @@ class SessionPersistence:
         agent_run_id: str,
         tools: tuple = (),
         prepared_spec=None,
+        prepared_mcp_run=None,
     ) -> TurnSubmitResult:
         if self.writer is None:
             raise RuntimeError("session persistence is not attached")
@@ -247,6 +251,7 @@ class SessionPersistence:
             agent_run_id=agent_run_id,
             tools=tools,
             prepared_spec=prepared_spec,
+            prepared_mcp_run=prepared_mcp_run,
             writer=self.writer,
         )
 

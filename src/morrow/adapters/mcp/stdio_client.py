@@ -13,7 +13,7 @@ from pathlib import Path
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
-from mcp.types import PaginatedRequestParams
+from mcp.types import CallToolResult, PaginatedRequestParams
 
 from morrow.core.mcp import (
     MCP_MAX_DIAGNOSTIC_BYTES,
@@ -217,6 +217,37 @@ class McpStdioClient:
             cursor = page.next_cursor
             if not cursor:
                 return tuple(values)
+
+    async def call_tool(self, remote_name: str, arguments: dict[str, object]) -> CallToolResult:
+        """Call one catalogued remote tool with one timeout and no retry."""
+
+        if self._session is None:
+            raise McpAdapterError(
+                "not_connected", "call_tool", "MCP stdio session is not connected"
+            )
+        if (
+            not remote_name
+            or len(remote_name) > 128
+            or any(char in remote_name for char in "\x00\r\n")
+        ):
+            raise McpAdapterError("invalid_tool", "call_tool", "MCP remote tool name is invalid")
+        if not isinstance(arguments, dict):
+            raise McpAdapterError(
+                "invalid_arguments", "call_tool", "MCP tool arguments are invalid"
+            )
+        try:
+            return await asyncio.wait_for(
+                self._session.call_tool(remote_name, arguments),
+                self.definition.timeout_ms / 1000,
+            )
+        except TimeoutError as exc:
+            raise McpAdapterError("timeout", "call_tool", "MCP tool call timed out") from exc
+        except McpAdapterError:
+            raise
+        except (OSError, ValueError, TypeError) as exc:
+            raise McpAdapterError("call_failed", "call_tool") from exc
+        except Exception as exc:
+            raise McpAdapterError("protocol_failed", "call_tool") from exc
 
     async def close(self) -> None:
         stack, self._stack = self._stack, None

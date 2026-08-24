@@ -16,6 +16,7 @@ from morrow.core.domain import (
     SourceRevisionRef,
     canonical_json_bytes,
 )
+from morrow.core.mcp import McpReviewEvidence
 from morrow.core.permissions import (
     CapabilityGrant,
     CapabilityIsolation,
@@ -42,7 +43,7 @@ _SNAPSHOT_COLUMNS = (
     "access_scope, approval_mode, process_isolation, workspace_root_digest, workspace_read_only, "
     "tool_schema_digest, run_policy_digest, permission_profile_digest, policy_version, "
     "schema_version, source_revisions_json, grant_id, grant_digest, granted_capabilities_json, "
-    "capability_isolations_json, created_at_unix"
+    "capability_isolations_json, mcp_review_evidence_json, created_at_unix"
 )
 _SNAPSHOT_SELECT = f"p.{_SNAPSHOT_COLUMNS.replace(', ', ', p.')}"
 
@@ -485,7 +486,7 @@ class SqliteRunPermissionJournal:
             )
         self.backend.executor().execute(
             f"INSERT INTO permission_snapshots({_SNAPSHOT_COLUMNS}) "
-            f"VALUES ({', '.join('?' for _ in range(22))})",
+            f"VALUES ({', '.join('?' for _ in range(23))})",
             (
                 permission_snapshot.permission_snapshot_id,
                 permission_snapshot.workspace_id,
@@ -515,6 +516,12 @@ class SqliteRunPermissionJournal:
                     [
                         item.model_dump(mode="json")
                         for item in permission_snapshot.capability_isolations
+                    ]
+                ).decode("utf-8"),
+                canonical_json_bytes(
+                    [
+                        item.model_dump(mode="json")
+                        for item in permission_snapshot.mcp_review_evidence
                     ]
                 ).decode("utf-8"),
                 _unix(permission_snapshot.created_at),
@@ -606,11 +613,17 @@ def _permission_snapshot_from_row(row: tuple[object, ...]) -> PermissionSnapshot
         source_revisions = json.loads(str(row[16]))
         granted_capabilities = json.loads(str(row[19]))
         capability_isolations = json.loads(str(row[20]))
+        mcp_review_evidence = json.loads(str(row[21]))
         if row[10] not in (0, 1):
             raise ValueError("permission snapshot read-only flag is invalid")
         if not all(
             isinstance(value, list)
-            for value in (source_revisions, granted_capabilities, capability_isolations)
+            for value in (
+                source_revisions,
+                granted_capabilities,
+                capability_isolations,
+                mcp_review_evidence,
+            )
         ):
             raise ValueError("permission snapshot JSON columns are not lists")
         return PermissionSnapshot(
@@ -645,7 +658,10 @@ def _permission_snapshot_from_row(row: tuple[object, ...]) -> PermissionSnapshot
                 )
                 for item in capability_isolations
             ),
-            created_at=_from_unix(row[21]),
+            mcp_review_evidence=tuple(
+                McpReviewEvidence.model_validate(item) for item in mcp_review_evidence
+            ),
+            created_at=_from_unix(row[22]),
         )
     except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
         raise StorageError(

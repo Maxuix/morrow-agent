@@ -17,6 +17,7 @@ from pydantic import BaseModel, ConfigDict, field_validator
 from morrow.core.capabilities import (
     OperationIntent,
     OperationKind,
+    PolicyDecision,
     PolicyVerdict,
     ToolCallContext,
     ToolFact,
@@ -26,6 +27,7 @@ from morrow.core.capabilities import (
 from morrow.core.execution import (
     EffectClass,
     MissingCompletionPolicy,
+    ToolExecutionDisposition,
     ToolRecoveryDeclaration,
     UnknownToolDeclarationError,
     tool_declaration,
@@ -110,9 +112,16 @@ class ToolErrorCode(StrEnum):
 class ToolExecutionError(Exception):
     """Typed handler failure mapped to one deterministic code."""
 
-    def __init__(self, code: ToolErrorCode, message: str) -> None:
+    def __init__(
+        self,
+        code: ToolErrorCode,
+        message: str,
+        *,
+        disposition: ToolExecutionDisposition | None = None,
+    ) -> None:
         super().__init__(message)
         self.code = code
+        self.disposition = disposition
 
 
 def _dump(payload: dict) -> str:
@@ -161,6 +170,9 @@ def tool_parameters_from_model(model: type[BaseModel]) -> dict:
 ApprovalPreview = Callable[[BaseModel], tuple[str, ...] | list[str]]
 IntentResolver = Callable[
     [BaseModel, ToolCallContext], OperationIntent | Awaitable[OperationIntent]
+]
+PolicyResolver = Callable[
+    [OperationIntent, ToolCallContext, bool], PolicyDecision | Awaitable[PolicyDecision]
 ]
 ContextHandler = Callable[[BaseModel, ToolCallContext], Awaitable[object]]
 ContextApprovalPreview = Callable[[BaseModel, ToolCallContext], tuple[str, ...] | list[str]]
@@ -233,6 +245,7 @@ class RegisteredTool:
     execution_policy: ToolExecutionPolicy = field(default_factory=ToolExecutionPolicy)
     approval_preview: ApprovalPreview | None = None
     intent_resolver: IntentResolver | None = None
+    policy_resolver: PolicyResolver | None = None
     context_handler: ContextHandler | None = None
     context_approval_preview: ContextApprovalPreview | None = None
     approval_preview_budget: ApprovalPreviewBudget = field(default_factory=ApprovalPreviewBudget)
@@ -298,6 +311,7 @@ class ToolExecutionOutcome:
     truncated: bool = False
     original_chars: int | None = None
     facts: tuple[ToolFact, ...] = ()
+    disposition: ToolExecutionDisposition | None = None
 
 
 class ToolExecutor:
@@ -321,6 +335,36 @@ class ToolExecutor:
     @property
     def definitions(self) -> tuple[ToolDefinition, ...]:
         return self.tool_set.definitions
+
+    def recovery_declaration(self, tool_name: str) -> ToolRecoveryDeclaration:
+        registered = self.tool_set.tools.get(tool_name)
+        if registered is None or registered.recovery_declaration is None:
+            return _fallback_recovery_declaration(tool_name)
+        return registered.recovery_declaration
+
+    def resolve_policy(
+        self,
+        registered: RegisteredTool,
+        intent: OperationIntent,
+        context: ToolCallContext,
+        *,
+        allow_unconfined_host: bool,
+    ) -> PolicyDecision:
+        """Resolve an ordinary or narrowly specialized policy decision."""
+
+        if registered.policy_resolver is not None:
+            decision = registered.policy_resolver(intent, context, allow_unconfined_host)
+            if inspect.isawaitable(decision):
+                raise ToolExecutionError(
+                    ToolErrorCode.PREFLIGHT_FAILED,
+                    "同步工具预检不能等待外部策略",
+                )
+            if not isinstance(decision, PolicyDecision):
+                raise ToolExecutionError(ToolErrorCode.PREFLIGHT_FAILED, "工具策略结果无效")
+            return decision
+        if self.capability_policy is None:
+            raise ToolExecutionError(ToolErrorCode.PREFLIGHT_FAILED, "能力策略不可用")
+        return self.capability_policy.evaluate(intent, allow_unconfined_host=allow_unconfined_host)
 
     def error_outcome(
         self,
@@ -392,8 +436,11 @@ class ToolExecutor:
                         ToolErrorCode.PREFLIGHT_FAILED,
                         "工具能力预检结果无效",
                     )
-                policy_decision = self.capability_policy.evaluate(
-                    intent, allow_unconfined_host=allow_unconfined_host
+                policy_decision = self.resolve_policy(
+                    registered,
+                    intent,
+                    call_context,
+                    allow_unconfined_host=allow_unconfined_host,
                 )
             except asyncio.CancelledError:
                 raise
@@ -523,7 +570,13 @@ class ToolExecutor:
         except asyncio.CancelledError:
             raise
         except ToolExecutionError as exc:
-            return self._error(call, exc.code, str(exc), limit=limit)
+            return self._error(
+                call,
+                exc.code,
+                str(exc),
+                limit=limit,
+                disposition=exc.disposition,
+            )
         except Exception:
             return self._error(call, ToolErrorCode.EXECUTION_FAILED, "工具执行失败", limit=limit)
 
@@ -657,6 +710,7 @@ class ToolExecutor:
         *,
         limit: int,
         details: list[dict[str, str]] | None = None,
+        disposition: ToolExecutionDisposition | None = None,
     ) -> ToolExecutionOutcome:
         envelope = tool_error_envelope(code, message, details=details)
         if len(envelope) > limit and details:
@@ -673,6 +727,7 @@ class ToolExecutor:
             ok=False,
             envelope=envelope,
             error_code=code,
+            disposition=disposition,
         )
 
 
@@ -686,6 +741,7 @@ def make_tool(
     execution_policy: ToolExecutionPolicy | None = None,
     approval_preview: ApprovalPreview | None = None,
     intent_resolver: IntentResolver | None = None,
+    policy_resolver: PolicyResolver | None = None,
     context_handler: ContextHandler | None = None,
     context_approval_preview: ContextApprovalPreview | None = None,
     approval_preview_budget: ApprovalPreviewBudget | None = None,
@@ -710,6 +766,7 @@ def make_tool(
         execution_policy=execution_policy or ToolExecutionPolicy(),
         approval_preview=approval_preview,
         intent_resolver=intent_resolver,
+        policy_resolver=policy_resolver,
         context_handler=context_handler,
         context_approval_preview=context_approval_preview,
         approval_preview_budget=approval_preview_budget or ApprovalPreviewBudget(),

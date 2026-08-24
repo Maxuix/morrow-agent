@@ -37,6 +37,7 @@ from morrow.core.domain import (
     sha256_digest,
     validate_prefixed_id,
 )
+from morrow.core.mcp import McpReviewEvidence
 from morrow.core.models import utc_now
 
 PERMISSION_POLICY_VERSION = "stage4-permissions-v1"
@@ -257,6 +258,7 @@ class PermissionSnapshot(LocalCapabilityModel):
     grant_digest: str | None = None
     granted_capabilities: tuple[CapabilityName, ...] = ()
     capability_isolations: tuple[CapabilityIsolation, ...] = ()
+    mcp_review_evidence: tuple[McpReviewEvidence, ...] = ()
     created_at: datetime = Field(default_factory=utc_now)
 
     @field_validator("permission_snapshot_id")
@@ -330,6 +332,15 @@ class PermissionSnapshot(LocalCapabilityModel):
             raise ValueError("capability is not available in Stage 4")
         return values
 
+    @field_validator("mcp_review_evidence")
+    @classmethod
+    def bounded_mcp_review_evidence(
+        cls, values: tuple[McpReviewEvidence, ...]
+    ) -> tuple[McpReviewEvidence, ...]:
+        if len(values) > 8 or len({item.review_id for item in values}) != len(values):
+            raise ValueError("MCP review evidence must be unique and bounded")
+        return values
+
     @model_validator(mode="after")
     def enforce_contract(self) -> PermissionSnapshot:
         if self.schema_version != PERMISSION_SCHEMA_VERSION:
@@ -353,6 +364,11 @@ class PermissionSnapshot(LocalCapabilityModel):
                 != self.granted_capabilities
             ):
                 raise ValueError("capability isolation evidence must match granted capabilities")
+        if any(
+            item.workspace_id != self.workspace_id or item.agent_run_id != self.agent_run_id
+            for item in self.mcp_review_evidence
+        ):
+            raise ValueError("MCP review evidence must match the PermissionSnapshot AgentRun")
         payload = canonical_json_bytes(self.model_dump(mode="json"))
         require_payload_budget(payload, PERMISSION_SNAPSHOT_MAX_BYTES, label="PermissionSnapshot")
         refuse_secret_material(payload, label="PermissionSnapshot")

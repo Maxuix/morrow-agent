@@ -397,6 +397,7 @@ class AgentLoop:
         resume_current_turn: bool = False,
         prepared: PreparedAgentRunRuntime | None = None,
         startup_error: str | None = None,
+        agent_run_id: str | None = None,
     ) -> AsyncIterator[AgentEvent]:
         client_message_id = client_message_id or self._id("cmsg")
         if prepared is not None:
@@ -500,9 +501,20 @@ class AgentLoop:
                         user_input,
                         client_message_id,
                         turn_id=state.turn_id,
-                        agent_run_id=self._id("arun"),
+                        agent_run_id=(
+                            agent_run_id
+                            or (
+                                getattr(prepared, "agent_run_id", None)
+                                if prepared is not None
+                                else None
+                            )
+                            or self._id("arun")
+                        ),
                         tools=tool_executor.definitions if tool_executor else (),
                         prepared_spec=prepared.spec if prepared is not None else None,
+                        prepared_mcp_run=(
+                            getattr(prepared, "mcp_run", None) if prepared is not None else None
+                        ),
                     )
                     if submit_outcome.turn_id:
                         state.turn_id = submit_outcome.turn_id
@@ -554,7 +566,13 @@ class AgentLoop:
                 if durable_runtime is None or permission_snapshot is not None:
                     return
                 permission_snapshot = durable_runtime.freeze_permission_snapshot(
-                    session, tools=tools
+                    session,
+                    tools=tools,
+                    mcp_review_evidence=(
+                        getattr(getattr(prepared, "mcp_run", None), "review_evidence", ())
+                        if prepared is not None
+                        else ()
+                    ),
                 )
 
             while True:
@@ -920,7 +938,13 @@ class AgentLoop:
                 except Exception:
                     pass
             if prepared is not None:
-                prepared.close()
+                close = getattr(prepared, "aclose", None)
+                if close is None:
+                    prepared.close()
+                else:
+                    result = close()
+                    if inspect.isawaitable(result):
+                        await result
 
     def _cycle_result_limit(self, message: AssistantMessage, policy, context_builder) -> int | None:
         """Largest equal raw envelope cap safe under worst-case JSON escaping."""
@@ -1042,6 +1066,7 @@ class AgentRuntime:
         client_message_id: str | None = None,
         prepared: PreparedAgentRunRuntime | None = None,
         startup_error: str | None = None,
+        agent_run_id: str | None = None,
     ) -> AsyncIterator[AgentEvent]:
         return self._loop.run_task(
             session,
@@ -1049,4 +1074,5 @@ class AgentRuntime:
             client_message_id=client_message_id,
             prepared=prepared,
             startup_error=startup_error,
+            agent_run_id=agent_run_id,
         )

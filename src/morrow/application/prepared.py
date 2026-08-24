@@ -224,8 +224,10 @@ def _prepare_one(
                         "prepared intent cannot await during persist",
                     )
                 if tool_executor.capability_policy is not None:
-                    decision = tool_executor.capability_policy.evaluate(
+                    decision = tool_executor.resolve_policy(
+                        registered,
                         resolved,
+                        context,
                         allow_unconfined_host=grant_id is not None and call.name == "run_command",
                     )
                     policy_verdict = decision.verdict

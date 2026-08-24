@@ -507,7 +507,42 @@ class McpLaunchSnapshot(ProtocolModel):
     credential_risk: bool = False
     outside_workspace_risk: bool = False
     allowlisted_remote_tools: tuple[str, ...] = ()
+    # Optional keeps v16 rows written before the runtime bridge decodable. New
+    # prepared runs always populate it and fail closed when it is absent.
+    toolset_digest: str | None = None
     created_at: datetime = Field(default_factory=utc_now)
+
+    @field_validator(
+        "launch_snapshot_id",
+        "workspace_id",
+        "agent_run_id",
+        "server_id",
+    )
+    @classmethod
+    def bounded_identity(cls, value: str) -> str:
+        if not value or len(value) > 256 or any(char in value for char in "\x00\r\n"):
+            raise ValueError("MCP launch snapshot identity is invalid")
+        return value
+
+    @field_validator(
+        "config_digest",
+        "catalog_digest",
+        "toolset_digest",
+        "argv_digest",
+        "executable_digest",
+    )
+    @classmethod
+    def valid_snapshot_digest(cls, value: str | None) -> str | None:
+        if value is not None and not MCP_DIGEST_PATTERN.fullmatch(value):
+            raise ValueError("MCP launch snapshot digest is invalid")
+        return value
+
+    @field_validator("allowlisted_remote_tools")
+    @classmethod
+    def bounded_allowlist(cls, values: tuple[str, ...]) -> tuple[str, ...]:
+        if len(values) > MCP_MAX_REMOTE_TOOLS or len(set(values)) != len(values):
+            raise ValueError("MCP launch snapshot allowlist is invalid")
+        return values
 
 
 class McpToolSnapshot(ProtocolModel):
@@ -525,6 +560,35 @@ class McpToolSnapshot(ProtocolModel):
     catalog_revision: int = Field(ge=1)
     recovery_declaration: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=utc_now)
+
+    @field_validator(
+        "tool_snapshot_id",
+        "launch_snapshot_id",
+        "agent_run_id",
+        "server_id",
+        "remote_name",
+        "local_name",
+        "schema_dialect",
+    )
+    @classmethod
+    def bounded_identity(cls, value: str) -> str:
+        if not value or len(value) > 256 or any(char in value for char in "\x00\r\n"):
+            raise ValueError("MCP tool snapshot identity is invalid")
+        return value
+
+    @field_validator("schema_dialect")
+    @classmethod
+    def valid_snapshot_dialect(cls, value: str) -> str:
+        if value != MCP_SCHEMA_DIALECT:
+            raise ValueError("MCP tool snapshot schema dialect is not supported")
+        return value
+
+    @field_validator("input_schema_digest", "output_schema_digest")
+    @classmethod
+    def valid_schema_digest(cls, value: str | None) -> str | None:
+        if value is not None and not MCP_DIGEST_PATTERN.fullmatch(value):
+            raise ValueError("MCP tool snapshot schema digest is invalid")
+        return value
 
 
 class McpResultArtifactLink(ProtocolModel):

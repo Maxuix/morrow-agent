@@ -544,6 +544,8 @@ class AgentRunSnapshot(ProtocolModel):
     tool_schema_digest: str
     permission_profile_digest: str
     runtime_instance_id: str
+    # Reference-only MCP evidence; full launch/tool rows stay in v16 tables.
+    mcp_run_snapshot_ids: tuple[str, ...] = ()
     memory_selection_id: str | None = None
     memory_selection_digest: str | None = None
     memory_snapshot_revision: int | None = Field(default=None, ge=0)
@@ -637,6 +639,17 @@ class AgentRunSnapshot(ProtocolModel):
             not item or len(item) > 256 or any(ch in item for ch in "\x00\r\n") for item in value
         ):
             raise ValueError("Skill evidence reference is invalid")
+        return value
+
+    @field_validator("mcp_run_snapshot_ids")
+    @classmethod
+    def bounded_mcp_snapshot_ids(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        if len(value) > 64 or len(value) != len(set(value)):
+            raise ValueError("AgentRun MCP snapshot references must be unique and bounded")
+        if any(
+            not item or len(item) > 256 or any(ch in item for ch in "\x00\r\n") for item in value
+        ):
+            raise ValueError("AgentRun MCP snapshot reference is invalid")
         return value
 
     @model_validator(mode="before")

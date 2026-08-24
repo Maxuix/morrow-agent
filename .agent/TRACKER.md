@@ -12,9 +12,10 @@ AgentLoop/Session/Task boundaries. The verified Subplan 72 checkpoint is committ
 as `c1a7132`;
 remote publication is not in scope.
 
-Subplan 73 is now active on `codex/feat/stage6-mcp-runtime`, based on local `main@97d4a82`.
-Scope is limited to ordinary ToolExecutor integration, compound MCP policy, lazy run-scoped
-lifecycle, bounded results and recovery; backup v2 and doctor closeout remain pending.
+Subplan 73 is complete locally on `codex/feat/stage6-mcp-runtime`, based on local `main@97d4a82`.
+It adds ordinary ToolExecutor integration, compound MCP policy, lazy run-scoped lifecycle, bounded
+results, generic outcome-unknown recovery, AgentRun/PermissionSnapshot evidence and bounded doctor
+facts. Backup v2, remaining doctor closeout and final acceptance remain pending.
 
 ## Last completed work (Subplan 72)
 
@@ -69,12 +70,12 @@ lifecycle, bounded results and recovery; backup v2 and doctor closeout remain pe
 
 ## Active task
 
-Subplan 73 — MCP Runtime and Security Adapter.
+None. Subplan 73 is complete; the next planned child is Subplan 74.
 
 ## Next action
 
-Build the frozen launch/tool evidence and policy bridge first; keep MCP runtime changes inside the
-existing ToolExecutor, permission, approval, cancellation, audit and recovery seams.
+Fast-forward the verified topic branch into `main`, remove the clean topic branch/worktree, and
+activate Subplan 74 only when the user requests continuation.
 
 ## Last completed work (Subplan 71)
 
@@ -90,8 +91,6 @@ existing ToolExecutor, permission, approval, cancellation, audit and recovery se
 - Validation: focused compatibility/dynamic/recovery suites `76 passed`; full non-live gate
   `1036 passed, 3 skipped, 2 deselected`; Ruff, compileall and `git diff --check` passed.
 
-## Next action
-
 ## Dependency gate
 
 User approved the exact change on 2026-08-24: `mcp >= 2.0.0, < 3` and `jsonschema >= 4.20, < 5`,
@@ -100,7 +99,7 @@ is authorized by this approval.
 
 ## Blockers
 
-None. Subplan 73 remains a later child and is not active.
+None. No remote push was requested or performed.
 
 ## Notes
 

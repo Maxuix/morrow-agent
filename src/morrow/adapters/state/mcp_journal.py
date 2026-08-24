@@ -433,8 +433,8 @@ class SqliteMcpJournal:
                 config_digest, catalog_revision, catalog_digest, transport, argv_digest,
                 executable_digest, cwd_policy, workspace_visibility, network_risk,
                 credential_risk, outside_workspace_risk, allowlisted_remote_tools_json,
-                created_at_unix
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                toolset_digest, created_at_unix
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(launch_snapshot_id) DO NOTHING
             """,
             (
@@ -455,6 +455,7 @@ class SqliteMcpJournal:
                 int(snapshot.credential_risk),
                 int(snapshot.outside_workspace_risk),
                 _json(list(snapshot.allowlisted_remote_tools)),
+                snapshot.toolset_digest,
                 _unix(snapshot.created_at),
             ),
         )
@@ -469,7 +470,7 @@ class SqliteMcpJournal:
                    config_digest, catalog_revision, catalog_digest, transport, argv_digest,
                    executable_digest, cwd_policy, workspace_visibility, network_risk,
                    credential_risk, outside_workspace_risk, allowlisted_remote_tools_json,
-                   created_at_unix
+                   toolset_digest, created_at_unix
             FROM mcp_run_launch_snapshots
             WHERE workspace_id = ? AND agent_run_id = ?
             ORDER BY server_id, launch_snapshot_id
@@ -496,7 +497,8 @@ class SqliteMcpJournal:
                     credential_risk=bool(row[14]),
                     outside_workspace_risk=bool(row[15]),
                     allowlisted_remote_tools=tuple(_load_json(row[16], fallback=[])),
-                    created_at=_from_unix(row[17]),
+                    toolset_digest=str(row[17]) if row[17] is not None else None,
+                    created_at=_from_unix(row[18]),
                 )
                 for row in rows
             )

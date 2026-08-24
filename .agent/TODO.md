@@ -10,12 +10,12 @@ Subplan 73 — MCP Runtime and Security Adapter.
 
 ## Tasks (Subplan 73)
 
-- `[>]` Freeze enabled Server/Catalog evidence into new AgentRun launch and tool snapshots.
-- `[ ]` Add narrowly scoped MCP review evidence and deny-first compound policy evaluation.
-- `[ ]` Register MCP tools through the existing validator/recovery seams and ordinary ToolExecutor.
-- `[ ]` Implement lazy per-AgentRun pool, cancellation/timeout/crash handling and no-retry behavior.
-- `[ ]` Normalize bounded MCP result content and import binary/embedded payloads as Artifacts.
-- `[ ]` Add status/doctor facts, Fake runtime/policy/result/recovery tests and standard quality gates.
+- `[x]` Freeze enabled Server/Catalog evidence into new AgentRun launch and tool snapshots.
+- `[x]` Add narrowly scoped MCP review evidence and deny-first compound policy evaluation.
+- `[x]` Register MCP tools through the existing validator/recovery seams and ordinary ToolExecutor.
+- `[x]` Implement lazy per-AgentRun pool, cancellation/timeout/crash handling and no-retry behavior.
+- `[x]` Normalize bounded MCP result content and import binary/embedded payloads as Artifacts.
+- `[x]` Add status/doctor facts, Fake runtime/policy/result/recovery tests and standard quality gates.
 
 ## Boundaries
 

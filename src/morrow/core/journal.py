@@ -401,6 +401,7 @@ class TurnSubmitReceiptPort(Protocol):
 class TurnLifecycleJournalPort(
     SessionLifecyclePort,
     AgentRunPort,
+    McpCatalogJournalPort,
     SkillRunJournalPort,
     SkillDraftUsageJournalPort,
     TurnSubmitReceiptPort,
