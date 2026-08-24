@@ -1,62 +1,52 @@
 # Subplans
 
-Stage 4 and the original Stage 5 v12 implementation are complete through Subplan 55. The real-
-Provider evaluation then demonstrated that the fixed-field, marker-gated Preference path has
-unacceptable natural-language recall and stale existing-Session injection. On 2026-08-21 the user
-approved drafting a Preference v2 refactor with a separate asynchronous Reviewer and deterministic
-Writer. Subplans 56–61 and the separate integrated review/fix/gate pass are complete. The 2026-08-23
-live corpus exposed a remaining Reviewer quality gap; completed Subplan 62 remediated it and passed
-the reviewed final live corpus.
+Stage 4 and Stage 5 are complete through Subplan 62 and remain recoverable in Git history. On
+2026-08-24 the user explicitly requested a fact-checked final Stage 6方案 and a complete executable
+implementation plan. Stage 6 is now planned as Subplans 63–75; no implementation subplan has started.
 
-Subplan 35 and the conditional review remediation were accepted on 2026-08-19 and preserved in Git
-history at `20fb43e`; its retired task file is no longer kept in the active subplan directory.
+## Stage 6 sequence
 
 | Order | File | Status |
 |---|---|---|
-| 36 | `36-stage4-operational-store.md` | completed |
-| 37 | `37-stage4-durable-session-conversation.md` | completed |
-| 38 | `38-stage4-tool-journal-approval.md` | completed |
-| 39 | `39-stage4-recovery-crash.md` | completed |
-| 40 | `40-stage4-task-outcome.md` | completed |
-| 41 | `41-stage4-artifact-store.md` | completed |
-| 42 | `42-stage4-context-fork.md` | completed |
-| 43 | `43-stage4-api-cli-doctor-backup.md` | completed |
-| 44 | `44-stage4-full-access-manual.md` | completed |
-| 45 | `45-stage4-acceptance.md` | completed |
-| 46 | `46-stage4-boundary-refactor.md` | completed |
-| 47 | `47-stage4-real-user-remediation.md` | completed |
-| 48 | `48-pre-stage5-boundary-refactor.md` | completed |
-| 49 | `49-stage5-learning-foundation.md` | completed |
-| 50 | `50-stage5-review-pipeline.md` | completed |
-| 51 | `51-stage5-inbox-project-knowledge.md` | completed |
-| 52 | `52-stage5-configuration-promotion.md` | completed |
-| 53 | `53-stage5-memory-selection-context.md` | completed |
-| 54 | `54-stage5-reviewer-acceptance.md` | completed |
-| 55 | `55-stage5-simulated-user-remediation.md` | completed |
-| 56 | `56-stage5-preference-foundation.md` | completed |
-| 57 | `57-stage5-preference-writer.md` | completed |
-| 58 | `58-stage5-preference-reviewer-inbox.md` | completed |
-| 59 | `59-stage5-review-worker.md` | completed |
-| 60 | `60-stage5-preference-context.md` | completed |
-| 61 | `61-stage5-preference-closeout.md` | completed |
-| 62 | `62-stage5-live-reviewer-remediation.md` | completed |
+| 63 | `63-stage6-dependency-contract-spike.md` | ready |
+| 64 | `64-stage6-agent-run-preparation.md` | pending |
+| 65 | `65-stage6-skill-catalog-foundation.md` | pending |
+| 66 | `66-stage6-skill-lifecycle-bindings.md` | pending |
+| 67 | `67-stage6-skill-selection-context.md` | pending |
+| 68 | `68-stage6-skill-drafts-usage.md` | pending |
+| 69 | `69-stage6-skill-script-execution.md` | pending |
+| 70 | `70-stage6-provider-model-control.md` | pending |
+| 71 | `71-stage6-dynamic-tool-contracts.md` | pending |
+| 72 | `72-stage6-mcp-control-catalog.md` | pending; dependency approval gate |
+| 73 | `73-stage6-mcp-runtime-security.md` | pending |
+| 74 | `74-stage6-backup-doctor.md` | pending |
+| 75 | `75-stage6-acceptance-closeout.md` | pending |
 
-Completed Stage 3 Subplans 29–34 were removed from the active directory when this master plan was
-created; they remain recoverable in Git history together with their accepted evidence.
+## Completed retained subplans
+
+| Range | Stage | Status |
+|---|---|---|
+| 36–47 | Stage 4 implementation/remediation | completed |
+| 48–55 | Stage 5 original implementation | completed |
+| 56–62 | Stage 5 Preference v2/live remediation | completed |
+
+Individual completed files remain in this directory where retained by the previous plan; older
+retired files are available from Git history.
 
 ## Rules
 
-- `.agent/PLAN.md` is the living master index and cross-cutting contract.
-- `.agent/TODO.md` contains executable tasks for the one active subplan only.
-- Start one subplan only after its prerequisite gate passes and the user-authorized execution state
-  is updated. For Preference v2, create the branch listed in that subplan from the latest verified
-  `main`.
-- Keep production changes inside the active subplan's ownership; do not implement a later slice
-  early.
-- When code or validation conflicts with a plan, update the stale plan before continuing.
-- Record accepted decisions, meaningful failures, gates, and transitions in `.agent/LOG.md`.
-- Mark a task complete only after its declared validation succeeds. Every S56–S61 implementation
-  result receives exactly one `$grok-delegate` `/review`, followed by one independently adjudicated
-  fix pass and no second review. Before closing a subplan, commit verified progress and activate the
-  next subplan explicitly.
-- Do not recreate completed subplans in this directory; use Git history for old execution detail.
+- `.agent/PLAN.md` is the active master plan and cross-cutting contract.
+- `.agent/TODO.md` contains tasks for the one active subplan only.
+- Start a child from latest verified `main`; do not implement later schemas/interfaces early.
+- At most one child is active. Mark `[>]` only when work actually begins and `[x]` only after its
+  declared validation succeeds.
+- Code and validation outrank stale planning text; update the plan before continuing with changed
+  scope.
+- Keep production changes inside the active child's ownership. Preserve other user/worktree changes.
+- Record accepted decisions, failures, gates, dependency approvals and transitions in `.agent/LOG.md`.
+- Before closing a child: commit verified progress, run gates, update execution state, fast-forward
+  merge, verify no topic commits are absent from `main`, and retire the clean branch/worktree.
+- Subplan 63 may recommend dependencies but cannot add them. Subplan 72 cannot edit dependency files
+  until the user approves the exact change.
+- No live Provider/MCP/network/credential test runs without explicit authorization and compatible
+  credentials. Offline Fake/Scripted fixtures are the default.

@@ -2,34 +2,30 @@
 
 ## Current stage
 
-Stage 5 complete and accepted.
+Stage 6 planned; implementation not started.
 
 ## Active subplan
 
-None.
+Subplan 63 — Dependency and Contract Spike (`ready`, not yet in progress).
 
 ## Tasks
 
-- `[x]` Persist the compatible Provider credential in macOS Keychain and verify connectivity without
-  exposing the secret.
-- `[x]` Repair the stale live adherence harness and add a non-live regression test.
-- `[x]` Run the complete frozen live corpus and record its bounded failing aggregate score.
-- `[x]` Add sanitized per-case diagnostics and identify the Reviewer semantic failure modes.
-- `[x]` Improve the no-tool Reviewer prompt/schema contract and add offline regressions.
-- `[x]` Run focused and complete non-live gates.
-- `[x]` Replay Reviewer v3 once and record its bounded failing evidence.
-- `[x]` Apply the three evidence-driven Reviewer v4 semantic corrections and run non-live gates.
-- `[x]` Run the one Subplan 62 Grok review; do not run a second review.
-- `[x]` Independently apply confirmed report-contract, sanitization-test, anti-overfit-test, and
-  per-case error-containment suggestions, then rerun non-live gates.
-- `[x]` Run one reviewed final live replay and record its passing bounded evidence.
-- `[x]` Run final non-live and repository quality gates.
-- `[x]` Commit evidence, fast-forward merge, and retire the branch.
+- `[ ]` Create `codex/feat/stage6-contract-spike` from the latest verified `main` when implementation
+  is authorized to begin.
+- `[ ]` Reconfirm current runtime, permission, process, migration and backup seams with source refs.
+- `[ ]` Evaluate the official MCP Python SDK in a temporary environment without changing dependency
+  files.
+- `[ ]` Select JSON Schema dialect/validator behavior and record unsupported-feature handling.
+- `[ ]` Exercise the narrow local Fake stdio connect/list/call/close prototype.
+- `[ ]` Measure AgentRun reference, Skill context and MCP catalog/result budgets.
+- `[ ]` Lock Skill package canonicalization, safe version paths and TOCTOU rules.
+- `[ ]` Publish the Stage 6 dependency/contract ADR with exact recommendation and alternatives.
+- `[ ]` Verify `pyproject.toml` and `uv.lock` are unchanged; run the Subplan 63 gates.
+- `[ ]` Commit, merge and retire Subplan 63 before activating Subplan 64.
 
 ## Boundaries
 
-- Preserve Writer, Inbox, YAML authority, durable Review, ContextBuilder, capability policy, and
-  public event contracts.
-- Do not persist credentials, raw Provider output, reasoning, statements, or user text in reports.
-- Do not replace semantic Review with keyword classification or add Provider calls.
-- Preserve the two untracked user research files.
+- This subplan changes no production behavior and adds no permanent dependency.
+- Do not use real credentials, networked MCP Servers, live Providers or user state.
+- A recommended dependency still requires explicit user approval before Subplan 72 changes the lock.
+- Preserve AgentLoop/ConversationLog, permission policy defaults, public events and Stage 4/5 behavior.

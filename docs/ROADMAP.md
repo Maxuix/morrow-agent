@@ -1,6 +1,6 @@
 # Morrow 个人 Agent 工作台开发路线总览
 
-> 状态：阶段 1–5 已完成；阶段 6–10 未开始
+> 状态：阶段 1–5 已完成；阶段 6 设计中；阶段 7–10 未开始
 > 基线日期：2026-08-19
 > 用途：维护 Morrow 的长期产品方向、阶段顺序、稳定边界与详细阶段文档入口。
 > 执行约定：具体实现任务、活跃子计划、进度与验证结果继续维护在 `.agent/`；本文不承担实时 TODO 或开发日志职责。
@@ -223,7 +223,7 @@ Morrow 必须在数据模型中区分以下信息，不允许都塞入一个“m
 | 3. 本地 Code Agent 与安全闭环 | 已完成 | 在指定工作空间中可靠定位、修改、验证，并可在当前 macOS 原生沙箱中自动运行项目命令 | [阶段 3](roadmap/stage-3-local-tools-and-safety.md) |
 | 4. Task、Session、Artifact 与持久化 | 已完成 | 生产实现、全链路故障/迁移验收、当前平台安全门禁与包安装恢复均已通过 | [阶段 4](roadmap/stage-4-task-session-and-persistence.md) |
 | 5. 可审查学习与长期记忆 | 已完成 | 通用原子 Preference、no-tool Reviewer、SQLite 异步队列、Inbox/Writer、下一 AgentRun 冻结注入、Project Knowledge/Memory 与 v13 doctor/backup 已实现；Reviewer v4 live 验收通过 | [阶段 5](roadmap/stage-5-reviewable-learning-and-memory.md) |
-| 6. Skills 与扩展生命周期 | 未开始 | Skill、MCP 和 Provider 扩展具备版本、权限与生命周期治理 | [阶段 6](roadmap/stage-6-skills-and-extensions.md) |
+| 6. Skills 与扩展生命周期 | 设计中 | Skill、MCP 和 Provider 扩展具备版本、权限与生命周期治理 | [阶段 6](roadmap/stage-6-skills-and-extensions.md) |
 | 7. Agent Definition 与静态 Workflow Runtime | 未开始 | 用户可定义多个 Agent，并运行经编译验证的版本化 Workflow | [阶段 7](roadmap/stage-7-workflow-runtime.md) |
 | 8. 自适应编排与 GUI 控制面 | 未开始 | 系统生成可编辑 Workflow Draft，用户在 GUI 中观察与控制运行 | [阶段 8](roadmap/stage-8-adaptive-orchestration-and-gui.md) |
 | 9. 后台任务与可靠自动化 | 未开始 | Workflow 可作为可恢复、可暂停、可审计的后台或周期任务运行 | [阶段 9](roadmap/stage-9-background-automation.md) |

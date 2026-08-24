@@ -1,10 +1,11 @@
 # Stage 6：Skills 与扩展生命周期
 
-> 状态：未开始
+> 状态：设计中
 > 阶段结果：Morrow 可以发现、加载、测试、版本化和治理 Skills，并以统一安全边界接入 MCP 与更多 Provider
 > 上级文档：[开发路线总览](../ROADMAP.md)
 > 上一阶段：[Stage 5：可审查学习与长期记忆](stage-5-reviewable-learning-and-memory.md)
 > 下一阶段：[Stage 7：Agent Definition 与静态 Workflow Runtime](stage-7-workflow-runtime.md)
+> 最终方案：[Stage 6 Skills 与扩展生命周期最终方案](../reviews/stage-6-skills-and-extensions-final-proposal.md)
 
 ## 一、阶段目标
 
@@ -81,14 +82,14 @@ SkillDefinition
 - description
 - source_kind
 - scope
-- current_version
-- status: draft | active | disabled | deprecated | retired
+- source_locator
 - created_at / updated_at
 
 SkillVersion
 - skill_id
-- version
-- content_checksum
+- version_id             # Morrow 分配的安全不透明 ID，不直接使用外部 version 作路径
+- display_version
+- tree_checksum
 - manifest
 - required_capabilities[]
 - required_tools[]
@@ -97,9 +98,26 @@ SkillVersion
 - created_by
 - test_status
 - approval_status
+
+SkillBinding
+- scope: global | workspace
+- scope_id: null | workspace_id
+- skill_id
+- enabled
+- pinned_version_id | null
+- selection_mode: explicit | workspace_default | description_match
+- revision
+
+SkillSelection
+- agent_run_id
+- skill_id / version_id
+- activation_reason
+- content_checksum
 ```
 
-SkillVersion 一旦 Active 后不可原地修改。更新产生新版本，用户可以 pin、回滚或禁用。
+SkillVersion 一旦获批后不可原地修改。更新产生新版本；某作用域是否启用、pin 或回滚由
+SkillBinding 表达；某次 AgentRun 实际使用什么由 SkillSelection 冻结。不要在 SkillVersion 上再
+维护一份 `active/disabled` 状态。
 
 ## 五、Skill 目录与 Manifest
 
@@ -135,10 +153,12 @@ required_mcp_servers
 entry_resources
 context_budget
 platform_constraints
-trust_level
+requested_trust          # 非权威提示
 ```
 
-不要把工具权限仅写在自然语言中；权限声明必须结构化，并由本地策略取交集。
+不要把工具权限仅写在自然语言中；权限声明必须结构化，并由本地策略取交集。Skill 自报的 Trust
+不能成为有效 Trust；有效 Trust 由 Morrow 根据 builtin 发行清单、用户目录、generated 审批记录或
+imported 来源/校验和在本地计算，且不能绕过 CapabilityPolicy。
 
 ## 六、Skill 发现与渐进式加载
 
@@ -248,12 +268,15 @@ SkillCandidate
 - 样例任务或测试是否通过。
 - Prompt Injection、密钥和隐私扫描。
 
-脚本运行必须经过与本地 Shell 相同或更严格的审批与沙箱策略。
+脚本运行必须经过与本地 Shell 相同或更严格的审批与沙箱策略。实现使用专用
+`SkillScriptExecutionService`：它以冻结 Skill 根和隔离输出目录为边界，只与本地 Shell 共享更底层
+的 ProcessAdapter、超时/取消、脱敏和 CapabilityPolicy，不直接复用工作空间根绑定的
+`ProcessExecutionService`。
 
 ### 7.4 更新、回滚与退休
 
 - 自动改进只能针对 generated Skill 的新版本 Draft。
-- 每次更新显示与 Active 版本 Diff。
+- 每次更新显示与当前 Binding 选定版本的 Diff。
 - 用户可 pin 版本，阻止自动切换。
 - 失败率上升时提示回滚，不自动删除历史版本。
 - 长期未使用可以建议 retired，但不自动删除。
@@ -295,7 +318,7 @@ McpServerDefinition
 - command_or_endpoint
 - credential_refs[]
 - workspace_visibility
-- trust_level
+- local_review_status
 - enabled
 - timeout_policy
 - capability_policy
@@ -305,7 +328,8 @@ McpServerDefinition
 
 ### 9.2 工具发现与命名空间
 
-- MCP 工具使用稳定命名空间，例如 `mcp.<server-id>.<tool-name>`。
+- MCP 工具使用稳定且兼容 Provider 工具名约束的命名空间，例如
+  `mcp__<server-slug>__<tool-slug>`；超长或 slug 碰撞用确定性 digest 后缀消歧，并保留远端原名映射。
 - 发现结果进入本地 Tool Catalog，再冻结进 AgentRun ToolSet。
 - 同名工具不覆盖本地工具。
 - MCP Schema 转换失败只隔离该工具或 Server。
@@ -323,6 +347,20 @@ MCP 工具必须映射到 Morrow 的本地能力模型：
 
 若 MCP 声明“只读”，但本地策略无法验证，仍以 Morrow 配置为准。
 
+每次 MCP 调用同时形成两类风险事实：
+
+1. **Launch Intent**：Server 的 executable/argv、隔离、网络、凭据和工作空间外访问；
+2. **Tool Intent**：本次远端工具的 read/write/destructive/external-effect 语义。
+
+二者都由同一 CapabilityPolicy 评估，最终决定按 `DENY > REQUIRE_APPROVAL > ALLOW` 合并。
+本地 MCP 配置和审核快照只提供事实证据，不是第二套授权权威；真正授权仍由
+`PermissionSnapshot + CapabilityPolicy + ApprovalService` 决定。
+
+第一版中，只有与 AgentRun/Server/配置/Catalog/工具完全匹配的本地审核证据，才能把 MCP 的
+network、credential、loopback 或 external-effect 从硬拒绝提升为逐调用审批，不能直接允许；
+destructive、outside-workspace、privilege escalation 和 git write 仍拒绝，bundled policy 默认值
+不变。
+
 ### 9.4 进程与故障隔离
 
 - MCP Server 启动、停止和崩溃不破坏主进程。
@@ -330,6 +368,10 @@ MCP 工具必须映射到 Morrow 的本地能力模型：
 - stdout/stderr 进入脱敏诊断，不混入工具结果。
 - 失败 Server 自动标记 degraded，不无限重启。
 - 运行中的 AgentRun 使用冻结的工具快照；Server 消失时形成普通工具错误。
+- MCP 调用不自动重试，即使工具被标记为 read；handler entry 后丢失结果统一进入现有
+  `outcome_unknown/requires_reconciliation` 恢复语义。
+- 第一版结果适配覆盖 text、image、audio、resource link、embedded resource 和 structured
+  content；二进制进入 ArtifactStore，模型上下文只接收受限引用和摘要。
 
 ## 十、Provider 与模型扩展
 
@@ -353,7 +395,7 @@ morrow model use <provider-id>/<model-id>
 morrow model remove <provider-id>/<model-id>
 ```
 
-能力描述至少包括：
+能力描述分为 Adapter 默认能力和精确 Model 覆盖，至少包括：
 
 - 流式文本。
 - Tool calling 协议。
@@ -386,6 +428,9 @@ unknown_import
 
 Trust Level 影响默认启用、审批、脚本执行和更新策略，但不绕过全局安全边界。
 
+Trust Level 的有效值只由 Morrow 本地 provenance 和生命周期记录产生；Skill 包中的声明只能作为
+requested hint，不能提升自身 Trust。
+
 ### 11.2 冲突与依赖
 
 - Skill ID、版本和来源冲突有确定性解析。
@@ -399,6 +444,19 @@ Trust Level 影响默认启用、审批、脚本执行和更新策略，但不�
 - 自动更新默认关闭。
 - 脚本内容和权限变化要求重新审批。
 - 诊断包不打包凭据、私有 Skill 内容或完整脚本，除非用户明确选择。
+
+### 11.4 持久化与备份边界
+
+- Provider/Model、SkillBinding 和 MCP desired state 使用 versioned YAML；CredentialStore 仍是
+  secret authority。
+- Skill 包使用 managed filesystem version 与逐文件/树摘要；Catalog、Draft、Usage 和 AgentRun
+  扩展证据使用 SQLite。
+- AgentRun 主快照只保存 Skill/MCP 证据引用和 digest，完整 Skill context 放入专用、受预算的运行
+  表，不能依赖一个正文字符上限推断 64 KiB 主快照必然合法。
+- Stage 6 新增显式 Backup bundle v2，覆盖 SQLite、Artifact、Extension YAML 和被引用的 managed
+  Skill versions；现有 v1 的含义和 verifier 保持不变，CredentialStore 永不打包。
+- 安装、加载和执行都校验 canonical package tree 与文件摘要；symlink、路径逃逸和检查后替换失败
+  关闭。
 
 ## 十二、建议实施切片
 
@@ -514,7 +572,7 @@ MCP Server 在调用中崩溃。对应工具形成受限错误，AgentRun 可以
 |---|---|
 | 自动 Skill 把一次任务过拟合成永久流程 | 多任务 Evidence、Draft、测试、用户批准、版本评估 |
 | Skill 内容成为 Prompt Injection | 低于系统边界、来源可见、按需加载、敏感扫描 |
-| 脚本绕过 Shell 策略 | 统一 ProcessExecutionService 和 CapabilityPolicy |
+| 脚本绕过 Shell 策略 | 专用 SkillScriptExecutionService，共享底层进程适配并统一走 CapabilityPolicy |
 | 同名 Skill 劫持 | 稳定 ID、来源分区、显式冲突处理 |
 | MCP 注解被错误信任 | 本地风险映射和 deny-wins |
 | 扩展故障拖垮主进程 | 进程/错误隔离、超时、degraded 状态 |

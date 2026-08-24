@@ -2342,3 +2342,17 @@
 - Committed the final live evidence as `0f0058c`, fast-forwarded Subplan 62 into local `main`, and
   deleted the clean branch. No push was attempted. Stage 5 is complete and accepted; Stage 6 remains
   unopened.
+
+## 2026-08-24 — Stage 6 final design and implementation-plan activation
+
+- The user explicitly opened Stage 6 planning and supplied a review-agent assessment of the prior
+ 方案. Reconciled it against local `main` at `479270b`, current code and the Stage 6 roadmap.
+- Wrote the final design at `docs/reviews/stage-6-skills-and-extensions-final-proposal.md` and updated
+  the roadmap contracts for SkillBinding, local Trust authority, dedicated Skill script execution,
+  compound MCP launch/tool policy, no MCP auto retry, complete results and Backup v2.
+- Kept `docs/ARCHITECTURE.md` unchanged because the future modules are not implemented. The final
+  closeout subplan will synchronize it from actual code.
+- Activated the Stage 6 master plan with sequential Subplans 63–75. Subplan 63 is ready but not in
+  progress. It may evaluate dependencies without modifying the lock; any exact dependency addition
+  still requires explicit user approval before Subplan 72.
+- No production code, dependency, branch, Provider, MCP, credential, network or user state changed.
