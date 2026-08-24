@@ -17,6 +17,7 @@ from morrow.application.learning.memory_doctor import inspect_memory
 from morrow.application.preferences.backup import verify_preference_references
 from morrow.application.preferences.run_projection import render_frozen_run_preferences
 from morrow.application.preferences.writer import PreferenceWriter
+from morrow.application.skills.doctor import inspect_skills
 from morrow.core.artifacts import (
     ARTIFACT_FILE_SUFFIX,
     ARTIFACT_TEMP_SUFFIX,
@@ -145,8 +146,33 @@ class OperationalDoctor:
                     for code in preference_codes
                 )
             self._inspect_permissions(journal, workspace_id, counts, issues)
-            checks.append("mcp_snapshots_and_reviews")
-            self._inspect_mcp(journal, workspace_id, counts, issues)
+            if (classification.schema_version or 0) >= 14:
+                checks.extend(
+                    ("skill_catalog_and_bindings", "skill_run_evidence", "skill_package_drift")
+                )
+                try:
+                    inspect_skills(
+                        journal,
+                        self.data_root,
+                        workspace_id,
+                        counts,
+                        issues,
+                        issue_factory=self._issue,
+                        schema_version=classification.schema_version,
+                    )
+                except StorageError:
+                    raise
+                except Exception:
+                    issues.append(
+                        self._issue(
+                            "skill_integrity",
+                            DoctorSeverity.ERROR,
+                            "Skill integrity checks could not read the bounded evidence",
+                        )
+                    )
+            if (classification.schema_version or 0) >= 16:
+                checks.append("mcp_snapshots_and_reviews")
+                self._inspect_mcp(journal, workspace_id, counts, issues)
             checks.extend(("learning_reviews_and_candidates", "learning_promotions"))
             inspect_learning(
                 journal,

@@ -2664,3 +2664,16 @@
 - Scope is limited to preserving Backup v1 compatibility, adding isolated Backup v2 for referenced
   Stage 6 state, and extending bounded Doctor integrity checks. Integrated acceptance closeout,
   live/network/credential paths and Stage 7 behavior remain out of scope.
+
+## 2026-08-24 — Subplan 74 Backup v2 and Doctor completed locally
+
+- Added explicit v1/v2 backup contracts and preserved v1 verification while adding v2 online SQLite
+  backup, current sanitized YAML, Artifact bytes, referenced managed Skill packages and bounded
+  references. Verification rejects path traversal, symlinks, drift, unsupported schemas, digest or
+  cross-store mismatches; restore publishes only after verification into an isolated atomic target.
+- Added bounded Skill and MCP backup verifiers plus schema-gated Doctor checks for catalog, Binding,
+  selection/context, Draft/Usage and managed package integrity. Credential values, raw results and
+  diagnostics remain excluded.
+- Validation passed: Stage 6 backup suite `5 passed`; affected backup/Doctor/MCP/Skill suite `32
+  passed`; full offline suite `1056 passed, 2 skipped, 2 deselected`; Ruff format/check, compileall,
+  required CLI help and `git diff --check` passed. No live, networked or credentialed path was run.

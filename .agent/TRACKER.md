@@ -16,7 +16,13 @@ Subplan 73 is complete on local `main@514a9a6` after a fast-forward merge from
 `codex/feat/stage6-mcp-runtime`.
 It adds ordinary ToolExecutor integration, compound MCP policy, lazy run-scoped lifecycle, bounded
 results, generic outcome-unknown recovery, AgentRun/PermissionSnapshot evidence and bounded doctor
-facts. Backup v2, remaining doctor closeout and final acceptance remain pending.
+facts. Subplan 74 is now complete on its topic branch; final acceptance and closeout remain pending.
+
+Subplan 74 adds versioned Backup v2 with online SQLite backup, sanitized current YAML, Artifact
+content, referenced managed Skill packages, canonical per-file/tree/manifest digests, symlink/path
+refusal, cross-store Skill/MCP checks, atomic isolated restore and explicit v1 compatibility. Doctor
+now validates bounded Skill catalog/Binding/run/Draft/Usage evidence and managed package drift while
+preserving older schema gates.
 
 ## Last completed work (Subplan 72)
 
@@ -71,13 +77,13 @@ facts. Backup v2, remaining doctor closeout and final acceptance remain pending.
 
 ## Active task
 
-Subplan 74 — Backup v2 and Doctor, on `codex/feat/stage6-backup-doctor` from
-`main@514a9a6`.
+Subplan 74 — completed locally on `codex/feat/stage6-backup-doctor`; merge to `main`, then activate
+Subplan 75 from the verified merge.
 
 ## Next action
 
-Inspect the existing v1 Backup/Doctor seams, implement the v2 contract and bounded Stage 6
-integrity checks, then run focused and full offline gates before merging.
+Commit the verified Subplan 74 state, fast-forward it into `main`, retire the clean topic branch,
+and activate the integrated acceptance closeout subplan.
 
 ## Last completed work (Subplan 71)
 

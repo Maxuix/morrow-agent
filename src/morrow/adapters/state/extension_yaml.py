@@ -156,6 +156,11 @@ class ExtensionYamlStore:
         name = "extensions-global.lock" if scope == "global" else f"{workspace_id}-extensions.lock"
         return FileLock(str(self.locks / name), timeout=5)
 
+    def maintenance_lock(self) -> FileLock:
+        """Serialize Extension writes with bounded cross-store backup capture."""
+
+        return FileLock(str(self.locks / "extensions-maintenance.lock"), timeout=5)
+
     def load_global(self) -> ExtensionYamlLoad:
         return self._load_path(self.global_path, expected_scope="global", expected_scope_id=None)
 
@@ -302,35 +307,36 @@ class ExtensionYamlStore:
     ) -> ExtensionYamlLoad:
         if value.scope != scope or value.scope_id != workspace_id:
             raise ExtensionYamlError("scope", "Extension YAML value has the wrong scope")
-        with self._lock(scope, workspace_id):
-            current = self._load_path(
-                path,
-                expected_scope=scope,
-                expected_scope_id=workspace_id,
-            )
-            if current.status is not ExtensionYamlLoadStatus.OK or current.value is None:
-                raise ExtensionYamlError(
-                    current.error or "unavailable", "Extension YAML is not writable"
+        with self.maintenance_lock():
+            with self._lock(scope, workspace_id):
+                current = self._load_path(
+                    path,
+                    expected_scope=scope,
+                    expected_scope_id=workspace_id,
                 )
-            if expected_revision is not None and current.revision != expected_revision:
-                raise ExtensionYamlConflict()
-            if expected_value_digest is not None and current.digest != expected_value_digest:
-                raise ExtensionYamlConflict("Extension YAML value changed")
-            next_value = value.model_copy(
-                update={"revision": current.revision + 1, "updated_at": utc_now()}
-            )
-            data = yaml.safe_dump(
-                next_value.model_dump(mode="json", by_alias=True, exclude_none=False),
-                allow_unicode=True,
-                sort_keys=False,
-            ).encode("utf-8")
-            path.parent.mkdir(parents=True, exist_ok=True)
-            if path.exists():
-                if self.failure_injector:
-                    self.failure_injector("backup")
-                self._backup(path)
-            self._publish(path, data)
-            return self._load_path(path, expected_scope=scope, expected_scope_id=workspace_id)
+                if current.status is not ExtensionYamlLoadStatus.OK or current.value is None:
+                    raise ExtensionYamlError(
+                        current.error or "unavailable", "Extension YAML is not writable"
+                    )
+                if expected_revision is not None and current.revision != expected_revision:
+                    raise ExtensionYamlConflict()
+                if expected_value_digest is not None and current.digest != expected_value_digest:
+                    raise ExtensionYamlConflict("Extension YAML value changed")
+                next_value = value.model_copy(
+                    update={"revision": current.revision + 1, "updated_at": utc_now()}
+                )
+                data = yaml.safe_dump(
+                    next_value.model_dump(mode="json", by_alias=True, exclude_none=False),
+                    allow_unicode=True,
+                    sort_keys=False,
+                ).encode("utf-8")
+                path.parent.mkdir(parents=True, exist_ok=True)
+                if path.exists():
+                    if self.failure_injector:
+                        self.failure_injector("backup")
+                    self._backup(path)
+                self._publish(path, data)
+                return self._load_path(path, expected_scope=scope, expected_scope_id=workspace_id)
 
     def _backup(self, path: Path) -> None:
         backup = path.with_suffix(path.suffix + ".bak")

@@ -13,6 +13,7 @@ from pathlib import Path
 from morrow.adapters.state.artifacts import FilesystemArtifactStore
 from morrow.adapters.state.journal import SqliteOperationalJournal
 from morrow.adapters.state.operational import OperationalStore, restrict_path
+from morrow.application.backup_v2 import BackupV2Error, Stage6BackupService
 from morrow.application.learning.learning_backup import verify_learning_references
 from morrow.application.learning.memory_backup import verify_memory_references
 from morrow.application.preferences.backup import verify_preference_references
@@ -22,6 +23,8 @@ from morrow.core.backup import (
     ArtifactBackupStatus,
     BackupBundleReport,
     BackupManifest,
+    BackupV2BundleReport,
+    BackupV2RestoreReport,
     BackupVerificationReport,
 )
 from morrow.core.models import utc_now
@@ -40,8 +43,13 @@ class OperationalBackupService:
     ) -> None:
         self.store = store
         self.journal = journal
+        self.stage6 = Stage6BackupService(store)
 
-    def create(self, bundle_name: str | None = None) -> BackupBundleReport:
+    def create(self, bundle_name: str | None = None, *, version: int = 1):
+        if version == 2:
+            return self.create_v2(bundle_name)
+        if version != 1:
+            raise BackupBundleError("backup bundle version is unsupported")
         name = bundle_name or f"operational-{int(self.store.clock.now().timestamp())}"
         self._validate_name(name)
         bundle = self.store.layout.backups_dir / f"{name}.bundle"
@@ -111,8 +119,31 @@ class OperationalBackupService:
                 temporary_database.unlink(missing_ok=True)
             raise BackupBundleError("backup bundle could not be completed") from exc
 
+    def create_v2(self, bundle_name: str | None = None) -> BackupV2BundleReport:
+        name = bundle_name or f"stage6-{int(self.store.clock.now().timestamp())}"
+        try:
+            bundle, manifest, manifest_digest = self.stage6.create(name)
+        except BackupV2Error as exc:
+            raise BackupBundleError("backup v2 could not be completed") from exc
+        return BackupV2BundleReport(
+            bundle_name=bundle.name,
+            schema_version=manifest.schema_version,
+            integrity_ok=True,
+            manifest_sha256=manifest_digest,
+            artifacts=manifest.artifacts,
+            skill_versions=manifest.skill_versions,
+        )
+
     def verify(self, bundle: Path) -> BackupVerificationReport:
         root = self._validate_bundle_path(bundle)
+        try:
+            manifest_version = json.loads((root / "manifest.json").read_text(encoding="utf-8")).get(
+                "manifest_version"
+            )
+        except (OSError, UnicodeError, TypeError, ValueError, json.JSONDecodeError):
+            manifest_version = None
+        if manifest_version == 2:
+            return self.stage6.verify(root)
         database = root / "database.sqlite"
         manifest_path = root / "manifest.json"
         manifest_digest_path = root / "manifest.sha256"
@@ -251,6 +282,15 @@ class OperationalBackupService:
             credentials_excluded=self._credentials_excluded(root),
             issues=tuple(dict.fromkeys(issues)),
         )
+
+    def verify_v2(self, bundle: Path):
+        return self.stage6.verify(bundle)
+
+    def restore_v2(self, bundle: Path, target_root: Path) -> BackupV2RestoreReport:
+        return self.stage6.restore(bundle, target_root)
+
+    def restore(self, bundle: Path, target_root: Path) -> BackupV2RestoreReport:
+        return self.restore_v2(bundle, target_root)
 
     def _copy_artifacts(self, target: Path):
         handle = None

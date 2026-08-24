@@ -1,8 +1,8 @@
 # Stage 6 Skills and Extensions Implementation Plan
 
-> Status: Stage 6 implementation in progress; Subplans 63–73 and the Subplan 65 review repair are
+> Status: Stage 6 implementation in progress; Subplans 63–74 and the Subplan 65 review repair are
 > complete locally
-> Active subplan: Subplan 74 — Backup v2 and Doctor
+> Active subplan: Subplan 74 — Backup v2 and Doctor (completed; Subplan 75 activates after merge)
 > Baseline: local `main` at `514a9a6`; dependency gate approved by the user on 2026-08-24
 > Design baseline: `docs/reviews/stage-6-skills-and-extensions-final-proposal.md`
 > Roadmap authority: `docs/roadmap/stage-6-skills-and-extensions.md`
@@ -159,7 +159,7 @@ existing seam first inside the active subplan.
 | 71 | Dynamic Tool contracts | completed locally; bounded validators and declaration-owned recovery |
 | 72 | MCP control plane and Catalog | completed locally; stdio definitions, config, discovery, namespacing and v16 evidence |
 | 73 | MCP runtime and security adapter | completed locally; compound policy, lazy lifecycle, no retry, normalized results and recovery |
-| 74 | Backup v2 and doctor | active; cross-store backup/restore verification and Stage 6 integrity checks |
+| 74 | Backup v2 and doctor | completed locally; cross-store backup/restore verification and Stage 6 integrity checks |
 | 75 | Integrated acceptance and closeout | fixtures/examples, full gates, docs and truthful architecture/roadmap sync |
 
 Each child plan in `.agent/subplans/63-*.md` through `75-*.md` owns exact tasks, files, focused tests

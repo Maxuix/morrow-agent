@@ -1,6 +1,6 @@
 # Subplan 74 — Backup v2 and Doctor
 
-> Status: in progress
+> Status: completed locally
 > Branch: `codex/feat/stage6-backup-doctor`
 > Prerequisite: Subplan 73 complete
 
@@ -58,3 +58,15 @@ doctor with bounded Stage 6 integrity checks.
   explicit exclusions.
 - Restore never activates unverified partial state.
 - Doctor detects all declared cross-store integrity failures without leaking content.
+
+## Completion evidence
+
+- Added explicit v1/v2 manifest contracts, atomic v2 creation/verification/restore, bounded YAML and
+  managed Skill capture, Artifact integrity checks, cross-store Skill/MCP/reference validation and
+  credentials exclusion.
+- Added Stage 6 Doctor checks for v14/v15 Skill catalog, Binding, run evidence, Draft/Usage links and
+  managed package drift, gated by the store schema so older stores remain diagnosable.
+- Focused suite: `tests/test_stage6_backup.py` — 5 passed; affected backup/Doctor/MCP/Skill suite —
+  32 passed. Full offline gate: `1056 passed, 2 skipped, 2 deselected`.
+- Ruff format/check, `compileall`, required CLI help commands and `git diff --check` passed. No live,
+  networked or credentialed path was run.
