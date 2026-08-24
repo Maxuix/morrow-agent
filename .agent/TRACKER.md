@@ -12,6 +12,10 @@ AgentLoop/Session/Task boundaries. The verified Subplan 72 checkpoint is committ
 as `c1a7132`;
 remote publication is not in scope.
 
+Subplan 73 is now active on `codex/feat/stage6-mcp-runtime`, based on local `main@97d4a82`.
+Scope is limited to ordinary ToolExecutor integration, compound MCP policy, lazy run-scoped
+lifecycle, bounded results and recovery; backup v2 and doctor closeout remain pending.
+
 ## Last completed work (Subplan 72)
 
 - Added approved official MCP/JSON Schema dependencies, strict stdio Server contracts, bounded
@@ -65,12 +69,12 @@ remote publication is not in scope.
 
 ## Active task
 
-None. Subplan 72 is complete locally; Subplan 73 remains pending activation.
+Subplan 73 — MCP Runtime and Security Adapter.
 
 ## Next action
 
-Subplan 72 is fast-forwarded into local `main` as `c1a7132`; keep MCP unavailable to AgentRun
-execution until Subplan 73 is explicitly activated.
+Build the frozen launch/tool evidence and policy bridge first; keep MCP runtime changes inside the
+existing ToolExecutor, permission, approval, cancellation, audit and recovery seams.
 
 ## Last completed work (Subplan 71)
 
@@ -100,7 +104,7 @@ None. Subplan 73 remains a later child and is not active.
 
 ## Notes
 
-- `main` is ahead of `origin/main` through the verified Subplan 71 fast-forward. Remote publication
+- `main` is ahead of `origin/main` through the verified Subplan 72 fast-forward. Remote publication
   was not placed in scope, so no push was made.
 - The spike test file skips cleanly in the default dev env (`importorskip("mcp")`).
 

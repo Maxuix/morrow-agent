@@ -2631,3 +2631,12 @@
   compileall and `git diff --check`. No live/networked MCP path or remote push was run.
 - Committed as `c1a7132`, fast-forwarded into local `main`, and retained no MCP-specific branch in
   ToolExecutor or recovery. Remote publication remains out of scope.
+
+## 2026-08-24 — Subplan 73 activated
+
+- The user requested continuation of the Stage 6 plan after the verified Subplan 72 merge. Created
+  `codex/feat/stage6-mcp-runtime` from local `main@97d4a82`.
+- Scope is limited to frozen MCP launch/tool evidence, the existing ToolExecutor/permission/
+  approval/recovery seams, lazy per-AgentRun lifecycle, bounded result normalization and no-retry
+  behavior. Backup v2, doctor closeout, new dependencies and live/network/credential tests remain
+  out of scope.

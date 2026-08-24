@@ -1,6 +1,6 @@
 # Subplan 73 — MCP Runtime and Security Adapter
 
-> Status: pending
+> Status: in progress
 > Branch: `codex/feat/stage6-mcp-runtime`
 > Prerequisite: Subplan 72 complete
 

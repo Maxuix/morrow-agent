@@ -2,8 +2,8 @@
 
 > Status: Stage 6 implementation in progress; Subplans 63–72 and the Subplan 65 review repair are
 > complete locally
-> Active subplan: none; Subplan 73 — MCP Runtime and Security Adapter is pending activation
-> Baseline: local `main` at `c1a7132`; dependency gate approved by the user on 2026-08-24
+> Active subplan: Subplan 73 — MCP Runtime and Security Adapter
+> Baseline: local `main` at `97d4a82`; dependency gate approved by the user on 2026-08-24
 > Design baseline: `docs/reviews/stage-6-skills-and-extensions-final-proposal.md`
 > Roadmap authority: `docs/roadmap/stage-6-skills-and-extensions.md`
 
@@ -158,7 +158,7 @@ existing seam first inside the active subplan.
 | 70 | Provider/Model control plane | completed locally; capabilities, CRUD/sync/use/remove and next-run snapshots |
 | 71 | Dynamic Tool contracts | completed locally; bounded validators and declaration-owned recovery |
 | 72 | MCP control plane and Catalog | completed locally; stdio definitions, config, discovery, namespacing and v16 evidence |
-| 73 | MCP runtime and security adapter | compound policy, lazy lifecycle, no retry, normalized results and recovery |
+| 73 | MCP runtime and security adapter | in progress; compound policy, lazy lifecycle, no retry, normalized results and recovery |
 | 74 | Backup v2 and doctor | cross-store backup/restore verification and Stage 6 integrity checks |
 | 75 | Integrated acceptance and closeout | fixtures/examples, full gates, docs and truthful architecture/roadmap sync |
 
