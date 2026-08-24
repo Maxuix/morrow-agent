@@ -6,15 +6,16 @@ Stage 6 implementation in progress.
 
 ## Active subplan
 
-Subplan 69 — Skill Script Execution (active in the current working tree).
+No subplan is active. Subplan 69 — Skill Script Execution is complete locally; Subplan 70 is
+pending activation.
 
 ## Tasks (Subplan 69)
 
-- `[>]` Define bounded script requests, execution results and output Artifact contracts.
-- `[ ]` Implement frozen package verification, argv/env/root validation and isolated execution.
-- `[ ]` Route capability/approval/cancellation/audit/recovery through existing ToolExecutor seams.
-- `[ ]` Import bounded declared outputs as Artifacts and redact/truncate process summaries.
-- `[ ]` Add focused script/permission/recovery tests and run the standard quality gates.
+- `[x]` Define bounded script requests, execution results and output Artifact contracts.
+- `[x]` Implement frozen package verification, argv/env/root validation and isolated execution.
+- `[x]` Route capability/approval/cancellation/audit/recovery through existing ToolExecutor seams.
+- `[x]` Import bounded declared outputs as Artifacts and redact/truncate process summaries.
+- `[x]` Add focused script/permission/recovery tests and run the standard quality gates.
 
 ## Boundaries
 

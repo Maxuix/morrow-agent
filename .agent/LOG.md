@@ -2533,3 +2533,19 @@
 - Scope is limited to bounded script requests, frozen managed-package verification, dedicated
   constrained execution, existing permission/approval/audit/recovery seams and Artifact outputs;
   no general shell, ambient host access or capability widening is allowed.
+
+## 2026-08-24 — Subplan 69 Skill Script execution completed
+
+- Added strict `SkillScriptRequest`/`SkillScriptResult` contracts, immutable `FrozenSkillPackage`
+  capture, and `SkillScriptExecutionService` over the existing process adapter seam. The service
+  revalidates the managed envelope/tree/script digest immediately before launch and never falls
+  back to the workspace-rooted `ProcessExecutionService` or an unconfined production adapter.
+- Added isolated temporary package/input/output roots, fixed safe environment construction, root /
+  input / output symlink and mutation checks, declared output validation, bounded redacted stdout /
+  stderr and session-scoped Artifact publication. Manifest permission declarations become risk
+  flags and cannot grant capability; missing native sandbox is rejected.
+- Registered `run_skill_script` in the standard ToolExecutor path and added the durable recovery
+  declaration `PROCESS_EFFECT_NON_DURABLE / OUTCOME_UNKNOWN` with frozen-confinement evidence.
+- Focused coverage and existing Process/Permission/Recovery regressions passed; final non-live gate
+  passed `1023 passed, 3 skipped, 2 deselected`. Ruff format/check, compileall and `git diff --check`
+  passed. Committed as `73f99db`; no remote push.

@@ -1,12 +1,12 @@
 # Morrow 架构基线
 
-> 状态：阶段 2–5 已完成（macOS；Linux 原生运行仍 unsupported）；Stage 6+ 尚未开始
+> 状态：阶段 2–5 已完成；Stage 6 Subplans 63–69 已在本地完成（macOS；Linux 原生运行仍
+> unsupported）；Stage 6 MCP 及后续阶段尚未完成
 
 本文锁定当前依赖方向、数据所有权和安全边界。阶段 3 的能力策略、配置工具、工作空间读搜、冲突安全文件变更、审批后 Host 命令、只读 Git 和当前 macOS 原生沙箱
 已经交付；Linux 原生运行尚未声明支持。Stage 4 已落地数据根 SQLite Operational Store 的
 身份/迁移/备份基础、v2 无工具 Session 历史、v3 工具执行/审批日志、v4 恢复分类与
-崩溃对账，以及 v5 TaskRun 生命周期、转移审计、版本化 TaskOutcome、v6 Artifact 元数据/引用与受控字节发布、v7 确定性 ContextCheckpoint 与不可变 Session lineage、v8 有界 application event/command receipt、v9 按 AgentRun 冻结的权限证据与可撤销 grant。Stage 5 Subplans 49–54 已增加 LearningPolicy、Review、Evidence、Candidate、Suppression 的有界领域与 v10–v12 SQLite 持久化；accepted TaskOutcome 的同事务 Review 请求、一次性 lease Runner、Evidence/Context 安全边界和候选去重/抑制；Inbox、Candidate 决策、Project Knowledge 生命周期；公开 prepared 配置契约、SQLite/YAML Promotion Saga、激活来源、恢复/撤销和 CLI/REPL 入口；确定性 MemorySelection、AgentRun 冻结/恢复复用、RunContextProjection；以及 no-tool production Reviewer、离线评估、只读 Learning doctor 和隔离 backup 引用校验。Reviewer v4 的真实 Provider 质量目标已通过，不由离线证据替代。Stage 6 的 Skills/MCP，
-以及 Stage 7–10 的 Workflow、GUI、后台自动化和产品化均尚未开始。
+崩溃对账，以及 v5 TaskRun 生命周期、转移审计、版本化 TaskOutcome、v6 Artifact 元数据/引用与受控字节发布、v7 确定性 ContextCheckpoint 与不可变 Session lineage、v8 有界 application event/command receipt、v9 按 AgentRun 冻结的权限证据与可撤销 grant。Stage 5 Subplans 49–54 已增加 LearningPolicy、Review、Evidence、Candidate、Suppression 的有界领域与 v10–v12 SQLite 持久化；accepted TaskOutcome 的同事务 Review 请求、一次性 lease Runner、Evidence/Context 安全边界和候选去重/抑制；Inbox、Candidate 决策、Project Knowledge 生命周期；公开 prepared 配置契约、SQLite/YAML Promotion Saga、激活来源、恢复/撤销和 CLI/REPL 入口；确定性 MemorySelection、AgentRun 冻结/恢复复用、RunContextProjection；以及 no-tool production Reviewer、离线评估、只读 Learning doctor 和隔离 backup 引用校验。Reviewer v4 的真实 Provider 质量目标已通过，不由离线证据替代。Stage 6 的 Skills 包、生命周期、选择/上下文、Draft/Usage 和受限脚本执行已在本地完成；MCP 及 Stage 7–10 的 Workflow、GUI、后台自动化和产品化均尚未完成。
 
 S56–S61 已冻结并接通 generic Preference 契约、decode-only legacy 迁移、workspace Preference v3、
 Operational Store v13 Review/Evidence/Proposal/Writer saga、异步 Worker、Inbox、Writer 和下一
@@ -63,7 +63,8 @@ Session 持有的进程内 `ConversationLog` 是唯一聊天历史权威，`Sess
 Snapshot 生成 Chat 或 Structured 投影，按完整 Cycle/turn 控制预算；它不写事实源、不调用摘要模型。
 
 生产组合只在 Adapter 声明 OpenAI function-tool 支持时启用 `list_directory`、`read_file`、
-`find_files`、`search_text`、`apply_patch`、`write_file`、`show_changes`、`run_command`、`git_status`、`git_diff`、`update_configuration` 和 `manage_preferences`；
+`find_files`、`search_text`、`apply_patch`、`write_file`、`show_changes`、`run_command`、
+`run_skill_script`、`git_status`、`git_diff`、`update_configuration` 和 `manage_preferences`；
 支持原生沙箱时再加入当前运行、始终需审批的 `promote_sandbox_changes`。读搜工具通过冻结的
 `WorkspacePathResolver`、`WorkspaceFileService` 与 `WorkspaceSearchService` 访问当前工作空间，
 并对调用路径及工作区内解析后的文件符号链接目标应用同一受保护策略；变更工具通过
@@ -91,6 +92,10 @@ pager、外部 diff、textconv、hooks-like executable extension points、prompt
 快照中自动执行。快照准备/收集使用协作式取消和预留临时根，超时等待后台阶段停稳后再清理；沙箱变更只通过
 当前运行、始终需审批的推广工具进入既有冲突安全 mutation 服务，并记录到同一 `ChangeSetService`。
 Linux bubblewrap 在真实 runner 验收前固定探测为 unsupported，不因本机存在二进制而声明支持。
+`run_skill_script` 则通过 `SkillScriptExecutionService` 读取按 AgentRun 选择的冻结 managed Skill 包，
+只在可用原生沙箱中运行；脚本 argv、环境名、输入 Artifact 和输出路径均有界，输出先脱敏再发布为
+Session-scoped Artifact。它不接受 shell、不继承 ambient 环境或 CredentialStore，缺少沙箱时拒绝，
+并沿用同一 CapabilityPolicy、ToolExecutor、ToolFact 与恢复分类。
 
 Stage 4 的 Full Access Manual 是一条额外的、明确受限的证据链：只有 Application API 的本地界面命令能
 创建 `CapabilityGrant`；它绑定一个前台 AgentRun，随后冻结为不可替换的 `PermissionSnapshot`。Stage 4
@@ -166,6 +171,8 @@ Service 或 Port：
 `list_directory`、`read_file`、`find_files` 与 `search_text` 通过注入的文件/搜索服务访问冻结工作空间；
 `apply_patch`、`write_file` 与 `show_changes` 通过注入的 mutation/ChangeSet 服务执行和报告当前运行的实际变更；
 `run_command` 通过注入的 `ProcessExecutionService` 执行审批后的 Host 命令，或在 Auto Sandboxed 中执行原生快照命令；
+`run_skill_script` 通过注入的 `SkillScriptExecutionService` 执行已冻结 Skill 包中的脚本，并只发布有界、脱敏的
+声明输出 Artifact；
 `promote_sandbox_changes` 通过注入的 `SandboxSnapshotService`、`WorkspaceMutationService` 与
 `ChangeSetService` 推广并记录当前运行的有界文本变更；
 `update_configuration` 通过注入的 `ConfigPatchService` 管理 Profile；`manage_preferences` 通过注入的
@@ -297,7 +304,7 @@ Session/Task/Artifact 列表的 Application page 合同在 CLI 中不被丢弃�
 下一页时输出 `next_cursor`，`--json` 输出 `{items, next_cursor}`。Doctor 的报告生成与
 健康结果是两件事：报告保留可读输出，但只有 health OK 时 CLI exit 0，其他状态 exit 2。
 
-- 当前工具只读取冻结工作空间，或通过冲突安全的 mutation 服务更新项目文件，或经审批调用非隔离 Host 命令；Auto Sandboxed 只在原生临时快照内执行；Git 只读检查不修改仓库；配置服务更新既有状态；不联网。
+- 当前工具只读取冻结工作空间，或通过冲突安全的 mutation 服务更新项目文件，或经审批调用非隔离 Host 命令；Auto Sandboxed 只在原生临时快照内执行；Skill 脚本只在冻结包的原生沙箱内执行并通过 Artifact 输出；Git 只读检查不修改仓库；配置服务更新既有状态；不联网。
 - 当前系统边界按冻结 ToolSet 动态渲染；未提供的能力、工作空间外访问、网络/loopback、Git 写入和权限提升始终被禁止。
 - 默认测试不联网、不使用真实钥匙串、不依赖用户主目录。
 - Provider 和结构化响应失败必须分类；不静默切换 Provider 或模型。

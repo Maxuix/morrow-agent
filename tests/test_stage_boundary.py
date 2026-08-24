@@ -21,8 +21,9 @@ from morrow.core.execution import missing_declarations
 from morrow.core.models import FunctionToolCall, ModelRef
 from morrow.testing import FixedIdSource, ScriptedModelProvider, make_run_policy
 
-# Capability families that must stay outside the current Stage 3F
-# slice: arbitrary shell, Git writes, network, browser, MCP and skill access.
+# Capability families that must stay outside the current production slice:
+# arbitrary shell, Git writes, network, browser and MCP access.  Stage 6 Skill
+# script execution is a distinct frozen-package capability with its own policy.
 FORBIDDEN_TOOL_KEYWORDS = frozenset(
     {
         "shell",
@@ -41,7 +42,6 @@ FORBIDDEN_TOOL_KEYWORDS = frozenset(
         "browse",
         "navigate",
         "mcp",
-        "skill",
     }
 )
 
@@ -150,6 +150,7 @@ def test_no_forbidden_tool_capability_is_registered_or_exposed(tmp_path):
         "write_file",
         "show_changes",
         "run_command",
+        "run_skill_script",
         "git_status",
         "git_diff",
     }

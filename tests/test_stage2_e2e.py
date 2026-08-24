@@ -189,6 +189,7 @@ async def test_ordinary_chat_can_finish_without_calling_advertised_guarded_tools
         "write_file",
         "show_changes",
         "run_command",
+        "run_skill_script",
         "git_status",
         "git_diff",
     }

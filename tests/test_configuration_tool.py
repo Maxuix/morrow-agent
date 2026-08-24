@@ -805,6 +805,7 @@ async def test_production_composition_uses_one_agent_loop_and_refreshes_state_pr
         "write_file",
         "show_changes",
         "run_command",
+        "run_skill_script",
         "git_status",
         "git_diff",
     }

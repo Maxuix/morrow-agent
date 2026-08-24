@@ -2,12 +2,10 @@
 
 ## Current status
 
-Subplans 63 (spike), 64 (per-AgentRun preparation) and 65 (Skill package/catalog foundation + v14)
-are complete and merged to local `main`; the Subplan 65 review repairs are also complete locally.
-Subplans 67 and 68 are complete locally. Skills remain discoverable and truthfully projectable;
-Subplan 68 adds only bounded generated Draft review and observational Usage on top of accepted Stage
-5 Candidates. The verified checkpoint is committed locally as `8afbcd2`; remote publication is not
-in scope.
+Subplans 63 (spike), 64 (per-AgentRun preparation), 65 (Skill package/catalog foundation + v14),
+66, 67, 68 and 69 are complete locally; the Subplan 65 review repairs are also complete. Subplan
+69 adds constrained Skill script execution without widening the existing ToolExecutor boundary.
+The verified checkpoint is committed locally as `73f99db`; remote publication is not in scope.
 
 ## Last completed work (Subplan 66)
 
@@ -48,12 +46,12 @@ in scope.
 
 ## Active task
 
-Subplan 69 — Skill Script execution is active.
+None. Subplan 69 is complete locally; Subplan 70 — Provider/Model control is the next pending
+subplan.
 
 ## Next action
 
-Inspect the existing ProcessAdapter, permission and Artifact seams, then define the bounded script
-request/result contracts before implementing execution.
+Activate Subplan 70 from the verified `main` checkpoint `73f99db` when continuing Stage 6.
 
 ## Dependency gate
 
@@ -68,9 +66,23 @@ dependency decision and explicit approval if new packages are recommended.
 
 ## Notes
 
-- `main` is five local commits ahead of `origin/main` (through the Subplan 68 checkpoint
-  `8afbcd2`). Remote publication was not placed in scope, so no push was made.
+- `main` is eight local commits ahead of `origin/main` (through the Subplan 69 checkpoint
+  `73f99db`). Remote publication was not placed in scope, so no push was made.
 - The spike test file skips cleanly in the default dev env (`importorskip("mcp")`).
+
+## Last completed work (Subplan 69)
+
+- Added strict Skill script request/result contracts with bounded argv, environment names, input
+  Artifact IDs, output paths and timeout; shell strings and overlapping output paths are rejected.
+- Added verified whole-package capture and immediate pre-launch envelope/tree/script digest checks;
+  execution uses an isolated temporary root, read-only Skill copy, declared input Artifacts and
+  declared output files only. Root/output/input symlink and mutation checks fail closed.
+- Registered `run_skill_script` through the existing ToolExecutor/CapabilityPolicy path with a
+  sandbox-required OperationIntent, manifest permission risk flags, approval metadata and an
+  outcome-unknown recovery declaration. Stdout/stderr and output files are redacted/bounded before
+  the output Artifact refs enter the result envelope.
+- Validation: focused suite `82 passed, 2 skipped`; full non-live suite `1023 passed, 3 skipped,
+  2 deselected`; Ruff, compileall and `git diff --check` passed. Commit `73f99db`; no push.
 
 ## Last completed work (Subplan 68)
 

@@ -1,6 +1,6 @@
 # Subplan 69 — Skill Script Execution
 
-> Status: in progress
+> Status: completed locally
 > Branch: `codex/feat/stage6-skill-scripts`
 > Prerequisite: Subplan 68 complete
 
@@ -51,3 +51,15 @@ not expose a general shell or silently fall back to an unconfined host process.
 - A valid generated/imported script runs only under its frozen, approved constraints.
 - Script execution is not a second process policy path and cannot widen its own authority.
 - No general shell tool or ambient host access was introduced.
+
+## Exit evidence
+
+- Implemented `SkillScriptRequest`/`SkillScriptResult`, verified `FrozenSkillPackage` capture,
+  `SkillScriptExecutionService`, ToolExecutor registration, capability policy routing, recovery
+  declaration and redacted Artifact output publication.
+- Added focused coverage for request bounds, frozen-package drift, sandbox availability, root and
+  symlink escape, input mutation, permission denial, redaction, timeout and temporary cleanup.
+- Validation: focused Skill/Tool/Process/Recovery suite `82 passed, 2 skipped`; full non-live suite
+  `1023 passed, 3 skipped, 2 deselected`; Ruff format/check, compileall and `git diff --check`
+  passed.
+- Git checkpoint: `73f99db feat(stage6): add isolated skill script execution`; no remote push.
