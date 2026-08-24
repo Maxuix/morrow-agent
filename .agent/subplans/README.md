@@ -2,7 +2,7 @@
 
 Stage 4 and Stage 5 are complete through Subplan 62 and remain recoverable in Git history. On
 2026-08-24 the user explicitly requested a fact-checked final Stage 6方案 and a complete executable
-implementation plan. Stage 6 is now planned as Subplans 63–75; implementation is in progress.
+implementation plan. Stage 6 is now complete locally through Subplan 75; one post-closeout review remains.
 
 ## Stage 6 sequence
 
@@ -20,7 +20,7 @@ implementation plan. Stage 6 is now planned as Subplans 63–75; implementation 
 | 72 | `72-stage6-mcp-control-catalog.md` | completed locally |
 | 73 | `73-stage6-mcp-runtime-security.md` | completed locally |
 | 74 | `74-stage6-backup-doctor.md` | completed locally |
-| 75 | `75-stage6-acceptance-closeout.md` | pending |
+| 75 | `75-stage6-acceptance-closeout.md` | completed locally |
 
 ## Completed retained subplans
 

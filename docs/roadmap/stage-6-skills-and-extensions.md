@@ -1,9 +1,11 @@
 # Stage 6：Skills 与扩展生命周期
 
-> 状态：实施中（Subplans 63–73 已在本地完成；当前实施 Subplan74 Backup/Doctor，最终验收仍待实施）
-> 当前进展：MCP desired state、stdio Catalog discovery、确定性命名空间、Operational Store v16、
-> run-scoped lazy runtime、安全策略桥接、结果 Artifact 引用与普通 ToolExecutor 接入已完成。
-> 阶段结果：Morrow 可以发现、加载、测试、版本化和治理 Skills，并以统一安全边界接入 MCP 与更多 Provider
+> 状态：已完成（Subplans 63–75 已在本地完成；macOS 离线验收通过，Linux 原生运行仍 unsupported）
+> 当前进展：Skill Catalog/生命周期、Selection/Context、Draft/Usage、受限脚本、Provider/Model 控制面，
+> MCP desired state、stdio Catalog discovery、确定性命名空间、Operational Store v16、run-scoped lazy runtime、
+> 安全策略桥接、结果 Artifact 引用、普通 ToolExecutor 接入、Doctor 和 Backup v2 均已完成。
+> 阶段结果：Morrow 可以在隔离状态中发现、加载、测试、版本化和治理 Skills，并以统一安全边界接入 MCP 与更多 Provider；
+> 完整离线验收证据见 [Stage 6 acceptance](../acceptance/stage6-skills-and-extensions.md)
 > 上级文档：[开发路线总览](../ROADMAP.md)
 > 上一阶段：[Stage 5：可审查学习与长期记忆](stage-5-reviewable-learning-and-memory.md)
 > 下一阶段：[Stage 7：Agent Definition 与静态 Workflow Runtime](stage-7-workflow-runtime.md)
@@ -460,7 +462,7 @@ requested hint，不能提升自身 Trust。
 - 安装、加载和执行都校验 canonical package tree 与文件摘要；symlink、路径逃逸和检查后替换失败
   关闭。
 
-## 十二、建议实施切片
+## 十二、实施切片（Subplans 63–75 已完成）
 
 ### 6A：Skill 规范、Catalog 与加载
 

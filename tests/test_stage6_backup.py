@@ -6,6 +6,8 @@ import json
 import os
 import random
 
+from typer.testing import CliRunner
+
 from morrow.adapters.credentials.keyring import MemoryCredentialStore
 from morrow.adapters.state.artifacts import FilesystemArtifactStore
 from morrow.adapters.state.extension_yaml import ExtensionYamlStore
@@ -18,6 +20,7 @@ from morrow.bootstrap import build_application, build_skill_services
 from morrow.core.artifacts import ArtifactKind
 from morrow.core.domain import DurableSession
 from morrow.core.skills.bindings import GlobalExtensionDocument
+from morrow.interfaces.cli import app as cli_app
 from morrow.testing import FixedClock, FixedIdSource
 
 
@@ -148,3 +151,24 @@ def test_stage6_v2_copies_only_referenced_managed_skill_and_doctor_detects_drift
     drift = OperationalDoctor(store).inspect("ws_1")
     assert any(issue.code == "skill_package_drift" for issue in drift.issues)
     handle.close()
+
+
+def test_stage6_v2_is_selectable_from_state_backup_cli(tmp_path):
+    root = tmp_path / "state"
+    OperationalStore(root, maintenance_timeout=0).initialize().close()
+    result = CliRunner().invoke(
+        cli_app,
+        [
+            "state",
+            "backup",
+            "--name",
+            "stage6-cli",
+            "--version",
+            "2",
+            "--state-root",
+            str(root),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    manifest = root / "backups" / "operational" / "stage6-cli.bundle" / "manifest.json"
+    assert json.loads(manifest.read_text(encoding="utf-8"))["manifest_version"] == 2

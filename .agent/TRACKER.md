@@ -16,13 +16,17 @@ Subplan 73 is complete on local `main@514a9a6` after a fast-forward merge from
 `codex/feat/stage6-mcp-runtime`.
 It adds ordinary ToolExecutor integration, compound MCP policy, lazy run-scoped lifecycle, bounded
 results, generic outcome-unknown recovery, AgentRun/PermissionSnapshot evidence and bounded doctor
-facts. Subplan 74 is now complete on its topic branch; final acceptance and closeout remain pending.
+facts. Subplan 74 is complete on local `main@0dc4e54` after a fast-forward merge from
+`codex/feat/stage6-backup-doctor`, which was then retired cleanly. Integrated acceptance and closeout
+is now active on `codex/feat/stage6-closeout`.
 
 Subplan 74 adds versioned Backup v2 with online SQLite backup, sanitized current YAML, Artifact
 content, referenced managed Skill packages, canonical per-file/tree/manifest digests, symlink/path
 refusal, cross-store Skill/MCP checks, atomic isolated restore and explicit v1 compatibility. Doctor
 now validates bounded Skill catalog/Binding/run/Draft/Usage evidence and managed package drift while
-preserving older schema gates.
+preserving older schema gates. Subplan 75 is complete locally after isolated acceptance, one narrow
+generated-Draft Trust evidence repair, CLI v2 backup exposure, documentation reconciliation and the
+final offline/quality gates.
 
 ## Last completed work (Subplan 72)
 
@@ -75,15 +79,16 @@ preserving older schema gates.
   `git diff --check` green; `pyproject.toml`/`uv.lock` unchanged; pre-existing migration tests'
   hardcoded version expectations bumped to 14.
 
-## Active task
+## Post-closeout review
 
-Subplan 74 — completed locally on `codex/feat/stage6-backup-doctor`; merge to `main`, then activate
-Subplan 75 from the verified merge.
+Stage 6 Subplans 63–75 are complete on `codex/feat/stage6-closeout` from `main@0dc4e54`; after
+the closeout commit is merged, run the single requested Grok review against the complete Stage 6
+tree. Do not run a second review.
 
 ## Next action
 
-Commit the verified Subplan 74 state, fast-forward it into `main`, retire the clean topic branch,
-and activate the integrated acceptance closeout subplan.
+Commit the verified closeout, fast-forward it into local `main`, retire the clean topic branch,
+then run exactly one read-only Grok review and independently analyze its result.
 
 ## Last completed work (Subplan 71)
 

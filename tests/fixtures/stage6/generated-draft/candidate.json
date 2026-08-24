@@ -1,0 +1,9 @@
+{
+  "title": "Report Writer",
+  "problem_pattern": "draft a concise report",
+  "observed_steps": [
+    "inspect the request",
+    "write the report"
+  ],
+  "tool_names": []
+}

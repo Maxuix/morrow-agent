@@ -145,11 +145,18 @@ Subplan 55 已修复并复测 headless `learning accept/edit/reject` 的确认�
 `docs/acceptance/stage5-simulated-user-evaluation.md`。
 
 `state doctor` 对 v13 Preference Review/Evidence/Proposal/Writer、既有 Learning Review、Candidate、决策、Promotion、Knowledge、Memory Selection
-和 AgentRun 冻结引用执行只读检查；`state backup` / `state verify-backup` 只备份隔离的 Operational
-SQLite 与 Artifact bundle，并验证 `preference_references_ok`；不包含 YAML、workspace index、凭据或 Keychain。跨存储的 Preference/
-Profile 恢复仍需要既有 YAML 状态文件备份；SQLite 中的 activation provenance 不能单独重建 YAML。
+和 AgentRun 冻结引用执行只读检查；它也会检查 Stage 6 Skill 包、Draft、Usage、Binding、Selection、MCP 引用和 v16 表。
+`state backup` 默认保持 v1 兼容格式；使用 `state backup --version 2` 会把隔离的 Operational SQLite、Artifact bundle、脱敏后的
+Provider/Model 与扩展 YAML、以及被引用的 managed Skill 版本一起纳入 v2 bundle。`state verify-backup` 会自动识别两种格式；v2 的
+`OperationalBackupService.restore_v2` 只允许恢复到新的隔离目标，不包含 CredentialStore、Keychain 或凭据字节。
+跨存储的 Preference/Profile 恢复仍需按文档核对 YAML；SQLite 中的 activation provenance 不能单独重建未纳入 bundle 的外部状态。
 禁止原始 Reviewer 输出、Provider reasoning、密钥和受保护内容进入事件、日志、候选、YAML 或模型上下文。
 当前确定性离线安全门禁与模拟用户回放已完成；真实 Provider 质量评估仍需显式授权和兼容凭据，未授权时不运行。
+
+Stage 6 当前已提供受治理的 Skill 生命周期、生成 Draft 审查、按 AgentRun 冻结的 Selection/Context、Usage、受限脚本 Artifact，
+Provider/Model 控制面，以及离线 Fake stdio MCP 的 Catalog、审批、结果归一化、崩溃隔离和恢复证据。可从
+`tests/acceptance/test_stage6_integrated.py` 与 `docs/acceptance/stage6-skills-and-extensions.md` 查看隔离验收入口；它们不读取真实用户状态、
+凭据或外部 MCP。
 
 Artifact cleanup 默认只 dry-run，并以同一 data root 内所有 workspace 的 metadata 与
 reference 为权威。`--apply` 不销毁字节：它只会把经目录、类型、权限、单链接和事务内
@@ -171,5 +178,5 @@ Linux 原生运行仍在真实 runner 验证前保持 unsupported。每次完成
 生成的有界事实摘要；该摘要不进入 Provider、公开事件或持久状态。
 `auto-sandboxed` 在 native backend 不可用或无法证明时会 fail closed。持久化聊天历史、Artifact、恢复、
 checkpoint、fork、按 AgentRun 冻结的 CapabilityGrant 与 Full Access Manual 属于 Stage 4；Full Access Auto
-和 raw auto 仍不支持。可审查学习从 Stage 5 开始，Skills/MCP、Multi-Agent Workflow、GUI 和后台任务属于
-更后续阶段，当前均未实现。
+和 raw auto 仍不支持。可审查学习从 Stage 5 开始；Skills/MCP 与 Provider/Model 扩展已在 Stage 6 交付，
+Multi-Agent Workflow、GUI 和后台任务仍属于后续阶段。

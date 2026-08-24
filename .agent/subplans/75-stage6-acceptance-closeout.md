@@ -1,6 +1,6 @@
 # Subplan 75 — Integrated Acceptance and Closeout
 
-> Status: pending
+> Status: completed locally
 > Branch: `codex/feat/stage6-closeout`
 > Prerequisite: Subplan 74 complete
 
@@ -56,3 +56,16 @@ facts.
 - Documentation matches code rather than future design, and the roadmap is marked complete.
 - All Subplans 63–75 are merged/retired, repository state is clean except explicitly preserved user
   files, and no required work remains.
+
+## Completion evidence
+
+- Added isolated fixtures under `tests/fixtures/stage6/` and integrated coverage under
+  `tests/acceptance/test_stage6_integrated.py`; no real user state, credentials or external MCP
+  configuration is read.
+- The final offline gate passed with `1060 passed, 2 skipped, 2 deselected`; the Stage 6 matrix,
+  quality checks, CLI help and exact outcomes are recorded in
+  `docs/acceptance/stage6-skills-and-extensions.md`.
+- The only confirmed integration defect was generated Draft acceptance becoming undiscoverable:
+  its controlled approval reference was not retained in `managed-version.json`. The envelope,
+  discovery projection and catalog Trust projection now preserve that bounded evidence; unapproved
+  generated packages remain `unknown` Trust. `state backup --version 2` is now explicit in CLI help.

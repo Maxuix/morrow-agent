@@ -151,7 +151,12 @@ def _inspect_version_dir(
         errors.append(f"version directory name {skill_id_hint!r} does not match envelope skill_id")
     if envelope["source_kind"] != source_kind.value:
         errors.append("managed-version.json source_kind does not match the configured source root")
-    expected_trust = effective_trust(TrustEvidence(source_kind=source_kind))
+    expected_trust = effective_trust(
+        TrustEvidence(
+            source_kind=source_kind,
+            controlled_approval_ref=envelope.get("controlled_approval_ref"),
+        )
+    )
     if envelope["effective_trust"] != expected_trust.value:
         errors.append("managed-version.json effective_trust does not match local provenance")
     if errors:
@@ -279,6 +284,7 @@ def scan_source_root(
 
 
 def to_catalog_version(package: DiscoveredPackage) -> SkillVersion:
+    trust = _package_trust(package)
     return SkillVersion(
         version_id=package.version_id,
         skill_id=package.skill_id,
@@ -290,7 +296,7 @@ def to_catalog_version(package: DiscoveredPackage) -> SkillVersion:
         scope_id=package.scope_id,
         provenance=f"{package.source_kind.value}:{package.version_dir.parent.name}/{package.version_dir.name}",
         evidence_refs=tuple(package.envelope.get("evidence_refs", ())),
-        effective_trust=effective_trust(TrustEvidence(source_kind=package.source_kind)),
+        effective_trust=trust,
         created_at=datetime.fromtimestamp(int(package.envelope["installed_at_unix"]), tz=UTC),
     )
 
@@ -302,5 +308,14 @@ def to_catalog_definition(package: DiscoveredPackage) -> SkillDefinition:
         description=package.manifest.description,
         source_kind=package.source_kind,
         scope_id=package.scope_id,
-        effective_trust=effective_trust(TrustEvidence(source_kind=package.source_kind)),
+        effective_trust=_package_trust(package),
+    )
+
+
+def _package_trust(package: DiscoveredPackage):
+    return effective_trust(
+        TrustEvidence(
+            source_kind=package.source_kind,
+            controlled_approval_ref=package.envelope.get("controlled_approval_ref"),
+        )
     )

@@ -2677,3 +2677,31 @@
 - Validation passed: Stage 6 backup suite `5 passed`; affected backup/Doctor/MCP/Skill suite `32
   passed`; full offline suite `1056 passed, 2 skipped, 2 deselected`; Ruff format/check, compileall,
   required CLI help and `git diff --check` passed. No live, networked or credentialed path was run.
+
+## 2026-08-24 — Subplan 75 Integrated Acceptance and Closeout activated
+
+- Fast-forwarded Subplan 74 commit `0dc4e54` into local `main`, verified the topic had no commits
+  absent from `main`, retired the clean `codex/feat/stage6-backup-doctor` branch, and created
+  `codex/feat/stage6-closeout` from `main@0dc4e54`.
+- Scope is limited to isolated offline acceptance fixtures, confirmed integration repairs, exact final
+  gates and documentation reconciliation. No live/network/credential path, new dependency, policy
+  default, public event lifecycle or Stage 7 behavior is in scope.
+
+## 2026-08-24 — Subplan 75 Integrated Acceptance and Closeout completed locally
+
+- Added inert Stage 6 fixtures for a handwritten Skill, generated candidate and second Provider
+  shape, plus isolated integrated tests for workspace Skill selection/resource/Usage/Doctor/Backup
+  and Candidate→Draft→edit→accept→explicit enable. Existing offline Fake stdio MCP and script
+  suites cover the remaining runtime seams without a second authority.
+- Acceptance exposed one real defect: accepted generated Draft packages wrote `effective_trust=generated`
+  but omitted the controlled approval reference from `managed-version.json`; discovery therefore
+  recomputed `unknown` and could not explicitly enable the package. Persisted the bounded approval
+  reference and used it in discovery/catalog Trust projection; packages without approval remain
+  `unknown`. Added regression coverage.
+- Added `state backup --version 2` CLI selection and regression coverage; reconciled README,
+  architecture, roadmap and final acceptance evidence with the implemented v16/Backup v2 boundaries.
+- Final evidence: integrated `2 passed`; Skill matrix `41 passed`; Provider/Model matrix `66 passed,
+  1 skipped` (the explicit Live credential checklist); MCP matrix `14 passed`; backup/Doctor/CLI
+  matrix `30 passed`; full offline `1060 passed, 2 skipped, 2 deselected`; Ruff format/check,
+  compileall, five CLI help commands and `git diff --check` passed. No live/network/credential path
+  ran and no remote push was performed.

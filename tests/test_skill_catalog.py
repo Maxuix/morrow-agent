@@ -500,6 +500,21 @@ def test_catalog_exposes_requested_and_effective_trust_separately(tmp_path: Path
     assert entry.definition.effective_trust is TrustLevel.UNKNOWN
 
 
+def test_catalog_preserves_generated_approval_evidence(tmp_path: Path) -> None:
+    root = tmp_path / "root"
+    version_dir, payload = _make_package(root, source_kind=SourceKind.GENERATED)
+    approved = dict(payload)
+    approved["controlled_approval_ref"] = "sdr_approval"
+    approved["effective_trust"] = TrustLevel.GENERATED.value
+    approved = _resign_envelope(approved)
+    write_envelope(version_dir, approved)
+
+    entry = _catalog(root, source_kind=SourceKind.GENERATED).scan().entry("search-tool")
+    assert entry is not None
+    assert entry.effective_trust is TrustLevel.GENERATED
+    assert entry.definition.effective_trust is TrustLevel.GENERATED
+
+
 def test_catalog_reports_invalid_packages_without_enabling(tmp_path: Path) -> None:
     root = tmp_path / "root"
     version_dir = root / "search-tool" / SKV_ID

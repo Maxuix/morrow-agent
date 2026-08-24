@@ -67,6 +67,7 @@ def build_envelope_payload(
         "total_bytes": tree.total_bytes,
         "effective_trust": trust.value,
         "evidence_refs": list(evidence_refs[:8]),
+        "controlled_approval_ref": controlled_approval_ref,
         "files": [entry.canonical() for entry in tree.entries],
         "installed_at_unix": int(installed_at.timestamp()),
     }
@@ -195,6 +196,13 @@ def _validate_envelope_structure(payload: object, *, verify_digest: bool) -> Non
         or any(not isinstance(item, str) or len(item) > 256 for item in evidence_refs)
     ):
         raise EnvelopeError("managed-version.json evidence_refs is invalid")
+    controlled_approval_ref = payload.get("controlled_approval_ref")
+    if controlled_approval_ref is not None and (
+        not isinstance(controlled_approval_ref, str)
+        or not controlled_approval_ref
+        or len(controlled_approval_ref) > 256
+    ):
+        raise EnvelopeError("managed-version.json controlled_approval_ref is invalid")
     files = payload.get("files")
     if not isinstance(files, list) or len(files) != payload["file_count"]:
         raise EnvelopeError("managed-version.json files is invalid")

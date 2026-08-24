@@ -1835,6 +1835,13 @@ def state_events(
 @state_app.command("backup")
 def state_backup(
     name: str | None = typer.Option(None, "--name"),
+    version: int = typer.Option(
+        1,
+        "--version",
+        min=1,
+        max=2,
+        help="备份格式：1 保持旧版兼容；2 包含 Stage 6 扩展状态与受引用 Skill 包。",
+    ),
     state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
 ) -> None:
     handle = None
@@ -1842,7 +1849,7 @@ def state_backup(
         _application, handle, _api, _doctor, backup = _state_services(
             state_root=state_root, workspace_id="ws_cli", directory=Path("."), write=True
         )
-        _emit_model(backup.create(name))
+        _emit_model(backup.create(name, version=version))
     except Exception as exc:
         _cli_error(exc)
         raise typer.Exit(code=2) from None

@@ -1,16 +1,23 @@
 # Morrow 架构基线
 
-> 状态：阶段 2–5 已完成；Stage 6 Subplans 63–72 已在本地完成（macOS；Linux 原生运行仍
-> unsupported）；MCP Runtime/Security 及后续阶段尚未完成
+> 状态：阶段 2–5 已完成；Stage 6 Subplans 63–75 已在本地完成（macOS；Linux 原生运行仍
+> unsupported）；Stage 7–10 尚未开始
 
 本文锁定当前依赖方向、数据所有权和安全边界。阶段 3 的能力策略、配置工具、工作空间读搜、冲突安全文件变更、审批后 Host 命令、只读 Git 和当前 macOS 原生沙箱
 已经交付；Linux 原生运行尚未声明支持。Stage 4 已落地数据根 SQLite Operational Store 的
 身份/迁移/备份基础、v2 无工具 Session 历史、v3 工具执行/审批日志、v4 恢复分类与
-崩溃对账，以及 v5 TaskRun 生命周期、转移审计、版本化 TaskOutcome、v6 Artifact 元数据/引用与受控字节发布、v7 确定性 ContextCheckpoint 与不可变 Session lineage、v8 有界 application event/command receipt、v9 按 AgentRun 冻结的权限证据与可撤销 grant。Stage 5 Subplans 49–54 已增加 LearningPolicy、Review、Evidence、Candidate、Suppression 的有界领域与 v10–v12 SQLite 持久化；accepted TaskOutcome 的同事务 Review 请求、一次性 lease Runner、Evidence/Context 安全边界和候选去重/抑制；Inbox、Candidate 决策、Project Knowledge 生命周期；公开 prepared 配置契约、SQLite/YAML Promotion Saga、激活来源、恢复/撤销和 CLI/REPL 入口；确定性 MemorySelection、AgentRun 冻结/恢复复用、RunContextProjection；以及 no-tool production Reviewer、离线评估、只读 Learning doctor 和隔离 backup 引用校验。Reviewer v4 的真实 Provider 质量目标已通过，不由离线证据替代。Stage 6 的 Skills 包、生命周期、选择/上下文、Draft/Usage、受限脚本执行、Provider/Model 控制面以及 MCP desired state/Catalog/v16 持久化已在本地完成；MCP Runtime/Security 与 Stage 7–10 的 Workflow、GUI、后台自动化和产品化均尚未完成。
+崩溃对账，以及 v5 TaskRun 生命周期、转移审计、版本化 TaskOutcome、v6 Artifact 元数据/引用与受控字节发布、v7 确定性 ContextCheckpoint 与不可变 Session lineage、v8 有界 application event/command receipt、v9 按 AgentRun 冻结的权限证据与可撤销 grant。Stage 5 Subplans 49–54 已增加 LearningPolicy、Review、Evidence、Candidate、Suppression 的有界领域与 v10–v12 SQLite 持久化；accepted TaskOutcome 的同事务 Review 请求、一次性 lease Runner、Evidence/Context 安全边界和候选去重/抑制；Inbox、Candidate 决策、Project Knowledge 生命周期；公开 prepared 配置契约、SQLite/YAML Promotion Saga、激活来源、恢复/撤销和 CLI/REPL 入口；确定性 MemorySelection、AgentRun 冻结/恢复复用、RunContextProjection；以及 no-tool production Reviewer、离线评估、只读 Learning doctor 和隔离 backup 引用校验。Reviewer v4 的真实 Provider 质量目标已通过，不由离线证据替代。Stage 6 的 Skills 包、生命周期、选择/上下文、Draft/Usage、受限脚本执行、Provider/Model 控制面以及 MCP desired state/Catalog/v16 持久化已在本地完成；MCP Runtime/Security、Backup v2 与 Stage 6 Doctor 也已完成；Stage 7–10 的 Workflow、GUI、后台自动化和产品化均尚未开始。
 
 S56–S61 已冻结并接通 generic Preference 契约、decode-only legacy 迁移、workspace Preference v3、
 Operational Store v13 Review/Evidence/Proposal/Writer saga、异步 Worker、Inbox、Writer 和下一
 AgentRun 注入。v13 DDL 与 checksum 保持不变。
+
+Stage 6 的当前所有权如下：`application/skills/` 负责 Catalog、生命周期、Selection/Context、Draft、Usage、脚本和
+Doctor；`application/mcp/` 负责 desired-state、Catalog、run-scoped runtime、策略桥接和结果归一化；Provider/Model
+控制面仍由 Provider service 与 Adapter Registry 持有。SkillBinding、MCP desired state、Provider/Model 非敏感配置和
+Workspace 扩展配置继续由 YAML 持有，CredentialStore 是唯一凭据权威。Operational Store v14–v16 持有 Skill/MCP
+运行证据；`application/backup_v2.py` 组合在线 SQLite、Artifact、脱敏 YAML 和被引用 managed Skill 版本，并以新目标
+目录执行原子、隔离 restore。v1 backup verifier 保持向后兼容，Backup v2 不复制凭据。
 
 ## 分层与依赖方向
 
@@ -229,7 +236,7 @@ workspace Preferences 损坏只隔离该层。旧 `handoff.yaml(.bak)` 不属于
 `config.yaml` 是聚合文档，Provider 与全局 Preferences 的写入必须在同一事务锁内保留对方字段。
 `workspace-index.yaml` 由独立 WorkspaceIndexStore 管理。
 
-### Operational Store 与 Artifact 布局（v13）
+### Operational Store 与 Artifact 布局（v16）
 
 数据根（`--state-root` 或 `~/.morrow`）下的保留路径：
 
@@ -243,7 +250,7 @@ workspace Preferences 损坏只隔离该层。旧 `handoff.yaml(.bak)` 不属于
 ```
 
 `DataRoot` 暴露 `store_path`、`artifacts_path`、`backups_path` 与 `operational_lock_path`。
-`build_session_application()` 会打开或创建当前 v13 Operational Store，并把对话经 ConversationLog
+`build_session_application()` 会打开或创建当前 v16 Operational Store，并把对话经 ConversationLog
 提交到 Session / TaskRun / Turn / AgentRun / conversation / receipt 表。v3 起有 tool_executions
 与 approvals；v4 增加 recovery_reports / recovery_receipts；v5 增加完整 TaskRun 状态、转移审计、
 TaskOutcome 版本和 Task 命令回执；v6 增加 Artifact 元数据、引用、pin 状态和 `artifact_refs_json`；v7 增加不可变
@@ -253,7 +260,9 @@ TaskOutcome 版本和 Task 命令回执；v6 增加 Artifact 元数据、引用�
 `learning_policies`、`learning_reviews`、`learning_evidence`、`learning_candidates`、Evidence link
 和 `learning_suppressions`，v11 增加 Candidate decisions、Project Knowledge、`promotion_operations`
 和 `configuration_activations`；v12 增加 `memory_selections`、`memory_selection_items` 和
-`memory_search_terms`；v13 增加 Preference Review job、Evidence、Proposal、WriteBatch 及链接表。
+`memory_search_terms`；v13 增加 Preference Review job、Evidence、Proposal、WriteBatch 及链接表；v14 增加
+Skill Catalog、Binding、Selection、Context 和 Draft；v15 增加 Skill Usage 与生成 Skill 的运行证据；v16 增加
+MCP Server、Catalog、run snapshot、Tool snapshot 和结果 Artifact 链接。
 Selection 只引用不可变 Project Knowledge revision，AgentRunSnapshot 保存
 selection/digest/memory revision，运行时由 `RunContextProjection` 重建。Promotion 只保存审计/恢复/来源
 记录，不形成 YAML Active 状态副本。
@@ -264,9 +273,11 @@ TaskRun 预留字节上限 256 MiB，元数据/Excerpt 上限分别为 32 KiB/8 
 Host/sandbox 缺 `handler_completed` 一律 `outcome_unknown`。YAML 与凭据权威不变。
 
 `OperationalDoctor` 使用 diagnose/read-only 连接检查 schema、SQLite integrity/FK、Conversation grammar、
-Task/Execution、Review/Evidence/Candidate/Promotion/Knowledge、Memory Selection/AgentRun/derived terms、Artifact metadata/bytes/reference 和 application-event cursor；报告只包含
-有界摘要与计数，绝不自动改写历史。`OperationalBackupService` 使用 SQLite online backup 生成隔离
-bundle，同时写入 Artifact hash/size manifest，并验证 Learning/Memory/Preference v13 引用和可验证副本；bundle 不读取或复制 YAML/CredentialStore。
+Task/Execution、Review/Evidence/Candidate/Promotion/Knowledge、Memory Selection/AgentRun/derived terms、Skill/MCP
+运行证据、Artifact metadata/bytes/reference 和 application-event cursor；报告只包含有界摘要与计数，绝不自动改写历史。
+`OperationalBackupService` 的 v1 使用 SQLite online backup 生成隔离 bundle，同时写入 Artifact hash/size manifest，并验证
+Learning/Memory/Preference v13 引用和可验证副本；v2 另外在维护锁下捕获脱敏的 config/workspace-index/extensions YAML、
+被引用的 imported/generated Skill 版本和 MCP 引用，并提供只写入新目标的隔离 restore。两个版本都不读取或复制 CredentialStore。
 缺失、损坏或变化的 Artifact、backup 中断裂的 Learning/Memory/Preference 引用在 manifest/restore verification 中显式可见。Doctor 在遍历前验证
 data-root/`artifacts`/`tmp` 目录链，并区分 managed-unreferenced、unmanaged-removable 和
 unsafe-refused；受管 `tmp/` 本身不是 orphan。
