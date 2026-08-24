@@ -2557,3 +2557,18 @@
 - Scope is limited to exact Adapter/Model capability snapshots, versioned Provider/Model control,
   sanitized test/sync projections, second-Adapter isolation and per-new-AgentRun resolution. No
   AgentLoop/Session/Task branching, silent fallback, dependency addition or live Provider calls.
+
+## 2026-08-24 — Subplan 70 Provider/Model control plane completed
+
+- Added typed Adapter defaults and narrowing-only exact Model capability overrides covering streaming,
+  tool protocol, multi-tool calls, structured output, request/context limits, input modalities and
+  cost metadata source/time. Exact capabilities now flow from ProviderModelConfig into new-run
+  frozen ProviderRuntimeSnapshot evidence; rehydration remains evidence-only.
+- Added explicit registry discovery, OpenAI-compatible model discovery, Provider/Model control
+  services with CredentialRef-only YAML, URL/Adapter validation, revision OCC, backup-preserving
+  writes, active-model removal protection and sanitized failure projections.
+- Added plan-compatible provider/model CLI forms and a Fake second Adapter contract. No AgentLoop,
+  Session, Task or fallback branches changed.
+- Validation passed: focused provider/preparation/CLI suite `77 passed, 1 skipped`; full non-live
+  suite `1030 passed, 3 skipped, 2 deselected`; Ruff format/check, compileall, CLI help and
+  `git diff --check` passed. Implementation committed as `89e70e9`.

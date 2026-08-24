@@ -3,9 +3,10 @@
 ## Current status
 
 Subplans 63 (spike), 64 (per-AgentRun preparation), 65 (Skill package/catalog foundation + v14),
-66, 67, 68 and 69 are complete locally; the Subplan 65 review repairs are also complete. Subplan
-69 adds constrained Skill script execution without widening the existing ToolExecutor boundary.
-The verified checkpoint is committed locally as `73f99db`; remote publication is not in scope.
+66, 67, 68, 69 and 70 are complete locally; the Subplan 65 review repairs are also complete.
+Subplan 69 adds constrained Skill script execution and Subplan 70 adds the Provider/Model control
+plane without widening the existing AgentLoop/Session/Task boundaries. The verified Subplan 70
+checkpoint is committed locally as `89e70e9`; remote publication is not in scope.
 
 ## Last completed work (Subplan 66)
 
@@ -46,12 +47,12 @@ The verified checkpoint is committed locally as `73f99db`; remote publication is
 
 ## Active task
 
-Subplan 70 — Provider/Model Control Plane.
+None. Subplan 71 — Dynamic Tool Contracts is next.
 
 ## Next action
 
-Inspect the existing ProviderConfig, AdapterRegistry, capability snapshot, YAML OCC and CLI seams;
-then define the exact Provider/Model control contracts without changing AgentLoop or Session branches.
+Fast-forward the verified `feat/stage6-provider-control` commits into local `main`, then activate
+Subplan 71 from that checkpoint. Keep MCP dependency approval gated until Subplan 72.
 
 ## Dependency gate
 
@@ -66,8 +67,8 @@ dependency decision and explicit approval if new packages are recommended.
 
 ## Notes
 
-- `main` is eight local commits ahead of `origin/main` (through the Subplan 69 checkpoint
-  `73f99db`). Remote publication was not placed in scope, so no push was made.
+- `main` is expected to be ahead of `origin/main` after the verified Subplan 70 fast-forward.
+  Remote publication was not placed in scope, so no push was made.
 - The spike test file skips cleanly in the default dev env (`importorskip("mcp")`).
 
 ## Last completed work (Subplan 69)

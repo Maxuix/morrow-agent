@@ -1,12 +1,12 @@
 # Morrow 架构基线
 
-> 状态：阶段 2–5 已完成；Stage 6 Subplans 63–69 已在本地完成（macOS；Linux 原生运行仍
+> 状态：阶段 2–5 已完成；Stage 6 Subplans 63–70 已在本地完成（macOS；Linux 原生运行仍
 > unsupported）；Stage 6 MCP 及后续阶段尚未完成
 
 本文锁定当前依赖方向、数据所有权和安全边界。阶段 3 的能力策略、配置工具、工作空间读搜、冲突安全文件变更、审批后 Host 命令、只读 Git 和当前 macOS 原生沙箱
 已经交付；Linux 原生运行尚未声明支持。Stage 4 已落地数据根 SQLite Operational Store 的
 身份/迁移/备份基础、v2 无工具 Session 历史、v3 工具执行/审批日志、v4 恢复分类与
-崩溃对账，以及 v5 TaskRun 生命周期、转移审计、版本化 TaskOutcome、v6 Artifact 元数据/引用与受控字节发布、v7 确定性 ContextCheckpoint 与不可变 Session lineage、v8 有界 application event/command receipt、v9 按 AgentRun 冻结的权限证据与可撤销 grant。Stage 5 Subplans 49–54 已增加 LearningPolicy、Review、Evidence、Candidate、Suppression 的有界领域与 v10–v12 SQLite 持久化；accepted TaskOutcome 的同事务 Review 请求、一次性 lease Runner、Evidence/Context 安全边界和候选去重/抑制；Inbox、Candidate 决策、Project Knowledge 生命周期；公开 prepared 配置契约、SQLite/YAML Promotion Saga、激活来源、恢复/撤销和 CLI/REPL 入口；确定性 MemorySelection、AgentRun 冻结/恢复复用、RunContextProjection；以及 no-tool production Reviewer、离线评估、只读 Learning doctor 和隔离 backup 引用校验。Reviewer v4 的真实 Provider 质量目标已通过，不由离线证据替代。Stage 6 的 Skills 包、生命周期、选择/上下文、Draft/Usage 和受限脚本执行已在本地完成；MCP 及 Stage 7–10 的 Workflow、GUI、后台自动化和产品化均尚未完成。
+崩溃对账，以及 v5 TaskRun 生命周期、转移审计、版本化 TaskOutcome、v6 Artifact 元数据/引用与受控字节发布、v7 确定性 ContextCheckpoint 与不可变 Session lineage、v8 有界 application event/command receipt、v9 按 AgentRun 冻结的权限证据与可撤销 grant。Stage 5 Subplans 49–54 已增加 LearningPolicy、Review、Evidence、Candidate、Suppression 的有界领域与 v10–v12 SQLite 持久化；accepted TaskOutcome 的同事务 Review 请求、一次性 lease Runner、Evidence/Context 安全边界和候选去重/抑制；Inbox、Candidate 决策、Project Knowledge 生命周期；公开 prepared 配置契约、SQLite/YAML Promotion Saga、激活来源、恢复/撤销和 CLI/REPL 入口；确定性 MemorySelection、AgentRun 冻结/恢复复用、RunContextProjection；以及 no-tool production Reviewer、离线评估、只读 Learning doctor 和隔离 backup 引用校验。Reviewer v4 的真实 Provider 质量目标已通过，不由离线证据替代。Stage 6 的 Skills 包、生命周期、选择/上下文、Draft/Usage、受限脚本执行和 Provider/Model 控制面已在本地完成；MCP 及 Stage 7–10 的 Workflow、GUI、后台自动化和产品化均尚未完成。
 
 S56–S61 已冻结并接通 generic Preference 契约、decode-only legacy 迁移、workspace Preference v3、
 Operational Store v13 Review/Evidence/Proposal/Writer saga、异步 Worker、Inbox、Writer 和下一

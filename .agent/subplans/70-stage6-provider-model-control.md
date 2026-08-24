@@ -1,7 +1,7 @@
 # Subplan 70 — Provider and Model Control Plane
 
-> Status: in progress
-> Branch: `codex/feat/stage6-provider-control`
+> Status: completed locally
+> Branch: `feat/stage6-provider-control`
 > Prerequisite: Subplan 69 complete; per-run preparation from Subplan 64
 
 ## Objective
@@ -43,6 +43,20 @@ or Task code and without silent model fallback.
   sync drift/failure, active removal refusal and sanitized test output.
 - Second Adapter contract without edits to AgentLoop/Session/TaskStore.
 - CLI helps and projections; affected configuration/preference migration compatibility.
+
+## Result
+
+- Added typed Adapter/Model capability defaults and narrowing-only per-model overrides for
+  streaming, tool protocol, multi-tool calls, structured output, request/context limits, input
+  modalities and cost metadata provenance/time.
+- Added registry-owned explicit model discovery, OpenAI-compatible discovery, versioned Provider and
+  Model control operations with CredentialRef-only YAML, URL/Adapter checks, OCC and active-model
+  removal guards.
+- Added plan-compatible CLI projections (`--name`, `--provider`, `provider/model`) while retaining
+  existing positional compatibility; no AgentLoop, Session, Task or fallback branches were added.
+- Validation: focused provider/preparation/CLI suite `77 passed, 1 skipped`; full non-live suite
+  `1030 passed, 3 skipped, 2 deselected`; Ruff format/check, compileall, CLI help and `git diff --check`
+  passed. Implementation commit: `89e70e9`.
 - Focused provider tests, standard quality commands and full non-live suite.
 
 ## Exit criteria
