@@ -11,6 +11,11 @@ from __future__ import annotations
 
 import json
 
+from morrow.core.agent_runs import (
+    ProviderCapabilities,
+    ProviderRuntimeSnapshot,
+    exact_model_capabilities,
+)
 from morrow.core.domain import (
     AGENT_RUN_SNAPSHOT_MAX_BYTES,
     AgentRunSnapshot,
@@ -18,6 +23,8 @@ from morrow.core.domain import (
     ModelRef,
     SourceRevisionRef,
 )
+from morrow.core.models import CredentialRef
+from morrow.runtime.policy import load_agent_policy
 
 # Locked budgets (bytes of canonical JSON, no trailing whitespace).
 SKILL_REF_MAX_BYTES = 512
@@ -56,8 +63,31 @@ def _realistic_snapshot() -> AgentRunSnapshot:
         )
         for i in range(8)
     )
+    model = ModelRef(provider_id="openai-compatible", model_id="gpt-5-mini")
+    run_policy = load_agent_policy().resolve(
+        model, tool_protocol="openai_function", multiple_tool_calls=True
+    )
+    provider_runtime = ProviderRuntimeSnapshot(
+        provider_id="openai-compatible",
+        adapter_id="openai-compatible",
+        model=model,
+        api_model_id="gpt-5-mini",
+        endpoint="https://api.example.test/v1",
+        credential_ref=CredentialRef(ref="provider:openai-compatible:ab12", version=1),
+        capabilities=exact_model_capabilities(
+            "openai-compatible",
+            ProviderCapabilities(
+                tool_protocol="openai_function",
+                multiple_tool_calls=True,
+                structured_output=True,
+            ),
+            model,
+        ),
+        config_revision=41,
+        config_digest=DIGEST,
+    )
     return AgentRunSnapshot(
-        model=ModelRef(provider_id="openai-compatible", model_id="gpt-5-mini"),
+        model=model,
         provider_id="openai-compatible",
         source_revisions=_realistic_source_revisions(),
         run_policy_digest=DIGEST,
@@ -72,6 +102,8 @@ def _realistic_snapshot() -> AgentRunSnapshot:
         preference_omitted_count=2,
         preference_source_scopes=("global", "workspace", "session"),
         preference_refresh_status="ok",
+        provider_runtime=provider_runtime,
+        run_policy=run_policy,
     )
 
 

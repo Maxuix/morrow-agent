@@ -20,6 +20,7 @@ from morrow.application.turn_lifecycle import (
     TurnSubmitResult,
 )
 from morrow.application.turn_permissions import RunPermissionCoordinator
+from morrow.core.domain import AgentRunSnapshot
 from morrow.core.execution import (
     DurableApproval,
     DurableToolExecution,
@@ -214,6 +215,15 @@ class SessionPersistence:
         if self._session is not None:
             self.turn_submission.close_open_receipt(self._session)
 
+    def probe(
+        self,
+        session: Session,
+        user_input: str,
+        client_message_id: str,
+    ) -> TurnSubmitResult:
+        """Read-only submission classification; no IDs, YAML reads or writes."""
+        return self.turn_submission.probe(session, user_input, client_message_id)
+
     def submit_user(
         self,
         session: Session,
@@ -223,6 +233,7 @@ class SessionPersistence:
         turn_id: str,
         agent_run_id: str,
         tools: tuple = (),
+        prepared_spec=None,
     ) -> TurnSubmitResult:
         if self.writer is None:
             raise RuntimeError("session persistence is not attached")
@@ -233,8 +244,16 @@ class SessionPersistence:
             turn_id=turn_id,
             agent_run_id=agent_run_id,
             tools=tools,
+            prepared_spec=prepared_spec,
             writer=self.writer,
         )
+
+    def get_open_run_snapshot(self) -> AgentRunSnapshot | None:
+        """Return the durable foreground AgentRun's frozen snapshot, if any."""
+        if self.current_agent_run_id is None:
+            return None
+        run = self.journal.get_agent_run(self.workspace_id, self.current_agent_run_id)
+        return run.snapshot if run is not None else None
 
     def start_new_session(self, session: Session, session_id: str) -> None:
         self.session_restore.start_new_session(session, session_id)

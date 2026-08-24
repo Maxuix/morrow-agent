@@ -8,6 +8,7 @@ import json
 import time
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from morrow.application.context import ContextBudgetError
 from morrow.core.application import ApplicationError
@@ -49,6 +50,9 @@ from morrow.runtime.tools import (
     ToolExecutionOutcome,
     ToolExecutor,
 )
+
+if TYPE_CHECKING:
+    from morrow.application.agent_runs.preparation import PreparedAgentRunRuntime
 
 TRANSIENT_MODEL_ERRORS = frozenset(
     {ModelErrorCode.NETWORK, ModelErrorCode.RATE_LIMIT, ModelErrorCode.TIMEOUT}
@@ -391,9 +395,27 @@ class AgentLoop:
         *,
         client_message_id: str | None = None,
         resume_current_turn: bool = False,
+        prepared: PreparedAgentRunRuntime | None = None,
     ) -> AsyncIterator[AgentEvent]:
         client_message_id = client_message_id or self._id("cmsg")
-        policy = self.run_policy
+        if prepared is not None:
+            provider = prepared.provider
+            model = prepared.model
+            context_builder = prepared.context_builder
+            tool_executor = prepared.tool_executor
+            policy = prepared.run_policy
+        else:
+            provider = self.runner.provider
+            model = self.runner.model
+            context_builder = self.context_builder
+            tool_executor = self.tool_executor
+            policy = self.run_policy
+        runner = ModelCallRunner(provider, model)
+        tool_cycle = (
+            ToolCycleExecutor(tool_executor, policy, wall_now=self._wall_now)
+            if tool_executor is not None
+            else None
+        )
         durable_runtime = session.durable_runtime
         initial_turn_id = self._id("turn")
         state = _AgentRunState(
@@ -455,7 +477,8 @@ class AgentLoop:
                         client_message_id,
                         turn_id=state.turn_id,
                         agent_run_id=self._id("arun"),
-                        tools=self.tool_executor.definitions if self.tool_executor else (),
+                        tools=tool_executor.definitions if tool_executor else (),
+                        prepared_spec=prepared.spec if prepared is not None else None,
                     )
                     if submit_outcome.turn_id:
                         state.turn_id = submit_outcome.turn_id
@@ -497,7 +520,7 @@ class AgentLoop:
                     session.begin_user_turn(UserMessage(content=user_input))
 
             state.started = True
-            tools = self.tool_executor.definitions if self.tool_executor else ()
+            tools = tool_executor.definitions if tool_executor else ()
             yield event("turn.started", {})
             permission_snapshot = None
             await self._request_pending_grant(session)
@@ -529,9 +552,9 @@ class AgentLoop:
                         yield item
                     return
                 try:
-                    context = self.context_builder.build(session, tools=tools)
+                    context = context_builder.build(session, tools=tools)
                     call_messages = list(context.messages)
-                    self.context_builder.validate_request(call_messages, tools)
+                    context_builder.validate_request(call_messages, tools)
                 except ContextBudgetError as exc:
                     for item in terminal_error(str(exc), AgentStopCode.CONTEXT_BUDGET):
                         yield item
@@ -543,7 +566,7 @@ class AgentLoop:
                     for item in terminal_error("任务超过总运行时间", AgentStopCode.RUN_TIMEOUT):
                         yield item
                     return
-                stream = self.runner.attempt(call_messages, tools)
+                stream = runner.attempt(call_messages, tools)
                 try:
                     while True:
                         try:
@@ -574,10 +597,10 @@ class AgentLoop:
                 if _pending_cancellation():
                     _consume_cancellation_request()
                     raise asyncio.CancelledError
-                outcome = self.runner.outcome
+                outcome = runner.outcome
                 if outcome.error_code is not None:
                     if (
-                        not self.runner.made_progress
+                        not runner.made_progress
                         and state.retry_count < policy.model_retry_limit
                         and outcome.error_code in TRANSIENT_MODEL_ERRORS
                     ):
@@ -642,7 +665,7 @@ class AgentLoop:
                     ):
                         yield item
                     return
-                per_call_result_limit = self._cycle_result_limit(message)
+                per_call_result_limit = self._cycle_result_limit(message, policy, context_builder)
                 if per_call_result_limit is None:
                     for item in terminal_error(
                         "模型工具调用输出超过 Cycle 预算",
@@ -659,7 +682,7 @@ class AgentLoop:
                             planned,
                             message,
                             run_context=state.run_context,
-                            tool_executor=self.tool_executor,
+                            tool_executor=tool_executor,
                         )
                         missing = [
                             item.tool_execution_id
@@ -682,7 +705,7 @@ class AgentLoop:
                 if state.tool_calls + len(calls) > policy.max_tool_calls:
                     interrupted = tuple(call.id for call in calls)
                     for index, call in enumerate(calls, start=1):
-                        outcome = self.tool_executor.error_outcome(
+                        outcome = tool_executor.error_outcome(
                             call,
                             ToolErrorCode.BUDGET_EXHAUSTED,
                             "工具调用总数已达上限",
@@ -721,6 +744,7 @@ class AgentLoop:
                             state.durable_executions,
                             ToolErrorCode.BUDGET_EXHAUSTED,
                             "任务总运行时间已耗尽",
+                            tool_executor=tool_executor,
                             result_limit=state.active_result_limit,
                         )
                         for status_event in synthetic_statuses(
@@ -741,9 +765,9 @@ class AgentLoop:
                     durable = (
                         state.durable_executions[index - 1] if state.durable_executions else None
                     )
-                    if self.tool_cycle is None:
+                    if tool_cycle is None:
                         raise RuntimeError("tool cycle executor is unavailable")
-                    call_execution = await self.tool_cycle.execute_call(
+                    call_execution = await tool_cycle.execute_call(
                         session,
                         call,
                         durable_execution=durable,
@@ -805,6 +829,7 @@ class AgentLoop:
                 state.durable_executions,
                 ToolErrorCode.CANCELLED,
                 "任务已取消，工具调用未完成",
+                tool_executor=tool_executor,
                 result_limit=state.active_result_limit,
             )
             for status_event in synthetic_statuses(
@@ -835,6 +860,7 @@ class AgentLoop:
                 state.durable_executions,
                 ToolErrorCode.INTERNAL,
                 "内部错误，工具调用未完成",
+                tool_executor=tool_executor,
                 result_limit=state.active_result_limit,
             )
             for status_event in synthetic_statuses(
@@ -863,30 +889,33 @@ class AgentLoop:
                         state.durable_executions,
                         ToolErrorCode.CANCELLED,
                         "任务已取消，工具调用未完成",
+                        tool_executor=tool_executor,
                         result_limit=state.active_result_limit,
                     )
                     session.finish_turn(FinishReason.CANCELLED, interrupted_call_ids=interrupted)
                 except Exception:
                     pass
+            if prepared is not None:
+                prepared.close()
 
-    def _cycle_result_limit(self, message: AssistantMessage) -> int | None:
+    def _cycle_result_limit(self, message: AssistantMessage, policy, context_builder) -> int | None:
         """Largest equal raw envelope cap safe under worst-case JSON escaping."""
         calls = message.tool_calls
-        high = self.run_policy.effective_result_limit
+        high = policy.effective_result_limit
         low = MIN_ERROR_ENVELOPE_CHARS
 
         def estimated(limit: int) -> int:
             worst_case = tuple(
                 ToolMessage(tool_call_id=call.id, content="\\" * limit) for call in calls
             )
-            return self.context_builder.estimate_request_chars((message, *worst_case), ())
+            return context_builder.estimate_request_chars((message, *worst_case), ())
 
-        if high < low or estimated(low) > self.run_policy.effective_cycle_limit:
+        if high < low or estimated(low) > policy.effective_cycle_limit:
             return None
         accepted = low
         while low <= high:
             middle = (low + high) // 2
-            if estimated(middle) <= self.run_policy.effective_cycle_limit:
+            if estimated(middle) <= policy.effective_cycle_limit:
                 accepted = middle
                 low = middle + 1
             else:
@@ -901,6 +930,7 @@ class AgentLoop:
         code: ToolErrorCode,
         message: str,
         *,
+        tool_executor,
         result_limit: int | None,
     ) -> tuple[str, ...]:
         """One synthetic envelope per unresolved call, in original order."""
@@ -913,9 +943,9 @@ class AgentLoop:
             call = calls_by_id.get(call_id)
             if call is None:
                 raise RuntimeError("open ToolCycle call is missing from the active batch")
-            if self.tool_executor is None:
+            if tool_executor is None:
                 raise RuntimeError("open ToolCycle requires a ToolExecutor")
-            outcome = self.tool_executor.error_outcome(
+            outcome = tool_executor.error_outcome(
                 call,
                 code,
                 message,
@@ -986,5 +1016,11 @@ class AgentRuntime:
         user_input: str,
         *,
         client_message_id: str | None = None,
+        prepared: PreparedAgentRunRuntime | None = None,
     ) -> AsyncIterator[AgentEvent]:
-        return self._loop.run_task(session, user_input, client_message_id=client_message_id)
+        return self._loop.run_task(
+            session,
+            user_input,
+            client_message_id=client_message_id,
+            prepared=prepared,
+        )

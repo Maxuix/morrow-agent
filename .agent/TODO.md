@@ -6,26 +6,29 @@ Stage 6 implementation in progress.
 
 ## Active subplan
 
-Subplan 63 — Dependency and Contract Spike (completed on `codex/feat/stage6-contract-spike`).
+Subplan 64 — Per-AgentRun Runtime Preparation (completed on `codex/feat/stage6-run-preparation`).
 
-## Tasks
+## Tasks (Subplan 64)
 
-- `[x]` Create `codex/feat/stage6-contract-spike` from the latest verified `main` when implementation
-  is authorized to begin.
-- `[x]` Reconfirm current runtime, permission, process, migration and backup seams with source refs.
-- `[x]` Evaluate the official MCP Python SDK in a temporary environment without changing dependency
-  files.
-- `[x]` Select JSON Schema dialect/validator behavior and record unsupported-feature handling.
-- `[x]` Exercise the narrow local Fake stdio connect/list/call/close prototype.
-- `[x]` Measure AgentRun reference, Skill context and MCP catalog/result budgets.
-- `[x]` Lock Skill package canonicalization, safe version paths and TOCTOU rules.
-- `[x]` Publish the Stage 6 dependency/contract ADR with exact recommendation and alternatives.
-- `[x]` Verify `pyproject.toml` and `uv.lock` are unchanged; run the Subplan 63 gates.
-- `[x]` Commit, merge and retire Subplan 63 before activating Subplan 64.
+- `[x]` Introduce `PreparedAgentRunSpec`, `PreparedAgentRunRuntime` and cleanup ownership without
+  storing SDK/provider objects in Pydantic or SQLite; freeze a sanitized Provider runtime snapshot.
+- `[x]` Add complete Adapter/Model capability contracts and an exact-Model resolution function;
+  preserve current tool-support defaults through a compatibility constructor.
+- `[x]` Implement `TurnSubmissionCoordinator.probe()` for new/closed-replay/recovery/conflict without
+  creating IDs, reading mutable extension state or performing external work.
+- `[x]` Implement `prepare_new()` from current global config and existing local tools.
+- `[x]` Implement `rehydrate()` from stored AgentRun evidence; missing frozen CredentialRef becomes
+  unavailable rather than fallback.
+- `[x]` Change `AgentLoop.run_task()` to consume a prepared run and construct its runner/tool cycle
+  per invocation; keep `run_turn()` a thin delegate and ConversationLog as the only history writer.
+- `[x]` Retain the receipt recheck inside Turn admission; concurrent loser closes the unused runtime.
+- `[x]` Add bounded cleanup for success, failure, cancellation, replay and preparation failure.
+- `[x]` Preserve old AgentRun snapshot decoding; add optional reference fields with budget checks and
+  decode/doctor coverage.
 
 ## Boundaries
 
-- This subplan changes no production behavior and adds no permanent dependency.
+- This subplan changes no production behavior and adds no dependency.
 - Do not use real credentials, networked MCP Servers, live Providers or user state.
-- A recommended dependency still requires explicit user approval before Subplan 72 changes the lock.
+- Next: Subplan 65 (Skill package and Catalog foundation) from latest `main`.
 - Preserve AgentLoop/ConversationLog, permission policy defaults, public events and Stage 4/5 behavior.

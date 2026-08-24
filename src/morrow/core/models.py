@@ -191,6 +191,34 @@ class ToolDefinition(ProtocolModel):
     function: ToolFunction
 
 
+class ProviderToolSupport(ProtocolModel):
+    """Exact-Model tool protocol facts used to resolve a RunPolicy."""
+
+    tool_protocol: Literal["none", "openai_function"]
+    multiple_tool_calls: bool
+    safe_request_chars: int | None = Field(default=None, gt=0)
+
+
+class RunPolicy(ProtocolModel):
+    """Immutable per-AgentRun budget and tool-support policy."""
+
+    max_tool_rounds: int = Field(gt=0)
+    max_model_attempts: int = Field(gt=0)
+    max_tool_calls: int = Field(gt=0)
+    max_tool_calls_per_cycle: int = Field(gt=0)
+    max_run_seconds: float = Field(gt=0)
+    tool_timeout_seconds: float = Field(gt=0)
+    model_retry_limit: int = Field(ge=0)
+    effective_request_chars: int = Field(gt=0)
+    effective_result_limit: int = Field(gt=0)
+    effective_cycle_limit: int = Field(gt=0)
+    max_validation_errors: int = Field(gt=0)
+    loop_detection_enabled: bool
+    loop_repeat_limit: int = Field(ge=2)
+    loop_max_pattern_cycles: int = Field(gt=0)
+    provider_tool_support: ProviderToolSupport
+
+
 class ModelRef(MorrowModel):
     provider_id: str
     model_id: str

@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+from morrow.core.agent_runs import ProviderCapabilities
 from morrow.core.models import ModelRef, ProviderConfig
 from morrow.core.ports import ModelProvider
 from morrow.runtime.policy import ProviderToolSupport
@@ -14,6 +15,7 @@ class AdapterRegistry:
     def __init__(self) -> None:
         self._factories: dict[str, Callable[[ProviderConfig, str], ModelProvider]] = {}
         self._tool_support: dict[str, ProviderToolSupport] = {}
+        self._capabilities: dict[str, ProviderCapabilities] = {}
 
     def register(
         self,
@@ -22,6 +24,7 @@ class AdapterRegistry:
         *,
         tool_protocol: str | None = None,
         multiple_tool_calls: bool | None = None,
+        capabilities: ProviderCapabilities | None = None,
     ) -> None:
         if not adapter_id.strip():
             raise ValueError("adapter_id must not be empty")
@@ -35,6 +38,8 @@ class AdapterRegistry:
             if multiple_tool_calls is not None
             else (previous.multiple_tool_calls if previous else False),
         )
+        if capabilities is not None:
+            self._capabilities[adapter_id] = capabilities
 
     def create(self, config: ProviderConfig, credential: str) -> ModelProvider:
         try:
@@ -51,6 +56,18 @@ class AdapterRegistry:
             return self._tool_support[adapter_id]
         except KeyError as exc:
             raise ValueError(f"未注册的 Adapter: {adapter_id}") from exc
+
+    def capabilities(self, adapter_id: str) -> ProviderCapabilities:
+        """Declared capabilities; default derived from tool support when absent."""
+        declared = self._capabilities.get(adapter_id)
+        if declared is not None:
+            return declared
+        support = self.tool_support(adapter_id)
+        return ProviderCapabilities(
+            tool_protocol=support.tool_protocol,
+            multiple_tool_calls=support.multiple_tool_calls,
+            safe_request_chars=support.safe_request_chars,
+        )
 
 
 OPENCODE_GO_PRESET: dict[str, Any] = {

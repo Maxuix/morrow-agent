@@ -15,11 +15,13 @@ from typing import Any, Literal
 
 from pydantic import Field, field_validator, model_validator
 
+from morrow.core.agent_runs import ProviderRuntimeSnapshot
 from morrow.core.models import (
     ModelRef,
     Preferences,
     Profile,
     ProtocolModel,
+    RunPolicy,
     utc_now,
 )
 
@@ -424,6 +426,24 @@ def refuse_secret_material(payload: str | bytes, *, label: str) -> None:
         raise ValueError(f"{label} cannot contain secret material")
 
 
+def _refuse_provider_runtime_secrets(payload: bytes, *, label: str) -> None:
+    """Strict redaction for the sanitized provider-runtime evidence subtree.
+
+    ``credential_ref`` legitimately serializes as a typed opaque reference name
+    plus a version integer and is never a secret value, so the generic needle
+    scan (which rejects the word "credential" anywhere) does not apply here.
+    Everything that can actually carry a secret still fails: API-key-ish
+    needles and token patterns, with the endpoint already structurally
+    sanitized by ``ProviderRuntimeSnapshot``.
+    """
+    text = payload.decode("utf-8")
+    serialized = text.casefold()
+    if any(
+        needle in serialized for needle in ("api_key", "authorization", "password")
+    ) or SECRET_TOKEN_PATTERN.search(serialized):
+        raise ValueError(f"{label} cannot contain secret material")
+
+
 def validate_prefixed_id(value: str, prefix: str) -> str:
     if not value or not value.strip():
         raise ValueError("identifier must not be empty")
@@ -533,6 +553,10 @@ class AgentRunSnapshot(ProtocolModel):
     preference_source_scopes: tuple[Literal["global", "workspace", "session"], ...] = ()
     preference_refresh_status: Literal["legacy", "ok", "degraded"] = "legacy"
     preference_refresh_error: str | None = Field(default=None, max_length=128)
+    # Stage 6 optional frozen preparation evidence. Absent on pre-Stage-6 runs,
+    # which keeps old snapshots decodable; rehydration never falls back silently.
+    provider_runtime: ProviderRuntimeSnapshot | None = None
+    run_policy: RunPolicy | None = None
 
     @field_validator("provider_id", "runtime_instance_id")
     @classmethod
@@ -612,7 +636,20 @@ class AgentRunSnapshot(ProtocolModel):
         dumped = self.model_dump(mode="json")
         payload = canonical_json_bytes(dumped)
         require_payload_budget(payload, AGENT_RUN_SNAPSHOT_MAX_BYTES, label="AgentRun snapshot")
-        refuse_secret_material(payload, label="AgentRun snapshot")
+        if self.provider_runtime is not None:
+            # The typed CredentialRef NAME legitimately serializes under
+            # "credential_ref"; the generic needle scan would reject that benign
+            # key. Scan the rest generically and the provider subtree with the
+            # strict structural check below instead.
+            stripped = dict(dumped)
+            stripped["provider_runtime"] = None
+            refuse_secret_material(canonical_json_bytes(stripped), label="AgentRun snapshot")
+            _refuse_provider_runtime_secrets(
+                canonical_json_bytes(dumped["provider_runtime"]),
+                label="AgentRun provider runtime",
+            )
+        else:
+            refuse_secret_material(payload, label="AgentRun snapshot")
         return self
 
 

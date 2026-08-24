@@ -203,8 +203,8 @@ call_log: slow 恰好 1 次（SDK 不自动重试）
 
 | 场景 | 实测 | 锁定上限 |
 |---|---|---|
-| AgentRunSnapshot 基座（8 preferences、4 source revisions、memory selection） | 3 192 B | 64 KiB（不变） |
-| + 8 个 Skill ref + 1 个 MCP ref（合计 9 个引用） | +1 630 B → 4 822 B | 单 ref ≤ 512 B（实测 ~181 B/个） |
+| AgentRunSnapshot 基座（8 preferences、4 source revisions、memory selection、Stage 6 provider_runtime + run_policy 证据） | 4 367 B | 64 KiB（不变） |
+| + 8 个 Skill ref + 1 个 MCP ref（合计 9 个引用） | +1 630 B → 5 997 B | 单 ref ≤ 512 B（实测 ~181 B/个） |
 | Skill 上下文条目（8 条，含短摘要） | 单条 250 B，合计 2 000 B | 单条 ≤ 2 KiB，每次运行合计 ≤ 16 KiB |
 | MCP 工具快照（6 族真实形状 schema × 复制到 64） | 1 个 196 B；16 个 3 786 B；64 个 21 474 B | 单工具 ≤ 4 KiB（实测最大 3.8 KiB），每服务器合计 ≤ 64 KiB |
 | MCP 归一化结果文本块 | — | ≤ 128 KiB/块（结果 DTO 上限；文本另有总字符预算） |

@@ -12,6 +12,7 @@ from morrow.application.preferences.jobs import PreferenceReviewJobEnqueuer
 from morrow.application.preferences.run_projection import select_run_preferences
 from morrow.application.recovery import RecoveryService
 from morrow.application.tasks import TaskOutcomeAssembler, TaskService
+from morrow.core.agent_runs import PreparedAgentRunSpec
 from morrow.core.application import ApplicationError, ApplicationErrorCode
 from morrow.core.context import ContextCheckpoint
 from morrow.core.domain import (
@@ -194,33 +195,27 @@ class TurnSubmissionCoordinator:
             receipt.model_copy(update={"disposition": TurnSubmitDisposition.ACCEPTED_CLOSED}),
         )
 
-    def submit_user(
+    def probe(
         self,
         session: Session,
         user_input: str,
         client_message_id: str,
         *,
-        turn_id: str,
-        agent_run_id: str,
-        tools: tuple[ToolDefinition, ...] = (),
-        writer: DurableConversationWriter,
+        digest: str | None = None,
     ) -> TurnSubmitResult:
-        digest = request_digest(user_input)
-        existing = self.journal.get_receipt(
-            self.workspace_id, session.session_id, client_message_id
+        """Classify one submission read-only.
+
+        Never creates IDs, loads preferences YAML, or performs external work;
+        `prepare_new()` may then run only when the probe says the run is new.
+        """
+        digest = digest or request_digest(user_input)
+        classified = _classify_receipt(
+            self.journal.get_receipt(self.workspace_id, session.session_id, client_message_id),
+            digest,
+            session,
         )
-        if existing is not None:
-            if existing.request_digest != digest:
-                return TurnSubmitResult("conflict", existing.turn_id, existing)
-            if existing.disposition is TurnSubmitDisposition.ACCEPTED_CLOSED:
-                return TurnSubmitResult(
-                    "closed_replay",
-                    existing.turn_id,
-                    existing,
-                    assistant_text=_last_assistant_text(session.log),
-                )
-            self._mark_needs_recovery(session)
-            return TurnSubmitResult("recovery", existing.turn_id, existing)
+        if classified is not None:
+            return classified
         if session.health is SessionHealth.NEEDS_RECOVERY:
             return TurnSubmitResult("recovery", self.state.turn_id, None)
         if session.lifecycle is not SessionLifecycle.ACTIVE:
@@ -230,6 +225,26 @@ class TurnSubmissionCoordinator:
             )
         if session.health is not SessionHealth.OK:
             raise _turn_health_error(session.health)
+        return TurnSubmitResult("new", None, None)
+
+    def submit_user(
+        self,
+        session: Session,
+        user_input: str,
+        client_message_id: str,
+        *,
+        turn_id: str,
+        agent_run_id: str,
+        tools: tuple[ToolDefinition, ...] = (),
+        prepared_spec: PreparedAgentRunSpec | None = None,
+        writer: DurableConversationWriter,
+    ) -> TurnSubmitResult:
+        digest = request_digest(user_input)
+        result = self.probe(session, user_input, client_message_id, digest=digest)
+        if result.kind != "new":
+            if result.kind == "recovery" and result.receipt is not None:
+                self._mark_needs_recovery(session)
+            return result
 
         preference_sources = (
             self.preference_loader() if self.preference_loader is not None else None
@@ -238,6 +253,15 @@ class TurnSubmissionCoordinator:
         command_id = self.id_source.new_id(COMMAND_ID_PREFIX)
 
         def work(txn: MemorySelectionAdmissionPort) -> _AcceptedTurn | TurnSubmitResult:
+            # Concurrent-loser recheck: a receipt that appeared after the probe
+            # wins; the unused prepared runtime is closed by the caller.
+            recheck = _classify_receipt(
+                txn.get_receipt(self.workspace_id, session.session_id, client_message_id),
+                digest,
+                session,
+            )
+            if recheck is not None:
+                return recheck
             row = txn.get_session(self.workspace_id, session.session_id)
             if row is None:
                 stamp = self.clock()
@@ -316,12 +340,13 @@ class TurnSubmissionCoordinator:
             )
             snapshot = build_agent_run_snapshot(
                 session,
-                model=self.model,
-                run_policy=self.run_policy,
+                model=self.model if prepared_spec is None else prepared_spec.provider_runtime.model,
+                run_policy=self.run_policy if prepared_spec is None else prepared_spec.run_policy,
                 tools=tools,
                 runtime_instance_id=self.runtime_instance_id,
                 memory_selection=selection,
                 preference_sources=preference_sources,
+                prepared_spec=prepared_spec,
             )
             txn.put_memory_selection(self.workspace_id, selection)
             txn.create_agent_run(
@@ -350,7 +375,10 @@ class TurnSubmissionCoordinator:
 
         accepted = self.journal.transact(work)
         if isinstance(accepted, TurnSubmitResult):
-            session.health = SessionHealth.NEEDS_RECOVERY
+            if accepted.kind == "recovery":
+                if accepted.receipt is not None:
+                    self._mark_needs_recovery(session)
+                session.health = SessionHealth.NEEDS_RECOVERY
             return accepted
         try:
             projection = load_run_context_projection(
@@ -612,6 +640,26 @@ def request_digest(user_input: str) -> str:
     return sha256_digest(canonical_json_bytes({"content": user_input}))
 
 
+def _classify_receipt(
+    receipt: TurnSubmitReceipt | None,
+    digest: str,
+    session: Session,
+) -> TurnSubmitResult | None:
+    """Shared receipt classification used by the probe and the in-txn recheck."""
+    if receipt is None:
+        return None
+    if receipt.request_digest != digest:
+        return TurnSubmitResult("conflict", receipt.turn_id, receipt)
+    if receipt.disposition is TurnSubmitDisposition.ACCEPTED_CLOSED:
+        return TurnSubmitResult(
+            "closed_replay",
+            receipt.turn_id,
+            receipt,
+            assistant_text=_last_assistant_text(session.log),
+        )
+    return TurnSubmitResult("recovery", receipt.turn_id, receipt)
+
+
 def build_agent_run_snapshot(
     session: Session,
     *,
@@ -621,6 +669,7 @@ def build_agent_run_snapshot(
     runtime_instance_id: str,
     memory_selection: MemorySelection | None = None,
     preference_sources: PreferenceRunSources | None = None,
+    prepared_spec: PreparedAgentRunSpec | None = None,
 ) -> AgentRunSnapshot:
     def source_digest(presence: StatePresence, value) -> str:
         if value is not None and not hasattr(value, "model_dump"):
@@ -742,6 +791,8 @@ def build_agent_run_snapshot(
         preference_refresh_error=(
             preference_sources.refresh_error if preference_sources is not None else None
         ),
+        provider_runtime=prepared_spec.provider_runtime if prepared_spec is not None else None,
+        run_policy=prepared_spec.run_policy if prepared_spec is not None else None,
     )
 
 

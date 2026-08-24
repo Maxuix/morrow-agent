@@ -37,6 +37,8 @@ from morrow.core.preference_models import PreferenceEntry
 from morrow.runtime.conversation import ConversationAppend, ConversationLog
 
 if TYPE_CHECKING:
+    from morrow.core.agent_runs import PreparedAgentRunSpec
+    from morrow.core.domain import AgentRunSnapshot
     from morrow.runtime.tools import ToolExecutionOutcome, ToolExecutor
 
 
@@ -64,6 +66,13 @@ class DurableRunCoordinator(SessionCommitter, Protocol):
 
     def now(self) -> datetime: ...
 
+    def probe(
+        self,
+        session: Session,
+        user_input: str,
+        client_message_id: str,
+    ) -> TurnSubmissionResult: ...
+
     def submit_user(
         self,
         session: Session,
@@ -73,7 +82,10 @@ class DurableRunCoordinator(SessionCommitter, Protocol):
         turn_id: str,
         agent_run_id: str,
         tools: tuple[ToolDefinition, ...],
+        prepared_spec: PreparedAgentRunSpec | None = None,
     ) -> TurnSubmissionResult: ...
+
+    def get_open_run_snapshot(self) -> AgentRunSnapshot | None: ...
 
     def freeze_permission_snapshot(
         self,

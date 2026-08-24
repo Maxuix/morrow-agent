@@ -25,6 +25,11 @@ from morrow.adapters.state.yaml import (
     ProjectStateYamlStore,
     WorkspaceIndexYamlStore,
 )
+from morrow.application.agent_runs.preparation import (
+    AgentRunPreparationService,
+    PreparedAgentRunRuntime,
+    build_prepared_spec,
+)
 from morrow.application.api import OperationalApplicationService
 from morrow.application.artifacts import ArtifactService
 from morrow.application.backup import OperationalBackupService
@@ -57,6 +62,7 @@ from morrow.application.recovery import RecoveryService
 from morrow.application.tasks import TaskService
 from morrow.application.turn_lifecycle import PreferenceRunSources
 from morrow.application.turns import SessionPersistence
+from morrow.core.agent_runs import exact_model_capabilities
 from morrow.core.capabilities import (
     AccessScope,
     ApprovalMode,
@@ -66,7 +72,12 @@ from morrow.core.capabilities import (
 )
 from morrow.core.domain import DurableSession, SessionLifecycle
 from morrow.core.execution import missing_declarations
-from morrow.core.models import Preferences, StatePresence
+from morrow.core.models import (
+    Preferences,
+    ProviderConfig,
+    ProviderModelConfig,
+    StatePresence,
+)
 from morrow.core.permissions import UNCONFINED_HOST_WARNING_DIGEST, CapabilityName
 from morrow.core.preference_documents import PreferenceDocument
 from morrow.core.preference_models import PreferenceScope
@@ -576,9 +587,12 @@ def build_session_application(
             tool_preference_service = preference_service
         else:
             tool_preference_service = None
-        tool_executor = (
-            _default_tool_executor(
-                run_policy,
+
+        def make_tools(policy):
+            if adapter_support.tool_protocol != "openai_function":
+                return None
+            return _default_tool_executor(
+                policy,
                 config_service=config_service,
                 preference_service=tool_preference_service,
                 approval_port=approval_port,
@@ -593,9 +607,8 @@ def build_session_application(
                 sandbox_enabled=sandbox_capability.supported,
                 process_isolation=permission_profile.process_isolation,
             )
-            if adapter_support.tool_protocol == "openai_function"
-            else None
-        )
+
+        tool_executor = make_tools(run_policy)
         runtime = AgentRuntime(
             provider,
             model,
@@ -627,6 +640,43 @@ def build_session_application(
             artifacts=operational.artifacts,
             recovery=operational.recovery,
             preference_loader=load_run_preferences,
+        )
+        spec_provider_config = provider_config
+        if spec_provider_config is None:
+            # Explicit provider/model integrations (tests) resolve no global
+            # ProviderConfig; the legacy spec still freezes their exact model.
+            spec_provider_config = ProviderConfig(
+                adapter=adapter_id,
+                base_url="",
+                models={model.model_id: ProviderModelConfig(api_model_id=model.model_id)},
+            )
+        exact_capabilities = exact_model_capabilities(
+            adapter_id, app.registry.capabilities(adapter_id), model
+        )
+        legacy_spec = build_prepared_spec(
+            provider_config=spec_provider_config,
+            model=model,
+            exact_capabilities=exact_capabilities,
+            config_revision=global_result.revision,
+            run_policy=run_policy,
+            tools=tool_executor.definitions if tool_executor is not None else (),
+        )
+        legacy_prepared = PreparedAgentRunRuntime(
+            spec=legacy_spec,
+            provider=provider,
+            model=model,
+            context_builder=context_builder,
+            tool_executor=tool_executor,
+            run_policy=run_policy,
+        )
+        preparation = AgentRunPreparationService(
+            global_store=app.global_store,
+            registry=app.registry,
+            agent_policy=app.agent_policy,
+            credential_resolver=app.provider_service.credential_resolver,
+            estimate_request_chars=estimate_request_chars,
+            tool_factory=make_tools,
+            legacy=legacy_prepared,
         )
         if resume_session_id:
             persistence.restore_into(session)
@@ -695,6 +745,7 @@ def build_session_application(
             command_service=commands,
             context_builder=context_builder,
             id_source=app.id_source,
+            preparation=preparation,
         )
         products = SessionApplication(
             session=session,

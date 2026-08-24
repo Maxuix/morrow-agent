@@ -2393,3 +2393,28 @@
   `pyproject.toml`/`uv.lock` byte-identical. Committed, fast-forwarded Subplan 63 into local `main`,
   deleted the clean branch; no push (remote publication not in scope; `main` is one commit ahead of
   origin). Subplan 64 is ready to activate.
+
+## 2026-08-24 — Subplan 64 per-AgentRun runtime preparation completed
+
+- Added core/agent_runs.py contracts (ProviderCapabilities/ModelCapabilities/ExactModelCapabilities,
+  ProviderRuntimeSnapshot with sanitized endpoint and CredentialRef name/version only,
+  PreparedAgentRunSpec) and moved RunPolicy/ProviderToolSupport into core/models.py with re-exports.
+- Added application/agent_runs/preparation.py: prepare_new() reads current global config per run;
+  rehydrate() rebuilds strictly from stored AgentRun evidence; a frozen unresolvable CredentialRef
+  raises ProviderUnavailableError with no fallback; pre-Stage-6 snapshots use the boot legacy runtime;
+  PreparedAgentRunRuntime.close() is bounded and idempotent.
+- TurnSubmissionCoordinator.probe() is read-only (no IDs/YAML/writes); submit_user retains the
+  in-txn receipt recheck so concurrent duplicates persist exactly one AgentRun and the loser's
+  unused runtime is closed by run_task.
+- AgentRunSnapshot gained optional provider_runtime + run_policy evidence; redaction splits a strict
+  dedicated scan for the provider subtree away from the generic "credential" needle scan.
+- AgentLoop.run_task() constructs runner/tool-cycle per invocation from a prepared run; run_turn()
+  stays a thin delegate; orchestrator probes first (admission errors surface as ordered error
+  events), prepares only for new runs, and rehydrates on recovery resume.
+- One regression found and fixed: orchestrator-level probe must not raise health errors as
+  exceptions — test_stage4_task_outcome expects them as error events from the loop.
+- Validation: 14 new preparation tests; full offline suite `961 passed, 1 skipped (mcp spike),
+  2 deselected in 23.73s`; ruff format/check, compileall, git diff --check passed; pyproject.toml
+  and uv.lock unchanged; snapshot budget re-measured at 4 367 B base / 5 997 B with refs.
+- Committed and fast-forwarded Subplan 64 into local `main`; branch deleted; no push (remote
+  publication not in scope). Subplan 65 is ready to activate.
