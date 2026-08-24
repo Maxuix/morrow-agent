@@ -12,7 +12,7 @@ from enum import StrEnum
 from types import MappingProxyType
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from morrow.core.capabilities import (
     OperationIntent,
@@ -22,6 +22,13 @@ from morrow.core.capabilities import (
     ToolFact,
     ToolHandlerOutcome,
     ToolRunContext,
+)
+from morrow.core.execution import (
+    EffectClass,
+    MissingCompletionPolicy,
+    ToolRecoveryDeclaration,
+    UnknownToolDeclarationError,
+    tool_declaration,
 )
 from morrow.core.models import (
     FunctionToolCall,
@@ -33,6 +40,11 @@ from morrow.core.models import (
 from morrow.core.ports import ApprovalPort
 from morrow.runtime.capabilities import CapabilityPolicy, CapabilityReason
 from morrow.runtime.policy import RunPolicy, ToolApproval, ToolExecutionPolicy
+from morrow.runtime.tool_arguments import (
+    PydanticArgumentsValidator,
+    ToolArgumentsValidationError,
+    ToolArgumentsValidator,
+)
 
 ENVELOPE_MESSAGE_LIMIT = 200
 APPROVAL_PREVIEW_LINE_LIMIT = 200
@@ -192,17 +204,51 @@ def _sanitize_approval_preview(
     return tuple(lines)
 
 
+def _fallback_recovery_declaration(name: str) -> ToolRecoveryDeclaration:
+    """Keep legacy test and extension tools conservative until they declare recovery."""
+
+    return ToolRecoveryDeclaration(
+        tool_name=name,
+        effect_class=EffectClass.UNCONFINED_EXTERNAL_EFFECT,
+        missing_handler_completed=MissingCompletionPolicy.OUTCOME_UNKNOWN,
+    )
+
+
+def _recovery_declaration(
+    name: str, declaration: ToolRecoveryDeclaration | None = None
+) -> ToolRecoveryDeclaration:
+    if declaration is not None:
+        return declaration
+    try:
+        return tool_declaration(name)
+    except UnknownToolDeclarationError:
+        return _fallback_recovery_declaration(name)
+
+
 @dataclass(frozen=True)
 class RegisteredTool:
     definition: ToolDefinition
-    arguments_model: type[BaseModel]
     handler: Callable[[BaseModel], Awaitable[object]] | ContextHandler
+    arguments_validator: ToolArgumentsValidator | None = None
     execution_policy: ToolExecutionPolicy = field(default_factory=ToolExecutionPolicy)
     approval_preview: ApprovalPreview | None = None
     intent_resolver: IntentResolver | None = None
     context_handler: ContextHandler | None = None
     context_approval_preview: ContextApprovalPreview | None = None
     approval_preview_budget: ApprovalPreviewBudget = field(default_factory=ApprovalPreviewBudget)
+    recovery_declaration: ToolRecoveryDeclaration | None = None
+
+    def __post_init__(self) -> None:
+        validator = self.arguments_validator
+        if validator is None:
+            raise ValueError("RegisteredTool requires an arguments validator")
+        declaration = _recovery_declaration(
+            self.definition.function.name, self.recovery_declaration
+        )
+        if self.recovery_declaration is None:
+            object.__setattr__(self, "recovery_declaration", declaration)
+        if declaration.tool_name != self.definition.function.name:
+            raise ValueError("tool recovery declaration name must match tool definition")
 
 
 @dataclass(frozen=True)
@@ -306,21 +352,21 @@ class ToolExecutor:
                 call, ToolErrorCode.UNKNOWN_TOOL, f"未注册的工具: {call.name}", limit=limit
             )
         try:
-            arguments = registered.arguments_model.model_validate_json(call.arguments, strict=True)
-        except ValidationError as exc:
-            details = [
-                {
-                    "path": ".".join(str(item) for item in error["loc"]),
-                    "type": str(error["type"]),
-                }
-                for error in exc.errors(include_url=False)[: self.run_policy.max_validation_errors]
-            ]
+            arguments = registered.arguments_validator.validate(call.arguments)
+        except ToolArgumentsValidationError as exc:
+            return self._error(
+                call,
+                ToolErrorCode.INVALID_ARGUMENTS,
+                str(exc),
+                limit=limit,
+                details=list(exc.details[: self.run_policy.max_validation_errors]),
+            )
+        except Exception:
             return self._error(
                 call,
                 ToolErrorCode.INVALID_ARGUMENTS,
                 "工具参数校验失败",
                 limit=limit,
-                details=details,
             )
         call_context = ToolCallContext(
             run=self._active_run_context or ToolRunContext(run_id="legacy", session_id="legacy"),
@@ -634,7 +680,8 @@ def make_tool(
     *,
     name: str,
     description: str,
-    arguments_model: type[BaseModel],
+    arguments_model: type[BaseModel] | None = None,
+    arguments_validator: ToolArgumentsValidator | None = None,
     handler: Callable[[BaseModel], Awaitable[object]] | ContextHandler,
     execution_policy: ToolExecutionPolicy | None = None,
     approval_preview: ApprovalPreview | None = None,
@@ -642,23 +689,31 @@ def make_tool(
     context_handler: ContextHandler | None = None,
     context_approval_preview: ContextApprovalPreview | None = None,
     approval_preview_budget: ApprovalPreviewBudget | None = None,
+    recovery_declaration: ToolRecoveryDeclaration | None = None,
 ) -> RegisteredTool:
+    validator = arguments_validator
+    if validator is None and arguments_model is not None:
+        validator = PydanticArgumentsValidator(arguments_model)
+    if validator is None:
+        raise ValueError("make_tool requires an arguments model or validator")
+    declaration = _recovery_declaration(name, recovery_declaration)
     return RegisteredTool(
         definition=ToolDefinition(
             function=ToolFunction(
                 name=name,
                 description=description,
-                parameters=tool_parameters_from_model(arguments_model),
+                parameters=validator.schema,
             )
         ),
-        arguments_model=arguments_model,
         handler=handler,
+        arguments_validator=validator,
         execution_policy=execution_policy or ToolExecutionPolicy(),
         approval_preview=approval_preview,
         intent_resolver=intent_resolver,
         context_handler=context_handler,
         context_approval_preview=context_approval_preview,
         approval_preview_budget=approval_preview_budget or ApprovalPreviewBudget(),
+        recovery_declaration=declaration,
     )
 
 
@@ -701,6 +756,7 @@ def make_lookup_record_tool(records: Mapping[tuple[str, str], object]) -> Regist
         arguments_model=LookupRecordArguments,
         handler=handler,
         intent_resolver=intent,
+        recovery_declaration=tool_declaration("lookup_record"),
     )
 
 
@@ -755,4 +811,5 @@ def make_calculate_tool() -> RegisteredTool:
         arguments_model=CalculateArguments,
         handler=handler,
         intent_resolver=intent,
+        recovery_declaration=tool_declaration("calculate"),
     )

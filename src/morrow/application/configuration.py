@@ -20,6 +20,7 @@ from morrow.core.domain import (
     require_payload_budget,
     sha256_digest,
 )
+from morrow.core.execution import tool_declaration
 from morrow.core.models import StatePresence, ToolEffect
 from morrow.core.preference_models import PreferenceLifecycleOperation, PreferenceOperation
 from morrow.runtime.policy import ToolApproval, ToolExecutionPolicy
@@ -248,4 +249,5 @@ def make_configuration_tool(config_service) -> RegisteredTool:
         ),
         approval_preview=preview,
         intent_resolver=intent,
+        recovery_declaration=tool_declaration("update_configuration"),
     )

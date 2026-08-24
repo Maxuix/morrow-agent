@@ -2572,3 +2572,28 @@
 - Validation passed: focused provider/preparation/CLI suite `77 passed, 1 skipped`; full non-live
   suite `1030 passed, 3 skipped, 2 deselected`; Ruff format/check, compileall, CLI help and
   `git diff --check` passed. Implementation committed as `89e70e9`.
+
+## 2026-08-24 — Subplan 71 activated
+
+- Fast-forwarded the verified Subplan70 implementation and state commits into local `main`, removed
+  the clean topic branch, and created `feat/stage6-dynamic-tools` from that checkpoint.
+- Scope is limited to one bounded tool-argument validator interface, selected JSON Schema dialect
+  validation, declaration-owned recovery metadata and local tool migration. No MCP dependency,
+  MCP-specific branch, live server or policy-default change is authorized.
+
+## 2026-08-24 — Subplan 71 Dynamic Tool Contracts completed
+
+- Added one bounded `ToolArgumentsValidator` seam with a Pydantic compatibility adapter and a
+  dependency-free explicit Draft 2020-12 JSON Schema subset. Schema and argument budgets cover
+  bytes, depth, properties, arrays, strings and numbers; unsupported or remote references fail
+  closed without exposing raw values.
+- Changed `RegisteredTool` to use one validator authority and one declaration-owned recovery
+  contract. Local, configuration, preference, Git, Skill-script and fixture factories pass
+  explicit declarations; `arguments_model` remains only as a constructor adapter for compatibility.
+- Prepared intents persist the declaration before handler entry and recovery prefers the frozen
+  evidence over the current registry or static tool-name inventory. Dynamic unknown-at-start tests
+  cover validation, approval, execution and recovery stability without name-prefix branches.
+- Focused compatibility/dynamic/recovery suites passed `76`; full non-live validation passed
+  `1036 passed, 3 skipped, 2 deselected`. Ruff format/check, compileall and `git diff --check`
+  passed. No dependency files changed; exact MCP/JSON Schema dependency approval remains gated
+  before Subplan 72.

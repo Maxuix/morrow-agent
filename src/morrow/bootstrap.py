@@ -88,7 +88,6 @@ from morrow.core.capabilities import (
     WorkspaceCapability,
 )
 from morrow.core.domain import DurableSession, SessionLifecycle
-from morrow.core.execution import missing_declarations
 from morrow.core.models import (
     Preferences,
     ProviderConfig,
@@ -320,7 +319,11 @@ def _default_tool_executor(
     if sandbox is not None and process.requires_sandbox and sandbox_enabled:
         registry.register(make_promote_sandbox_tool(sandbox, mutation, changes))
     names = tuple(tool.function.name for tool in registry.definitions())
-    missing = missing_declarations(names, process_isolation=process_isolation)
+    missing = tuple(
+        name
+        for name in names
+        if (registered := registry.get(name)) is None or registered.recovery_declaration is None
+    )
     if missing:
         raise RuntimeError("registered tools lack durable declarations: " + ", ".join(missing))
     return ToolExecutor(

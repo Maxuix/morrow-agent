@@ -3,10 +3,11 @@
 ## Current status
 
 Subplans 63 (spike), 64 (per-AgentRun preparation), 65 (Skill package/catalog foundation + v14),
-66, 67, 68, 69 and 70 are complete locally; the Subplan 65 review repairs are also complete.
-Subplan 69 adds constrained Skill script execution and Subplan 70 adds the Provider/Model control
-plane without widening the existing AgentLoop/Session/Task boundaries. The verified Subplan 70
-checkpoint is committed locally as `89e70e9`; remote publication is not in scope.
+66, 67, 68, 69, 70 and 71 are complete locally; the Subplan 65 review repairs are also complete.
+Subplan 69 adds constrained Skill script execution, Subplan 70 adds the Provider/Model control
+plane, and Subplan 71 adds generic dynamic-tool contracts without widening the existing
+AgentLoop/Session/Task boundaries. The verified Subplan 71 checkpoint is committed locally;
+remote publication is not in scope.
 
 ## Last completed work (Subplan 66)
 
@@ -45,14 +46,24 @@ checkpoint is committed locally as `89e70e9`; remote publication is not in scope
   `git diff --check` green; `pyproject.toml`/`uv.lock` unchanged; pre-existing migration tests'
   hardcoded version expectations bumped to 14.
 
-## Active task
+## Last completed work (Subplan 71)
 
-None. Subplan 71 — Dynamic Tool Contracts is next.
+- Added one bounded `ToolArgumentsValidator` seam, a Pydantic compatibility adapter and a
+  dependency-free explicit Draft 2020-12 JSON Schema subset with input/schema/depth/property/
+  array/string/number budgets, unsupported keyword rejection and local-reference-only behavior.
+- `RegisteredTool` now has one validator and one recovery declaration; all local/configuration/
+  preference/Git/Skill/fixture factories pass explicit declarations. Legacy `arguments_model`
+  callers are constructor-adapted without retaining a second execution authority.
+- Prepared intents freeze the declaration into durable evidence before handler entry; recovery uses
+  that evidence after the current registry changes. Dynamic-tool tests cover validation, approval,
+  execution and crash-classification stability without name-prefix branches.
+- Validation: focused compatibility/dynamic/recovery suites `76 passed`; full non-live gate
+  `1036 passed, 3 skipped, 2 deselected`; Ruff, compileall and `git diff --check` passed.
 
 ## Next action
 
-Fast-forward the verified `feat/stage6-provider-control` commits into local `main`, then activate
-Subplan 71 from that checkpoint. Keep MCP dependency approval gated until Subplan 72.
+Ask the user to approve the exact Subplan 72 dependency change (`mcp >= 2.0.0, < 3` and
+`jsonschema >= 4.20, < 5`) before activating MCP control-plane work.
 
 ## Dependency gate
 
@@ -67,8 +78,8 @@ dependency decision and explicit approval if new packages are recommended.
 
 ## Notes
 
-- `main` is expected to be ahead of `origin/main` after the verified Subplan 70 fast-forward.
-  Remote publication was not placed in scope, so no push was made.
+- `main` is ahead of `origin/main` through the verified Subplan 71 fast-forward. Remote publication
+  was not placed in scope, so no push was made.
 - The spike test file skips cleanly in the default dev env (`importorskip("mcp")`).
 
 ## Last completed work (Subplan 69)

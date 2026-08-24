@@ -1,6 +1,6 @@
 # Morrow 架构基线
 
-> 状态：阶段 2–5 已完成；Stage 6 Subplans 63–70 已在本地完成（macOS；Linux 原生运行仍
+> 状态：阶段 2–5 已完成；Stage 6 Subplans 63–71 已在本地完成（macOS；Linux 原生运行仍
 > unsupported）；Stage 6 MCP 及后续阶段尚未完成
 
 本文锁定当前依赖方向、数据所有权和安全边界。阶段 3 的能力策略、配置工具、工作空间读搜、冲突安全文件变更、审批后 Host 命令、只读 Git 和当前 macOS 原生沙箱
@@ -152,7 +152,9 @@ Session 仍为 ACTIVE + health OK，不依赖陈旧内存投影扩大恢复权�
 ### 工具能力边界
 
 `ToolDefinition`、`ToolRegistry`、`ToolExecutor` 与 `AgentLoop` 只拥有标准工具协议、任务级注册冻结、
-参数校验、intent 预检、能力策略、执行预算、取消闭合、结果限制和通用风险策略，不拥有任何具体工具的领域行为。
+统一有界参数验证、声明拥有的恢复证据、intent 预检、能力策略、执行预算、取消闭合、结果限制和通用风险策略，
+不拥有任何具体工具的领域行为。每个 `RegisteredTool` 携带一个参数验证器和一个 `ToolRecoveryDeclaration`；
+准备阶段把声明冻结进 durable intent，恢复优先使用该证据，不从当前注册表或工具名表重新推断。
 `RegisteredTool` handler 是标准工具协议到领域能力的薄适配层；新增工具不得要求 `AgentLoop`、
 `ToolExecutor` 或 `SessionOrchestrator` 按工具名称增加业务分支。
 

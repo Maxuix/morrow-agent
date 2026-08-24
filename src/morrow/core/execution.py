@@ -329,6 +329,20 @@ class DurableToolFacts(ProtocolModel):
         return self
 
 
+class ToolRecoveryDeclaration(ProtocolModel):
+    tool_name: str
+    effect_class: EffectClass
+    missing_handler_completed: MissingCompletionPolicy
+    reconciliation_strategy_id: str | None = Field(default=None, pattern=r"^[A-Za-z0-9_.-]{1,64}$")
+    process_isolation: ProcessIsolation | None = None
+    requires_frozen_confinement: bool = False
+
+    @field_validator("tool_name")
+    @classmethod
+    def valid_name(cls, value: str) -> str:
+        return _valid_tool_name(value)
+
+
 class PreparedIntent(ProtocolModel):
     tool_name: str
     call_id: str
@@ -337,6 +351,7 @@ class PreparedIntent(ProtocolModel):
     schema_digest: str
     permission_context_digest: str
     effect_class: EffectClass
+    recovery_declaration: ToolRecoveryDeclaration | None = None
     requires_approval: bool = False
     policy_verdict: PolicyVerdict | None = None
     redacted_arguments: dict[str, Any] = Field(default_factory=dict)
@@ -664,19 +679,6 @@ class DurableApproval(ProtocolModel):
                 raise ValueError("revoked approval cannot be consumed")
         _budget_and_redact(self, APPROVAL_RECORD_MAX_BYTES, label="approval record")
         return self
-
-
-class ToolRecoveryDeclaration(ProtocolModel):
-    tool_name: str
-    effect_class: EffectClass
-    missing_handler_completed: MissingCompletionPolicy
-    process_isolation: ProcessIsolation | None = None
-    requires_frozen_confinement: bool = False
-
-    @field_validator("tool_name")
-    @classmethod
-    def valid_name(cls, value: str) -> str:
-        return _valid_tool_name(value)
 
 
 def _declaration(

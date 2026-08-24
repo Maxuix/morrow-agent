@@ -15,16 +15,18 @@ from morrow.core.execution import (
     DurableToolExecution,
     EffectClass,
     FileMutationEvidence,
+    MissingCompletionPolicy,
     PreparedIntent,
     ToolExecutionState,
+    ToolRecoveryDeclaration,
     require_tool_call_arguments_budget,
-    tool_declaration,
 )
 from morrow.core.models import AssistantMessage, FunctionToolCall
 from morrow.core.permissions import UNCONFINED_HOST_WARNING, IsolationLabel
 from morrow.core.ports import IdSource
 from morrow.runtime.policy import ToolApproval
 from morrow.runtime.session import Session
+from morrow.runtime.tool_arguments import ToolArgumentsValidationError
 from morrow.runtime.tools import (
     ToolErrorCode,
     ToolExecutionError,
@@ -85,11 +87,14 @@ def config_evidence_from_arguments(
     )
 
 
-def _declaration_effect(name: str, isolation: ProcessIsolation) -> EffectClass:
-    try:
-        return tool_declaration(name, process_isolation=isolation).effect_class
-    except Exception:
-        return EffectClass.UNCONFINED_EXTERNAL_EFFECT
+def _fallback_declaration(name: str) -> ToolRecoveryDeclaration:
+    """Give an unrecognized call a conservative, evidence-carrying declaration."""
+
+    return ToolRecoveryDeclaration(
+        tool_name=name,
+        effect_class=EffectClass.UNCONFINED_EXTERNAL_EFFECT,
+        missing_handler_completed=MissingCompletionPolicy.OUTCOME_UNKNOWN,
+    )
 
 
 def _arguments_digest(raw: str) -> str:
@@ -182,6 +187,11 @@ def _prepare_one(
     grant_id: str | None,
 ) -> PreparedIntent:
     registered = tool_executor.tool_set.tools.get(call.name) if tool_executor is not None else None
+    declaration = (
+        registered.recovery_declaration
+        if registered is not None
+        else _fallback_declaration(call.name)
+    )
     schema_digest = (
         sha256_digest(canonical_json_bytes(registered.definition.model_dump(mode="json")))
         if registered is not None
@@ -196,7 +206,7 @@ def _prepare_one(
     policy_verdict: PolicyVerdict | None = None
     if registered is not None:
         try:
-            arguments = registered.arguments_model.model_validate_json(call.arguments, strict=True)
+            arguments = registered.arguments_validator.validate(call.arguments)
             context = ToolCallContext(
                 run=run_context,
                 call_id=call.id,
@@ -244,7 +254,16 @@ def _prepare_one(
                 if plan is not None:
                     file_evidence = (file_evidence_from_plan(plan),)
             config_evidence = config_evidence_from_arguments(arguments, session)
-        except (ValidationError, ToolExecutionError, LocalFileError, ValueError, TypeError):
+        except (
+            ToolArgumentsValidationError,
+            ValidationError,
+            ToolExecutionError,
+            LocalFileError,
+            ValueError,
+            TypeError,
+        ):
+            preview = ()
+        except Exception:
             preview = ()
     return PreparedIntent(
         tool_name=call.name,
@@ -253,7 +272,8 @@ def _prepare_one(
         arguments_digest=_arguments_digest(call.arguments),
         schema_digest=schema_digest,
         permission_context_digest=permission_digest,
-        effect_class=_declaration_effect(call.name, isolation),
+        effect_class=declaration.effect_class,
+        recovery_declaration=declaration,
         requires_approval=requires_approval,
         policy_verdict=policy_verdict,
         file_evidence=file_evidence,

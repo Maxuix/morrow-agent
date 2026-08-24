@@ -1,9 +1,9 @@
 # Stage 6 Skills and Extensions Implementation Plan
 
-> Status: Stage 6 implementation in progress; Subplans 63–70 and the Subplan 65 review repair are
+> Status: Stage 6 implementation in progress; Subplans 63–71 and the Subplan 65 review repair are
 > complete locally
-> Active subplan: none (Subplan 70 is closed; Subplan 71 is next)
-> Baseline: local `main` at `89e70e9` with verified Subplans 65–70 committed
+> Active subplan: none; Subplan 72 is gated on exact dependency approval
+> Baseline: local `main` at the verified Subplan 71 merge checkpoint
 > Design baseline: `docs/reviews/stage-6-skills-and-extensions-final-proposal.md`
 > Roadmap authority: `docs/roadmap/stage-6-skills-and-extensions.md`
 
@@ -156,7 +156,7 @@ existing seam first inside the active subplan.
 | 68 | Generated Draft and Usage | completed locally; Candidate→Draft review flow, validation reports, Usage and v15 storage |
 | 69 | Skill Script execution | completed locally; dedicated constrained execution and Artifact outputs |
 | 70 | Provider/Model control plane | completed locally; capabilities, CRUD/sync/use/remove and next-run snapshots |
-| 71 | Dynamic Tool contracts | JSON Schema validator seam and declaration-owned recovery |
+| 71 | Dynamic Tool contracts | completed locally; bounded validators and declaration-owned recovery |
 | 72 | MCP control plane and Catalog | stdio definitions, config, discovery, namespacing and v16 evidence |
 | 73 | MCP runtime and security adapter | compound policy, lazy lifecycle, no retry, normalized results and recovery |
 | 74 | Backup v2 and doctor | cross-store backup/restore verification and Stage 6 integrity checks |

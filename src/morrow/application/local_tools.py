@@ -9,10 +9,12 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from morrow.core.capabilities import (
     OperationIntent,
     OperationKind,
+    ProcessIsolation,
     RiskFlag,
     ToolCallContext,
     ToolHandlerOutcome,
 )
+from morrow.core.execution import tool_declaration
 from morrow.core.local_tools import (
     ChangeSetResult,
     CommandRequest,
@@ -244,6 +246,7 @@ def make_list_directory_tool(files: WorkspaceFileService) -> RegisteredTool:
         handler=handler,
         context_handler=handler,
         intent_resolver=resolve,
+        recovery_declaration=tool_declaration("list_directory"),
     )
 
 
@@ -271,6 +274,7 @@ def make_read_file_tool(files: WorkspaceFileService) -> RegisteredTool:
         handler=handler,
         context_handler=handler,
         intent_resolver=resolve,
+        recovery_declaration=tool_declaration("read_file"),
     )
 
 
@@ -298,6 +302,7 @@ def make_find_files_tool(files: WorkspaceFileService) -> RegisteredTool:
         handler=handler,
         context_handler=handler,
         intent_resolver=resolve,
+        recovery_declaration=tool_declaration("find_files"),
     )
 
 
@@ -332,6 +337,7 @@ def make_search_text_tool(search: WorkspaceSearchService) -> RegisteredTool:
         handler=handler,
         context_handler=handler,
         intent_resolver=resolve,
+        recovery_declaration=tool_declaration("search_text"),
     )
 
 
@@ -413,6 +419,14 @@ def make_run_command_tool(process: ProcessExecutionService) -> RegisteredTool:
         intent_resolver=resolve,
         context_approval_preview=preview,
         approval_preview_budget=COMMAND_PREVIEW_BUDGET,
+        recovery_declaration=tool_declaration(
+            "run_command",
+            process_isolation=(
+                ProcessIsolation.NATIVE_SANDBOX
+                if process.requires_sandbox
+                else ProcessIsolation.HOST
+            ),
+        ),
     )
 
 
@@ -507,6 +521,7 @@ def make_promote_sandbox_tool(
             approval=ToolApproval.REQUIRED,
         ),
         approval_preview_budget=PROMOTION_PREVIEW_BUDGET,
+        recovery_declaration=tool_declaration("promote_sandbox_changes"),
     )
 
 
@@ -538,6 +553,7 @@ def make_git_status_tool(git: GitInspectionService) -> RegisteredTool:
         handler=handler,
         context_handler=handler,
         intent_resolver=resolve,
+        recovery_declaration=tool_declaration("git_status"),
     )
 
 
@@ -574,6 +590,7 @@ def make_git_diff_tool(git: GitInspectionService) -> RegisteredTool:
         handler=handler,
         context_handler=handler,
         intent_resolver=resolve,
+        recovery_declaration=tool_declaration("git_diff"),
     )
 
 
@@ -706,6 +723,7 @@ def make_apply_patch_tool(
         intent_resolver=resolve,
         context_approval_preview=preview,
         approval_preview_budget=MUTATION_PREVIEW_BUDGET,
+        recovery_declaration=tool_declaration("apply_patch"),
     )
 
 
@@ -759,6 +777,7 @@ def make_write_file_tool(
         intent_resolver=resolve,
         context_approval_preview=preview,
         approval_preview_budget=MUTATION_PREVIEW_BUDGET,
+        recovery_declaration=tool_declaration("write_file"),
     )
 
 
@@ -781,4 +800,5 @@ def make_show_changes_tool(changes: ChangeSetService) -> RegisteredTool:
         handler=handler,
         context_handler=handler,
         intent_resolver=resolve,
+        recovery_declaration=tool_declaration("show_changes"),
     )

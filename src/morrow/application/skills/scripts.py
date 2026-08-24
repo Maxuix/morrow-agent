@@ -34,6 +34,7 @@ from morrow.core.capabilities import (
     ToolRunContext,
 )
 from morrow.core.domain import ArtifactReference
+from morrow.core.execution import tool_declaration
 from morrow.core.local_tools import CommandStatus
 from morrow.core.models import ToolEffect
 from morrow.core.skills.scripts import (
@@ -721,6 +722,7 @@ def make_skill_script_tool(service: SkillScriptExecutionService) -> RegisteredTo
         approval_preview_budget=ApprovalPreviewBudget(
             max_lines=8, max_line_chars=200, max_bytes=1600
         ),
+        recovery_declaration=tool_declaration("run_skill_script"),
     )
 
 

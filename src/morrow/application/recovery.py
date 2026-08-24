@@ -75,6 +75,9 @@ def _isolation_for(effect: EffectClass) -> ProcessIsolation | None:
 
 
 def declaration_for_execution(execution) -> ToolRecoveryDeclaration:
+    frozen = getattr(execution.intent, "recovery_declaration", None)
+    if frozen is not None:
+        return frozen
     isolation = _isolation_for(execution.intent.effect_class)
     try:
         return tool_declaration(execution.tool_name, process_isolation=isolation)

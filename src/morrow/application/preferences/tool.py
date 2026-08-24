@@ -12,6 +12,7 @@ from morrow.core.capabilities import (
     ToolCallContext,
     ToolHandlerOutcome,
 )
+from morrow.core.execution import tool_declaration
 from morrow.core.models import ToolEffect
 from morrow.core.preference_models import PreferenceScope
 from morrow.core.preference_operations import (
@@ -269,6 +270,7 @@ def make_preference_management_tool(service: PreferenceManagementService) -> Reg
         ),
         approval_preview=preview,
         intent_resolver=intent,
+        recovery_declaration=tool_declaration("manage_preferences"),
     )
 
 

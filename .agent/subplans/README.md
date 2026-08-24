@@ -16,7 +16,7 @@ implementation plan. Stage 6 is now planned as Subplans 63–75; implementation 
 | 68 | `68-stage6-skill-drafts-usage.md` | completed locally; branch unavailable |
 | 69 | `69-stage6-skill-script-execution.md` | completed locally |
 | 70 | `70-stage6-provider-model-control.md` | completed locally |
-| 71 | `71-stage6-dynamic-tool-contracts.md` | pending |
+| 71 | `71-stage6-dynamic-tool-contracts.md` | completed locally |
 | 72 | `72-stage6-mcp-control-catalog.md` | pending; dependency approval gate |
 | 73 | `73-stage6-mcp-runtime-security.md` | pending |
 | 74 | `74-stage6-backup-doctor.md` | pending |

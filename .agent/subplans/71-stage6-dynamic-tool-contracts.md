@@ -1,7 +1,7 @@
 # Subplan 71 — Dynamic Tool Contracts
 
-> Status: pending
-> Branch: `codex/feat/stage6-dynamic-tools`
+> Status: completed locally
+> Branch: `feat/stage6-dynamic-tools`
 > Prerequisite: Subplan 70 complete; Subplan 63 selected Schema approach
 
 ## Objective
@@ -51,3 +51,20 @@ ToolCycle or recovery.
 - ToolExecutor has one validator interface and one recovery declaration source.
 - Existing tools have no behavior regression and MCP can register tools from runtime schemas.
 - No `if name.startswith("mcp.")` or dynamic-name recovery table exists.
+
+## Result
+
+- Added one bounded validator seam with Pydantic compatibility and a dependency-free, explicit Draft
+  2020-12 JSON Schema subset that rejects unsupported and remote references.
+- Registered tools now carry exactly one argument validator and one recovery declaration; local,
+  configuration, preference, Git, Skill-script and fixture factories provide explicit declarations.
+- Prepared intents persist the declaration before handler entry, and recovery prefers that frozen
+  evidence even when the current registry or static inventory has changed.
+- Added dynamic-tool coverage for validation, approval, execution, budgets, malformed JSON and
+  recovery stability without name-prefix special cases.
+
+## Validation
+
+- Focused compatibility/dynamic/recovery suites: `76 passed`.
+- Full non-live gate: `1036 passed, 3 skipped, 2 deselected`.
+- Ruff format/check, compileall and `git diff --check` passed; no dependency files changed.
