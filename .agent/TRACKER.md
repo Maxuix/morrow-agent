@@ -12,7 +12,8 @@ AgentLoop/Session/Task boundaries. The verified Subplan 72 checkpoint is committ
 as `c1a7132`;
 remote publication is not in scope.
 
-Subplan 73 is complete locally on `codex/feat/stage6-mcp-runtime`, based on local `main@97d4a82`.
+Subplan 73 is complete on local `main@514a9a6` after a fast-forward merge from
+`codex/feat/stage6-mcp-runtime`.
 It adds ordinary ToolExecutor integration, compound MCP policy, lazy run-scoped lifecycle, bounded
 results, generic outcome-unknown recovery, AgentRun/PermissionSnapshot evidence and bounded doctor
 facts. Backup v2, remaining doctor closeout and final acceptance remain pending.
@@ -74,8 +75,7 @@ None. Subplan 73 is complete; the next planned child is Subplan 74.
 
 ## Next action
 
-Fast-forward the verified topic branch into `main`, remove the clean topic branch/worktree, and
-activate Subplan 74 only when the user requests continuation.
+Activate Subplan 74 only when the user requests continuation.
 
 ## Last completed work (Subplan 71)
 

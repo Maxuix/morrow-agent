@@ -2655,3 +2655,5 @@
 - Validation passed: focused MCP/runtime/recovery suite `67 passed`; full offline suite `1051 passed,
   2 skipped, 2 deselected`; Ruff format/check, compileall and `git diff --check` passed. No live,
   networked, credentialed MCP path or remote push was run.
+- Committed as `514a9a6`, fast-forwarded into local `main`, verified the topic branch had no commits
+  absent from `main`, and deleted the clean topic branch. Remote publication remains out of scope.
