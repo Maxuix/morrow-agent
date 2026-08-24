@@ -2612,3 +2612,20 @@
   the official SDK at `mcp==2.0.0` and `jsonschema==4.26.0` plus its recorded transitive packages.
 - `uv sync` completed successfully. The offline Fake stdio Spike passed `4 tests`; no networked or
   credentialed MCP path was run.
+
+## 2026-08-24 — Subplan 72 MCP Control Plane and Catalog completed
+
+- Added strict stdio MCP Server definitions and YAML-authoritative add/show/list/enable/disable/
+  remove operations with revision/digest OCC. Servers are disabled on add; enable requires a
+  refreshed Catalog, explicit local allowlist and local risk mappings. Remote annotations remain
+  observational evidence only.
+- Added the official SDK handshake/list/close adapter with cancellation-aware timeouts, bounded
+  stderr counting and no remote tool execution. Catalog refresh normalizes Draft 2020-12 schemas,
+  isolates invalid tools, degrades only unusable Server catalogs and assigns deterministic bounded
+  `mcp__<server>__<tool>` names.
+- Added Operational Store v16 Server/Catalog/run snapshot/Artifact-link persistence, safe query
+  projections and MCP CLI commands. MCP is still not registered with AgentRun execution; that is
+  reserved for Subplan 73.
+- Validation passed: focused MCP/SDK suite `8 passed`; affected migration/binding suite `97 passed`;
+  full non-live suite `1044 passed, 2 skipped, 2 deselected`; CLI help, Ruff format/check,
+  compileall and `git diff --check`. No live/networked MCP path or remote push was run.

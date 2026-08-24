@@ -3,11 +3,27 @@
 ## Current status
 
 Subplans 63 (spike), 64 (per-AgentRun preparation), 65 (Skill package/catalog foundation + v14),
-66, 67, 68, 69, 70 and 71 are complete locally; the Subplan 65 review repairs are also complete.
+66, 67, 68, 69, 70, 71 and 72 are complete locally; the Subplan 65 review repairs are also
+complete.
 Subplan 69 adds constrained Skill script execution, Subplan 70 adds the Provider/Model control
-plane, and Subplan 71 adds generic dynamic-tool contracts without widening the existing
-AgentLoop/Session/Task boundaries. The verified Subplan 71 checkpoint is committed locally;
+plane, Subplan 71 adds generic dynamic-tool contracts, and Subplan 72 adds the MCP desired-state
+control plane, stdio Catalog discovery and v16 evidence without widening the existing
+AgentLoop/Session/Task boundaries. The verified Subplan 72 checkpoint is committed locally;
 remote publication is not in scope.
+
+## Last completed work (Subplan 72)
+
+- Added approved official MCP/JSON Schema dependencies, strict stdio Server contracts, bounded
+  Extension YAML add/show/list/enable/disable/remove operations and revision/digest OCC. Add is
+  disabled by default; enable requires a fresh Catalog plus explicit local allowlist/risk mappings.
+- Added a cancellable official-SDK stdio handshake/list/close adapter with bounded stderr counting,
+  schema dialect/local-reference validation, isolated invalid tools, deterministic provider-safe
+  names and non-authoritative annotation evidence.
+- Added v16 Server/Catalog/run-snapshot/Artifact-link tables, SQLite journal/query projections and
+  safe MCP CLI commands. MCP remains unavailable to AgentRun execution until Subplan 73.
+- Validation: MCP/SDK focused suite `8 passed`; affected migration/binding suite `97 passed`; full
+  non-live suite `1044 passed, 2 skipped, 2 deselected`; CLI help, Ruff format/check, compileall
+  and `git diff --check` passed.
 
 ## Last completed work (Subplan 66)
 
@@ -48,12 +64,12 @@ remote publication is not in scope.
 
 ## Active task
 
-Subplan 72 — MCP Control Plane and Catalog.
+None. Subplan 72 is complete locally; Subplan 73 remains pending activation.
 
 ## Next action
 
-Dependencies are locked and the Fake stdio Spike passes; next define the strict stdio Server
-contract and YAML control-plane seam. Keep MCP unavailable to AgentRun execution until Subplan 73.
+The verified Subplan 72 checkpoint should be fast-forwarded into `main`; keep MCP unavailable to
+AgentRun execution until Subplan 73 is explicitly activated.
 
 ## Last completed work (Subplan 71)
 

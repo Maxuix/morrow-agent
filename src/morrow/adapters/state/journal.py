@@ -14,6 +14,7 @@ from morrow.adapters.state.context_journal import SqliteContextJournal
 from morrow.adapters.state.conversation_journal import SqliteConversationJournal
 from morrow.adapters.state.learning_journal import SqliteLearningJournal
 from morrow.adapters.state.learning_memory_journal import SqliteLearningMemoryJournal
+from morrow.adapters.state.mcp_journal import SqliteMcpJournal
 from morrow.adapters.state.memory_selection_journal import SqliteMemorySelectionJournal
 from morrow.adapters.state.operational import OperationalStoreSession, SqliteExecutor
 from morrow.adapters.state.permission_journal import SqliteRunPermissionJournal
@@ -80,6 +81,13 @@ from morrow.core.learning_memory import (
     ProjectKnowledgeHead,
     ProjectKnowledgeRevision,
     ProjectKnowledgeStatus,
+)
+from morrow.core.mcp import (
+    McpCatalogSnapshot,
+    McpLaunchSnapshot,
+    McpResultArtifactLink,
+    McpServerDefinition,
+    McpToolSnapshot,
 )
 from morrow.core.memory_selection import MemorySearchTerm, MemorySelection
 from morrow.core.permissions import (
@@ -179,6 +187,7 @@ class SqliteOperationalJournal:
         self._memory_selection_journal = SqliteMemorySelectionJournal(self._backend)
         self._preference_journal = SqlitePreferenceJournal(self._backend)
         self._skill_journal = SqliteSkillJournal(self._backend)
+        self._mcp_journal = SqliteMcpJournal(self._backend)
 
     def now(self) -> datetime:
         return self._backend.now()
@@ -818,6 +827,62 @@ class SqliteOperationalJournal:
             agent_run_id=agent_run_id,
             limit=limit,
         )
+
+    def put_mcp_server(
+        self, definition: McpServerDefinition, *, catalog: McpCatalogSnapshot | None = None
+    ) -> McpServerDefinition:
+        return self._mcp_journal.put_server(definition, catalog=catalog)
+
+    def get_mcp_server(
+        self, scope: str, server_id: str, *, scope_id: str | None = None
+    ) -> McpServerDefinition | None:
+        return self._mcp_journal.get_server(scope, server_id, scope_id=scope_id)
+
+    def list_mcp_servers(
+        self, scope: str, *, scope_id: str | None = None
+    ) -> tuple[McpServerDefinition, ...]:
+        return self._mcp_journal.list_servers(scope, scope_id=scope_id)
+
+    def put_mcp_catalog(
+        self, definition: McpServerDefinition, snapshot: McpCatalogSnapshot
+    ) -> McpCatalogSnapshot:
+        return self._mcp_journal.put_catalog(definition, snapshot)
+
+    def get_mcp_catalog(
+        self,
+        scope: str,
+        server_id: str,
+        *,
+        scope_id: str | None = None,
+        revision: int | None = None,
+    ) -> McpCatalogSnapshot | None:
+        return self._mcp_journal.get_catalog(scope, server_id, scope_id=scope_id, revision=revision)
+
+    def put_mcp_launch_snapshot(self, snapshot: McpLaunchSnapshot) -> McpLaunchSnapshot:
+        return self._mcp_journal.put_launch_snapshot(snapshot)
+
+    def list_mcp_launch_snapshots(
+        self, workspace_id: str, agent_run_id: str
+    ) -> tuple[McpLaunchSnapshot, ...]:
+        return self._mcp_journal.list_launch_snapshots(workspace_id, agent_run_id)
+
+    def put_mcp_tool_snapshot(
+        self, workspace_id: str, snapshot: McpToolSnapshot
+    ) -> McpToolSnapshot:
+        return self._mcp_journal.put_tool_snapshot(snapshot, workspace_id=workspace_id)
+
+    def list_mcp_tool_snapshots(
+        self, workspace_id: str, agent_run_id: str
+    ) -> tuple[McpToolSnapshot, ...]:
+        return self._mcp_journal.list_tool_snapshots(workspace_id, agent_run_id)
+
+    def put_mcp_result_artifact_link(self, link: McpResultArtifactLink) -> McpResultArtifactLink:
+        return self._mcp_journal.put_result_artifact_link(link)
+
+    def list_mcp_result_artifact_links(
+        self, workspace_id: str, tool_execution_id: str
+    ) -> tuple[McpResultArtifactLink, ...]:
+        return self._mcp_journal.list_result_artifact_links(workspace_id, tool_execution_id)
 
     def put_memory_selection(
         self, workspace_id: str, selection: MemorySelection

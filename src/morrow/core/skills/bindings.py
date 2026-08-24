@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import AliasChoices, ConfigDict, Field, field_validator, model_validator
 
 from morrow.core.domain import canonical_json_bytes, validate_prefixed_id
+from morrow.core.mcp import MCP_MAX_SERVER_BYTES, McpServerDefinition
 from morrow.core.models import ProtocolModel, utc_now
 
 from .identity import validate_skill_id, validate_skv_id
@@ -27,9 +28,9 @@ class SkillSelectionMode(StrEnum):
 
 
 class ExtensionMcpSection(ProtocolModel):
-    """Reserved, inert MCP desired-state slot for the later MCP subplans."""
+    """Typed MCP desired-state slot; execution remains owned by later subplans."""
 
-    servers: tuple[dict[str, Any], ...] = ()
+    servers: tuple[McpServerDefinition, ...] = ()
 
     @model_validator(mode="after")
     def bounded(self) -> ExtensionMcpSection:
@@ -37,6 +38,14 @@ class ExtensionMcpSection(ProtocolModel):
             raise ValueError("Extension MCP section contains too many servers")
         if len(canonical_json_bytes(self.model_dump(mode="json"))) > EXTENSION_MAX_MCP_BYTES:
             raise ValueError("Extension MCP section exceeds its byte budget")
+        if any(
+            len(canonical_json_bytes(server.model_dump(mode="json"))) > MCP_MAX_SERVER_BYTES
+            for server in self.servers
+        ):
+            raise ValueError("Extension MCP server exceeds its byte budget")
+        ids = tuple(server.server_id for server in self.servers)
+        if len(ids) != len(set(ids)):
+            raise ValueError("MCP server ids must be unique within one Extension document")
         return self
 
 
@@ -133,6 +142,9 @@ class ExtensionDocument(ProtocolModel):
             seen.add(key)
             if binding.scope != self.scope or binding.scope_id != self.scope_id:
                 raise ValueError("Skill binding scope must match its Extension document")
+        for server in self.mcp.servers:
+            if server.scope != self.scope or server.scope_id != self.scope_id:
+                raise ValueError("MCP server scope must match its Extension document")
         return self
 
     @property

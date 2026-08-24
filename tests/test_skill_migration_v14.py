@@ -134,7 +134,7 @@ def test_interrupted_v14_rolls_back_to_v13(tmp_path) -> None:
 
 def test_future_schema_version_is_refused() -> None:
     with pytest.raises(StorageError) as error:
-        MigrationRegistry(supported_version=16)
+        MigrationRegistry(supported_version=17)
     assert error.value.code is StorageErrorCode.UNAVAILABLE
 
 

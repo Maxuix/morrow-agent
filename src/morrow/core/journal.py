@@ -28,6 +28,13 @@ from morrow.core.domain import (
     TurnSubmitReceipt,
 )
 from morrow.core.execution import DurableApproval, DurableToolExecution
+from morrow.core.mcp import (
+    McpCatalogSnapshot,
+    McpLaunchSnapshot,
+    McpResultArtifactLink,
+    McpServerDefinition,
+    McpToolSnapshot,
+)
 from morrow.core.permissions import CapabilityGrant, PermissionSnapshot
 from morrow.core.recovery import RecoveryReceipt, RecoveryReport
 from morrow.core.skills.context import SkillContextEntry
@@ -326,6 +333,57 @@ class SkillDraftUsageJournalPort(Protocol):
         agent_run_id: str | None = None,
         limit: int = 100,
     ) -> tuple[SkillUsage, ...]: ...
+
+
+class McpCatalogJournalPort(Protocol):
+    """v16 MCP desired-state, Catalog and reserved run-evidence surface."""
+
+    def put_mcp_server(
+        self, definition: McpServerDefinition, *, catalog: McpCatalogSnapshot | None = None
+    ) -> McpServerDefinition: ...
+
+    def get_mcp_server(
+        self, scope: str, server_id: str, *, scope_id: str | None = None
+    ) -> McpServerDefinition | None: ...
+
+    def list_mcp_servers(
+        self, scope: str, *, scope_id: str | None = None
+    ) -> tuple[McpServerDefinition, ...]: ...
+
+    def put_mcp_catalog(
+        self, definition: McpServerDefinition, snapshot: McpCatalogSnapshot
+    ) -> McpCatalogSnapshot: ...
+
+    def get_mcp_catalog(
+        self,
+        scope: str,
+        server_id: str,
+        *,
+        scope_id: str | None = None,
+        revision: int | None = None,
+    ) -> McpCatalogSnapshot | None: ...
+
+    def put_mcp_launch_snapshot(self, snapshot: McpLaunchSnapshot) -> McpLaunchSnapshot: ...
+
+    def list_mcp_launch_snapshots(
+        self, workspace_id: str, agent_run_id: str
+    ) -> tuple[McpLaunchSnapshot, ...]: ...
+
+    def put_mcp_tool_snapshot(
+        self, workspace_id: str, snapshot: McpToolSnapshot
+    ) -> McpToolSnapshot: ...
+
+    def list_mcp_tool_snapshots(
+        self, workspace_id: str, agent_run_id: str
+    ) -> tuple[McpToolSnapshot, ...]: ...
+
+    def put_mcp_result_artifact_link(
+        self, link: McpResultArtifactLink
+    ) -> McpResultArtifactLink: ...
+
+    def list_mcp_result_artifact_links(
+        self, workspace_id: str, tool_execution_id: str
+    ) -> tuple[McpResultArtifactLink, ...]: ...
 
 
 class TurnSubmitReceiptPort(Protocol):

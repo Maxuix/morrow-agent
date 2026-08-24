@@ -1,6 +1,6 @@
 # Subplan 72 — MCP Control Plane and Catalog
 
-> Status: in progress
+> Status: completed locally
 > Branch: `feat/stage6-mcp-catalog`
 > Prerequisite: Subplans 63 and 71 complete; user approves any exact dependency change
 
