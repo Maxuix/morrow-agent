@@ -6,7 +6,8 @@ foundation, version 11 adds immutable decisions plus Project Knowledge, and vers
 rewriting older evidence or creating a second configuration authority. Version 13
 reserves the generic Preference Review, Evidence, Proposal, and Writer saga state.
 Version 14 adds the immutable Skill catalog foundation (definitions, versions,
-catalog operations, and the reserved AgentRun selection/context tables).
+catalog operations, and the reserved AgentRun selection/context tables). Version
+15 adds generated Skill Draft, validation and observational Usage records.
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ from dataclasses import dataclass
 
 from morrow.adapters.state.migrations_v13_preferences import V13_NAME, V13_STATEMENTS
 from morrow.adapters.state.migrations_v14_skills import V14_NAME, V14_STATEMENTS
+from morrow.adapters.state.migrations_v15_skill_learning import V15_NAME, V15_STATEMENTS
 from morrow.core.store import (
     APPLICATION_NAME,
     RESERVED_SCHEMA_VERSIONS,
@@ -1399,6 +1401,7 @@ V12 = SchemaMigration(version=12, name=V12_NAME, statements=V12_STATEMENTS)
 V13 = SchemaMigration(version=13, name=V13_NAME, statements=V13_STATEMENTS)
 
 V14 = SchemaMigration(version=14, name=V14_NAME, statements=V14_STATEMENTS)
+V15 = SchemaMigration(version=15, name=V15_NAME, statements=V15_STATEMENTS)
 
 
 class MigrationRegistry:
@@ -1468,6 +1471,7 @@ def production_registry() -> MigrationRegistry:
     registry.add(V12)
     registry.add(V13)
     registry.add(V14)
+    registry.add(V15)
     return registry
 
 

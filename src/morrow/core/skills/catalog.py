@@ -10,11 +10,22 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Literal
 
 from morrow.core.models import ProtocolModel
 
+from .bindings import SkillBinding
+from .selection import SkillSelection
 from .trust import SourceKind, TrustLevel
+
+__all__ = [
+    "SkillAvailability",
+    "SkillBinding",
+    "SkillCatalogEntry",
+    "SkillConflictStatus",
+    "SkillDefinition",
+    "SkillSelection",
+    "SkillVersion",
+]
 
 
 class SkillConflictStatus(StrEnum):
@@ -35,6 +46,7 @@ class SkillDefinition(ProtocolModel):
 
     skill_id: str
     name: str
+    description: str | None = None
     source_kind: SourceKind
     scope_id: str | None = None  # None means global
     availability: SkillAvailability = SkillAvailability.UNAVAILABLE
@@ -57,30 +69,6 @@ class SkillVersion(ProtocolModel):
     evidence_refs: tuple[str, ...] = ()
     effective_trust: TrustLevel = TrustLevel.UNKNOWN
     created_at: datetime | None = None
-
-
-class SkillBinding(ProtocolModel):
-    """Global/workspace desired state; YAML is the authority (Subplan 66)."""
-
-    skill_id: str
-    scope: Literal["global", "workspace"]
-    scope_id: str | None = None
-    enabled: bool = False
-    pinned_version_id: str | None = None
-    selection_mode: Literal["explicit", "workspace_default", "description_match"] = "explicit"
-    revision: int = 0
-
-
-class SkillSelection(ProtocolModel):
-    """Exact version chosen for one AgentRun; frozen at preparation (Subplan 67)."""
-
-    selection_id: str
-    agent_run_id: str
-    skill_id: str
-    version_id: str
-    scope_id: str | None = None
-    activation_reason: str = ""
-    tree_digest: str = ""
 
 
 class SkillCatalogEntry(ProtocolModel):

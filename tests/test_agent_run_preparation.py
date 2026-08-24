@@ -24,7 +24,7 @@ from morrow.application.turn_lifecycle import (
     request_digest,
 )
 from morrow.bootstrap import build_application, build_session_application
-from morrow.core.agent_runs import ProviderCapabilities, exact_model_capabilities
+from morrow.core.agent_runs import ModelCapabilities, ProviderCapabilities, exact_model_capabilities
 from morrow.core.domain import (
     AGENT_RUN_SNAPSHOT_MAX_BYTES,
     AgentRunSnapshot,
@@ -195,6 +195,38 @@ def test_active_model_change_affects_next_new_run_only(tmp_path: Path) -> None:
     assert first.provider is not second.provider
 
 
+def test_model_capability_overrides_only_narrow_adapter_defaults() -> None:
+    model = ModelRef(provider_id="provider", model_id="model")
+    exact = exact_model_capabilities(
+        "adapter",
+        ProviderCapabilities(
+            streaming_text=False,
+            tool_protocol="none",
+            multiple_tool_calls=False,
+            structured_output=False,
+            safe_request_chars=100,
+            input_types=("text",),
+        ),
+        model,
+        ModelCapabilities(
+            model=model,
+            streaming_text=True,
+            tool_protocol="openai_function",
+            multiple_tool_calls=True,
+            structured_output=True,
+            safe_request_chars=1000,
+            input_types=("image", "text"),
+        ),
+    )
+
+    assert exact.streaming_text is False
+    assert exact.tool_protocol == "none"
+    assert exact.multiple_tool_calls is False
+    assert exact.structured_output is False
+    assert exact.safe_request_chars == 100
+    assert exact.input_types == ("text",)
+
+
 def test_prepare_new_without_config_returns_legacy_runtime(tmp_path: Path) -> None:
     app = _app(tmp_path)
     constructions: list = []
@@ -254,6 +286,57 @@ async def test_closed_replay_performs_no_provider_construction(tmp_path: Path) -
         session_app.persistence.workspace_id, session_app.session.session_id
     )
     assert len(runs) == 1
+
+
+async def test_prepare_failure_is_emitted_as_ordered_error_events(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app = _app(tmp_path)
+    _register_fake_adapter(app, constructions=[])
+    _configure_active(app)
+    project = tmp_path / "project"
+    project.mkdir()
+    session_app = _open_session_application(app, project)
+
+    def fail_prepare():
+        raise ValueError("Provider 凭据不可用")
+
+    monkeypatch.setattr(session_app.orchestrator.preparation, "prepare_new", fail_prepare)
+    events = await _dispatch(session_app.orchestrator, "prepare me")
+
+    assert [event.type for event in events] == ["turn.started", "error", "turn.completed"]
+    assert events[1].payload["stop_code"] == "internal"
+    assert events[-1].payload["finish_reason"] == "error"
+
+
+async def test_rehydrate_failure_emits_events_and_closes_active_turn(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app = _app(tmp_path)
+    _register_fake_adapter(app, constructions=[])
+    _configure_active(app)
+    project = tmp_path / "project"
+    project.mkdir()
+    session_app = _open_session_application(app, project)
+    accepted = session_app.persistence.submit_user(
+        session_app.session,
+        "resume me",
+        "cmsg-resume-failure",
+        turn_id="turn_resume_failure",
+        agent_run_id="arun_resume_failure",
+        tools=(),
+    )
+    assert accepted.kind == "accepted"
+
+    def fail_rehydrate(_snapshot):
+        raise ProviderUnavailableError("frozen credential is unavailable")
+
+    monkeypatch.setattr(session_app.orchestrator.preparation, "rehydrate", fail_rehydrate)
+    events = [event async for event in session_app.orchestrator.resume_recovery()]
+
+    assert [event.type for event in events] == ["turn.started", "error", "turn.completed"]
+    assert events[0].turn_id == "turn_resume_failure"
+    assert not session_app.session.log.has_active_turn
 
 
 def test_open_receipt_probe_classifies_recovery(tmp_path: Path) -> None:

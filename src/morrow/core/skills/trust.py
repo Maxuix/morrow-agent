@@ -38,6 +38,11 @@ class ManifestDocument(ProtocolModel):
     display_version: str | None = None
     requested_trust: TrustLevel | None = None
     requested_permissions: tuple[str, ...] = ()
+    required_tools: tuple[str, ...] = ()
+    required_mcp_servers: tuple[str, ...] = ()
+    entry_resources: tuple[str, ...] = ()
+    context_budget: int | None = None
+    platform_constraints: tuple[str, ...] = ()
     raw_morrow_fields: tuple[str, ...] = ()
 
     def has_identity_fields(self) -> bool:

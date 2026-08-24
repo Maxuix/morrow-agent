@@ -34,6 +34,7 @@ from morrow.core.models import (
 from morrow.core.permissions import PermissionSnapshot
 from morrow.core.preference_documents import PreferenceDocument
 from morrow.core.preference_models import PreferenceEntry
+from morrow.core.skills.context import SkillContextProjection
 from morrow.runtime.conversation import ConversationAppend, ConversationLog
 
 if TYPE_CHECKING:
@@ -198,6 +199,7 @@ class Session:
     workspace_preferences_presence: StatePresence = StatePresence.MISSING
     context_checkpoint: ContextCheckpoint | None = None
     run_context_projection: RunContextProjection | None = None
+    skill_context_projection: SkillContextProjection | None = None
 
     def __post_init__(self) -> None:
         # Hand-built Sessions in tests and local integrations may only provide values.  Infer
@@ -257,6 +259,7 @@ class Session:
         self.latest_metrics = None
         self.context_checkpoint = None
         self.run_context_projection = None
+        self.skill_context_projection = None
         self.pending_full_access_grant = False
 
     def retain_run_facts(

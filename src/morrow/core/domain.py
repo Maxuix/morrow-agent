@@ -553,8 +553,19 @@ class AgentRunSnapshot(ProtocolModel):
     preference_source_scopes: tuple[Literal["global", "workspace", "session"], ...] = ()
     preference_refresh_status: Literal["legacy", "ok", "degraded"] = "legacy"
     preference_refresh_error: str | None = Field(default=None, max_length=128)
-    # Stage 6 optional frozen preparation evidence. Absent on pre-Stage-6 runs,
-    # which keeps old snapshots decodable; rehydration never falls back silently.
+    # Skill selection/context are reference-only. Full context remains in the
+    # dedicated v14 rows and is verified when a Run projection is rebuilt.
+    skill_selection_ids: tuple[str, ...] = ()
+    skill_selection_id: str | None = Field(default=None, exclude=True)
+    skill_selection_digest: str | None = None
+    skill_context_ids: tuple[str, ...] = ()
+    skill_context_id: str | None = Field(default=None, exclude=True)
+    skill_context_digest: str | None = None
+    skill_selected_count: int = Field(default=0, ge=0)
+    skill_omitted_count: int = Field(default=0, ge=0)
+    skill_binding_digest: str | None = None
+    skill_catalog_digest: str | None = None
+    # Optional frozen preparation evidence keeps older snapshots decodable.
     provider_runtime: ProviderRuntimeSnapshot | None = None
     run_policy: RunPolicy | None = None
 
@@ -597,6 +608,50 @@ class AgentRunSnapshot(ProtocolModel):
             raise ValueError("Preference projection digest must be a SHA-256 hex digest")
         return value
 
+    @field_validator("skill_selection_digest", "skill_context_digest")
+    @classmethod
+    def valid_skill_digest(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if not DIGEST_PATTERN.match(value):
+            raise ValueError("Skill evidence digest must be a SHA-256 hex digest")
+        return value
+
+    @field_validator("skill_binding_digest", "skill_catalog_digest")
+    @classmethod
+    def valid_skill_source_digest(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if not DIGEST_PATTERN.match(value):
+            raise ValueError("Skill source digest must be a SHA-256 hex digest")
+        return value
+
+    @field_validator("skill_selection_ids", "skill_context_ids")
+    @classmethod
+    def bounded_skill_ids(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        if len(value) > 64:
+            raise ValueError("AgentRun contains too many Skill evidence references")
+        if len(value) != len(set(value)):
+            raise ValueError("Skill evidence references must be unique")
+        if any(
+            not item or len(item) > 256 or any(ch in item for ch in "\x00\r\n") for item in value
+        ):
+            raise ValueError("Skill evidence reference is invalid")
+        return value
+
+    @model_validator(mode="before")
+    @classmethod
+    def accept_singular_skill_refs(cls, value):
+        if isinstance(value, dict):
+            value = dict(value)
+            if value.get("skill_selection_id") and not value.get("skill_selection_ids"):
+                value["skill_selection_ids"] = (value["skill_selection_id"],)
+            if value.get("skill_context_id") and not value.get("skill_context_ids"):
+                value["skill_context_ids"] = (value["skill_context_id"],)
+            if value.get("skill_selection_ids") and "skill_selected_count" not in value:
+                value["skill_selected_count"] = len(value["skill_selection_ids"])
+        return value
+
     @model_validator(mode="after")
     def enforce_budget_and_redaction(self) -> AgentRunSnapshot:
         memory_fields = (
@@ -633,6 +688,24 @@ class AgentRunSnapshot(ProtocolModel):
             self.preference_refresh_error is not None
         ):
             raise ValueError("AgentRun Preference refresh status and error must match")
+        if self.skill_selected_count != len(self.skill_selection_ids):
+            raise ValueError("AgentRun Skill selected count does not match references")
+        if self.skill_selection_ids and self.skill_selection_digest is None:
+            raise ValueError("AgentRun Skill selection digest is missing")
+        if self.skill_context_ids and self.skill_context_digest is None:
+            raise ValueError("AgentRun Skill context digest is missing")
+        if (
+            not self.skill_selection_ids
+            and self.skill_selection_digest is not None
+            and self.skill_omitted_count == 0
+        ):
+            raise ValueError("AgentRun Skill selection digest has no references")
+        if not self.skill_context_ids and self.skill_context_digest is not None:
+            raise ValueError("AgentRun Skill context digest has no references")
+        if self.skill_selection_id is None and len(self.skill_selection_ids) == 1:
+            object.__setattr__(self, "skill_selection_id", self.skill_selection_ids[0])
+        if self.skill_context_id is None and len(self.skill_context_ids) == 1:
+            object.__setattr__(self, "skill_context_id", self.skill_context_ids[0])
         dumped = self.model_dump(mode="json")
         payload = canonical_json_bytes(dumped)
         require_payload_budget(payload, AGENT_RUN_SNAPSHOT_MAX_BYTES, label="AgentRun snapshot")

@@ -16,6 +16,7 @@ from morrow.adapters.models.openai_compatible import estimate_request_chars, mak
 from morrow.adapters.models.preference_reviewer import ModelPreferenceReviewer
 from morrow.adapters.registry import AdapterRegistry
 from morrow.adapters.state.artifacts import FilesystemArtifactStore
+from morrow.adapters.state.extension_yaml import ExtensionYamlStore
 from morrow.adapters.state.journal import SqliteOperationalJournal
 from morrow.adapters.state.operational import OperationalStore, OperationalStoreSession
 from morrow.adapters.state.preference_yaml import PreferenceYamlStore
@@ -59,6 +60,14 @@ from morrow.application.preferences.tool import (
 from morrow.application.preferences.worker import ReviewWorker
 from morrow.application.preferences.writer import PreferenceWriter
 from morrow.application.recovery import RecoveryService
+from morrow.application.skills.bindings import SkillBindingService
+from morrow.application.skills.catalog import SkillCatalogService
+from morrow.application.skills.drafts import SkillDraftService
+from morrow.application.skills.lifecycle import SkillLifecycleService
+from morrow.application.skills.queries import SkillQueries
+from morrow.application.skills.resources import SkillResourceService
+from morrow.application.skills.selection import SkillSelectionService
+from morrow.application.skills.usage import SkillUsageService
 from morrow.application.tasks import TaskService
 from morrow.application.turn_lifecycle import PreferenceRunSources
 from morrow.application.turns import SessionPersistence
@@ -81,6 +90,7 @@ from morrow.core.models import (
 from morrow.core.permissions import UNCONFINED_HOST_WARNING_DIGEST, CapabilityName
 from morrow.core.preference_documents import PreferenceDocument
 from morrow.core.preference_models import PreferenceScope
+from morrow.core.skills.trust import SourceKind
 from morrow.core.store import (
     StorageError,
     StorageErrorCode,
@@ -160,6 +170,110 @@ class OperationalServices:
     recovery: RecoveryService
     doctor: OperationalDoctor
     backup: OperationalBackupService
+
+
+@dataclass(frozen=True)
+class SkillServices:
+    """Composition-only Skill services; lifecycle semantics stay in application modules."""
+
+    extensions: ExtensionYamlStore
+    packages: object
+    catalog: SkillCatalogService
+    bindings: SkillBindingService
+    lifecycle: SkillLifecycleService
+    queries: SkillQueries
+    selection: SkillSelectionService
+    resources: SkillResourceService
+    drafts: SkillDraftService | None = None
+    usage: SkillUsageService | None = None
+    journal: SqliteOperationalJournal | None = None
+
+
+def build_skill_services(
+    app: Application,
+    *,
+    workspace_id: str | None = None,
+    journal: SqliteOperationalJournal | None = None,
+    available_tools=None,
+    available_mcp_servers=None,
+    available_capabilities=None,
+) -> SkillServices:
+    from morrow.adapters.skills.managed_store import ManagedSkillPackageStore
+
+    extensions = ExtensionYamlStore(app.data_root.root)
+    packages = ManagedSkillPackageStore(app.data_root.root)
+    roots: dict[SourceKind, tuple[Path | tuple[Path, str | None], ...]] = {}
+    for source_kind in SourceKind:
+        global_root = app.data_root.root / "skills" / source_kind.value
+        configured: list[Path | tuple[Path, str | None]] = [(global_root, None)]
+        if workspace_id is not None:
+            configured.append(
+                (
+                    app.data_root.root / "workspaces" / workspace_id / "skills" / source_kind.value,
+                    workspace_id,
+                )
+            )
+        roots[source_kind] = tuple(configured)
+    catalog = SkillCatalogService(roots)
+    bindings = SkillBindingService(extensions, workspace_id)
+    lifecycle = SkillLifecycleService(
+        extensions,
+        packages,
+        catalog,
+        journal=journal,
+        workspace_id=workspace_id,
+        id_source=app.id_source,
+        clock=journal.now if journal is not None else None,
+    )
+    queries = SkillQueries(catalog, bindings, journal=journal)
+    selection = SkillSelectionService(
+        catalog,
+        bindings,
+        packages,
+        id_source=app.id_source,
+        workspace_id=workspace_id,
+        available_tools=available_tools,
+        available_mcp_servers=available_mcp_servers,
+        available_capabilities=available_capabilities,
+    )
+    resources = SkillResourceService(packages)
+    drafts = (
+        SkillDraftService(
+            journal,
+            packages,
+            lifecycle,
+            workspace_id=workspace_id,
+            id_source=app.id_source,
+            clock=journal.now if journal is not None else None,
+            available_tools=available_tools,
+            available_mcp_servers=available_mcp_servers,
+        )
+        if journal is not None and workspace_id is not None
+        else None
+    )
+    usage = (
+        SkillUsageService(
+            journal,
+            workspace_id=workspace_id,
+            id_source=app.id_source,
+            clock=journal.now if journal is not None else None,
+        )
+        if journal is not None and workspace_id is not None
+        else None
+    )
+    return SkillServices(
+        extensions=extensions,
+        packages=packages,
+        catalog=catalog,
+        bindings=bindings,
+        lifecycle=lifecycle,
+        queries=queries,
+        selection=selection,
+        resources=resources,
+        drafts=drafts,
+        usage=usage,
+        journal=journal,
+    )
 
 
 def _default_tool_executor(
@@ -589,7 +703,7 @@ def build_session_application(
             tool_preference_service = None
 
         def make_tools(policy):
-            if adapter_support.tool_protocol != "openai_function":
+            if policy.provider_tool_support.tool_protocol != "openai_function":
                 return None
             return _default_tool_executor(
                 policy,
@@ -624,6 +738,15 @@ def build_session_application(
             workspace_root=workspace_capability.root,
         )
         journal = operational.journal
+        skill_services = build_skill_services(
+            app,
+            workspace_id=identity.workspace_id,
+            available_tools=(
+                tuple(tool.function.name for tool in tool_executor.definitions)
+                if tool_executor is not None
+                else ()
+            ),
+        )
         if resume_session_id is not None:
             resumed = journal.get_session(identity.workspace_id, resume_session_id)
             if resumed is not None and resumed.lifecycle is not SessionLifecycle.ACTIVE:
@@ -640,6 +763,7 @@ def build_session_application(
             artifacts=operational.artifacts,
             recovery=operational.recovery,
             preference_loader=load_run_preferences,
+            skill_selection=skill_services.selection,
         )
         spec_provider_config = provider_config
         if spec_provider_config is None:

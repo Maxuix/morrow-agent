@@ -238,7 +238,8 @@ call_log: slow 恰好 1 次（SDK 不自动重试）
   `RESERVED_SCHEMA_VERSIONS` 相应扩）、`migrations.py:1450-1465`（`production_registry()` 注册），
   每版独立 `migrations_vNN_*.py` 模块（v13 模式：仅导出 `VNN_NAME`/`VNN_STATEMENTS`，手写接线）。
   幂等、checksum 固定、future-version 拒绝、迁移前自动 backup（`operational.py:603`）都已有机制；
-  允许空迁移保留槽位。所有 operation/receipt 使用 `scope + scope_id`（global 的 scope_id 为 null）。
+  允许空迁移保留槽位。领域模型中 global 的 `scope_id` 为 null；v14 SQLite 表用非空空字符串
+  sentinel 存储它，避免复合唯一键和外键被 SQLite 的 NULL 语义削弱。
 - **Backup v2**：`BACKUP_MANIFEST_VERSION`（`core/backup.py:20`）→ 2；`BackupManifest` 增加 v2 字段
   （Extension YAML 引用、被引用 managed Skill 版本/envelope、各域 schema 版本），并保持 32 KiB +
   `refuse_secret_material`；`application/backup.py:156-179` 的解析/校验按 manifest_version 分支；

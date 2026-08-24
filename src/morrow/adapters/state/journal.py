@@ -725,6 +725,9 @@ class SqliteOperationalJournal:
     def record_skill_operation(self, **kwargs) -> None:
         self._skill_journal.record_operation(**kwargs)
 
+    def get_skill_operation(self, operation_id: str):
+        return self._skill_journal.get_operation(operation_id)
+
     def get_skill_definition(self, scope_id, skill_id):
         return self._skill_journal.get_definition(scope_id, skill_id)
 
@@ -733,6 +736,88 @@ class SqliteOperationalJournal:
 
     def list_skill_versions(self, *, workspace_id=None):
         return self._skill_journal.list_versions(workspace_id=workspace_id)
+
+    def skill_version_references(self, version_id):
+        return self._skill_journal.skill_version_references(version_id)
+
+    def delete_skill_version(self, version_id):
+        self._skill_journal.delete_version(version_id)
+
+    def put_skill_selection(self, workspace_id, selection):
+        return self._skill_journal.put_selection(selection)
+
+    def get_skill_selection(self, workspace_id, selection_id):
+        return self._skill_journal.get_selection(workspace_id, selection_id)
+
+    def list_skill_selections(self, workspace_id, agent_run_id):
+        return self._skill_journal.list_selections(workspace_id, agent_run_id)
+
+    def put_skill_context(self, workspace_id, context):
+        return self._skill_journal.put_context(context)
+
+    def get_skill_context(self, workspace_id, context_id):
+        return self._skill_journal.get_context(workspace_id, context_id)
+
+    def list_skill_contexts(self, workspace_id, agent_run_id):
+        return self._skill_journal.list_contexts(workspace_id, agent_run_id)
+
+    def put_skill_draft(self, workspace_id, draft):
+        if draft.workspace_id != workspace_id:
+            raise StorageError(StorageErrorCode.UNAVAILABLE, "Skill Draft is outside the workspace")
+        return self._skill_journal.put_draft(draft)
+
+    def get_skill_draft(self, workspace_id, draft_id):
+        return self._skill_journal.get_draft(workspace_id, draft_id)
+
+    def get_skill_draft_by_candidate(self, workspace_id, candidate_id, *, latest=True):
+        return self._skill_journal.get_draft_by_candidate(workspace_id, candidate_id, latest=latest)
+
+    def list_skill_drafts(self, workspace_id, *, candidate_id=None, status=None, limit=100):
+        return self._skill_journal.list_drafts(
+            workspace_id, candidate_id=candidate_id, status=status, limit=limit
+        )
+
+    def save_skill_draft(self, workspace_id, draft, *, expected_row_version):
+        if draft.workspace_id != workspace_id:
+            raise StorageError(StorageErrorCode.UNAVAILABLE, "Skill Draft is outside the workspace")
+        return self._skill_journal.save_draft(draft, expected_row_version=expected_row_version)
+
+    def put_skill_draft_validation(self, workspace_id, report):
+        draft = self.get_skill_draft(workspace_id, report.draft_id)
+        if draft is None:
+            raise StorageError(StorageErrorCode.NOT_FOUND, "Skill Draft is missing")
+        return self._skill_journal.put_validation(report)
+
+    def get_skill_draft_validation(self, workspace_id, draft_id, validation_id):
+        draft = self.get_skill_draft(workspace_id, draft_id)
+        if draft is None:
+            return None
+        return self._skill_journal.get_validation(draft_id, validation_id)
+
+    def list_skill_draft_validations(self, workspace_id, draft_id, *, limit=32):
+        draft = self.get_skill_draft(workspace_id, draft_id)
+        if draft is None:
+            return ()
+        return self._skill_journal.list_validations(draft_id, limit=limit)
+
+    def put_skill_usage(self, workspace_id, usage):
+        if usage.workspace_id != workspace_id:
+            raise StorageError(StorageErrorCode.UNAVAILABLE, "Skill usage is outside the workspace")
+        return self._skill_journal.put_usage(usage)
+
+    def get_skill_usage(self, workspace_id, usage_id):
+        return self._skill_journal.get_usage(workspace_id, usage_id)
+
+    def list_skill_usages(
+        self, workspace_id, *, skill_id=None, version_id=None, agent_run_id=None, limit=100
+    ):
+        return self._skill_journal.list_usages(
+            workspace_id,
+            skill_id=skill_id,
+            version_id=version_id,
+            agent_run_id=agent_run_id,
+            limit=limit,
+        )
 
     def put_memory_selection(
         self, workspace_id: str, selection: MemorySelection

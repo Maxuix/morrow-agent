@@ -1,6 +1,6 @@
 # Subplan 65 — Skill Package and Catalog Foundation
 
-> Status: pending
+> Status: completed; review repair applied locally
 > Branch: `codex/feat/stage6-skill-catalog`
 > Prerequisite: Subplan 64 complete
 
@@ -38,8 +38,10 @@ and conflicts, and Operational Store v14. Do not enable Skills or inject context
 7. Compute effective Trust from local source/provenance only and expose requested/effective values
    separately.
 8. Add v14 tables for Skill definitions, versions, catalog operations, AgentRun selections/contexts
-   and their reference constraints. Operations use `scope + scope_id` (null for global), never a
-   required workspace ID. Reserve later-use tables completely so v14 checksum never changes.
+   and their reference constraints. The domain API uses `None` for global scope; SQLite v14 stores
+   that value as a non-null empty-string sentinel so composite uniqueness and foreign keys work.
+   Workspace rows retain exact `ws_` IDs. Reserve later-use tables completely so v14 checksum never
+   changes after release.
 9. Keep SQL and row mapping in `skill_journal.py`; the existing aggregate Journal only delegates.
 
 ## Validation
@@ -50,6 +52,17 @@ and conflicts, and Operational Store v14. Do not enable Skills or inject context
   empty rebuild.
 - Focused Skill tests, operational-store migration tests, standard quality commands and full
   non-live suite at the migration gate.
+
+## Review repair evidence
+
+- v14 global scope rows use a non-null empty-string SQLite sentinel; domain APIs still expose
+  scope_id=None for global and map it at the journal boundary.
+- Discovery rejects directory symlinks at the source/skill/version/package roots, rejects hardlinks,
+  parses manifests from the bytes captured during canonical hashing, validates envelope structure,
+  recomputes local Trust, and checks version-directory identity.
+- Skill versions are insert-only with identical retries accepted; definition Trust survives
+  round-trip; preparation/rehydration failures yield ordered error events; model overrides cannot
+  widen adapter capabilities.
 
 ## Exit criteria
 

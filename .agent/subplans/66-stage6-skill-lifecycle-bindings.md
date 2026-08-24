@@ -1,6 +1,6 @@
 # Subplan 66 — Skill Lifecycle and Binding Control
 
-> Status: pending
+> Status: completed locally; branch unavailable because the workspace `.git` refs are read-only
 > Branch: `codex/feat/stage6-skill-lifecycle`
 > Prerequisite: Subplan 65 complete
 
@@ -53,3 +53,11 @@ disabled by default; this subplan still does not inject Skills into AgentRun con
 - Every lifecycle action has one visible authority and deterministic replay/recovery.
 - Binding, Version and Catalog states cannot contradict by design.
 - No AgentRun behavior changes until Subplan 67.
+
+## Completion evidence
+
+- Focused Skill/catalog/migration suite: 41 passed.
+- Full offline suite: 1003 passed, 3 skipped, 2 deselected.
+- `ruff format --check .`, `ruff check .`, `python -m compileall -q src tests`, root/Skill CLI help,
+  and `git diff --check` passed.
+- No dependency files changed; no live Provider, MCP, credential or network tests ran.

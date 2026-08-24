@@ -10,16 +10,28 @@ Discovery never writes; projection belongs to the application catalog.
 
 from __future__ import annotations
 
+import os
+import stat
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 from morrow.core.skills.catalog import (
     SkillDefinition,
     SkillVersion,
 )
-from morrow.core.skills.identity import RESERVED_PATH_NAMES, collides, validate_skill_id
-from morrow.core.skills.trust import ManifestDocument, SourceKind, TrustLevel
+from morrow.core.skills.identity import (
+    RESERVED_PATH_NAMES,
+    collides,
+    validate_skill_id,
+    validate_skv_id,
+)
+from morrow.core.skills.trust import (
+    ManifestDocument,
+    SourceKind,
+    TrustEvidence,
+    effective_trust,
+)
 
 from .envelope import EnvelopeError, read_envelope, verify_envelope_against_tree
 from .manifest_parser import ManifestError, load_manifest
@@ -69,18 +81,7 @@ class DiscoveryResult:
         )
 
 
-def _skill_id_candidate(manifest: ManifestDocument) -> str | None:
-    from morrow.core.skills.identity import skill_id_from_name
-
-    if manifest.name is None:
-        return None
-    candidate = skill_id_from_name(manifest.name)
-    if candidate is None or candidate in RESERVED_PATH_NAMES:
-        return None
-    return validate_skill_id(candidate)
-
-
-def inspect_version_dir(
+def _inspect_version_dir(
     version_dir: Path,
     *,
     source_kind: SourceKind,
@@ -90,31 +91,69 @@ def inspect_version_dir(
     """Load one version directory: envelope, tree, manifest; bounded failures."""
     errors: list[str] = []
     try:
+        version_info = os.lstat(version_dir)
+        if stat.S_ISLNK(version_info.st_mode) or not stat.S_ISDIR(version_info.st_mode):
+            return PackageLoadError(
+                version_dir,
+                skill_id_hint,
+                ("version directory must be a real directory",),
+            )
+        try:
+            validate_skv_id(version_dir.name)
+        except ValueError as exc:
+            return PackageLoadError(version_dir, skill_id_hint, (f"invalid version_id: {exc}",))
         envelope = read_envelope(version_dir)
     except EnvelopeError as exc:
         return PackageLoadError(version_dir, skill_id_hint, (str(exc),))
-    skill_id = str(envelope.get("skill_id") or skill_id_hint or "")
     try:
+        skill_id = envelope["skill_id"]
         validate_skill_id(skill_id)
+        if skill_id_hint is not None:
+            validate_skill_id(skill_id_hint)
     except ValueError as exc:
         return PackageLoadError(version_dir, skill_id, (f"invalid skill_id: {exc}",))
+    if envelope["version_id"] != version_dir.name:
+        return PackageLoadError(
+            version_dir,
+            skill_id,
+            (f"version directory name {version_dir.name!r} does not match envelope version_id",),
+        )
+    # Older catalog fixtures may omit scope_id; a managed package published by
+    # Morrow always carries it. Reject an explicit mismatch without breaking
+    # read-only packages whose scope is supplied by the configured root.
+    if envelope.get("scope_id") is not None and envelope.get("scope_id") != scope_id:
+        return PackageLoadError(
+            version_dir,
+            skill_id,
+            ("managed-version.json scope_id does not match the configured scope",),
+        )
     package_root = version_dir / "package"
-    if not package_root.is_dir():
-        return PackageLoadError(version_dir, skill_id, ("package directory is missing",))
     try:
-        tree = build_canonical_tree(package_root)
+        package_info = os.lstat(package_root)
+        if stat.S_ISLNK(package_info.st_mode) or not stat.S_ISDIR(package_info.st_mode):
+            return PackageLoadError(
+                version_dir,
+                skill_id,
+                ("package directory must be a real directory",),
+            )
+        manifest_files: dict[str, bytes] = {}
+        tree = build_canonical_tree(package_root, content_sink=manifest_files)
         verify_envelope_against_tree(envelope, tree)
     except PackageTreeError as exc:
         return PackageLoadError(version_dir, skill_id, (f"package tree invalid: {exc}",))
     except EnvelopeError as exc:
         return PackageLoadError(version_dir, skill_id, (f"envelope drift: {exc}",))
     try:
-        manifest = load_manifest(package_root)
+        manifest = load_manifest(package_root, file_bytes=manifest_files)
     except ManifestError as exc:
         return PackageLoadError(version_dir, skill_id, (f"manifest invalid: {exc}",))
-    envelope_skill_id = str(envelope.get("skill_id") or "")
-    if skill_id_hint and envelope_skill_id and envelope_skill_id != skill_id_hint:
+    if skill_id_hint and envelope["skill_id"] != skill_id_hint:
         errors.append(f"version directory name {skill_id_hint!r} does not match envelope skill_id")
+    if envelope["source_kind"] != source_kind.value:
+        errors.append("managed-version.json source_kind does not match the configured source root")
+    expected_trust = effective_trust(TrustEvidence(source_kind=source_kind))
+    if envelope["effective_trust"] != expected_trust.value:
+        errors.append("managed-version.json effective_trust does not match local provenance")
     if errors:
         return PackageLoadError(version_dir, skill_id, tuple(errors))
     return DiscoveredPackage(
@@ -129,6 +168,29 @@ def inspect_version_dir(
     )
 
 
+def inspect_version_dir(
+    version_dir: Path,
+    *,
+    source_kind: SourceKind,
+    scope_id: str | None,
+    skill_id_hint: str | None,
+) -> DiscoveredPackage | PackageLoadError:
+    """Load one version and keep every expected package fault bounded."""
+    try:
+        return _inspect_version_dir(
+            version_dir,
+            source_kind=source_kind,
+            scope_id=scope_id,
+            skill_id_hint=skill_id_hint,
+        )
+    except (KeyError, OSError, OverflowError, TypeError, ValueError) as exc:
+        return PackageLoadError(
+            version_dir,
+            skill_id_hint,
+            (f"package validation failed: {type(exc).__name__}",),
+        )
+
+
 def scan_source_root(
     root: Path,
     *,
@@ -138,15 +200,70 @@ def scan_source_root(
     """Scan one managed source root without writing anything."""
     packages: list[DiscoveredPackage] = []
     failures: list[PackageLoadError] = []
-    if not root.is_dir():
+    try:
+        root_info = os.lstat(root)
+    except FileNotFoundError:
         return DiscoveryResult((), ())
-    for skill_dir in sorted(root.iterdir()):
-        if not skill_dir.is_dir() or skill_dir.name in RESERVED_PATH_NAMES:
+    except OSError:
+        return DiscoveryResult(
+            (), (PackageLoadError(root, None, ("source root could not be read",)),)
+        )
+    if stat.S_ISLNK(root_info.st_mode):
+        return DiscoveryResult(
+            (), (PackageLoadError(root, None, ("source root symlinks are rejected",)),)
+        )
+    if not stat.S_ISDIR(root_info.st_mode):
+        return DiscoveryResult((), ())
+    try:
+        skill_dirs = sorted(root.iterdir())
+    except OSError:
+        return DiscoveryResult(
+            (), (PackageLoadError(root, None, ("source root could not be read",)),)
+        )
+    for skill_dir in skill_dirs:
+        try:
+            skill_info = os.lstat(skill_dir)
+        except OSError:
+            failures.append(
+                PackageLoadError(skill_dir, None, ("skill directory could not be read",))
+            )
+            continue
+        if stat.S_ISLNK(skill_info.st_mode):
+            failures.append(
+                PackageLoadError(
+                    skill_dir, skill_dir.name, ("skill directory symlinks are rejected",)
+                )
+            )
+            continue
+        if not stat.S_ISDIR(skill_info.st_mode) or skill_dir.name in RESERVED_PATH_NAMES:
             continue
         if collides(skill_dir.name, "package") or collides(skill_dir.name, "catalog"):
             continue
-        for version_dir in sorted(skill_dir.iterdir()):
-            if not version_dir.is_dir():
+        try:
+            version_dirs = sorted(skill_dir.iterdir())
+        except OSError:
+            failures.append(
+                PackageLoadError(skill_dir, skill_dir.name, ("skill directory could not be read",))
+            )
+            continue
+        for version_dir in version_dirs:
+            try:
+                version_info = os.lstat(version_dir)
+            except OSError:
+                failures.append(
+                    PackageLoadError(
+                        version_dir, skill_dir.name, ("version directory could not be read",)
+                    )
+                )
+                continue
+            if stat.S_ISLNK(version_info.st_mode):
+                failures.append(
+                    PackageLoadError(
+                        version_dir, skill_dir.name, ("version directory symlinks are rejected",)
+                    )
+                )
+                continue
+            if not stat.S_ISDIR(version_info.st_mode):
                 continue
             loaded = inspect_version_dir(
                 version_dir,
@@ -166,17 +283,15 @@ def to_catalog_version(package: DiscoveredPackage) -> SkillVersion:
         version_id=package.version_id,
         skill_id=package.skill_id,
         display_version=package.display_version,
-        tree_digest=package.envelope["tree_digest"],
-        file_count=package.envelope["file_count"],
-        total_bytes=package.envelope["total_bytes"],
+        tree_digest=package.tree.tree_digest,
+        file_count=package.tree.file_count,
+        total_bytes=package.tree.total_bytes,
         source_kind=package.source_kind,
         scope_id=package.scope_id,
         provenance=f"{package.source_kind.value}:{package.version_dir.parent.name}/{package.version_dir.name}",
         evidence_refs=tuple(package.envelope.get("evidence_refs", ())),
-        effective_trust=TrustLevel(package.envelope["effective_trust"]),
-        created_at=datetime.fromtimestamp(
-            int(package.envelope["installed_at_unix"]), tz=__import__("datetime").timezone.utc
-        ),
+        effective_trust=effective_trust(TrustEvidence(source_kind=package.source_kind)),
+        created_at=datetime.fromtimestamp(int(package.envelope["installed_at_unix"]), tz=UTC),
     )
 
 
@@ -184,6 +299,8 @@ def to_catalog_definition(package: DiscoveredPackage) -> SkillDefinition:
     return SkillDefinition(
         skill_id=package.skill_id,
         name=package.manifest.name or package.version_dir.parent.name,
+        description=package.manifest.description,
         source_kind=package.source_kind,
         scope_id=package.scope_id,
+        effective_trust=effective_trust(TrustEvidence(source_kind=package.source_kind)),
     )

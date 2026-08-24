@@ -105,6 +105,11 @@ class ContextBuilder:
         checkpoint: ContextCheckpoint | None = None,
     ) -> tuple[SystemMessage, ...]:
         projection = session.run_context_projection
+        skill_context = (
+            projection.skill_context
+            if projection is not None and projection.skill_context is not None
+            else session.skill_context_projection
+        )
         if projection is None and session.persisted:
             state = None
             profile = None
@@ -168,6 +173,8 @@ class ContextBuilder:
         messages = [
             SystemMessage(content=render_system_boundary(tools)),
         ]
+        if skill_context is not None and skill_context.entries:
+            messages.append(SystemMessage(content=skill_context.block))
         if state is not None:
             messages.append(
                 SystemMessage(

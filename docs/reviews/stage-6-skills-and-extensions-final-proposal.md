@@ -478,8 +478,9 @@ SQLite Catalog 是派生/审计投影，不与 YAML 或包目录竞争 Active �
 `adapters/state/journal.py` 只做薄组合。迁移必须幂等、checksum 固定、future schema 拒绝，并有从
 v13 升级、失败回滚、备份恢复和 doctor 篡改测试。
 
-所有可能作用于 global 或 workspace 的 operation/receipt 使用 `scope + scope_id`：global 的
-`scope_id` 为 null，workspace 使用精确 `ws_` ID。不得用一个必填 `workspace_id` 假装表示 global。
+所有可能作用于 global 或 workspace 的 operation/receipt 使用 `scope + scope_id`：领域模型中
+global 的 `scope_id` 为 null，workspace 使用精确 `ws_` ID；SQLite v14 用非空空字符串 sentinel
+存储 global，避免 NULL 破坏复合唯一性与外键。不得用一个必填 `workspace_id` 假装表示 global。
 
 ### 11.3 Backup bundle v2
 

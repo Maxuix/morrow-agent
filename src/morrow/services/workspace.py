@@ -64,6 +64,12 @@ class DataRoot:
         return self.root / "config.yaml"
 
     @property
+    def extensions_path(self) -> Path:
+        """Global Extension YAML path, kept separate from Preferences/Profile state."""
+
+        return self.root / "extensions.yaml"
+
+    @property
     def index_path(self) -> Path:
         return self.root / "workspace-index.yaml"
 

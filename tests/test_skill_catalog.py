@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 from datetime import UTC, datetime
@@ -26,6 +27,7 @@ from morrow.adapters.skills.tree import (
     build_canonical_tree,
 )
 from morrow.application.skills.catalog import SkillCatalogService
+from morrow.core.domain import sha256_digest
 from morrow.core.skills.catalog import (
     SkillAvailability,
     SkillConflictStatus,
@@ -91,6 +93,18 @@ def _make_package(
     return version_dir, payload
 
 
+def _resign_envelope(payload: dict) -> dict:
+    signed = dict(payload)
+    signed["envelope_sha256"] = sha256_digest(
+        json.dumps(
+            {key: value for key, value in signed.items() if key != "envelope_sha256"},
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    )
+    return signed
+
+
 # --- identity -----------------------------------------------------------------
 
 
@@ -142,6 +156,10 @@ def test_manifest_rejects_unknown_keys_and_bad_versions(tmp_path: Path) -> None:
     _write(root, "SKILL.md", "---\nallows: [run_command]\n---\n")
     with pytest.raises(ManifestError):
         load_manifest(root)
+
+    _write(root, "SKILL.md", "---\nname: yes\n---\n")
+    with pytest.raises(ManifestError, match="name must be a string"):
+        load_manifest(root)
     _write(root, "morrow.yaml", "morrow.version: '../etc'\n")
     with pytest.raises(ManifestError):
         load_manifest(root)
@@ -183,6 +201,16 @@ def test_canonical_tree_rejects_symlinks_and_nonregular_entries(tmp_path: Path) 
     os.symlink(dir_link, dir_link / "loop")
     with pytest.raises(PackageTreeError, match="real directories"):
         build_canonical_tree(dir_link)
+
+
+def test_canonical_tree_rejects_hardlinks(tmp_path: Path) -> None:
+    root = tmp_path / "pkg"
+    _write(root, "SKILL.md", "# x\n")
+    outside = tmp_path / "outside.txt"
+    outside.write_text("outside\n", encoding="utf-8")
+    os.link(outside, root / "linked.txt")
+    with pytest.raises(PackageTreeError, match="hard links"):
+        build_canonical_tree(root)
 
 
 def test_canonical_tree_rejects_collisions_reserved_and_oversize(tmp_path: Path) -> None:
@@ -254,7 +282,7 @@ def test_discovery_isolates_scope_and_reports_bounded_failures(tmp_path: Path) -
     global_root = tmp_path / "global"
     ws_root = tmp_path / "ws"
     _make_package(global_root, skill_id="search-tool")
-    _make_package(ws_root, skill_id="parse-tool")
+    _make_package(ws_root, skill_id="parse-tool", source_kind=SourceKind.USER_AUTHORED)
     scan = scan_source_root(global_root, source_kind=SourceKind.IMPORTED)
     assert len(scan.packages) == 1
     assert scan.packages[0].scope_id is None
@@ -282,11 +310,92 @@ def test_discovery_rejects_skill_id_mismatch(tmp_path: Path) -> None:
     assert "does not match envelope" in failures[0].errors[0]
 
 
+def test_discovery_rejects_directory_symlinks_at_every_package_boundary(tmp_path: Path) -> None:
+    outside = tmp_path / "outside"
+    version_dir, _payload = _make_package(outside)
+
+    skill_link_root = tmp_path / "skill-link-root"
+    skill_link_root.mkdir()
+    (skill_link_root / SKILL_ID).symlink_to(outside / SKILL_ID, target_is_directory=True)
+    result = scan_source_root(skill_link_root, source_kind=SourceKind.IMPORTED)
+    assert not result.packages
+    assert any("skill directory symlinks" in error.errors[0] for error in result.failures)
+
+    version_link_root = tmp_path / "version-link-root"
+    (version_link_root / SKILL_ID).mkdir(parents=True)
+    (version_link_root / SKILL_ID / SKV_ID).symlink_to(version_dir, target_is_directory=True)
+    result = scan_source_root(version_link_root, source_kind=SourceKind.IMPORTED)
+    assert not result.packages
+    assert any("version directory symlinks" in error.errors[0] for error in result.failures)
+
+    package_link_root = tmp_path / "package-link-root"
+    linked_version, _payload = _make_package(package_link_root)
+    real_package = tmp_path / "real-package"
+    linked_version.joinpath("package").rename(real_package)
+    linked_version.joinpath("package").symlink_to(real_package, target_is_directory=True)
+    result = scan_source_root(package_link_root, source_kind=SourceKind.IMPORTED)
+    assert not result.packages
+    assert any(
+        "package directory must be a real directory" in error.errors[0] for error in result.failures
+    )
+
+
+def test_discovery_rejects_version_id_mismatch(tmp_path: Path) -> None:
+    root = tmp_path / "root"
+    version_dir, _payload = _make_package(root)
+    renamed = version_dir.with_name("skv_99999999")
+    version_dir.rename(renamed)
+    result = scan_source_root(root, source_kind=SourceKind.IMPORTED)
+    assert not result.packages
+    assert "does not match envelope version_id" in result.failures[0].errors[0]
+
+
+def test_discovery_recomputes_effective_trust_from_local_source(tmp_path: Path) -> None:
+    root = tmp_path / "root"
+    version_dir, payload = _make_package(root)
+    spoofed = dict(payload)
+    spoofed["effective_trust"] = TrustLevel.BUILTIN.value
+    spoofed = _resign_envelope(spoofed)
+    write_envelope(version_dir, spoofed)
+    result = scan_source_root(root, source_kind=SourceKind.IMPORTED)
+    assert not result.packages
+    assert "effective_trust does not match local provenance" in result.failures[0].errors[0]
+
+
+def test_discovery_reports_structurally_malformed_envelopes(tmp_path: Path) -> None:
+    root = tmp_path / "root"
+    version_dir, payload = _make_package(root)
+    malformed = dict(payload)
+    malformed.pop("version_id")
+    write_envelope(version_dir, _resign_envelope(malformed))
+
+    result = scan_source_root(root, source_kind=SourceKind.IMPORTED)
+    assert not result.packages
+    assert "version_id is invalid" in result.failures[0].errors[0]
+
+
+def test_discovery_parses_manifest_from_canonical_tree_bytes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "root"
+    _make_package(root)
+    original_read_bytes = Path.read_bytes
+
+    def reject_manifest_reopen(path: Path) -> bytes:
+        if path.name in {"SKILL.md", "morrow.yaml"}:
+            raise AssertionError("manifest was reopened after tree hashing")
+        return original_read_bytes(path)
+
+    monkeypatch.setattr(Path, "read_bytes", reject_manifest_reopen)
+    result = scan_source_root(root, source_kind=SourceKind.IMPORTED)
+    assert len(result.packages) == 1
+
+
 # --- catalog conflicts and trust ---------------------------------------------
 
 
-def _catalog(root: Path) -> SkillCatalogService:
-    return SkillCatalogService({SourceKind.IMPORTED: (root,)})
+def _catalog(root: Path, *, source_kind: SourceKind = SourceKind.IMPORTED) -> SkillCatalogService:
+    return SkillCatalogService({source_kind: (root,)})
 
 
 def test_catalog_folds_identical_digests_and_blocks_conflicts(tmp_path: Path) -> None:
@@ -383,11 +492,12 @@ def test_catalog_exposes_requested_and_effective_trust_separately(tmp_path: Path
         source_kind=SourceKind.GENERATED,
         manifest_body="name: Search Tool\nmorrow.requested_trust: builtin\n",
     )
-    entry = _catalog(root).scan().entry("search-tool")
+    entry = _catalog(root, source_kind=SourceKind.GENERATED).scan().entry("search-tool")
     # The manifest ask (builtin) is a hint; local evidence (generated, no
     # approval ref) yields UNKNOWN effective Trust.
     assert entry.requested_trust is TrustLevel.BUILTIN
     assert entry.effective_trust is TrustLevel.UNKNOWN
+    assert entry.definition.effective_trust is TrustLevel.UNKNOWN
 
 
 def test_catalog_reports_invalid_packages_without_enabling(tmp_path: Path) -> None:

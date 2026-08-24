@@ -47,6 +47,7 @@ from morrow.core.recovery import RecoveryResolution
 from morrow.core.store import StorageError, StorageErrorCode, StoreOpenMode
 from morrow.interfaces.learning_cli import learning_app, memory_app
 from morrow.interfaces.preferences_cli import preference_inbox_app
+from morrow.interfaces.skills_cli import skill_app
 from morrow.interfaces.terminal import Terminal, TerminalApprovalPort, run_repl
 from morrow.runtime.durable_log import restore_conversation_log
 from morrow.services.workspace import WorkspaceError, WorkspaceWriterLock
@@ -62,6 +63,7 @@ recovery_app = typer.Typer(help="恢复报告与决策。")
 grant_app = typer.Typer(help="Foreground AgentRun 的手动权限授予与撤销。")
 state_app = typer.Typer(help="Operational Store 诊断、事件与备份。")
 preferences_app = typer.Typer(help="Generic Preference 查询与直接生命周期管理。")
+app.add_typer(skill_app, name="skill")
 app.add_typer(provider_app, name="provider")
 app.add_typer(model_app, name="model")
 app.add_typer(workspace_app, name="workspace")

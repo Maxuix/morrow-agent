@@ -55,6 +55,7 @@ class SessionPersistence:
         faults: FaultInjector | None = None,
         clock: Clock | None = None,
         preference_loader=None,
+        skill_selection=None,
     ) -> None:
         self.workspace_id = workspace_id
         self.journal = journal
@@ -98,6 +99,7 @@ class SessionPersistence:
             state=self.turn_state,
             preference_reviews=self.preference_reviews,
             preference_loader=preference_loader,
+            skill_selection=skill_selection,
         )
         self.session_restore = SessionRestoreCoordinator(
             journal,

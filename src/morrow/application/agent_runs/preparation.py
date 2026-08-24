@@ -218,6 +218,12 @@ class AgentRunPreparationService:
             run_policy_digest=snapshot.run_policy_digest,
             tool_schema_digest=snapshot.tool_schema_digest,
             tool_count=len(tools),
+            skill_selection_ids=snapshot.skill_selection_ids,
+            skill_selection_id=snapshot.skill_selection_id,
+            skill_context_ids=snapshot.skill_context_ids,
+            skill_context_id=snapshot.skill_context_id,
+            skill_selection_digest=snapshot.skill_selection_digest,
+            skill_context_digest=snapshot.skill_context_digest,
         )
         return PreparedAgentRunRuntime(
             spec=spec,

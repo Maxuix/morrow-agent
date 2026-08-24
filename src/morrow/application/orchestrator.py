@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from morrow.application.agent_runs.preparation import AgentRunPreparationError
 from morrow.core.application import ApplicationError
 from morrow.core.domain import SessionLifecycle, session_can_start_work
 from morrow.core.models import AgentEvent
@@ -80,6 +81,7 @@ class SessionOrchestrator:
         if self.id_source is not None:
             client_message_id = self.id_source.new_id("cmsg")
         prepared: PreparedAgentRunRuntime | None = None
+        startup_error: str | None = None
         try:
             if self.preparation is not None:
                 durable_runtime = self.session.durable_runtime
@@ -91,9 +93,16 @@ class SessionOrchestrator:
                         # run_task as ordered error events, never here.
                         probe = None
                     if probe is not None and probe.kind == "new":
-                        prepared = self.preparation.prepare_new()
+                        try:
+                            prepared = self.preparation.prepare_new()
+                        except (AgentRunPreparationError, ValueError) as exc:
+                            startup_error = _preparation_error_message(exc)
             async for event in self.runtime.run_turn(
-                self.session, text, client_message_id=client_message_id, prepared=prepared
+                self.session,
+                text,
+                client_message_id=client_message_id,
+                prepared=prepared,
+                startup_error=startup_error,
             ):
                 yield event
         finally:
@@ -119,16 +128,30 @@ class SessionOrchestrator:
         if not session_can_start_work(self.session.lifecycle, self.session.health):
             raise RuntimeError("only an active healthy Session can resume a Turn")
         prepared = None
-        if self.preparation is not None and self.session.durable_runtime is not None:
-            snapshot = self.session.durable_runtime.get_open_run_snapshot()
-            if snapshot is not None:
-                prepared = self.preparation.rehydrate(snapshot)
-        async for event in self.runtime.loop.run_task(
-            self.session,
-            "",
-            resume_current_turn=True,
-            prepared=prepared,
-        ):
-            yield event
-        if prepared is not None:
-            prepared.close()
+        startup_error: str | None = None
+        try:
+            if self.preparation is not None and self.session.durable_runtime is not None:
+                snapshot = self.session.durable_runtime.get_open_run_snapshot()
+                if snapshot is not None:
+                    try:
+                        prepared = self.preparation.rehydrate(snapshot)
+                    except (AgentRunPreparationError, ValueError) as exc:
+                        startup_error = _preparation_error_message(exc)
+            async for event in self.runtime.loop.run_task(
+                self.session,
+                "",
+                resume_current_turn=True,
+                prepared=prepared,
+                startup_error=startup_error,
+            ):
+                yield event
+        finally:
+            if prepared is not None:
+                prepared.close()
+
+
+def _preparation_error_message(error: Exception) -> str:
+    """Map preparation failures to bounded, non-secret public event text."""
+    if isinstance(error, AgentRunPreparationError):
+        return "当前 AgentRun 无法从冻结的 Provider 证据恢复，请检查凭据或运行状态。"
+    return "当前 Provider 配置不可用，请检查 active_model、模型和凭据配置。"

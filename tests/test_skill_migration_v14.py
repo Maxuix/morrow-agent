@@ -21,6 +21,7 @@ from morrow.adapters.state.migrations import (
     V11,
     V12,
     V13,
+    V14,
     MigrationRegistry,
 )
 from morrow.adapters.state.operational import OperationalStore
@@ -40,6 +41,13 @@ NOW = datetime(2026, 8, 1, 12, 0, 0, tzinfo=UTC)
 def _v13_registry() -> MigrationRegistry:
     registry = MigrationRegistry(supported_version=13)
     for migration in (V1, V2, V3, V4, V5, V6, V7, V8, V9, V10, V11, V12, V13):
+        registry.add(migration)
+    return registry
+
+
+def _v14_registry() -> MigrationRegistry:
+    registry = MigrationRegistry(supported_version=14)
+    for migration in (V1, V2, V3, V4, V5, V6, V7, V8, V9, V10, V11, V12, V13, V14):
         registry.add(migration)
     return registry
 
@@ -88,7 +96,7 @@ def test_v13_to_v14_migration_and_repeat(tmp_path) -> None:
     store = _store(root, registry=_v13_registry())
     store.initialize().close()
 
-    migrated = _store(root)
+    migrated = _store(root, registry=_v14_registry())
     report = migrated.migrate()
     assert report.from_version == 13
     assert report.to_version == 14
@@ -100,7 +108,7 @@ def test_v13_to_v14_migration_and_repeat(tmp_path) -> None:
         assert journal.list_skill_versions() == ()
 
     # Repeat migration is a no-op.
-    again = _store(root)
+    again = _store(root, registry=_v14_registry())
     repeat = again.migrate()
     assert repeat.from_version == 14
     assert repeat.to_version == 14
@@ -126,7 +134,7 @@ def test_interrupted_v14_rolls_back_to_v13(tmp_path) -> None:
 
 def test_future_schema_version_is_refused() -> None:
     with pytest.raises(StorageError) as error:
-        MigrationRegistry(supported_version=15)
+        MigrationRegistry(supported_version=16)
     assert error.value.code is StorageErrorCode.UNAVAILABLE
 
 
@@ -137,6 +145,7 @@ def test_skill_journal_round_trip_and_scope_rules(tmp_path) -> None:
         journal = SqliteOperationalJournal(handle)
 
         def write(txn):
+            txn.put_skill_definition(_definition(), updated_at=NOW)
             txn.put_skill_definition(_definition(), updated_at=NOW)
             txn.put_skill_version(_version())
             txn.record_skill_operation(
@@ -157,6 +166,9 @@ def test_skill_journal_round_trip_and_scope_rules(tmp_path) -> None:
         definitions = journal.list_skill_definitions()
         assert len(definitions) == 2
         assert any(item.scope_id == "ws_1" for item in definitions)
+        assert (
+            journal.get_skill_definition(None, "search-tool").effective_trust is TrustLevel.IMPORTED
+        )
         versions = journal.list_skill_versions()
         assert versions[0].evidence_refs == ("evt_1",)
         assert versions[0].created_at == NOW
@@ -185,3 +197,36 @@ def test_skill_journal_rejects_fake_workspace_ids(tmp_path) -> None:
                 lambda txn: txn.put_skill_definition(_definition(scope_id="WS_1"), updated_at=NOW)
             )
         assert error.value.code is StorageErrorCode.UNAVAILABLE
+
+
+def test_global_scope_is_unique_and_versions_are_foreign_keyed(tmp_path) -> None:
+    root = tmp_path / "state"
+    _store(root).initialize().close()
+    with _store(root).open(StoreOpenMode.READ_WRITE) as handle:
+        journal = SqliteOperationalJournal(handle)
+        journal.transact(lambda txn: txn.put_skill_definition(_definition(), updated_at=NOW))
+        journal.transact(lambda txn: txn.put_skill_definition(_definition(), updated_at=NOW))
+        assert len(journal.list_skill_definitions()) == 1
+
+        orphan = _version().model_copy(update={"skill_id": "missing-skill"})
+        with pytest.raises(StorageError):
+            journal.transact(lambda txn: txn.put_skill_version(orphan))
+
+
+def test_skill_version_is_insert_only_but_identical_retries_are_idempotent(tmp_path) -> None:
+    root = tmp_path / "state"
+    _store(root).initialize().close()
+    with _store(root).open(StoreOpenMode.READ_WRITE) as handle:
+        journal = SqliteOperationalJournal(handle)
+        journal.transact(lambda txn: txn.put_skill_definition(_definition(), updated_at=NOW))
+        original = _version()
+        journal.transact(lambda txn: txn.put_skill_version(original))
+        journal.transact(lambda txn: txn.put_skill_version(original))
+
+        changed = original.model_copy(update={"tree_digest": "c" * 64})
+        with pytest.raises(StorageError, match="immutable content"):
+            journal.transact(lambda txn: txn.put_skill_version(changed))
+        changed_timestamp = original.model_copy(update={"created_at": NOW.replace(day=2)})
+        with pytest.raises(StorageError, match="immutable content"):
+            journal.transact(lambda txn: txn.put_skill_version(changed_timestamp))
+        assert journal.list_skill_versions()[0].tree_digest == "b" * 64

@@ -23,6 +23,7 @@ from morrow.core.domain import (
 from morrow.core.learning_memory import ProjectKnowledgeHead, ProjectKnowledgeRevision
 from morrow.core.memory_selection import MemorySelection
 from morrow.core.models import ProtocolModel, utc_now
+from morrow.core.skills.context import SkillContextProjection
 
 CONTEXT_CHECKPOINT_MAX_BYTES = 32 * 1024
 CONTEXT_SECTION_MAX_BYTES = 8 * 1024
@@ -54,6 +55,7 @@ class RunContextProjection:
     preference_content_digest: str | None = None
     preference_omitted_count: int = 0
     preference_source_scopes: tuple[str, ...] = ()
+    skill_context: SkillContextProjection | None = None
 
 
 class CheckpointOmissionReason(StrEnum):

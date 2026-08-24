@@ -82,28 +82,46 @@ def exact_model_capabilities(
     A Model override may only narrow; unknown fields keep the Adapter default.
     """
 
-    def narrowed(model_value, default):
-        return default if model_value is None else model_value
+    def narrowed_bool(model_value: bool | None, default: bool) -> bool:
+        return default if model_value is None else default and model_value
+
+    def narrowed_protocol(model_value, default):
+        if model_value is None or default == "none":
+            return default
+        return "none" if model_value == "none" else default
+
+    def narrowed_limit(model_value: int | None, default: int | None) -> int | None:
+        if model_value is None:
+            return default
+        return model_value if default is None else min(default, model_value)
+
+    def narrowed_input_types(model_value, default):
+        if model_value is None:
+            return default
+        allowed = set(model_value)
+        return tuple(item for item in default if item in allowed)
 
     return ExactModelCapabilities(
         adapter_id=adapter_id,
         model=model,
-        streaming_text=narrowed(model_caps.streaming_text, adapter.streaming_text)
+        streaming_text=narrowed_bool(model_caps.streaming_text, adapter.streaming_text)
         if model_caps is not None
         else adapter.streaming_text,
-        tool_protocol=narrowed(model_caps.tool_protocol, adapter.tool_protocol)
+        tool_protocol=narrowed_protocol(model_caps.tool_protocol, adapter.tool_protocol)
         if model_caps is not None
         else adapter.tool_protocol,
-        multiple_tool_calls=narrowed(model_caps.multiple_tool_calls, adapter.multiple_tool_calls)
+        multiple_tool_calls=narrowed_bool(
+            model_caps.multiple_tool_calls, adapter.multiple_tool_calls
+        )
         if model_caps is not None
         else adapter.multiple_tool_calls,
-        structured_output=narrowed(model_caps.structured_output, adapter.structured_output)
+        structured_output=narrowed_bool(model_caps.structured_output, adapter.structured_output)
         if model_caps is not None
         else adapter.structured_output,
-        safe_request_chars=narrowed(model_caps.safe_request_chars, adapter.safe_request_chars)
+        safe_request_chars=narrowed_limit(model_caps.safe_request_chars, adapter.safe_request_chars)
         if model_caps is not None
         else adapter.safe_request_chars,
-        input_types=narrowed(model_caps.input_types, adapter.input_types)
+        input_types=narrowed_input_types(model_caps.input_types, adapter.input_types)
         if model_caps is not None
         else adapter.input_types,
     )
@@ -164,6 +182,12 @@ class PreparedAgentRunSpec(ProtocolModel):
     run_policy_digest: str
     tool_schema_digest: str
     tool_count: int = Field(ge=0)
+    skill_selection_ids: tuple[str, ...] = ()
+    skill_selection_id: str | None = Field(default=None, exclude=True)
+    skill_context_ids: tuple[str, ...] = ()
+    skill_context_id: str | None = Field(default=None, exclude=True)
+    skill_selection_digest: str | None = None
+    skill_context_digest: str | None = None
 
     @field_validator("run_policy_digest", "tool_schema_digest")
     @classmethod

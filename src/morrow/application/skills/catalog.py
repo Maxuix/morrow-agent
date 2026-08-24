@@ -51,15 +51,18 @@ class SkillCatalogView:
 class SkillCatalogService:
     """Scan configured roots and project the catalog without enabling anything."""
 
-    def __init__(self, roots: dict[SourceKind, tuple[Path, ...]]) -> None:
+    def __init__(self, roots: dict[SourceKind, tuple[Path | tuple[Path, str | None], ...]]) -> None:
         self.roots = roots
 
     def scan(self) -> SkillCatalogView:
         """Deterministic full scan over all configured source roots."""
         result = DiscoveryResult(())
         for source_kind, roots in sorted(self.roots.items(), key=lambda item: item[0].value):
-            for root in roots:
-                result = result.merge(scan_source_root(root, source_kind=source_kind))
+            for root_spec in roots:
+                root, scope_id = _root_spec(root_spec, requested_scope=None)
+                result = result.merge(
+                    scan_source_root(root, source_kind=source_kind, scope_id=scope_id)
+                )
         return self._project(result)
 
     def scan_scope(self, scope_id: str | None = None) -> SkillCatalogView:
@@ -67,8 +70,15 @@ class SkillCatalogService:
         result = DiscoveryResult(())
         key = scope_key(scope_id)
         for source_kind, roots in sorted(self.roots.items(), key=lambda item: item[0].value):
-            for root in roots:
-                candidate = scan_source_root(root, source_kind=source_kind, scope_id=scope_id)
+            for root_spec in roots:
+                root, configured_scope = _root_spec(root_spec, requested_scope=scope_id)
+                if configured_scope != scope_id:
+                    continue
+                candidate = scan_source_root(
+                    root,
+                    source_kind=source_kind,
+                    scope_id=configured_scope,
+                )
                 result = result.merge(
                     DiscoveryResult(
                         packages=tuple(
@@ -83,8 +93,26 @@ class SkillCatalogService:
 
     @staticmethod
     def _project(result: DiscoveryResult) -> SkillCatalogView:
-        by_scope: dict[str, dict[str, list[DiscoveredPackage]]] = {}
+        failures = list(result.failures)
+        valid_packages: list[DiscoveredPackage] = []
         for package in result.packages:
+            try:
+                # Validate the projection boundary too: callers may provide a
+                # DiscoveryResult assembled outside scan_source_root.
+                to_catalog_version(package)
+                to_catalog_definition(package)
+            except (KeyError, OverflowError, TypeError, ValueError) as exc:
+                failures.append(
+                    PackageLoadError(
+                        package.version_dir,
+                        package.skill_id,
+                        (f"catalog projection failed: {type(exc).__name__}",),
+                    )
+                )
+                continue
+            valid_packages.append(package)
+        by_scope: dict[str, dict[str, list[DiscoveredPackage]]] = {}
+        for package in valid_packages:
             scope = scope_key(package.scope_id)
             by_scope.setdefault(scope, {}).setdefault(package.skill_id, []).append(package)
 
@@ -97,7 +125,15 @@ class SkillCatalogService:
                 name_owners.setdefault(folded, []).append(skill_id)
             for skill_id in sorted(packages_by_id):
                 entries.append(_project_entry(packages_by_id[skill_id], name_owners))
-        return SkillCatalogView(tuple(entries), result.failures)
+        return SkillCatalogView(tuple(entries), tuple(failures))
+
+
+def _root_spec(
+    value: Path | tuple[Path, str | None], *, requested_scope: str | None
+) -> tuple[Path, str | None]:
+    if isinstance(value, tuple):
+        return value
+    return value, requested_scope
 
 
 def _folded_name(package: DiscoveredPackage) -> str:
@@ -127,10 +163,14 @@ def _project_entry(
         versions,
         key=lambda version: version.created_at or datetime.min.replace(tzinfo=UTC),
     )
-    definition = to_catalog_definition(ordered[0]).model_copy(
-        update={"availability": availability, "conflict_status": conflict}
-    )
     effective = newest.effective_trust if versions else TrustLevel.UNKNOWN
+    definition = to_catalog_definition(ordered[0]).model_copy(
+        update={
+            "availability": availability,
+            "conflict_status": conflict,
+            "effective_trust": effective,
+        }
+    )
     return SkillCatalogEntry(
         definition=definition,
         versions=versions,

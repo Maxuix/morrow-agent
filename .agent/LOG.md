@@ -2440,3 +2440,88 @@
 - Committed as c3038e0 on codex/feat/stage6-skill-catalog and fast-forwarded into local `main`;
   branch deleted; no push (remote publication not in scope; main is 3 commits ahead of origin).
   Subplan 66 is ready to activate.
+
+## 2026-08-24 — Subplan 65 review repairs
+
+- Re-read the complete 13-item review for Subplans 63–65 and verified every finding against the
+  implementation. Repaired v14 global scope identity with a non-null SQLite sentinel and composite
+  FK enforcement, made Skill versions insert-only, and restored effective Trust in definition rows.
+- Hardened Skill package discovery and validation: lstat directory roots, reject hardlinks, consume
+  manifest bytes captured by the canonical tree scan, validate malformed envelopes/manifests within
+  bounded failures, recompute Trust from local source provenance, and require version directory IDs
+  to match envelopes. Removed the unused identity helper.
+- Routed preparation and rehydration failures through AgentLoop's ordered error lifecycle, made the
+  production ToolExecutor factory follow the prepared run policy, and made Model capability
+  overrides narrowing-only. Updated stale v14 scope documentation and added regression coverage.
+- Focused validation passed 47 tests; final full offline validation passed 992 passed, 3 skipped, 2
+  deselected; Ruff format/check, compileall and git diff --check passed. Branch creation and commit
+  were unavailable because the workspace exposes .git as read-only.
+
+## 2026-08-24 — Subplan 66 activated
+
+- The user explicitly resumed Stage 6 implementation. Activated Subplan 66 for Skill Lifecycle and
+  Binding Control after confirming Subplan 65 and its review repairs are locally complete.
+- Creating `codex/feat/stage6-skill-lifecycle` failed because the workspace cannot create `.git` refs;
+  implementation continues in the existing `main` worktree without discarding the review repairs.
+
+## 2026-08-24 — Subplan 66 Skill lifecycle and Binding control completed
+
+- Added independent Extension YAML authorities, immutable managed package installation, Binding
+  lifecycle commands, bounded status queries, CLI projections and cross-store recovery records.
+- Kept installation disabled by default, preserved source/provenance boundaries, rejected
+  ambiguous/conflicted/unavailable dependencies, protected referenced versions, and did not add
+  Agent-facing lifecycle tools or AgentRun selection/context injection.
+- Added recovery coverage for package publication, YAML publication with revision advancement and
+  package-removal boundaries; durable global/workspace command replay is covered by the journal
+  and bounded application receipts.
+- Validation: focused suite `41 passed`; full non-live suite `1003 passed, 3 skipped, 2 deselected`;
+  Ruff format/check, compileall, root/Skill CLI help and `git diff --check` passed.
+- Could not create or commit a topic branch because `.git` refs remain read-only; all existing
+  review-repair and Subplan 66 changes remain in the shared working tree.
+
+## 2026-08-24 — Subplan 67 activated
+
+- The user authorized continuation of Stage 6 after Subplan 66 completion. Activated Subplan 67 for
+  bounded Skill selection, per-AgentRun context/resource evidence and historical rehydration.
+- Scope is limited to explicit/workspace-default/conservative description selection, frozen package
+  reads, v14 selection/context persistence and low-authority context rendering; Draft, scripts, MCP,
+  learned routing and unrestricted injection remain excluded.
+- Topic branch creation remains unavailable because the workspace `.git` refs are read-only; work
+  continues in the shared `main` worktree while preserving the existing dirty changes.
+
+## 2026-08-24 — Subplan 67 Skill selection, context and resources completed
+
+- Added deterministic explicit/default/conservative description selection with scope, source, pin,
+  availability, dependency, platform, capability and budget checks; omitted candidates retain
+  bounded reasons in the selection plan.
+- Persisted exact per-AgentRun selection and context evidence in the admission transaction while
+  keeping the main snapshot reference-only; historical rehydration reads journal evidence only.
+- Added low-authority bounded Skill context rendering and frozen relative resource reads with
+  traversal, symlink, MIME, size, Artifact and package-drift protections.
+- Validation: full non-live suite `1011 passed, 3 skipped, 2 deselected`; Ruff format/check,
+  compileall, CLI help and `git diff --check` passed. No live Provider, MCP, network or credential
+  path was exercised.
+
+## 2026-08-24 — Subplan 68 activated
+
+- Activated Generated Skill Drafts and Usage after Subplan 67 passed its exit gates. Scope is limited
+  to accepted Stage 5 SkillCandidates, bounded Draft/validation/Usage evidence and v15 storage;
+  Draft approval must not enable or repin a Binding.
+- Topic branch creation remains unavailable because the workspace `.git` refs are read-only; work
+  continues in the shared `main` worktree while preserving all prior changes.
+
+## 2026-08-24 — Subplan 68 Generated Skill Drafts and Usage completed
+
+- Added bounded Draft, validation-report and observational Usage contracts with digest-checked
+  SQLite mappings and the v15 `skill_drafts`, `skill_draft_validations` and `skill_usage` tables.
+- Added accepted same-workspace SkillCandidate→Draft generation, replay-safe package roots,
+  deterministic validation, revision/diff/edit/revalidate/reject transitions and immutable lifecycle
+  publication. Draft acceptance records approval evidence without enabling or repinning a Binding.
+- Added bounded Usage recording keyed to exact AgentRun/Task/selection/version facts and descriptive
+  comparisons that explicitly return insufficient-data results instead of routing decisions.
+- Fixed migration expectations for schema 15 and version-reference scanning for
+  `skill_drafts.accepted_version_id`; added CLI Draft/Usage commands and focused regression tests.
+- Validation passed: focused suite `6 passed`; full non-live suite `1017 passed, 3 skipped,
+  2 deselected`; Ruff format/check, compileall, CLI help and `git diff --check`.
+- The topic branch remains unavailable because `.git` refs are read-only. A verified local `main`
+  checkpoint is now ready for commit; remote publication is not in scope.

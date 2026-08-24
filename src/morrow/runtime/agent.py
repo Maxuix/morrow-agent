@@ -396,6 +396,7 @@ class AgentLoop:
         client_message_id: str | None = None,
         resume_current_turn: bool = False,
         prepared: PreparedAgentRunRuntime | None = None,
+        startup_error: str | None = None,
     ) -> AsyncIterator[AgentEvent]:
         client_message_id = client_message_id or self._id("cmsg")
         if prepared is not None:
@@ -457,6 +458,29 @@ class AgentLoop:
             )
 
         try:
+            if startup_error is not None:
+                if resume_current_turn:
+                    current_turn_id = (
+                        durable_runtime.current_turn_id if durable_runtime is not None else None
+                    )
+                    if current_turn_id:
+                        state.turn_id = current_turn_id
+                        state.run_context = ToolRunContext(
+                            run_id=state.turn_id,
+                            session_id=session.session_id,
+                        )
+                state.started = True
+                yield event("turn.started", {})
+                if session.log.has_active_turn:
+                    try:
+                        session.finish_turn(FinishReason.ERROR)
+                    except ConversationLogError:
+                        pass
+                state.settled = True
+                retain_facts(FinishReason.ERROR.value)
+                for item in fatal(startup_error, AgentStopCode.INTERNAL):
+                    yield item
+                return
             if resume_current_turn:
                 if not session.log.has_active_turn:
                     raise ConversationLogError("no active turn is available to resume")
@@ -1017,10 +1041,12 @@ class AgentRuntime:
         *,
         client_message_id: str | None = None,
         prepared: PreparedAgentRunRuntime | None = None,
+        startup_error: str | None = None,
     ) -> AsyncIterator[AgentEvent]:
         return self._loop.run_task(
             session,
             user_input,
             client_message_id=client_message_id,
             prepared=prepared,
+            startup_error=startup_error,
         )

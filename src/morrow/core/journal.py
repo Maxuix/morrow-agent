@@ -30,6 +30,10 @@ from morrow.core.domain import (
 from morrow.core.execution import DurableApproval, DurableToolExecution
 from morrow.core.permissions import CapabilityGrant, PermissionSnapshot
 from morrow.core.recovery import RecoveryReceipt, RecoveryReport
+from morrow.core.skills.context import SkillContextEntry
+from morrow.core.skills.drafts import SkillDraft, SkillDraftValidationReport
+from morrow.core.skills.selection import SkillSelection
+from morrow.core.skills.usage import SkillUsage
 
 T = TypeVar("T")
 
@@ -247,6 +251,83 @@ class AgentRunPort(Protocol):
     ) -> DurableAgentRun: ...
 
 
+class SkillRunJournalPort(Protocol):
+    """v14 immutable Skill evidence attached to one AgentRun."""
+
+    def put_skill_selection(
+        self, workspace_id: str, selection: SkillSelection
+    ) -> SkillSelection: ...
+
+    def get_skill_selection(
+        self, workspace_id: str, selection_id: str
+    ) -> SkillSelection | None: ...
+
+    def list_skill_selections(
+        self, workspace_id: str, agent_run_id: str
+    ) -> tuple[SkillSelection, ...]: ...
+
+    def put_skill_context(
+        self, workspace_id: str, context: SkillContextEntry
+    ) -> SkillContextEntry: ...
+
+    def get_skill_context(self, workspace_id: str, context_id: str) -> SkillContextEntry | None: ...
+
+    def list_skill_contexts(
+        self, workspace_id: str, agent_run_id: str
+    ) -> tuple[SkillContextEntry, ...]: ...
+
+
+class SkillDraftUsageJournalPort(Protocol):
+    """v15 generated Draft, validation and observational Usage records."""
+
+    def put_skill_draft(self, workspace_id: str, draft: SkillDraft) -> SkillDraft: ...
+
+    def get_skill_draft(self, workspace_id: str, draft_id: str) -> SkillDraft | None: ...
+
+    def get_skill_draft_by_candidate(
+        self, workspace_id: str, candidate_id: str, *, latest: bool = True
+    ) -> SkillDraft | None: ...
+
+    def list_skill_drafts(
+        self,
+        workspace_id: str,
+        *,
+        candidate_id: str | None = None,
+        status: str | None = None,
+        limit: int = 100,
+    ) -> tuple[SkillDraft, ...]: ...
+
+    def save_skill_draft(
+        self, workspace_id: str, draft: SkillDraft, *, expected_row_version: int
+    ) -> SkillDraft: ...
+
+    def put_skill_draft_validation(
+        self, workspace_id: str, report: SkillDraftValidationReport
+    ) -> SkillDraftValidationReport: ...
+
+    def get_skill_draft_validation(
+        self, workspace_id: str, draft_id: str, validation_id: str
+    ) -> SkillDraftValidationReport | None: ...
+
+    def list_skill_draft_validations(
+        self, workspace_id: str, draft_id: str, *, limit: int = 32
+    ) -> tuple[SkillDraftValidationReport, ...]: ...
+
+    def put_skill_usage(self, workspace_id: str, usage: SkillUsage) -> SkillUsage: ...
+
+    def get_skill_usage(self, workspace_id: str, usage_id: str) -> SkillUsage | None: ...
+
+    def list_skill_usages(
+        self,
+        workspace_id: str,
+        *,
+        skill_id: str | None = None,
+        version_id: str | None = None,
+        agent_run_id: str | None = None,
+        limit: int = 100,
+    ) -> tuple[SkillUsage, ...]: ...
+
+
 class TurnSubmitReceiptPort(Protocol):
     def get_receipt(
         self, workspace_id: str, session_id: str, client_message_id: str
@@ -262,6 +343,8 @@ class TurnSubmitReceiptPort(Protocol):
 class TurnLifecycleJournalPort(
     SessionLifecyclePort,
     AgentRunPort,
+    SkillRunJournalPort,
+    SkillDraftUsageJournalPort,
     TurnSubmitReceiptPort,
     TransactionalJournalPort,
     Protocol,
@@ -273,6 +356,8 @@ class SessionRestoreJournalPort(
     SessionLifecyclePort,
     ConversationJournalPort,
     AgentRunPort,
+    SkillRunJournalPort,
+    SkillDraftUsageJournalPort,
     Protocol,
 ):
     """Read surface needed to restore one in-process Session projection."""

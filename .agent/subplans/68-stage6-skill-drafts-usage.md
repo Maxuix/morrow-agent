@@ -1,6 +1,6 @@
 # Subplan 68 — Generated Skill Drafts and Usage
 
-> Status: pending
+> Status: completed locally
 > Branch: `codex/feat/stage6-skill-drafts`
 > Prerequisite: Subplan 67 complete
 
@@ -52,3 +52,10 @@ enable or repin it.
 - No Candidate or Draft can become selected without both version approval and an enabled Binding.
 - User/builtin/imported packages remain immutable to the Draft path.
 - v15 is fixed and Usage remains observational only.
+
+## Exit evidence
+
+- Focused Draft/Usage/migration suite: `6 passed`.
+- Full non-live suite: `1017 passed, 3 skipped, 2 deselected`.
+- Ruff format/check, compileall, CLI help and `git diff --check` passed.
+- No live Provider, MCP, network or credential path was exercised.

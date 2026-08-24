@@ -1,8 +1,9 @@
 # Stage 6 Skills and Extensions Implementation Plan
 
-> Status: final design and executable plan complete; implementation not started
-> Active subplan: 63 — dependency and contract spike
-> Baseline: local `main` at `479270b`
+> Status: Stage 6 implementation in progress; Subplans 63–68 and the Subplan 65 review repair are
+> complete locally
+> Next subplan: Subplan 69 — Skill Script Execution
+> Baseline: local `main` at `21abd6c` plus verified review-repair working-tree changes
 > Design baseline: `docs/reviews/stage-6-skills-and-extensions-final-proposal.md`
 > Roadmap authority: `docs/roadmap/stage-6-skills-and-extensions.md`
 
@@ -151,8 +152,8 @@ existing seam first inside the active subplan.
 | 64 | Per-AgentRun runtime preparation | replay-first admission, prepare/rehydrate, per-run Provider/Model/RunPolicy/ToolSet |
 | 65 | Skill package and Catalog foundation | core contracts, managed package validator, v14 storage and deterministic conflicts |
 | 66 | Skill lifecycle and Binding control | install/enable/disable/pin/rollback/remove with YAML authority and recovery |
-| 67 | Skill selection, context and resources | AgentRun selection/context evidence, bounded injection and frozen reads |
-| 68 | Generated Draft and Usage | Candidate→Draft review flow, validation reports, Usage and v15 storage |
+| 67 | Skill selection, context and resources | completed locally; AgentRun selection/context evidence, bounded injection and frozen reads |
+| 68 | Generated Draft and Usage | completed locally; Candidate→Draft review flow, validation reports, Usage and v15 storage |
 | 69 | Skill Script execution | dedicated sandboxed/approved script service and Artifact outputs |
 | 70 | Provider/Model control plane | complete capabilities and provider/model CLI without core branching |
 | 71 | Dynamic Tool contracts | JSON Schema validator seam and declaration-owned recovery |

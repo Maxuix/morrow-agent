@@ -2,18 +2,18 @@
 
 Stage 4 and Stage 5 are complete through Subplan 62 and remain recoverable in Git history. On
 2026-08-24 the user explicitly requested a fact-checked final Stage 6方案 and a complete executable
-implementation plan. Stage 6 is now planned as Subplans 63–75; no implementation subplan has started.
+implementation plan. Stage 6 is now planned as Subplans 63–75; implementation is in progress.
 
 ## Stage 6 sequence
 
 | Order | File | Status |
 |---|---|---|
-| 63 | `63-stage6-dependency-contract-spike.md` | ready |
-| 64 | `64-stage6-agent-run-preparation.md` | pending |
-| 65 | `65-stage6-skill-catalog-foundation.md` | pending |
-| 66 | `66-stage6-skill-lifecycle-bindings.md` | pending |
-| 67 | `67-stage6-skill-selection-context.md` | pending |
-| 68 | `68-stage6-skill-drafts-usage.md` | pending |
+| 63 | `63-stage6-dependency-contract-spike.md` | completed |
+| 64 | `64-stage6-agent-run-preparation.md` | completed |
+| 65 | `65-stage6-skill-catalog-foundation.md` | completed; review repair applied locally |
+| 66 | `66-stage6-skill-lifecycle-bindings.md` | completed locally; branch unavailable |
+| 67 | `67-stage6-skill-selection-context.md` | completed locally; branch unavailable |
+| 68 | `68-stage6-skill-drafts-usage.md` | completed locally; branch unavailable |
 | 69 | `69-stage6-skill-script-execution.md` | pending |
 | 70 | `70-stage6-provider-model-control.md` | pending |
 | 71 | `71-stage6-dynamic-tool-contracts.md` | pending |

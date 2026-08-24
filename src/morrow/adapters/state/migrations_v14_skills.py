@@ -1,19 +1,26 @@
 """Operational Store v14: Skill definitions, versions, operations, selections and contexts.
 
-Immutable after Subplan 65. Scope rows use ``scope + scope_id`` (scope_id NULL
-for global) so global and workspace rows never fake a workspace ID. The
-AgentRun selection/context tables are reserved fully in this migration; later
+Global rows use the empty string as a non-null storage sentinel for
+``scope_id``. SQLite treats NULL values as distinct in unique constraints and
+composite foreign keys, so a nullable global key would not provide the
+identity or referential guarantees these tables need. The AgentRun
+selection/context tables are reserved fully in this migration; later
 subplans add journal methods but never alter this DDL (the migration checksum
-must stay fixed).
+must stay fixed after release).
 """
 
 V14_NAME = "skill_catalog_foundation"
+
+GLOBAL_SCOPE_ID = ""
 
 V14_STATEMENTS = (
     """
     CREATE TABLE skill_definitions (
         scope TEXT NOT NULL CHECK (scope IN ('global', 'workspace')),
-        scope_id TEXT,
+        scope_id TEXT NOT NULL CHECK (
+            (scope = 'global' AND scope_id = '') OR
+            (scope = 'workspace' AND substr(scope_id, 1, 3) = 'ws_' AND length(scope_id) > 3)
+        ),
         skill_id TEXT NOT NULL,
         name TEXT NOT NULL,
         source_kind TEXT NOT NULL
@@ -32,7 +39,10 @@ V14_STATEMENTS = (
     CREATE TABLE skill_versions (
         version_id TEXT PRIMARY KEY,
         scope TEXT NOT NULL CHECK (scope IN ('global', 'workspace')),
-        scope_id TEXT,
+        scope_id TEXT NOT NULL CHECK (
+            (scope = 'global' AND scope_id = '') OR
+            (scope = 'workspace' AND substr(scope_id, 1, 3) = 'ws_' AND length(scope_id) > 3)
+        ),
         skill_id TEXT NOT NULL,
         display_version TEXT,
         tree_digest TEXT NOT NULL,
@@ -56,7 +66,10 @@ V14_STATEMENTS = (
     CREATE TABLE skill_catalog_operations (
         operation_id TEXT PRIMARY KEY,
         scope TEXT NOT NULL CHECK (scope IN ('global', 'workspace')),
-        scope_id TEXT,
+        scope_id TEXT NOT NULL CHECK (
+            (scope = 'global' AND scope_id = '') OR
+            (scope = 'workspace' AND substr(scope_id, 1, 3) = 'ws_' AND length(scope_id) > 3)
+        ),
         skill_id TEXT NOT NULL,
         version_id TEXT,
         operation TEXT NOT NULL CHECK (
@@ -82,7 +95,10 @@ V14_STATEMENTS = (
         selection_id TEXT PRIMARY KEY,
         agent_run_id TEXT NOT NULL REFERENCES agent_runs(agent_run_id),
         scope TEXT NOT NULL CHECK (scope IN ('global', 'workspace')),
-        scope_id TEXT,
+        scope_id TEXT NOT NULL CHECK (
+            (scope = 'global' AND scope_id = '') OR
+            (scope = 'workspace' AND substr(scope_id, 1, 3) = 'ws_' AND length(scope_id) > 3)
+        ),
         skill_id TEXT NOT NULL,
         version_id TEXT NOT NULL REFERENCES skill_versions(version_id),
         activation_reason TEXT NOT NULL,
@@ -99,7 +115,10 @@ V14_STATEMENTS = (
         context_id TEXT PRIMARY KEY,
         agent_run_id TEXT NOT NULL REFERENCES agent_runs(agent_run_id),
         scope TEXT NOT NULL CHECK (scope IN ('global', 'workspace')),
-        scope_id TEXT,
+        scope_id TEXT NOT NULL CHECK (
+            (scope = 'global' AND scope_id = '') OR
+            (scope = 'workspace' AND substr(scope_id, 1, 3) = 'ws_' AND length(scope_id) > 3)
+        ),
         skill_id TEXT NOT NULL,
         version_id TEXT NOT NULL REFERENCES skill_versions(version_id),
         context_digest TEXT NOT NULL,

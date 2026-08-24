@@ -1,6 +1,6 @@
 # Subplan 67 — Skill Selection, Context and Resources
 
-> Status: pending
+> Status: completed locally; branch unavailable because the workspace `.git` refs are read-only
 > Branch: `codex/feat/stage6-skill-context`
 > Prerequisite: Subplan 66 complete
 
@@ -52,3 +52,10 @@ same-run freeze and historical recovery.
 - A handwritten enabled Skill appears only in the intended new AgentRun with exact version evidence.
 - Historical/replay behavior is independent of current Binding/Catalog state.
 - Skill content cannot expand authority or overflow AgentRun/model budgets.
+
+## Exit evidence
+
+- Focused selection/context/resource and preparation tests passed.
+- Full offline suite passed: `1011 passed, 3 skipped, 2 deselected`.
+- Ruff format/check, compileall, CLI help and `git diff --check` passed.
+- No live Provider, MCP, network or credential path was exercised.

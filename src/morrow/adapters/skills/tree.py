@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 import stat
 import unicodedata
+from collections.abc import MutableMapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -18,6 +19,7 @@ MAX_PACKAGE_FILES = 256
 MAX_PACKAGE_TOTAL_BYTES = 8 * 1024 * 1024
 MAX_PACKAGE_FILE_BYTES = 1 * 1024 * 1024
 MAX_RELATIVE_PATH_CHARS = 512
+MANIFEST_FILES = frozenset({"SKILL.md", "morrow.yaml"})
 
 TREE_SCHEMA = "skill-tree-v1"
 
@@ -77,11 +79,16 @@ def _normalized_relative_path(root: Path, path: Path) -> str:
 
 def _read_file_bytes(path: Path) -> tuple[bytes, int, bool]:
     """One safe open: fstat and bytes from the same descriptor."""
-    fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    try:
+        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    except OSError as exc:
+        raise PackageTreeError("package file could not be opened safely") from exc
     try:
         info = os.fstat(fd)
         if not stat.S_ISREG(info.st_mode):
             raise PackageTreeError("package files must be regular files")
+        if info.st_nlink != 1:
+            raise PackageTreeError("package hard links are rejected")
         if info.st_size > MAX_PACKAGE_FILE_BYTES:
             raise PackageTreeError("package file exceeds the per-file byte budget")
         chunks: list[bytes] = []
@@ -139,8 +146,25 @@ def _reject_normalization_collisions(paths: list[str]) -> None:
         seen.add(folded)
 
 
-def build_canonical_tree(package_root: Path) -> CanonicalPackageTree:
-    """Build the canonical tree for one immutable package root."""
+def build_canonical_tree(
+    package_root: Path,
+    *,
+    content_sink: MutableMapping[str, bytes] | None = None,
+    all_content_sink: MutableMapping[str, bytes] | None = None,
+) -> CanonicalPackageTree:
+    """Build the canonical tree for one immutable package root.
+
+    ``content_sink`` retains the historical manifest-only capture used by
+    discovery. ``all_content_sink`` is an explicit installer-only capture of
+    the already-validated bytes, avoiding a second path-based read during a
+    managed package publish.
+    """
+    try:
+        root_info = os.lstat(package_root)
+    except OSError as exc:
+        raise PackageTreeError("package root could not be inspected") from exc
+    if stat.S_ISLNK(root_info.st_mode) or not stat.S_ISDIR(root_info.st_mode):
+        raise PackageTreeError("package root must be a real directory")
     seen: set[str] = set()
     entries: list[CanonicalFileEntry] = []
     total_bytes = 0
@@ -189,6 +213,10 @@ def build_canonical_tree(package_root: Path) -> CanonicalPackageTree:
                     sha256=sha256_digest(raw),
                 )
             )
+            if content_sink is not None and relative in MANIFEST_FILES:
+                content_sink[relative] = raw
+            if all_content_sink is not None:
+                all_content_sink[relative] = raw
             if len(entries) > MAX_PACKAGE_FILES:
                 raise PackageTreeError("package exceeds the file count budget")
     return CanonicalPackageTree(

@@ -51,6 +51,7 @@ from morrow.core.models import (
 from morrow.core.ports import IdSource
 from morrow.core.preference_documents import PreferenceDocument
 from morrow.core.recovery import RecoveryReport, RecoveryReportStatus
+from morrow.core.skills.selection import SkillSelectionPlan
 from morrow.core.store import StorageError, StorageErrorCode
 from morrow.runtime.conversation import (
     ConversationAppend,
@@ -136,6 +137,7 @@ class TurnSubmissionCoordinator:
         state: DurableTurnState,
         preference_reviews: PreferenceReviewJobEnqueuer | None = None,
         preference_loader: Callable[[], PreferenceRunSources] | None = None,
+        skill_selection=None,
     ) -> None:
         self.journal = journal
         self.workspace_id = workspace_id
@@ -148,6 +150,7 @@ class TurnSubmissionCoordinator:
         self.state = state
         self.preference_reviews = preference_reviews
         self.preference_loader = preference_loader
+        self.skill_selection = skill_selection
         self.memory_selector = MemorySelector(id_source=id_source, clock=clock)
 
     def commit(
@@ -328,6 +331,16 @@ class TurnSubmissionCoordinator:
                     turn_id=turn_id,
                 )
             stored_agent_run_id = agent_run_id or self.id_source.new_id(AGENT_RUN_ID_PREFIX)
+            skill_plan = (
+                self.skill_selection.select(
+                    agent_run_id=stored_agent_run_id,
+                    user_input=user_input,
+                    workspace_id=self.workspace_id,
+                    now=stamp,
+                )
+                if self.skill_selection is not None
+                else SkillSelectionPlan()
+            )
             selection = self.memory_selector.select(
                 txn,
                 MemoryQuery(
@@ -347,6 +360,7 @@ class TurnSubmissionCoordinator:
                 memory_selection=selection,
                 preference_sources=preference_sources,
                 prepared_spec=prepared_spec,
+                skill_plan=skill_plan,
             )
             txn.put_memory_selection(self.workspace_id, selection)
             txn.create_agent_run(
@@ -359,6 +373,12 @@ class TurnSubmissionCoordinator:
                     created_at=stamp,
                 ),
             )
+            if self.skill_selection is not None:
+                self.skill_selection.sync_catalog(txn, now=stamp)
+            for skill_selection in skill_plan.selections:
+                txn.put_skill_selection(self.workspace_id, skill_selection)
+            for skill_context in skill_plan.contexts:
+                txn.put_skill_context(self.workspace_id, skill_context)
             txn.put_receipt(
                 self.workspace_id,
                 TurnSubmitReceipt(
@@ -386,6 +406,7 @@ class TurnSubmissionCoordinator:
             )
         except StorageError as exc:
             session.run_context_projection = None
+            session.skill_context_projection = None
             if exc.code is StorageErrorCode.NEEDS_REPAIR:
                 session.health = SessionHealth.QUARANTINED
             raise
@@ -395,6 +416,7 @@ class TurnSubmissionCoordinator:
         self.state.permission_snapshot_id = None
         self.state.last_client_message_id = client_message_id
         session.run_context_projection = projection
+        session.skill_context_projection = projection.skill_context
         if preference_sources is not None:
             session.generic_global_preferences = preference_sources.global_document
             session.generic_workspace_preferences = preference_sources.workspace_document
@@ -504,6 +526,7 @@ class SessionRestoreCoordinator:
     def restore_into(self, session: Session) -> None:
         self.state.reset()
         session.run_context_projection = None
+        session.skill_context_projection = None
         row = self.journal.get_session(self.workspace_id, session.session_id)
         if row is None:
             stamp = self.clock()
@@ -573,8 +596,10 @@ class SessionRestoreCoordinator:
             session.run_context_projection = load_run_context_projection(
                 self.journal, self.workspace_id, resumed_agent_run_id
             )
+            session.skill_context_projection = session.run_context_projection.skill_context
         elif report.status is RecoveryReportStatus.RESOLVED:
             session.run_context_projection = None
+            session.skill_context_projection = None
         self.state.open_report = None if report.status is RecoveryReportStatus.RESOLVED else report
 
     def _restore_context_checkpoint(self, row: DurableSession) -> ContextCheckpoint | None:
@@ -591,6 +616,7 @@ class SessionRestoreCoordinator:
 
     def _restore_active_work(self, session: Session) -> None:
         session.run_context_projection = None
+        session.skill_context_projection = None
         report = self.recovery.discover(session.session_id, session.log)
         self.state.open_report = report
         if report is not None:
@@ -628,9 +654,11 @@ class SessionRestoreCoordinator:
             session.run_context_projection = build_run_context_projection(
                 self.journal, self.workspace_id, snapshot
             )
+            session.skill_context_projection = session.run_context_projection.skill_context
         except StorageError as exc:
             if exc.code is StorageErrorCode.NEEDS_REPAIR:
                 session.run_context_projection = None
+                session.skill_context_projection = None
                 session.health = SessionHealth.QUARANTINED
                 return
             raise
@@ -670,6 +698,7 @@ def build_agent_run_snapshot(
     memory_selection: MemorySelection | None = None,
     preference_sources: PreferenceRunSources | None = None,
     prepared_spec: PreparedAgentRunSpec | None = None,
+    skill_plan: SkillSelectionPlan | None = None,
 ) -> AgentRunSnapshot:
     def source_digest(presence: StatePresence, value) -> str:
         if value is not None and not hasattr(value, "model_dump"):
@@ -791,6 +820,14 @@ def build_agent_run_snapshot(
         preference_refresh_error=(
             preference_sources.refresh_error if preference_sources is not None else None
         ),
+        skill_selection_ids=skill_plan.selection_ids if skill_plan is not None else (),
+        skill_selection_digest=skill_plan.selection_digest if skill_plan is not None else None,
+        skill_context_ids=skill_plan.context_ids if skill_plan is not None else (),
+        skill_context_digest=skill_plan.context_digest if skill_plan is not None else None,
+        skill_selected_count=skill_plan.selected_count if skill_plan is not None else 0,
+        skill_omitted_count=skill_plan.omitted_count if skill_plan is not None else 0,
+        skill_binding_digest=skill_plan.binding_digest if skill_plan is not None else None,
+        skill_catalog_digest=skill_plan.catalog_digest if skill_plan is not None else None,
         provider_runtime=prepared_spec.provider_runtime if prepared_spec is not None else None,
         run_policy=prepared_spec.run_policy if prepared_spec is not None else None,
     )
