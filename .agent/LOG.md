@@ -2418,3 +2418,25 @@
   and uv.lock unchanged; snapshot budget re-measured at 4 367 B base / 5 997 B with refs.
 - Committed and fast-forwarded Subplan 64 into local `main`; branch deleted; no push (remote
   publication not in scope). Subplan 65 is ready to activate.
+
+## 2026-08-24 — Subplan 65 Skill package and catalog foundation completed
+
+- Added core/skills/ contracts (identity safe rules, manifest contracts, TrustLevel +
+  effective_trust from local provenance, SkillDefinition/Version/Binding/Selection views).
+- Added adapters/skills/: strict manifest parser (frontmatter + morrow.yaml; unknown keys rejected;
+  requested Trust/permissions non-authoritative), canonical tree builder with one-safe-open
+  fstat+bytes hashing, collision/reserved/oversize/non-UTF-8 rejection, Morrow-written
+  managed-version.json envelopes with digest verification and drift detection, and bounded root
+  discovery with scope isolation.
+- Added application/skills/catalog.py: deterministic truthful projection; same id/digest folds,
+  same id/different digest -> identity_conflict, different id/same normalized name ->
+  name_conflict; scope/source never overrides; requested vs effective Trust exposed.
+- Operational Store v14: skill_definitions, skill_versions, skill_catalog_operations and the
+  reserved agent_run_skill_selections/agent_run_skill_contexts tables (scope + scope_id composite),
+  SqliteSkillJournal, thin aggregate delegation; SUPPORTED_SCHEMA_VERSION 14.
+- Bumped legacy expectations in migration/version tests (hardcoded 13 -> 14) and the future-schema
+  tamper test (15). Full offline suite `983 passed, 1 skipped, 2 deselected in 22.62s`; ruff,
+  compileall, git diff --check green; dependency files unchanged.
+- Committed as c3038e0 on codex/feat/stage6-skill-catalog and fast-forwarded into local `main`;
+  branch deleted; no push (remote publication not in scope; main is 3 commits ahead of origin).
+  Subplan 66 is ready to activate.

@@ -6,29 +6,29 @@ Stage 6 implementation in progress.
 
 ## Active subplan
 
-Subplan 64 — Per-AgentRun Runtime Preparation (completed on `codex/feat/stage6-run-preparation`).
+Subplan 65 — Skill Package and Catalog Foundation (completed; merged to `main`).
 
-## Tasks (Subplan 64)
+## Tasks (Subplan 65)
 
-- `[x]` Introduce `PreparedAgentRunSpec`, `PreparedAgentRunRuntime` and cleanup ownership without
-  storing SDK/provider objects in Pydantic or SQLite; freeze a sanitized Provider runtime snapshot.
-- `[x]` Add complete Adapter/Model capability contracts and an exact-Model resolution function;
-  preserve current tool-support defaults through a compatibility constructor.
-- `[x]` Implement `TurnSubmissionCoordinator.probe()` for new/closed-replay/recovery/conflict without
-  creating IDs, reading mutable extension state or performing external work.
-- `[x]` Implement `prepare_new()` from current global config and existing local tools.
-- `[x]` Implement `rehydrate()` from stored AgentRun evidence; missing frozen CredentialRef becomes
-  unavailable rather than fallback.
-- `[x]` Change `AgentLoop.run_task()` to consume a prepared run and construct its runner/tool cycle
-  per invocation; keep `run_turn()` a thin delegate and ConversationLog as the only history writer.
-- `[x]` Retain the receipt recheck inside Turn admission; concurrent loser closes the unused runtime.
-- `[x]` Add bounded cleanup for success, failure, cancellation, replay and preparation failure.
-- `[x]` Preserve old AgentRun snapshot decoding; add optional reference fields with budget checks and
-  decode/doctor coverage.
+- `[x]` Strict namespaced manifest decoding (SKILL.md frontmatter + morrow.yaml) with requested
+  Trust/permissions recorded as non-authoritative hints.
+- `[x]` Safe IDs: stable skill_id, Morrow `skv_` version ids, display version; reject separators,
+  dot paths, NUL, reserved names and normalization collisions.
+- `[x]` Canonical package trees: regular files only, one safe open per file, exec mode, reject
+  symlink/hardlink/device/FIFO/socket, root escape, collisions, reserved names, oversize, non-UTF-8.
+- `[x]` Immutable `managed-version.json` envelopes with per-file/tree digests; package-provided
+  envelopes never trusted; drift detection.
+- `[x]` Discovery of builtin/user/generated/imported roots, scope isolation, bounded failures.
+- `[x]` Exact conflict rules: same id/digest folds; same id/different digest blocks
+  (identity_conflict); different id/same name is explicit ambiguity (name_conflict).
+- `[x]` Effective Trust computed from local provenance only; requested vs effective exposed.
+- `[x]` v14 tables (definitions, versions, operations, reserved AgentRun selections/contexts) with
+  scope+scope_id composite identity; checksum fixed; thin journal delegation.
+- `[x]` SQL and row mapping in `skill_journal.py`; aggregate journal only delegates.
 
 ## Boundaries
 
-- This subplan changes no production behavior and adds no dependency.
+- Nothing is enabled, selected or injected; no Draft/Usage or MCP tables exist.
 - Do not use real credentials, networked MCP Servers, live Providers or user state.
-- Next: Subplan 65 (Skill package and Catalog foundation) from latest `main`.
+- Next: Subplan 66 (Skill lifecycle and Binding control) from latest `main`.
 - Preserve AgentLoop/ConversationLog, permission policy defaults, public events and Stage 4/5 behavior.
