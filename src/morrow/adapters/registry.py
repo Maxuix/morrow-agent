@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from inspect import isawaitable
 from typing import Any
 
 from morrow.core.agent_runs import ProviderCapabilities
 from morrow.core.models import ModelRef, ProviderConfig
 from morrow.core.ports import ModelProvider
+from morrow.core.providers import DiscoveredModel, ModelDiscovery
 from morrow.runtime.policy import ProviderToolSupport
 
 
@@ -16,6 +18,7 @@ class AdapterRegistry:
         self._factories: dict[str, Callable[[ProviderConfig, str], ModelProvider]] = {}
         self._tool_support: dict[str, ProviderToolSupport] = {}
         self._capabilities: dict[str, ProviderCapabilities] = {}
+        self._discoveries: dict[str, ModelDiscovery] = {}
 
     def register(
         self,
@@ -25,21 +28,44 @@ class AdapterRegistry:
         tool_protocol: str | None = None,
         multiple_tool_calls: bool | None = None,
         capabilities: ProviderCapabilities | None = None,
+        discovery: ModelDiscovery | None = None,
     ) -> None:
         if not adapter_id.strip():
             raise ValueError("adapter_id must not be empty")
+        if capabilities is not None:
+            if tool_protocol is not None and capabilities.tool_protocol != tool_protocol:
+                raise ValueError("tool_protocol conflicts with declared Adapter capabilities")
+            if (
+                multiple_tool_calls is not None
+                and capabilities.multiple_tool_calls != multiple_tool_calls
+            ):
+                raise ValueError("multiple_tool_calls conflicts with declared Adapter capabilities")
         self._factories[adapter_id] = factory
         previous = self._tool_support.get(adapter_id)
+        declared = capabilities or self._capabilities.get(adapter_id)
         self._tool_support[adapter_id] = ProviderToolSupport(
             tool_protocol=tool_protocol
             if tool_protocol is not None
-            else (previous.tool_protocol if previous else "none"),
+            else (
+                declared.tool_protocol
+                if declared
+                else (previous.tool_protocol if previous else "none")
+            ),
             multiple_tool_calls=multiple_tool_calls
             if multiple_tool_calls is not None
-            else (previous.multiple_tool_calls if previous else False),
+            else (
+                declared.multiple_tool_calls
+                if declared
+                else (previous.multiple_tool_calls if previous else False)
+            ),
+            safe_request_chars=declared.safe_request_chars
+            if declared
+            else (previous.safe_request_chars if previous else None),
         )
         if capabilities is not None:
             self._capabilities[adapter_id] = capabilities
+        if discovery is not None:
+            self._discoveries[adapter_id] = discovery
 
     def create(self, config: ProviderConfig, credential: str) -> ModelProvider:
         try:
@@ -68,6 +94,27 @@ class AdapterRegistry:
             multiple_tool_calls=support.multiple_tool_calls,
             safe_request_chars=support.safe_request_chars,
         )
+
+    async def discover_models(
+        self, config: ProviderConfig, credential: str
+    ) -> tuple[DiscoveredModel, ...]:
+        """Run an adapter-owned, explicit discovery operation once requested."""
+
+        try:
+            discovery = self._discoveries[config.adapter]
+        except KeyError as exc:
+            raise ValueError(f"Adapter 不支持模型发现: {config.adapter}") from exc
+        discovered = discovery(config, credential)
+        if isawaitable(discovered):
+            discovered = await discovered
+        try:
+            models = tuple(DiscoveredModel.model_validate(item) for item in discovered)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Adapter 返回了无效的模型发现结果") from exc
+        ids = [item.model_id for item in models]
+        if len(ids) != len(set(ids)):
+            raise ValueError("Adapter 返回了重复的模型 ID")
+        return models
 
 
 OPENCODE_GO_PRESET: dict[str, Any] = {

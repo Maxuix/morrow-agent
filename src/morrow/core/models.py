@@ -7,6 +7,7 @@ state data becomes typed application data.
 
 from __future__ import annotations
 
+import math
 import re
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -38,6 +39,9 @@ class ProtocolModel(BaseModel):
     """Wire protocol objects: immutable, extras rejected, ordered tuples."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+InputModality = Literal["text", "image", "audio", "document"]
 
 
 def _require_non_empty(value: str) -> str:
@@ -199,6 +203,50 @@ class ProviderToolSupport(ProtocolModel):
     safe_request_chars: int | None = Field(default=None, gt=0)
 
 
+class CostMetadata(ProtocolModel):
+    """Sanitized, time-stamped pricing metadata for one capability snapshot."""
+
+    source: str = Field(min_length=1, max_length=128)
+    updated_at: datetime = Field(default_factory=utc_now)
+    currency: str = Field(default="USD", min_length=3, max_length=3)
+    input_cost_per_million: float | None = Field(default=None, ge=0)
+    output_cost_per_million: float | None = Field(default=None, ge=0)
+
+    @field_validator("currency")
+    @classmethod
+    def currency_code(cls, value: str) -> str:
+        if not value.isascii() or not value.isupper():
+            raise ValueError("currency must be an uppercase ISO-like code")
+        return value
+
+    @field_validator("updated_at")
+    @classmethod
+    def timezone_aware(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("cost metadata updated_at must be timezone-aware")
+        return value
+
+    @field_validator("input_cost_per_million", "output_cost_per_million")
+    @classmethod
+    def finite_cost(cls, value: float | None) -> float | None:
+        if value is not None and not math.isfinite(value):
+            raise ValueError("cost metadata must be finite")
+        return value
+
+
+class ModelCapabilityOverrides(ProtocolModel):
+    """Optional per-model restrictions persisted below one ProviderConfig."""
+
+    streaming_text: bool | None = None
+    tool_protocol: Literal["none", "openai_function"] | None = None
+    multiple_tool_calls: bool | None = None
+    structured_output: bool | None = None
+    safe_request_chars: int | None = Field(default=None, gt=0)
+    safe_context_chars: int | None = Field(default=None, gt=0)
+    input_types: tuple[InputModality, ...] | None = None
+    cost_metadata: CostMetadata | None = None
+
+
 class RunPolicy(ProtocolModel):
     """Immutable per-AgentRun budget and tool-support policy."""
 
@@ -336,6 +384,7 @@ class CredentialRef(MorrowModel):
 
 class ProviderModelConfig(MorrowModel):
     api_model_id: str
+    capabilities: ModelCapabilityOverrides | None = None
 
 
 class LastTestResult(MorrowModel):

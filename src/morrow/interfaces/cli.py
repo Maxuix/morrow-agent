@@ -307,10 +307,35 @@ def provider_presets() -> None:
 
 @provider_app.command("add")
 def provider_add(
+    provider_id: str | None = typer.Argument(None),
     preset: str = typer.Option("opencode-go", "--preset", help=_preset_option_help()),
+    provider_name: str | None = typer.Option(None, "--name"),
+    adapter: str | None = typer.Option(None, "--adapter"),
+    base_url: str | None = typer.Option(None, "--base-url"),
     state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
 ) -> None:
-    service = build_application(state_root=state_root).provider_service
+    application = build_application(state_root=state_root)
+    service = application.provider_service
+    provider_id = provider_name or provider_id
+    if provider_id is not None or adapter is not None or base_url is not None:
+        if not provider_id or not adapter or not base_url:
+            typer.echo("Provider 添加需要 --name、--adapter 和 --base-url", err=True)
+            raise typer.Exit(code=2)
+        try:
+            service.add_provider(
+                provider_id,
+                adapter_id=adapter,
+                base_url=base_url,
+                secret=_secret(provider_id),
+            )
+        except CredentialAccessError as exc:
+            _echo_credential_error(exc)
+            raise typer.Exit(code=2) from None
+        except ValueError as exc:
+            typer.echo(f"Provider 添加失败：{exc}", err=True)
+            raise typer.Exit(code=2) from None
+        typer.echo(f"已添加 Provider：{provider_id}")
+        return
     try:
         model = service.add(preset, _secret())
     except CredentialAccessError as exc:
@@ -328,6 +353,19 @@ def provider_add(
         typer.echo(f"当前模型：{current}")
     else:
         typer.echo(f"当前模型未切换：{current}")
+
+
+@provider_app.command("remove")
+def provider_remove(
+    provider_id: str,
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+) -> None:
+    try:
+        build_application(state_root=state_root).provider_service.remove_provider(provider_id)
+    except ValueError as exc:
+        typer.echo(f"Provider 移除失败：{exc}", err=True)
+        raise typer.Exit(code=2) from None
+    typer.echo(f"已移除 Provider：{provider_id}")
 
 
 @provider_app.command("test")
@@ -397,6 +435,115 @@ def model_list(
             continue
         for model_id in value.models:
             typer.echo(f"{provider_id}/{model_id}")
+
+
+def _split_model_target(target: str, model_id: str | None) -> tuple[str, str]:
+    if model_id is not None:
+        return target, model_id
+    provider_id, separator, parsed_model_id = target.partition("/")
+    if not separator or not provider_id or not parsed_model_id:
+        raise ValueError("模型目标必须是 provider_id/model_id")
+    return provider_id, parsed_model_id
+
+
+@model_app.command("show")
+def model_show(
+    model_target: str,
+    model_id: str | None = typer.Argument(None),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+) -> None:
+    try:
+        provider_id, model_id = _split_model_target(model_target, model_id)
+        service = build_application(state_root=state_root).provider_service
+        provider = service.provider(provider_id)
+        model = provider.models[model_id]
+    except (KeyError, ValueError):
+        typer.echo(f"未知模型: {provider_id}/{model_id}", err=True)
+        raise typer.Exit(code=2) from None
+    typer.echo(f"provider: {provider_id}")
+    typer.echo(f"model: {model_id}")
+    typer.echo(f"api_model_id: {model.api_model_id}")
+    if model.capabilities is not None:
+        typer.echo("capabilities: " + json.dumps(model.capabilities.model_dump(mode="json")))
+
+
+@model_app.command("add")
+def model_add(
+    provider_id: str | None = typer.Argument(None),
+    model_id: str | None = typer.Argument(None),
+    provider_option: str | None = typer.Option(None, "--provider"),
+    model_option: str | None = typer.Option(None, "--model-id", "--model"),
+    api_model_id: str | None = typer.Option(None, "--api-model-id"),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+) -> None:
+    provider_id = provider_option or provider_id
+    model_id = model_option or model_id
+    if not provider_id or not model_id:
+        typer.echo("模型添加需要 --provider 和 model_id", err=True)
+        raise typer.Exit(code=2)
+    try:
+        model = build_application(state_root=state_root).provider_service.add_model(
+            provider_id,
+            model_id,
+            api_model_id=api_model_id,
+        )
+    except ValueError as exc:
+        typer.echo(f"模型添加失败：{exc}", err=True)
+        raise typer.Exit(code=2) from None
+    typer.echo(f"已添加模型：{model}")
+
+
+@model_app.command("sync")
+def model_sync(
+    provider_id: str | None = typer.Argument(None),
+    provider_option: str | None = typer.Option(None, "--provider"),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+) -> None:
+    provider_id = provider_option or provider_id
+    if not provider_id:
+        typer.echo("模型同步需要 provider_id 或 --provider", err=True)
+        raise typer.Exit(code=2)
+    try:
+        models = build_application(state_root=state_root).provider_service.sync_models(provider_id)
+    except ValueError as exc:
+        typer.echo(f"模型同步失败：{exc}", err=True)
+        raise typer.Exit(code=2) from None
+    for model in models:
+        typer.echo(str(model))
+
+
+@model_app.command("use")
+def model_use(
+    model_target: str,
+    model_id: str | None = typer.Argument(None),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+) -> None:
+    try:
+        provider_id, model_id = _split_model_target(model_target, model_id)
+        model = build_application(state_root=state_root).provider_service.use_model(
+            provider_id, model_id
+        )
+    except ValueError as exc:
+        typer.echo(f"模型切换失败：{exc}", err=True)
+        raise typer.Exit(code=2) from None
+    typer.echo(f"当前模型：{model}")
+
+
+@model_app.command("remove")
+def model_remove(
+    model_target: str,
+    model_id: str | None = typer.Argument(None),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+) -> None:
+    try:
+        provider_id, model_id = _split_model_target(model_target, model_id)
+        build_application(state_root=state_root).provider_service.remove_model(
+            provider_id, model_id
+        )
+    except ValueError as exc:
+        typer.echo(f"模型移除失败：{exc}", err=True)
+        raise typer.Exit(code=2) from None
+    typer.echo(f"已移除模型：{provider_id}/{model_id}")
 
 
 @model_app.command("current")

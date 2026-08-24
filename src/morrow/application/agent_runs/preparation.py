@@ -148,7 +148,13 @@ class AgentRunPreparationService:
         if not credential:
             raise ValueError("Provider 凭据不可用")
         capabilities = self.registry.capabilities(provider_config.adapter)
-        exact = exact_model_capabilities(provider_config.adapter, capabilities, model)
+        model_config = provider_config.models[model.model_id]
+        exact = exact_model_capabilities(
+            provider_config.adapter,
+            capabilities,
+            model,
+            model_config.capabilities,
+        )
         run_policy = self.agent_policy.resolve(
             model,
             tool_protocol=exact.tool_protocol,

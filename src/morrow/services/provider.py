@@ -8,6 +8,7 @@ from dataclasses import dataclass
 
 from morrow.adapters.credentials.keyring import CredentialAccessError, environment_credential
 from morrow.adapters.registry import PRESETS, AdapterRegistry
+from morrow.application.providers.control import ProviderControlMixin
 from morrow.core.models import (
     CredentialRef,
     GlobalConfig,
@@ -21,6 +22,7 @@ from morrow.core.models import (
     UserMessage,
     provider_error_message,
 )
+from morrow.core.providers import validate_base_url
 
 
 @dataclass(frozen=True)
@@ -30,7 +32,7 @@ class CredentialInspection:
     message: str = ""
 
 
-class ProviderService:
+class ProviderService(ProviderControlMixin):
     def __init__(
         self, global_store, credentials, registry: AdapterRegistry, credential_resolver=None
     ) -> None:
@@ -143,7 +145,10 @@ class ProviderService:
         old = current.providers.get(provider_id)
         if not old:
             raise ValueError(f"未知 Provider: {provider_id}")
-        next_config = old.model_copy(update={"base_url": base_url or old.base_url})
+        next_base_url = old.base_url
+        if base_url is not None:
+            next_base_url = validate_base_url(base_url)
+        next_config = old.model_copy(update={"base_url": next_base_url})
         new_ref = None
         credential = None
         if replace_credential and environment_credential(provider_id):
@@ -209,6 +214,8 @@ class ProviderService:
         credential = self._read_credential(provider_id, config.credential_ref)
         if not credential:
             raise ValueError("Provider 凭据不可用")
+        if not config.models:
+            raise ValueError("Provider 尚未配置模型")
         model_id = next(iter(config.models))
         try:
             await self.registry.create(config, credential).complete(

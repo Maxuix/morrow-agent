@@ -12,7 +12,11 @@ from morrow.adapters.local.sandbox import (
     default_sandbox_backend,
 )
 from morrow.adapters.models.learning_reviewer import ModelLearningReviewer
-from morrow.adapters.models.openai_compatible import estimate_request_chars, make_openai_compatible
+from morrow.adapters.models.openai_compatible import (
+    discover_openai_compatible_models,
+    estimate_request_chars,
+    make_openai_compatible,
+)
 from morrow.adapters.models.preference_reviewer import ModelPreferenceReviewer
 from morrow.adapters.registry import AdapterRegistry
 from morrow.adapters.state.artifacts import FilesystemArtifactStore
@@ -341,6 +345,7 @@ def build_application(
         make_openai_compatible,
         tool_protocol="openai_function",
         multiple_tool_calls=True,
+        discovery=discover_openai_compatible_models,
     )
     credential_store = credentials or KeyringCredentialStore()
     application_id_source = id_source or RandomIdSource()

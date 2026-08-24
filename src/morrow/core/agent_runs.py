@@ -14,7 +14,10 @@ from typing import Literal
 from pydantic import Field, field_validator
 
 from morrow.core.models import (
+    CostMetadata,
     CredentialRef,
+    InputModality,
+    ModelCapabilityOverrides,
     ModelRef,
     ProtocolModel,
     ProviderToolSupport,
@@ -24,7 +27,6 @@ from morrow.core.models import (
 DIGEST_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 
 CapabilityToolProtocol = Literal["none", "openai_function"]
-InputModality = Literal["text", "image", "audio", "document"]
 
 
 class ProviderCapabilities(ProtocolModel):
@@ -39,10 +41,12 @@ class ProviderCapabilities(ProtocolModel):
     multiple_tool_calls: bool = False
     structured_output: bool = False
     safe_request_chars: int | None = Field(default=None, gt=0)
+    safe_context_chars: int | None = Field(default=None, gt=0)
     input_types: tuple[InputModality, ...] = ("text",)
+    cost_metadata: CostMetadata | None = None
 
 
-class ModelCapabilities(ProtocolModel):
+class ModelCapabilities(ModelCapabilityOverrides):
     """Optional per-Model overrides; None fields keep the Adapter default.
 
     Stage 6 captures these before any Provider/Model control-plane fields exist;
@@ -50,12 +54,7 @@ class ModelCapabilities(ProtocolModel):
     """
 
     model: ModelRef
-    streaming_text: bool | None = None
-    tool_protocol: CapabilityToolProtocol | None = None
-    multiple_tool_calls: bool | None = None
-    structured_output: bool | None = None
-    safe_request_chars: int | None = None
-    input_types: tuple[InputModality, ...] | None = None
+    pass
 
 
 class ExactModelCapabilities(ProtocolModel):
@@ -68,19 +67,24 @@ class ExactModelCapabilities(ProtocolModel):
     multiple_tool_calls: bool
     structured_output: bool
     safe_request_chars: int | None = None
+    safe_context_chars: int | None = None
     input_types: tuple[InputModality, ...] = ("text",)
+    cost_metadata: CostMetadata | None = None
 
 
 def exact_model_capabilities(
     adapter_id: str,
     adapter: ProviderCapabilities,
     model: ModelRef,
-    model_caps: ModelCapabilities | None = None,
+    model_caps: ModelCapabilityOverrides | ModelCapabilities | None = None,
 ) -> ExactModelCapabilities:
     """Merge Adapter defaults with a Model's narrower overrides.
 
     A Model override may only narrow; unknown fields keep the Adapter default.
     """
+
+    if model_caps is not None and hasattr(model_caps, "model") and model_caps.model != model:
+        raise ValueError("Model capability overrides refer to a different Model")
 
     def narrowed_bool(model_value: bool | None, default: bool) -> bool:
         return default if model_value is None else default and model_value
@@ -100,6 +104,9 @@ def exact_model_capabilities(
             return default
         allowed = set(model_value)
         return tuple(item for item in default if item in allowed)
+
+    def selected_metadata(model_value, default):
+        return default if model_value is None else model_value
 
     return ExactModelCapabilities(
         adapter_id=adapter_id,
@@ -121,9 +128,15 @@ def exact_model_capabilities(
         safe_request_chars=narrowed_limit(model_caps.safe_request_chars, adapter.safe_request_chars)
         if model_caps is not None
         else adapter.safe_request_chars,
+        safe_context_chars=narrowed_limit(model_caps.safe_context_chars, adapter.safe_context_chars)
+        if model_caps is not None
+        else adapter.safe_context_chars,
         input_types=narrowed_input_types(model_caps.input_types, adapter.input_types)
         if model_caps is not None
         else adapter.input_types,
+        cost_metadata=selected_metadata(model_caps.cost_metadata, adapter.cost_metadata)
+        if model_caps is not None
+        else adapter.cost_metadata,
     )
 
 

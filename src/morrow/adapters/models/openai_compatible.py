@@ -19,6 +19,7 @@ from morrow.core.models import (
     ToolMessage,
     provider_error_message,
 )
+from morrow.core.providers import DiscoveredModel
 
 
 def serialize_message(message: Message) -> dict:
@@ -240,6 +241,48 @@ async def _close_response(response) -> None:
         except Exception:
             return
         return
+
+
+async def _close_client(client) -> None:
+    if client is None:
+        return
+    closer = getattr(client, "close", None)
+    if closer is None:
+        return
+    try:
+        result = closer()
+        if hasattr(result, "__await__"):
+            await result
+    except Exception:
+        return
+
+
+async def discover_openai_compatible_models(config, credential: str) -> tuple[DiscoveredModel, ...]:
+    """Explicitly discover model IDs through the OpenAI-compatible models port."""
+
+    client = None
+    try:
+        from openai import AsyncOpenAI
+
+        client = AsyncOpenAI(api_key=credential, base_url=config.base_url, timeout=60.0)
+        response = await client.models.list()
+        result: list[DiscoveredModel] = []
+        for item in getattr(response, "data", ()) or ():
+            model_id = getattr(item, "id", None)
+            if not isinstance(model_id, str) or not model_id.strip():
+                continue
+            try:
+                result.append(DiscoveredModel(model_id=model_id, api_model_id=model_id))
+            except ValueError:
+                continue
+        return tuple(result)
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        code = classify_error(exc)
+        raise ModelProviderError(code, provider_error_message(code)) from None
+    finally:
+        await _close_client(client)
 
 
 class OpenAICompatibleProvider:
