@@ -2,26 +2,26 @@
 
 ## Current stage
 
-Stage 6 planned; implementation not started.
+Stage 6 implementation in progress.
 
 ## Active subplan
 
-Subplan 63 — Dependency and Contract Spike (`ready`, not yet in progress).
+Subplan 63 — Dependency and Contract Spike (completed on `codex/feat/stage6-contract-spike`).
 
 ## Tasks
 
-- `[ ]` Create `codex/feat/stage6-contract-spike` from the latest verified `main` when implementation
+- `[x]` Create `codex/feat/stage6-contract-spike` from the latest verified `main` when implementation
   is authorized to begin.
-- `[ ]` Reconfirm current runtime, permission, process, migration and backup seams with source refs.
-- `[ ]` Evaluate the official MCP Python SDK in a temporary environment without changing dependency
+- `[x]` Reconfirm current runtime, permission, process, migration and backup seams with source refs.
+- `[x]` Evaluate the official MCP Python SDK in a temporary environment without changing dependency
   files.
-- `[ ]` Select JSON Schema dialect/validator behavior and record unsupported-feature handling.
-- `[ ]` Exercise the narrow local Fake stdio connect/list/call/close prototype.
-- `[ ]` Measure AgentRun reference, Skill context and MCP catalog/result budgets.
-- `[ ]` Lock Skill package canonicalization, safe version paths and TOCTOU rules.
-- `[ ]` Publish the Stage 6 dependency/contract ADR with exact recommendation and alternatives.
-- `[ ]` Verify `pyproject.toml` and `uv.lock` are unchanged; run the Subplan 63 gates.
-- `[ ]` Commit, merge and retire Subplan 63 before activating Subplan 64.
+- `[x]` Select JSON Schema dialect/validator behavior and record unsupported-feature handling.
+- `[x]` Exercise the narrow local Fake stdio connect/list/call/close prototype.
+- `[x]` Measure AgentRun reference, Skill context and MCP catalog/result budgets.
+- `[x]` Lock Skill package canonicalization, safe version paths and TOCTOU rules.
+- `[x]` Publish the Stage 6 dependency/contract ADR with exact recommendation and alternatives.
+- `[x]` Verify `pyproject.toml` and `uv.lock` are unchanged; run the Subplan 63 gates.
+- `[x]` Commit, merge and retire Subplan 63 before activating Subplan 64.
 
 ## Boundaries
 

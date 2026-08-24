@@ -2356,3 +2356,40 @@
   progress. It may evaluate dependencies without modifying the lock; any exact dependency addition
   still requires explicit user approval before Subplan 72.
 - No production code, dependency, branch, Provider, MCP, credential, network or user state changed.
+
+## 2026-08-24 — Subplan 63 dependency and contract spike completed
+
+- Reconfirmed all Stage 6 seams with exact source refs and recorded them in the ADR:
+  AgentRun assembly/replay (`turn_lifecycle.py:240-349`, `memory_run_projection.py`), ToolExecutor/
+  `TOOL_NAME_PATTERN` (`models.py:26`), PermissionSnapshot/CapabilityPolicy verdict order,
+  ProcessExecutionService minimal env, AdapterRegistry/ModelProvider protocol, v13 migration
+  registry, backup v1 manifest and doctor pattern.
+- Evaluated official MCP Python SDK `mcp 2.0.0` in `/tmp/mcp-eval-venv` (Python 3.13, matching the
+  project interpreter): MIT, requires-python >=3.10, wheel 342 016 B, direct deps include
+  `jsonschema>=4.20` and `mcp-types==2.0.0`; per-call `read_timeout_seconds` raises
+  `MCPError("Request 'tools/call' timed out")`; no public per-request cancel API; OTel dependency
+  is default-inert; no auto-retry.
+- Selected `jsonschema` with one controlled dialect (draft 2020-12; absent `$schema` defaults to
+  2020-12; all others fail-closed) after measuring that `validator_for` silently falls back to the
+  latest draft on unknown `$schema` — that fallback is rejected for Morrow.
+- Prototyped the narrow stdio connect/list/call/close path against a pure-stdlib Fake server in
+  `tests/spikes/` (offline, ~3.4 s): handshake, typed results, is_error results, timeout evidence,
+  session-usable-after-timeout, and a call log proving exactly one handler entry for the timed-out
+  call. Runs under `uv run --with mcp`; skips cleanly in the default dev env.
+- Measured locked budgets: AgentRunSnapshot 3 192 B base → 4 822 B with 8 Skill refs + 1 MCP ref
+  (64 KiB cap); Skill context entry 250 B (<= 2 KiB each, <= 16 KiB per run); MCP tool snapshot
+  1/16/64 tools = 196/3 786/21 474 B (<= 4 KiB per tool, <= 64 KiB per server); result chunk
+  <= 128 KiB.
+- Locked Skill package canonicalization (skv_ envelope, canonical tree digest over sorted
+  regular-file entries, reject symlink/hardlink/device/socket/FIFO and escapes, Unicode/case
+  collision rejection, TOCTOU-safe reads) and confirmed v14/v15/v16 migration ownership plus
+  backup bundle v2 manifest-versioning seams.
+- Published `docs/research/stage6-mcp-dependency-spike.md`: recommendation `mcp >=2.0.0,<3` and
+  `jsonschema >=4.20,<5`, rejected alternatives (hand-rolled client, HTTP transport, internal JSON
+  Schema validator, pydantic interpretation), risks, and the explicit user-approval gate before
+  Subplan 72.
+- Validation: `ruff format --check .`, `ruff check .`, `compileall`, `git diff --check` passed;
+  full offline suite `947 passed, 1 skipped (mcp spike), 2 deselected in 22.94s`;
+  `pyproject.toml`/`uv.lock` byte-identical. Committed, fast-forwarded Subplan 63 into local `main`,
+  deleted the clean branch; no push (remote publication not in scope; `main` is one commit ahead of
+  origin). Subplan 64 is ready to activate.
