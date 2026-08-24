@@ -2597,3 +2597,18 @@
   `1036 passed, 3 skipped, 2 deselected`. Ruff format/check, compileall and `git diff --check`
   passed. No dependency files changed; exact MCP/JSON Schema dependency approval remains gated
   before Subplan 72.
+
+## 2026-08-24 — Subplan 72 activated
+
+- The user explicitly approved the exact dependency change `mcp >= 2.0.0, < 3` and
+  `jsonschema >= 4.20, < 5`, with the Subplan 63 ADR as rationale and compatibility evidence.
+- Created `feat/stage6-mcp-catalog` from verified `main@11f7f6d`. Scope is limited to MCP stdio
+  Server definitions, Extension YAML control, catalog normalization/namespacing and v16 evidence;
+  MCP tools remain unavailable to AgentRun execution until Subplan 73.
+
+## 2026-08-24 — Subplan 72 dependencies locked
+
+- Added the approved direct ranges `mcp>=2.0.0,<3` and `jsonschema>=4.20,<5`; `uv lock` resolved
+  the official SDK at `mcp==2.0.0` and `jsonschema==4.26.0` plus its recorded transitive packages.
+- `uv sync` completed successfully. The offline Fake stdio Spike passed `4 tests`; no networked or
+  credentialed MCP path was run.

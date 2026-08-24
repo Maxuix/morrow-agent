@@ -46,6 +46,15 @@ remote publication is not in scope.
   `git diff --check` green; `pyproject.toml`/`uv.lock` unchanged; pre-existing migration tests'
   hardcoded version expectations bumped to 14.
 
+## Active task
+
+Subplan 72 — MCP Control Plane and Catalog.
+
+## Next action
+
+Dependencies are locked and the Fake stdio Spike passes; next define the strict stdio Server
+contract and YAML control-plane seam. Keep MCP unavailable to AgentRun execution until Subplan 73.
+
 ## Last completed work (Subplan 71)
 
 - Added one bounded `ToolArgumentsValidator` seam, a Pydantic compatibility adapter and a
@@ -62,19 +71,15 @@ remote publication is not in scope.
 
 ## Next action
 
-Ask the user to approve the exact Subplan 72 dependency change (`mcp >= 2.0.0, < 3` and
-`jsonschema >= 4.20, < 5`) before activating MCP control-plane work.
-
 ## Dependency gate
 
-No dependency added through Subplans 63–65. Before Subplan 72, ask the user to approve the exact
-change: `mcp >= 2.0.0, < 3` and `jsonschema >= 4.20, < 5` (rationale and versions in the ADR). If
-denied, complete Subplans 66–71 normally and mark 72–73 blocked.
+User approved the exact change on 2026-08-24: `mcp >= 2.0.0, < 3` and `jsonschema >= 4.20, < 5`,
+with the rationale and measured impact recorded in the Subplan 63 ADR. No live MCP/Provider test
+is authorized by this approval.
 
 ## Blockers
 
-None for Subplans 66–71. MCP implementation Subplans 72–73 are conditional on the recorded
-dependency decision and explicit approval if new packages are recommended.
+None. Subplan 73 remains a later child and is not active.
 
 ## Notes
 

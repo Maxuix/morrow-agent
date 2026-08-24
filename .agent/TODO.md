@@ -6,21 +6,22 @@ Stage 6 implementation in progress.
 
 ## Active subplan
 
-None. Subplan 71 is complete locally; Subplan 72 awaits exact dependency approval.
+Subplan 72 — MCP Control Plane and Catalog.
 
-## Tasks (Subplan 71)
+## Tasks (Subplan 72)
 
-- `[x]` Define the bounded validator interface and Pydantic compatibility path.
-- `[x]` Implement bounded JSON Schema dialect validation without remote references.
-- `[x]` Attach frozen recovery declarations to every RegisteredTool and durable execution.
-- `[x]` Migrate local tools without changing ordinary outcomes or policy behavior.
-- `[x]` Prove unknown dynamic tool validation, approval, execution and recovery stability.
-- `[x]` Run focused dynamic-tool tests and the standard quality gates.
+- `[x]` Add the approved MCP and JSON Schema dependencies and lock impact.
+- `[ ]` Define strict stdio server configuration and YAML control operations.
+- `[ ]` Implement the narrow cancellable stdio handshake/list/close adapter seam.
+- `[ ]` Normalize schemas, annotations and deterministic provider-safe local names.
+- `[ ]` Add v16 catalog/server/run snapshot persistence and query projections.
+- `[ ]` Add Fake Server, migration, YAML/OCC, namespace and catalog integrity tests.
+- `[ ]` Run focused MCP control/migration/CLI tests and the standard quality gates.
 
 ## Boundaries
 
 - Do not implement MCP, learned routing or unrestricted Skill injection.
 - Do not use real credentials, networked MCP Servers, live Providers or user state.
-- Work is on `feat/stage6-dynamic-tools`; preserve the verified Subplan70 commits and do not
+- Work is on `feat/stage6-mcp-catalog`; preserve the verified Subplan71 commits and do not
   introduce MCP-specific branches into ToolExecutor or recovery.
 - Preserve AgentLoop/ConversationLog, permission policy defaults, public events and Stage 4/5 behavior.

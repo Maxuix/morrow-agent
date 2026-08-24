@@ -1,7 +1,7 @@
 # Subplan 72 — MCP Control Plane and Catalog
 
-> Status: pending; dependency approval gate at start
-> Branch: `codex/feat/stage6-mcp-catalog`
+> Status: in progress
+> Branch: `feat/stage6-mcp-catalog`
 > Prerequisite: Subplans 63 and 71 complete; user approves any exact dependency change
 
 ## Objective
