@@ -2732,3 +2732,28 @@
   passed; full non-live suite `1065 passed, 2 skipped, 2 deselected`; Ruff format/check, compileall,
   five CLI help commands and `git diff --check` passed. No live/network/credential path or remote
   push was run.
+
+## 2026-08-25 — Subplan 76 Runtime Policy Configuration activated
+
+- Isolated live acceptance proved Keychain/Provider connectivity but all three Learning Reviewer
+  models hit the same constructor-owned 15-second deadline. The user requested a packaged
+  `runtime-policy.toml` plus optional user `config.yaml` overrides and explicitly required fixed
+  safety invariants to remain untouched.
+- Created `fix/stage6-runtime-policy` from local `main@24f8ae8`. Scope is limited to process-wide
+  AgentRun/Review tuning defaults, strict bounded overlays, composition wiring, tests and docs.
+  Permission defaults, secret/path/schema/payload limits, storage invariants and per-entity request
+  timeouts remain code-owned or entity-owned. No live/network/credential path is in scope.
+
+## 2026-08-25 — Subplan 76 completed locally
+
+- Replaced the superseded Agent-only resource with versioned `runtime-policy.toml`, adding one
+  packaged default authority for AgentRun, Learning Review and Preference Review runtime tuning.
+- Added strict optional `config.yaml.runtime_policy` overlays, code-owned safety ceilings,
+  cross-field revalidation and lossless preservation by unrelated Provider/Preference writes.
+  Safety-owned loop/model tables and permission/secret/path/schema/payload/storage/recovery
+  invariants are not user-overridable.
+- Production bootstrap now injects the effective immutable policy into AgentRun and both Review
+  paths. Focused matrix: `135 passed in 5.64s`; full non-live suite:
+  `1074 passed, 2 skipped, 2 deselected in 42.11s`; Ruff format/check, compileall, five CLI help
+  commands and `git diff --check` passed. No live/network/credential/user-state path or remote push
+  was run.

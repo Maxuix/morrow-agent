@@ -407,7 +407,7 @@ ToolCycle 完成后取消
 
 ### 9.4 预算
 
-Stage 2 不使用一个含糊的 `max_steps`。所有数值来自随包 `resources/agent-policy.toml`，由标准库 `tomllib` 和现有 Pydantic 解析为严格、冻结的 `AgentPolicy` / `RunPolicy`。测试可以注入更小策略；这些字段不进入任何用户设置面。
+Stage 2 不使用一个含糊的 `max_steps`。原始实现的数值来自随包 `resources/agent-policy.toml`，由标准库 `tomllib` 和现有 Pydantic 解析为严格、冻结的 `AgentPolicy` / `RunPolicy`。Stage 6 Subplan 76 已将该资源升级为聚合 `runtime-policy.toml`，并在不允许放宽代码安全不变量的前提下增加可选用户覆盖；Stage 2 的 RunPolicy 冻结语义保持不变。
 
 ```text
 AgentPolicy

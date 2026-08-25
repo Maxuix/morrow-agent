@@ -1,6 +1,6 @@
 # Stage 6 离线综合验收
 
-本记录对应 Subplans 63–75 的本地验收。所有场景使用 pytest `tmp_path` 隔离数据根、内存凭据存储、固定时钟/ID 和脚本化 Provider；
+本记录对应 Subplans 63–76 的本地验收。所有场景使用 pytest `tmp_path` 隔离数据根、内存凭据存储、固定时钟/ID 和脚本化 Provider；
 不会读取或修改用户的 `~/.morrow`、真实 CredentialStore、项目 Skill 或外部 MCP 配置。MCP 场景使用仓库内的
 `tests/spikes/fake_mcp_stdio_server.py`，Provider 场景使用 `tests/fixtures/stage6/fake-provider.py` 的无 IO 形状。
 
@@ -52,3 +52,26 @@ CLI help 也已通过：`morrow --help`、`morrow skill --help`、`morrow mcp --
 
 2026-08-25 已按请求重新执行一次覆盖 Stage6 全部代码的 Grok review。报告未发现 P0；确认的 P1/P2 包括 MCP desired-state 权威、Skill 选择证据、Generated 审批、安装竞态、工作区可见性、Schema/备份/恢复完整性、冻结 Credential、可执行文件漂移和敏感数据边界。上述问题均已按现有架构修复，并补充了握手校验、MCP 二进制 Artifact 的 ToolExecution/v16 关联及跨 workspace 校验。
 修复后重新通过聚焦测试、全量离线测试和质量/CLI 门禁；未运行 live Provider、网络 MCP 或真实凭据路径，也未执行 remote push。
+
+## Subplan 76：运行策略配置修复
+
+2026-08-25 完成硬编码复核，并将生产 composition 的进程级 AgentRun、Learning Review 与
+Preference Review 调优默认值统一到随包 `runtime-policy.toml`。可选的
+`config.yaml.runtime_policy` 只接受声明字段，并在代码级上限内完成严格类型、有限数和跨字段组合
+校验；权限/隔离、密钥/路径、schema/payload/storage、协议兼容和恢复语义等固定安全不变量未迁移。
+逐 MCP、逐 Skill 脚本和逐命令的超时仍由对应实体或请求持有，避免出现第二配置权威。
+
+本次补充证据：
+
+| 命令 | 结果 |
+|---|---|
+| `UV_CACHE_DIR=/private/tmp/morrow-stage6-uv-cache uv run --offline pytest -q tests/test_policy.py tests/test_preference_reviewer.py tests/test_review_worker.py tests/test_stage5_review_pipeline.py tests/test_preference_yaml.py tests/test_state_and_workspace.py tests/test_provider_control.py tests/test_agent_run_preparation.py` | `135 passed in 5.64s` |
+| `UV_CACHE_DIR=/private/tmp/morrow-stage6-uv-cache uv run --offline pytest -m 'not live'` | `1074 passed, 2 skipped, 2 deselected in 42.11s` |
+| `UV_CACHE_DIR=/private/tmp/morrow-stage6-uv-cache uv run --offline ruff format --check .` | `433 files already formatted` |
+| `UV_CACHE_DIR=/private/tmp/morrow-stage6-uv-cache uv run --offline ruff check .` | `All checks passed!` |
+| `UV_CACHE_DIR=/private/tmp/morrow-stage6-uv-cache uv run --offline python -m compileall -q src tests` | 通过 |
+| `git diff --check` | 通过 |
+
+`morrow --help`、`morrow skill --help`、`morrow mcp --help`、`morrow provider --help` 和
+`morrow model --help` 同步通过。两个 skip 仍为嵌套 Codex sandbox 中不可执行的真实 macOS
+Seatbelt 测试；两个 deselect 为 live 测试。本轮未访问网络、真实 Provider、CredentialStore 或用户状态。

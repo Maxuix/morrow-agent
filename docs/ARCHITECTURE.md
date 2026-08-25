@@ -77,7 +77,7 @@ Snapshot 生成 Chat 或 Structured 投影，按完整 Cycle/turn 控制预算�
 并对调用路径及工作区内解析后的文件符号链接目标应用同一受保护策略；变更工具通过
 `WorkspaceMutationService`、`FileSystemAdapter` 与进程内 `ChangeSetService` 执行 SHA-256 冲突检查、
 原子发布和实际 Diff。`update_configuration` 只管理 Workspace Profile；`manage_preferences` 是原子 Preference Writer 的受审批薄适配器。所有工具遵循同一标准 ToolCycle。随包
-`agent-policy.toml` 解析为任务固定的 RunPolicy。模型请求白名单、流片段组装与 reasoning/SDK 元数据
+`runtime-policy.toml` 与可选 `config.yaml.runtime_policy` 安全覆盖在 composition root 合并，并解析为任务固定的 RunPolicy 及 Review policy。模型请求白名单、流片段组装与 reasoning/SDK 元数据
 隔离归 Provider Adapter。
 
 Runtime 已提供与具体领域无关的 `PermissionProfile`、`WorkspaceCapability`、`CapabilityPolicy`、
@@ -222,7 +222,8 @@ Service 或 Port：
 | 工作空间路径索引 | `workspace-index.yaml` | Workspace 服务 | 独立于项目状态 |
 | 工作空间 Profile | `profile.yaml` | Workspace/配置服务 | 按 workspace_id 隔离 |
 | 当前会话消息 | 进程内 ConversationLog 投影；权威在 Operational Store v13 | AgentLoop 经 ConversationLog 提交 | 未闭合工具在重启后进入 needs_recovery，不自动重放；Checkpoint 不是第二历史权威 |
-| Agent 运行策略 | 随包策略 → RunPolicy | composition root | 不属于用户配置 |
+| 运行策略默认值 | 随包 `runtime-policy.toml` | 发行包；composition root 只读 | AgentRun/Review 的唯一默认值来源 |
+| 运行策略覆盖 | 全局 `config.yaml.runtime_policy` | 用户手工配置；YAML Store 保留 | 可省略；只覆盖声明字段且不能突破代码安全上限；Agent 工具不可写 |
 | 运行记录 / Artifact 元数据 | 数据根 `store/operational.sqlite`；Artifact 字节在 `artifacts/` | v11 Session/Task/对话/工具执行/审批/恢复报告/Outcome/Artifact/Checkpoint/PermissionSnapshot/Grant，以及 LearningPolicy/Review/Evidence/Candidate/Suppression/Decision/PromotionOperation/ConfigurationActivation 与应用 receipt/event 服务 | 字节只经有界脱敏、hash/size 校验、fsync 和原子发布；YAML 与凭据权威不变 |
 | Learning 与 Preference v2 审计 | Operational Store v13；Profile/Preferences Active 仍由 YAML 持有 | no-tool Reviewers、`ReviewWorker`、Inbox/Writer、Knowledge/Promotion、doctor/backup verifiers | 普通终态 Turn 同事务 enqueue；进程内 Worker lease/retry；推断只进 Inbox，无 daemon、无自动晋升 |
 
@@ -233,7 +234,7 @@ Profile 损坏或未来版本使工作空间持久状态只读，并阻止 Profi
 workspace Preferences 损坏只隔离该层。旧 `handoff.yaml(.bak)` 不属于当前状态 API：生产代码不读取、
 校验、迁移、覆盖或删除它，因此它也不能触发只读降级。
 
-`config.yaml` 是聚合文档，Provider 与全局 Preferences 的写入必须在同一事务锁内保留对方字段。
+`config.yaml` 是聚合文档，Provider、全局 Preferences 与可选 runtime-policy 覆盖的写入必须在同一事务锁内保留对方字段。
 `workspace-index.yaml` 由独立 WorkspaceIndexStore 管理。
 
 ### Operational Store 与 Artifact 布局（v16）

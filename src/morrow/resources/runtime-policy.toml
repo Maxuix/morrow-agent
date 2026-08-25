@@ -1,3 +1,6 @@
+schema_version = 1
+
+[agent_run]
 max_tool_rounds = 30
 max_model_attempts = 40
 max_tool_calls = 128
@@ -16,6 +19,12 @@ loop_detection_enabled = true
 loop_repeat_limit = 3
 loop_max_pattern_cycles = 4
 
-# Exact provider_id/model_id entries require verified Live evidence.
-# The initial production table is intentionally empty.
-[model_safe_request_chars]
+# Exact provider_id/model_id entries require verified Live evidence and cannot be user-overridden.
+[agent_run.model_safe_request_chars]
+
+[reviews]
+learning_timeout_seconds = 60
+learning_lease_seconds = 120
+preference_timeout_seconds = 60
+preference_lease_seconds = 120
+preference_retry_backoff_seconds = [5, 15]

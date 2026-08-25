@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import math
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
@@ -14,7 +15,6 @@ from morrow.application.learning.events import LearningEventWriter
 from morrow.application.learning.requests import policy_from_review
 from morrow.core.application import ApplicationError, ApplicationErrorCode
 from morrow.core.learning import (
-    LEARNING_REVIEW_LEASE_SECONDS,
     CandidateDraftBatch,
     LearningReview,
     LearningReviewFailureCode,
@@ -23,6 +23,7 @@ from morrow.core.learning import (
 from morrow.core.learning_ports import LearningReviewerError, LearningReviewerPort
 from morrow.core.models import ModelRef, ProtocolModel
 from morrow.core.ports import IdSource
+from morrow.core.runtime_policy import REVIEW_MAX_LEASE_SECONDS, REVIEW_MAX_TIMEOUT_SECONDS
 from morrow.core.store import StorageError
 
 
@@ -57,13 +58,27 @@ class LearningReviewRunner:
         workspace_id: str,
         id_source: IdSource,
         clock: Callable[[], datetime],
+        timeout_seconds: float,
+        lease_seconds: int,
         reviewer: LearningReviewerPort | None = None,
         model: ModelRef | None = None,
-        timeout_seconds: float = 15.0,
         preference_v2_enabled: bool = False,
     ) -> None:
-        if timeout_seconds <= 0 or timeout_seconds > 120:
+        if (
+            isinstance(timeout_seconds, bool)
+            or not isinstance(timeout_seconds, (int, float))
+            or not math.isfinite(timeout_seconds)
+            or timeout_seconds <= 0
+            or timeout_seconds > REVIEW_MAX_TIMEOUT_SECONDS
+        ):
             raise ValueError("learning Reviewer timeout is outside the supported range")
+        if (
+            isinstance(lease_seconds, bool)
+            or not isinstance(lease_seconds, int)
+            or lease_seconds <= timeout_seconds
+            or lease_seconds > REVIEW_MAX_LEASE_SECONDS
+        ):
+            raise ValueError("learning Reviewer lease is outside the supported range")
         self.journal = journal
         self.workspace_id = workspace_id
         self.id_source = id_source
@@ -71,6 +86,7 @@ class LearningReviewRunner:
         self.reviewer = reviewer or DeterministicLearningReviewer()
         self.model = model or ModelRef(provider_id="deterministic", model_id="stage5-v1")
         self.timeout_seconds = timeout_seconds
+        self.lease_seconds = lease_seconds
         self.events = LearningEventWriter(
             workspace_id=workspace_id,
             id_source=id_source,
@@ -172,7 +188,7 @@ class LearningReviewRunner:
                 review_id,
                 expected_row_version=current.row_version,
                 lease_id=self.id_source.new_id("lease"),
-                lease_expires_at=now + timedelta(seconds=LEARNING_REVIEW_LEASE_SECONDS),
+                lease_expires_at=now + timedelta(seconds=self.lease_seconds),
                 started_at=now,
             )
             self.events.put(

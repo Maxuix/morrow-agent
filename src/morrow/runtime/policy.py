@@ -1,4 +1,4 @@
-"""Validated developer policy and exact-model effective run limits."""
+"""Packaged runtime defaults, safe user overlays, and exact-model run limits."""
 
 from __future__ import annotations
 
@@ -7,24 +7,51 @@ from enum import StrEnum
 from importlib import resources
 from typing import Literal
 
-from pydantic import ConfigDict, Field, model_validator
+from pydantic import ConfigDict, Field, field_validator, model_validator
 
 from morrow.core.models import ModelRef, ProtocolModel, ProviderToolSupport, RunPolicy, ToolEffect
+from morrow.core.runtime_policy import (
+    AGENT_MAX_LOOP_PATTERN_CYCLES,
+    AGENT_MAX_LOOP_REPEAT,
+    AGENT_MAX_MODEL_ATTEMPTS,
+    AGENT_MAX_MODEL_RETRIES,
+    AGENT_MAX_REQUEST_CHARS,
+    AGENT_MAX_RUN_SECONDS,
+    AGENT_MAX_TOOL_CALLS,
+    AGENT_MAX_TOOL_CALLS_PER_CYCLE,
+    AGENT_MAX_TOOL_CYCLE_CHARS,
+    AGENT_MAX_TOOL_RESULT_CHARS,
+    AGENT_MAX_TOOL_ROUNDS,
+    AGENT_MAX_TOOL_TIMEOUT_SECONDS,
+    AGENT_MAX_VALIDATION_ERRORS,
+    REVIEW_MAX_LEASE_SECONDS,
+    REVIEW_MAX_RETRY_BACKOFF_SECONDS,
+    REVIEW_MAX_TIMEOUT_SECONDS,
+    REVIEW_RETRY_BACKOFF_COUNT,
+    RUNTIME_POLICY_SCHEMA_VERSION,
+    RuntimePolicyOverrides,
+    finite_number,
+)
 
 __all__ = [
     "AgentPolicy",
     "PolicyLoadError",
     "ProviderToolSupport",
+    "ReviewPolicy",
     "RunPolicy",
+    "RuntimePolicy",
     "ToolApproval",
     "ToolExecutionPolicy",
     "load_agent_policy",
+    "load_runtime_policy",
     "parse_agent_policy",
+    "parse_runtime_policy",
+    "resolve_runtime_policy",
 ]
 
 
 class PolicyLoadError(RuntimeError):
-    """The packaged developer policy is missing or invalid."""
+    """The packaged runtime policy is missing or invalid."""
 
 
 class ToolApproval(StrEnum):
@@ -46,23 +73,23 @@ class ToolExecutionPolicy(ProtocolModel):
 class AgentPolicy(ProtocolModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    max_tool_rounds: int = Field(gt=0)
-    max_model_attempts: int = Field(gt=0)
-    max_tool_calls: int = Field(gt=0)
-    max_tool_calls_per_cycle: int = Field(gt=0)
-    max_run_seconds: float = Field(gt=0)
-    tool_timeout_seconds: float = Field(gt=0)
-    model_retry_limit: int = Field(ge=0)
-    requested_context_chars: int = Field(gt=0)
-    unknown_model_fallback_chars: int = Field(gt=0)
-    max_tool_result_chars: int = Field(gt=0)
+    max_tool_rounds: int = Field(gt=0, le=AGENT_MAX_TOOL_ROUNDS)
+    max_model_attempts: int = Field(gt=0, le=AGENT_MAX_MODEL_ATTEMPTS)
+    max_tool_calls: int = Field(gt=0, le=AGENT_MAX_TOOL_CALLS)
+    max_tool_calls_per_cycle: int = Field(gt=0, le=AGENT_MAX_TOOL_CALLS_PER_CYCLE)
+    max_run_seconds: float = Field(gt=0, le=AGENT_MAX_RUN_SECONDS)
+    tool_timeout_seconds: float = Field(gt=0, le=AGENT_MAX_TOOL_TIMEOUT_SECONDS)
+    model_retry_limit: int = Field(ge=0, le=AGENT_MAX_MODEL_RETRIES)
+    requested_context_chars: int = Field(gt=0, le=AGENT_MAX_REQUEST_CHARS)
+    unknown_model_fallback_chars: int = Field(gt=0, le=AGENT_MAX_REQUEST_CHARS)
+    max_tool_result_chars: int = Field(gt=0, le=AGENT_MAX_TOOL_RESULT_CHARS)
     max_tool_result_request_ratio: float = Field(gt=0, le=1)
-    max_tool_cycle_chars: int = Field(gt=0)
+    max_tool_cycle_chars: int = Field(gt=0, le=AGENT_MAX_TOOL_CYCLE_CHARS)
     max_tool_cycle_request_ratio: float = Field(gt=0, le=1)
-    max_validation_errors: int = Field(gt=0)
+    max_validation_errors: int = Field(gt=0, le=AGENT_MAX_VALIDATION_ERRORS)
     loop_detection_enabled: bool
-    loop_repeat_limit: int = Field(ge=2)
-    loop_max_pattern_cycles: int = Field(gt=0)
+    loop_repeat_limit: int = Field(ge=2, le=AGENT_MAX_LOOP_REPEAT)
+    loop_max_pattern_cycles: int = Field(gt=0, le=AGENT_MAX_LOOP_PATTERN_CYCLES)
     model_safe_request_chars: dict[str, int] = Field(default_factory=dict)
 
     @model_validator(mode="after")
@@ -78,10 +105,13 @@ class AgentPolicy(ProtocolModel):
         if any(not key.strip() or "/" not in key for key in self.model_safe_request_chars):
             raise ValueError("model safe-size keys must be exact provider_id/model_id values")
         if any(
-            not isinstance(value, int) or isinstance(value, bool) or value <= 0
+            not isinstance(value, int)
+            or isinstance(value, bool)
+            or value <= 0
+            or value > AGENT_MAX_REQUEST_CHARS
             for value in self.model_safe_request_chars.values()
         ):
-            raise ValueError("model safe sizes must be positive integers")
+            raise ValueError("model safe sizes are outside the safety boundary")
         return self
 
     def resolve(
@@ -128,19 +158,109 @@ class AgentPolicy(ProtocolModel):
         )
 
 
-def parse_agent_policy(data: bytes) -> AgentPolicy:
+class ReviewPolicy(ProtocolModel):
+    """Process-wide Review tuning below fixed retry and payload invariants."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    learning_timeout_seconds: float = Field(gt=0, le=REVIEW_MAX_TIMEOUT_SECONDS)
+    learning_lease_seconds: int = Field(gt=0, le=REVIEW_MAX_LEASE_SECONDS)
+    preference_timeout_seconds: float = Field(gt=0, le=REVIEW_MAX_TIMEOUT_SECONDS)
+    preference_lease_seconds: int = Field(gt=0, le=REVIEW_MAX_LEASE_SECONDS)
+    preference_retry_backoff_seconds: tuple[int, ...]
+
+    @field_validator("learning_timeout_seconds", "preference_timeout_seconds")
+    @classmethod
+    def finite_timeouts(cls, value: float) -> float:
+        return finite_number(value, label="Review timeout")
+
+    @field_validator("preference_retry_backoff_seconds", mode="before")
+    @classmethod
+    def tuple_retry_backoff(cls, value):
+        return tuple(value) if isinstance(value, list) else value
+
+    @field_validator("preference_retry_backoff_seconds")
+    @classmethod
+    def valid_retry_backoff(cls, value: tuple[int, ...]) -> tuple[int, ...]:
+        if (
+            len(value) != REVIEW_RETRY_BACKOFF_COUNT
+            or any(isinstance(item, bool) or item <= 0 for item in value)
+            or any(item > REVIEW_MAX_RETRY_BACKOFF_SECONDS for item in value)
+            or tuple(sorted(value)) != value
+        ):
+            raise ValueError("Preference Review retry backoff is outside the safety boundary")
+        return value
+
+    @model_validator(mode="after")
+    def leases_outlive_attempts(self) -> ReviewPolicy:
+        if self.learning_lease_seconds <= self.learning_timeout_seconds:
+            raise ValueError("Learning Review lease must outlive its timeout")
+        if self.preference_lease_seconds <= self.preference_timeout_seconds:
+            raise ValueError("Preference Review lease must outlive its timeout")
+        return self
+
+
+class RuntimePolicy(ProtocolModel):
+    """Versioned packaged defaults after any validated user overlay is applied."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    schema_version: Literal[RUNTIME_POLICY_SCHEMA_VERSION] = RUNTIME_POLICY_SCHEMA_VERSION
+    agent_run: AgentPolicy
+    reviews: ReviewPolicy
+
+
+def resolve_runtime_policy(
+    defaults: RuntimePolicy, overrides: RuntimePolicyOverrides | None
+) -> RuntimePolicy:
+    if overrides is None:
+        return defaults
+    payload = defaults.model_dump(mode="python")
+    if overrides.agent_run is not None:
+        payload["agent_run"].update(
+            overrides.agent_run.model_dump(mode="python", exclude_none=True)
+        )
+    if overrides.reviews is not None:
+        payload["reviews"].update(overrides.reviews.model_dump(mode="python", exclude_none=True))
+    try:
+        return RuntimePolicy.model_validate(payload, strict=True)
+    except Exception as exc:
+        raise PolicyLoadError("user runtime policy override is invalid") from exc
+
+
+def parse_runtime_policy(
+    data: bytes, *, overrides: RuntimePolicyOverrides | None = None
+) -> RuntimePolicy:
     try:
         payload = tomllib.loads(data.decode("utf-8"))
-        return AgentPolicy.model_validate(payload, strict=True)
+        defaults = RuntimePolicy.model_validate(payload, strict=True)
     except Exception as exc:
-        raise PolicyLoadError("developer agent policy is invalid") from exc
+        raise PolicyLoadError("packaged runtime policy is invalid") from exc
+    return resolve_runtime_policy(defaults, overrides)
 
 
-def load_agent_policy(
-    *, package: str = "morrow.resources", resource_name: str = "agent-policy.toml"
-) -> AgentPolicy:
+def parse_agent_policy(data: bytes) -> AgentPolicy:
+    """Compatibility entrypoint returning the AgentRun section of runtime policy."""
+
+    return parse_runtime_policy(data).agent_run
+
+
+def load_runtime_policy(
+    *,
+    overrides: RuntimePolicyOverrides | None = None,
+    package: str = "morrow.resources",
+    resource_name: str = "runtime-policy.toml",
+) -> RuntimePolicy:
     try:
         data = resources.files(package).joinpath(resource_name).read_bytes()
     except Exception as exc:
-        raise PolicyLoadError("developer agent policy resource is missing") from exc
-    return parse_agent_policy(data)
+        raise PolicyLoadError("packaged runtime policy resource is missing") from exc
+    return parse_runtime_policy(data, overrides=overrides)
+
+
+def load_agent_policy(
+    *, package: str = "morrow.resources", resource_name: str = "runtime-policy.toml"
+) -> AgentPolicy:
+    """Compatibility entrypoint returning packaged AgentRun defaults."""
+
+    return load_runtime_policy(package=package, resource_name=resource_name).agent_run

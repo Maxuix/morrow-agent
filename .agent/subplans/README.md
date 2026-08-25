@@ -2,8 +2,8 @@
 
 Stage 4 and Stage 5 are complete through Subplan 62 and remain recoverable in Git history. On
 2026-08-24 the user explicitly requested a fact-checked final Stage 6方案 and a complete executable
-implementation plan. Stage 6 is now complete locally through Subplan 75; the requested full
-post-closeout review and fix cycle is also complete.
+implementation plan. Stage 6 is complete locally through Subplan 76, including the user-requested
+runtime-policy repair following isolated live acceptance.
 
 ## Stage 6 sequence
 
@@ -22,6 +22,7 @@ post-closeout review and fix cycle is also complete.
 | 73 | `73-stage6-mcp-runtime-security.md` | completed locally |
 | 74 | `74-stage6-backup-doctor.md` | completed locally |
 | 75 | `75-stage6-acceptance-closeout.md` | completed locally |
+| 76 | `76-stage6-runtime-policy.md` | completed locally |
 
 ## Completed retained subplans
 

@@ -26,11 +26,17 @@ from morrow.core.preference_persistence_models import (
     PreferenceReviewJobStatus,
 )
 from morrow.core.preference_review import PreferenceReviewerError
+from morrow.core.runtime_policy import (
+    REVIEW_MAX_LEASE_SECONDS,
+    REVIEW_MAX_RETRY_BACKOFF_SECONDS,
+    REVIEW_MAX_TIMEOUT_SECONDS,
+    REVIEW_RETRY_BACKOFF_COUNT,
+)
 from morrow.core.store import StorageError, StorageErrorCode
 
 PREFERENCE_REVIEW_MAX_ATTEMPTS = 3
 PREFERENCE_REVIEW_RETRY_BACKOFF_SECONDS = (5, 15)
-PREFERENCE_REVIEW_DEFAULT_TIMEOUT_SECONDS = 60.0
+PREFERENCE_REVIEW_DEFAULT_TIMEOUT_SECONDS = REVIEW_MAX_TIMEOUT_SECONDS / 2
 PREFERENCE_REVIEW_RETRYABLE_FAILURES = frozenset(
     {
         PreferenceReviewFailureCode.TIMEOUT,
@@ -92,7 +98,8 @@ class ReviewWorker:
         model: ModelRef | None = None,
         learning_runner=None,
         timeout_seconds: float = PREFERENCE_REVIEW_DEFAULT_TIMEOUT_SECONDS,
-        lease_seconds: int = 120,
+        lease_seconds: int = int(REVIEW_MAX_TIMEOUT_SECONDS),
+        retry_backoff_seconds: tuple[int, ...] = PREFERENCE_REVIEW_RETRY_BACKOFF_SECONDS,
         retry_scheduler: Callable[[float, Callable[[], None]], object] | None = None,
     ) -> None:
         if (
@@ -100,13 +107,20 @@ class ReviewWorker:
             or not isinstance(timeout_seconds, (int, float))
             or not math.isfinite(timeout_seconds)
             or timeout_seconds <= 0
-            or timeout_seconds > 120
+            or timeout_seconds > REVIEW_MAX_TIMEOUT_SECONDS
         ):
             raise ValueError("Preference Review timeout is outside the supported range")
         if isinstance(lease_seconds, bool) or not isinstance(lease_seconds, int):
             raise ValueError("Preference Review lease is invalid")
-        if lease_seconds <= 0 or lease_seconds > 3_600:
+        if lease_seconds <= 0 or lease_seconds > REVIEW_MAX_LEASE_SECONDS:
             raise ValueError("Preference Review lease is outside the supported range")
+        if (
+            len(retry_backoff_seconds) != REVIEW_RETRY_BACKOFF_COUNT
+            or any(isinstance(item, bool) or item <= 0 for item in retry_backoff_seconds)
+            or any(item > REVIEW_MAX_RETRY_BACKOFF_SECONDS for item in retry_backoff_seconds)
+            or tuple(sorted(retry_backoff_seconds)) != retry_backoff_seconds
+        ):
+            raise ValueError("Preference Review retry backoff is outside the supported range")
         self.journal = journal
         self.repository = getattr(journal, "preference_journal", journal)
         self.learning_repository = journal
@@ -114,6 +128,7 @@ class ReviewWorker:
         self.id_source = id_source
         self.clock = clock
         self.lease_seconds = lease_seconds
+        self.retry_backoff_seconds = retry_backoff_seconds
         self.retry_scheduler = retry_scheduler
         self.learning_runner = learning_runner
         self.runner = runner or PreferenceReviewRunner(
@@ -441,10 +456,9 @@ class ReviewWorker:
             expected_row_version=current.row_version,
         )
 
-    @staticmethod
-    def _retry_delay(attempt_count: int) -> int:
-        index = max(0, min(attempt_count - 1, len(PREFERENCE_REVIEW_RETRY_BACKOFF_SECONDS) - 1))
-        return PREFERENCE_REVIEW_RETRY_BACKOFF_SECONDS[index]
+    def _retry_delay(self, attempt_count: int) -> int:
+        index = max(0, min(attempt_count - 1, len(self.retry_backoff_seconds) - 1))
+        return self.retry_backoff_seconds[index]
 
     @staticmethod
     def _failure_code(exc: BaseException) -> PreferenceReviewFailureCode:

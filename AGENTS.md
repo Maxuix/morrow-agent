@@ -89,7 +89,7 @@ Before completing a subplan:
 
 - Adding a third-party dependency.
 - Starting Stage 3+ work: local file, Shell, Git, network, or browser tools; MCP; Skills; persistent chat history; LLM summaries; background tasks.
-- Changing bundled `agent-policy.toml` defaults or the public event lifecycle.
+- Changing bundled `runtime-policy.toml` defaults or the public event lifecycle.
 
 **Never**
 

@@ -15,6 +15,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from morrow.core.runtime_policy import RuntimePolicyOverrides
 from morrow.core.state_schema import (
     GLOBAL_CONFIG_LEGACY_SCHEMA_VERSION,
     WORKSPACE_INDEX_SCHEMA_VERSION,
@@ -409,6 +410,7 @@ class GlobalConfig(MorrowModel):
     preferences: Preferences = Field(default_factory=Preferences)
     providers: dict[str, ProviderConfig] = Field(default_factory=dict)
     active_model: ModelRef | None = None
+    runtime_policy: RuntimePolicyOverrides | None = None
 
     @model_validator(mode="after")
     def active_model_is_registered(self) -> GlobalConfig:

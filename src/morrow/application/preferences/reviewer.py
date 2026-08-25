@@ -23,6 +23,7 @@ from morrow.core.preference_persistence_models import (
     PreferenceReviewJob,
 )
 from morrow.core.preference_review import PreferenceReviewContext, PreferenceReviewOutput
+from morrow.core.runtime_policy import REVIEW_MAX_TIMEOUT_SECONDS
 
 
 @dataclass(frozen=True)
@@ -61,7 +62,7 @@ class PreferenceReviewRunner:
         clock,
         reviewer=None,
         model: ModelRef | None = None,
-        timeout_seconds: float = 60.0,
+        timeout_seconds: float = REVIEW_MAX_TIMEOUT_SECONDS / 2,
         context_builder: PreferenceReviewContextBuilder | None = None,
         pipeline: PreferenceProposalPipeline | None = None,
     ) -> None:
@@ -71,7 +72,7 @@ class PreferenceReviewRunner:
             or not math.isfinite(timeout_seconds)
         ):
             raise ValueError("Preference Review timeout is invalid")
-        if timeout_seconds <= 0 or timeout_seconds > 120:
+        if timeout_seconds <= 0 or timeout_seconds > REVIEW_MAX_TIMEOUT_SECONDS:
             raise ValueError("Preference Review timeout is outside the supported range")
         self.journal = journal
         self.workspace_id = workspace_id

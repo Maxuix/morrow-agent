@@ -20,6 +20,7 @@ from morrow.core.preference_models import (
     _aware,
     normalize_preference_statement,
 )
+from morrow.core.runtime_policy import RuntimePolicyOverrides
 from morrow.core.state_schema import (
     GLOBAL_CONFIG_SCHEMA_VERSION,
     WORKSPACE_PREFERENCE_SCHEMA_VERSION,
@@ -71,6 +72,7 @@ class GlobalConfigV2(ProtocolModel):
     preferences: PreferenceEntriesPayload = Field(default_factory=PreferenceEntriesPayload)
     providers: dict[str, ProviderConfig] = Field(default_factory=dict)
     active_model: ModelRef | None = None
+    runtime_policy: RuntimePolicyOverrides | None = None
 
     _normalize_time = field_validator("updated_at", mode="before")(_aware)
 

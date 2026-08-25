@@ -298,6 +298,7 @@ class GlobalConfigYamlStore:
             preferences=preferences_from_entries(value.preferences.entries),
             providers=value.providers,
             active_model=value.active_model,
+            runtime_policy=value.runtime_policy,
         )
 
     @classmethod
@@ -344,6 +345,7 @@ class GlobalConfigYamlStore:
                     "preferences": PreferenceEntriesPayload(entries=entries),
                     "providers": updated.providers,
                     "active_model": updated.active_model,
+                    "runtime_policy": updated.runtime_policy,
                 }
             )
             written = self.preference_store.write_global(

@@ -71,6 +71,24 @@ scripts/morrow-mimo model current
 事件或模型上下文。环境变量优先于 CredentialStore；环境变量存在时必须先取消它，才能使用
 `--replace-credential` 轮换存储凭据。
 
+## 运行策略配置
+
+Morrow 随程序发布只读的 `morrow/resources/runtime-policy.toml` 作为 AgentRun、Learning Review
+和 Preference Review 的默认运行策略。用户不需要也不应修改安装包资源；如需调整，可在自己的
+`~/.morrow/config.yaml` 中添加可选覆盖，例如：
+
+```yaml
+runtime_policy:
+  reviews:
+    learning_timeout_seconds: 90
+    learning_lease_seconds: 180
+```
+
+覆盖在进程启动时加载。未知字段、错误类型、非有限数、违反字段组合或超过代码级安全上限的值会使
+配置整体拒绝加载，不会部分生效。权限、审批、循环检测开关、密钥/路径过滤、schema/payload/storage
+预算及最大重试语义不允许通过 YAML 放宽；Agent 的配置与学习工具也不能写 `runtime_policy`。完整字段
+和硬编码分类见 [Runtime Policy Configuration Boundary](docs/decisions/runtime-policy-configuration.md)。
+
 REPL 常用命令包括 `/workspace`、`/workspace edit summary ...`、`/workspace reset`、`/status`、
 `/preferences`、`/task`、`/accept`、
 `/grant`、`/recovery`、`/new` 和 `/exit`。默认启动会创建新的 Session；若要继续已有 Session，
@@ -92,7 +110,7 @@ REPL 常用命令包括 `/workspace`、`/workspace edit summary ...`、`/workspa
 `update_configuration`（仅 Profile）和 `manage_preferences`；支持原生沙箱的 Auto Sandboxed 组合额外启用 `promote_sandbox_changes`。不支持 function calling 的 Adapter 不会启用这些工具，但 `/workspace`、`/preferences` 等确定性命令仍可用。终端以 `↳ 工具步骤 n/m：工具名`
 展示活动；有副作用的
 配置调用和 Host 命令在工具执行前由终端审批。审批拒绝、审批通道不可用或审批等待超时都会安全地形成普通工具结果，
-模型可以继续恢复；随包策略的工具超时仍为 120 秒。旧 `/config edit` fixed-field 入口已退役，
+模型可以继续恢复；默认工具超时为 120 秒，并可在安全上限内通过用户运行策略覆盖。旧 `/config edit` fixed-field 入口已退役，
 `append/remove` 由自然语言工具提供。达到模型、工具、时间、上下文、结果或循环上限时，任务以稳定的
 `stop_code` 结束。
 

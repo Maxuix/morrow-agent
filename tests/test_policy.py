@@ -5,14 +5,20 @@ from __future__ import annotations
 from importlib import resources
 
 import pytest
+import yaml
 from pydantic import ValidationError
 
+from morrow.adapters.credentials.keyring import MemoryCredentialStore
 from morrow.adapters.registry import AdapterRegistry
-from morrow.core.models import ModelRef
+from morrow.adapters.state.operational import OperationalStore
+from morrow.bootstrap import build_application, build_operational_api, build_operational_services
+from morrow.core.models import ModelRef, Preferences, StateLoadStatus
+from morrow.core.runtime_policy import RuntimePolicyOverrides
 from morrow.runtime.policy import (
     AgentPolicy,
     PolicyLoadError,
     load_agent_policy,
+    load_runtime_policy,
     parse_agent_policy,
 )
 
@@ -23,8 +29,10 @@ def _values(**updates):
     return values
 
 
-def test_bundled_policy_has_approved_defaults_and_empty_exact_model_table():
-    policy = load_agent_policy()
+def test_bundled_runtime_policy_has_approved_defaults_and_empty_exact_model_table():
+    runtime = load_runtime_policy()
+    policy = runtime.agent_run
+    assert runtime.schema_version == 1
     assert policy.model_dump(exclude={"model_safe_request_chars"}) == {
         "max_tool_rounds": 30,
         "max_model_attempts": 40,
@@ -45,6 +53,13 @@ def test_bundled_policy_has_approved_defaults_and_empty_exact_model_table():
         "loop_max_pattern_cycles": 4,
     }
     assert policy.model_safe_request_chars == {}
+    assert runtime.reviews.model_dump() == {
+        "learning_timeout_seconds": 60.0,
+        "learning_lease_seconds": 120,
+        "preference_timeout_seconds": 60.0,
+        "preference_lease_seconds": 120,
+        "preference_retry_backoff_seconds": (5, 15),
+    }
     with pytest.raises(ValidationError):
         policy.max_tool_rounds = 1
 
@@ -107,6 +122,127 @@ def test_policy_rejects_invalid_values_and_combinations(updates):
         AgentPolicy.model_validate(_values(**updates), strict=True)
 
 
+def test_user_overlay_changes_only_declared_fields_and_revalidates_combinations():
+    overrides = RuntimePolicyOverrides.model_validate(
+        {
+            "agent_run": {"max_run_seconds": 2400.0, "tool_timeout_seconds": 180.0},
+            "reviews": {
+                "learning_timeout_seconds": 90.0,
+                "learning_lease_seconds": 180,
+                "preference_retry_backoff_seconds": [10, 30],
+            },
+        },
+        strict=True,
+    )
+    effective = load_runtime_policy(overrides=overrides)
+    assert effective.agent_run.max_run_seconds == 2400.0
+    assert effective.agent_run.tool_timeout_seconds == 180.0
+    assert effective.agent_run.loop_detection_enabled is True
+    assert effective.agent_run.model_safe_request_chars == {}
+    assert effective.reviews.learning_timeout_seconds == 90.0
+    assert effective.reviews.learning_lease_seconds == 180
+    assert effective.reviews.preference_retry_backoff_seconds == (10, 30)
+    assert effective.reviews.preference_timeout_seconds == 60.0
+
+    invalid_combination = RuntimePolicyOverrides.model_validate(
+        {"agent_run": {"max_tool_calls": 16, "max_tool_calls_per_cycle": 32}}, strict=True
+    )
+    with pytest.raises(PolicyLoadError, match="override"):
+        load_runtime_policy(overrides=invalid_combination)
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"agent_run": {"loop_detection_enabled": False}},
+        {"agent_run": {"model_safe_request_chars": {"vendor/model": 100}}},
+        {"agent_run": {"max_run_seconds": 3601.0}},
+        {"reviews": {"learning_timeout_seconds": 121.0}},
+        {"reviews": {"preference_retry_backoff_seconds": [30, 10]}},
+        {"unknown": {}},
+    ],
+)
+def test_user_overlay_rejects_safety_owned_unknown_and_over_ceiling_values(payload):
+    with pytest.raises(ValidationError):
+        RuntimePolicyOverrides.model_validate(payload, strict=True)
+
+
+def test_config_yaml_override_is_applied_and_preserved_by_unrelated_writes(tmp_path):
+    state_root = tmp_path / "state"
+    state_root.mkdir()
+    config_path = state_root / "config.yaml"
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "schema_version": 2,
+                "revision": 0,
+                "preferences": {"entries": []},
+                "providers": {},
+                "active_model": None,
+                "runtime_policy": {
+                    "agent_run": {"max_run_seconds": 2400.0},
+                    "reviews": {
+                        "learning_timeout_seconds": 90.0,
+                        "learning_lease_seconds": 180,
+                    },
+                },
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    application = build_application(
+        state_root=state_root,
+        credentials=MemoryCredentialStore(),
+    )
+    assert application.runtime_policy.agent_run.max_run_seconds == 2400.0
+    assert application.runtime_policy.reviews.learning_timeout_seconds == 90.0
+    assert application.runtime_policy.reviews.learning_lease_seconds == 180
+
+    handle = OperationalStore(state_root).initialize()
+    try:
+        services = build_operational_services(
+            application,
+            "ws_policy",
+            handle=handle,
+            write=True,
+        )
+        api = build_operational_api(application, "ws_policy", services)
+        assert api.learning_review_runner.timeout_seconds == 90.0
+        assert api.learning_review_runner.lease_seconds == 180
+        assert api.review_worker.runner.timeout_seconds == 60.0
+        assert api.review_worker.lease_seconds == 120
+        assert api.review_worker.retry_backoff_seconds == (5, 15)
+    finally:
+        handle.close()
+
+    written = application.global_store.update(
+        lambda value: value.model_copy(update={"preferences": Preferences(language="中文")})
+    )
+    assert written.status.value == "ok"
+    persisted = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    assert persisted["runtime_policy"]["agent_run"]["max_run_seconds"] == 2400.0
+    assert persisted["runtime_policy"]["reviews"]["learning_timeout_seconds"] == 90.0
+
+
+def test_invalid_runtime_policy_makes_config_unavailable_instead_of_being_partially_applied(
+    tmp_path,
+):
+    state_root = tmp_path / "state"
+    state_root.mkdir()
+    (state_root / "config.yaml").write_text(
+        "schema_version: 2\nrevision: 0\nruntime_policy:\n  reviews:\n"
+        "    learning_timeout_seconds: 121\n",
+        encoding="utf-8",
+    )
+    application = build_application(
+        state_root=state_root,
+        credentials=MemoryCredentialStore(),
+    )
+    assert application.global_store.load().status is StateLoadStatus.CORRUPT
+
+
 def test_missing_and_malformed_policy_fail_clearly():
     with pytest.raises(PolicyLoadError, match="missing"):
         load_agent_policy(resource_name="missing-policy.toml")
@@ -115,11 +251,11 @@ def test_missing_and_malformed_policy_fail_clearly():
 
 
 def test_policy_resource_is_packaged_and_adapter_metadata_is_explicit():
-    resource = resources.files("morrow.resources").joinpath("agent-policy.toml")
+    resource = resources.files("morrow.resources").joinpath("runtime-policy.toml")
     assert resource.is_file()
     assert (
         resource.read_bytes()
-        == resources.files("morrow.resources").joinpath("agent-policy.toml").read_bytes()
+        == resources.files("morrow.resources").joinpath("runtime-policy.toml").read_bytes()
     )
 
     registry = AdapterRegistry()

@@ -61,6 +61,7 @@ from morrow.core.permissions import (
 from morrow.core.ports import IdSource
 from morrow.core.preference_persistence_models import PreferenceReviewJobStatus
 from morrow.core.recovery import RecoveryReport, RecoveryResolution
+from morrow.core.runtime_policy import REVIEW_MAX_TIMEOUT_SECONDS
 from morrow.runtime.ids import RandomIdSource
 
 
@@ -89,6 +90,8 @@ class OperationalApplicationService:
         clock: Callable[[], datetime] | None = None,
         learning_reviewer: LearningReviewerPort | None = None,
         learning_model=None,
+        learning_review_timeout_seconds: float = REVIEW_MAX_TIMEOUT_SECONDS / 2,
+        learning_review_lease_seconds: int = int(REVIEW_MAX_TIMEOUT_SECONDS),
         config_service=None,
         preference_inbox: PreferenceInbox | None = None,
         preference_queries: PreferenceQueries | None = None,
@@ -143,6 +146,8 @@ class OperationalApplicationService:
             workspace_id=self.workspace_id,
             id_source=self.id_source,
             clock=self.clock,
+            timeout_seconds=learning_review_timeout_seconds,
+            lease_seconds=learning_review_lease_seconds,
             reviewer=learning_reviewer,
             model=learning_model,
             preference_v2_enabled=preference_v2_enabled,

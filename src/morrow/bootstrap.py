@@ -97,6 +97,7 @@ from morrow.core.models import (
     Preferences,
     ProviderConfig,
     ProviderModelConfig,
+    StateLoadStatus,
     StatePresence,
 )
 from morrow.core.permissions import UNCONFINED_HOST_WARNING_DIGEST, CapabilityName
@@ -112,7 +113,7 @@ from morrow.core.store import (
 from morrow.runtime.agent import AgentRuntime
 from morrow.runtime.capabilities import CapabilityPolicy
 from morrow.runtime.ids import RandomIdSource
-from morrow.runtime.policy import AgentPolicy, load_agent_policy
+from morrow.runtime.policy import AgentPolicy, RuntimePolicy, load_runtime_policy
 from morrow.runtime.session import Session
 from morrow.runtime.tools import ToolExecutor, ToolRegistry
 from morrow.services.changes import ChangeSetService
@@ -142,7 +143,13 @@ class Application:
     registry: AdapterRegistry
     credentials: object
     id_source: object
-    agent_policy: AgentPolicy
+    runtime_policy: RuntimePolicy
+
+    @property
+    def agent_policy(self) -> AgentPolicy:
+        """Compatibility view used by existing AgentRun composition."""
+
+        return self.runtime_policy.agent_run
 
 
 @dataclass
@@ -348,6 +355,12 @@ def build_application(
     data_root = DataRoot(state_root)
     data_root.ensure()
     global_store = GlobalConfigYamlStore(data_root.root)
+    loaded_config = global_store.load()
+    runtime_overrides = (
+        loaded_config.value.runtime_policy
+        if loaded_config.status is StateLoadStatus.OK and loaded_config.value is not None
+        else None
+    )
     index_store = WorkspaceIndexYamlStore(data_root.root)
     project_store = ProjectStateYamlStore(data_root.root)
     registry = AdapterRegistry()
@@ -377,7 +390,7 @@ def build_application(
         registry,
         credential_store,
         application_id_source,
-        load_agent_policy(),
+        load_runtime_policy(overrides=runtime_overrides),
     )
 
 
@@ -496,6 +509,7 @@ def build_operational_api(
             clock=services.journal.now,
             reviewer=resolved_preference_reviewer,
             model=preference_model or learning_model,
+            timeout_seconds=app.runtime_policy.reviews.preference_timeout_seconds,
         )
         if resolved_preference_reviewer is not None
         else None
@@ -513,6 +527,8 @@ def build_operational_api(
         clock=services.journal.now,
         learning_reviewer=learning_reviewer,
         learning_model=learning_model,
+        learning_review_timeout_seconds=app.runtime_policy.reviews.learning_timeout_seconds,
+        learning_review_lease_seconds=app.runtime_policy.reviews.learning_lease_seconds,
         config_service=resolved_config_service,
         preference_inbox=preference_inbox,
         preference_queries=preference_queries,
@@ -532,6 +548,9 @@ def build_operational_api(
         reviewer=resolved_preference_reviewer,
         model=preference_model or learning_model,
         learning_runner=service.learning_review_runner,
+        timeout_seconds=app.runtime_policy.reviews.preference_timeout_seconds,
+        lease_seconds=app.runtime_policy.reviews.preference_lease_seconds,
+        retry_backoff_seconds=app.runtime_policy.reviews.preference_retry_backoff_seconds,
     )
     return service
 

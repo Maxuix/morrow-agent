@@ -2,6 +2,10 @@
 
 ## Current status
 
+Subplan 76 is complete locally. The user-requested separation between packaged runtime defaults and
+optional safe `config.yaml` overrides is implemented and verified; the isolated Learning Review
+deadline is now supplied by effective runtime policy instead of a constructor literal.
+
 Subplans 63 (spike), 64 (per-AgentRun preparation), 65 (Skill package/catalog foundation + v14),
 66, 67, 68, 69, 70, 71, 72 and 73 are complete locally; the Subplan 65 review repairs are also
 complete.
@@ -89,7 +93,7 @@ push is in scope.
 
 ## Next action
 
-No remaining Stage6 implementation action; keep local `main` clean. No remote push is in scope.
+No remaining Stage 6 implementation action; keep local `main` clean. No remote push is in scope.
 
 ## Last completed work (Subplan 71)
 
