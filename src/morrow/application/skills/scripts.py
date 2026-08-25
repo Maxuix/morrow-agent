@@ -33,6 +33,7 @@ from morrow.core.capabilities import (
     ToolHandlerOutcome,
     ToolRunContext,
 )
+from morrow.core.diagnostics import PublicDiagnosticError
 from morrow.core.domain import ArtifactReference
 from morrow.core.execution import tool_declaration
 from morrow.core.local_tools import CommandStatus
@@ -58,13 +59,8 @@ from morrow.runtime.tools import (
 from morrow.services.process import SecretRedactor
 
 
-class SkillScriptExecutionError(RuntimeError):
-    """A Skill script cannot be admitted, executed, or safely collected."""
-
-    def __init__(self, code: str, message: str) -> None:
-        super().__init__(message)
-        self.code = code
-        self.message = message
+class SkillScriptExecutionError(PublicDiagnosticError):
+    """A Skill script failure with a reviewed, user-safe diagnostic."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -741,7 +737,9 @@ def _tool_error(exc: SkillScriptExecutionError) -> ToolExecutionError:
         "spawn_failed": ToolErrorCode.PROCESS_FAILED,
         "process_failed": ToolErrorCode.PROCESS_FAILED,
     }
-    return ToolExecutionError(mapping.get(exc.code, ToolErrorCode.INVALID_ARGUMENTS), exc.message)
+    return ToolExecutionError(
+        mapping.get(exc.code, ToolErrorCode.INVALID_ARGUMENTS), exc.public_message
+    )
 
 
 def _script_status(status: CommandStatus, returncode: int | None) -> SkillScriptStatus:

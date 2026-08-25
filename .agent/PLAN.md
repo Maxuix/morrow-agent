@@ -1,6 +1,6 @@
 # Stage 6 Skills and Extensions Implementation Plan
 
-> Status: Stage 6 implementation complete locally through Subplan 76
+> Status: Stage 6 implementation complete locally through Subplan 77
 > Post-closeout review: full Stage6 Grok review completed; confirmed findings and independent boundary
 > gaps are fixed and verified
 > Baseline: local `main` at `0dc4e54`; dependency gate approved by the user on 2026-08-24
@@ -162,8 +162,9 @@ existing seam first inside the active subplan.
 | 74 | Backup v2 and doctor | completed locally; cross-store backup/restore verification and Stage 6 integrity checks |
 | 75 | Integrated acceptance and closeout | completed locally; isolated fixtures, integration repair, full gates and docs synchronized |
 | 76 | Runtime-policy repair | completed locally; packaged defaults, safe user overrides and review timeout composition verified |
+| 77 | Skill Script diagnostics/context repair | completed locally; safe diagnostics and model-visible selection evidence verified |
 
-Each child plan in `.agent/subplans/63-*.md` through `76-*.md` owns exact tasks, files, focused tests
+Each child plan in `.agent/subplans/63-*.md` through `77-*.md` owns exact tasks, files, focused tests
 and exit evidence. Later schemas and interfaces cannot be implemented early.
 
 ## 6. Dependency gate

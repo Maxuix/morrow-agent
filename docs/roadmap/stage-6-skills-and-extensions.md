@@ -1,6 +1,6 @@
 # Stage 6：Skills 与扩展生命周期
 
-> 状态：已完成（Subplans 63–75 及 Subplan 76 runtime-policy 修复已在本地完成；macOS 离线验收通过，Linux 原生运行仍 unsupported）
+> 状态：已完成（Subplans 63–77 已在本地完成，含 runtime-policy 与 Skill Script diagnostics/context 修复；macOS 离线验收通过，Linux 原生运行仍 unsupported）
 > 当前进展：Skill Catalog/生命周期、Selection/Context、Draft/Usage、受限脚本、Provider/Model 控制面，
 > MCP desired state、stdio Catalog discovery、确定性命名空间、Operational Store v16、run-scoped lazy runtime、
 > 安全策略桥接、结果 Artifact 引用、普通 ToolExecutor 接入、Doctor 和 Backup v2 均已完成。

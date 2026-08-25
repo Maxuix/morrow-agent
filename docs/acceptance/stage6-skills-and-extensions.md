@@ -1,6 +1,6 @@
 # Stage 6 离线综合验收
 
-本记录对应 Subplans 63–76 的本地验收。所有场景使用 pytest `tmp_path` 隔离数据根、内存凭据存储、固定时钟/ID 和脚本化 Provider；
+本记录对应 Subplans 63–77 的本地验收。所有场景使用 pytest `tmp_path` 隔离数据根、内存凭据存储、固定时钟/ID 和脚本化 Provider；
 不会读取或修改用户的 `~/.morrow`、真实 CredentialStore、项目 Skill 或外部 MCP 配置。MCP 场景使用仓库内的
 `tests/spikes/fake_mcp_stdio_server.py`，Provider 场景使用 `tests/fixtures/stage6/fake-provider.py` 的无 IO 形状。
 
@@ -75,3 +75,18 @@ Preference Review 调优默认值统一到随包 `runtime-policy.toml`。可选�
 `morrow --help`、`morrow skill --help`、`morrow mcp --help`、`morrow provider --help` 和
 `morrow model --help` 同步通过。两个 skip 仍为嵌套 Codex sandbox 中不可执行的真实 macOS
 Seatbelt 测试；两个 deselect 为 live 测试。本轮未访问网络、真实 Provider、CredentialStore 或用户状态。
+
+## Subplan 77：Skill Script 诊断与可调用 Context 修复
+
+Script 领域失败现在通过显式 `PublicDiagnosticError` 合同提供稳定诊断码和已审查消息。该合同限制
+code 形状、单行消息和长度，并拒绝疑似密钥材料；普通未知异常仍使用固定内部错误，公开事件字段、
+顺序和 ConversationLog 写入权不变。ToolExecutor 的正常失败 envelope 同样保留 Script 诊断码。
+
+每个低权限 Skill context 条目现在显示 Morrow 持久化的 `selection_id`、Skill/version/scope/tree
+身份，因此模型能够构造 `run_skill_script` 的严格请求。该元数据不改变正文的不可信地位，也不授予
+工具、权限、审批或新的选择证据。
+
+本次补充证据：直接诊断/context 回归 `34 passed in 3.30s`；全部 Skill/Agent/context/architecture
+扩展回归 `161 passed in 4.66s`；全量非 live suite
+`1077 passed, 2 skipped, 2 deselected in 42.77s`。Ruff format/check、compileall、CLI help 和
+`git diff --check` 通过；未使用网络、真实 Provider、CredentialStore 或用户状态。

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -177,6 +178,50 @@ def test_skill_script_requires_durable_selection_evidence(tmp_path) -> None:
     with pytest.raises(SkillScriptExecutionError, match="selection evidence") as error:
         service.preflight(request, agent_run_id="arun_script12345678")
     assert error.value.code == "selection_missing"
+
+
+@pytest.mark.asyncio
+async def test_skill_script_tool_preserves_safe_preflight_diagnostic(tmp_path) -> None:
+    store, version = _package(tmp_path)
+    package = store.read_frozen_package(
+        skill_id="script-skill",
+        version_id=version,
+        source_kind=SourceKind.GENERATED,
+        scope_id="ws_script",
+    )
+    request = _request(package, version)
+    service = SkillScriptExecutionService(
+        store,
+        workspace_id="ws_script",
+        adapter_factory=lambda _root: HostProcessAdapter(),
+        sandbox_available=True,
+    )
+    registry = ToolRegistry()
+    registry.register(make_skill_script_tool(service))
+    executor = ToolExecutor(
+        registry.snapshot(),
+        make_run_policy(),
+        capability_policy=CapabilityPolicy(
+            PermissionProfile(),
+            WorkspaceCapability(workspace_id="ws_script", root=tmp_path),
+            sandbox_available=True,
+        ),
+    )
+
+    outcome = await executor.execute_with_context(
+        FunctionToolCall(
+            id="call_missing_selection",
+            name="run_skill_script",
+            arguments=request.model_dump_json(),
+        ),
+        run_context=ToolRunContext(run_id="arun_script12345678", session_id="ses_script12345678"),
+        ordinal=1,
+        total=1,
+    )
+
+    assert outcome.error_code is ToolErrorCode.NOT_FOUND
+    error = json.loads(outcome.envelope)["error"]
+    assert error["message"] == ("selection_missing: Skill selection evidence is unavailable")
 
 
 def test_skill_script_rejects_undeclared_output_and_package_drift(tmp_path) -> None:

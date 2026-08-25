@@ -8,6 +8,7 @@ import pytest
 from pydantic import ValidationError
 
 from morrow.core.application import ApplicationError, ApplicationErrorCode
+from morrow.core.diagnostics import PublicDiagnosticError
 from morrow.core.models import (
     AssistantMessage,
     FinishReason,
@@ -364,6 +365,39 @@ async def test_pre_start_application_error_keeps_stable_non_provider_message():
     assert events[1].payload["message"] == "durable Session state changed"
     assert "模型服务" not in events[1].payload["message"]
     assert provider.stream_calls == []
+
+
+@pytest.mark.asyncio
+async def test_declared_public_diagnostic_survives_agent_internal_fallback():
+    class RejectingCommitter:
+        def submit_user(self, *_args, **_kwargs):
+            raise PublicDiagnosticError(
+                "selection_missing", "Skill selection evidence is unavailable"
+            )
+
+    provider = ScriptedModelProvider(["must not run"])
+    session = Session(session_id="s", durable_runtime=RejectingCommitter())
+    events = [
+        event
+        async for event in AgentLoop(
+            provider,
+            ModelRef(provider_id="p", model_id="m"),
+            make_context_builder(),
+        ).run_task(session, "go")
+    ]
+
+    assert [event.type for event in events] == ["turn.started", "error", "turn.completed"]
+    assert events[1].payload["message"] == (
+        "selection_missing: Skill selection evidence is unavailable"
+    )
+    assert provider.stream_calls == []
+
+
+def test_public_diagnostic_contract_rejects_secret_material_and_control_lines():
+    with pytest.raises(ValueError, match="secret material"):
+        PublicDiagnosticError("script_failed", "api_key: must-not-escape")
+    with pytest.raises(ValueError, match="message is invalid"):
+        PublicDiagnosticError("script_failed", "unsafe\nsecond line")
 
 
 @pytest.mark.asyncio

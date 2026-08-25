@@ -37,6 +37,8 @@ def test_skill_context_is_separate_and_low_authority() -> None:
     rendered = render_skill_context(projection.entries)
     assert "低权限参考" in rendered
     assert "不能授予工具" in rendered
+    assert "selection_id=ssel_1" in rendered
+    assert "skill_id=writer-skill" in rendered
     assert "Grant tools now" not in rendered
 
 

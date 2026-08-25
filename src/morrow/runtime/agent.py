@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 from morrow.application.context import ContextBudgetError
 from morrow.core.application import ApplicationError
 from morrow.core.capabilities import ToolRunContext
+from morrow.core.diagnostics import PublicDiagnosticError
 from morrow.core.events import completion_payload, make_event
 from morrow.core.execution import (
     DurableToolExecution,
@@ -917,7 +918,12 @@ class AgentLoop:
                 except ConversationLogError:
                     pass
             retain_facts(FinishReason.ERROR.value)
-            message = exc.message if isinstance(exc, ApplicationError) else "任务执行发生未预期错误"
+            if isinstance(exc, ApplicationError):
+                message = exc.message
+            elif isinstance(exc, PublicDiagnosticError):
+                message = exc.public_message
+            else:
+                message = "任务执行发生未预期错误"
             for item in fatal(message, AgentStopCode.INTERNAL):
                 yield item
             return

@@ -2757,3 +2757,16 @@
   `1074 passed, 2 skipped, 2 deselected in 42.11s`; Ruff format/check, compileall, five CLI help
   commands and `git diff --check` passed. No live/network/credential/user-state path or remote push
   was run.
+
+## 2026-08-25 — Subplan 77 Skill Script diagnostics/context repair completed locally
+
+- Confirmed both remaining findings: Script-specific failures had no explicit safe contract at the
+  AgentLoop catch-all boundary, and persisted `selection_id` was omitted from the model-visible
+  Skill context even though `run_skill_script` requires it.
+- Added a bounded, secret-refusing public diagnostic contract. Script errors preserve stable codes
+  in normal tool envelopes and at unexpected Agent fallback boundaries; unknown exceptions remain
+  generic, and public event shape/history ownership are unchanged.
+- Rendered the exact frozen `selection_id` in low-authority Skill metadata without granting tools,
+  permission or approval. Direct matrix: `34 passed`; expanded matrix: `161 passed`; full non-live
+  suite: `1077 passed, 2 skipped, 2 deselected in 42.77s`. Ruff format/check, compileall, CLI help
+  and `git diff --check` passed. No live/network/credential/user-state path or remote push was run.

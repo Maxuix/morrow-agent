@@ -63,7 +63,8 @@ deadline/预算、取消闭合、循环检测和全部聊天历史写入；`Agen
 有序公开事件的构造由 loop 内部事件发射协作者负责，但状态转换、事件时机和 ConversationLog
 写入权仍只属于 `AgentLoop.run_task()`。持久化运行能力由显式 `DurableRunCoordinator` 合同提供；
 工具 handler 的审批、权限复查、超时/取消和 durable execution 状态由 `ToolCycleExecutor` 执行，
-但它不拥有聊天历史或公开事件。
+但它不拥有聊天历史或公开事件。只有实现有界、单行且拒绝密钥材料的 `PublicDiagnosticError`
+合同的领域失败可越过 Agent 的通用异常边界；未知异常仍只产生固定内部错误，不暴露 traceback。
 
 Session 持有的进程内 `ConversationLog` 是唯一聊天历史权威，`Session.messages` 是只读投影。
 带 calls 的 Assistant 与其有序 ToolMessage 构成不可拆分的 ToolCycle。ContextBuilder 从不可变
@@ -102,7 +103,9 @@ Linux bubblewrap 在真实 runner 验收前固定探测为 unsupported，不因�
 `run_skill_script` 则通过 `SkillScriptExecutionService` 读取按 AgentRun 选择的冻结 managed Skill 包，
 只在可用原生沙箱中运行；脚本 argv、环境名、输入 Artifact 和输出路径均有界，输出先脱敏再发布为
 Session-scoped Artifact。它不接受 shell、不继承 ambient 环境或 CredentialStore，缺少沙箱时拒绝，
-并沿用同一 CapabilityPolicy、ToolExecutor、ToolFact 与恢复分类。
+并沿用同一 CapabilityPolicy、ToolExecutor、ToolFact 与恢复分类。模型可见的低权限 Skill context
+显示 Morrow 持久化的 `selection_id` 及冻结身份，以便构造严格请求；Skill 正文仍不能生成选择证据、
+授予工具、权限或审批。Script 失败只返回已审查的稳定诊断码/消息，不返回原始异常。
 
 Stage 4 的 Full Access Manual 是一条额外的、明确受限的证据链：只有 Application API 的本地界面命令能
 创建 `CapabilityGrant`；它绑定一个前台 AgentRun，随后冻结为不可替换的 `PermissionSnapshot`。Stage 4

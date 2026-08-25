@@ -2,8 +2,8 @@
 
 Stage 4 and Stage 5 are complete through Subplan 62 and remain recoverable in Git history. On
 2026-08-24 the user explicitly requested a fact-checked final Stage 6方案 and a complete executable
-implementation plan. Stage 6 is complete locally through Subplan 76, including the user-requested
-runtime-policy repair following isolated live acceptance.
+implementation plan. Stage 6 is complete locally through Subplan 77, including the user-requested
+runtime-policy and remaining Skill Script diagnostics/context repairs.
 
 ## Stage 6 sequence
 
@@ -23,6 +23,7 @@ runtime-policy repair following isolated live acceptance.
 | 74 | `74-stage6-backup-doctor.md` | completed locally |
 | 75 | `75-stage6-acceptance-closeout.md` | completed locally |
 | 76 | `76-stage6-runtime-policy.md` | completed locally |
+| 77 | `77-stage6-script-diagnostics-context.md` | completed locally |
 
 ## Completed retained subplans
 

@@ -2,9 +2,10 @@
 
 ## Current status
 
-Subplan 76 is complete locally. The user-requested separation between packaged runtime defaults and
-optional safe `config.yaml` overrides is implemented and verified; the isolated Learning Review
-deadline is now supplied by effective runtime policy instead of a constructor literal.
+Subplan 77 is complete locally. Skill Script failures now retain only explicitly reviewed, bounded
+and secret-refusing diagnostics instead of falling through to an information-free internal error;
+frozen Skill context now renders the exact `selection_id` needed by `run_skill_script` without
+changing package-text authority or permission policy.
 
 Subplans 63 (spike), 64 (per-AgentRun preparation), 65 (Skill package/catalog foundation + v14),
 66, 67, 68, 69, 70, 71, 72 and 73 are complete locally; the Subplan 65 review repairs are also
@@ -85,8 +86,9 @@ final offline/quality gates.
 
 ## Final status
 
-Stage 6 Subplans 63–75 are complete on local `main`; closeout commit `19432fb` is merged and the
-topic branch is retired. The requested full Stage6 Grok review was rerun over the complete Stage6
+Stage 6 Subplans 63–77 are complete locally; closeout commit `19432fb` and subsequent repairs are
+merged into local `main`, and the topic branch is retired. The requested full Stage6 Grok review
+was rerun over the complete Stage6
 code surface; its confirmed P1/P2 findings and the independent handshake/Artifact evidence gaps
 were fixed and committed locally. The final offline, quality and CLI gates are green; no remote
 push is in scope.
