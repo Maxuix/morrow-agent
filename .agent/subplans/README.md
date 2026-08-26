@@ -13,8 +13,9 @@ On 2026-08-26 the user approved the ordered Direct Agent reliability checklist a
 Subplan 79 completed the evaluation protocol and failure-taxonomy freeze, passed internal review,
 and was fast-forward integrated into local `main` before any measured Direct Agent repair begins.
 The user then requested the remaining items in strict order. Subplan 80 completed S7P-01 safe
-AgentRun observability and a one-shot headless execution entrypoint. Subplan 81 now activates
-S7P-02 Provider-visible tool contracts and recoverable argument validation.
+AgentRun observability and a one-shot headless execution entrypoint. Subplan 81 completed S7P-02
+Provider-visible tool contracts and recoverable argument validation and was integrated locally.
+Subplan 82 now activates S7P-03 Direct Coding prompt and scoped project-instruction assembly.
 
 ## Stage 7 reliability sequence
 
@@ -22,7 +23,8 @@ S7P-02 Provider-visible tool contracts and recoverable argument validation.
 |---|---|---|
 | 79 | `79-s7p-00-evaluation-protocol.md` | completed and integrated locally |
 | 80 | `80-s7p-01-observability-headless.md` | completed and integrated locally |
-| 81 | `81-s7p-02-tool-contracts.md` | active |
+| 81 | `81-s7p-02-tool-contracts.md` | completed and integrated locally |
+| 82 | `82-s7p-03-direct-coding-prompt.md` | active |
 
 ## Stage 7 pre-baseline
 

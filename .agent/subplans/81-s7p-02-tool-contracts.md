@@ -1,6 +1,6 @@
 # Subplan 81 — S7P-02 Provider-visible Tool Contracts
 
-> Status: completed
+> Status: completed, fast-forward integrated into local main, and retired
 > Branch: `codex/fix/s7p-02-tool-contracts`
 > Base: activation baseline `36f3be18d2d9ce813a827a704ea911aa4baa502a`
 > Dependency: S7P-01 completed, integrated and retired

@@ -3043,3 +3043,17 @@
   import proof and `git diff --check` passed. No live Provider/model/Pi/MCP/network/credential test
   ran. Acceptance evidence is `docs/acceptance/s7p-02-tool-contracts.md`; the topic remains
   unmerged for root-owned handoff.
+
+## 2026-08-27 — Subplan 81 integrated and Subplan 82 activated
+
+- Fast-forward merged the five verified S7P-02 topic commits into local `main@e75c3b2`, verified
+  `main...topic` was `0 0`, archived the implementation task, removed its clean worktree and
+  deleted the fully merged local branch. The three user-owned research documents remain untouched.
+- Reproduced S7P-03 against production context composition: a Direct task currently receives no
+  inspect/edit/verify/stop protocol, no root `AGENTS.md`, and no prompt/project-instruction fields
+  in `AgentRunSnapshot`. No project-instruction resolver exists; mini-eval evidence is placeholder
+  metadata only.
+- Activated Subplan 82 with a reusable versioned Direct Coding profile, deterministic scoped
+  `AGENTS.md` resolver, reference-only AgentRun evidence, exact recovery verification and bounded
+  fail-closed diagnostics. S7P-03 changes no public events, runtime-policy defaults, ToolSet,
+  permission/sandbox authority or dependencies and runs no live tests.
