@@ -8,10 +8,12 @@ from types import SimpleNamespace
 from typer.testing import CliRunner
 
 from morrow.application.orchestrator import DispatchResult
-from morrow.core.models import AgentEvent, WorkspaceIdentity, WorkspaceResolution
+from morrow.bootstrap import build_application
+from morrow.core.models import AgentEvent, ModelRef, WorkspaceIdentity, WorkspaceResolution
 from morrow.interfaces import cli as cli_module
 from morrow.interfaces.cli import app
 from morrow.services.workspace import DataRoot
+from morrow.testing import ScriptedModelProvider
 
 
 def test_run_emits_only_versioned_jsonl_and_terminal_safe_record(monkeypatch, tmp_path):
@@ -104,6 +106,80 @@ def test_run_emits_only_versioned_jsonl_and_terminal_safe_record(monkeypatch, tm
     assert all(record["schema_version"] == 1 for record in records)
     assert records[-1]["agent_run_id"] == "arun_1"
     assert records[-1]["metrics"]["usage"]["availability"] == "unavailable"
+    assert "Traceback" not in result.output
+
+
+def test_headless_dispatch_does_not_reuse_an_existing_agent_run_id(capsys):
+    class ExplodingApi:
+        def get_agent_run_observation(self, _agent_run_id):
+            raise AssertionError("dispatch-only input must not query the previous AgentRun")
+
+    session_app = SimpleNamespace(
+        session=SimpleNamespace(
+            session_id="ses_old",
+            committer=SimpleNamespace(
+                current_task_run_id="task_old", current_agent_run_id="arun_old"
+            ),
+        ),
+        persistence=SimpleNamespace(
+            current_task_run_id="task_old", current_agent_run_id="arun_old"
+        ),
+        api=ExplodingApi(),
+    )
+
+    assert not cli_module._headless_terminal_record(
+        session_app, None, DispatchResult(lines=["status"])
+    )
+    record = json.loads(capsys.readouterr().out)
+    assert record["kind"] == "run.completed"
+    assert record["agent_run_id"] is None
+    assert record["session_id"] is None
+    assert record["task_run_id"] is None
+    assert record["turn_id"] is None
+    assert record["metrics"] is None
+
+
+def test_run_uses_the_real_session_builder_with_a_scripted_provider(monkeypatch, tmp_path):
+    workspace = tmp_path / "project"
+    workspace.mkdir()
+    state_root = tmp_path / "state"
+    real_application = build_application(state_root=state_root)
+    resolution = real_application.workspace_service.resolve(workspace)
+    identity = real_application.workspace_service.confirm(resolution)
+    provider = ScriptedModelProvider(["done"])
+    real_application.provider_service.build_active = lambda: (
+        provider,
+        ModelRef(provider_id="scripted", model_id="test-model"),
+    )
+    monkeypatch.setattr(cli_module, "build_application", lambda **_: real_application)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "run",
+            "say hello",
+            "--workspace",
+            str(workspace),
+            "--state-root",
+            str(state_root),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    records = [json.loads(line) for line in result.output.splitlines()]
+    assert [record["kind"] for record in records] == [
+        "agent_event",
+        "agent_event",
+        "agent_event",
+        "run.completed",
+    ]
+    terminal = records[-1]
+    assert terminal["session_id"].startswith("ses_")
+    assert terminal["task_run_id"].startswith("task_")
+    assert terminal["agent_run_id"].startswith("arun_")
+    assert terminal["turn_id"].startswith("turn_")
+    assert terminal["metrics"]["finish_reason"] == "stop"
+    assert identity.workspace_id
     assert "Traceback" not in result.output
 
 

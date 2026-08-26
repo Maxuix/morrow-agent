@@ -25,6 +25,7 @@ from morrow.core.models import (
     AssistantMessage,
     FinishReason,
     FunctionToolCall,
+    ModelCost,
     ModelErrorCode,
     ModelEvent,
     ModelFinishReason,
@@ -286,6 +287,7 @@ def test_agent_run_usage_aggregation_marks_incompatible_partial_usage_unavailabl
         persistence.settle_model_request(
             first.model_request_id,
             state="completed",
+            finish_reason=ModelFinishReason.STOP,
             usage=ModelUsage(
                 availability=UsageAvailability.AVAILABLE,
                 input_tokens=3,
@@ -294,6 +296,7 @@ def test_agent_run_usage_aggregation_marks_incompatible_partial_usage_unavailabl
         persistence.settle_model_request(
             second.model_request_id,
             state="completed",
+            finish_reason=ModelFinishReason.STOP,
             usage=ModelUsage(
                 availability=UsageAvailability.AVAILABLE,
                 output_tokens=4,
@@ -342,6 +345,53 @@ def test_agent_run_observation_rejects_illegal_transition_and_cross_workspace_ac
         persistence.settle_model_request(admitted.model_request_id, state="cancelled")
     finally:
         handle.close()
+
+
+def test_agent_run_observation_rejects_incomplete_terminal_facts(tmp_path):
+    handle, _journal, session, persistence = _open(tmp_path)
+    try:
+        persistence.submit_user(
+            session,
+            "hello",
+            "cmsg_1",
+            turn_id="turn_1",
+            agent_run_id="arun_1",
+        )
+        admitted = persistence.admit_model_request(
+            agent_run_id="arun_1",
+            attempt_ordinal=1,
+            estimated_request_chars=10,
+            request_char_budget=100,
+        )
+        with pytest.raises(StorageError) as error:
+            persistence.settle_model_request(admitted.model_request_id, state="completed")
+        assert error.value.code is StorageErrorCode.UNAVAILABLE
+
+        with pytest.raises(StorageError) as error:
+            persistence.settle_model_request(admitted.model_request_id, state="failed")
+        assert error.value.code is StorageErrorCode.UNAVAILABLE
+
+        persistence.settle_model_request(admitted.model_request_id, state="cancelled")
+        with pytest.raises(StorageError) as error:
+            persistence.finalize_agent_run(
+                agent_run_id="arun_1",
+                finish_reason=FinishReason.STOP,
+                stop_code=AgentStopCode.INTERNAL,
+                model_attempts=1,
+            )
+        assert error.value.code is StorageErrorCode.UNAVAILABLE
+    finally:
+        handle.close()
+
+
+def test_model_cost_source_rejects_credential_like_values():
+    with pytest.raises(ValueError):
+        ModelCost(
+            availability=UsageAvailability.AVAILABLE,
+            amount_minor=0,
+            currency="USD",
+            source="token=sk-" + "a" * 20,
+        )
 
 
 def test_agent_run_observation_tampered_typed_json_fails_closed(tmp_path):
@@ -411,7 +461,11 @@ def test_backup_carries_agent_run_observation_rows(tmp_path):
             estimated_request_chars=10,
             request_char_budget=100,
         )
-        persistence.settle_model_request(admitted.model_request_id, state="completed")
+        persistence.settle_model_request(
+            admitted.model_request_id,
+            state="completed",
+            finish_reason=ModelFinishReason.STOP,
+        )
         persistence.finalize_agent_run(
             agent_run_id="arun_1", finish_reason=FinishReason.STOP, model_attempts=1
         )
@@ -584,6 +638,38 @@ def test_invalid_argument_diagnostics_retain_only_bounded_path_and_type():
     assert "value" not in encoded
 
 
+@pytest.mark.parametrize(
+    "envelope",
+    [
+        {
+            "ok": True,
+            "error": {
+                "code": "invalid_arguments",
+                "details": [{"path": "count", "type": "int_type"}],
+            },
+        },
+        {
+            "ok": False,
+            "error": {
+                "code": "internal",
+                "details": [{"path": "count", "type": "int_type"}],
+            },
+        },
+        {"ok": False, "error": {"code": "invalid_arguments", "details": "not-a-list"}},
+    ],
+)
+def test_invalid_argument_diagnostics_require_a_matching_error_envelope(envelope):
+    outcome = ToolExecutionOutcome(
+        call_id="call_1",
+        name="validate",
+        ok=bool(envelope["ok"]),
+        envelope=json.dumps(envelope),
+        error_code=ToolErrorCode.INVALID_ARGUMENTS,
+    )
+
+    assert _envelope_from_outcome(outcome).validation_diagnostics == ()
+
+
 @pytest.mark.asyncio
 async def test_agent_loop_persists_invalid_argument_diagnostics_without_values(tmp_path):
     class StrictArguments(BaseModel):
@@ -675,6 +761,35 @@ async def test_agent_loop_records_one_durable_request_and_terminal_metrics(tmp_p
         assert observation.terminal_metrics.finish_reason is FinishReason.STOP
         assert observation.terminal_metrics.model_attempts == 1
         assert observation.terminal_metrics.usage.availability is UsageAvailability.UNAVAILABLE
+    finally:
+        handle.close()
+
+
+@pytest.mark.asyncio
+async def test_agent_loop_marks_an_empty_provider_stream_as_invalid_response(tmp_path):
+    class EmptyProvider:
+        async def stream(self, _model, _messages, _tools=()):
+            if False:
+                yield ModelEvent(kind="text_delta", text="unreachable")
+
+    handle, _journal, session, persistence = _open(tmp_path)
+    try:
+        loop = AgentLoop(
+            EmptyProvider(),
+            ModelRef(provider_id="p", model_id="m"),
+            make_context_builder(),
+            id_source=FixedIdSource(),
+            clock=FixedClock(),
+        )
+
+        events = [event async for event in loop.run_task(session, "empty")]
+
+        assert events[-1].payload["stop_code"] == AgentStopCode.INVALID_RESPONSE.value
+        observation = persistence.get_agent_run_observation()
+        assert observation is not None and observation.terminal_metrics is not None
+        assert observation.requests[0].state.value == "failed"
+        assert observation.requests[0].error_code is ModelErrorCode.INVALID_RESPONSE
+        assert observation.terminal_metrics.stop_code is AgentStopCode.INVALID_RESPONSE
     finally:
         handle.close()
 
@@ -887,6 +1002,7 @@ async def test_agent_loop_resume_continues_the_same_agent_run_after_settled_requ
         assert observation.terminal_metrics.dropped_turn_count == 1
         assert observation.terminal_metrics.dropped_cycle_count == 3
         assert observation.terminal_metrics.dropped_record_count == 4
+        assert observation.terminal_metrics.retry_count == 1
     finally:
         reopened.close()
 

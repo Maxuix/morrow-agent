@@ -29,6 +29,7 @@ from morrow.core.models import (
     ModelFinishReason,
     ModelUsage,
     ProtocolModel,
+    UsageAvailability,
     utc_now,
 )
 
@@ -124,12 +125,26 @@ class ModelRequestObservation(ProtocolModel):
         if self.settled_at is not None and self.settled_at < self.admitted_at:
             raise ValueError("model request settlement cannot precede admission")
         if self.state is ModelRequestState.ADMITTED:
-            if self.settled_at is not None or self.finish_reason is not None or self.error_code:
+            if (
+                self.settled_at is not None
+                or self.finish_reason is not None
+                or self.error_code
+                or self.usage.availability is not UsageAvailability.UNAVAILABLE
+                or self.cost.availability is not UsageAvailability.UNAVAILABLE
+            ):
                 raise ValueError("admitted model request must not contain settlement facts")
         elif self.settled_at is None:
             raise ValueError("settled model request requires settled_at")
-        if self.state is ModelRequestState.COMPLETED and self.error_code is not None:
-            raise ValueError("completed model request must not contain an error code")
+        if self.state is ModelRequestState.COMPLETED:
+            if self.finish_reason not in (ModelFinishReason.STOP, ModelFinishReason.TOOL_CALLS):
+                raise ValueError("completed model request requires a normal finish reason")
+            if self.error_code is not None:
+                raise ValueError("completed model request must not contain an error code")
+        elif self.state is ModelRequestState.FAILED:
+            if self.error_code is None:
+                raise ValueError("failed model request requires an error code")
+        elif self.state is ModelRequestState.CANCELLED and self.finish_reason is not None:
+            raise ValueError("cancelled model request must not contain a finish reason")
         return self
 
 
@@ -187,6 +202,15 @@ class AgentRunTerminalMetrics(ProtocolModel):
     @classmethod
     def valid_finalized_at(cls, value: datetime) -> datetime:
         return _aware(value)
+
+    @model_validator(mode="after")
+    def terminal_contract(self) -> AgentRunTerminalMetrics:
+        if self.finish_reason in (FinishReason.STOP, FinishReason.CANCELLED):
+            if self.stop_code is not None:
+                raise ValueError("successful or cancelled AgentRun must not contain a stop code")
+        elif self.stop_code is None:
+            raise ValueError("failed AgentRun requires a stop code")
+        return self
 
 
 class AgentRunObservation(ProtocolModel):

@@ -41,7 +41,18 @@ V17_STATEMENTS = (
         UNIQUE (agent_run_id, attempt_ordinal),
         CHECK (
             (state = 'admitted' AND settled_at_unix IS NULL AND finish_reason IS NULL AND error_code IS NULL)
-            OR (state != 'admitted' AND settled_at_unix IS NOT NULL)
+            OR (
+                state = 'completed'
+                AND settled_at_unix IS NOT NULL
+                AND finish_reason IN ('stop', 'tool_calls')
+                AND error_code IS NULL
+            )
+            OR (state = 'failed' AND settled_at_unix IS NOT NULL AND error_code IS NOT NULL)
+            OR (
+                state = 'cancelled'
+                AND settled_at_unix IS NOT NULL
+                AND finish_reason IS NULL
+            )
         ),
         CHECK (settled_at_unix IS NULL OR settled_at_unix >= admitted_at_unix),
         CHECK (
@@ -113,6 +124,10 @@ V17_STATEMENTS = (
                 AND cost_amount_minor IS NULL AND cost_currency IS NULL AND cost_source IS NULL)
             OR (cost_availability = 'available'
                 AND cost_amount_minor IS NOT NULL AND cost_currency IS NOT NULL AND cost_source IS NOT NULL)
+        ),
+        CHECK (
+            (finish_reason IN ('stop', 'cancelled') AND stop_code IS NULL)
+            OR (finish_reason = 'error' AND stop_code IS NOT NULL)
         )
     )
     """,

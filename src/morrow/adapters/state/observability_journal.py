@@ -161,18 +161,26 @@ class SqliteObservabilityJournal:
         existing = self.get_model_request(workspace_id, model_request_id)
         if existing is None:
             raise StorageError(StorageErrorCode.NOT_FOUND, "AgentRun model request is missing")
-        candidate = existing.model_copy(
-            update={
-                "state": selected_state,
-                "settled_at": settled_at or self.backend.now(),
-                "finish_reason": (
-                    ModelFinishReason(finish_reason) if finish_reason is not None else None
-                ),
-                "error_code": ModelErrorCode(error_code) if error_code is not None else None,
-                "usage": usage or ModelUsage.unavailable(),
-                "cost": cost or ModelCost.unavailable(),
-            }
-        )
+        try:
+            candidate = ModelRequestObservation.model_validate(
+                {
+                    **existing.model_dump(mode="python"),
+                    "state": selected_state,
+                    "settled_at": settled_at or self.backend.now(),
+                    "finish_reason": (
+                        ModelFinishReason(finish_reason) if finish_reason is not None else None
+                    ),
+                    "error_code": ModelErrorCode(error_code) if error_code is not None else None,
+                    "usage": usage or ModelUsage.unavailable(),
+                    "cost": cost or ModelCost.unavailable(),
+                },
+                strict=True,
+            )
+        except (TypeError, ValueError):
+            raise StorageError(
+                StorageErrorCode.UNAVAILABLE,
+                "AgentRun model request settlement is invalid",
+            ) from None
 
         def work() -> ModelRequestObservation:
             current = self.get_model_request(workspace_id, model_request_id)
@@ -241,6 +249,22 @@ class SqliteObservabilityJournal:
     ) -> AgentRunTerminalMetrics:
         run = self._require_run(workspace_id, agent_run_id)
         task_run_id = self._task_run_id(run)
+        try:
+            selected_finish_reason = FinishReason(finish_reason)
+            selected_stop_code = AgentStopCode(stop_code) if stop_code is not None else None
+        except (TypeError, ValueError):
+            raise StorageError(
+                StorageErrorCode.UNAVAILABLE,
+                "AgentRun terminal metrics finish facts are invalid",
+            ) from None
+        if (
+            selected_finish_reason in (FinishReason.STOP, FinishReason.CANCELLED)
+            and selected_stop_code is not None
+        ) or (selected_finish_reason is FinishReason.ERROR and selected_stop_code is None):
+            raise StorageError(
+                StorageErrorCode.UNAVAILABLE,
+                "AgentRun terminal metrics finish facts are inconsistent",
+            )
         requests = self.list_model_requests(workspace_id, agent_run_id)
         if any(item.state is ModelRequestState.ADMITTED for item in requests):
             raise StorageError(
@@ -266,8 +290,8 @@ class SqliteObservabilityJournal:
             session_id=run.session_id,
             task_run_id=task_run_id,
             turn_id=run.turn_id,
-            finish_reason=FinishReason(finish_reason),
-            stop_code=AgentStopCode(stop_code) if stop_code is not None else None,
+            finish_reason=selected_finish_reason,
+            stop_code=selected_stop_code,
             model_attempts=model_attempts,
             retry_count=retry_count,
             tool_rounds=max(tool_rounds, persisted_tool_rounds),

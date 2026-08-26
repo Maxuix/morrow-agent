@@ -2970,3 +2970,24 @@
   implementation/acceptance commits and the required read-only Luna Max review remain next. The
   topic branch is intentionally unmerged; no push, branch deletion, worktree deletion or S7P-02
   work is authorized.
+
+## 2026-08-26 — Subplan 80 review repairs and final offline acceptance
+
+- The required read-only collaboration reviewer Euler
+  (`01a03e1f-77c8-72d2-ad24-9cdf1d25edde`) used `gpt-5.6-luna` with `max` reasoning and inspected
+  the complete `d204a6518d1c7f64193ddb42c33384c8fb320e3d..50fa808741dd1b1e4748f06a57525d8dd951fe3e`
+  diff. The reviewer changed no files and ran no tests. The report contained seven confirmed
+  findings (one P1, five P2, and one P3), with no P0 or uncertain findings.
+- Independently verified and repaired all seven findings: empty streams now fail as
+  `invalid_response`; observation terminal facts are constrained in models and schema-v17;
+  credential-like cost sources are rejected; headless failure paths cannot reuse stale run IDs;
+  resume retry restoration includes the latest settled failure; a real-builder scripted-Provider
+  headless test covers production composition; and validation diagnostics require a matching
+  invalid-arguments envelope.
+- Review-fix focused validation passed with 69 tests. The expanded affected S7P-01 suite passed
+  `224 passed, 1 skipped in 8.14s`; the repository-wide offline gate passed
+  `1142 passed, 2 deselected in 49.17s`. Ruff format/check, compileall, CLI help smoke and
+  `git diff --check` passed. No live Provider, model, Pi, MCP, network or credential test ran.
+- Acceptance evidence and execution state were updated. The final repair commit remains on
+  `codex/feat/s7p-01-observability-headless`; root-owned merge, branch/worktree deletion, push and
+  S7P-02 work remain out of scope.

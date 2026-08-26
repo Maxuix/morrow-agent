@@ -215,6 +215,10 @@ async def _headless_stream(session_app, prompt: str):
 
 
 def _headless_ids(session_app, terminal_event):
+    if terminal_event is None:
+        # Slash commands, preflight failures and stream failures do not admit a
+        # new AgentRun. Never attribute their terminal record to an older one.
+        return None, None, None, None
     session = getattr(session_app, "session", None)
     persistence = getattr(session_app, "persistence", None)
     committer = getattr(session, "committer", None)

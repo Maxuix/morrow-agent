@@ -18,8 +18,8 @@ Subplan 80 — S7P-01 AgentRun observability and headless run.
 - `[x]` Persist bounded invalid-argument field/type diagnostics without argument values.
 - `[x]` Add the one-shot JSONL entrypoint through the existing Session application/orchestrator.
 - `[x]` Publish S7P-01 acceptance evidence and run focused/full offline quality gates.
-- `[ ]` Complete Luna Max subagent code review, repair all confirmed findings and rerun gates.
-- `[ ]` Commit the final verified implementation; leave merge and Subplan 80 retirement to the root task.
+- `[x]` Complete Luna Max subagent code review, repair all confirmed findings and rerun gates.
+- `[x]` Commit the final verified implementation; leave merge and Subplan 80 retirement to the root task.
 
 ## Boundaries
 

@@ -442,7 +442,14 @@ def _envelope_from_outcome(result: ToolExecutionOutcome) -> HandlerResultEnvelop
     if result.error_code is ToolErrorCode.INVALID_ARGUMENTS:
         try:
             payload = json.loads(result.envelope)
-            details = payload.get("error", {}).get("details", [])
+            error = payload.get("error") if isinstance(payload, dict) else None
+            details = (
+                error.get("details", [])
+                if payload.get("ok") is False
+                and isinstance(error, dict)
+                and error.get("code") == ToolErrorCode.INVALID_ARGUMENTS.value
+                else []
+            )
         except (TypeError, ValueError, json.JSONDecodeError, AttributeError):
             details = []
         if isinstance(details, list):

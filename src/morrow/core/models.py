@@ -26,6 +26,8 @@ CURRENT_SCHEMA_VERSION = 1
 WORKSPACE_DOCUMENT_SCHEMA_VERSION = WORKSPACE_PROFILE_SCHEMA_VERSION
 
 TOOL_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+_COST_SOURCE_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$")
+_SECRET_TOKEN_PATTERN = re.compile(r"(?<![A-Za-z0-9])sk-[A-Za-z0-9_-]{20,}", re.IGNORECASE)
 
 
 def utc_now() -> datetime:
@@ -340,14 +342,18 @@ class ModelCost(ProtocolModel):
     @field_validator("source")
     @classmethod
     def valid_source(cls, value: str | None) -> str | None:
-        if value is not None and (
-            not value.strip()
-            or any(char in value for char in "\x00\r\n")
+        if value is None:
+            return None
+        lowered = value.casefold()
+        if (
+            not _COST_SOURCE_PATTERN.fullmatch(value)
             or any(
-                needle in value.casefold() for needle in ("api_key", "authorization", "password")
+                needle in lowered
+                for needle in ("api_key", "authorization", "password", "credential")
             )
+            or _SECRET_TOKEN_PATTERN.search(value) is not None
         ):
-            raise ValueError("cost source is not safe")
+            raise ValueError("cost source must be a safe provider label")
         return value
 
     @model_validator(mode="after")

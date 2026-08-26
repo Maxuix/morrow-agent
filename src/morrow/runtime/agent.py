@@ -112,6 +112,13 @@ class ModelCallRunner:
                         cost=model_event.cost,
                     )
                 yield model_event
+            if self._outcome.message is None and self._outcome.error_code is None:
+                self._outcome = ModelCallOutcome(
+                    error_code=ModelErrorCode.INVALID_RESPONSE,
+                    error_message="模型响应未正常结束",
+                    usage=self._outcome.usage,
+                    cost=self._outcome.cost,
+                )
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -511,17 +518,16 @@ class AgentLoop:
             state.dropped_record_count = sum(item.dropped_record_count for item in requests)
             state.tool_rounds = max(item.tool_rounds for item in requests)
             state.tool_calls = max(item.tool_calls for item in requests)
-            settled_before_latest = requests[:-1]
+            settled_before_latest = requests[:-1] if latest_is_open else requests
             state.total_retry_count = sum(
                 item.state.value == "failed" for item in settled_before_latest
             )
-            if latest_is_open:
-                trailing_failures = 0
-                for item in reversed(settled_before_latest):
-                    if item.state.value != "failed":
-                        break
-                    trailing_failures += 1
-                state.retry_count = trailing_failures
+            trailing_failures = 0
+            for item in reversed(settled_before_latest):
+                if item.state.value != "failed":
+                    break
+                trailing_failures += 1
+            state.retry_count = trailing_failures
 
         def settle_model_request(
             admission,
