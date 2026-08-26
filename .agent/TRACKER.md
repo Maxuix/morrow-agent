@@ -2,10 +2,10 @@
 
 ## Current status
 
-S7P-00 implementation, independent review, review repairs and offline validation are complete on
-`codex/feat/s7p-00-eval-protocol` from verified
-`main@f69a0ce9ec7efc6a7eea07f7c5a1bb36945e9dfa`. The full user-provided reliability checklist has
-been read. The evaluation-only harness now has a versioned protocol, strict non-secret profile,
+S7P-00 implementation, internal independent review, review repairs, offline validation and local
+integration are complete. Verified commits through `bbda7de395c97beac372d60803461caeddefd8db` were
+fast-forward merged into `main`; the clean topic branch and worktree were removed after ancestry
+verification. The evaluation-only harness now has a versioned protocol, strict non-secret profile,
 create-only Run Manifest, rebuild/finalize lifecycle, fail-closed workspace/artifact evidence and
 mechanical aggregation; production runtime files remain unchanged.
 
@@ -14,8 +14,7 @@ reliability checklist. They are not part of the topic branch and must remain unt
 
 ## Active task
 
-Record the completed independent review and review-repair validation; keep the topic branch/worktree
-available for the current/root task's independent integration.
+None. Subplan 79 is completed, integrated and retired.
 
 ## Located evidence
 
@@ -31,9 +30,9 @@ available for the current/root task's independent integration.
 
 ## Next action
 
-Review-repair commit(s) and all requested gates are ready for the current/root task. Keep the three
-user-owned untracked research documents and the historical Stage 7 baseline untouched; do not merge
-`main` or delete the topic branch/worktree.
+Wait for the user to explicitly open the next ordered Stage 7 reliability item. Do not create the
+next subplan automatically. Keep the three user-owned untracked research documents and the
+historical Stage 7 baseline untouched.
 
 ## Blockers
 

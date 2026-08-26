@@ -1,8 +1,8 @@
 # Stage 7 Preflight Reliability Repairs — S7P-00 Evaluation Protocol
 
-> Status: active
-> Active subplan: 79 — freeze the evaluation protocol and failure taxonomy
-> Branch: `codex/feat/s7p-00-eval-protocol`
+> Status: completed and integrated locally
+> Active subplan: none — Subplan 79 completed and retired
+> Integration: local `main` contains the verified implementation through `bbda7de`
 > Source authority: the user-requested S7P-00 checklist, current code, and deterministic checks
 
 ## 1. Objective
@@ -116,7 +116,7 @@ No live Provider, credential, network, Pi or Morrow model run is part of S7P-00.
 - S7P-00 acceptance evidence maps every checklist item to a command/test/artifact.
 - The implementation receives review from an independent review subagent. All findings are repaired
   and revalidated after the findings are returned.
-- Verified changes are committed on the topic branch. The current/root task owns any later merge or
-  branch/worktree retirement; this implementation session does not merge `main` or delete the topic
-  branch/worktree. User-owned untracked research documents remain untouched.
+- Verified changes were fast-forward merged into local `main` through `bbda7de`. The clean topic
+  branch and worktree were retired only after ancestry and cleanliness checks. User-owned untracked
+  research documents remain untouched.
 - No remote push is performed unless separately requested.

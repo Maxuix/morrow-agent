@@ -2915,3 +2915,17 @@
   already formatted` / `All checks passed`; compileall; eval lifecycle CLI smoke; `morrow --help`;
   and `git diff --check`. No live Provider, Pi, network or credential test ran. The topic branch
   remains unmerged and the worktree remains available for the current/root task.
+
+## 2026-08-26 — Subplan 79 integrated and retired
+
+- Fast-forward merged `codex/feat/s7p-00-eval-protocol` into local `main` from `f69a0ce` through
+  `bbda7de`; no merge commit or history rewrite was used.
+- Confirmed the topic branch had no commit absent from `main` and its worktree was clean. Archived
+  the completed implementation task, removed its clean worktree, and deleted the fully merged local
+  topic branch.
+- The final committed-state gates remain: focused `22 passed in 10.12s`; self-check 10/10 baseline
+  failed and Gold passed; offline `1101 passed, 2 skipped, 2 deselected in 46.47s`; Ruff format/check,
+  compileall, `morrow --help`, eval lifecycle CLI smoke and `git diff --check` passed. No live
+  Provider, Pi, network or credential test ran.
+- The three user-owned untracked research documents remain present and unmodified. No remote push
+  was requested or performed; local `main` is intentionally ahead of `origin/main`.

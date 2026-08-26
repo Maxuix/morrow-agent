@@ -10,14 +10,14 @@ completed Code Agent Mini Eval, then repair only evidence-backed tool gaps that 
 7 tasks. Subplan 78 is complete, integrated into local `main`, and retired.
 
 On 2026-08-26 the user approved the ordered Direct Agent reliability checklist and opened S7P-00.
-Subplan 79 freezes the evaluation protocol and failure taxonomy before any measured Direct Agent
-repair begins.
+Subplan 79 completed the evaluation protocol and failure-taxonomy freeze, passed internal review,
+and was fast-forward integrated into local `main` before any measured Direct Agent repair begins.
 
 ## Stage 7 reliability sequence
 
 | Order | File | Status |
 |---|---|---|
-| 79 | `79-s7p-00-evaluation-protocol.md` | active |
+| 79 | `79-s7p-00-evaluation-protocol.md` | completed and integrated locally |
 
 ## Stage 7 pre-baseline
 

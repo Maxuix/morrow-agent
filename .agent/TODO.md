@@ -6,7 +6,7 @@ Stage 7 preflight reliability repairs, S7P-00: freeze evaluation protocol and fa
 
 ## Active subplan
 
-Subplan 79 — S7P-00 reproducible evaluation protocol.
+None. Subplan 79 — S7P-00 reproducible evaluation protocol — is completed and retired.
 
 ## Tasks
 
@@ -18,8 +18,9 @@ Subplan 79 — S7P-00 reproducible evaluation protocol.
 - `[x]` Update evaluation documentation and publish S7P-00 acceptance evidence.
 - `[x]` Run focused, self-check, full offline and quality gates.
 - `[x]` Complete independent code review, repair all findings and rerun affected gates.
-- `[x]` Commit verified implementation and review repairs; leave merge and branch/worktree retirement
-  to the current/root task.
+- `[x]` Commit verified implementation and review repairs.
+- `[x]` Fast-forward merge the verified branch into local `main`, verify ancestry, and retire the
+  clean topic branch/worktree.
 
 ## Boundaries
 
