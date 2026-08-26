@@ -1,110 +1,120 @@
-# Stage 7 Pre-Baseline: Direct Agent Evaluation and Blocking Tool Repairs
+# Stage 7 Preflight Reliability Repairs — S7P-00 Evaluation Protocol
 
-> Status: completed and integrated locally
-> Active subplan: none; Subplan 78 retired
-> Baseline revision: `05e3603090dce7955d89f72f08f7df2ed2d7b120`
-> Branch: `codex/feat/stage7-direct-baseline`
-> Evaluation authority: `evals/code-agent-mini/README.md`
+> Status: active
+> Active subplan: 79 — freeze the evaluation protocol and failure taxonomy
+> Branch: `codex/feat/s7p-00-eval-protocol`
+> Source authority: the user-requested S7P-00 checklist, current code, and deterministic checks
 
 ## 1. Objective
 
-Establish the Direct Agent success, cost and rework baseline required before Stage 7. Run the fixed
-10-task Code Agent Mini Eval through Morrow's public terminal interface, diagnose failures from
-sanitized evidence, and repair only tool behavior that demonstrably blocks Stage 7 complex code
-tasks.
+Complete S7P-00 before any Direct Agent reliability repair changes the measured system. Replace the
+current ad-hoc CSV/manual-report workflow with a versioned, immutable and machine-checkable run
+bundle that can:
 
-This slice does not implement AgentDefinition, Workflow, orchestration, compaction, steering, plan
-mode, model routing or generalized product improvements.
+1. recreate an equivalent isolated task workspace from one Run Manifest;
+2. distinguish verifier outcome, task failure class and tool terminal states;
+3. retain raw verifier output, bounded Git evidence, expected/unexpected paths and a structured stop
+   reason;
+4. mechanically derive aggregate counts without merging failed, denied and blocked outcomes; and
+5. enforce two independent repetitions and the frozen Stage 7 entry thresholds.
 
-## 2. Test contract
+## 2. Located defect
 
-- Agent: current production Direct Agent.
-- Provider/model: the configured `opencode-go/mimo-v2.5`; no silent model fallback.
-- Permission mode: `auto-sandboxed` so ordinary workspace-local code operations can run without
-  manual approvals while preserving the native sandbox boundary.
-- Workspace: one newly prepared, isolated Git workspace per task.
-- User surface: launch with `morrow --dir WORKSPACE`, submit one ordinary request to read `TASK.md`
-  and complete the task, then exit through the documented REPL command.
-- Oracle: the evaluation harness's workspace-external verifier plus unexpected-diff inspection.
-- Repetition: one complete 10-task baseline. Repeat only a failed task when needed to distinguish
-  nondeterminism from a reproducible tool defect or to verify a repair.
-- Network/credentials: Provider-backed execution is explicitly in scope for this user-requested
-  Direct Agent baseline; never print credential values or raw Provider payloads.
+The existing `evals/code-agent-mini/eval.py` supports only `list`, `show`, `prepare`, `verify` and
+`self-check`. Its workspace marker records only dataset version, task ID and gold/baseline state.
+`results-template.csv` has no fixed failure enum, tool-state split, stop code, verifier artifact,
+diff evidence, environment/configuration snapshot or integrity linkage. The README still permits a
+single complete baseline and manual repetition. No committed raw run records exist, so the legacy
+report cannot be mechanically regenerated.
 
-## 3. Failure classification and repair gate
+This is an evaluation-harness defect. S7P-00 does not require or authorize changes to AgentLoop,
+Provider adapters, public events, Operational Store, runtime-policy defaults or production prompts.
 
-Classify every non-pass as one of:
+## 3. Frozen protocol decisions
 
-1. `tool_blocker`: an available or clearly required code-agent tool cannot perform a necessary,
-   policy-allowed operation, reports unusable diagnostics, or exposes a broken workflow contract;
-2. `agent_reasoning`: tools were sufficient but the model chose or implemented the wrong approach;
-3. `budget_or_context`: the run stopped at a frozen runtime limit without evidence of a tool defect;
-4. `provider_or_environment`: credential, network, Provider, sandbox, dependency or harness failure;
-5. `inconclusive`: evidence is insufficient or the outcome is nondeterministic.
+- Add a versioned `protocol.toml` as the authority for result classes, tool terminal states,
+  repetition count, required evidence and Stage 7 gate thresholds.
+- Task result classes are exactly `PASS`, `FAIL_MODEL`, `FAIL_TOOL_CONTRACT`, `FAIL_RUNTIME`,
+  `DENIED_POLICY`, `BLOCKED_ENV` and `BUDGET_EXHAUSTED`.
+- Tool states are counted independently as succeeded, failed, denied, cancelled and blocked (or the
+  documented equivalent). A denial never increments failed.
+- A PASS requires verifier success and no unexpected workspace modification. Non-PASS results
+  require one fixed class and a bounded evidence-based explanation.
+- Every baseline task requires two fresh repetitions. A summary with missing/duplicate repetitions,
+  mixed protocol/profile revisions, tampered artifacts or unavailable required evidence is
+  incomplete, never passing.
+- Freeze the S7P-09 hard thresholds now in the versioned protocol. Changing them later requires a
+  new protocol revision; historical manifests retain the original protocol hash.
+- A clean evaluator source checkout is required for comparable baselines. Explicit dirty diagnostic
+  runs may record a bounded path/hash summary but cannot satisfy the comparison gate.
+- Preserve the legacy Stage 7 Direct baseline as historical evidence. Record its known
+  `38 failed + 16 denied = 54 non-success` correction in the new S7P-00 acceptance document without
+  rewriting that snapshot.
 
-Production changes require a reproducible `tool_blocker` on at least one complex task and a clear
-Stage 7 impact. Fix the narrowest shared tool boundary; preserve capability policy, approvals,
-sandboxing, workspace containment, ToolExecutor/recovery ownership, event lifecycle and secret
-redaction. Do not tune against Gold patches or copy reference solutions into Agent context.
+## 4. Run bundle contract
 
-## 4. Execution sequence
+Implement the contract with Python standard library code in the existing evaluation harness:
 
-1. Record revision, dirty-state caveat, public launch path, non-secret model/policy facts and
-   Provider readiness.
-2. Run the dataset self-check, then one simple public-interface smoke task.
-3. Run all 10 tasks once, capture sanitized terminal evidence and verifier results, and inspect
-   workspace diffs.
-4. Reconcile the 10 tasks into the runtime-generated user-scenario matrix and diagnose failures.
-5. If and only if the repair gate is met, add a focused regression, implement the minimal tool fix,
-   rerun the affected task(s), focused tests and required quality/offline gates.
-6. Persist a self-contained Stage 7 Direct baseline report and reconcile roadmap/execution state.
+```text
+run bundle/
+  run-manifest.json       frozen before Agent execution
+  workspace/              newly prepared isolated Git workspace
+  runtime-evidence.json   sanitized execution/stop/tool-state facts
+  verifier-output.txt     raw external verifier output
+  workspace-diff.patch    evaluation-workspace patch evidence
+  run-result.json         classification plus hashes of every evidence artifact
+```
 
-## 5. Validation
+The manifest captures the evaluator commit and bounded dirty summary, dataset/protocol revisions and
+hashes, task/repetition/workspace baseline tree, Agent/entrypoint, Provider/model revision, sampling
+parameters, Provider-visible tool snapshot, permission policy, budgets, system-prompt version/hash,
+project-instruction sources/hashes and execution/runtime versions. No credential, reasoning, full
+tool arguments/results or traceback is accepted.
 
-Always run the focused tests for any changed tool boundary, then:
+The CLI must retain the current commands and add narrow lifecycle commands equivalent to:
+
+- start a new run bundle from a strict non-secret profile;
+- rebuild and hash-check an equivalent workspace from a manifest;
+- finalize a run by invoking the external verifier and recording Git/runtime evidence; and
+- summarize finalized run results with completeness and gate diagnostics.
+
+Exact command names may change during implementation if tests reveal a clearer interface, but the
+artifact and acceptance contracts above may not be weakened.
+
+## 5. Implementation sequence
+
+1. Add regression tests that expose the missing manifest, classification and aggregation contracts.
+2. Freeze protocol v1, strict run-profile shape and per-task expected-change policy without exposing
+   Gold implementations to the Agent.
+3. Implement manifest creation, content hashes, clean-source comparability and workspace rebuild.
+4. Implement verifier/diff/runtime evidence finalization and strict result classification.
+5. Implement mechanical aggregation, two-run completeness checks and frozen gate evaluation.
+6. Replace the legacy CSV instructions with the run-bundle workflow and publish S7P-00 acceptance
+   evidence plus the legacy-statistics erratum.
+7. Run focused tests, the dataset self-check, full offline and repository quality gates.
+
+## 6. Validation
 
 ```bash
+uv run pytest -q tests/test_code_agent_mini_eval.py
+.venv/bin/python evals/code-agent-mini/eval.py self-check
 uv run pytest -m 'not live'
 uv run ruff format --check .
 uv run ruff check .
-uv run python -m compileall -q src tests
+uv run python -m compileall -q src tests evals/code-agent-mini
 uv run morrow --help
 git diff --check
 ```
 
-The live evaluation result and the offline quality gate are separate evidence. A Provider-backed
-task pass does not replace deterministic regression coverage; an offline unit pass does not count
-as a Direct Agent task pass.
+No live Provider, credential, network, Pi or Morrow model run is part of S7P-00.
 
-## 6. Completion conditions
+## 7. Completion and integration
 
-- all 10 baseline tasks have `PASS`, `FAIL`, `BLOCKED`, `NOT RUN` or `INCONCLUSIVE` status with an
-  external verifier result or precise blocking reason;
-- the report records task success, runtime/tool-call/token facts when publicly observable, user
-  intervention, failure class and unexpected file changes;
-- every implemented production change is traced to a reproduced Stage 7-blocking tool defect and
-  has focused regression coverage;
-- affected task reruns and all required offline/quality gates pass, or remaining blockers are
-  recorded without broadening scope;
-- verified changes and execution state are committed without absorbing the user's pre-existing
-  uncommitted roadmap/evaluation files; no remote push is performed unless separately requested.
-
-## 7. Preserved boundaries
-
-- `ConversationLog` remains the only chat-history writer.
-- Ordinary chat remains on `AgentLoop.run_task()` and the existing ToolExecutor path.
-- Credentials, reasoning, full tool arguments/results, SDK objects and tracebacks stay out of
-  evidence, logs, terminal output and YAML.
-- No destructive Git operation, host-wide mutation, live MCP, Workflow implementation, new
-  dependency or permission-default change is in scope.
-
-## 8. Outcome
-
-- Complete Direct baseline: `2 PASS / 8 FAIL`; 312 tool calls; approximately 32 minutes 52 seconds.
-- Confirmed and repaired two shared blockers: durable policy-denial recovery diagnostics and exact
-  read-only project/runtime toolchain exposure inside the native sandbox.
-- Repair verification: `MORROW-001` and `MORROW-003` reached viable project command execution; both
-  still failed for Agent/budget behavior, so no Workflow, compaction or budget change was added.
-- Deterministic gates: focused `37 passed`; host-level macOS sandbox `2 passed`; full offline
-  `1081 passed, 2 deselected`; Ruff, compileall, CLI help and diff check passed.
-- Acceptance record: `docs/acceptance/stage7-direct-agent-baseline.md`.
+- The focused matrix proves rebuild equivalence, tamper detection, PASS strictness, fixed
+  classification, distinct failed/denied/blocked totals, unavailable-not-zero metrics, duplicate
+  rejection and two-run completeness.
+- S7P-00 acceptance evidence maps every checklist item to a command/test/artifact.
+- The implementation receives a separate code review. All findings are repaired and revalidated.
+- Verified changes are committed on the topic branch, fast-forward merged into local `main`, and the
+  clean topic worktree/branch is retired. User-owned untracked research documents remain untouched.
+- No remote push is performed unless separately requested.

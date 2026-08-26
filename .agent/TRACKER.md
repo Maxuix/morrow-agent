@@ -2,56 +2,36 @@
 
 ## Current status
 
-Subplan 78 is complete and fast-forward integrated into local `main`. Its baseline revision was
-`05e3603090dce7955d89f72f08f7df2ed2d7b120`.
+S7P-00 is active on `codex/feat/s7p-00-eval-protocol` from verified
+`main@f69a0ce9ec7efc6a7eea07f7c5a1bb36945e9dfa`. The full user-provided reliability checklist has
+been read. Current repository evidence confirms that the evaluation harness has task preparation
+and verification but no Run Manifest, frozen taxonomy, raw run record, integrity-linked diff/stop
+evidence or mechanical aggregation path.
 
-The 10-task Code Agent Mini Eval is present and enumerable. The current public Direct Agent launch
-path is `morrow --dir WORKSPACE`; the configured model is `opencode-go/mimo-v2.5`. Stage 7's roadmap
-requires this single-Agent success/cost/rework baseline before Workflow work begins.
-
-The starting worktree is intentionally dirty with user-owned changes to `docs/ROADMAP.md`,
-`docs/IMPROVEMENT_OPPORTUNITIES.md`, `.agents/` and `evals/`. They must be preserved and excluded
-from repair commits unless the final evidence report specifically belongs with the completed eval
-dataset.
-
-The dataset self-check passed all 10 items. Provider readiness passed outside the Codex filesystem
-sandbox with the existing Keychain credential; the evaluation uses a disposable state root seeded
-only with the current non-secret global configuration.
-
-The public-interface `EXTERNAL-001` smoke run passed its external oracle (`13 passed`). Morrow's
-terminal summary reported 13 tool calls, 10 successes, 3 failures, two modified files and validation
-passed. Two write approvals were required. `phone_number.py` was the intended change; an untracked
-`test_phone_number.py` remained even though the Agent said it had cleaned the temporary test. Record
-this as an unexpected modification and possible delete/promotion workflow gap, not yet as a Stage 7
-blocker.
+The current worktree also contains three user-owned untracked research documents, including the
+reliability checklist. They are not part of the topic branch and must remain untouched.
 
 ## Active task
 
-None. Stage 7 pre-baseline item 2 is complete. The user's pre-existing roadmap,
-improvement-list, `.agents/` and `evals/` changes remain uncommitted and preserved.
+The executable Subplan 79 is written and awaiting implementation in the user-requested separate
+Codex session using `gpt-5.6-luna` with `max` reasoning.
 
-The first full baseline is complete: `PASS 2`, `FAIL 8`, `BLOCKED 0`, `INCONCLUSIVE 0`. All six
-Morrow-history tasks failed before any file modification after 32–49 tool calls and the 30-round
-limit. `EXTERNAL-001` and `EXTERNAL-002` passed. `EXTERNAL-003` and `EXTERNAL-004` reached working
-implementations but failed hidden callback/redefinition semantics and are classified as Agent
-reasoning failures, not tool defects. All four external runs left Agent-created test files.
+## Located evidence
 
-The two narrow repairs are complete. Durable prepared intents retain bounded policy reason codes
-and expose safe recovery guidance; native sandbox execution exposes only exact read-only current
-runtime/workspace `.venv` roots. `MORROW-001` and `MORROW-003` reruns reached viable project command
-execution but remained FAIL because of Agent/round-budget behavior. No additional tool repair is
-justified by the evidence.
-
-The acceptance report is `docs/acceptance/stage7-direct-agent-baseline.md`. Focused tests passed
-(`37 passed`), host-level native sandbox tests passed (`2 passed`), and the full offline gate passed
-(`1081 passed, 2 deselected in 39.18s`). Ruff format/check, compileall, CLI help and diff check passed.
+- `eval.py --help` exposes only `list/show/prepare/verify/self-check`.
+- A freshly prepared workspace marker contains only dataset/version/task/gold fields.
+- `results-template.csv` lacks failure class, tool terminal-state split, stop reason, verifier/diff
+  evidence and all environment/configuration snapshots.
+- The README still defines one full baseline plus optional reruns, conflicting with S7P-00's
+  minimum two independent repetitions.
+- No committed raw result JSON/JSONL exists from which the legacy acceptance totals can be rebuilt.
 
 ## Next action
 
-Await an explicit request to begin the next Stage 7 activity. Remote push was not requested and
-remains out of scope.
+Commit this plan checkpoint, return the primary worktree to `main`, create a separate project
+worktree session on the topic branch with Luna Max, and execute Subplan 79. After its implementation
+commit, review the full branch diff before requesting any review repairs.
 
 ## Blockers
 
-None. The Direct baseline remains poor but is now a valid Stage 7 comparison baseline; the remaining
-complex-task failures are Agent reasoning/round-budget evidence, not a missing execution tool.
+None.

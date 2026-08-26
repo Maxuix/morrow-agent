@@ -2,28 +2,31 @@
 
 ## Current stage
 
-Stage 7 pre-baseline, item 2: test the current Direct Agent and repair only blocking tool gaps.
+Stage 7 preflight reliability repairs, S7P-00: freeze evaluation protocol and failure taxonomy.
 
 ## Active subplan
 
-Subplan 78 — Direct Agent baseline and blocking tool gaps.
+Subplan 79 — S7P-00 reproducible evaluation protocol.
 
 ## Tasks
 
-- `[x]` Establish the public-surface test basis, isolated execution setup and Provider readiness.
-- `[x]` Self-check the 10-task dataset and pass one public-interface smoke task.
-- `[x]` Execute the complete 10-task Direct Agent baseline once and capture sanitized evidence.
-- `[x]` Classify every failure and reproduce only suspected Stage 7-blocking tool defects.
-- `[x]` Add focused regression tests and minimally repair each confirmed blocking tool defect.
-- `[x]` Rerun affected evaluations and required focused/full offline and quality gates.
-- `[x]` Persist the evidence-backed baseline report and reconcile execution state.
-- `[x]` Commit verified work, integrate it into local `main`, and retire the topic branch.
+- `[x]` Read the full reliability checklist and locate S7P-00 against current code and evidence.
+- `[x]` Freeze scope, protocol decisions, implementation boundaries and deterministic validation.
+- `[ ]` Add failing tests for run manifests, rebuild, evidence finalization and aggregation.
+- `[ ]` Implement the versioned protocol, strict run profile and task change contracts.
+- `[ ]` Implement run start/rebuild/finalize/summarize without changing production runtime code.
+- `[ ]` Update evaluation documentation and publish S7P-00 acceptance evidence.
+- `[ ]` Run focused, self-check, full offline and quality gates.
+- `[ ]` Complete independent code review, repair all findings and rerun affected gates.
+- `[ ]` Commit verified implementation, fast-forward merge to `main`, and retire Subplan 79.
 
 ## Boundaries
 
-- Do not use Gold patches or external-task reference solutions to guide the Agent.
-- Do not repair model reasoning, add Workflow/AgentDefinition behavior, or broaden into compaction,
-  steering, plan mode, routing, package management or Git writes without direct blocking evidence.
-- Preserve policy defaults, approval/sandbox/workspace boundaries, recovery ownership, event shape,
-  secret redaction and all unrelated user changes.
-- Provider-backed Direct Agent calls are in scope; live MCP and unrelated network actions are not.
+- Do not modify AgentLoop, Provider adapters, public events, Operational Store, prompts or runtime
+  policy in S7P-00.
+- Do not run live Provider/model/Pi/network/credential tests.
+- Do not expose Gold solutions to an evaluated Agent.
+- Do not persist credentials, reasoning, full tool arguments/results or tracebacks.
+- Do not rewrite the legacy Direct baseline; publish an explicit erratum in the new acceptance
+  record.
+- Preserve the three user-owned untracked research documents.

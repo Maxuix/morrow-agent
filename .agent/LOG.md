@@ -2852,3 +2852,21 @@
   are non-convergent Direct behavior, semantic implementation misses, or the Provider timeout.
 - External workspaces left six Agent-created extra files. This remains a cleanup-quality finding,
   not a Stage 7-blocking tool defect. Detailed matrix and evidence are in the acceptance report.
+
+## 2026-08-26 — Subplan 79 S7P-00 evaluation protocol activated
+
+- The user approved the ordered Stage 7 preflight Direct Agent reliability checklist and requested
+  S7P-00 first, with planning before implementation, implementation in a separate Luna Max Codex
+  session, then code review, repair, commit and fast-forward integration to `main`.
+- Current-code reproduction shows that `eval.py` only prepares/verifies tasks, its workspace marker
+  has no execution/configuration snapshot, and the one-line CSV cannot encode the fixed failure
+  taxonomy, distinct tool terminal states, stop/diff/verifier evidence or repeatability. No raw run
+  records exist from which the legacy prose totals can be mechanically regenerated.
+- Activated `codex/feat/s7p-00-eval-protocol` at
+  `main@f69a0ce9ec7efc6a7eea07f7c5a1bb36945e9dfa`. Scope is evaluation-only: versioned protocol,
+  strict non-secret run profile, immutable manifest/run bundle, rebuild/finalize/aggregate commands,
+  deterministic tests and acceptance evidence. Production runtime, Provider, prompt, event and
+  policy behavior remain out of scope; no live model/network/credential run is authorized.
+- The legacy acceptance report remains an immutable snapshot. Its later-discovered split of 54
+  non-success calls into 38 failed and 16 policy-denied calls will be recorded as an erratum in the
+  new S7P-00 acceptance record, not silently rewritten.
