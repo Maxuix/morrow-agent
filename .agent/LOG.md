@@ -3094,3 +3094,33 @@
   confined unlink and atomic no-replace move; expected-absence/two-path recovery; sandbox delete
   and unambiguous move promotion; deterministic partial-failure truth. Copy, directory mutation,
   overwrite/force, Git writes, public-event/default/dependency changes and live tests stay out.
+
+## 2026-08-27 — Subplan 83 implementation, formal review repair and final acceptance
+
+- Implemented S7P-04 on `codex/feat/s7p-04-workspace-change-lifecycle`: explicit production
+  `delete_file`, `move_file` and `rename_file` beside compatible create/patch/replace; regular-file
+  only, mandatory source SHA-256, protected/no-symlink/no-directory boundaries, required approval,
+  ordered absence/two-path evidence, sandbox delete and unambiguous move promotion, and bounded
+  partial-failure ChangeSet truth. Implementation and acceptance commits were `aecd4ec` and
+  `751bd02`.
+- The required same-task read-only reviewer Averroes
+  (`01a03f96-8c8b-7ad3-9f44-c767bf550a46`, `gpt-5.6-luna`, reasoning `max`) reviewed the complete
+  `e80c3157d3286116b04566cf76bf01fd192c6b8b...751bd02` diff and returned formal `REQUEST CHANGES`.
+  Euclid (`01a03f7f-efef-7b50-b794-697f03af07bb`) was interrupted after stalling and did not
+  substitute for the formal report. Averroes changed no files. Its recorded pre-repair full gate
+  was `1213 passed, 4 failed, 2 skipped, 2 deselected`; the four failures were stale production
+  inventory assertions. Reviewer static gates and worktree cleanliness were recorded as passing.
+- Locally reproduced and repaired every confirmed P1/P2/P3 finding in `ea19067`: strict recovery
+  path confinement; held no-follow source fd with stable double-read and entry identity recheck;
+  non-blocking FIFO/special handling; post-effect fsync/verification `OUTCOME_UNKNOWN` with
+  ChangeSet/ToolFact/durable evidence/recovery; destination hash/size/mode verification; inventory
+  updates; and deterministic source-race, FIFO, mode-drift, fsync, closed-unknown recovery and
+  effectful partial-failure regression coverage. No confirmed findings remain open after local
+  verification.
+- Final focused affected suite passed `205 passed, 2 skipped in 16.20s`; dedicated S7P-04 suite
+  passed `30 passed in 0.81s`; full offline fallback gate passed
+  `1225 passed, 2 skipped, 2 deselected in 50.65s`. `uv run pytest -m 'not live'` could not
+  initialize the restricted `/Users/ruirui/.cache/uv`; the documented current-worktree fallback
+  interpreter was used. Ruff format/check, compileall, both CLI help commands, current-worktree
+  import proof and `git diff --check` passed. No live Provider/model/Pi/MCP/network/credential test
+  ran. Acceptance evidence and execution state were updated; root integration remains pending.

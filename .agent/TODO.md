@@ -12,16 +12,16 @@ Subplan 83 — delete, move, rename and sandbox promotion lifecycle.
 
 - `[x]` Read S7P-04 and reproduce missing operations and ineligible sandbox deletion.
 - `[x]` Freeze regular-file-only, no-overwrite, approval, evidence and recovery decisions.
-- `[>]` Add failing delete/move/rename domain, schema and production inventory tests.
-- `[ ]` Implement confined delete and atomic no-replace move/rename publication.
-- `[ ]` Add structured tools, previews, approval/cancellation and ChangeSet facts.
-- `[ ]` Freeze ordered expected-absence/two-path durable evidence and recovery outcomes.
-- `[ ]` Promote sandbox deletes and unambiguous moves with deterministic partial-failure truth.
-- `[ ]` Prove dirty-change, conflict, symlink, directory, race and crash boundaries.
-- `[ ]` Prove scripted Direct delete/rename final-tree acceptance.
-- `[ ]` Update architecture, publish acceptance evidence and run focused/full offline gates.
-- `[ ]` Complete same-task Luna Max subagent review and repair every confirmed finding.
-- `[ ]` Commit the final verified implementation; leave merge/retirement to the root task.
+- `[x]` Add failing delete/move/rename domain, schema and production inventory tests.
+- `[x]` Implement confined delete and atomic no-replace move/rename publication.
+- `[x]` Add structured tools, previews, approval/cancellation and ChangeSet facts.
+- `[x]` Freeze ordered expected-absence/two-path durable evidence and recovery outcomes.
+- `[x]` Promote sandbox deletes and unambiguous moves with deterministic partial-failure truth.
+- `[x]` Prove dirty-change, conflict, symlink, directory, race and crash boundaries.
+- `[x]` Prove scripted Direct delete/rename final-tree acceptance.
+- `[x]` Update architecture, publish acceptance evidence and run focused/full offline gates.
+- `[x]` Complete same-task Luna Max subagent review and repair every confirmed finding.
+- `[x]` Commit the final verified implementation; leave merge/retirement to the root task.
 
 ## Boundaries
 

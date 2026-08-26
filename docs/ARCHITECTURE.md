@@ -97,18 +97,22 @@ Runtime 已提供与具体领域无关的 `PermissionProfile`、`WorkspaceCapabi
 能力与权限预设，Executor 按 intent 预检和策略判定后才允许审批或执行。生产配置工具使用
 `effect=persistent_write/approval=required`，通过 Interface 层的 `TerminalApprovalPort` 接收经过预检和
 脱敏的预览；权限、原因和副作用元数据不会进入 Provider wire。`ToolRunContext` 与严格 `ToolFact`
-只在进程内保留最近一次完成运行的事实，不写入 ConversationLog 或持久状态；可选
+只在进程内保留最近一次完成运行的事实，不写入 ConversationLog 或持久状态；对需要崩溃对账的文件变更，
+durable execution 只可额外保存无正文的 `FileMutationEvidence`，不保存 ToolFact、正文或完整参数；可选
 `RunMetricsSnapshot` 只保留有界 JSON-safe 计数，默认启用但可在 composition root 关闭，同样不持久化、不上传。
 Profile 配置工具和 `/workspace` 委托给 `ConfigPatchService`；Preference 工具、CLI/REPL 与 Inbox
 统一委托给 `PreferenceWriter`。文件读取与搜索不跟随目录符号链接，
 并把 `.git`、`.morrow`、凭据路径及常见 PEM 私钥内容作为受保护资源；文件变更拒绝符号链接路径、
 混合换行源文件、陈旧 SHA-256、模糊/多匹配编辑和受保护凭据内容，并通过同目录临时文件、文件 `fsync`、
 原子替换和父目录句柄保护发布。S7P-04 的 destructive mutation 只做 regular-file confined unlink，或
-通过 `renameatx_np`/`renameat2` 等已证明的 no-clobber primitive 完成 move/rename；多路径按稳定顺序
-加锁并在锁内重验，发布后验证 source absence、destination hash/size 与受影响父目录 fsync。prepared intent
+通过 `renameatx_np`/`renameat2` 等已证明的 no-clobber primitive 完成 move/rename；源 regular-file fd 在
+effect 期间保持打开，内容以有界稳定双读核验，并在 effect 前以 dev/ino/type/mode/size/mtime/ctime
+重验目录项身份；无法把源身份绑定到操作时 fail closed。多路径按稳定顺序加锁并在锁内重验，发布后验证
+source absence、destination hash/size/mode 与受影响父目录 fsync。prepared intent
 只冻结 hash/size/kind/path evidence：delete 为 source expected-absent，move/rename 为有序 source-absent
 加 destination expected-file；恢复区分 completed、safe-to-retry、mixed/reconciliation 与 outcome-unknown，
-不以路径缺失伪造成功。结果在领域服务内按当前 ToolCall 预算语义截断。Git 工具通过
+不以路径缺失伪造成功；effect 后 fsync/验证失败会保留 outcome-unknown ChangeSet/文件 evidence 并进入恢复，
+绝不宣称成功。结果在领域服务内按当前 ToolCall 预算语义截断。Git 工具通过
 `GitInspectionService` 与固定的 `GitInspectionAdapter` 解析只读状态/Diff，拒绝外部 Git metadata 并禁用
 pager、外部 diff、textconv、hooks-like executable extension points、prompt 和可选锁。`run_command` 通过同一个 `ProcessExecutionService` 选择
 `HostProcessAdapter` 或能力探测通过的 `NativeSandboxProcessAdapter`：Host 命令全部需要审批且不提供操作系统隔离，

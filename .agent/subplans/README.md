@@ -26,7 +26,7 @@ integrated locally. Subplan 83 now activates S7P-04 workspace change lifecycle r
 | 80 | `80-s7p-01-observability-headless.md` | completed and integrated locally |
 | 81 | `81-s7p-02-tool-contracts.md` | completed and integrated locally |
 | 82 | `82-s7p-03-direct-coding-prompt.md` | completed and integrated locally |
-| 83 | `83-s7p-04-workspace-change-lifecycle.md` | active |
+| 83 | `83-s7p-04-workspace-change-lifecycle.md` | completed; review repaired locally, topic pending root integration |
 
 ## Stage 7 pre-baseline
 
