@@ -318,4 +318,5 @@ class AgentRunPreparationService:
             tool_executor.run_policy,
             approval_port=tool_executor.approval_port,
             capability_policy=tool_executor.capability_policy,
+            expected_process_isolation=tool_executor.expected_process_isolation,
         )

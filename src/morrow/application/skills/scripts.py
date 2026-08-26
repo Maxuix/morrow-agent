@@ -41,7 +41,6 @@ from morrow.core.models import ToolEffect
 from morrow.core.skills.scripts import (
     SCRIPT_MAX_ENV_NAMES,
     SCRIPT_MAX_INPUT_ARTIFACTS,
-    SCRIPT_MAX_OUTPUTS,
     SCRIPT_MAX_TIMEOUT_SECONDS,
     SCRIPT_OUTPUT_FILE_MAX_BYTES,
     SCRIPT_PATH_MAX_CHARS,
@@ -69,15 +68,23 @@ class SkillScriptExecutionError(PublicDiagnosticError):
     """A Skill script failure with a reviewed, user-safe diagnostic."""
 
 
-_SKILL_RELATIVE_PATH_PATTERN = r"^(?!/)(?!.*\\)(?!.*\x00)(?!.*(?:^|/)\.{1,2}(?:/|$))[\s\S]+$"
-_SKILL_SCRIPT_PATH_PATTERN = r"^scripts/(?!$)(?!.*\\)(?!.*\x00)(?!.*(?:^|/)\.{1,2}(?:/|$))[\s\S]+$"
+_SKILL_RELATIVE_PATH_PATTERN = (
+    r"^(?!/)(?!.*\\)(?!.*\x00)(?!.*(?:^|/)\.{1,2}(?:/|$))"
+    r"(?!.*[^\x20-\x7e])[\s\S]+$"
+)
+_SKILL_SCRIPT_PATH_PATTERN = (
+    r"^scripts/(?!$)(?!.*\\)(?!.*\x00)(?!.*(?:^|/)\.{1,2}(?:/|$))"
+    r"(?!.*[^\x20-\x7e])[\s\S]+$"
+)
 _SKILL_ARG_PATTERN = r"^(?!.*\x00)(?!.*[\r\n])[\s\S]+$"
 _SKILL_ID_PATTERN = r"^[a-z0-9][a-z0-9_-]{0,63}$"
 _SKV_ID_PATTERN = r"^skv_[A-Za-z0-9_-]{8,64}$"
-_SELECTION_ID_PATTERN = r"^ssel_[A-Za-z0-9_-]{1,127}$"
-_WORKSPACE_ID_PATTERN = r"^ws_[A-Za-z0-9_-]{1,127}$"
-_ARTIFACT_ID_PATTERN = r"^art_[A-Za-z0-9_-]{1,127}$"
+_SELECTION_ID_PATTERN = r"^ssel_[A-Za-z0-9_-]{1,123}$"
+_WORKSPACE_ID_PATTERN = r"^ws_[A-Za-z0-9_-]{1,125}$"
+_ARTIFACT_ID_PATTERN = r"^art_[A-Za-z0-9_-]{1,124}$"
 _DIGEST_PATTERN = r"^[0-9a-f]{64}$"
+_ALLOWED_ENV_NAMES = frozenset({"LANG", "LC_ALL", "TZ", "PYTHONIOENCODING", "PYTHONUTF8"})
+_SKILL_PROVIDER_ARG_MAX_CHARS = 256
 
 SKILL_SCRIPT_PROVIDER_SCHEMA = {
     "$schema": SCHEMA_DIALECT,
@@ -109,7 +116,7 @@ SKILL_SCRIPT_PROVIDER_SCHEMA = {
             "items": {
                 "type": "string",
                 "minLength": 1,
-                "maxLength": 1024,
+                "maxLength": _SKILL_PROVIDER_ARG_MAX_CHARS,
                 "pattern": _SKILL_ARG_PATTERN,
             },
         },
@@ -117,7 +124,7 @@ SKILL_SCRIPT_PROVIDER_SCHEMA = {
             "type": "array",
             "maxItems": SCRIPT_MAX_ENV_NAMES,
             "uniqueItems": True,
-            "items": {"type": "string", "pattern": r"^[A-Z][A-Z0-9_]{0,63}$"},
+            "items": {"type": "string", "enum": sorted(_ALLOWED_ENV_NAMES)},
         },
         "input_artifact_ids": {
             "type": "array",
@@ -127,7 +134,7 @@ SKILL_SCRIPT_PROVIDER_SCHEMA = {
         },
         "output_paths": {
             "type": "array",
-            "maxItems": SCRIPT_MAX_OUTPUTS,
+            "maxItems": 1,
             "uniqueItems": True,
             "items": {
                 "type": "string",
@@ -159,7 +166,7 @@ class SkillScriptPlan:
 class SkillScriptExecutionService:
     """Execute only a selected version from a private, verified package copy."""
 
-    _SAFE_ENV_NAMES = frozenset({"LANG", "LC_ALL", "TZ", "PYTHONIOENCODING", "PYTHONUTF8"})
+    _SAFE_ENV_NAMES = _ALLOWED_ENV_NAMES
 
     def __init__(
         self,

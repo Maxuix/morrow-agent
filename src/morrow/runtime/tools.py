@@ -20,6 +20,7 @@ from morrow.core.capabilities import (
     OperationKind,
     PolicyDecision,
     PolicyVerdict,
+    ProcessIsolation,
     ToolCallContext,
     ToolFact,
     ToolHandlerOutcome,
@@ -39,6 +40,7 @@ from morrow.core.models import (
     ToolApprovalDecision,
     ToolApprovalRequest,
     ToolDefinition,
+    ToolEffect,
     ToolFunction,
 )
 from morrow.core.ports import ApprovalPort
@@ -201,6 +203,98 @@ class ToolContractAuditError(ValueError):
 
 
 @dataclass(frozen=True, slots=True)
+class ToolContractExpectation:
+    """Independent local expectations for one static Direct tool."""
+
+    intent_kind: OperationKind
+    intent_effect: ToolEffect
+    requires_host: bool | None = False
+    requires_sandbox: bool | None = False
+    policy_effect: ToolEffect = ToolEffect.NONE
+    policy_approval: ToolApproval = ToolApproval.NEVER
+
+
+def _static_contract(
+    kind: OperationKind,
+    effect: ToolEffect = ToolEffect.NONE,
+    *,
+    requires_host: bool | None = False,
+    requires_sandbox: bool | None = False,
+    policy_effect: ToolEffect = ToolEffect.NONE,
+    policy_approval: ToolApproval = ToolApproval.NEVER,
+) -> ToolContractExpectation:
+    return ToolContractExpectation(
+        intent_kind=kind,
+        intent_effect=effect,
+        requires_host=requires_host,
+        requires_sandbox=requires_sandbox,
+        policy_effect=policy_effect,
+        policy_approval=policy_approval,
+    )
+
+
+_STATIC_TOOL_CONTRACTS: Mapping[str, ToolContractExpectation] = MappingProxyType(
+    {
+        "list_directory": _static_contract(OperationKind.WORKSPACE_READ),
+        "read_file": _static_contract(OperationKind.WORKSPACE_READ),
+        "find_files": _static_contract(OperationKind.WORKSPACE_READ),
+        "search_text": _static_contract(OperationKind.WORKSPACE_READ),
+        "show_changes": _static_contract(OperationKind.INTERNAL_READ),
+        "git_status": _static_contract(OperationKind.GIT_READ),
+        "git_diff": _static_contract(OperationKind.GIT_READ),
+        "update_configuration": _static_contract(
+            OperationKind.CONFIGURATION_WRITE,
+            ToolEffect.PERSISTENT_WRITE,
+            policy_effect=ToolEffect.PERSISTENT_WRITE,
+            policy_approval=ToolApproval.REQUIRED,
+        ),
+        "manage_preferences": _static_contract(
+            OperationKind.CONFIGURATION_WRITE,
+            ToolEffect.PERSISTENT_WRITE,
+            policy_effect=ToolEffect.PERSISTENT_WRITE,
+            policy_approval=ToolApproval.REQUIRED,
+        ),
+        "apply_patch": _static_contract(OperationKind.WORKSPACE_WRITE, ToolEffect.PERSISTENT_WRITE),
+        "write_file": _static_contract(OperationKind.WORKSPACE_WRITE, ToolEffect.PERSISTENT_WRITE),
+        "promote_sandbox_changes": _static_contract(
+            OperationKind.WORKSPACE_WRITE,
+            ToolEffect.PERSISTENT_WRITE,
+            policy_effect=ToolEffect.PERSISTENT_WRITE,
+            policy_approval=ToolApproval.REQUIRED,
+        ),
+        "run_command": _static_contract(
+            OperationKind.PROCESS,
+            requires_host=None,
+            requires_sandbox=None,
+        ),
+        "run_skill_script": _static_contract(
+            OperationKind.PROCESS,
+            ToolEffect.SESSION_WRITE,
+            requires_host=False,
+            requires_sandbox=True,
+            policy_effect=ToolEffect.SESSION_WRITE,
+            policy_approval=ToolApproval.REQUIRED,
+        ),
+    }
+)
+
+
+def _static_contract_for(
+    name: str, *, process_isolation: ProcessIsolation | None = None
+) -> ToolContractExpectation | None:
+    expected = _STATIC_TOOL_CONTRACTS.get(name)
+    if expected is None:
+        return None
+    if name != "run_command" or process_isolation is None:
+        return expected
+    return replace(
+        expected,
+        requires_host=process_isolation is ProcessIsolation.HOST,
+        requires_sandbox=process_isolation is ProcessIsolation.NATIVE_SANDBOX,
+    )
+
+
+@dataclass(frozen=True, slots=True)
 class ToolContractAudit:
     """Value-free evidence that one registered tool passed the contract audit."""
 
@@ -263,6 +357,7 @@ def audit_registered_tool(
     require_runtime_contract: bool = False,
     require_closed_schema: bool = False,
     require_production_declaration: bool = False,
+    expected_process_isolation: ProcessIsolation | None = None,
 ) -> ToolContractAudit:
     """Fail closed when a registered tool and its final Provider contract drift apart.
 
@@ -288,19 +383,45 @@ def audit_registered_tool(
     declaration = registered.recovery_declaration
     if declaration is None or declaration.tool_name != name:
         raise _contract_failure(name, "recovery declaration is missing or mismatched")
-    if require_production_declaration:
+    check_static_declaration = require_production_declaration or (
+        require_runtime_contract and name in _STATIC_TOOL_CONTRACTS
+    )
+    if check_static_declaration:
+        declaration_isolation = (
+            expected_process_isolation
+            if expected_process_isolation is not None
+            else declaration.process_isolation
+        )
+        if name == "run_command" and declaration_isolation is None:
+            raise _contract_failure(name, "expected process isolation is missing")
         try:
             expected = tool_declaration(
                 name,
-                process_isolation=declaration.process_isolation if name == "run_command" else None,
-                production_only=True,
+                process_isolation=declaration_isolation if name == "run_command" else None,
+                production_only=require_production_declaration,
             )
         except UnknownToolDeclarationError:
-            raise _contract_failure(
-                name, "production recovery declaration is unavailable"
-            ) from None
+            label = "production " if require_production_declaration else "static "
+            raise _contract_failure(name, f"{label}recovery declaration is unavailable") from None
         if declaration != expected:
             raise _contract_failure(name, "recovery declaration drifted")
+
+    expected_contract = _static_contract_for(
+        name,
+        process_isolation=(
+            expected_process_isolation
+            if expected_process_isolation is not None
+            else declaration.process_isolation
+        ),
+    )
+    if require_runtime_contract and expected_contract is not None:
+        if registered.runtime_contract != expected_contract:
+            raise _contract_failure(name, "static runtime contract drifted")
+        if (
+            registered.execution_policy.effect is not expected_contract.policy_effect
+            or registered.execution_policy.approval is not expected_contract.policy_approval
+        ):
+            raise _contract_failure(name, "execution policy contract drifted")
 
     try:
         validator_schema = validator.schema
@@ -354,6 +475,7 @@ def audit_tool_contracts(
     require_runtime_contract: bool = False,
     require_closed_schema: bool = False,
     require_production_declaration: bool = False,
+    expected_process_isolation: ProcessIsolation | None = None,
 ) -> tuple[ToolContractAudit, ...]:
     """Audit a deterministic tool inventory and return only safe audit records."""
 
@@ -368,6 +490,7 @@ def audit_tool_contracts(
             require_runtime_contract=require_runtime_contract,
             require_closed_schema=require_closed_schema,
             require_production_declaration=require_production_declaration,
+            expected_process_isolation=expected_process_isolation,
         )
         for registered in sorted(values, key=lambda item: item.definition.function.name)
     )
@@ -460,6 +583,7 @@ class RegisteredTool:
     context_approval_preview: ContextApprovalPreview | None = None
     approval_preview_budget: ApprovalPreviewBudget = field(default_factory=ApprovalPreviewBudget)
     recovery_declaration: ToolRecoveryDeclaration | None = None
+    runtime_contract: ToolContractExpectation | None = None
 
     def __post_init__(self) -> None:
         validator = self.arguments_validator
@@ -472,6 +596,15 @@ class RegisteredTool:
             object.__setattr__(self, "recovery_declaration", declaration)
         if declaration.tool_name != self.definition.function.name:
             raise ValueError("tool recovery declaration name must match tool definition")
+        if self.runtime_contract is None:
+            object.__setattr__(
+                self,
+                "runtime_contract",
+                _static_contract_for(
+                    self.definition.function.name,
+                    process_isolation=declaration.process_isolation,
+                ),
+            )
 
 
 @dataclass(frozen=True)
@@ -519,6 +652,7 @@ class ToolRegistry:
         require_runtime_contract: bool = False,
         require_closed_schema: bool = False,
         require_production_declaration: bool = False,
+        expected_process_isolation: ProcessIsolation | None = None,
     ) -> ToolSet:
         tools = MappingProxyType(dict(self._tools))
         return ToolSet(
@@ -529,6 +663,7 @@ class ToolRegistry:
                 require_runtime_contract=require_runtime_contract,
                 require_closed_schema=require_closed_schema,
                 require_production_declaration=require_production_declaration,
+                expected_process_isolation=expected_process_isolation,
             ),
         )
 
@@ -557,15 +692,19 @@ class ToolExecutor:
         run_policy: RunPolicy,
         approval_port: ApprovalPort | None = None,
         capability_policy: CapabilityPolicy | None = None,
+        expected_process_isolation: ProcessIsolation | None = None,
     ) -> None:
+        resolved_isolation = expected_process_isolation
         self.audit = audit_tool_contracts(
             tool_set.tools,
             require_runtime_contract=capability_policy is not None,
+            expected_process_isolation=resolved_isolation,
         )
         self.tool_set = tool_set
         self.run_policy = run_policy
         self.approval_port = approval_port
         self.capability_policy = capability_policy
+        self.expected_process_isolation = resolved_isolation
         self._active_run_context: ToolRunContext | None = None
         self._active_ordinal = 1
         self._active_total = 1
@@ -675,6 +814,7 @@ class ToolExecutor:
                         ToolErrorCode.PREFLIGHT_FAILED,
                         "工具能力预检结果无效",
                     )
+                self._validate_runtime_contract(registered, intent)
                 policy_decision = self.resolve_policy(
                     registered,
                     intent,
@@ -827,6 +967,28 @@ class ToolExecutor:
             )
         except Exception:
             return self._error(call, ToolErrorCode.EXECUTION_FAILED, "工具执行失败", limit=limit)
+
+    @staticmethod
+    def _validate_runtime_contract(registered: RegisteredTool, intent: OperationIntent) -> None:
+        expected = registered.runtime_contract
+        if expected is None:
+            return
+        if (
+            intent.kind is not expected.intent_kind
+            or intent.effect is not expected.intent_effect
+            or (
+                expected.requires_host is not None
+                and intent.requires_host is not expected.requires_host
+            )
+            or (
+                expected.requires_sandbox is not None
+                and intent.requires_sandbox is not expected.requires_sandbox
+            )
+        ):
+            raise ToolExecutionError(
+                ToolErrorCode.PREFLIGHT_FAILED,
+                "工具能力预检与静态契约不一致",
+            )
 
     async def request_approval(self, request: ToolApprovalRequest) -> ToolApprovalDecision | None:
         port = self.approval_port

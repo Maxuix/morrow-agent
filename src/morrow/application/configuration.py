@@ -41,7 +41,7 @@ def _configuration_string(*, max_length: int, minimum: int = 1) -> dict[str, obj
         "type": "string",
         "minLength": minimum,
         "maxLength": min(max_length, MAX_STRING_CHARS),
-        "pattern": r"^(?!.*\x00)[\s\S]+$",
+        "pattern": r"^(?!\s*$)(?!.*\x00)(?!.*[\x00-\x1f\x7f])[\s\S]+$",
     }
 
 

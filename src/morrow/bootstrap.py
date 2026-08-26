@@ -347,10 +347,12 @@ def _default_tool_executor(
             require_runtime_contract=True,
             require_closed_schema=True,
             require_production_declaration=True,
+            expected_process_isolation=process_isolation,
         ),
         run_policy,
         approval_port=approval_port,
         capability_policy=capability_policy,
+        expected_process_isolation=process_isolation,
     )
 
 

@@ -30,7 +30,7 @@ from morrow.core.local_tools import (
 )
 from morrow.core.models import ToolEffect
 from morrow.runtime.policy import ToolApproval, ToolExecutionPolicy
-from morrow.runtime.tool_arguments import MAX_STRING_CHARS, SCHEMA_DIALECT
+from morrow.runtime.tool_arguments import MAX_SAFE_INTEGER, MAX_STRING_CHARS, SCHEMA_DIALECT
 from morrow.runtime.tools import (
     ApprovalPreviewBudget,
     RegisteredTool,
@@ -52,11 +52,13 @@ def _path(value: str) -> str:
     return validate_workspace_relative_path(value)
 
 
-def _path_schema(*, mutation: bool = False) -> dict[str, object]:
+def _path_schema(
+    *, mutation: bool = False, max_length: int = WORKSPACE_RELATIVE_PATH_MAX_CHARS
+) -> dict[str, object]:
     return {
         "type": "string",
         "minLength": 1,
-        "maxLength": WORKSPACE_RELATIVE_PATH_MAX_CHARS,
+        "maxLength": max_length,
         "pattern": (
             WORKSPACE_MUTATION_PATH_PATTERN if mutation else WORKSPACE_RELATIVE_PATH_PATTERN
         ),
@@ -110,6 +112,10 @@ _NO_NUL = r"^(?!.*\x00)[\s\S]*$"
 _NO_CONTROL_CHARS = r"^(?!.*\x00)(?!.*[\r\n])[\s\S]*$"
 _NONBLANK_NO_CONTROL = r"^(?!\s*$)(?!.*\x00)(?!.*[\r\n])[\s\S]+$"
 _SHA256_PATTERN = r"^[0-9a-f]{64}$"
+_PROVIDER_WRITE_CONTENT_MAX_CHARS = 10_000
+_PROVIDER_EXACT_EDIT_MAX_CHARS = 256
+_PROVIDER_COMMAND_ARG_MAX_CHARS = 256
+_PROVIDER_COMMAND_SHELL_MAX_CHARS = 10_000
 
 
 LIST_DIRECTORY_PROVIDER_SCHEMA = _object_schema(
@@ -123,7 +129,7 @@ LIST_DIRECTORY_PROVIDER_SCHEMA = _object_schema(
 READ_FILE_PROVIDER_SCHEMA = _object_schema(
     {
         "path": _path_schema(),
-        "start_line": {"type": "integer", "minimum": 1},
+        "start_line": {"type": "integer", "minimum": 1, "maximum": MAX_SAFE_INTEGER},
         "line_count": {"type": "integer", "minimum": 1, "maximum": 400},
     },
     required=("path",),
@@ -146,6 +152,7 @@ SEARCH_TEXT_PROVIDER_SCHEMA = _object_schema(
         "case": _string_schema(enum=("sensitive", "insensitive", "smart")),
         "glob": _nullable(
             _string_schema(
+                min_length=1,
                 max_length=128,
                 pattern=r"^(?!/)(?!.*\\)(?!.*\x00)(?!.*(?:^|/)\.\.(?:/|$))[\s\S]*$",
             )
@@ -158,8 +165,10 @@ SEARCH_TEXT_PROVIDER_SCHEMA = _object_schema(
 
 _EXACT_EDIT_PROVIDER_SCHEMA = _object_schema(
     {
-        "old_text": _string_schema(min_length=1, max_length=MAX_STRING_CHARS, pattern=_NO_NUL),
-        "new_text": _string_schema(max_length=MAX_STRING_CHARS, pattern=_NO_NUL),
+        "old_text": _string_schema(
+            min_length=1, max_length=_PROVIDER_EXACT_EDIT_MAX_CHARS, pattern=_NO_NUL
+        ),
+        "new_text": _string_schema(max_length=_PROVIDER_EXACT_EDIT_MAX_CHARS, pattern=_NO_NUL),
     },
     required=("old_text", "new_text"),
 )
@@ -182,11 +191,19 @@ RUN_COMMAND_PROVIDER_SCHEMA = _object_schema(
     {
         "argv": {
             "type": "array",
-            "items": _string_schema(min_length=1, max_length=1024, pattern=_NO_CONTROL_CHARS),
+            "items": _string_schema(
+                min_length=1,
+                max_length=_PROVIDER_COMMAND_ARG_MAX_CHARS,
+                pattern=_NO_CONTROL_CHARS,
+            ),
             "minItems": 1,
             "maxItems": 16,
         },
-        "shell": _string_schema(min_length=1, max_length=16 * 1024, pattern=_NONBLANK_NO_CONTROL),
+        "shell": _string_schema(
+            min_length=1,
+            max_length=_PROVIDER_COMMAND_SHELL_MAX_CHARS,
+            pattern=_NONBLANK_NO_CONTROL,
+        ),
         "cwd": _path_schema(),
         "timeout_seconds": {"type": "number", "exclusiveMinimum": 0, "maximum": 90},
     },
@@ -199,7 +216,7 @@ RUN_COMMAND_PROVIDER_SCHEMA = _object_schema(
 WRITE_FILE_PROVIDER_SCHEMA = _object_schema(
     {
         "path": _path_schema(mutation=True),
-        "content": _string_schema(max_length=MAX_STRING_CHARS),
+        "content": _string_schema(max_length=_PROVIDER_WRITE_CONTENT_MAX_CHARS, pattern=_NO_NUL),
         "mode": _string_schema(enum=("create", "replace")),
         "expected_sha256": _nullable(_string_schema(pattern=_SHA256_PATTERN)),
     },
@@ -210,7 +227,10 @@ WRITE_FILE_PROVIDER_SCHEMA = _object_schema(
             "not": {"required": ["expected_sha256"]},
         },
         {
-            "properties": {"mode": {"const": "replace"}},
+            "properties": {
+                "mode": {"const": "replace"},
+                "expected_sha256": _string_schema(pattern=_SHA256_PATTERN),
+            },
             "required": ["expected_sha256"],
         },
     ),
@@ -225,6 +245,7 @@ PROMOTE_SANDBOX_PROVIDER_SCHEMA = _object_schema(
             "type": "array",
             "minItems": 1,
             "maxItems": 16,
+            "uniqueItems": True,
             "items": _path_schema(mutation=True),
         },
     },
@@ -236,7 +257,11 @@ GIT_STATUS_PROVIDER_SCHEMA = _object_schema({})
 GIT_DIFF_PROVIDER_SCHEMA = _object_schema(
     {
         "staged": {"type": "boolean"},
-        "paths": {"type": "array", "maxItems": 32, "items": _path_schema()},
+        "paths": {
+            "type": "array",
+            "maxItems": 32,
+            "items": _path_schema(max_length=256),
+        },
     }
 )
 

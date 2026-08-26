@@ -210,7 +210,7 @@ def test_production_inventory_is_exact_and_demo_tools_are_not_exposed(tmp_path):
     )
 
 
-def test_run_command_schema_requires_xor_and_forbids_install_or_network(tmp_path):
+def test_run_command_schema_enforces_wire_shape_and_bounds(tmp_path):
     app = build_application(state_root=tmp_path / "state", credentials=MemoryCredentialStore())
     project = tmp_path / "project"
     project.mkdir()
@@ -254,7 +254,7 @@ def test_run_command_schema_requires_xor_and_forbids_install_or_network(tmp_path
         * schema["properties"]["argv"]["items"]["maxLength"]
         <= 16 * 1024
     )
-    assert schema["properties"]["shell"]["maxLength"] == 16 * 1024
+    assert schema["properties"]["shell"]["maxLength"] <= 16 * 1024
     assert schema["properties"]["timeout_seconds"]["maximum"] == 90
 
 

@@ -11,11 +11,11 @@ from morrow.core.models import ProtocolModel
 
 WORKSPACE_RELATIVE_PATH_MAX_CHARS = 512
 WORKSPACE_RELATIVE_PATH_PATTERN = (
-    r"^(?:\.$|(?![~/])(?![A-Za-z]:)(?!.*\\)(?!.*\u0000)(?!.*//)"
+    r"^(?:\.$|(?![~/])(?![^/]:)(?!.*\\)(?!.*\u0000)(?!.*//)"
     r"(?!.*\/$)(?!.*(?:^|/)\.{1,2}(?:/|$))[\s\S]+)$"
 )
 WORKSPACE_MUTATION_PATH_PATTERN = (
-    r"^(?![~/])(?![A-Za-z]:)(?!.*\\)(?!.*\u0000)(?!.*//)"
+    r"^(?![~/])(?![^/]:)(?!.*\\)(?!.*\u0000)(?!.*//)"
     r"(?!.*\/$)(?!.*(?:^|/)\.{1,2}(?:/|$))[\s\S]+$"
 )
 

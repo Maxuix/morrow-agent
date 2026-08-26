@@ -24,15 +24,15 @@ from morrow.core.preference_operations import (
     reduce_preference_operations,
 )
 from morrow.runtime.policy import ToolApproval, ToolExecutionPolicy
-from morrow.runtime.tool_arguments import SCHEMA_DIALECT
+from morrow.runtime.tool_arguments import MAX_SAFE_INTEGER, SCHEMA_DIALECT
 from morrow.runtime.tools import RegisteredTool, ToolErrorCode, ToolExecutionError, make_tool
 
 PreferenceManagementOperation = Literal["add", "replace", "remove", "enable", "disable"]
 
 
-_PREFERENCE_ID_PATTERN = r"^pref_[A-Za-z0-9_-]{1,127}$"
-_EVIDENCE_ID_PATTERN = r"^pev_[A-Za-z0-9_-]{1,127}$"
-_PREFERENCE_TEXT_PATTERN = r"^(?!.*\x00)[\s\S]+$"
+_PREFERENCE_ID_PATTERN = r"^pref_[A-Za-z0-9_-]{1,123}$"
+_EVIDENCE_ID_PATTERN = r"^pev_[A-Za-z0-9_-]{1,124}$"
+_PREFERENCE_TEXT_PATTERN = r"^(?!\s*$)(?!.*[\x00-\x1f\x7f])[\s\S]+$"
 
 
 def _nullable_string(*, max_length: int, pattern: str | None = None) -> dict[str, object]:
@@ -134,7 +134,12 @@ PREFERENCE_MANAGEMENT_PROVIDER_SCHEMA = {
             "maxItems": PREFERENCE_MAX_OPERATIONS,
             "items": _PREFERENCE_OPERATION_PROVIDER_SCHEMA,
         },
-        "expected_revision": {"anyOf": [{"type": "integer", "minimum": 0}, {"type": "null"}]},
+        "expected_revision": {
+            "anyOf": [
+                {"type": "integer", "minimum": 0, "maximum": MAX_SAFE_INTEGER},
+                {"type": "null"},
+            ]
+        },
     },
     "required": ["scope", "operations"],
     "additionalProperties": False,

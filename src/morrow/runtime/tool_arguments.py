@@ -23,6 +23,7 @@ MAX_SCHEMA_PROPERTIES = 64
 MAX_ARRAY_ITEMS = 256
 MAX_STRING_CHARS = 64 * 1024
 MAX_NUMBER_DIGITS = 309
+MAX_SAFE_INTEGER = 10**MAX_NUMBER_DIGITS - 1
 MAX_ENUM_VALUES = 64
 MAX_COMBINATIONS = 16
 SCHEMA_DIALECT = "https://json-schema.org/draft/2020-12/schema"
@@ -166,7 +167,9 @@ def _schema_error(message: str) -> ToolArgumentsValidationError:
 
 
 def _is_number(value: object) -> bool:
-    if not isinstance(value, (int, float)) or isinstance(value, bool):
+    if isinstance(value, int) and not isinstance(value, bool):
+        return True
+    if not isinstance(value, float):
         return False
     try:
         return math.isfinite(value)
@@ -197,6 +200,11 @@ def _normalize_generated_schema(node: Any) -> Any:
         current = normalized.get("maxProperties")
         normalized["maxProperties"] = (
             MAX_OBJECT_PROPERTIES if current is None else min(current, MAX_OBJECT_PROPERTIES)
+        )
+    if node_type == "integer":
+        current = normalized.get("maximum")
+        normalized["maximum"] = (
+            MAX_SAFE_INTEGER if current is None else min(current, MAX_SAFE_INTEGER)
         )
     return normalized
 
@@ -486,7 +494,10 @@ class JsonSchemaArgumentsValidator:
                 raise _schema_error("工具 Schema bound 超出上限")
         for keyword in ("minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf"):
             value = node.get(keyword)
-            if value is not None and not _is_number(value):
+            if value is not None and (
+                not _is_number(value)
+                or (isinstance(value, int) and len(str(abs(value))) > MAX_NUMBER_DIGITS)
+            ):
                 raise _schema_error("工具 Schema numeric bound 无效")
         if node.get("multipleOf") is not None and node["multipleOf"] <= 0:
             raise _schema_error("工具 Schema multipleOf 无效")
@@ -688,6 +699,9 @@ class JsonSchemaArgumentsValidator:
 
 __all__ = [
     "JsonSchemaArgumentsValidator",
+    "MAX_ARGUMENT_BYTES",
+    "MAX_NUMBER_DIGITS",
+    "MAX_SAFE_INTEGER",
     "PydanticArgumentsValidator",
     "ToolArgumentsValidationError",
     "ToolArgumentsValidator",
