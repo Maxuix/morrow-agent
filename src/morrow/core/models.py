@@ -285,6 +285,93 @@ class ModelErrorCode(StrEnum):
     INTERNAL = "internal"
 
 
+class UsageAvailability(StrEnum):
+    """Whether a Provider reported a trustworthy usage or cost fact."""
+
+    AVAILABLE = "available"
+    UNAVAILABLE = "unavailable"
+
+
+class ModelUsage(ProtocolModel):
+    """Normalized token usage; absent values are explicit, never fabricated zeros."""
+
+    availability: UsageAvailability = UsageAvailability.UNAVAILABLE
+    input_tokens: Annotated[int, Field(strict=True, ge=0)] | None = None
+    output_tokens: Annotated[int, Field(strict=True, ge=0)] | None = None
+    total_tokens: Annotated[int, Field(strict=True, ge=0)] | None = None
+
+    @model_validator(mode="after")
+    def validate_availability(self) -> ModelUsage:
+        values = (self.input_tokens, self.output_tokens, self.total_tokens)
+        if self.availability is UsageAvailability.UNAVAILABLE:
+            if any(value is not None for value in values):
+                raise ValueError("unavailable usage must not contain token counts")
+            return self
+        if all(value is None for value in values):
+            raise ValueError("available usage must contain at least one token count")
+        if self.input_tokens is not None and self.output_tokens is not None:
+            expected = self.input_tokens + self.output_tokens
+            if self.total_tokens is not None and self.total_tokens != expected:
+                raise ValueError("usage total_tokens must equal input_tokens + output_tokens")
+        return self
+
+    @classmethod
+    def unavailable(cls) -> ModelUsage:
+        return cls()
+
+
+class ModelCost(ProtocolModel):
+    """Normalized cost fact with an explicit source and availability marker."""
+
+    availability: UsageAvailability = UsageAvailability.UNAVAILABLE
+    amount_minor: Annotated[int, Field(strict=True, ge=0)] | None = None
+    currency: Annotated[str, Field(strict=True, min_length=3, max_length=3)] | None = None
+    source: Annotated[str, Field(strict=True, min_length=1, max_length=128)] | None = None
+
+    @field_validator("currency")
+    @classmethod
+    def valid_currency(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if len(value) != 3 or not value.isascii() or not value.isupper():
+            raise ValueError("cost currency must be an uppercase three-letter code")
+        return value
+
+    @field_validator("source")
+    @classmethod
+    def valid_source(cls, value: str | None) -> str | None:
+        if value is not None and (
+            not value.strip()
+            or any(char in value for char in "\x00\r\n")
+            or any(
+                needle in value.casefold() for needle in ("api_key", "authorization", "password")
+            )
+        ):
+            raise ValueError("cost source is not safe")
+        return value
+
+    @model_validator(mode="after")
+    def validate_availability(self) -> ModelCost:
+        values = (self.amount_minor, self.currency, self.source)
+        if self.availability is UsageAvailability.UNAVAILABLE:
+            if any(value is not None for value in values):
+                raise ValueError("unavailable cost must not contain cost values")
+            return self
+        if any(value is None for value in values):
+            raise ValueError("available cost requires amount_minor, currency and source")
+        return self
+
+    @classmethod
+    def unavailable(cls) -> ModelCost:
+        return cls()
+
+
+# Compatibility aliases make the contract discoverable without multiplying wire types.
+UsageStatus = UsageAvailability
+NormalizedUsage = ModelUsage
+NormalizedCost = ModelCost
+
+
 class ModelProviderError(RuntimeError):
     def __init__(self, code: ModelErrorCode, message: str) -> None:
         super().__init__(message)
@@ -347,6 +434,8 @@ class ModelEvent(MorrowModel):
     error_code: ModelErrorCode | None = None
     error_message: str | None = None
     made_progress: bool = False
+    usage: ModelUsage = Field(default_factory=ModelUsage.unavailable)
+    cost: ModelCost = Field(default_factory=ModelCost.unavailable)
 
 
 class Preferences(MorrowModel):

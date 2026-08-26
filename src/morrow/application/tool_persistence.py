@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from datetime import datetime, timedelta
 
@@ -19,6 +20,7 @@ from morrow.core.execution import (
     HandlerResultEnvelope,
     ToolExecutionDisposition,
     ToolExecutionState,
+    ValidationDiagnostic,
     approval_preview_digest,
     consume_approval,
     intent_hash,
@@ -35,7 +37,7 @@ from morrow.core.store import StorageError
 from morrow.runtime.conversation import ConversationAppend
 from morrow.runtime.durable_log import DurableConversationWriter, durable_call_id
 from morrow.runtime.session import Session
-from morrow.runtime.tools import ToolExecutionOutcome, ToolExecutor
+from morrow.runtime.tools import ToolErrorCode, ToolExecutionOutcome, ToolExecutor
 from morrow.services.files import WorkspaceMutationService
 
 APPROVAL_TTL = timedelta(minutes=5)
@@ -436,11 +438,33 @@ class ToolConversationPersistence:
 
 def _envelope_from_outcome(result: ToolExecutionOutcome) -> HandlerResultEnvelope:
     error_code = result.error_code.value if result.error_code is not None else None
+    diagnostics: list[ValidationDiagnostic] = []
+    if result.error_code is ToolErrorCode.INVALID_ARGUMENTS:
+        try:
+            payload = json.loads(result.envelope)
+            details = payload.get("error", {}).get("details", [])
+        except (TypeError, ValueError, json.JSONDecodeError, AttributeError):
+            details = []
+        if isinstance(details, list):
+            for item in details:
+                if not isinstance(item, dict):
+                    continue
+                try:
+                    diagnostic = ValidationDiagnostic.model_validate(
+                        {"path": item.get("path"), "type": item.get("type")}, strict=True
+                    )
+                except ValueError:
+                    continue
+                if diagnostic not in diagnostics:
+                    diagnostics.append(diagnostic)
+                if len(diagnostics) >= 8:
+                    break
     return HandlerResultEnvelope(
         ok=bool(result.ok),
         truncated=bool(result.truncated),
         summary={"chars": len(result.envelope or "")},
         error_code=error_code,
+        validation_diagnostics=tuple(diagnostics),
     )
 
 

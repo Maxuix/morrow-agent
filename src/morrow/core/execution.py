@@ -6,6 +6,7 @@ handlers, write ConversationLog, or derive crash safety from ``ToolEffect``.
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from enum import StrEnum
 from typing import Any, Literal
@@ -74,6 +75,8 @@ _RELATIVE_PATH_LIMIT = 512
 _PREVIEW_LINE_LIMIT = 240
 _PREVIEW_LINE_COUNT = 40
 _CALL_ID_LIMIT = 128
+_VALIDATION_PATH_PATTERN = re.compile(r"^[A-Za-z0-9_$.-]+(?:\[[0-9]+\])*$")
+_VALIDATION_TYPE_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]{0,63}$")
 
 
 class EffectClass(StrEnum):
@@ -393,12 +396,42 @@ class PreparedIntent(ProtocolModel):
         return self
 
 
+class ValidationDiagnostic(ProtocolModel):
+    """Value-free field/type evidence retained from invalid tool arguments."""
+
+    path: str = Field(min_length=1, max_length=128)
+    type: str = Field(min_length=1, max_length=64)
+
+    @field_validator("path")
+    @classmethod
+    def valid_path(cls, value: str) -> str:
+        if not _VALIDATION_PATH_PATTERN.fullmatch(value):
+            raise ValueError("validation diagnostic path is invalid")
+        return value
+
+    @field_validator("type")
+    @classmethod
+    def valid_type(cls, value: str) -> str:
+        if not _VALIDATION_TYPE_PATTERN.fullmatch(value):
+            raise ValueError("validation diagnostic type is invalid")
+        return value
+
+    @model_validator(mode="after")
+    def reject_secret_tokens(self) -> ValidationDiagnostic:
+        _budget_and_redact(self, 512, label="validation diagnostic")
+        return self
+
+
+ValidationDiagnosticEntry = ValidationDiagnostic
+
+
 class HandlerResultEnvelope(ProtocolModel):
     ok: bool
     truncated: bool = False
     summary: dict[str, Any] = Field(default_factory=dict)
     error_code: str | None = Field(default=None, max_length=64)
     error_message: str | None = None
+    validation_diagnostics: tuple[ValidationDiagnostic, ...] = ()
 
     @field_validator("error_message")
     @classmethod
@@ -411,6 +444,8 @@ class HandlerResultEnvelope(ProtocolModel):
 
     @model_validator(mode="after")
     def enforce_budget(self) -> HandlerResultEnvelope:
+        if len(self.validation_diagnostics) > 8:
+            raise ValueError("too many validation diagnostics")
         _budget_and_redact(self, TOOL_RESULT_ENVELOPE_MAX_BYTES, label="tool result envelope")
         return self
 

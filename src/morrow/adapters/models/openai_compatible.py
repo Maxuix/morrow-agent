@@ -4,19 +4,22 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping
 
 from morrow.core.models import (
     AssistantMessage,
     FunctionToolCall,
     Message,
+    ModelCost,
     ModelErrorCode,
     ModelEvent,
     ModelFinishReason,
     ModelProviderError,
     ModelRef,
+    ModelUsage,
     ToolDefinition,
     ToolMessage,
+    UsageAvailability,
     provider_error_message,
 )
 from morrow.core.providers import DiscoveredModel
@@ -77,6 +80,66 @@ _FINISH_REASONS: dict[str, ModelFinishReason] = {
     "length": ModelFinishReason.LENGTH,
     "content_filter": ModelFinishReason.CONTENT_FILTER,
 }
+
+
+def _raw_usage_value(raw_usage, name: str):
+    if isinstance(raw_usage, Mapping):
+        return raw_usage.get(name)
+    return getattr(raw_usage, name, None)
+
+
+def _normalize_usage(raw_usage) -> ModelUsage:
+    """Read only the stable token fields exposed by OpenAI-compatible adapters."""
+
+    if raw_usage is None:
+        return ModelUsage.unavailable()
+
+    aliases = {
+        "input_tokens": ("prompt_tokens", "input_tokens"),
+        "output_tokens": ("completion_tokens", "output_tokens"),
+        "total_tokens": ("total_tokens",),
+    }
+    values: dict[str, int] = {}
+    for canonical, names in aliases.items():
+        observed = [
+            (name, _raw_usage_value(raw_usage, name))
+            for name in names
+            if _raw_usage_value(raw_usage, name) is not None
+        ]
+        if not observed:
+            continue
+        first_name, value = observed[0]
+        if any(item != value for _, item in observed[1:]):
+            raise ValueError(f"conflicting usage fields for {canonical}")
+        if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+            raise ValueError(f"usage field {first_name} must be a non-negative integer")
+        values[canonical] = value
+    if not values:
+        raise ValueError("usage payload has no supported token counts")
+    if "input_tokens" in values and "output_tokens" in values and "total_tokens" not in values:
+        values["total_tokens"] = values["input_tokens"] + values["output_tokens"]
+    return ModelUsage(availability=UsageAvailability.AVAILABLE, **values)
+
+
+def _merge_usage(current: ModelUsage, candidate: ModelUsage) -> ModelUsage:
+    if candidate.availability is UsageAvailability.UNAVAILABLE:
+        return current
+    if current.availability is UsageAvailability.UNAVAILABLE:
+        return candidate
+    values: dict[str, int | None] = {}
+    for name in ("input_tokens", "output_tokens", "total_tokens"):
+        previous = getattr(current, name)
+        incoming = getattr(candidate, name)
+        if previous is not None and incoming is not None and previous != incoming:
+            raise ValueError(f"conflicting usage values for {name}")
+        values[name] = incoming if previous is None else previous
+    if values["input_tokens"] is not None and values["output_tokens"] is not None:
+        expected = values["input_tokens"] + values["output_tokens"]
+        if values["total_tokens"] is None:
+            values["total_tokens"] = expected
+        elif values["total_tokens"] != expected:
+            raise ValueError("usage total_tokens must equal input_tokens + output_tokens")
+    return ModelUsage(availability=UsageAvailability.AVAILABLE, **values)
 
 
 class _CallFragments:
@@ -325,11 +388,16 @@ class OpenAICompatibleProvider:
     ) -> AsyncIterator[ModelEvent]:
         accumulator = StreamAccumulator()
         response = None
+        usage = ModelUsage.unavailable()
+        completed_message: AssistantMessage | None = None
+        completed_reason: ModelFinishReason | None = None
+        finish_seen = False
         try:
             request: dict = {
                 "model": self.api_model_ids.get(model.model_id, model.model_id),
                 "messages": [serialize_message(message) for message in messages],
                 "stream": True,
+                "stream_options": {"include_usage": True},
             }
             if tools:
                 request["tools"] = [serialize_tool(tool) for tool in tools]
@@ -363,12 +431,16 @@ class OpenAICompatibleProvider:
                             ModelErrorCode.TIMEOUT, phase="first_token"
                         ),
                         made_progress=accumulator.made_progress,
+                        usage=usage,
                     )
                     return
                 first = False
+                usage = _merge_usage(usage, _normalize_usage(getattr(chunk, "usage", None)))
                 choices = getattr(chunk, "choices", None) or []
                 if not choices:
                     continue
+                if finish_seen:
+                    raise ValueError("semantic stream chunk appeared after finish")
                 if len(choices) != 1:
                     raise ValueError("stream must carry exactly one logical choice")
                 choice = choices[0]
@@ -385,20 +457,31 @@ class OpenAICompatibleProvider:
                 finish = getattr(choice, "finish_reason", None)
                 if finish is not None:
                     accumulator.set_finish(finish)
-                    message, reason = accumulator.build()
-                    yield ModelEvent(kind="completed", finish_reason=reason, message=message)
-                    return
-            accumulator.build()
-            raise ValueError("model response is missing a normal end signal")
+                    completed_message, completed_reason = accumulator.build()
+                    finish_seen = True
+            if not finish_seen or completed_reason is None:
+                accumulator.build()
+                raise ValueError("model response is missing a normal end signal")
+            yield ModelEvent(
+                kind="completed",
+                finish_reason=completed_reason,
+                message=completed_message,
+                usage=usage,
+                cost=ModelCost.unavailable(),
+            )
         except asyncio.CancelledError:
             raise
         except Exception as exc:
             code = classify_error(exc)
+            safe_usage = (
+                usage if code is not ModelErrorCode.INVALID_RESPONSE else ModelUsage.unavailable()
+            )
             yield ModelEvent(
                 kind="error",
                 error_code=code,
                 error_message=provider_error_message(code),
                 made_progress=accumulator.made_progress,
+                usage=safe_usage,
             )
         finally:
             if response is not None:

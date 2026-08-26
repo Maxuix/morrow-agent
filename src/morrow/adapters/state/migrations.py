@@ -1,6 +1,6 @@
 """Ordered, checksummed Operational Store migrations.
 
-Production currently owns schema v1–v14. Version 10 adds the governed Learning
+Production currently owns schema v1–v17. Version 10 adds the governed Learning
 foundation, version 11 adds immutable decisions plus Project Knowledge, and version
 12 adds immutable MemorySelection records plus rebuildable lexical terms without
 rewriting older evidence or creating a second configuration authority. Version 13
@@ -9,7 +9,8 @@ Version 14 adds the immutable Skill catalog foundation (definitions, versions,
 catalog operations, and the reserved AgentRun selection/context tables). Version
 15 adds generated Skill Draft, validation and observational Usage records.
 Version 16 adds MCP desired-state projections, Catalog revisions, and reserved
-run snapshot/artifact-link tables.
+run snapshot/artifact-link tables. Version 17 adds bounded AgentRun model-request
+observations and terminal metrics without mutating the immutable AgentRun snapshot.
 """
 
 from __future__ import annotations
@@ -21,6 +22,7 @@ from morrow.adapters.state.migrations_v13_preferences import V13_NAME, V13_STATE
 from morrow.adapters.state.migrations_v14_skills import V14_NAME, V14_STATEMENTS
 from morrow.adapters.state.migrations_v15_skill_learning import V15_NAME, V15_STATEMENTS
 from morrow.adapters.state.migrations_v16_mcp import V16_NAME, V16_STATEMENTS
+from morrow.adapters.state.migrations_v17_observability import V17_NAME, V17_STATEMENTS
 from morrow.core.store import (
     APPLICATION_NAME,
     RESERVED_SCHEMA_VERSIONS,
@@ -1406,6 +1408,7 @@ V13 = SchemaMigration(version=13, name=V13_NAME, statements=V13_STATEMENTS)
 V14 = SchemaMigration(version=14, name=V14_NAME, statements=V14_STATEMENTS)
 V15 = SchemaMigration(version=15, name=V15_NAME, statements=V15_STATEMENTS)
 V16 = SchemaMigration(version=16, name=V16_NAME, statements=V16_STATEMENTS)
+V17 = SchemaMigration(version=17, name=V17_NAME, statements=V17_STATEMENTS)
 
 
 class MigrationRegistry:
@@ -1477,6 +1480,7 @@ def production_registry() -> MigrationRegistry:
     registry.add(V14)
     registry.add(V15)
     registry.add(V16)
+    registry.add(V17)
     return registry
 
 

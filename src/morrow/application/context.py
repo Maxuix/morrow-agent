@@ -68,6 +68,8 @@ class ContextPack(ProtocolModel):
     purpose: ContextPurpose = "chat"
     estimated_request_chars: int = 0
     cleared_cycle_count: int = 0
+    dropped_turn_count: int = 0
+    dropped_cycle_count: int = 0
     dropped_record_count: int = 0
     checkpoint_id: str | None = None
 
@@ -332,12 +334,18 @@ class ContextBuilder:
         if estimated > request.request_char_limit:
             raise ContextBudgetError("必要上下文超过预算，请缩短当前输入或状态")
         self._validate_tool_pairing(messages)
+        dropped_turn_count = len(dropped_turns)
+        dropped_cycle_count = len(dropped_cycles) + sum(
+            len(turns[turn_index].cycles) for turn_index in dropped_turns
+        )
         return ContextPack(
             messages=messages,
             tools=request.tools,
             purpose=request.purpose,
             estimated_request_chars=estimated,
             cleared_cycle_count=cleared_count,
+            dropped_turn_count=dropped_turn_count,
+            dropped_cycle_count=dropped_cycle_count,
             dropped_record_count=dropped_record_count,
             checkpoint_id=request.checkpoint.checkpoint_id if request.checkpoint else None,
         )

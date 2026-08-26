@@ -16,6 +16,7 @@ from morrow.adapters.state.learning_journal import SqliteLearningJournal
 from morrow.adapters.state.learning_memory_journal import SqliteLearningMemoryJournal
 from morrow.adapters.state.mcp_journal import SqliteMcpJournal
 from morrow.adapters.state.memory_selection_journal import SqliteMemorySelectionJournal
+from morrow.adapters.state.observability_journal import SqliteObservabilityJournal
 from morrow.adapters.state.operational import OperationalStoreSession, SqliteExecutor
 from morrow.adapters.state.permission_journal import SqliteRunPermissionJournal
 from morrow.adapters.state.preference_journal import SqlitePreferenceJournal
@@ -100,6 +101,7 @@ from morrow.core.preference_models import (
 )
 from morrow.core.recovery import RecoveryReceipt, RecoveryReport
 from morrow.core.store import StorageError, StorageErrorCode
+from morrow.runtime.ids import RandomIdSource
 
 _SESSION_COLUMNS = (
     "session_id, workspace_id, lifecycle, health, current_task_run_id, "
@@ -124,6 +126,7 @@ class SqliteOperationalJournal:
         session: OperationalStoreSession,
         *,
         clock: Callable[[], datetime] | None = None,
+        id_source=None,
     ) -> None:
         self._backend = SqliteJournalBackend(session, clock=clock)
         self._recovery_journal = SqliteRecoveryJournal(
@@ -179,6 +182,14 @@ class SqliteOperationalJournal:
             get_capability_grant=self.get_capability_grant,
             validate_artifact_refs=self._validate_artifact_refs,
             replace_artifact_refs=self._replace_artifact_references,
+        )
+        self._observability_journal = SqliteObservabilityJournal(
+            self._backend,
+            id_source=id_source or RandomIdSource(),
+            get_agent_run=self.get_agent_run,
+            list_tool_executions=lambda workspace_id, agent_run_id: self.list_executions(
+                workspace_id, agent_run_id=agent_run_id
+            ),
         )
 
         self._learning_journal = SqliteLearningJournal(self._backend)
@@ -1380,6 +1391,29 @@ class SqliteOperationalJournal:
         self, workspace_id: str, session_id: str
     ) -> tuple[DurableAgentRun, ...]:
         return self._permission_journal.list_session_agent_runs(workspace_id, session_id)
+
+    def admit_model_request(self, workspace_id: str, **kwargs):
+        return self._observability_journal.admit_model_request(workspace_id, **kwargs)
+
+    def settle_model_request(self, workspace_id: str, model_request_id: str, **kwargs):
+        return self._observability_journal.settle_model_request(
+            workspace_id, model_request_id, **kwargs
+        )
+
+    def finalize_agent_run(self, workspace_id: str, **kwargs):
+        return self._observability_journal.finalize_agent_run(workspace_id, **kwargs)
+
+    def get_model_request(self, workspace_id: str, model_request_id: str):
+        return self._observability_journal.get_model_request(workspace_id, model_request_id)
+
+    def list_model_requests(self, workspace_id: str, agent_run_id: str):
+        return self._observability_journal.list_model_requests(workspace_id, agent_run_id)
+
+    def get_agent_run_terminal_metrics(self, workspace_id: str, agent_run_id: str):
+        return self._observability_journal.get_terminal_metrics(workspace_id, agent_run_id)
+
+    def get_agent_run_observation(self, workspace_id: str, agent_run_id: str):
+        return self._observability_journal.get_agent_run_observation(workspace_id, agent_run_id)
 
     def get_permission_snapshot(
         self, workspace_id: str, permission_snapshot_id: str

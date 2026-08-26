@@ -1,0 +1,272 @@
+"""Safe, bounded AgentRun observation contracts.
+
+Observations are deliberately separate from the immutable AgentRun snapshot and
+from ConversationLog.  They contain only identifiers, counters, normalized
+usage/cost facts and typed state transitions; no prompt, message, tool argument,
+tool result, SDK object or traceback is part of this module.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime
+from enum import StrEnum
+
+from pydantic import Field, field_validator, model_validator
+
+from morrow.core.domain import (
+    AGENT_RUN_ID_PREFIX,
+    SESSION_ID_PREFIX,
+    TASK_RUN_ID_PREFIX,
+    TURN_ID_PREFIX,
+    WORKSPACE_ID_PREFIX,
+    validate_prefixed_id,
+)
+from morrow.core.models import (
+    AgentStopCode,
+    FinishReason,
+    ModelCost,
+    ModelErrorCode,
+    ModelFinishReason,
+    ModelUsage,
+    ProtocolModel,
+    utc_now,
+)
+
+MODEL_REQUEST_ID_PREFIX = "mreq"
+
+
+class ModelRequestState(StrEnum):
+    ADMITTED = "admitted"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+ObservationRequestState = ModelRequestState
+
+
+def _aware(value: datetime) -> datetime:
+    if value.tzinfo is None or value.utcoffset() is None:
+        raise ValueError("observation timestamps must be timezone-aware")
+    return value
+
+
+class ToolTerminalCounts(ProtocolModel):
+    """Counts grouped by the durable ToolExecution terminal disposition."""
+
+    pending: int = Field(default=0, ge=0)
+    denied: int = Field(default=0, ge=0)
+    succeeded: int = Field(default=0, ge=0)
+    failed: int = Field(default=0, ge=0)
+    cancelled: int = Field(default=0, ge=0)
+    interrupted: int = Field(default=0, ge=0)
+    unknown: int = Field(default=0, ge=0)
+
+    @property
+    def terminal_total(self) -> int:
+        return sum(
+            (
+                self.denied,
+                self.succeeded,
+                self.failed,
+                self.cancelled,
+                self.interrupted,
+                self.unknown,
+            )
+        )
+
+
+class ModelRequestObservation(ProtocolModel):
+    """Admission and one-time settlement projection for one Provider attempt."""
+
+    model_request_id: str
+    workspace_id: str
+    agent_run_id: str
+    attempt_ordinal: int = Field(ge=1)
+    state: ModelRequestState = ModelRequestState.ADMITTED
+    admitted_at: datetime = Field(default_factory=utc_now)
+    settled_at: datetime | None = None
+    estimated_request_chars: int = Field(ge=0)
+    request_char_budget: int = Field(gt=0)
+    cleared_cycle_count: int = Field(default=0, ge=0)
+    dropped_turn_count: int = Field(default=0, ge=0)
+    dropped_cycle_count: int = Field(default=0, ge=0)
+    dropped_record_count: int = Field(default=0, ge=0)
+    tool_rounds: int = Field(default=0, ge=0)
+    tool_calls: int = Field(default=0, ge=0)
+    finish_reason: ModelFinishReason | None = None
+    error_code: ModelErrorCode | None = None
+    usage: ModelUsage = Field(default_factory=ModelUsage.unavailable)
+    cost: ModelCost = Field(default_factory=ModelCost.unavailable)
+
+    @field_validator("model_request_id")
+    @classmethod
+    def valid_model_request_id(cls, value: str) -> str:
+        return validate_prefixed_id(value, MODEL_REQUEST_ID_PREFIX)
+
+    @field_validator("workspace_id")
+    @classmethod
+    def valid_workspace_id(cls, value: str) -> str:
+        return validate_prefixed_id(value, WORKSPACE_ID_PREFIX)
+
+    @field_validator("agent_run_id")
+    @classmethod
+    def valid_agent_run_id(cls, value: str) -> str:
+        return validate_prefixed_id(value, AGENT_RUN_ID_PREFIX)
+
+    @field_validator("admitted_at", "settled_at")
+    @classmethod
+    def valid_timestamp(cls, value: datetime | None) -> datetime | None:
+        return _aware(value) if value is not None else None
+
+    @model_validator(mode="after")
+    def state_contract(self) -> ModelRequestObservation:
+        if self.settled_at is not None and self.settled_at < self.admitted_at:
+            raise ValueError("model request settlement cannot precede admission")
+        if self.state is ModelRequestState.ADMITTED:
+            if self.settled_at is not None or self.finish_reason is not None or self.error_code:
+                raise ValueError("admitted model request must not contain settlement facts")
+        elif self.settled_at is None:
+            raise ValueError("settled model request requires settled_at")
+        if self.state is ModelRequestState.COMPLETED and self.error_code is not None:
+            raise ValueError("completed model request must not contain an error code")
+        return self
+
+
+class AgentRunTerminalMetrics(ProtocolModel):
+    """Exactly-once terminal aggregate for one durable AgentRun."""
+
+    agent_run_id: str
+    workspace_id: str
+    session_id: str
+    task_run_id: str
+    turn_id: str
+    finish_reason: FinishReason
+    stop_code: AgentStopCode | None = None
+    model_attempts: int = Field(default=0, ge=0)
+    retry_count: int = Field(default=0, ge=0)
+    tool_rounds: int = Field(default=0, ge=0)
+    tool_calls: int = Field(default=0, ge=0)
+    max_estimated_request_chars: int = Field(default=0, ge=0)
+    request_char_budget: int = Field(default=1, gt=0)
+    cleared_cycle_count: int = Field(default=0, ge=0)
+    dropped_turn_count: int = Field(default=0, ge=0)
+    dropped_cycle_count: int = Field(default=0, ge=0)
+    dropped_record_count: int = Field(default=0, ge=0)
+    usage: ModelUsage = Field(default_factory=ModelUsage.unavailable)
+    cost: ModelCost = Field(default_factory=ModelCost.unavailable)
+    tool_terminal_counts: ToolTerminalCounts = Field(default_factory=ToolTerminalCounts)
+    finalized_at: datetime = Field(default_factory=utc_now)
+
+    @field_validator("agent_run_id")
+    @classmethod
+    def valid_agent_run_id(cls, value: str) -> str:
+        return validate_prefixed_id(value, AGENT_RUN_ID_PREFIX)
+
+    @field_validator("workspace_id")
+    @classmethod
+    def valid_workspace_id(cls, value: str) -> str:
+        return validate_prefixed_id(value, WORKSPACE_ID_PREFIX)
+
+    @field_validator("session_id")
+    @classmethod
+    def valid_session_id(cls, value: str) -> str:
+        return validate_prefixed_id(value, SESSION_ID_PREFIX)
+
+    @field_validator("task_run_id")
+    @classmethod
+    def valid_task_run_id(cls, value: str) -> str:
+        return validate_prefixed_id(value, TASK_RUN_ID_PREFIX)
+
+    @field_validator("turn_id")
+    @classmethod
+    def valid_turn_id(cls, value: str) -> str:
+        return validate_prefixed_id(value, TURN_ID_PREFIX)
+
+    @field_validator("finalized_at")
+    @classmethod
+    def valid_finalized_at(cls, value: datetime) -> datetime:
+        return _aware(value)
+
+
+class AgentRunObservation(ProtocolModel):
+    """Safe complete inspection of one AgentRun and its observation rows."""
+
+    agent_run_id: str
+    workspace_id: str
+    session_id: str
+    task_run_id: str
+    turn_id: str
+    resume_of_agent_run_id: str | None = None
+    created_at: datetime
+    terminal_metrics: AgentRunTerminalMetrics | None = None
+    requests: tuple[ModelRequestObservation, ...] = ()
+
+    @field_validator("agent_run_id")
+    @classmethod
+    def valid_agent_run_id(cls, value: str) -> str:
+        return validate_prefixed_id(value, AGENT_RUN_ID_PREFIX)
+
+    @field_validator("workspace_id")
+    @classmethod
+    def valid_workspace_id(cls, value: str) -> str:
+        return validate_prefixed_id(value, WORKSPACE_ID_PREFIX)
+
+    @field_validator("session_id")
+    @classmethod
+    def valid_session_id(cls, value: str) -> str:
+        return validate_prefixed_id(value, SESSION_ID_PREFIX)
+
+    @field_validator("task_run_id")
+    @classmethod
+    def valid_task_run_id(cls, value: str) -> str:
+        return validate_prefixed_id(value, TASK_RUN_ID_PREFIX)
+
+    @field_validator("turn_id")
+    @classmethod
+    def valid_turn_id(cls, value: str) -> str:
+        return validate_prefixed_id(value, TURN_ID_PREFIX)
+
+    @field_validator("resume_of_agent_run_id")
+    @classmethod
+    def valid_resume_id(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return validate_prefixed_id(value, AGENT_RUN_ID_PREFIX)
+
+    @field_validator("created_at")
+    @classmethod
+    def valid_created_at(cls, value: datetime) -> datetime:
+        return _aware(value)
+
+    @model_validator(mode="after")
+    def ordered_requests(self) -> AgentRunObservation:
+        ordinals = [request.attempt_ordinal for request in self.requests]
+        if ordinals != sorted(ordinals) or len(ordinals) != len(set(ordinals)):
+            raise ValueError("AgentRun model requests must be ordered and unique")
+        if any(request.agent_run_id != self.agent_run_id for request in self.requests):
+            raise ValueError("model request belongs to another AgentRun")
+        if self.terminal_metrics is not None and (
+            self.terminal_metrics.agent_run_id != self.agent_run_id
+            or self.terminal_metrics.workspace_id != self.workspace_id
+        ):
+            raise ValueError("terminal metrics belong to another AgentRun")
+        return self
+
+
+# Names used by callers that prefer the shorter aggregate terminology.
+AgentRunMetrics = AgentRunTerminalMetrics
+ModelRequestRecord = ModelRequestObservation
+
+
+__all__ = [
+    "AgentRunMetrics",
+    "AgentRunObservation",
+    "AgentRunTerminalMetrics",
+    "MODEL_REQUEST_ID_PREFIX",
+    "ModelRequestObservation",
+    "ModelRequestRecord",
+    "ModelRequestState",
+    "ObservationRequestState",
+    "ToolTerminalCounts",
+]

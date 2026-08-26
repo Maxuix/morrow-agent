@@ -20,6 +20,7 @@ from morrow.adapters.state.operational import OperationalStore
 from morrow.adapters.state.preference_yaml import PreferenceYamlStore
 from morrow.application.backup import BackupBundleError
 from morrow.application.doctor import OperationalDoctor
+from morrow.application.orchestrator import DispatchResult
 from morrow.application.preferences.inbox import PreferenceInboxError
 from morrow.application.preferences.queries import PreferenceQueries
 from morrow.application.preferences.tool import (
@@ -37,7 +38,13 @@ from morrow.bootstrap import (
 from morrow.core.application import ApplicationError, ApplicationErrorCode
 from morrow.core.capabilities import PermissionPreset, PermissionProfile
 from morrow.core.learning import LearningReviewStatus
-from morrow.core.models import ModelErrorCode, ModelProviderError, provider_error_message
+from morrow.core.models import (
+    AgentEvent,
+    ModelErrorCode,
+    ModelProviderError,
+    ToolApprovalDecision,
+    provider_error_message,
+)
 from morrow.core.permissions import (
     UNCONFINED_HOST_WARNING,
     UNCONFINED_HOST_WARNING_DIGEST,
@@ -63,6 +70,7 @@ artifact_app = typer.Typer(help="Artifact 查看与保留。")
 recovery_app = typer.Typer(help="恢复报告与决策。")
 grant_app = typer.Typer(help="Foreground AgentRun 的手动权限授予与撤销。")
 state_app = typer.Typer(help="Operational Store 诊断、事件与备份。")
+agent_run_app = typer.Typer(help="AgentRun 观测查询。")
 preferences_app = typer.Typer(help="Generic Preference 查询与直接生命周期管理。")
 app.add_typer(skill_app, name="skill")
 app.add_typer(provider_app, name="provider")
@@ -74,6 +82,7 @@ app.add_typer(artifact_app, name="artifact")
 app.add_typer(recovery_app, name="recovery")
 app.add_typer(grant_app, name="grant")
 app.add_typer(state_app, name="state")
+app.add_typer(agent_run_app, name="agent-run")
 app.add_typer(preferences_app, name="preferences")
 preferences_app.add_typer(preference_inbox_app, name="inbox")
 app.add_typer(learning_app, name="learning")
@@ -147,7 +156,7 @@ def root(
         with WorkspaceWriterLock(application.data_root, identity.workspace_id):
             code = _run_workspace(
                 application,
-                identity,
+                identity=identity,
                 permission_profile=PermissionProfile.from_preset(permission_mode),
                 resume_session_id=session_id,
             )
@@ -158,6 +167,197 @@ def root(
         _echo_credential_error(exc)
         raise typer.Exit(code=2) from None
     raise typer.Exit(code=code)
+
+
+class HeadlessApprovalPort:
+    """Fail-closed approval adapter for the non-interactive one-shot command."""
+
+    async def request(self, _request) -> ToolApprovalDecision:
+        return ToolApprovalDecision(approved=False)
+
+
+def _headless_dump(value):
+    if value is None:
+        return None
+    if hasattr(value, "model_dump"):
+        return value.model_dump(mode="json")
+    if isinstance(value, dict):
+        return {str(key): _headless_dump(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_headless_dump(item) for item in value]
+    return value
+
+
+def _headless_echo(kind: str, **payload) -> None:
+    record = {"schema_version": 1, "kind": kind, **payload}
+    typer.echo(
+        json.dumps(
+            record,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        )
+    )
+
+
+async def _headless_stream(session_app, prompt: str):
+    terminal_event = None
+    dispatch = None
+    async for item in session_app.orchestrator.stream(prompt):
+        if isinstance(item, AgentEvent):
+            _headless_echo("agent_event", event=_headless_dump(item))
+            if item.type == "turn.completed":
+                terminal_event = item
+        elif isinstance(item, DispatchResult):
+            dispatch = item
+    return terminal_event, dispatch
+
+
+def _headless_ids(session_app, terminal_event):
+    session = getattr(session_app, "session", None)
+    persistence = getattr(session_app, "persistence", None)
+    committer = getattr(session, "committer", None)
+    session_id = getattr(session, "session_id", None)
+    agent_run_id = getattr(persistence, "current_agent_run_id", None) or getattr(
+        committer, "current_agent_run_id", None
+    )
+    task_run_id = getattr(persistence, "current_task_run_id", None) or getattr(
+        committer, "current_task_run_id", None
+    )
+    turn_id = getattr(persistence, "current_turn_id", None) or getattr(
+        committer, "current_turn_id", None
+    )
+    if terminal_event is not None:
+        session_id = session_id or terminal_event.session_id
+        turn_id = turn_id or terminal_event.turn_id
+    return session_id, task_run_id, agent_run_id, turn_id
+
+
+def _headless_terminal_record(
+    session_app,
+    terminal_event,
+    dispatch: DispatchResult | None,
+    *,
+    stream_failed: bool = False,
+) -> bool:
+    session_id, task_run_id, agent_run_id, turn_id = _headless_ids(session_app, terminal_event)
+    observation = None
+    observation_failed = False
+    api = getattr(session_app, "api", None)
+    if agent_run_id is not None and api is not None:
+        getter = getattr(api, "get_agent_run_observation", None)
+        if callable(getter):
+            try:
+                observation = getter(agent_run_id)
+            except Exception:
+                observation_failed = True
+    observation_payload = _headless_dump(observation) or {}
+    session_id = observation_payload.get("session_id", session_id)
+    task_run_id = observation_payload.get("task_run_id", task_run_id)
+    agent_run_id = observation_payload.get("agent_run_id", agent_run_id)
+    turn_id = observation_payload.get("turn_id", turn_id)
+    metrics = observation_payload.get("terminal_metrics")
+    finish_reason = terminal_event.payload.get("finish_reason") if terminal_event else None
+    dispatch_degraded = bool(getattr(dispatch, "degraded", False))
+    successful = (
+        not stream_failed
+        and not observation_failed
+        and not dispatch_degraded
+        and terminal_event is not None
+        and finish_reason == "stop"
+        and metrics is not None
+        and metrics.get("finish_reason") == "stop"
+    )
+    _headless_echo(
+        "run.completed",
+        agent_run_id=agent_run_id,
+        session_id=session_id,
+        task_run_id=task_run_id,
+        turn_id=turn_id,
+        metrics=metrics,
+    )
+    return successful
+
+
+@app.command("run")
+def run_headless(
+    prompt_arg: str | None = typer.Argument(None, metavar="[PROMPT]"),
+    prompt_option: str | None = typer.Option(None, "--prompt"),
+    workspace: Path | None = typer.Option(None, "--workspace"),
+    state_root: Path | None = typer.Option(None, "--state-root"),
+    permission_mode: PermissionPreset = typer.Option(
+        PermissionPreset.MANUAL,
+        "--permission-mode",
+        "--mode",
+        help="权限预设；需要审批的工具在 headless 模式下默认拒绝。",
+    ),
+    resume_session_id: str | None = typer.Option(
+        None, "--resume-session-id", "--session-id", help="恢复指定 Session。"
+    ),
+) -> None:
+    """Run one ordinary prompt and emit versioned JSONL records only."""
+
+    if workspace is None:
+        typer.echo("headless run requires an explicit --workspace", err=True)
+        raise typer.Exit(code=2)
+    if prompt_arg is not None and prompt_option is not None:
+        typer.echo("provide the prompt either as an argument or with --prompt", err=True)
+        raise typer.Exit(code=2)
+    prompt = prompt_option if prompt_option is not None else prompt_arg
+    if prompt is None or not prompt.strip():
+        typer.echo("headless run requires an explicit prompt", err=True)
+        raise typer.Exit(code=2)
+    if permission_mode is PermissionPreset.AUTO_SANDBOXED:
+        capability = default_sandbox_backend().probe()
+        if not capability.supported:
+            typer.echo(
+                f"Auto Sandboxed 不可用（{capability.reason}）；不会回退到 Host 执行。", err=True
+            )
+            raise typer.Exit(code=2)
+
+    try:
+        application = build_application(state_root=state_root)
+        resolution = application.workspace_service.resolve(workspace)
+        if resolution.status != "existing" or resolution.identity is None:
+            typer.echo(
+                "headless run requires an already registered workspace; interactive confirmation is disabled",
+                err=True,
+            )
+            raise typer.Exit(code=2)
+        identity = resolution.identity
+        with WorkspaceWriterLock(application.data_root, identity.workspace_id):
+            session_app = build_session_application(
+                app=application,
+                identity=identity,
+                approval_port=HeadlessApprovalPort(),
+                permission_profile=PermissionProfile.from_preset(permission_mode),
+                resume_session_id=resume_session_id,
+            )
+            stream_failed = False
+            terminal_event = None
+            dispatch = None
+            try:
+                terminal_event, dispatch = asyncio.run(_headless_stream(session_app, prompt))
+            except Exception:
+                stream_failed = True
+                typer.echo("headless run failed before a normal terminal event", err=True)
+            try:
+                success = _headless_terminal_record(
+                    session_app, terminal_event, dispatch, stream_failed=stream_failed
+                )
+            except Exception:
+                typer.echo("headless run observation is unavailable", err=True)
+                success = False
+    except typer.Exit:
+        raise
+    except (CredentialAccessError, StorageError, WorkspaceError, ApplicationError, ValueError):
+        typer.echo("headless run could not start safely", err=True)
+        raise typer.Exit(code=2) from None
+    except Exception:
+        typer.echo("headless run could not start safely", err=True)
+        raise typer.Exit(code=2) from None
+    raise typer.Exit(code=0 if success else 2)
 
 
 def _run_workspace(
@@ -630,6 +830,38 @@ def _state_services(
         operational.doctor,
         operational.backup,
     )
+
+
+@agent_run_app.command("show")
+def agent_run_show(
+    agent_run_id: str,
+    workspace_id: str | None = typer.Option(None, "--workspace-id", "--workspace"),
+    directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
+    as_json: bool = typer.Option(False, "--json"),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+) -> None:
+    """Inspect safe AgentRun metrics and ordered model-request observations."""
+
+    handle = None
+    try:
+        _application, handle, api, _doctor, _backup = _state_services(
+            state_root=state_root,
+            workspace_id=workspace_id,
+            directory=directory,
+            write=False,
+        )
+        observation = api.get_agent_run_observation(agent_run_id)
+        if observation is None:
+            typer.echo("AgentRun observation not found", err=True)
+            raise typer.Exit(code=2)
+        _emit_model(observation, as_json=as_json)
+    except typer.Exit:
+        raise
+    except Exception:
+        typer.echo("AgentRun observation is unavailable", err=True)
+        raise typer.Exit(code=2) from None
+    finally:
+        _close_state(handle)
 
 
 def _close_state(handle) -> None:

@@ -31,6 +31,11 @@ from morrow.core.models import (
     ToolDefinition,
     UserMessage,
 )
+from morrow.core.observability import (
+    AgentRunObservation,
+    AgentRunTerminalMetrics,
+    ModelRequestObservation,
+)
 from morrow.core.permissions import PermissionSnapshot
 from morrow.core.preference_documents import PreferenceDocument
 from morrow.core.preference_models import PreferenceEntry
@@ -64,6 +69,7 @@ class DurableRunCoordinator(SessionCommitter, Protocol):
 
     current_turn_id: str | None
     current_task_run_id: str | None
+    current_agent_run_id: str | None
 
     def now(self) -> datetime: ...
 
@@ -87,6 +93,16 @@ class DurableRunCoordinator(SessionCommitter, Protocol):
     ) -> TurnSubmissionResult: ...
 
     def get_open_run_snapshot(self) -> AgentRunSnapshot | None: ...
+
+    def admit_model_request(self, **kwargs) -> ModelRequestObservation: ...
+
+    def settle_model_request(self, model_request_id: str, **kwargs) -> ModelRequestObservation: ...
+
+    def finalize_agent_run(self, **kwargs) -> AgentRunTerminalMetrics: ...
+
+    def get_agent_run_observation(
+        self, agent_run_id: str | None = None
+    ) -> AgentRunObservation | None: ...
 
     def freeze_permission_snapshot(
         self,

@@ -35,6 +35,11 @@ from morrow.core.mcp import (
     McpServerDefinition,
     McpToolSnapshot,
 )
+from morrow.core.observability import (
+    AgentRunObservation,
+    AgentRunTerminalMetrics,
+    ModelRequestObservation,
+)
 from morrow.core.permissions import CapabilityGrant, PermissionSnapshot
 from morrow.core.recovery import RecoveryReceipt, RecoveryReport
 from morrow.core.skills.context import SkillContextEntry
@@ -258,6 +263,34 @@ class AgentRunPort(Protocol):
     ) -> DurableAgentRun: ...
 
 
+class AgentRunObservabilityPort(Protocol):
+    """Admission, settlement and safe inspection for AgentRun observations."""
+
+    def admit_model_request(self, workspace_id: str, **kwargs) -> ModelRequestObservation: ...
+
+    def settle_model_request(
+        self, workspace_id: str, model_request_id: str, **kwargs
+    ) -> ModelRequestObservation: ...
+
+    def finalize_agent_run(self, workspace_id: str, **kwargs) -> AgentRunTerminalMetrics: ...
+
+    def get_model_request(
+        self, workspace_id: str, model_request_id: str
+    ) -> ModelRequestObservation | None: ...
+
+    def list_model_requests(
+        self, workspace_id: str, agent_run_id: str
+    ) -> tuple[ModelRequestObservation, ...]: ...
+
+    def get_agent_run_terminal_metrics(
+        self, workspace_id: str, agent_run_id: str
+    ) -> AgentRunTerminalMetrics | None: ...
+
+    def get_agent_run_observation(
+        self, workspace_id: str, agent_run_id: str
+    ) -> AgentRunObservation | None: ...
+
+
 class SkillRunJournalPort(Protocol):
     """v14 immutable Skill evidence attached to one AgentRun."""
 
@@ -401,6 +434,7 @@ class TurnSubmitReceiptPort(Protocol):
 class TurnLifecycleJournalPort(
     SessionLifecyclePort,
     AgentRunPort,
+    AgentRunObservabilityPort,
     McpCatalogJournalPort,
     SkillRunJournalPort,
     SkillDraftUsageJournalPort,

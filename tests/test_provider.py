@@ -110,8 +110,17 @@ def tool_stream_chunk(fragments, *, text=None, finish=None):
     )
 
 
-def usage_only_chunk():
-    return SimpleNamespace(choices=[], usage=SimpleNamespace(total_tokens=3))
+def usage_only_chunk(*, prompt_tokens=None, completion_tokens=None, total_tokens=None):
+    values = {
+        name: value
+        for name, value in {
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "total_tokens": total_tokens,
+        }.items()
+        if value is not None
+    }
+    return SimpleNamespace(choices=[], usage=SimpleNamespace(**values))
 
 
 def demo_tool(name="lookup_record"):
@@ -679,14 +688,14 @@ async def test_adapter_sorts_interleaved_calls_by_vendor_index():
 
 
 @pytest.mark.asyncio
-async def test_adapter_ignores_usage_only_chunks():
+async def test_adapter_retains_leading_and_trailing_usage_without_extra_events():
     provider = provider_with_stream(
         AsyncChunks(
             [
-                usage_only_chunk(),
+                usage_only_chunk(prompt_tokens=2, completion_tokens=1, total_tokens=3),
                 stream_chunk(text="vis"),
-                usage_only_chunk(),
                 stream_chunk(text="ible", finish="stop"),
+                usage_only_chunk(prompt_tokens=2, completion_tokens=1, total_tokens=3),
             ]
         )
     )
@@ -698,6 +707,59 @@ async def test_adapter_ignores_usage_only_chunks():
         ("text_delta", "ible"),
         ("completed", None),
     ]
+    assert events[-1].usage.availability.value == "available"
+    assert events[-1].usage.input_tokens == 2
+    assert events[-1].usage.output_tokens == 1
+    assert events[-1].usage.total_tokens == 3
+
+
+@pytest.mark.asyncio
+async def test_adapter_marks_missing_usage_unavailable_and_preserves_explicit_zero():
+    missing = provider_with_stream(AsyncChunks([stream_chunk(text="ok", finish="stop")]))
+    missing_events = await collect_stream(missing)
+    assert missing_events[-1].usage.availability.value == "unavailable"
+    assert missing_events[-1].usage.total_tokens is None
+
+    zero = provider_with_stream(
+        AsyncChunks(
+            [
+                stream_chunk(text="ok", finish="stop"),
+                usage_only_chunk(prompt_tokens=0, completion_tokens=0, total_tokens=0),
+            ]
+        )
+    )
+    zero_events = await collect_stream(zero)
+    assert zero_events[-1].usage.availability.value == "available"
+    assert zero_events[-1].usage.total_tokens == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "chunks",
+    [
+        [stream_chunk(text="ok", finish="stop"), usage_only_chunk(total_tokens="3")],
+        [
+            usage_only_chunk(prompt_tokens=1, completion_tokens=1, total_tokens=2),
+            usage_only_chunk(prompt_tokens=1, completion_tokens=1, total_tokens=3),
+            stream_chunk(text="ok", finish="stop"),
+        ],
+        [
+            stream_chunk(text="ok", finish="stop"),
+            stream_chunk(text="late"),
+        ],
+    ],
+)
+async def test_adapter_rejects_malformed_usage_conflicts_and_post_finish_semantics(chunks):
+    events = await collect_stream(provider_with_stream(AsyncChunks(chunks)))
+    assert events[-1].kind == "error"
+    assert events[-1].error_code == ModelErrorCode.INVALID_RESPONSE
+
+
+@pytest.mark.asyncio
+async def test_adapter_requests_stream_usage_with_supported_request_field():
+    provider = provider_with_stream(AsyncChunks([stream_chunk(text="ok", finish="stop")]))
+    await collect_stream(provider)
+    assert provider._client.chat.completions.kwargs["stream_options"] == {"include_usage": True}
 
 
 def test_accumulator_preserves_argument_string_fidelity():

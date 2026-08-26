@@ -126,6 +126,8 @@ def test_hard_trim_drops_oldest_whole_turn_and_counts_source_records():
 
     assert [message.content for message in pack.messages if message.role != "system"] == ["current"]
     assert pack.dropped_record_count == 3
+    assert pack.dropped_turn_count == 1
+    assert pack.dropped_cycle_count == 0
 
 
 def test_hard_trim_drops_oldest_closed_cycle_but_preserves_current_user():
@@ -150,6 +152,8 @@ def test_hard_trim_drops_oldest_closed_cycle_but_preserves_current_user():
     ]
     assert pack.messages[2].content == "current"
     assert pack.dropped_record_count == 2
+    assert pack.dropped_turn_count == 0
+    assert pack.dropped_cycle_count == 1
 
 
 def test_protected_context_overflow_is_typed_context_budget_failure():

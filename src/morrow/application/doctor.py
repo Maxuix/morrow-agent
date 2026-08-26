@@ -173,6 +173,9 @@ class OperationalDoctor:
             if (classification.schema_version or 0) >= 16:
                 checks.append("mcp_snapshots_and_reviews")
                 self._inspect_mcp(journal, workspace_id, counts, issues)
+            if (classification.schema_version or 0) >= 17:
+                checks.append("agent_run_observations")
+                self._inspect_agent_run_observations(journal, workspace_id, counts, issues)
             checks.extend(("learning_reviews_and_candidates", "learning_promotions"))
             inspect_learning(
                 journal,
@@ -210,7 +213,8 @@ class OperationalDoctor:
         elif any(issue.severity is DoctorSeverity.ERROR for issue in issues):
             health = DoctorHealth.NEEDS_REPAIR
         elif any(
-            issue.code in {"open_turn", "interrupted_execution", "artifact_staging"}
+            issue.code
+            in {"open_turn", "interrupted_execution", "artifact_staging", "open_model_request"}
             or issue.code in {"learning_review_lease_expired", "learning_promotion_recovery"}
             for issue in issues
         ):
@@ -802,6 +806,36 @@ class OperationalDoctor:
                 permission = journal.get_permission_snapshot_for_run(workspace_id, run.agent_run_id)
                 if permission is not None:
                     counts["mcp_review_evidence"] += len(permission.mcp_review_evidence)
+
+    def _inspect_agent_run_observations(self, journal, workspace_id, counts, issues) -> None:
+        """Check only safe request/terminal projections; never inspect chat payloads."""
+
+        counts["agent_run_observations"] = 0
+        counts["agent_run_model_requests"] = 0
+        counts["agent_run_terminal_metrics"] = 0
+        counts["agent_run_open_model_requests"] = 0
+        for session in journal.list_sessions(workspace_id):
+            for run in journal.list_session_agent_runs(workspace_id, session.session_id):
+                observation = journal.get_agent_run_observation(workspace_id, run.agent_run_id)
+                if observation is None:
+                    # v17 is additive: AgentRuns created before the migration
+                    # legitimately have no linked observation rows.
+                    continue
+                counts["agent_run_observations"] += 1
+                counts["agent_run_model_requests"] += len(observation.requests)
+                if observation.terminal_metrics is not None:
+                    counts["agent_run_terminal_metrics"] += 1
+                open_requests = sum(item.state.value == "admitted" for item in observation.requests)
+                counts["agent_run_open_model_requests"] += open_requests
+                if open_requests:
+                    issues.append(
+                        self._issue(
+                            "open_model_request",
+                            DoctorSeverity.WARNING,
+                            "AgentRun has an admitted model request requiring recovery",
+                            count=open_requests,
+                        )
+                    )
 
     def _inspect_events(self, journal, workspace_id, counts, issues) -> None:
         after = 0

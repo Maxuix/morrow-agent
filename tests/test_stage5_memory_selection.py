@@ -22,6 +22,7 @@ from morrow.adapters.state.migrations import (
     V14_NAME,
     V15_NAME,
     V16_NAME,
+    V17_NAME,
     MigrationRegistry,
     SchemaMigration,
 )
@@ -181,10 +182,10 @@ def test_v11_store_upgrades_to_v13_without_rewriting_v11(tmp_path):
     report = upgraded.migrate()
 
     assert report.from_version == 11
-    assert report.to_version == 16
-    assert report.applied == (V12_NAME, V13_NAME, V14_NAME, V15_NAME, V16_NAME)
+    assert report.to_version == 17
+    assert report.applied == (V12_NAME, V13_NAME, V14_NAME, V15_NAME, V16_NAME, V17_NAME)
     with upgraded.open(StoreOpenMode.READ_WRITE) as session:
-        assert session.schema_version == 16
+        assert session.schema_version == 17
         tables = session.run_read(
             lambda executor: executor.execute(
                 "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ("

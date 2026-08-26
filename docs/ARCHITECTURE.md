@@ -1,12 +1,13 @@
 # Morrow 架构基线
 
 > 状态：阶段 2–5 已完成；Stage 6 Subplans 63–75 已在本地完成（macOS；Linux 原生运行仍
-> unsupported）；Stage 7–10 尚未开始
+> unsupported）；Stage 7 preflight S7P-01 已在本地落地并保持独立 topic branch；其余 Stage 7–10
+> 尚未开始
 
 本文锁定当前依赖方向、数据所有权和安全边界。阶段 3 的能力策略、配置工具、工作空间读搜、冲突安全文件变更、审批后 Host 命令、只读 Git 和当前 macOS 原生沙箱
 已经交付；Linux 原生运行尚未声明支持。Stage 4 已落地数据根 SQLite Operational Store 的
 身份/迁移/备份基础、v2 无工具 Session 历史、v3 工具执行/审批日志、v4 恢复分类与
-崩溃对账，以及 v5 TaskRun 生命周期、转移审计、版本化 TaskOutcome、v6 Artifact 元数据/引用与受控字节发布、v7 确定性 ContextCheckpoint 与不可变 Session lineage、v8 有界 application event/command receipt、v9 按 AgentRun 冻结的权限证据与可撤销 grant。Stage 5 Subplans 49–54 已增加 LearningPolicy、Review、Evidence、Candidate、Suppression 的有界领域与 v10–v12 SQLite 持久化；accepted TaskOutcome 的同事务 Review 请求、一次性 lease Runner、Evidence/Context 安全边界和候选去重/抑制；Inbox、Candidate 决策、Project Knowledge 生命周期；公开 prepared 配置契约、SQLite/YAML Promotion Saga、激活来源、恢复/撤销和 CLI/REPL 入口；确定性 MemorySelection、AgentRun 冻结/恢复复用、RunContextProjection；以及 no-tool production Reviewer、离线评估、只读 Learning doctor 和隔离 backup 引用校验。Reviewer v4 的真实 Provider 质量目标已通过，不由离线证据替代。Stage 6 的 Skills 包、生命周期、选择/上下文、Draft/Usage、受限脚本执行、Provider/Model 控制面以及 MCP desired state/Catalog/v16 持久化已在本地完成；MCP Runtime/Security、Backup v2 与 Stage 6 Doctor 也已完成；Stage 7–10 的 Workflow、GUI、后台自动化和产品化均尚未开始。
+崩溃对账，以及 v5 TaskRun 生命周期、转移审计、版本化 TaskOutcome、v6 Artifact 元数据/引用与受控字节发布、v7 确定性 ContextCheckpoint 与不可变 Session lineage、v8 有界 application event/command receipt、v9 按 AgentRun 冻结的权限证据与可撤销 grant。Stage 5 Subplans 49–54 已增加 LearningPolicy、Review、Evidence、Candidate、Suppression 的有界领域与 v10–v12 SQLite 持久化；accepted TaskOutcome 的同事务 Review 请求、一次性 lease Runner、Evidence/Context 安全边界和候选去重/抑制；Inbox、Candidate 决策、Project Knowledge 生命周期；公开 prepared 配置契约、SQLite/YAML Promotion Saga、激活来源、恢复/撤销和 CLI/REPL 入口；确定性 MemorySelection、AgentRun 冻结/恢复复用、RunContextProjection；以及 no-tool production Reviewer、离线评估、只读 Learning doctor 和隔离 backup 引用校验。Reviewer v4 的真实 Provider 质量目标已通过，不由离线证据替代。Stage 6 的 Skills 包、生命周期、选择/上下文、Draft/Usage、受限脚本执行、Provider/Model 控制面以及 MCP desired state/Catalog/v16 持久化已在本地完成；MCP Runtime/Security、Backup v2 与 Stage 6 Doctor 也已完成；S7P-01 增加了不改变公开事件的 AgentRun request/terminal observability 与复用同一 SessionOrchestrator/AgentLoop 的 headless JSONL 入口；Stage 7–10 的 Workflow、GUI、后台自动化和产品化均尚未开始。
 
 S56–S61 已冻结并接通 generic Preference 契约、decode-only legacy 迁移、workspace Preference v3、
 Operational Store v13 Review/Evidence/Proposal/Writer saga、异步 Worker、Inbox、Writer 和下一
@@ -15,8 +16,9 @@ AgentRun 注入。v13 DDL 与 checksum 保持不变。
 Stage 6 的当前所有权如下：`application/skills/` 负责 Catalog、生命周期、Selection/Context、Draft、Usage、脚本和
 Doctor；`application/mcp/` 负责 desired-state、Catalog、run-scoped runtime、策略桥接和结果归一化；Provider/Model
 控制面仍由 Provider service 与 Adapter Registry 持有。SkillBinding、MCP desired state、Provider/Model 非敏感配置和
-Workspace 扩展配置继续由 YAML 持有，CredentialStore 是唯一凭据权威。Operational Store v14–v16 持有 Skill/MCP
-运行证据；`application/backup_v2.py` 组合在线 SQLite、Artifact、脱敏 YAML 和被引用 managed Skill 版本，并以新目标
+Workspace 扩展配置继续由 YAML 持有，CredentialStore 是唯一凭据权威。Operational Store v14–v17 持有 Skill/MCP
+运行证据与 AgentRun 观测；v17 的 request ledger 与 terminal metrics 独立于不可变 AgentRun admission snapshot。
+`application/backup_v2.py` 组合在线 SQLite、Artifact、脱敏 YAML 和被引用 managed Skill 版本，并以新目标
 目录执行原子、隔离 restore。v1 backup verifier 保持向后兼容，Backup v2 不复制凭据。
 
 ## 分层与依赖方向
@@ -62,6 +64,9 @@ Core 不依赖 CLI、Rich、具体模型 SDK、YAML、数据库或操作系统�
 deadline/预算、取消闭合、循环检测和全部聊天历史写入；`AgentRuntime.run_turn()` 是薄委托。
 有序公开事件的构造由 loop 内部事件发射协作者负责，但状态转换、事件时机和 ConversationLog
 写入权仍只属于 `AgentLoop.run_task()`。持久化运行能力由显式 `DurableRunCoordinator` 合同提供；
+AgentLoop 在每次 Provider 调用前后经该合同记录 bounded request admission/settlement，并在终态
+写入独立的 AgentRun terminal metrics；projection 只含 ID、状态、计数、stop/finish 和明确的
+usage/cost availability，不含 prompt、message、reasoning、完整工具参数/结果、SDK object 或 traceback。
 工具 handler 的审批、权限复查、超时/取消和 durable execution 状态由 `ToolCycleExecutor` 执行，
 但它不拥有聊天历史或公开事件。只有实现有界、单行且拒绝密钥材料的 `PublicDiagnosticError`
 合同的领域失败可越过 Agent 的通用异常边界；未知异常仍只产生固定内部错误，不暴露 traceback。
@@ -129,7 +134,7 @@ Conversation/Turn、Permission、Recovery、Task 与 Tool SQL 分属有界 repos
 配置补丁显式分派到 Preferences 或 Profile，不存在兜底目标。`build_session_application()` 返回命名的
 `SessionApplication`，包含 `session`、`context_builder`、`commands`、`orchestrator`、`files`、`search`、`mutation`、`changes`、
 `process`、`checkpoints`、`forks`、统一 `api`、只读 `doctor` 和 `backup` 服务。
-交互 bootstrap 与 headless CLI 通过 `build_operational_services()` / `build_operational_api()` 复用同一
+交互 bootstrap 与 headless CLI（包括 `morrow run`）通过 `build_operational_services()` / `build_operational_api()` 复用同一
 Operational 组装路径；接口层不自行复制领域服务构造。
 
 `SessionPersistence` 继续作为运行时兼容 facade，但 Turn 提交、Session 恢复、权限证据、durable tool
@@ -201,12 +206,14 @@ Service 或 Port：
   → 检查并加载 Profile / workspace Preferences
   → 构造进程内 SessionApplication
   → AgentLoop 接纳 User，ContextBuilder 组装合法历史和工具
+  → 每次 Provider 调用前 admission bounded request observation，完成/失败/取消后 exactly-once settlement
   → Adapter 流式返回文本或 tool calls
   → ConversationLog 校验 Assistant ToolCall 后，同一事务提交有序 ToolExecution 意图
   → 审批 consume 与 executing 同一事务；handler 只在已提交意图可见后运行
   → bounded、redacted run_command 结果先发布为 Artifact，再记录 handler_completed 与 ToolMessage/closed
   → ToolExecutor 校验、预检、审批并串行执行受限工具，闭合 ToolCycle
   → 最终回答、取消或确定性 stop_code
+  → AgentRun terminal metrics 由已 settlement request 与已关闭 ToolExecution 聚合；crash 留下 open request 供 Doctor/恢复识别
   → 先提交 Turn/User，再发出 turn.started
   → 重启后扫描未闭合 ToolExecution；Host/sandbox 缺完成一律 unknown，禁止自动重放
   → 恢复只经 ConversationLog 追加 interrupted/error ToolMessage，不编造成功
@@ -227,7 +234,7 @@ Service 或 Port：
 | 当前会话消息 | 进程内 ConversationLog 投影；权威在 Operational Store v13 | AgentLoop 经 ConversationLog 提交 | 未闭合工具在重启后进入 needs_recovery，不自动重放；Checkpoint 不是第二历史权威 |
 | 运行策略默认值 | 随包 `runtime-policy.toml` | 发行包；composition root 只读 | AgentRun/Review 的唯一默认值来源 |
 | 运行策略覆盖 | 全局 `config.yaml.runtime_policy` | 用户手工配置；YAML Store 保留 | 可省略；只覆盖声明字段且不能突破代码安全上限；Agent 工具不可写 |
-| 运行记录 / Artifact 元数据 | 数据根 `store/operational.sqlite`；Artifact 字节在 `artifacts/` | v11 Session/Task/对话/工具执行/审批/恢复报告/Outcome/Artifact/Checkpoint/PermissionSnapshot/Grant，以及 LearningPolicy/Review/Evidence/Candidate/Suppression/Decision/PromotionOperation/ConfigurationActivation 与应用 receipt/event 服务 | 字节只经有界脱敏、hash/size 校验、fsync 和原子发布；YAML 与凭据权威不变 |
+| 运行记录 / Artifact 元数据 | 数据根 `store/operational.sqlite`；Artifact 字节在 `artifacts/` | v11 Session/Task/对话/工具执行/审批/恢复报告/Outcome/Artifact/Checkpoint/PermissionSnapshot/Grant，以及 LearningPolicy/Review/Evidence/Candidate/Suppression/Decision/PromotionOperation/ConfigurationActivation、v17 AgentRun request/terminal observations 与应用 receipt/event 服务 | 字节只经有界脱敏、hash/size 校验、fsync 和原子发布；观测不复制聊天/工具 payload；YAML 与凭据权威不变 |
 | Learning 与 Preference v2 审计 | Operational Store v13；Profile/Preferences Active 仍由 YAML 持有 | no-tool Reviewers、`ReviewWorker`、Inbox/Writer、Knowledge/Promotion、doctor/backup verifiers | 普通终态 Turn 同事务 enqueue；进程内 Worker lease/retry；推断只进 Inbox，无 daemon、无自动晋升 |
 
 ProjectStateStore 只支持 `profile.yaml` 和 `preferences.yaml`。两者使用版本化文档信封、revision、
@@ -240,7 +247,7 @@ workspace Preferences 损坏只隔离该层。旧 `handoff.yaml(.bak)` 不属于
 `config.yaml` 是聚合文档，Provider、全局 Preferences 与可选 runtime-policy 覆盖的写入必须在同一事务锁内保留对方字段。
 `workspace-index.yaml` 由独立 WorkspaceIndexStore 管理。
 
-### Operational Store 与 Artifact 布局（v16）
+### Operational Store 与 Artifact 布局（v17）
 
 数据根（`--state-root` 或 `~/.morrow`）下的保留路径：
 
@@ -254,7 +261,7 @@ workspace Preferences 损坏只隔离该层。旧 `handoff.yaml(.bak)` 不属于
 ```
 
 `DataRoot` 暴露 `store_path`、`artifacts_path`、`backups_path` 与 `operational_lock_path`。
-`build_session_application()` 会打开或创建当前 v16 Operational Store，并把对话经 ConversationLog
+`build_session_application()` 会打开或创建当前 v17 Operational Store，并把对话经 ConversationLog
 提交到 Session / TaskRun / Turn / AgentRun / conversation / receipt 表。v3 起有 tool_executions
 与 approvals；v4 增加 recovery_reports / recovery_receipts；v5 增加完整 TaskRun 状态、转移审计、
 TaskOutcome 版本和 Task 命令回执；v6 增加 Artifact 元数据、引用、pin 状态和 `artifact_refs_json`；v7 增加不可变
@@ -266,7 +273,10 @@ TaskOutcome 版本和 Task 命令回执；v6 增加 Artifact 元数据、引用�
 和 `configuration_activations`；v12 增加 `memory_selections`、`memory_selection_items` 和
 `memory_search_terms`；v13 增加 Preference Review job、Evidence、Proposal、WriteBatch 及链接表；v14 增加
 Skill Catalog、Binding、Selection、Context 和 Draft；v15 增加 Skill Usage 与生成 Skill 的运行证据；v16 增加
-MCP Server、Catalog、run snapshot、Tool snapshot 和结果 Artifact 链接。
+MCP Server、Catalog、run snapshot、Tool snapshot 和结果 Artifact 链接。v17 增加独立的
+`agent_run_model_requests` 与 `agent_run_terminal_metrics`，以 AgentRun 外键、workspace guard、
+ordered attempt、合法状态检查和明确 usage/cost availability 保存 Provider 进度与终态聚合；它不
+修改 immutable `agent_runs.snapshot_json`，也不复制 ConversationLog 或 ToolExecution payload。
 Selection 只引用不可变 Project Knowledge revision，AgentRunSnapshot 保存
 selection/digest/memory revision，运行时由 `RunContextProjection` 重建。Promotion 只保存审计/恢复/来源
 记录，不形成 YAML Active 状态副本。
@@ -310,7 +320,8 @@ Approval、CapabilityGrant 或文件。“不复制 TaskRun”是创建时约束
 
 每个任务恰好一次 `turn.started`/`turn.completed`。事件以 sequence 为顺序权威；取消是正常完成的
 一种 finish_reason。公开事件不包含密钥、原始 SDK 对象、完整异常堆栈、完整工具参数/结果或 Provider
-私有 reasoning。
+私有 reasoning。Headless `morrow run` 只在 stdout 输出版本化 JSONL：既有 AgentEvent 原样包裹，
+末尾附带不含消息/参数/结果的 safe AgentRun metrics；审批默认 fail closed，诊断只写 stderr。
 
 `application_events.cursor` 是独立的 `application_event_cursor` 命名空间，只记录已经与业务状态在同一
 SQLite 事务提交的 Session/Task/Turn/Recovery/Artifact/Checkpoint/Approval 事实。它不替代

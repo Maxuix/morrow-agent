@@ -29,6 +29,7 @@ from morrow.core.execution import (
 from morrow.core.faults import FaultInjector, FaultPoint, NoOpFaultInjector
 from morrow.core.mcp import McpReviewEvidence
 from morrow.core.models import AssistantMessage, ModelRef, utc_now
+from morrow.core.observability import MODEL_REQUEST_ID_PREFIX
 from morrow.core.permissions import PermissionSnapshot
 from morrow.core.ports import Clock, IdSource
 from morrow.core.recovery import RecoveryReport
@@ -261,6 +262,34 @@ class SessionPersistence:
             return None
         run = self.journal.get_agent_run(self.workspace_id, self.current_agent_run_id)
         return run.snapshot if run is not None else None
+
+    def admit_model_request(self, **kwargs):
+        """Record bounded Provider admission without exposing the SQLite journal to AgentLoop."""
+
+        kwargs.setdefault("agent_run_id", self.current_agent_run_id)
+        if kwargs["agent_run_id"] is None:
+            raise RuntimeError("model request admission requires an open AgentRun")
+        kwargs.setdefault("model_request_id", self.id_source.new_id(MODEL_REQUEST_ID_PREFIX))
+        return self.journal.admit_model_request(self.workspace_id, **kwargs)
+
+    def settle_model_request(self, model_request_id: str, **kwargs):
+        """Settle one admitted Provider request exactly once."""
+
+        return self.journal.settle_model_request(self.workspace_id, model_request_id, **kwargs)
+
+    def finalize_agent_run(self, **kwargs):
+        """Persist the bounded terminal aggregate for the current AgentRun."""
+
+        kwargs.setdefault("agent_run_id", self.current_agent_run_id)
+        if kwargs["agent_run_id"] is None:
+            raise RuntimeError("AgentRun finalization requires an open AgentRun")
+        return self.journal.finalize_agent_run(self.workspace_id, **kwargs)
+
+    def get_agent_run_observation(self, agent_run_id: str | None = None):
+        selected = agent_run_id or self.current_agent_run_id
+        if selected is None:
+            return None
+        return self.journal.get_agent_run_observation(self.workspace_id, selected)
 
     def start_new_session(self, session: Session, session_id: str) -> None:
         self.session_restore.start_new_session(session, session_id)

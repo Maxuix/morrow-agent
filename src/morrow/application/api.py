@@ -173,6 +173,13 @@ class OperationalApplicationService:
     def get_task(self, task_run_id: str) -> DurableTaskRun | None:
         return self._query(lambda: self.journal.get_task_run(self.workspace_id, task_run_id))
 
+    def get_agent_run_observation(self, agent_run_id: str):
+        """Return only the bounded, message-free AgentRun inspection projection."""
+
+        return self._query(
+            lambda: self.journal.get_agent_run_observation(self.workspace_id, agent_run_id)
+        )
+
     def list_tasks(
         self, session_id: str, *, cursor: str | None = None, limit: int = 50
     ) -> QueryPage[DurableTaskRun]:
