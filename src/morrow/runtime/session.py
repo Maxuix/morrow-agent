@@ -11,8 +11,10 @@ from morrow.core.capabilities import (
     RunMetricsSnapshot,
     ToolFact,
     ToolRunContext,
+    ValidationFact,
     WorkspaceCapability,
 )
+from morrow.core.completion import CompletionCheckResult, OutcomeContract, WorkspaceBaseline
 from morrow.core.context import ContextCheckpoint, RunContextProjection
 from morrow.core.domain import SessionHealth, SessionLifecycle
 from morrow.core.execution import (
@@ -92,6 +94,8 @@ class DurableRunCoordinator(SessionCommitter, Protocol):
         tools: tuple[ToolDefinition, ...],
         prepared_spec: PreparedAgentRunSpec | None = None,
         prompt_projection: PromptProjection | None = None,
+        outcome_contract: OutcomeContract | None = None,
+        workspace_baseline: WorkspaceBaseline | None = None,
     ) -> TurnSubmissionResult: ...
 
     def get_open_run_snapshot(self) -> AgentRunSnapshot | None: ...
@@ -203,8 +207,10 @@ class Session:
     workspace_capability: WorkspaceCapability | None = None
     latest_run_id: str | None = None
     latest_tool_facts: tuple[ToolFact, ...] = ()
+    latest_validation_facts: tuple[ValidationFact, ...] = ()
     metrics_enabled: bool = True
     latest_metrics: RunMetricsSnapshot | None = None
+    latest_completion_check: CompletionCheckResult | None = None
     committer: SessionCommitter | None = None
     durable_runtime: DurableRunCoordinator | None = None
     pending_full_access_grant: bool = False
@@ -276,7 +282,9 @@ class Session:
         self.health = SessionHealth.OK
         self.latest_run_id = None
         self.latest_tool_facts = ()
+        self.latest_validation_facts = ()
         self.latest_metrics = None
+        self.latest_completion_check = None
         self.context_checkpoint = None
         self.run_context_projection = None
         self.skill_context_projection = None
@@ -289,4 +297,5 @@ class Session:
         """Retain only the latest settled run's local facts; never persist them."""
         self.latest_run_id = run_context.run_id
         self.latest_tool_facts = run_context.facts
+        self.latest_validation_facts = run_context.validation_facts
         self.latest_metrics = run_context.metrics(finish_reason) if self.metrics_enabled else None

@@ -306,6 +306,8 @@ class AgentRunPreparationService:
             project_instruction_resolver_version=snapshot.project_instruction_resolver_version,
             project_instruction_sources=snapshot.project_instruction_sources,
             project_instruction_selection_digest=snapshot.project_instruction_selection_digest,
+            outcome_contract=snapshot.outcome_contract,
+            workspace_baseline=snapshot.workspace_baseline,
         )
         return PreparedAgentRunRuntime(
             spec=spec,

@@ -53,7 +53,9 @@ _METRICS_COLUMNS = (
     "tool_rounds, tool_calls, max_estimated_request_chars, request_char_budget, "
     "cleared_cycle_count, dropped_turn_count, dropped_cycle_count, dropped_record_count, "
     "usage_availability, input_tokens, output_tokens, total_tokens, cost_availability, "
-    "cost_amount_minor, cost_currency, cost_source, tool_terminal_counts_json, finalized_at_unix"
+    "cost_amount_minor, cost_currency, cost_source, tool_terminal_counts_json, "
+    "validation_outcome, completion_outcome, completion_basis, completion_reason_code, "
+    "finalized_at_unix"
 )
 
 
@@ -245,6 +247,10 @@ class SqliteObservabilityJournal:
         dropped_record_count: int | None = None,
         usage: ModelUsage | None = None,
         cost: ModelCost | None = None,
+        validation_outcome: str = "not_run",
+        completion_outcome: str = "not_run",
+        completion_basis: str = "not_completed",
+        completion_reason_code: str | None = None,
         finalized_at: datetime | None = None,
     ) -> AgentRunTerminalMetrics:
         run = self._require_run(workspace_id, agent_run_id)
@@ -326,6 +332,10 @@ class SqliteObservabilityJournal:
             usage=aggregate_usage,
             cost=aggregate_cost,
             tool_terminal_counts=counts,
+            validation_outcome=validation_outcome,
+            completion_outcome=completion_outcome,
+            completion_basis=completion_basis,
+            completion_reason_code=completion_reason_code,
             finalized_at=finalized_at or self.backend.now(),
         )
 
@@ -342,7 +352,7 @@ class SqliteObservabilityJournal:
                     "AgentRun terminal metrics were already finalized differently",
                 )
             self.backend.executor().execute(
-                f"INSERT INTO agent_run_terminal_metrics({_METRICS_COLUMNS}) VALUES ({', '.join('?' for _ in range(24))})",
+                f"INSERT INTO agent_run_terminal_metrics({_METRICS_COLUMNS}) VALUES ({', '.join('?' for _ in range(28))})",
                 self._metrics_values(candidate),
             )
             stored = self._metrics_for_run(workspace_id, agent_run_id)
@@ -537,6 +547,10 @@ class SqliteObservabilityJournal:
                 sort_keys=True,
                 separators=(",", ":"),
             ),
+            metrics.validation_outcome,
+            metrics.completion_outcome,
+            metrics.completion_basis,
+            metrics.completion_reason_code,
             _unix(metrics.finalized_at),
         )
 
@@ -639,7 +653,11 @@ def _metrics_from_row(
             usage=_usage_from_columns(row[14], row[15], row[16], row[17]),
             cost=_cost_from_columns(row[18], row[19], row[20], row[21]),
             tool_terminal_counts=counts,
-            finalized_at=_from_unix(row[23]),
+            validation_outcome=str(row[23]),
+            completion_outcome=str(row[24]),
+            completion_basis=str(row[25]),
+            completion_reason_code=str(row[26]) if row[26] is not None else None,
+            finalized_at=_from_unix(row[27]),
         )
     except StorageError:
         raise

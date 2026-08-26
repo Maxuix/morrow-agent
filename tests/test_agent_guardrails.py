@@ -292,8 +292,8 @@ async def test_cancellation_after_text_progress_discards_partial_assistant_and_r
     assert [message.role for message in session.messages] == ["user"]
     assert events[-1].payload == {
         "finish_reason": "cancelled",
-        "text": "partial",
-        "text_length": 7,
+        "text": "",
+        "text_length": 0,
     }
     assert lifecycle_is_valid(events)
 
@@ -412,7 +412,6 @@ async def test_aclose_while_yielded_closes_active_turn_for_the_next_begin():
     session = Session(session_id="s")
     gen = AgentLoop(StreamingThenHang(), MODEL, make_context_builder()).run_task(session, "go")
     assert (await anext(gen)).type == "turn.started"
-    assert (await anext(gen)).type == "text.delta"
     await gen.aclose()
 
     assert session.log.has_active_turn is False

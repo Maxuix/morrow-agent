@@ -13,6 +13,15 @@ from typing import TYPE_CHECKING
 from morrow.application.context import ContextBudgetError
 from morrow.core.application import ApplicationError
 from morrow.core.capabilities import ToolRunContext
+from morrow.core.completion import (
+    CompletionBasis,
+    CompletionCheckResult,
+    CompletionOutcome,
+    OutcomeContract,
+    OutcomeContractCompiler,
+    WorkspaceBaseline,
+    WorkspaceBaselineStatus,
+)
 from morrow.core.diagnostics import PublicDiagnosticError
 from morrow.core.events import completion_payload, make_event
 from morrow.core.execution import (
@@ -35,6 +44,7 @@ from morrow.core.models import (
     ModelRef,
     ModelUsage,
     ProtocolModel,
+    SystemMessage,
     ToolDefinition,
     ToolMessage,
     UserMessage,
@@ -232,6 +242,29 @@ def _consume_cancellation_request() -> None:
             task.uncancel()
 
 
+def _completion_feedback(result: CompletionCheckResult) -> str:
+    """Render only bounded runtime fact codes for one permitted correction."""
+
+    reasons = ",".join(result.reason_codes[:8]) or "completion_inconclusive"
+    next_actions = ",".join(result.next_action_codes[:8]) or "inspect_runtime_evidence"
+    changed = ",".join(result.changed_paths[:8])
+    changed_note = f" changed_paths={changed}" if changed else ""
+    return (
+        "Runtime completion check failed; this is a factual correction request, not a claim "
+        f"about business correctness. reason_codes={reasons}; next_action_codes={next_actions}."
+        f"{changed_note} Re-check the bounded contract and continue with tools if needed."
+    )
+
+
+def _accepted_text_chunks(chunks: list[str], message: AssistantMessage) -> list[str]:
+    """Return text already streamed for a model response once its outcome is known."""
+
+    content = message.content or ""
+    if chunks and "".join(chunks) == content:
+        return chunks
+    return [content] if content else []
+
+
 @dataclass
 class _AgentRunState:
     """Mutable state for one bounded AgentLoop run."""
@@ -265,6 +298,12 @@ class _AgentRunState:
     crashed: bool = False
     terminal_finish_reason: FinishReason | None = None
     stop_code: AgentStopCode | None = None
+    outcome_contract: OutcomeContract | None = None
+    workspace_baseline: WorkspaceBaseline | None = None
+    completion_check: CompletionCheckResult | None = None
+    completion_correction_used: bool = False
+    completion_feedback: str | None = None
+    known_failure_codes: list[str] = field(default_factory=list)
 
 
 class _RunEventEmitter:
@@ -385,6 +424,8 @@ class AgentLoop:
         clock: Clock | None = None,
         tool_executor: ToolExecutor | None = None,
         grant_provider=None,
+        completion_checker=None,
+        outcome_contract_compiler: OutcomeContractCompiler | None = None,
         monotonic=None,
     ) -> None:
         self.runner = ModelCallRunner(provider, model)
@@ -395,6 +436,8 @@ class AgentLoop:
         self.tool_executor = tool_executor
         self.grant_provider = grant_provider
         self.monotonic = monotonic or time.monotonic
+        self.completion_checker = completion_checker
+        self.outcome_contract_compiler = outcome_contract_compiler or OutcomeContractCompiler()
         self.tool_cycle = (
             ToolCycleExecutor(
                 tool_executor,
@@ -437,6 +480,9 @@ class AgentLoop:
         prepared: PreparedAgentRunRuntime | None = None,
         startup_error: str | None = None,
         agent_run_id: str | None = None,
+        outcome_contract: OutcomeContract | None = None,
+        workspace_baseline: WorkspaceBaseline | None = None,
+        verifier=None,
     ) -> AsyncIterator[AgentEvent]:
         client_message_id = client_message_id or self._id("cmsg")
         if prepared is not None:
@@ -485,6 +531,61 @@ class AgentLoop:
                     ),
                 }
             )
+        if resume_current_turn and prepared_spec is not None:
+            # Resume is authoritative to the durable snapshot. A caller cannot
+            # replace the original proof obligations or baseline with fresh input.
+            outcome_contract = prepared_spec.outcome_contract
+            workspace_baseline = prepared_spec.workspace_baseline
+        elif prepared_spec is not None and (
+            outcome_contract is not None or workspace_baseline is not None
+        ):
+            prepared_spec = prepared_spec.model_copy(
+                update={
+                    "outcome_contract": outcome_contract or prepared_spec.outcome_contract,
+                    "workspace_baseline": workspace_baseline or prepared_spec.workspace_baseline,
+                }
+            )
+        if outcome_contract is None:
+            contract_input = user_input
+            if resume_current_turn and not contract_input:
+                for record in reversed(session.log.snapshot().records):
+                    message = getattr(record, "message", None)
+                    if isinstance(message, UserMessage):
+                        contract_input = message.content
+                        break
+            outcome_contract = (
+                prepared_spec.outcome_contract
+                if prepared_spec is not None and prepared_spec.outcome_contract is not None
+                else self.outcome_contract_compiler.compile(contract_input)
+            )
+        if workspace_baseline is None and prepared_spec is not None:
+            workspace_baseline = prepared_spec.workspace_baseline
+        if self.completion_checker is not None and workspace_baseline is None:
+            if resume_current_turn:
+                workspace_baseline = WorkspaceBaseline(
+                    status=WorkspaceBaselineStatus.INCONCLUSIVE,
+                    entries=(),
+                    reason_code="missing_frozen_baseline",
+                )
+            else:
+                try:
+                    workspace_baseline = self.completion_checker.baselines.prepare()
+                except Exception:
+                    workspace_baseline = WorkspaceBaseline(
+                        status=WorkspaceBaselineStatus.INCONCLUSIVE,
+                        entries=(),
+                        reason_code="baseline_prepare_failed",
+                    )
+        if prepared_spec is not None and (
+            prepared_spec.outcome_contract != outcome_contract
+            or prepared_spec.workspace_baseline != workspace_baseline
+        ):
+            prepared_spec = prepared_spec.model_copy(
+                update={
+                    "outcome_contract": outcome_contract,
+                    "workspace_baseline": workspace_baseline,
+                }
+            )
         runner = ModelCallRunner(provider, model)
         tool_cycle = (
             ToolCycleExecutor(tool_executor, policy, wall_now=self._wall_now)
@@ -506,7 +607,10 @@ class AgentLoop:
             ),
             agent_run_id=initial_agent_run_id,
             deadline=self.monotonic() + policy.max_run_seconds,
+            outcome_contract=outcome_contract,
+            workspace_baseline=workspace_baseline,
         )
+        session.latest_completion_check = None
 
         observation_runtime = (
             durable_runtime
@@ -597,6 +701,8 @@ class AgentLoop:
             ):
                 return
             finish_reason = state.terminal_finish_reason or FinishReason.ERROR
+            run_metrics = state.run_context.metrics(finish_reason.value)
+            completion = state.completion_check
             try:
                 observation_runtime.finalize_agent_run(
                     agent_run_id=state.agent_run_id,
@@ -612,6 +718,14 @@ class AgentLoop:
                     dropped_turn_count=state.dropped_turn_count,
                     dropped_cycle_count=state.dropped_cycle_count,
                     dropped_record_count=state.dropped_record_count,
+                    validation_outcome=run_metrics.validation_outcome,
+                    completion_outcome=(completion.outcome.value if completion else "not_run"),
+                    completion_basis=(completion.basis.value if completion else "not_completed"),
+                    completion_reason_code=(
+                        completion.reason_codes[0]
+                        if completion and completion.reason_codes
+                        else None
+                    ),
                 )
             except Exception:
                 # Observation persistence must never leak raw storage details into
@@ -722,6 +836,8 @@ class AgentLoop:
                         tools=tool_executor.definitions if tool_executor else (),
                         prepared_spec=prepared_spec,
                         prompt_projection=prompt_projection,
+                        outcome_contract=state.outcome_contract,
+                        workspace_baseline=state.workspace_baseline,
                         prepared_mcp_run=(
                             getattr(prepared, "mcp_run", None) if prepared is not None else None
                         ),
@@ -816,6 +932,8 @@ class AgentLoop:
                 try:
                     context = context_builder.build(session, tools=tools)
                     call_messages = list(context.messages)
+                    if state.completion_feedback is not None:
+                        call_messages.insert(0, SystemMessage(content=state.completion_feedback))
                     context_builder.validate_request(call_messages, tools)
                 except ContextBudgetError as exc:
                     for item in terminal_error(str(exc), AgentStopCode.CONTEXT_BUDGET):
@@ -859,6 +977,7 @@ class AgentLoop:
                     for item in terminal_error("任务超过总运行时间", AgentStopCode.RUN_TIMEOUT):
                         yield item
                     return
+                candidate_chunks: list[str] = []
                 stream = runner.attempt(call_messages, tools)
                 try:
                     while True:
@@ -876,8 +995,7 @@ class AgentLoop:
                                 yield item
                             return
                         if model_event.kind == "text_delta" and model_event.text:
-                            state.visible += model_event.text
-                            yield event("text.delta", {"text": model_event.text})
+                            candidate_chunks.append(model_event.text)
                         remaining_model_time = state.deadline - self.monotonic()
                         if remaining_model_time <= 0:
                             request_state = "failed"
@@ -949,6 +1067,70 @@ class AgentLoop:
                     and not message.tool_calls
                 )
                 if is_final_text:
+                    candidate_text = message.content or "".join(candidate_chunks)
+                    completion_required = self.completion_checker is not None and not (
+                        state.workspace_baseline is not None
+                        and state.workspace_baseline.reason_code == "missing_frozen_baseline"
+                        and state.outcome_contract is not None
+                        and not state.outcome_contract.requires_net_change
+                        and not state.outcome_contract.required_validations
+                        and state.outcome_contract.verifier_id is None
+                    )
+                    if completion_required:
+                        try:
+                            completion = self.completion_checker.check(
+                                state.outcome_contract
+                                or self.outcome_contract_compiler.compile(user_input),
+                                state.workspace_baseline
+                                or WorkspaceBaseline(
+                                    status=WorkspaceBaselineStatus.INCONCLUSIVE,
+                                    entries=(),
+                                    reason_code="missing_frozen_baseline",
+                                ),
+                                run_context=state.run_context,
+                                unresolved_tool_ids=session.log.unresolved_call_ids,
+                                known_failure_codes=tuple(state.known_failure_codes),
+                                verifier=verifier,
+                            )
+                        except Exception:
+                            completion = CompletionCheckResult(
+                                outcome=CompletionOutcome.INCONCLUSIVE,
+                                basis=CompletionBasis.INCONCLUSIVE,
+                                changed_paths=(),
+                                target_paths=(
+                                    state.outcome_contract.target_paths
+                                    if state.outcome_contract
+                                    else ()
+                                ),
+                                unexpected_paths=(),
+                                forbidden_paths=(),
+                                unresolved_tool_count=len(session.log.unresolved_call_ids),
+                                required_validations=(),
+                                known_failure_codes=(),
+                                baseline_status=WorkspaceBaselineStatus.INCONCLUSIVE,
+                                reason_codes=("completion_check_failed",),
+                                next_action_codes=("inspect_runtime_evidence",),
+                            )
+                        state.completion_check = completion
+                        session.latest_completion_check = completion
+                        if not completion.passed:
+                            if (
+                                not state.completion_correction_used
+                                and state.model_attempts < policy.max_model_attempts
+                                and self.monotonic() < state.deadline
+                            ):
+                                state.completion_correction_used = True
+                                state.completion_feedback = _completion_feedback(completion)
+                                continue
+                            stop_code = (
+                                completion.stop_code or AgentStopCode.COMPLETION_INCONCLUSIVE
+                            )
+                            for item in terminal_error(
+                                "完成条件未满足，请根据运行时事实修正后重试",
+                                stop_code,
+                            ):
+                                yield item
+                            return
                     try:
                         freeze_permissions()
                         session.append_assistant(message)
@@ -958,6 +1140,7 @@ class AgentLoop:
                         ):
                             yield item
                         return
+                    state.visible = candidate_text
                     state.final_committed = True
                     current = asyncio.current_task()
                     if current is not None:
@@ -967,6 +1150,8 @@ class AgentLoop:
                     state.terminal_finish_reason = FinishReason.STOP
                     state.stop_code = None
                     retain_facts(FinishReason.STOP.value)
+                    for chunk in _accepted_text_chunks(candidate_chunks, message):
+                        yield event("text.delta", {"text": chunk})
                     yield event(
                         "turn.completed",
                         completion_payload(FinishReason.STOP, state.visible),
@@ -1026,6 +1211,11 @@ class AgentLoop:
                     ):
                         yield item
                     return
+                # A response that finished with tool calls is not a final claim.  Its
+                # bounded text may be rendered after the assistant/tool intent is
+                # committed; a response rejected by the completion gate is never rendered.
+                for chunk in _accepted_text_chunks(candidate_chunks, message):
+                    yield event("text.delta", {"text": chunk})
                 state.active_calls = calls
                 state.active_running_id = None
                 state.active_result_limit = per_call_result_limit
@@ -1120,6 +1310,10 @@ class AgentLoop:
                         session.append_tool_result(call.id, result.envelope)
                     cycle_outcomes.append(result)
                     state.run_context.note_tool_outcome(ok=result.ok, error_code=result.error_code)
+                    if not result.ok and result.error_code is not None:
+                        code = result.error_code.value
+                        if code not in state.known_failure_codes:
+                            state.known_failure_codes.append(code)
                     state.active_running_id = None
                     yield tool_status(
                         call,
@@ -1341,6 +1535,8 @@ class AgentRuntime:
         clock: Clock | None = None,
         tool_executor: ToolExecutor | None = None,
         grant_provider=None,
+        completion_checker=None,
+        outcome_contract_compiler: OutcomeContractCompiler | None = None,
     ) -> None:
         self._loop = AgentLoop(
             provider,
@@ -1350,6 +1546,8 @@ class AgentRuntime:
             clock=clock,
             tool_executor=tool_executor,
             grant_provider=grant_provider,
+            completion_checker=completion_checker,
+            outcome_contract_compiler=outcome_contract_compiler,
         )
 
     @property
@@ -1365,6 +1563,9 @@ class AgentRuntime:
         prepared: PreparedAgentRunRuntime | None = None,
         startup_error: str | None = None,
         agent_run_id: str | None = None,
+        outcome_contract: OutcomeContract | None = None,
+        workspace_baseline: WorkspaceBaseline | None = None,
+        verifier=None,
     ) -> AsyncIterator[AgentEvent]:
         return self._loop.run_task(
             session,
@@ -1373,4 +1574,7 @@ class AgentRuntime:
             prepared=prepared,
             startup_error=startup_error,
             agent_run_id=agent_run_id,
+            outcome_contract=outcome_contract,
+            workspace_baseline=workspace_baseline,
+            verifier=verifier,
         )

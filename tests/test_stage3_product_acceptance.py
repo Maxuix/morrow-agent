@@ -188,7 +188,7 @@ async def test_fake_provider_python_locate_patch_fail_correct_validate_and_repor
     assert len(approval.requests) == 4
     assert session_app.session.latest_metrics is not None
     assert session_app.session.latest_metrics.tool_calls == 9
-    assert session_app.session.latest_metrics.validation_outcome == "failed"
+    assert session_app.session.latest_metrics.validation_outcome == "not_run"
     assert session_app.session.latest_metrics.changed_file_count == 1
     assert "已定位、修复并验证" in session_app.session.messages[-1].content
 

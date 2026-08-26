@@ -154,7 +154,7 @@ def test_run_metrics_are_local_json_safe_and_composition_disableable():
     session = Session(session_id="session-1", metrics_enabled=True)
     session.retain_run_facts(run, finish_reason="stop")
     assert session.latest_metrics is not None
-    assert session.latest_metrics.validation_outcome == "failed"
+    assert session.latest_metrics.validation_outcome == "not_run"
     assert session.latest_metrics.model_dump(mode="json")["run_id"] == "run-1"
 
     disabled = Session(session_id="session-2", metrics_enabled=False)

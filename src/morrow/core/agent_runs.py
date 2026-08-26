@@ -13,6 +13,7 @@ from typing import Literal
 
 from pydantic import Field, field_validator, model_validator
 
+from morrow.core.completion import OutcomeContract, WorkspaceBaseline
 from morrow.core.models import (
     CostMetadata,
     CredentialRef,
@@ -211,6 +212,9 @@ class PreparedAgentRunSpec(ProtocolModel):
     project_instruction_resolver_version: str | None = None
     project_instruction_sources: tuple[ProjectInstructionSourceRef, ...] = ()
     project_instruction_selection_digest: str | None = None
+    # Frozen completion truth is value-safe evidence, not a Provider/model input.
+    outcome_contract: OutcomeContract | None = None
+    workspace_baseline: WorkspaceBaseline | None = None
 
     @field_validator("run_policy_digest", "tool_schema_digest")
     @classmethod

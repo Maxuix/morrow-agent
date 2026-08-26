@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 from morrow.application.orchestrator import DispatchResult
+from morrow.core.capabilities import CommandToolFact, PolicyVerdict
 from morrow.core.models import AgentEvent, ToolApprovalRequest, ToolEffect
 from morrow.core.permissions import UNCONFINED_HOST_WARNING
 from morrow.interfaces import terminal as terminal_module
@@ -171,6 +172,55 @@ def test_terminal_segments_mixed_text_tool_and_final_text_without_replay_or_payl
         "正在连接模型并等待首个响应…（Ctrl+C 取消）\n"
         "先查\n↳ 工具步骤 1/1：lookup_record\n最终答案\n"
     )
+
+
+def test_terminal_summary_separates_commands_validation_and_completion_basis():
+    class RecordingConsole:
+        def __init__(self):
+            self.lines: list[str] = []
+
+        def print(self, *values, **kwargs):
+            del kwargs
+            self.lines.append(" ".join(str(value) for value in values))
+
+    metrics = SimpleNamespace(
+        tool_calls=2,
+        successful_tool_calls=1,
+        failed_tool_calls=1,
+        changed_file_count=1,
+        validation_outcome="not_run",
+    )
+    completion = SimpleNamespace(
+        outcome="passed",
+        basis="runtime_evidence_without_verifier",
+        reason_codes=(),
+    )
+    terminal = terminal_module.Terminal(console=RecordingConsole())
+    terminal.show_run_summary(
+        SimpleNamespace(
+            latest_metrics=metrics,
+            latest_tool_facts=(
+                CommandToolFact(
+                    call_id="call-1",
+                    tool_name="run_command",
+                    ordinal=1,
+                    approval_verdict=PolicyVerdict.ALLOW,
+                    command_class="project_command",
+                    status="exited",
+                    exit_code=0,
+                    duration_ms=1,
+                ),
+            ),
+            latest_completion_check=completion,
+        )
+    )
+
+    rendered = terminal.console.lines[0]
+    assert "成功工具 1" in rendered
+    assert "成功命令 1" in rendered
+    assert "失败命令 0" in rendered
+    assert "验证 未运行" in rendered
+    assert "完成 通过（依据 运行时证据（无验证器））" in rendered
 
 
 def test_terminal_explains_timeout_and_shows_waiting_after_last_tool():

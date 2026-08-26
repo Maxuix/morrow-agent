@@ -122,6 +122,7 @@ from morrow.runtime.policy import AgentPolicy, RuntimePolicy, load_runtime_polic
 from morrow.runtime.session import Session
 from morrow.runtime.tools import ToolExecutor, ToolRegistry
 from morrow.services.changes import ChangeSetService
+from morrow.services.completion import CompletionChecker
 from morrow.services.files import (
     WorkspaceFileService,
     WorkspaceMutationService,
@@ -964,6 +965,7 @@ def build_session_application(
             context_builder,
             id_source=app.id_source,
             tool_executor=tool_executor,
+            completion_checker=CompletionChecker(files),
         )
         skill_services = build_skill_services(
             app,

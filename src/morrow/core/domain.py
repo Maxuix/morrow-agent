@@ -16,6 +16,7 @@ from typing import Any, Literal
 from pydantic import Field, field_validator, model_validator
 
 from morrow.core.agent_runs import ProviderRuntimeSnapshot
+from morrow.core.completion import OutcomeContract, WorkspaceBaseline
 from morrow.core.models import (
     ModelRef,
     Preferences,
@@ -586,6 +587,9 @@ class AgentRunSnapshot(ProtocolModel):
     # Optional frozen preparation evidence keeps older snapshots decodable.
     provider_runtime: ProviderRuntimeSnapshot | None = None
     run_policy: RunPolicy | None = None
+    # Frozen completion evidence keeps resume bound to the original task state.
+    outcome_contract: OutcomeContract | None = None
+    workspace_baseline: WorkspaceBaseline | None = None
 
     @field_validator("provider_id", "runtime_instance_id")
     @classmethod

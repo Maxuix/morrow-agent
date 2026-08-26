@@ -200,7 +200,8 @@ async def test_run_deadline_does_not_cancel_consumer_paused_on_text_delta():
                 await asyncio.sleep(0.08)
 
     await asyncio.wait_for(consume(), timeout=1.0)
-    assert [event.type for event in events[:2]] == ["turn.started", "text.delta"]
+    assert [event.type for event in events[:2]] == ["turn.started", "error"]
+    assert not [event for event in events if event.type == "text.delta"]
     assert events[-2].payload["stop_code"] == "run_timeout"
     assert events[-1].payload["stop_code"] == "run_timeout"
     assert session.log.has_active_turn is False

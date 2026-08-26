@@ -298,6 +298,7 @@ def test_v3_store_migrates_to_v4_recovery(tmp_path):
         "skill_drafts_and_usage",
         "mcp_control_catalog_and_snapshots",
         "agent_run_observability",
+        "agent_run_completion_truth",
     )
 
 
@@ -346,6 +347,7 @@ def test_v4_task_children_survive_task_run_rebuild_to_v5(tmp_path):
         "skill_drafts_and_usage",
         "mcp_control_catalog_and_snapshots",
         "agent_run_observability",
+        "agent_run_completion_truth",
     )
     with upgraded.open(StoreOpenMode.READ_WRITE) as opened:
         journal = SqliteOperationalJournal(opened)

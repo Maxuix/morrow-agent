@@ -171,6 +171,17 @@ class AgentRunTerminalMetrics(ProtocolModel):
     usage: ModelUsage = Field(default_factory=ModelUsage.unavailable)
     cost: ModelCost = Field(default_factory=ModelCost.unavailable)
     tool_terminal_counts: ToolTerminalCounts = Field(default_factory=ToolTerminalCounts)
+    validation_outcome: str = Field(
+        default="not_run", pattern=r"^(not_run|passed|failed|timeout|cancelled)$"
+    )
+    completion_outcome: str = Field(
+        default="not_run", pattern=r"^(not_run|passed|rejected|inconclusive)$"
+    )
+    completion_basis: str = Field(
+        default="not_completed",
+        pattern=r"^(verified|runtime_evidence_without_verifier|not_completed|inconclusive)$",
+    )
+    completion_reason_code: str | None = Field(default=None, max_length=64)
     finalized_at: datetime = Field(default_factory=utc_now)
 
     @field_validator("agent_run_id")
@@ -202,6 +213,13 @@ class AgentRunTerminalMetrics(ProtocolModel):
     @classmethod
     def valid_finalized_at(cls, value: datetime) -> datetime:
         return _aware(value)
+
+    @field_validator("completion_reason_code")
+    @classmethod
+    def valid_completion_reason_code(cls, value: str | None) -> str | None:
+        if value is not None and not value or value is not None and not value.isidentifier():
+            raise ValueError("completion reason code is invalid")
+        return value
 
     @model_validator(mode="after")
     def terminal_contract(self) -> AgentRunTerminalMetrics:

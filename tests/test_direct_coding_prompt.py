@@ -213,7 +213,8 @@ async def test_production_ordinary_run_sends_direct_prompt_and_freezes_metadata(
 
     result = await session_app.orchestrator.dispatch("edit `src/main.py`")
 
-    assert result.events[-1].payload["finish_reason"] == "stop"
+    assert result.events[-1].payload["finish_reason"] == "error"
+    assert result.events[-1].payload["stop_code"] == "missing_required_change"
     messages = provider.stream_calls[0]
     system = [message.content for message in messages if message.role == "system"]
     assert system[0].startswith("你是 Morrow")

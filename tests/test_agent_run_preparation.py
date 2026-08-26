@@ -25,6 +25,12 @@ from morrow.application.turn_lifecycle import (
 )
 from morrow.bootstrap import build_application, build_session_application
 from morrow.core.agent_runs import ModelCapabilities, ProviderCapabilities, exact_model_capabilities
+from morrow.core.completion import (
+    OutcomeContract,
+    ValidationRequirement,
+    WorkspaceBaseline,
+    WorkspaceBaselineStatus,
+)
 from morrow.core.domain import (
     AGENT_RUN_SNAPSHOT_MAX_BYTES,
     AgentRunSnapshot,
@@ -384,6 +390,52 @@ async def test_prepared_submit_freezes_provider_evidence_in_snapshot(tmp_path: P
     assert snapshot.tool_schema_digest == prepared.spec.tool_schema_digest
     payload = canonical_json_bytes(snapshot.model_dump(mode="json"))
     assert len(payload) < AGENT_RUN_SNAPSHOT_MAX_BYTES
+
+
+async def test_prepared_submit_freezes_completion_contract_and_baseline_for_rehydration(
+    tmp_path: Path,
+) -> None:
+    app = _app(tmp_path)
+    _register_fake_adapter(app, constructions=[])
+    _configure_active(app)
+    project = tmp_path / "project"
+    project.mkdir()
+    session_app = _open_session_application(app, project)
+    prepared = session_app.orchestrator.preparation.prepare_new()
+    contract = OutcomeContract(
+        mode="change",
+        target_paths=("answer.txt",),
+        required_validations=(ValidationRequirement(validator_kind="pytest", scope="tests"),),
+    )
+    baseline = WorkspaceBaseline(
+        status=WorkspaceBaselineStatus.COMPLETE,
+        entries=(),
+        repository_state="filesystem",
+    )
+
+    accepted = session_app.persistence.submit_user(
+        session_app.session,
+        "fix answer.txt and run pytest tests",
+        "cmsg_completion_freeze",
+        turn_id="turn_1",
+        agent_run_id="arun_1",
+        prepared_spec=prepared.spec,
+        outcome_contract=contract,
+        workspace_baseline=baseline,
+    )
+    snapshot = session_app.persistence.get_open_run_snapshot()
+    assert accepted.kind == "accepted"
+    assert snapshot is not None
+    assert snapshot.outcome_contract == contract
+    assert snapshot.workspace_baseline == baseline
+
+    hydrated = _preparation(app).rehydrate(snapshot)
+    try:
+        assert hydrated.spec.outcome_contract == contract
+        assert hydrated.spec.workspace_baseline == baseline
+    finally:
+        hydrated.close()
+        prepared.close()
 
 
 async def test_rehydrate_rebuilds_exact_provider_from_frozen_evidence(tmp_path: Path) -> None:

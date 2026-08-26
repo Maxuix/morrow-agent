@@ -91,27 +91,53 @@ class Terminal:
 
         metrics = getattr(session, "latest_metrics", None)
         facts = getattr(session, "latest_tool_facts", ())
-        if metrics is None or metrics.tool_calls == 0:
+        completion = getattr(session, "latest_completion_check", None)
+        if metrics is None and completion is None:
             return
-        validation = {
-            "not_run": "未运行",
-            "passed": "通过",
-            "failed": "失败",
-            "timeout": "超时",
-            "cancelled": "取消",
-        }.get(metrics.validation_outcome, "未知")
-        markers: list[str] = []
-        command_facts = tuple(fact for fact in facts if isinstance(fact, CommandToolFact))
-        if any(fact.output_truncated for fact in command_facts):
-            markers.append("输出截断")
-        if any(fact.redaction_count for fact in command_facts):
-            markers.append("输出脱敏")
-        suffix = f"；{'、'.join(markers)}" if markers else ""
-        line = (
-            f"事实摘要：工具 {metrics.tool_calls} 次，成功 {metrics.successful_tool_calls}，"
-            f"失败 {metrics.failed_tool_calls}，修改 {metrics.changed_file_count} 个文件，"
-            f"验证 {validation}{suffix}"
-        )
+
+        if metrics is not None:
+            validation = {
+                "not_run": "未运行",
+                "passed": "通过",
+                "failed": "失败",
+                "timeout": "超时",
+                "cancelled": "取消",
+            }.get(metrics.validation_outcome, "未知")
+            markers: list[str] = []
+            command_facts = tuple(fact for fact in facts if isinstance(fact, CommandToolFact))
+            successful_commands = sum(
+                fact.status == "exited" and fact.exit_code == 0 for fact in command_facts
+            )
+            failed_commands = len(command_facts) - successful_commands
+            if any(fact.output_truncated for fact in command_facts):
+                markers.append("输出截断")
+            if any(fact.redaction_count for fact in command_facts):
+                markers.append("输出脱敏")
+            suffix = f"；{'、'.join(markers)}" if markers else ""
+            line = (
+                f"事实摘要：工具 {metrics.tool_calls} 次，成功工具 {metrics.successful_tool_calls}，"
+                f"失败工具 {metrics.failed_tool_calls}，成功命令 {successful_commands}，"
+                f"失败命令 {failed_commands}，修改 {metrics.changed_file_count} 个文件，"
+                f"验证 {validation}{suffix}"
+            )
+        else:
+            line = "事实摘要："
+
+        if completion is not None:
+            outcome = {
+                "passed": "通过",
+                "rejected": "未通过",
+                "inconclusive": "无法判定",
+            }.get(str(getattr(completion.outcome, "value", completion.outcome)), "未知")
+            basis = {
+                "verified": "已验证",
+                "runtime_evidence_without_verifier": "运行时证据（无验证器）",
+                "not_completed": "未完成",
+                "inconclusive": "无法判定",
+            }.get(str(getattr(completion.basis, "value", completion.basis)), "未知")
+            reason = completion.reason_codes[0] if completion.reason_codes else None
+            reason_suffix = f"，原因 {reason}" if reason else ""
+            line += f"，完成 {outcome}（依据 {basis}{reason_suffix}）"
         self.console.print(line[:200])
 
     async def prompt(self, session: PromptSession, message: str = "你 > ") -> str:

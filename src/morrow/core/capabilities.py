@@ -20,6 +20,7 @@ from morrow.core.domain import ArtifactReference
 from morrow.core.models import ProtocolModel, ToolEffect
 
 _LOCAL_CODE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
+_REVISION = re.compile(r"^[0-9a-f]{64}$")
 _RELATIVE_PATH_LIMIT = 512
 _PREVIEW_LINE_LIMIT = 240
 
@@ -213,7 +214,7 @@ class ToolFactHeader(LocalCapabilityModel):
     call_id: str = Field(min_length=1, max_length=128)
     tool_name: str = Field(min_length=1, max_length=64)
     ordinal: int = Field(ge=1, le=128)
-    relative_paths: tuple[str, ...] = ()
+    relative_paths: tuple[str, ...] = Field(default=(), max_length=256)
     approval_verdict: PolicyVerdict
 
     @field_validator("relative_paths")
@@ -251,12 +252,19 @@ class ChangeToolFact(ToolFactHeader):
     def valid_change_path(cls, value: str | None) -> str | None:
         return None if value is None else _clean_relative_path(value)
 
+    @field_validator("before_revision", "after_revision")
+    @classmethod
+    def valid_revisions(cls, value: str | None) -> str | None:
+        if value is not None and _REVISION.fullmatch(value) is None:
+            raise ValueError("change revisions must be SHA-256 digests")
+        return value
+
 
 class CommandToolFact(ToolFactHeader):
     kind: Literal["command"] = "command"
     command_class: str
     status: str = Field(min_length=1, max_length=32)
-    exit_code: int | None = None
+    exit_code: int | None = Field(default=None, ge=0, le=255)
     signal: int | None = Field(default=None, ge=1, le=255)
     duration_ms: int = Field(ge=0, le=120_000)
     output_truncated: bool = False
@@ -276,6 +284,32 @@ class CommandToolFact(ToolFactHeader):
         return tuple(_clean_code(value, field_name="redaction flag") for value in values)
 
 
+class ValidationFact(ToolFactHeader):
+    """Sanitized evidence that one recognized validator actually ran.
+
+    A normal ``CommandToolFact`` records process execution only.  This separate
+    variant is emitted only after preflight recognizes a validator and its safe
+    workspace scope; arbitrary commands therefore cannot manufacture validation.
+    """
+
+    kind: Literal["validation"] = "validation"
+    validator_kind: str = Field(min_length=1, max_length=64)
+    scope: str = Field(default=".", max_length=_RELATIVE_PATH_LIMIT)
+    status: Literal["passed", "failed", "timeout", "cancelled", "inconclusive"]
+    exit_code: int | None = Field(default=None, ge=0, le=255)
+    evidence_summary: str = Field(min_length=1, max_length=80)
+
+    @field_validator("validator_kind", "evidence_summary")
+    @classmethod
+    def valid_validation_fields(cls, value: str, info) -> str:
+        return _clean_code(value, field_name=info.field_name)
+
+    @field_validator("scope")
+    @classmethod
+    def valid_validation_scope(cls, value: str) -> str:
+        return _clean_relative_path(value)
+
+
 class GitToolFact(ToolFactHeader):
     kind: Literal["git"] = "git"
     repository_state: str = Field(min_length=1, max_length=32)
@@ -288,7 +322,7 @@ class GitToolFact(ToolFactHeader):
 
 
 ToolFact = Annotated[
-    ChangeToolFact | CommandToolFact | GitToolFact,
+    ChangeToolFact | CommandToolFact | ValidationFact | GitToolFact,
     Field(discriminator="kind"),
 ]
 
@@ -333,9 +367,19 @@ class ToolRunContext:
     def facts(self) -> tuple[ToolFact, ...]:
         return tuple(self._facts)
 
+    @property
+    def validation_facts(self) -> tuple[ValidationFact, ...]:
+        """Return the latest fact for each validator/scope pair in ordinal order."""
+
+        latest: dict[tuple[str, str], ValidationFact] = {}
+        for fact in self._facts:
+            if isinstance(fact, ValidationFact):
+                latest[(fact.validator_kind, fact.scope)] = fact
+        return tuple(sorted(latest.values(), key=lambda fact: fact.ordinal))
+
     def record(self, facts: Iterable[ToolFact]) -> None:
         for fact in facts:
-            if not isinstance(fact, (ChangeToolFact, CommandToolFact, GitToolFact)):
+            if not isinstance(fact, (ChangeToolFact, CommandToolFact, ValidationFact, GitToolFact)):
                 raise TypeError("ToolRunContext accepts only validated ToolFact values")
             self._facts.append(fact)
 
@@ -371,16 +415,17 @@ class ToolRunContext:
 
     def metrics(self, finish_reason: str) -> RunMetricsSnapshot:
         command_facts = tuple(fact for fact in self._facts if isinstance(fact, CommandToolFact))
-        if any(fact.status == "timed_out" for fact in command_facts):
+        validation_facts = self.validation_facts
+        if any(fact.status == "timeout" for fact in validation_facts):
             validation = "timeout"
-        elif any(
-            fact.status == "signaled" or fact.exit_code not in {None, 0} for fact in command_facts
-        ):
+        elif any(fact.status == "cancelled" for fact in validation_facts):
+            validation = "cancelled"
+        elif any(fact.status in {"failed", "inconclusive"} for fact in validation_facts):
             validation = "failed"
-        elif any(fact.status == "exited" for fact in command_facts):
+        elif any(fact.status == "passed" for fact in validation_facts):
             validation = "passed"
         else:
-            validation = "cancelled" if self._cancellation_count else "not_run"
+            validation = "not_run"
         changed_paths = {
             path
             for fact in self._facts
@@ -439,7 +484,8 @@ class ToolHandlerOutcome:
     def __post_init__(self) -> None:
         facts = tuple(self.facts)
         if any(
-            not isinstance(fact, (ChangeToolFact, CommandToolFact, GitToolFact)) for fact in facts
+            not isinstance(fact, (ChangeToolFact, CommandToolFact, ValidationFact, GitToolFact))
+            for fact in facts
         ):
             raise TypeError("ToolHandlerOutcome facts must be validated ToolFact values")
         object.__setattr__(self, "facts", facts)

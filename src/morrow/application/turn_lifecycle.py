@@ -14,6 +14,7 @@ from morrow.application.recovery import RecoveryService
 from morrow.application.tasks import TaskOutcomeAssembler, TaskService
 from morrow.core.agent_runs import PreparedAgentRunSpec
 from morrow.core.application import ApplicationError, ApplicationErrorCode
+from morrow.core.completion import OutcomeContract, WorkspaceBaseline
 from morrow.core.context import ContextCheckpoint
 from morrow.core.domain import (
     AGENT_RUN_ID_PREFIX,
@@ -245,6 +246,8 @@ class TurnSubmissionCoordinator:
         prepared_spec: PreparedAgentRunSpec | None = None,
         prepared_mcp_run=None,
         prompt_projection=None,
+        outcome_contract: OutcomeContract | None = None,
+        workspace_baseline: WorkspaceBaseline | None = None,
         writer: DurableConversationWriter,
     ) -> TurnSubmitResult:
         digest = request_digest(user_input)
@@ -388,6 +391,8 @@ class TurnSubmissionCoordinator:
                 prepared_spec=prepared_spec,
                 skill_plan=skill_plan,
                 prompt_projection=prompt_projection,
+                outcome_contract=outcome_contract,
+                workspace_baseline=workspace_baseline,
             )
             txn.put_memory_selection(self.workspace_id, selection)
             txn.create_agent_run(
@@ -763,6 +768,8 @@ def build_agent_run_snapshot(
     prepared_spec: PreparedAgentRunSpec | None = None,
     skill_plan: SkillSelectionPlan | None = None,
     prompt_projection: PromptProjection | None = None,
+    outcome_contract: OutcomeContract | None = None,
+    workspace_baseline: WorkspaceBaseline | None = None,
 ) -> AgentRunSnapshot:
     def source_digest(presence: StatePresence, value) -> str:
         if value is not None and not hasattr(value, "model_dump"):
@@ -951,6 +958,20 @@ def build_agent_run_snapshot(
         skill_catalog_digest=skill_plan.catalog_digest if skill_plan is not None else None,
         provider_runtime=prepared_spec.provider_runtime if prepared_spec is not None else None,
         run_policy=prepared_spec.run_policy if prepared_spec is not None else None,
+        outcome_contract=(
+            outcome_contract
+            if outcome_contract is not None
+            else prepared_spec.outcome_contract
+            if prepared_spec is not None
+            else None
+        ),
+        workspace_baseline=(
+            workspace_baseline
+            if workspace_baseline is not None
+            else prepared_spec.workspace_baseline
+            if prepared_spec is not None
+            else None
+        ),
         **prompt_values,
     )
 

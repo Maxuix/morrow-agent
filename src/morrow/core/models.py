@@ -429,6 +429,15 @@ class AgentStopCode(StrEnum):
     TOOL_CALL_LIMIT = "tool_call_limit"
     RUN_TIMEOUT = "run_timeout"
     LOOP_DETECTED = "loop_detected"
+    MISSING_REQUIRED_CHANGE = "missing_required_change"
+    VALIDATION_MISSING = "validation_missing"
+    VALIDATION_FAILED = "validation_failed"
+    UNEXPECTED_WORKSPACE_CHANGE = "unexpected_workspace_change"
+    FORBIDDEN_WORKSPACE_CHANGE = "forbidden_workspace_change"
+    UNRESOLVED_TOOL = "unresolved_tool"
+    KNOWN_FAILURE = "known_failure"
+    VERIFIER_FAILED = "verifier_failed"
+    COMPLETION_INCONCLUSIVE = "completion_inconclusive"
     INTERNAL = "internal"
 
 

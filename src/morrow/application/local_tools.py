@@ -713,7 +713,16 @@ def make_run_command_tool(process: ProcessExecutionService) -> RegisteredTool:
             )
         except ProcessServiceError as exc:
             raise _tool_error(exc) from exc
-        return ToolHandlerOutcome(payload=result.model_dump(mode="json"), facts=(fact,))
+        validation_fact = process.validation_fact(
+            plan,
+            result,
+            call_id=context.call_id,
+            tool_name=context.tool_name,
+            ordinal=context.ordinal,
+            approval_verdict=context.approval_verdict,
+        )
+        facts = (fact,) if validation_fact is None else (fact, validation_fact)
+        return ToolHandlerOutcome(payload=result.model_dump(mode="json"), facts=facts)
 
     return make_tool(
         name="run_command",

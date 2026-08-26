@@ -56,6 +56,8 @@ class CommandPlan:
     shell: str | None
     command_class: str
     risk_flags: tuple[RiskFlag, ...]
+    validation_kind: str | None = None
+    validation_scope: str | None = None
 
 
 class SecretRedactor:
@@ -125,14 +127,23 @@ class ProcessExecutionService:
             raise ProcessServiceError("invalid_command", "shell 命令语法无效") from exc
         if not tokens or any(not token for token in tokens):
             raise ProcessServiceError("invalid_command", "命令不能为空")
-        shell_script = _shell_script(tokens) if request.shell is None else request.shell
-        shell_form = request.shell is not None or shell_script is not None
+        parsed_shell_script = _shell_script(tokens) if request.shell is None else None
+        shell_script = request.shell if request.shell is not None else parsed_shell_script
+        shell_form = request.shell is not None or parsed_shell_script is not None
         command_class = _command_class(tokens[0], shell=shell_form)
         risk_flags = _risk_flags(
             tokens,
             self.files,
             shell=shell_form,
             shell_script=shell_script,
+        )
+        validation_kind, validation_scope = _recognized_validation(
+            tokens,
+            files=self.files,
+            cwd_relative=resolved.relative_path,
+            shell=request.shell is not None,
+            shell_script=parsed_shell_script,
+            shell_source=request.shell,
         )
         return CommandPlan(
             request=request,
@@ -142,6 +153,8 @@ class ProcessExecutionService:
             shell=request.shell,
             command_class=command_class,
             risk_flags=tuple(sorted(risk_flags, key=lambda flag: flag.value)),
+            validation_kind=validation_kind,
+            validation_scope=validation_scope,
         )
 
     def cache_plan(self, run_id: str, call_id: str, plan: CommandPlan) -> None:
@@ -264,6 +277,44 @@ class ProcessExecutionService:
         )
         return result, fact
 
+    @staticmethod
+    def validation_fact(
+        plan: CommandPlan,
+        result: CommandResult,
+        *,
+        call_id: str,
+        tool_name: str,
+        ordinal: int,
+        approval_verdict,
+    ):
+        """Project a recognized process result into separate validation evidence."""
+
+        if plan.validation_kind is None or plan.validation_scope is None:
+            return None
+        if result.status is CommandStatus.EXITED:
+            status = "passed" if result.exit_code == 0 else "failed"
+            evidence = "exit_zero" if status == "passed" else "exit_nonzero"
+        elif result.status is CommandStatus.TIMED_OUT:
+            status, evidence = "timeout", "timeout"
+        elif result.status is CommandStatus.CANCELLED:
+            status, evidence = "cancelled", "cancelled"
+        else:
+            status, evidence = "failed", "signaled"
+        from morrow.core.capabilities import ValidationFact
+
+        return ValidationFact(
+            call_id=call_id,
+            tool_name=tool_name,
+            ordinal=ordinal,
+            relative_paths=(plan.validation_scope,),
+            approval_verdict=approval_verdict,
+            validator_kind=plan.validation_kind,
+            scope=plan.validation_scope,
+            status=status,
+            exit_code=result.exit_code,
+            evidence_summary=evidence,
+        )
+
     def _minimal_environment(self) -> dict[str, str]:
         allowed = {"PATH", "LANG", "LC_ALL", "TMPDIR", "SystemRoot", "ComSpec"}
         return {
@@ -316,6 +367,173 @@ def _command_class(executable: str, *, shell: bool) -> str:
     if name in {"curl", "wget", "ssh", "scp", "ftp", "nc", "netcat"}:
         return "network"
     return "opaque"
+
+
+_VALIDATION_FLAGS = {
+    "pytest": frozenset({"-q", "-v", "-x", "--quiet", "--verbose", "--lf", "--last-failed"}),
+    "ruff": frozenset({"--quiet", "--output-format=concise", "--output-format=full"}),
+    "compileall": frozenset({"-q"}),
+}
+_VALIDATION_OPTION_PREFIXES = {
+    "pytest": ("--maxfail=", "-k="),
+    "ruff": ("--select=", "--ignore=", "--line-length="),
+}
+_SHELL_CONTROL = re.compile(r"[;&|<>$`(){}\[\]\n\r]")
+_PYTHON_NAMES = frozenset({"python", "python3", "python3.12", "python3.13"})
+
+
+def _recognized_validation(
+    tokens: tuple[str, ...],
+    *,
+    files: WorkspaceFileService,
+    cwd_relative: str,
+    shell: bool,
+    shell_script: str | None,
+    shell_source: str | None = None,
+) -> tuple[str | None, str | None]:
+    """Recognize only a single, bounded validator invocation.
+
+    The parser is intentionally conservative.  It never evaluates shell syntax,
+    expands variables, follows wrappers, or treats a generic successful command
+    as validation evidence.
+    """
+
+    if shell_script is not None:
+        return None, None
+    if shell:
+        if shell_source is not None and _SHELL_CONTROL.search(shell_source):
+            return None, None
+        raw = " ".join(tokens)
+        if _SHELL_CONTROL.search(raw) or not tokens or any("=" in token for token in tokens[:1]):
+            return None, None
+        if Path(tokens[0]).name.casefold() in _SHELL_INTERPRETERS:
+            return None, None
+    normalized = _unwrap_validation_tokens(tokens)
+    if normalized is None:
+        return None, None
+    kind, operands, option_family = normalized
+    operands = _safe_validation_options(operands, option_family)
+    if operands is None:
+        return None, None
+    scopes: list[str] = []
+    for operand in operands:
+        scope = _validation_scope(operand, files=files, cwd_relative=cwd_relative)
+        if scope is None:
+            return None, None
+        scopes.append(scope)
+    # A validator may name several paths, but the completion contract records one
+    # normalized scope.  Multiple disjoint operands are ambiguous and fail closed.
+    if len(set(scopes)) > 1:
+        return None, None
+    return kind, scopes[0] if scopes else cwd_relative
+
+
+def _unwrap_validation_tokens(
+    tokens: tuple[str, ...],
+) -> tuple[str, list[str], str] | None:
+    if not tokens:
+        return None
+    index = 0
+    executable = Path(tokens[index]).name.casefold()
+    if executable == "uv":
+        if len(tokens) < 3 or tokens[1] != "run":
+            return None
+        index = 2
+        # Only the plain `uv run <validator>` form is trusted.  Flags can
+        # redirect environments or hide the actual executable.
+        if tokens[index].startswith("-"):
+            return None
+        executable = Path(tokens[index]).name.casefold()
+    if executable in _PYTHON_NAMES:
+        if len(tokens) <= index + 2 or tokens[index + 1 : index + 2] != ("-m",):
+            return None
+        module = tokens[index + 2]
+        index += 3
+        if module == "pytest":
+            return "pytest", list(tokens[index:]), "pytest"
+        if module == "compileall":
+            return "compileall", list(tokens[index:]), "compileall"
+        return None
+    if executable == "pytest":
+        return "pytest", list(tokens[index + 1 :]), "pytest"
+    if executable == "ruff":
+        remaining = list(tokens[index + 1 :])
+        if not remaining:
+            return None
+        if remaining[0] == "check":
+            return "ruff_check", remaining[1:], "ruff"
+        if remaining[:2] == ["format", "--check"]:
+            return "ruff_format_check", remaining[2:], "ruff"
+        return None
+    if executable in {"mypy", "pyright"}:
+        return executable, list(tokens[index + 1 :]), executable
+    if executable in {"npm", "pnpm", "yarn"} and len(tokens) > index + 1:
+        if tokens[index + 1] == "test":
+            return f"{executable}_test", list(tokens[index + 2 :]), executable
+        return None
+    if executable == "cargo" and len(tokens) > index + 1:
+        if tokens[index + 1] in {"test", "check"}:
+            return f"cargo_{tokens[index + 1]}", list(tokens[index + 2 :]), "cargo"
+        return None
+    if executable == "make" and len(tokens) > index + 1:
+        if tokens[index + 1] in {"test", "check"}:
+            return f"make_{tokens[index + 1]}", list(tokens[index + 2 :]), "make"
+        return None
+    return None
+
+
+def _safe_validation_options(operands: list[str], option_family: str) -> list[str] | None:
+    allowed = _VALIDATION_FLAGS.get(option_family, frozenset())
+    paths: list[str] = []
+    after_separator = False
+    for token in operands:
+        if after_separator:
+            paths.append(token)
+            continue
+        if token == "--":
+            after_separator = True
+            continue
+        if not token.startswith("-"):
+            paths.append(token)
+            continue
+        if token in allowed:
+            continue
+        if any(
+            token.startswith(prefix)
+            for prefix in _VALIDATION_OPTION_PREFIXES.get(option_family, ())
+        ):
+            continue
+        return None
+    return paths
+
+
+def _validation_scope(
+    operand: str,
+    *,
+    files: WorkspaceFileService,
+    cwd_relative: str,
+) -> str | None:
+    if not operand or operand.startswith("-"):
+        return None
+    candidate = Path(operand)
+    if candidate.is_absolute():
+        try:
+            relative = candidate.relative_to(files.resolver.root).as_posix()
+        except ValueError:
+            return None
+    else:
+        if "\\" in operand or any(part in {"", ".", ".."} for part in operand.split("/")):
+            if operand != ".":
+                return None
+        relative = (Path(cwd_relative) / candidate).as_posix()
+    try:
+        relative = files.resolver.validate_relative_path(relative)
+        resolved = files.resolver.resolve_existing(relative)
+    except LocalFileError:
+        return None
+    if resolved.is_symlink:
+        return None
+    return relative
 
 
 def _shell_script(tokens: tuple[str, ...]) -> str | None:
