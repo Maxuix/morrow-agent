@@ -1,6 +1,6 @@
 # Subplan 80 — S7P-01 AgentRun Observability and Headless Run
 
-> Status: active
+> Status: completed and integrated locally
 > Branch: `codex/feat/s7p-01-observability-headless`
 > Base: `main@d204a6518d1c7f64193ddb42c33384c8fb320e3d`
 > Dependency: S7P-00 completed and integrated

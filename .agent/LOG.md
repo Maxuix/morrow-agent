@@ -2991,3 +2991,30 @@
 - Acceptance evidence and execution state were updated. The final repair commit remains on
   `codex/feat/s7p-01-observability-headless`; root-owned merge, branch/worktree deletion, push and
   S7P-02 work remain out of scope.
+
+## 2026-08-26 — Subplan 80 integrated and retired
+
+- Fast-forward merged the four verified S7P-01 topic commits into local `main` through `3f5c7cb`.
+  Verified `main...codex/feat/s7p-01-observability-headless` was `0 0`, the topic worktree was
+  clean, and `git diff --check` passed.
+- Archived the completed Luna Max implementation task, removed its clean dedicated worktree and
+  deleted the fully merged local topic branch. No remote push was requested or performed.
+- The final committed evidence remains: focused `55 passed, 1 skipped`, `33 passed`, `41 passed`;
+  expanded `224 passed, 1 skipped`; full offline `1142 passed, 2 deselected`; Ruff format/check,
+  compileall, CLI help and diff checks passed. No live test ran.
+- The three user-owned research documents remain untracked and untouched.
+
+## 2026-08-26 — Subplan 81 S7P-02 tool contracts activated
+
+- Reproduced the core mismatch against the actual final schema: the current run-command Provider
+  schema accepts both an empty object and simultaneous argv/shell, while strict Pydantic runtime
+  validation rejects both. The existing XOR-named test only checks description strings.
+- Located the same hidden cross-field pattern in write-file create/replace revision handling. Also
+  found that write-file advertises 1 MiB content although the common validator rejects strings over
+  64 KiB and total argument JSON over 128 KiB before handler execution.
+- Activated Subplan 81 to add one normalized explicit Provider-schema seam, a fail-closed static
+  Tool Contract Audit, final-wire tests, conservative common path/query/budget contracts, bounded
+  recovery hints and scripted next-call correction coverage.
+- S7P-02 changes no public events, runtime-policy defaults, permissions, sandbox authority or
+  dependencies. Scripted/local validation only is authorized; the frozen repeated live <=1%
+  invalid-argument threshold remains scheduled for S7P-09 rather than being fabricated offline.
