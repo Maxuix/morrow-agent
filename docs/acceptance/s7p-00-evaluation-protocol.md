@@ -93,9 +93,9 @@ live 测试。最终数值在实现门禁完成后回填；独立 review finding
 
 | 检查 | 结果 |
 |---|---|
-| focused `tests/test_code_agent_mini_eval.py` | 已通过：22 passed in 9.39s |
+| focused `tests/test_code_agent_mini_eval.py` | 已通过：22 passed in 10.12s |
 | `eval.py self-check` | 已通过：10 tasks；每项 baseline failed、gold passed |
-| full offline pytest (`-m 'not live'`) | 已通过：1101 passed, 2 skipped, 2 deselected in 46.66s |
+| full offline pytest (`-m 'not live'`) | 已通过：1101 passed, 2 skipped, 2 deselected in 46.47s |
 | Ruff format/check | 已通过：451 files already formatted；All checks passed |
 | compileall | 已通过：`python -m compileall -q src tests evals/code-agent-mini` |
 | eval CLI help/list/show/prepare/verify/start/finalize/summarize smoke；`morrow --help` | 已通过：兼容命令和 lifecycle 命令；预期非 PASS 的 verify/finalize/summarize 均返回非零 |

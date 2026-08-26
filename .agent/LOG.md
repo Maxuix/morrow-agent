@@ -2910,8 +2910,8 @@
 - Added focused regression coverage without copying Gold material into an Agent workspace. The
   review-repair implementation is committed as `4e48c7e` (`fix(evals): harden s7p-00 evidence
   protocol`); acceptance and execution-state updates are kept in a following documentation commit.
-- Review-repair validation passed: focused `22 passed`; self-check all 10 baseline/gold pairs;
-  full offline `1101 passed, 2 skipped, 2 deselected in 46.66s`; Ruff format/check `451 files
+- Review-repair validation passed: focused `22 passed in 10.12s`; self-check all 10 baseline/gold pairs;
+  full offline `1101 passed, 2 skipped, 2 deselected in 46.47s`; Ruff format/check `451 files
   already formatted` / `All checks passed`; compileall; eval lifecycle CLI smoke; `morrow --help`;
   and `git diff --check`. No live Provider, Pi, network or credential test ran. The topic branch
   remains unmerged and the worktree remains available for the current/root task.
