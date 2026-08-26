@@ -85,7 +85,9 @@
 修复后总工具调用为 311（257 成功、54 失败），其中 `run_command` 有 16 次策略拒绝：
 13 次 `destructive_not_enabled`、3 次 `outside_workspace`；拒绝原因已持久化且没有权限绕过。
 MORROW-001/002/003/004/005 的命令路径均能继续读取或执行测试，未再出现“看不到既有项目运行时”
-这一共同工具阻塞。MORROW-006 的两次模型瞬态重试后仍连接超时，归类为 Provider/环境阻塞。
+这一共同工具阻塞。独立 host-level sandbox check 还确认 `python` 可导入现有 `keyring` 依赖并正常
+返回，排除了“当前 venv 缺少该模块”的运行时误判。MORROW-006 的两次模型瞬态重试后仍连接超时，
+归类为 Provider/环境阻塞。
 
 本轮还观察到 15 次写入审批提示（外部任务），无用户人工介入；测试驱动使用 PTY 自动确认，
 不改变评测任务内容。外部工作区共留下 6 个 Agent 自建的非预期文件（包括测试文本/fixtures），
@@ -132,7 +134,7 @@ Stage 7 Direct/Workflow 对照验证。
 - 仅把精确 toolchain root 以只读方式暴露给原生 sandbox，并由这些精确 `bin` 构造 PATH；
   不继承任意 Host PATH。
 - macOS Seatbelt 实机回归证明 sandbox 内可导入当前运行时的 `pydantic`，同时仍禁止网络、
-  HOME、原工作区读取/写入，只允许变更快照。
+  HOME、原工作区读取/写入，只允许变更快照；独立命令检查也成功导入 `keyring`。
 
 ### 修复后代表性复测
 
