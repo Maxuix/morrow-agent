@@ -1,0 +1,4 @@
+interface:
+  display_name: "真实用户仿真测试"
+  short_description: "动态发现项目已实现能力并执行可复现的真实端到端用户场景测试"
+  default_prompt: "使用 $real-user-simulation-test 动态发现并测试本项目当前已实现的用户流程，返回证据化报告；本次允许调用已配置且兼容的 Provider。"

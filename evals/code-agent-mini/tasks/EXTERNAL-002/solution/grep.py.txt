@@ -1,0 +1,32 @@
+def _matches(line, pattern, flags):
+    candidate = line.rstrip("\n") if "-x" in flags else line
+    expected = pattern
+    if "-i" in flags:
+        candidate = candidate.casefold()
+        expected = expected.casefold()
+    matched = candidate == expected if "-x" in flags else expected in candidate
+    return not matched if "-v" in flags else matched
+
+
+def grep(pattern, flags, files):
+    enabled = set(flags.split())
+    matches = []
+    for filename in files:
+        with open(filename, encoding="utf-8") as handle:
+            for line_number, line in enumerate(handle, start=1):
+                if _matches(line, pattern, enabled):
+                    matches.append((filename, line_number, line))
+    if "-l" in enabled:
+        names = []
+        for filename, _line_number, _line in matches:
+            if filename not in names:
+                names.append(filename)
+        return "".join(f"{filename}\n" for filename in names)
+    output = []
+    multiple = len(files) > 1
+    for filename, line_number, line in matches:
+        prefix = f"{filename}:" if multiple else ""
+        if "-n" in enabled:
+            prefix += f"{line_number}:"
+        output.append(prefix + line)
+    return "".join(output)

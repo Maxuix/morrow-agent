@@ -1,0 +1,40 @@
+import pytest
+
+from phone_number import PhoneNumber
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("+1 (613)-995-0253", "6139950253"),
+        ("613.995.0253", "6139950253"),
+        ("1 613 995 0253", "6139950253"),
+    ],
+)
+def test_cleans_supported_formats(raw, expected):
+    assert PhoneNumber(raw).number == expected
+
+
+def test_exposes_area_code_and_pretty_form():
+    number = PhoneNumber("223 456 7890")
+    assert number.area_code == "223"
+    assert number.pretty() == "(223)-456-7890"
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "223456789",
+        "122345678901",
+        "22234567890",
+        "223-abc-7890",
+        "223_456_7890",
+        "0234567890",
+        "1234567890",
+        "2230567890",
+        "2231567890",
+    ],
+)
+def test_rejects_invalid_nanp_numbers(raw):
+    with pytest.raises(ValueError):
+        PhoneNumber(raw)

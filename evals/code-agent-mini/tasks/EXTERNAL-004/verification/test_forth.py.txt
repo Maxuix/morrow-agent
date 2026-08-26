@@ -1,0 +1,50 @@
+import pytest
+
+from forth import StackUnderflowError, evaluate
+
+
+@pytest.mark.parametrize(
+    ("program", "expected"),
+    [
+        (["1 2 3"], [1, 2, 3]),
+        (["1 2 +"], [3]),
+        (["7 3 -"], [4]),
+        (["-3 4 *"], [-12]),
+        (["-7 3 /"], [-2]),
+        (["1 dup"], [1, 1]),
+        (["1 2 swap"], [2, 1]),
+        (["1 2 over"], [1, 2, 1]),
+        (["1 2 drop"], [1]),
+    ],
+)
+def test_arithmetic_and_stack_words(program, expected):
+    assert evaluate(program) == expected
+
+
+def test_definitions_are_case_insensitive_and_can_be_nested():
+    assert evaluate([": double 2 * ;", ": QUAD double double ;", "3 quad"]) == [12]
+
+
+def test_redefinition_does_not_retroactively_change_compiled_words():
+    assert evaluate([": foo 5 ;", ": bar foo ;", ": foo 6 ;", "bar foo"]) == [5, 6]
+
+
+def test_builtin_can_be_redefined_for_later_calls():
+    assert evaluate([": + * ;", "3 4 +"]) == [12]
+
+
+@pytest.mark.parametrize("program", [["dup"], ["1 +"], ["swap"], ["1 over"]])
+def test_stack_underflow(program):
+    with pytest.raises(StackUnderflowError):
+        evaluate(program)
+
+
+def test_invalid_operations_and_division_by_zero():
+    with pytest.raises(ZeroDivisionError):
+        evaluate(["4 0 /"])
+    with pytest.raises(ValueError):
+        evaluate(["1 unknown"])
+    with pytest.raises(ValueError):
+        evaluate([": 1 2 ;"])
+    with pytest.raises(ValueError):
+        evaluate([": missing-end 2"])

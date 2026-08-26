@@ -1,0 +1,94 @@
+class StackUnderflowError(Exception):
+    pass
+
+
+BUILTINS = {"+", "-", "*", "/", "dup", "drop", "swap", "over"}
+
+
+def _is_integer(token):
+    try:
+        int(token)
+    except ValueError:
+        return False
+    return True
+
+
+def _compile(tokens, definitions):
+    compiled = []
+    for token in tokens:
+        word = token.casefold()
+        if _is_integer(word):
+            compiled.append(("number", int(word)))
+        elif word in definitions:
+            compiled.extend(definitions[word])
+        elif word in BUILTINS:
+            compiled.append(("builtin", word))
+        else:
+            raise ValueError("undefined operation")
+    return compiled
+
+
+def _binary(stack, operation):
+    if len(stack) < 2:
+        raise StackUnderflowError("insufficient number of items in stack")
+    right = stack.pop()
+    left = stack.pop()
+    if operation == "+":
+        stack.append(left + right)
+    elif operation == "-":
+        stack.append(left - right)
+    elif operation == "*":
+        stack.append(left * right)
+    else:
+        if right == 0:
+            raise ZeroDivisionError("divide by zero")
+        stack.append(int(left / right))
+
+
+def _execute(instructions, stack):
+    for kind, value in instructions:
+        if kind == "number":
+            stack.append(value)
+        elif value in {"+", "-", "*", "/"}:
+            _binary(stack, value)
+        elif value == "dup":
+            if not stack:
+                raise StackUnderflowError("insufficient number of items in stack")
+            stack.append(stack[-1])
+        elif value == "drop":
+            if not stack:
+                raise StackUnderflowError("insufficient number of items in stack")
+            stack.pop()
+        elif value == "swap":
+            if len(stack) < 2:
+                raise StackUnderflowError("insufficient number of items in stack")
+            stack[-1], stack[-2] = stack[-2], stack[-1]
+        elif value == "over":
+            if len(stack) < 2:
+                raise StackUnderflowError("insufficient number of items in stack")
+            stack.append(stack[-2])
+
+
+def evaluate(input_data):
+    tokens = " ".join(input_data).split()
+    definitions = {}
+    stack = []
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        if token == ":":
+            if index + 1 >= len(tokens):
+                raise ValueError("illegal definition")
+            name = tokens[index + 1].casefold()
+            if _is_integer(name):
+                raise ValueError("illegal operation")
+            try:
+                end = tokens.index(";", index + 2)
+            except ValueError as exc:
+                raise ValueError("unterminated definition") from exc
+            definitions[name] = _compile(tokens[index + 2 : end], definitions)
+            index = end + 1
+            continue
+        _execute(_compile([token], definitions), stack)
+        index += 1
+    return stack

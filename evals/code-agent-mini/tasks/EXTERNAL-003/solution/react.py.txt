@@ -1,0 +1,73 @@
+def _propagate(source):
+    affected = set()
+    pending = list(source._dependents)
+    while pending:
+        cell = pending.pop(0)
+        if cell in affected:
+            continue
+        affected.add(cell)
+        pending.extend(cell._dependents)
+
+    indegree = {
+        cell: sum(1 for input_cell in cell._inputs if input_cell in affected)
+        for cell in affected
+    }
+    ready = [cell for cell in affected if indegree[cell] == 0]
+    order = []
+    while ready:
+        cell = ready.pop(0)
+        order.append(cell)
+        for dependent in cell._dependents:
+            if dependent not in indegree:
+                continue
+            indegree[dependent] -= 1
+            if indegree[dependent] == 0:
+                ready.append(dependent)
+
+    old_values = {cell: cell._value for cell in order}
+    for cell in order:
+        cell._value = cell._compute([item.value for item in cell._inputs])
+    for cell in order:
+        if old_values[cell] != cell._value:
+            for callback in tuple(cell._callbacks):
+                callback(cell._value)
+
+
+class InputCell:
+    def __init__(self, initial_value):
+        self._value = initial_value
+        self._dependents = []
+
+    @property
+    def value(self):
+        return self._value
+
+    @value.setter
+    def value(self, new_value):
+        if new_value == self._value:
+            return
+        self._value = new_value
+        _propagate(self)
+
+
+class ComputeCell:
+    def __init__(self, inputs, compute_function):
+        self._inputs = tuple(inputs)
+        self._compute = compute_function
+        self._dependents = []
+        self._callbacks = []
+        self._value = compute_function([item.value for item in self._inputs])
+        for input_cell in self._inputs:
+            input_cell._dependents.append(self)
+
+    @property
+    def value(self):
+        return self._value
+
+    def add_callback(self, callback):
+        if callback not in self._callbacks:
+            self._callbacks.append(callback)
+
+    def remove_callback(self, callback):
+        if callback in self._callbacks:
+            self._callbacks.remove(callback)

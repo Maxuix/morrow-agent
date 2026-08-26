@@ -1,0 +1,52 @@
+from react import ComputeCell, InputCell
+
+
+def test_initial_values_and_direct_propagation():
+    source = InputCell(2)
+    doubled = ComputeCell([source], lambda values: values[0] * 2)
+    assert source.value == 2
+    assert doubled.value == 4
+    source.value = 5
+    assert doubled.value == 10
+
+
+def test_multiple_independent_inputs_update():
+    left = InputCell(2)
+    right = InputCell(3)
+    total = ComputeCell([left, right], sum)
+    left.value = 7
+    assert total.value == 10
+    right.value = 11
+    assert total.value == 18
+
+
+def test_callbacks_only_fire_for_changed_final_values():
+    source = InputCell(1)
+    bucket = ComputeCell([source], lambda values: values[0] // 3)
+    observed = []
+    observed_twice = []
+    bucket.add_callback(observed.append)
+    bucket.add_callback(observed_twice.append)
+    source.value = 2
+    source.value = 3
+    source.value = 3
+    assert observed == [1]
+    assert observed_twice == [1]
+    bucket.remove_callback(observed_twice.append)
+    source.value = 6
+    assert observed == [1, 2]
+    assert observed_twice == [1]
+
+
+def test_diamond_graph_notifies_once_after_stable_state():
+    source = InputCell(1)
+    plus_one = ComputeCell([source], lambda values: values[0] + 1)
+    times_two = ComputeCell([source], lambda values: values[0] * 2)
+    combined = ComputeCell([plus_one, times_two], sum)
+    observed = []
+    combined.add_callback(observed.append)
+    source.value = 4
+    assert plus_one.value == 5
+    assert times_two.value == 8
+    assert combined.value == 13
+    assert observed == [13]
