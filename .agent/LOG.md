@@ -1,5 +1,28 @@
 # Execution Log
 
+## 2026-08-27 — S7P-03 Direct Coding prompt implementation and review closure
+
+- Implemented `DirectCodingProfile`/`DirectCodingPromptAssembler` with stable ID/version/digest,
+  fixed boundary-first coding protocol, bounded optional role seam and deterministic final message
+  ordering. Added read-only, hash-frozen scoped `AGENTS.md` resolution with explicit compatible
+  names, safe fd traversal, TOCTOU checks, bounded fail-closed diagnostics and no document execution.
+- Added reference-only prompt/source metadata to AgentRun snapshots and prepared specs; bodies and
+  task text remain process-local. Fresh admission reuses the same projection; recovery rehydrates
+  exact frozen sources and quarantines drift or missing verification capability. Existing old
+  snapshots remain decodable.
+- First coherent implementation commit: `fb9e4dc`. Full offline pre-review gate: 1185 passed,
+  2 skipped, 2 deselected. Same-session read-only reviewer `01a03f2e-192a-7b42-b151-54d639ca80fa`
+  (gpt-5.6-luna/max) reviewed `30368876457ac740ae36565929190c4cc855e83c...fb9e4dc` and returned
+  `COMPLETE_WITH_FINDINGS`; it did not modify the worktree.
+- Locally confirmed and repaired all eight reviewer findings in `288bba6`, adding role/provenance,
+  no-rehydrator, safe-open/TOCTOU, durable-order, URL/target-boundary, OpenAI-compatible wire and
+  recovery-quarantine regressions. Final offline gate: 1193 passed, 2 skipped, 2 deselected.
+- Final focused gates, Ruff format/check, compileall, both CLI help commands, current-worktree
+  import proof and `git diff --check` passed. No live Provider/model/Pi/MCP/network/credential
+  tests, dependencies, public event lifecycle, runtime-policy defaults, ToolSet, permission or
+  sandbox authority changes; S7P-04 not started. Acceptance:
+  `docs/acceptance/s7p-03-direct-coding-prompt.md`.
+
 ## 2026-08-21 — Subplan 53.1 v12 selection persistence completed
 
 - Added bounded `MemoryQuery`, immutable `MemorySelection`/`MemorySelectionItem`, closed reason

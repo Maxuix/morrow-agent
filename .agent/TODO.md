@@ -12,15 +12,15 @@ Subplan 82 — Direct Coding profile and project-instruction assembly.
 
 - `[x]` Read S7P-03 and reproduce the missing coding protocol/instruction/snapshot evidence.
 - `[x]` Freeze authority order, resolver scope, budgets, recovery and compatibility decisions.
-- `[ ]` Add failing final-message prompt assembly and project-instruction resolver tests.
-- `[ ]` Implement the reusable Direct Coding profile and bounded role-prompt seam.
-- `[ ]` Implement root/nested project-instruction selection with deterministic scoped precedence.
-- `[ ]` Freeze metadata on AgentRun and verify exact instruction/profile recovery.
-- `[ ]` Prove fail-closed invalid/symlink/oversize/drift handling and no permission expansion.
-- `[ ]` Prove production final-wire ordering and no Morrow-generated unexpected task artifacts.
-- `[ ]` Publish S7P-03 acceptance evidence and run focused/full offline quality gates.
-- `[ ]` Complete same-task Luna Max subagent review and repair every confirmed finding.
-- `[ ]` Commit the final verified implementation; leave merge/retirement to the root task.
+- `[x]` Add failing final-message prompt assembly and project-instruction resolver tests.
+- `[x]` Implement the reusable Direct Coding profile and bounded role-prompt seam.
+- `[x]` Implement root/nested project-instruction selection with deterministic scoped precedence.
+- `[x]` Freeze metadata on AgentRun and verify exact instruction/profile recovery.
+- `[x]` Prove fail-closed invalid/symlink/oversize/drift handling and no permission expansion.
+- `[x]` Prove production final-wire ordering and no Morrow-generated unexpected task artifacts.
+- `[x]` Publish S7P-03 acceptance evidence and run focused/full offline quality gates.
+- `[x]` Complete same-task Luna Max subagent review and repair every confirmed finding.
+- `[x]` Commit the final verified implementation; leave merge/retirement to the root task.
 
 ## Boundaries
 
