@@ -252,6 +252,8 @@ class PromptProjection:
     evidence: PromptProfileEvidence
     role_prompt: str | None = None
     project_instructions: tuple[ProjectInstructionContent, ...] = ()
+    # Opaque process-local provenance; never serialized or used as durable evidence.
+    provenance: object | None = None
 
     @property
     def project_sources(self) -> tuple[ProjectInstructionContent, ...]:

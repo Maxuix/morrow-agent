@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -97,6 +98,29 @@ def test_limits_and_outside_targets_are_bounded(tmp_path: Path) -> None:
         resolver.resolve(target_paths=("a/b/c.py",))
 
 
+def test_target_extractor_ignores_url_paths(tmp_path: Path) -> None:
+    (tmp_path / "AGENTS.md").write_text("root", encoding="utf-8")
+
+    resolved = ProjectInstructionResolver(tmp_path).resolve(
+        "See https://example.test/docs/guide.py for unrelated context."
+    )
+
+    assert [item.reference.path for item in resolved.sources] == ["AGENTS.md"]
+
+
+def test_target_iterable_and_path_length_are_bounded(tmp_path: Path) -> None:
+    resolver = ProjectInstructionResolver(tmp_path, max_targets=2)
+
+    def many_targets():
+        for index in range(100):
+            yield f"target-{index}.py"
+
+    with pytest.raises(ProjectInstructionError, match="too_many_targets"):
+        resolver.resolve(target_paths=many_targets())
+    with pytest.raises(ProjectInstructionError, match="target_too_long"):
+        resolver.resolve(target_paths=("a" * 513,))
+
+
 def test_instruction_symlink_and_non_regular_sources_fail_closed(tmp_path: Path) -> None:
     target = tmp_path / "target.md"
     target.write_text("secret", encoding="utf-8")
@@ -108,6 +132,34 @@ def test_instruction_symlink_and_non_regular_sources_fail_closed(tmp_path: Path)
     (tmp_path / "AGENTS.md").mkdir()
     with pytest.raises(ProjectInstructionError, match="non_regular"):
         ProjectInstructionResolver(tmp_path).resolve()
+
+
+def test_resolver_requires_nofollow_and_rejects_file_identity_race(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "AGENTS.md").write_text("original", encoding="utf-8")
+    resolver = ProjectInstructionResolver(tmp_path)
+
+    replacement = tmp_path / "replacement.md"
+    replacement.write_text("replacement", encoding="utf-8")
+    real_open = os.open
+    swapped = False
+
+    def swapping_open(path, flags, *args, **kwargs):
+        nonlocal swapped
+        if path == "AGENTS.md" and not swapped:
+            swapped = True
+            os.replace(replacement, tmp_path / "AGENTS.md")
+        return real_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(os, "open", swapping_open)
+    with pytest.raises(ProjectInstructionError, match="source_changed"):
+        resolver.resolve()
+
+    monkeypatch.undo()
+    monkeypatch.delattr(os, "O_NOFOLLOW", raising=False)
+    with pytest.raises(ProjectInstructionError, match="safe_open_unavailable"):
+        ProjectInstructionResolver(tmp_path)
 
 
 def test_instruction_file_and_aggregate_byte_limits_fail_closed(tmp_path: Path) -> None:

@@ -175,19 +175,11 @@ def _load_prompt_projection(
             if prompt_projection.evidence != evidence:
                 raise ValueError("fresh prompt projection does not match AgentRun evidence")
             if prompt_assembler is None:
-                if prompt_projection.role_prompt or evidence.project_instruction_sources:
-                    raise ValueError("prompt verifier is unavailable")
-                return None
+                raise ValueError("prompt verifier is unavailable")
             prompt_assembler.verify_projection(prompt_projection)
             return prompt_projection
         if prompt_assembler is None:
-            # Keep callers that only rebuild the pre-S7P-03 memory/Skill view
-            # compatible when the frozen run has no external project sources.
-            # A source-bearing prompt must never be reconstructed without the
-            # resolver that can verify its path and content hash.
-            if evidence.project_instruction_sources or evidence.role_prompt_digest is not None:
-                raise ValueError("prompt rehydrator is unavailable")
-            return None
+            raise ValueError("prompt rehydrator is unavailable")
         return prompt_assembler.rehydrate(evidence)
     except StorageError:
         raise

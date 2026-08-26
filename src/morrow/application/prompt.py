@@ -85,6 +85,7 @@ class DirectCodingPromptAssembler:
     ) -> None:
         self.profile = profile or DirectCodingProfile()
         self.role_prompt = _validate_role_prompt(role_prompt)
+        self._provenance = object()
         if resolver is not None and workspace_root is not None:
             raise ValueError("prompt assembler accepts either resolver or workspace_root")
         self.resolver = resolver or (
@@ -200,12 +201,13 @@ class DirectCodingPromptAssembler:
             evidence=self.evidence_for(resolution),
             role_prompt=self.role_prompt,
             project_instructions=resolution.sources,
+            provenance=self._provenance,
         )
 
     def _empty_resolution(
         self, target_paths: Sequence[str | Path] | str | Path | None
     ) -> ProjectInstructionResolution:
-        if target_paths not in (None, (), ""):
+        if target_paths is not None and target_paths != "" and target_paths not in ((), []):
             raise PromptAssemblyError("project instruction workspace is unavailable")
         return ProjectInstructionResolution(
             sources=(),
@@ -216,7 +218,11 @@ class DirectCodingPromptAssembler:
     def _verify_projection(self, projection: PromptProjection) -> None:
         if not isinstance(projection, PromptProjection):
             raise PromptAssemblyError("prompt projection has an invalid type")
+        if projection.provenance is not self._provenance:
+            raise PromptAssemblyError("prompt projection provenance is not current")
         self._verify_profile_evidence(projection.evidence)
+        if projection.role_prompt != self.role_prompt:
+            raise PromptAssemblyError("role prompt projection is not current")
         refs = projection.project_instruction_sources
         if tuple(item.reference for item in projection.project_instructions) != refs:
             raise PromptAssemblyError("prompt projection sources are inconsistent")

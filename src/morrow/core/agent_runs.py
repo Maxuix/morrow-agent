@@ -261,6 +261,11 @@ class PreparedAgentRunSpec(ProtocolModel):
             raise ValueError("prepared project instruction references are invalid")
         if sum(item.byte_count for item in value) > 64 * 1024:
             raise ValueError("prepared project instruction references exceed the byte budget")
+        order = [
+            (0 if item.scope == "." else len(item.scope.split("/")), item.path) for item in value
+        ]
+        if order != sorted(order):
+            raise ValueError("prepared project instruction sources are not in scope order")
         return value
 
     @model_validator(mode="after")

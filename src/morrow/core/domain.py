@@ -684,6 +684,11 @@ class AgentRunSnapshot(ProtocolModel):
             raise ValueError("AgentRun project instruction sources must be unique")
         if sum(item.byte_count for item in value) > PROMPT_MAX_PROJECT_TOTAL_BYTES:
             raise ValueError("AgentRun project instruction sources exceed the byte budget")
+        order = [
+            (0 if item.scope == "." else len(item.scope.split("/")), item.path) for item in value
+        ]
+        if order != sorted(order):
+            raise ValueError("AgentRun project instruction sources are not in scope order")
         return value
 
     @field_validator("skill_selection_ids", "skill_context_ids")

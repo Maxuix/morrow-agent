@@ -179,6 +179,9 @@ class ContextBuilder:
             if projection is not None
             else getattr(session, "pending_prompt_projection", None)
         )
+        if projection is not None and projection.snapshot.prompt_profile_id is not None:
+            if prompt_projection is None:
+                raise ContextBudgetError("冻结 Direct prompt projection 不可用")
         # A persisted projection without verified prompt bodies must never fall
         # back to re-reading live project instructions during context assembly.
         use_prompt_profile = self.prompt_assembler is not None and not (

@@ -32,7 +32,7 @@ PROJECT_INSTRUCTION_MAX_TASK_BYTES = 64 * 1024
 
 _BACKTICK_RE = re.compile(r"`([^`\r\n]{1,512})`")
 _PATH_RE = re.compile(
-    r"(?<![A-Za-z0-9_.-])"
+    r"(?<![A-Za-z0-9_.:/-])"
     r"(?:/(?:[A-Za-z0-9_.-]+/)*[A-Za-z0-9_.-]+|"
     r"(?:\.\.?/)?[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)+|"
     r"(?:\.\.?/)?[A-Za-z0-9_.-]+\.(?:py|md|rst|txt|toml|yaml|yml|json|js|ts|tsx|jsx|rs|go|java|sh))"
@@ -104,6 +104,8 @@ class ProjectInstructionResolver:
         max_total_bytes: int = PROJECT_INSTRUCTION_MAX_TOTAL_BYTES,
     ) -> None:
         self.root = _confirmed_root(workspace_root)
+        self._file_open_flags = _safe_file_open_flags()
+        self._directory_open_flags = _safe_directory_open_flags()
         try:
             root_stat = os.stat(self.root, follow_symlinks=False)
         except OSError as exc:
@@ -140,8 +142,8 @@ class ProjectInstructionResolver:
             raise ProjectInstructionError("task_too_large")
         targets = self._targets(task_text, target_paths)
         target_dirs: set[tuple[str, ...]] = set()
-        for raw, parts in targets:
-            directory = self._target_directory(raw, parts)
+        for parts in targets:
+            directory = self._target_directory(parts)
             target_dirs.update(directory[:index] for index in range(len(directory) + 1))
 
         ordered_dirs = sorted(target_dirs, key=lambda value: (len(value), value))
@@ -249,7 +251,7 @@ class ProjectInstructionResolver:
         self,
         task_text: str,
         target_paths: Sequence[str | Path] | str | Path | None,
-    ) -> tuple[tuple[str, tuple[str, ...]], ...]:
+    ) -> tuple[tuple[str, ...], ...]:
         if target_paths is None:
             if not isinstance(task_text, str):
                 raise ProjectInstructionError("invalid_task_input")
@@ -257,19 +259,28 @@ class ProjectInstructionResolver:
         elif isinstance(target_paths, (str, Path)):
             raw_targets = (target_paths,)
         else:
-            raw_targets = tuple(target_paths)
+            try:
+                iterator = iter(target_paths)
+            except TypeError as exc:
+                raise ProjectInstructionError("invalid_target") from exc
+            collected: list[str | Path] = []
+            for index, raw in enumerate(iterator):
+                if index >= self.max_targets:
+                    raise ProjectInstructionError("too_many_targets")
+                collected.append(raw)
+            raw_targets = tuple(collected)
         if len(raw_targets) > self.max_targets:
             raise ProjectInstructionError("too_many_targets")
-        normalized: list[tuple[str, tuple[str, ...]]] = []
+        normalized: list[tuple[str, ...]] = []
         seen: set[tuple[str, ...]] = set()
         for raw in raw_targets:
             parts = self._normalize_target(raw)
             if parts in seen:
                 continue
             seen.add(parts)
-            normalized.append((str(raw), parts))
+            normalized.append(parts)
         if not normalized:
-            normalized.append((".", ()))
+            normalized.append(())
         return tuple(normalized)
 
     def _normalize_target(self, raw: str | Path) -> tuple[str, ...]:
@@ -286,6 +297,8 @@ class ProjectInstructionResolver:
             or any(unicodedata.category(char) in {"Cc", "Cf"} for char in value)
         ):
             raise ProjectInstructionError("invalid_target")
+        if len(value) > 512:
+            raise ProjectInstructionError("target_too_long")
         candidate = Path(value)
         if candidate.is_absolute():
             lexical = Path(os.path.abspath(value))
@@ -332,7 +345,7 @@ class ProjectInstructionResolver:
             ):
                 raise ProjectInstructionError("non_regular_target", path=_relative_parts(parts))
 
-    def _target_directory(self, raw: str, parts: tuple[str, ...]) -> tuple[str, ...]:
+    def _target_directory(self, parts: tuple[str, ...]) -> tuple[str, ...]:
         if not parts:
             return ()
         target = self.root.joinpath(*parts)
@@ -406,9 +419,8 @@ class ProjectInstructionResolver:
             if entry.st_size > self.max_file_bytes:
                 raise ProjectInstructionError("file_too_large", path=filename)
 
-            flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
             try:
-                file_fd = os.open(filename, flags, dir_fd=directory_fd)
+                file_fd = os.open(filename, self._file_open_flags, dir_fd=directory_fd)
             except FileNotFoundError:
                 raise ProjectInstructionError("source_changed", path=filename) from None
             except OSError as exc:
@@ -420,6 +432,16 @@ class ProjectInstructionResolver:
                 raise ProjectInstructionError("non_regular", path=filename)
             if before.st_size > self.max_file_bytes:
                 raise ProjectInstructionError("file_too_large", path=filename)
+            if (
+                before.st_dev,
+                before.st_ino,
+                stat.S_IFMT(before.st_mode),
+            ) != (
+                entry.st_dev,
+                entry.st_ino,
+                stat.S_IFMT(entry.st_mode),
+            ):
+                raise ProjectInstructionError("source_changed", path=filename)
             chunks: list[bytes] = []
             total = 0
             while True:
@@ -459,7 +481,7 @@ class ProjectInstructionResolver:
             os.close(directory_fd)
 
     def _open_directory_chain(self, directory: tuple[str, ...]) -> int | None:
-        flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+        flags = self._directory_open_flags
         try:
             descriptor = os.open(self.root, flags)
         except OSError as exc:
@@ -556,6 +578,26 @@ def _positive_limit(value: int, maximum: int) -> int:
     return value
 
 
+def _safe_file_open_flags() -> int:
+    nofollow = getattr(os, "O_NOFOLLOW", None)
+    if not isinstance(nofollow, int) or nofollow == 0:
+        raise ProjectInstructionError("safe_open_unavailable")
+    return os.O_RDONLY | nofollow
+
+
+def _safe_directory_open_flags() -> int:
+    nofollow = getattr(os, "O_NOFOLLOW", None)
+    directory = getattr(os, "O_DIRECTORY", None)
+    if (
+        not isinstance(nofollow, int)
+        or nofollow == 0
+        or not isinstance(directory, int)
+        or directory == 0
+    ):
+        raise ProjectInstructionError("safe_open_unavailable")
+    return os.O_RDONLY | directory | nofollow
+
+
 def _safe_diagnostic_path(value: str | None) -> str | None:
     if value is None:
         return None
@@ -564,6 +606,7 @@ def _safe_diagnostic_path(value: str | None) -> str | None:
         or not value
         or value.startswith("/")
         or "\x00" in value
+        or unicodedata.normalize("NFC", value) != value
         or any(unicodedata.category(char) in {"Cc", "Cf"} for char in value)
     ):
         return "<outside-workspace>"

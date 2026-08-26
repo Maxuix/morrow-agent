@@ -4,18 +4,24 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from morrow.adapters.credentials.keyring import MemoryCredentialStore
-from morrow.adapters.models.openai_compatible import estimate_request_chars
+from morrow.adapters.models.openai_compatible import (
+    OpenAICompatibleProvider,
+    estimate_request_chars,
+)
 from morrow.application.context import ContextBudgetError, ContextBuilder
 from morrow.application.learning.memory_run_projection import build_run_context_projection
 from morrow.application.prompt import DirectCodingProfile, DirectCodingPromptAssembler
 from morrow.application.turn_lifecycle import build_agent_run_snapshot
 from morrow.bootstrap import build_application, build_session_application
 from morrow.core.capabilities import PermissionPreset, PermissionProfile
+from morrow.core.domain import AgentRunSnapshot
 from morrow.core.models import ModelRef, UserMessage
+from morrow.core.prompt import PromptProjection, project_source_selection_digest
 from morrow.core.store import StorageError, StorageErrorCode
 from morrow.runtime.session import Session
 from morrow.testing import ScriptedModelProvider, make_run_policy
@@ -52,6 +58,24 @@ def test_direct_assembly_orders_authority_and_labels_project_scope(tmp_path: Pat
     assert contents.index(assembler.profile.coding_protocol) == 1
     assert "不能授权工具" in contents[2]
     assert "不能执行" in contents[3]
+
+
+def test_projection_binds_role_body_and_assembler_provenance(tmp_path: Path) -> None:
+    assembler = DirectCodingPromptAssembler(tmp_path, role_prompt="original role")
+    projection = assembler.prepare_for_task()
+
+    tampered = PromptProjection(
+        evidence=projection.evidence,
+        role_prompt="tampered role",
+        project_instructions=projection.project_instructions,
+        provenance=projection.provenance,
+    )
+    with pytest.raises(ValueError, match="role prompt"):
+        assembler.verify_projection(tampered)
+
+    other_assembler = DirectCodingPromptAssembler(tmp_path, role_prompt="original role")
+    with pytest.raises(ValueError, match="provenance"):
+        other_assembler.verify_projection(projection)
 
 
 def test_context_builder_uses_frozen_projection_and_keeps_tools_out_of_structured_view(
@@ -107,6 +131,48 @@ def test_snapshot_freezes_only_prompt_metadata_not_role_or_instruction_text(tmp_
     )
     assert "do not persist this instruction body" not in encoded
     assert "do not persist this role body" not in encoded
+
+
+def test_new_prompt_snapshot_requires_a_rehydrator(tmp_path: Path) -> None:
+    assembler = DirectCodingPromptAssembler(tmp_path)
+    projection = assembler.prepare_for_task()
+    snapshot = build_agent_run_snapshot(
+        Session(session_id="s"),
+        model=ModelRef(provider_id="p", model_id="m"),
+        run_policy=make_run_policy(),
+        tools=(),
+        runtime_instance_id="inst-1",
+        prompt_projection=projection,
+    )
+
+    with pytest.raises(StorageError) as exc_info:
+        build_run_context_projection(object(), "ws", snapshot)
+    assert exc_info.value.code is StorageErrorCode.NEEDS_REPAIR
+
+
+def test_durable_prompt_evidence_rejects_out_of_order_sources(tmp_path: Path) -> None:
+    (tmp_path / "AGENTS.md").write_text("root", encoding="utf-8")
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "AGENTS.md").write_text("nested", encoding="utf-8")
+    assembler = DirectCodingPromptAssembler(tmp_path)
+    projection = assembler.prepare_for_task(target_paths=("src/main.py",))
+    snapshot = build_agent_run_snapshot(
+        Session(session_id="s"),
+        model=ModelRef(provider_id="p", model_id="m"),
+        run_policy=make_run_policy(),
+        tools=(),
+        runtime_instance_id="inst-1",
+        prompt_projection=projection,
+    )
+    reversed_sources = tuple(reversed(snapshot.project_instruction_sources))
+    payload = snapshot.model_dump(mode="python")
+    payload["project_instruction_sources"] = reversed_sources
+    payload["project_instruction_selection_digest"] = project_source_selection_digest(
+        list(reversed_sources)
+    )
+
+    with pytest.raises(ValueError, match="scope order"):
+        AgentRunSnapshot.model_validate(payload)
 
 
 def test_protected_prompt_layers_fail_with_context_budget_error(tmp_path: Path) -> None:
@@ -176,6 +242,70 @@ async def test_production_ordinary_run_sends_direct_prompt_and_freezes_metadata(
 
 
 @pytest.mark.asyncio
+async def test_direct_prompt_reaches_openai_compatible_wire_serializer(tmp_path: Path) -> None:
+    (tmp_path / "AGENTS.md").write_text("wire guidance", encoding="utf-8")
+    assembler = DirectCodingPromptAssembler(tmp_path)
+    session = Session(session_id="s")
+    session.log.begin_turn(UserMessage(content="inspect `main.py`"))
+    session.pending_prompt_projection = assembler.prepare_for_task("inspect `main.py`")
+    messages = (
+        ContextBuilder(
+            run_policy=make_run_policy(),
+            estimate_request_chars=estimate_request_chars,
+            prompt_assembler=assembler,
+        )
+        .build(session)
+        .messages
+    )
+
+    class CaptureCompletions:
+        kwargs = None
+
+        async def create(self, **kwargs):
+            self.kwargs = kwargs
+
+            class Response:
+                def __init__(self):
+                    self._done = False
+
+                def __aiter__(self):
+                    return self
+
+                async def __anext__(self):
+                    if self._done:
+                        raise StopAsyncIteration
+                    self._done = True
+                    return SimpleNamespace(
+                        choices=[
+                            SimpleNamespace(
+                                delta=SimpleNamespace(content="ok", reasoning_content=None),
+                                finish_reason="stop",
+                            )
+                        ]
+                    )
+
+            return Response()
+
+    completions = CaptureCompletions()
+    provider = OpenAICompatibleProvider("https://provider.invalid", "credential-sentinel")
+    provider._client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+    events = [
+        event
+        async for event in provider.stream(ModelRef(provider_id="p", model_id="m"), list(messages))
+    ]
+
+    assert events[-1].kind == "completed"
+    assert completions.kwargs["messages"][0]["role"] == "system"
+    assert completions.kwargs["messages"][0]["content"].startswith("你是 Morrow")
+    assert completions.kwargs["messages"][1]["content"] == assembler.profile.coding_protocol
+    assert "wire guidance" in completions.kwargs["messages"][2]["content"]
+    assert completions.kwargs["messages"][-1] == {
+        "role": "user",
+        "content": "inspect `main.py`",
+    }
+
+
+@pytest.mark.asyncio
 async def test_auto_sandboxed_run_keeps_prompt_below_frozen_capability_authority(
     tmp_path: Path,
 ) -> None:
@@ -239,3 +369,47 @@ async def test_recovery_rejects_changed_project_instruction_source(tmp_path: Pat
             prompt_assembler=session_app.persistence.prompt_assembler,
         )
     assert exc_info.value.code is StorageErrorCode.NEEDS_REPAIR
+
+
+def test_restore_quarantines_changed_project_instruction_source(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    instruction = project / "AGENTS.md"
+    instruction.write_text("frozen guidance\n", encoding="utf-8")
+    app = build_application(state_root=tmp_path / "state", credentials=MemoryCredentialStore())
+    identity = app.workspace_service.confirm(app.workspace_service.resolve(project))
+    session_app = build_session_application(
+        app,
+        identity,
+        provider=ScriptedModelProvider(["unused"]),
+        model=ModelRef(provider_id="p", model_id="m"),
+    )
+    session_id = session_app.session.session_id
+    try:
+        accepted = session_app.persistence.submit_user(
+            session_app.session,
+            "inspect `main.py`",
+            "client-quarantine",
+            turn_id="turn_quarantine",
+            agent_run_id="arun_quarantine",
+        )
+        assert accepted.kind == "accepted"
+    finally:
+        session_app.persistence.close()
+
+    instruction.write_text("changed guidance\n", encoding="utf-8")
+    restored = build_session_application(
+        app,
+        identity,
+        provider=ScriptedModelProvider(["unused"]),
+        model=ModelRef(provider_id="p", model_id="m"),
+        resume_session_id=session_id,
+    )
+    try:
+        assert restored.session.health.value == "quarantined"
+        assert (
+            restored.persistence.journal.get_session(identity.workspace_id, session_id).health.value
+            == "quarantined"
+        )
+    finally:
+        restored.persistence.close()

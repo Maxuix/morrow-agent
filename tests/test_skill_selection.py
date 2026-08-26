@@ -166,6 +166,7 @@ async def test_admission_persists_skill_rows_and_injects_low_authority_context(
         session_app.persistence.journal,
         identity.workspace_id,
         snapshot,
+        prompt_assembler=session_app.persistence.prompt_assembler,
     )
     assert projection.skill_context is not None
     assert projection.skill_context.entries[0].version_id == installed.version_id
