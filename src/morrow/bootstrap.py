@@ -47,10 +47,13 @@ from morrow.application.context import ContextBuilder
 from morrow.application.doctor import OperationalDoctor
 from morrow.application.local_tools import (
     make_apply_patch_tool,
+    make_delete_file_tool,
     make_git_diff_tool,
     make_git_status_tool,
+    make_move_file_tool,
     make_promote_sandbox_tool,
     make_read_search_tools,
+    make_rename_file_tool,
     make_run_command_tool,
     make_show_changes_tool,
     make_write_file_tool,
@@ -327,6 +330,9 @@ def _default_tool_executor(
         registry.register(tool)
     registry.register(make_apply_patch_tool(mutation, changes))
     registry.register(make_write_file_tool(mutation, changes))
+    registry.register(make_delete_file_tool(mutation, changes))
+    registry.register(make_move_file_tool(mutation, changes))
+    registry.register(make_rename_file_tool(mutation, changes))
     registry.register(make_show_changes_tool(changes))
     registry.register(make_run_command_tool(process))
     if skill_scripts is not None:

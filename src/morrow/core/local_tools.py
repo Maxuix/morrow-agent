@@ -144,18 +144,26 @@ class MutationOperation(StrEnum):
     CREATE = "create"
     PATCH = "patch"
     REPLACE = "replace"
+    DELETE = "delete"
+    MOVE = "move"
+    RENAME = "rename"
 
 
 class MutationStatus(StrEnum):
     CREATED = "created"
     MODIFIED = "modified"
     UNCHANGED = "unchanged"
+    DELETED = "deleted"
+    MOVED = "moved"
+    RENAMED = "renamed"
 
 
 class MutationResult(LocalToolModel):
     path: str = Field(min_length=1, max_length=512)
     operation: MutationOperation
     status: MutationStatus
+    source_path: str | None = Field(default=None, max_length=512)
+    destination_path: str | None = Field(default=None, max_length=512)
     before_revision: FileRevision | None = None
     after_revision: FileRevision | None = None
     changed_lines: int = Field(ge=0, le=100_000)

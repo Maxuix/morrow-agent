@@ -11,7 +11,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from morrow.adapters.local.filesystem import FileSystemAdapter
+from morrow.adapters.local.filesystem import (
+    ConfinedFileState,
+    FileSystemAdapter,
+    FileSystemMutationError,
+)
 from morrow.core.capabilities import (
     DefaultSensitiveResourcePolicy,
     SensitiveResourcePolicy,
@@ -71,6 +75,7 @@ class SourceText:
     bom: bool
     newline: NewlineStyle
     mode: int
+    is_text: bool = True
 
 
 @dataclass(frozen=True)
@@ -90,6 +95,24 @@ class MutationPlan:
     edit_count: int = 0
     auxiliary_paths: tuple[str, ...] = ()
     threshold_exceeded: bool = False
+    source_target: Path | None = None
+    destination_target: Path | None = None
+    destination_relative_path: str | None = None
+
+    @property
+    def relative_paths(self) -> tuple[str, ...]:
+        if self.destination_relative_path is not None:
+            return (self.relative_path, self.destination_relative_path)
+        return (self.relative_path,)
+
+    @property
+    def affected_paths(self) -> tuple[Path, ...]:
+        values = [self.target]
+        if self.source_target is not None:
+            values.append(self.source_target)
+        if self.destination_target is not None:
+            values.append(self.destination_target)
+        return tuple(values)
 
 
 def _json_size(value: object) -> int:
@@ -288,6 +311,91 @@ class WorkspaceFileService:
             bom=bom,
             newline=_newline_style(text),
             mode=mode,
+        )
+
+    def read_mutation_source(self, path: str) -> SourceText:
+        """Read bounded regular-file metadata for destructive mutations.
+
+        Delete and move do not need to decode a file, so a regular binary file remains an
+        admissible source.  ``SourceText`` keeps the bounded bytes only in process memory for
+        hashing and a possible safe preview; prepared durable evidence stores hashes and sizes.
+        """
+
+        resolved = self.resolver.resolve_mutation(path)
+        if resolved.kind == "missing":
+            raise LocalFileError("not_found", "源文件不存在")
+        if resolved.kind != "file":
+            raise LocalFileError("invalid_target", "源文件不是普通文件")
+        relative = resolved.relative_path
+        if self.is_protected_resolved(relative, resolved.target):
+            raise LocalFileError("protected_resource", "资源受到本地内容策略保护")
+        try:
+            state = self.filesystem.read_confined_file(
+                resolved.target,
+                workspace_root=self.resolver.root,
+                max_bytes=MAX_SOURCE_FILE_BYTES,
+            )
+        except FileSystemMutationError as exc:
+            code = {
+                "source_conflict": "not_found",
+                "not_regular": "invalid_target",
+                "file_too_large": "file_too_large",
+                "unsupported_capability": "unsupported_capability",
+            }.get(exc.code, "path_unavailable")
+            raise LocalFileError(code, exc.message) from exc
+        raw = state.raw
+        if self.sensitive_policy.is_protected_content(raw):
+            raise LocalFileError("protected_resource", "资源受到本地内容策略保护")
+        bom = raw.startswith(b"\xef\xbb\xbf")
+        content = raw[3:] if bom else raw
+        try:
+            text = content.decode("utf-8", errors="strict")
+        except UnicodeDecodeError:
+            return SourceText(
+                relative_path=relative,
+                target=resolved.target,
+                raw=raw,
+                text="",
+                revision=FileRevision(
+                    sha256=hashlib.sha256(raw).hexdigest(),
+                    size=len(raw),
+                    mtime_ns=state.mtime_ns,
+                ),
+                bom=False,
+                newline=NewlineStyle.NONE,
+                mode=state.mode,
+                is_text=False,
+            )
+        if b"\x00" in content:
+            return SourceText(
+                relative_path=relative,
+                target=resolved.target,
+                raw=raw,
+                text="",
+                revision=FileRevision(
+                    sha256=hashlib.sha256(raw).hexdigest(),
+                    size=len(raw),
+                    mtime_ns=state.mtime_ns,
+                ),
+                bom=bom,
+                newline=NewlineStyle.NONE,
+                mode=state.mode,
+                is_text=False,
+            )
+        return SourceText(
+            relative_path=relative,
+            target=resolved.target,
+            raw=raw,
+            text=text,
+            revision=FileRevision(
+                sha256=hashlib.sha256(raw).hexdigest(),
+                size=len(raw),
+                mtime_ns=state.mtime_ns,
+            ),
+            bom=bom,
+            newline=_newline_style(text),
+            mode=state.mode,
+            is_text=True,
         )
 
     def read_file(
@@ -591,7 +699,7 @@ class WorkspaceMutationService:
 
     def __init__(self, files: WorkspaceFileService) -> None:
         self.files = files
-        self._previews: dict[tuple[str, str], MutationPlan] = {}
+        self._previews: dict[tuple[str, str], tuple[MutationPlan, ...]] = {}
 
     def preflight_patch(
         self,
@@ -666,10 +774,152 @@ class WorkspaceMutationService:
             run=run,
         )
 
+    def preflight_delete(
+        self,
+        path: str,
+        *,
+        expected_sha256: str,
+        run=None,
+    ) -> MutationPlan:
+        source = self._preflight_destructive_source(path, expected_sha256)
+        return self._destructive_plan(
+            source=source,
+            operation=MutationOperation.DELETE,
+            run=run,
+        )
+
+    def preflight_move(
+        self,
+        source_path: str,
+        destination_path: str,
+        *,
+        expected_sha256: str,
+        run=None,
+    ) -> MutationPlan:
+        source = self._preflight_destructive_source(source_path, expected_sha256)
+        destination, destination_relative = self._resolve_destination(destination_path)
+        if source.target == destination:
+            raise LocalFileError("invalid_path", "源路径和目标路径必须不同")
+        return self._destructive_plan(
+            source=source,
+            operation=MutationOperation.MOVE,
+            destination=destination,
+            destination_relative=destination_relative,
+            run=run,
+        )
+
+    def preflight_rename(
+        self,
+        source_path: str,
+        destination_path: str,
+        *,
+        expected_sha256: str,
+        run=None,
+    ) -> MutationPlan:
+        source = self._preflight_destructive_source(source_path, expected_sha256)
+        destination_relative = self.files.resolver.validate_relative_path(
+            destination_path, allow_root=False
+        )
+        if Path(source.relative_path).parent != Path(destination_relative).parent:
+            raise LocalFileError("invalid_path", "rename 只能在同一父目录内进行")
+        destination, destination_relative = self._resolve_destination(destination_path)
+        if source.target == destination:
+            raise LocalFileError("invalid_path", "源路径和目标路径必须不同")
+        return self._destructive_plan(
+            source=source,
+            operation=MutationOperation.RENAME,
+            destination=destination,
+            destination_relative=destination_relative,
+            run=run,
+        )
+
+    def _preflight_destructive_source(self, path: str, expected_sha256: str) -> SourceText:
+        source = self.files.read_mutation_source(path)
+        self._check_expected(source.revision, expected_sha256)
+        return source
+
+    def _resolve_destination(self, path: str) -> tuple[Path, str]:
+        relative = self.files.resolver.validate_relative_path(path, allow_root=False)
+        target = self.files.resolver.root.joinpath(*relative.split("/"))
+        self._revalidate_parent_chain(
+            target, allow_missing=False, symlink_error_code="symlink_not_allowed"
+        )
+        try:
+            current = os.lstat(target)
+        except FileNotFoundError:
+            current = None
+        except OSError as exc:
+            raise LocalFileError("path_unavailable", "目标路径不可用") from exc
+        if current is not None:
+            if stat.S_ISLNK(current.st_mode):
+                raise LocalFileError("symlink_not_allowed", "目标路径不能是符号链接")
+            raise LocalFileError("conflict", "目标路径已经存在")
+        if self.files.is_protected_resolved(relative, target):
+            raise LocalFileError("protected_resource", "资源受到本地内容策略保护")
+        return target, relative
+
+    def _destructive_plan(
+        self,
+        *,
+        source: SourceText,
+        operation: MutationOperation,
+        destination: Path | None = None,
+        destination_relative: str | None = None,
+        run=None,
+    ) -> MutationPlan:
+        if operation is MutationOperation.DELETE:
+            changed_lines, changed_bytes = (
+                _change_stats(source.text, "") if source.is_text else (0, len(source.raw))
+            )
+            diff, diff_truncated = _structural_diff(
+                f"a/{source.relative_path}", "/dev/null", source.revision.size
+            )
+            status = MutationStatus.DELETED
+        else:
+            if destination is None or destination_relative is None:
+                raise ValueError("move plan requires a destination")
+            changed_lines, changed_bytes = 0, 0
+            diff, diff_truncated = _structural_diff(
+                f"a/{source.relative_path}", f"b/{destination_relative}", source.revision.size
+            )
+            status = (
+                MutationStatus.MOVED
+                if operation is MutationOperation.MOVE
+                else MutationStatus.RENAMED
+            )
+        return MutationPlan(
+            relative_path=source.relative_path,
+            target=source.target,
+            operation=operation,
+            status=status,
+            before=source,
+            desired_text="",
+            desired_raw=b"",
+            after_revision=None,
+            changed_lines=changed_lines,
+            changed_bytes=changed_bytes,
+            diff=diff,
+            diff_truncated=diff_truncated,
+            edit_count=0,
+            threshold_exceeded=True,
+            source_target=source.target,
+            destination_target=destination,
+            destination_relative_path=destination_relative,
+        )
+
     def cache_plan(self, run_id: str, call_id: str, plan: MutationPlan) -> None:
-        self._previews[(run_id, call_id)] = plan
+        self.cache_plans(run_id, call_id, (plan,))
+
+    def cache_plans(self, run_id: str, call_id: str, plans: tuple[MutationPlan, ...]) -> None:
+        if not plans:
+            raise ValueError("at least one mutation plan is required")
+        self._previews[(run_id, call_id)] = tuple(plans)
 
     def cached_plan(self, run_id: str, call_id: str) -> MutationPlan | None:
+        plans = self._previews.get((run_id, call_id))
+        return plans[0] if plans else None
+
+    def cached_plans(self, run_id: str, call_id: str) -> tuple[MutationPlan, ...] | None:
         return self._previews.get((run_id, call_id))
 
     def apply(
@@ -684,7 +934,7 @@ class WorkspaceMutationService:
     ) -> tuple[MutationResult, object]:
         from morrow.core.capabilities import ChangeToolFact
 
-        with self.files.filesystem.target_lock(plan.target):
+        with self.files.filesystem.paths_lock(plan.affected_paths):
             current = self._revalidate(plan)
             if current.status is MutationStatus.UNCHANGED:
                 result = self._result(
@@ -696,21 +946,70 @@ class WorkspaceMutationService:
                     if plan.operation is MutationOperation.CREATE:
                         created_paths = self._create_parents(plan.auxiliary_paths)
                     self._revalidate(plan)
-                    mode = stat.S_IMODE(plan.before.mode) if plan.before is not None else 0o644
-                    self.files.filesystem.atomic_write(
-                        plan.target,
-                        plan.desired_raw,
-                        mode=mode,
-                        workspace_root=self.files.resolver.root,
-                    )
-                    after_raw = self.files.filesystem.read_bytes(
-                        plan.target, max_bytes=MAX_SOURCE_FILE_BYTES
-                    )
-                    if self.files.sensitive_policy.is_protected_content(after_raw):
-                        raise LocalFileError(
-                            "protected_resource", "发布后的内容受到本地内容策略保护"
+                    if plan.operation is MutationOperation.DELETE:
+                        before = plan.before
+                        if before is None:
+                            raise LocalFileError("conflict", "源文件证据不存在")
+                        try:
+                            self.files.filesystem.unlink_confined(
+                                plan.target,
+                                workspace_root=self.files.resolver.root,
+                                expected_sha256=before.revision.sha256,
+                                max_bytes=MAX_SOURCE_FILE_BYTES,
+                            )
+                        except FileSystemMutationError as exc:
+                            raise _filesystem_error(exc) from exc
+                        after_revision = None
+                    elif plan.operation in {MutationOperation.MOVE, MutationOperation.RENAME}:
+                        source = plan.source_target
+                        destination = plan.destination_target
+                        before = plan.before
+                        if source is None or destination is None or before is None:
+                            raise LocalFileError("conflict", "移动证据不完整")
+                        try:
+                            published = self.files.filesystem.move_no_replace(
+                                source,
+                                destination,
+                                workspace_root=self.files.resolver.root,
+                                expected_sha256=before.revision.sha256,
+                                max_bytes=MAX_SOURCE_FILE_BYTES,
+                            )
+                        except FileSystemMutationError as exc:
+                            raise _filesystem_error(exc) from exc
+                        if not isinstance(published, ConfinedFileState):
+                            published = self.files.filesystem.read_confined_file(
+                                destination,
+                                workspace_root=self.files.resolver.root,
+                                max_bytes=MAX_SOURCE_FILE_BYTES,
+                            )
+                        after_raw = published.raw
+                        if hashlib.sha256(after_raw).hexdigest() != before.revision.sha256:
+                            raise LocalFileError("publish_failed", "移动目标内容无法验证")
+                        if self.files.sensitive_policy.is_protected_content(after_raw):
+                            raise LocalFileError(
+                                "protected_resource", "发布后的内容受到本地内容策略保护"
+                            )
+                        after_revision = FileRevision(
+                            sha256=hashlib.sha256(after_raw).hexdigest(),
+                            size=len(after_raw),
+                            mtime_ns=published.mtime_ns,
                         )
-                    after_revision = self.files._revision(plan.target, after_raw)
+                    else:
+                        mode = stat.S_IMODE(plan.before.mode) if plan.before is not None else 0o644
+                        self.files.filesystem.atomic_write(
+                            plan.target,
+                            plan.desired_raw,
+                            mode=mode,
+                            workspace_root=self.files.resolver.root,
+                        )
+                        after_raw = self.files.filesystem.read_bytes(
+                            plan.target, max_bytes=MAX_SOURCE_FILE_BYTES
+                        )
+                        if self.files.sensitive_policy.is_protected_content(after_raw):
+                            raise LocalFileError(
+                                "protected_resource", "发布后的内容受到本地内容策略保护"
+                            )
+                        after_revision = self.files._revision(plan.target, after_raw)
                     result = self._result(
                         plan,
                         plan,
@@ -720,6 +1019,9 @@ class WorkspaceMutationService:
                 except LocalFileError:
                     self._cleanup_parents(created_paths)
                     raise
+                except FileSystemMutationError as exc:
+                    self._cleanup_parents(created_paths)
+                    raise _filesystem_error(exc) from exc
                 except Exception as exc:
                     self._cleanup_parents(created_paths)
                     raise LocalFileError("publish_failed", "文件发布失败") from exc
@@ -727,9 +1029,16 @@ class WorkspaceMutationService:
                 call_id=call_id,
                 tool_name=tool_name,
                 ordinal=ordinal,
-                relative_paths=(plan.relative_path, *plan.auxiliary_paths),
+                relative_paths=(
+                    plan.relative_paths
+                    if plan.destination_relative_path is not None
+                    else (plan.relative_path, *plan.auxiliary_paths)
+                ),
                 approval_verdict=approval_verdict,
                 operation=plan.operation.value,
+                status=result.status.value,
+                source_path=result.source_path,
+                destination_path=result.destination_path,
                 before_revision=(plan.before.revision.sha256 if plan.before is not None else None),
                 after_revision=(
                     result.after_revision.sha256 if result.after_revision is not None else None
@@ -805,6 +1114,12 @@ class WorkspaceMutationService:
                 pass
 
     def _revalidate(self, plan: MutationPlan) -> MutationPlan:
+        if plan.operation is MutationOperation.DELETE:
+            self._revalidate_destructive_source(plan)
+            return plan
+        if plan.operation in {MutationOperation.MOVE, MutationOperation.RENAME}:
+            self._revalidate_move(plan)
+            return plan
         self._revalidate_parent_chain(
             plan.target, allow_missing=plan.operation is MutationOperation.CREATE
         )
@@ -827,7 +1142,50 @@ class WorkspaceMutationService:
             return MutationPlan(**{**plan.__dict__, "status": MutationStatus.UNCHANGED})
         return plan
 
-    def _revalidate_parent_chain(self, target: Path, *, allow_missing: bool = False) -> None:
+    def _revalidate_destructive_source(self, plan: MutationPlan) -> SourceText:
+        self._revalidate_parent_chain(plan.target, allow_missing=False)
+        try:
+            metadata = os.lstat(plan.target)
+        except FileNotFoundError as exc:
+            raise LocalFileError("conflict", "源文件已发生变化") from exc
+        except OSError as exc:
+            raise LocalFileError("conflict", "源文件已发生变化") from exc
+        if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
+            raise LocalFileError("conflict", "源文件已发生变化")
+        try:
+            source = self.files.read_mutation_source(plan.relative_path)
+        except LocalFileError as exc:
+            if exc.code in {"not_found", "invalid_target", "symlink_not_allowed"}:
+                raise LocalFileError("conflict", "源文件已发生变化") from exc
+            raise
+        if plan.before is None or source.revision.sha256 != plan.before.revision.sha256:
+            raise LocalFileError("conflict", "源文件已发生变化")
+        return source
+
+    def _revalidate_move(self, plan: MutationPlan) -> None:
+        source = plan.source_target
+        destination = plan.destination_target
+        if source is None or destination is None:
+            raise LocalFileError("conflict", "移动证据不完整")
+        self._revalidate_destructive_source(plan)
+        self._revalidate_parent_chain(destination, allow_missing=False)
+        try:
+            current = os.lstat(destination)
+        except FileNotFoundError:
+            return
+        except OSError as exc:
+            raise LocalFileError("conflict", "目标路径已发生变化") from exc
+        if stat.S_ISLNK(current.st_mode) or stat.S_ISDIR(current.st_mode):
+            raise LocalFileError("conflict", "目标路径已发生变化")
+        raise LocalFileError("conflict", "目标路径已经存在")
+
+    def _revalidate_parent_chain(
+        self,
+        target: Path,
+        *,
+        allow_missing: bool = False,
+        symlink_error_code: str = "conflict",
+    ) -> None:
         current = target.parent
         parents: list[Path] = []
         while current != self.files.resolver.root:
@@ -844,8 +1202,13 @@ class WorkspaceMutationService:
                 raise LocalFileError("conflict", "父目录已发生变化") from None
             except OSError as exc:
                 raise LocalFileError("conflict", "父目录已发生变化") from exc
-            if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
-                raise LocalFileError("conflict", "父目录已发生变化")
+            if stat.S_ISLNK(metadata.st_mode):
+                raise LocalFileError(symlink_error_code, "父目录不能包含符号链接")
+            if not stat.S_ISDIR(metadata.st_mode):
+                raise LocalFileError(
+                    "invalid_path" if symlink_error_code == "symlink_not_allowed" else "conflict",
+                    "父目录不是目录",
+                )
 
     def _plan(
         self,
@@ -933,6 +1296,17 @@ class WorkspaceMutationService:
             diff_truncated=plan.diff_truncated,
             change_set_id=change_set_id,
             auxiliary_paths=plan.auxiliary_paths,
+            source_path=(
+                plan.relative_path
+                if plan.operation
+                in {
+                    MutationOperation.DELETE,
+                    MutationOperation.MOVE,
+                    MutationOperation.RENAME,
+                }
+                else None
+            ),
+            destination_path=plan.destination_relative_path,
         )
 
 
@@ -1027,6 +1401,24 @@ def _bounded_diff(before: str, after: str, relative: str) -> tuple[str, bool]:
     return bounded + marker, True
 
 
+def _structural_diff(source: str, destination: str, size: int) -> tuple[str, bool]:
+    """Describe a path-level mutation without retaining file contents."""
+
+    return f"--- {source}\n+++ {destination}\n@@ move/delete {size} bytes @@\n", False
+
+
+def _filesystem_error(error: FileSystemMutationError) -> LocalFileError:
+    mapping = {
+        "destination_exists": "conflict",
+        "source_conflict": "conflict",
+        "not_regular": "invalid_target",
+        "file_too_large": "file_too_large",
+        "unsupported_capability": "unsupported_capability",
+        "cross_device": "publish_failed",
+    }
+    return LocalFileError(mapping.get(error.code, "publish_failed"), error.message)
+
+
 def _threshold_exceeded(
     *,
     operation: MutationOperation,
@@ -1082,7 +1474,11 @@ def _threshold_exceeded(
 
 
 def _change_set_id(run, call_id: str, plan: MutationPlan) -> str:
-    seed = f"{getattr(run, 'run_id', 'run')}:{call_id}:{plan.relative_path}".encode()
+    destination = plan.destination_relative_path or ""
+    seed = (
+        f"{getattr(run, 'run_id', 'run')}:{call_id}:{plan.operation.value}:"
+        f"{plan.relative_path}:{destination}"
+    ).encode()
     return "cs_" + hashlib.sha256(seed).hexdigest()[:24]
 
 

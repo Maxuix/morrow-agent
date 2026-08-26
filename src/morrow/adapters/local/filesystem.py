@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import ctypes
+import errno
+import hashlib
 import os
 import stat
+import sys
 import threading
 import uuid
 from contextlib import contextmanager
@@ -21,6 +25,28 @@ class DirectoryItem:
     size: int
 
 
+class FileSystemMutationError(RuntimeError):
+    """Bounded adapter error for a confined destructive filesystem operation."""
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
+
+
+class FileSystemCapabilityError(FileSystemMutationError):
+    """The platform cannot prove the required no-clobber primitive."""
+
+
+@dataclass(frozen=True)
+class ConfinedFileState:
+    """Bounded state read from a no-follow file descriptor."""
+
+    raw: bytes
+    mode: int
+    mtime_ns: int
+
+
 class FileSystemAdapter:
     def __init__(self) -> None:
         self._lock_guard = threading.Lock()
@@ -28,14 +54,30 @@ class FileSystemAdapter:
 
     @contextmanager
     def target_lock(self, path: Path):
-        key = path.absolute()
+        with self.paths_lock((path,)):
+            yield
+
+    @contextmanager
+    def paths_lock(self, paths: tuple[Path, ...]):
+        """Acquire every affected path in one deterministic lexical order."""
+
+        keys = tuple(
+            sorted(
+                {path.absolute() for path in paths},
+                key=lambda value: (value.as_posix().casefold(), value.as_posix()),
+            )
+        )
         with self._lock_guard:
-            lock = self._locks.setdefault(key, threading.Lock())
-        lock.acquire()
+            locks = tuple(self._locks.setdefault(key, threading.Lock()) for key in keys)
+        acquired: list[threading.Lock] = []
         try:
+            for lock in locks:
+                lock.acquire()
+                acquired.append(lock)
             yield
         finally:
-            lock.release()
+            for lock in reversed(acquired):
+                lock.release()
 
     def read_bytes(self, path: Path, *, max_bytes: int) -> bytes:
         try:
@@ -171,6 +213,378 @@ class FileSystemAdapter:
                 except OSError:
                     pass
 
+    def unlink_confined(
+        self,
+        path: Path,
+        *,
+        workspace_root: Path,
+        expected_sha256: str | None = None,
+        max_bytes: int = 8 * 1024 * 1024,
+    ) -> None:
+        """Unlink one regular file through a no-follow directory descriptor."""
+
+        parent_fd: int | None = None
+        try:
+            self._require_confined_mutation_support()
+            parent_fd = self._open_directory_chain(workspace_root, path.parent)
+            try:
+                metadata = os.stat(path.name, dir_fd=parent_fd, follow_symlinks=False)
+            except FileNotFoundError as exc:
+                raise FileSystemMutationError("source_conflict", "源文件不存在") from exc
+            except OSError as exc:
+                raise FileSystemMutationError("publication_failed", "源文件无法检查") from exc
+            if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
+                raise FileSystemMutationError("not_regular", "源文件不是普通文件")
+            if expected_sha256 is not None:
+                raw = self._read_bytes_at(parent_fd, path.name, max_bytes=max_bytes)
+                if hashlib.sha256(raw).hexdigest() != expected_sha256:
+                    raise FileSystemMutationError("source_conflict", "源文件版本已变化")
+            try:
+                os.unlink(path.name, dir_fd=parent_fd)
+            except FileNotFoundError as exc:
+                raise FileSystemMutationError("source_conflict", "源文件不存在") from exc
+            except OSError as exc:
+                raise FileSystemMutationError("publication_failed", "文件删除失败") from exc
+            self._fsync_required(parent_fd)
+            try:
+                os.stat(path.name, dir_fd=parent_fd, follow_symlinks=False)
+            except FileNotFoundError:
+                return
+            except OSError as exc:
+                raise FileSystemMutationError("publication_failed", "删除结果无法验证") from exc
+            raise FileSystemMutationError("publication_failed", "文件删除结果无法确认")
+        except FileSystemMutationError:
+            raise
+        except OSError as exc:
+            raise FileSystemMutationError("publication_failed", "文件删除路径无法打开") from exc
+        finally:
+            if parent_fd is not None:
+                try:
+                    os.close(parent_fd)
+                except OSError:
+                    pass
+
+    def confined_unlink(
+        self,
+        path: Path,
+        *,
+        workspace_root: Path,
+        expected_sha256: str | None = None,
+        max_bytes: int = 8 * 1024 * 1024,
+    ) -> None:
+        """Compatibility spelling for callers that name the operation unlinkat-style."""
+
+        self.unlink_confined(
+            path,
+            workspace_root=workspace_root,
+            expected_sha256=expected_sha256,
+            max_bytes=max_bytes,
+        )
+
+    def read_confined_file(
+        self,
+        path: Path,
+        *,
+        workspace_root: Path,
+        max_bytes: int = 8 * 1024 * 1024,
+    ) -> ConfinedFileState:
+        """Read one regular file through the same no-follow directory-fd boundary."""
+
+        parent_fd: int | None = None
+        try:
+            self._require_confined_mutation_support()
+            parent_fd = self._open_directory_chain(workspace_root, path.parent)
+            try:
+                return self._read_file_at(parent_fd, path.name, max_bytes=max_bytes)
+            except FileNotFoundError as exc:
+                raise FileSystemMutationError("source_conflict", "文件不存在") from exc
+        except FileSystemMutationError:
+            raise
+        except OSError as exc:
+            raise FileSystemMutationError("source_conflict", "文件路径无法打开") from exc
+        finally:
+            if parent_fd is not None:
+                try:
+                    os.close(parent_fd)
+                except OSError:
+                    pass
+
+    def move_no_replace(
+        self,
+        source: Path,
+        destination: Path,
+        *,
+        workspace_root: Path,
+        expected_sha256: str | None = None,
+        max_bytes: int = 8 * 1024 * 1024,
+    ) -> ConfinedFileState:
+        """Atomically move a directory entry without ever clobbering the destination."""
+
+        source_parent_fd: int | None = None
+        destination_parent_fd: int | None = None
+        try:
+            self._require_confined_mutation_support()
+            source_parent_fd = self._open_directory_chain(workspace_root, source.parent)
+            if source.parent.absolute() == destination.parent.absolute():
+                destination_parent_fd = source_parent_fd
+            else:
+                destination_parent_fd = self._open_directory_chain(
+                    workspace_root, destination.parent
+                )
+            try:
+                metadata = os.stat(source.name, dir_fd=source_parent_fd, follow_symlinks=False)
+            except FileNotFoundError as exc:
+                raise FileSystemMutationError("source_conflict", "源文件不存在") from exc
+            except OSError as exc:
+                raise FileSystemMutationError("publication_failed", "源文件无法检查") from exc
+            if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
+                raise FileSystemMutationError("not_regular", "源文件不是普通文件")
+            if expected_sha256 is not None:
+                raw = self._read_bytes_at(source_parent_fd, source.name, max_bytes=max_bytes)
+                if hashlib.sha256(raw).hexdigest() != expected_sha256:
+                    raise FileSystemMutationError("source_conflict", "源文件版本已变化")
+            try:
+                self._rename_no_replace(
+                    source_parent_fd,
+                    source.name,
+                    destination_parent_fd,
+                    destination.name,
+                )
+            except FileSystemMutationError:
+                raise
+            except OSError as exc:
+                if exc.errno in {errno.EEXIST, errno.ENOTEMPTY}:
+                    raise FileSystemMutationError("destination_exists", "目标路径已经存在") from exc
+                if exc.errno in {
+                    errno.EINVAL,
+                    errno.ENOSYS,
+                    getattr(errno, "ENOTSUP", errno.EOPNOTSUPP),
+                    errno.EOPNOTSUPP,
+                }:
+                    raise FileSystemCapabilityError(
+                        "unsupported_capability", "平台不支持可证明的原子无覆盖移动"
+                    ) from exc
+                if exc.errno == errno.EXDEV:
+                    raise FileSystemMutationError("cross_device", "跨设备移动不受支持") from exc
+                if exc.errno in {errno.ENOENT, errno.ELOOP, errno.ENOTDIR}:
+                    raise FileSystemMutationError("source_conflict", "移动路径已发生变化") from exc
+                raise FileSystemMutationError("publication_failed", "原子移动失败") from exc
+            self._fsync_required(source_parent_fd)
+            if destination_parent_fd != source_parent_fd:
+                self._fsync_required(destination_parent_fd)
+            try:
+                os.stat(source.name, dir_fd=source_parent_fd, follow_symlinks=False)
+            except FileNotFoundError:
+                pass
+            except OSError as exc:
+                raise FileSystemMutationError("publication_failed", "移动源结果无法验证") from exc
+            else:
+                raise FileSystemMutationError("publication_failed", "移动源结果无法确认")
+            try:
+                published = self._read_file_at(
+                    destination_parent_fd, destination.name, max_bytes=max_bytes
+                )
+            except FileSystemMutationError as exc:
+                raise FileSystemMutationError("publication_failed", "移动目标结果无法验证") from exc
+            if (
+                expected_sha256 is not None
+                and hashlib.sha256(published.raw).hexdigest() != expected_sha256
+            ):
+                raise FileSystemMutationError("publication_failed", "移动目标内容无法验证")
+            return published
+        except FileSystemMutationError:
+            raise
+        except OSError as exc:
+            raise FileSystemMutationError("publication_failed", "移动路径无法打开") from exc
+        finally:
+            if destination_parent_fd is not None and destination_parent_fd != source_parent_fd:
+                try:
+                    os.close(destination_parent_fd)
+                except OSError:
+                    pass
+            if source_parent_fd is not None:
+                try:
+                    os.close(source_parent_fd)
+                except OSError:
+                    pass
+
+    def atomic_move_no_replace(
+        self,
+        source: Path,
+        destination: Path,
+        *,
+        workspace_root: Path,
+        expected_sha256: str | None = None,
+        max_bytes: int = 8 * 1024 * 1024,
+    ) -> ConfinedFileState:
+        """Compatibility spelling for the atomic no-clobber move primitive."""
+
+        return self.move_no_replace(
+            source,
+            destination,
+            workspace_root=workspace_root,
+            expected_sha256=expected_sha256,
+            max_bytes=max_bytes,
+        )
+
+    @staticmethod
+    def atomic_no_replace_supported() -> bool:
+        try:
+            FileSystemAdapter._require_confined_mutation_support()
+            FileSystemAdapter._rename_primitive()
+        except FileSystemMutationError:
+            return False
+        return True
+
+    @staticmethod
+    def _require_confined_mutation_support() -> None:
+        if not getattr(os, "O_NOFOLLOW", 0) or not getattr(os, "O_DIRECTORY", 0):
+            raise FileSystemCapabilityError(
+                "unsupported_capability", "平台不支持受限目录 fd 文件操作"
+            )
+
+    @staticmethod
+    def _read_bytes_at(parent_fd: int, name: str, *, max_bytes: int) -> bytes:
+        no_follow = getattr(os, "O_NOFOLLOW", 0)
+        fd: int | None = None
+        try:
+            fd = os.open(name, os.O_RDONLY | no_follow, dir_fd=parent_fd)
+            metadata = os.fstat(fd)
+            if not stat.S_ISREG(metadata.st_mode):
+                raise FileSystemMutationError("not_regular", "源文件不是普通文件")
+            return FileSystemAdapter._read_fd(fd, max_bytes=max_bytes)
+        except FileSystemMutationError:
+            raise
+        except OSError as exc:
+            raise FileSystemMutationError("source_conflict", "源文件无法读取") from exc
+        finally:
+            if fd is not None:
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
+
+    @staticmethod
+    def _read_file_at(parent_fd: int, name: str, *, max_bytes: int) -> ConfinedFileState:
+        no_follow = getattr(os, "O_NOFOLLOW", 0)
+        fd: int | None = None
+        try:
+            fd = os.open(name, os.O_RDONLY | no_follow, dir_fd=parent_fd)
+            metadata = os.fstat(fd)
+            if not stat.S_ISREG(metadata.st_mode):
+                raise FileSystemMutationError("not_regular", "文件不是普通文件")
+            return ConfinedFileState(
+                raw=FileSystemAdapter._read_fd(fd, max_bytes=max_bytes),
+                mode=stat.S_IMODE(metadata.st_mode),
+                mtime_ns=metadata.st_mtime_ns,
+            )
+        except FileSystemMutationError:
+            raise
+        except OSError as exc:
+            raise FileSystemMutationError("source_conflict", "文件无法读取") from exc
+        finally:
+            if fd is not None:
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
+
+    @staticmethod
+    def _read_fd(fd: int, *, max_bytes: int) -> bytes:
+        chunks: list[bytes] = []
+        total = 0
+        while True:
+            chunk = os.read(fd, min(128 * 1024, max_bytes - total + 1))
+            if not chunk:
+                return b"".join(chunks)
+            chunks.append(chunk)
+            total += len(chunk)
+            if total > max_bytes:
+                raise FileSystemMutationError("file_too_large", "文件超过读取上限")
+
+    @staticmethod
+    def _rename_no_replace(
+        source_parent_fd: int,
+        source_name: str,
+        destination_parent_fd: int,
+        destination_name: str,
+    ) -> None:
+        primitive = FileSystemAdapter._rename_primitive()
+        primitive(
+            source_parent_fd,
+            os.fsencode(source_name),
+            destination_parent_fd,
+            os.fsencode(destination_name),
+        )
+
+    @staticmethod
+    def _rename_primitive():
+        try:
+            libc = ctypes.CDLL(None, use_errno=True)
+        except OSError as exc:
+            raise FileSystemCapabilityError(
+                "unsupported_capability", "平台不支持可证明的原子无覆盖移动"
+            ) from exc
+        if sys.platform == "darwin":
+            function = getattr(libc, "renameatx_np", None)
+            if function is None:
+                raise FileSystemCapabilityError(
+                    "unsupported_capability", "平台不支持可证明的原子无覆盖移动"
+                )
+            function.argtypes = [
+                ctypes.c_int,
+                ctypes.c_char_p,
+                ctypes.c_int,
+                ctypes.c_char_p,
+                ctypes.c_uint,
+            ]
+            function.restype = ctypes.c_int
+
+            def renameatx_np(source_fd, source_name, destination_fd, destination_name):
+                result = function(
+                    source_fd,
+                    source_name,
+                    destination_fd,
+                    destination_name,
+                    0x00000004,
+                )
+                if result != 0:
+                    error_number = ctypes.get_errno()
+                    raise OSError(error_number, os.strerror(error_number))
+
+            return renameatx_np
+        if sys.platform.startswith("linux"):
+            function = getattr(libc, "renameat2", None)
+            if function is None:
+                raise FileSystemCapabilityError(
+                    "unsupported_capability", "平台不支持可证明的原子无覆盖移动"
+                )
+            function.argtypes = [
+                ctypes.c_int,
+                ctypes.c_char_p,
+                ctypes.c_int,
+                ctypes.c_char_p,
+                ctypes.c_uint,
+            ]
+            function.restype = ctypes.c_int
+
+            def renameat2(source_fd, source_name, destination_fd, destination_name):
+                result = function(
+                    source_fd,
+                    source_name,
+                    destination_fd,
+                    destination_name,
+                    0x00000001,
+                )
+                if result != 0:
+                    error_number = ctypes.get_errno()
+                    raise OSError(error_number, os.strerror(error_number))
+
+            return renameat2
+        raise FileSystemCapabilityError(
+            "unsupported_capability", "平台不支持可证明的原子无覆盖移动"
+        )
+
     @staticmethod
     def _open_directory_chain(root: Path, target_parent: Path) -> int:
         try:
@@ -214,3 +628,10 @@ class FileSystemAdapter:
             os.fsync(fd)
         except OSError:
             pass
+
+    @staticmethod
+    def _fsync_required(fd: int) -> None:
+        try:
+            os.fsync(fd)
+        except OSError as exc:
+            raise FileSystemMutationError("publication_failed", "文件系统同步失败") from exc

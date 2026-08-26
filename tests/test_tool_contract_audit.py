@@ -180,6 +180,17 @@ def _valid_inventory_arguments(name):
             "value": "x",
         },
         "write_file": {"path": "new.txt", "content": "x", "mode": "create"},
+        "delete_file": {"path": "old.txt", "expected_sha256": "0" * 64},
+        "move_file": {
+            "source_path": "old.txt",
+            "destination_path": "new.txt",
+            "expected_sha256": "0" * 64,
+        },
+        "rename_file": {
+            "source_path": "old.txt",
+            "destination_path": "renamed.txt",
+            "expected_sha256": "0" * 64,
+        },
         "promote_sandbox_changes": {
             "change_set_id": "sbx_" + "0" * 24,
             "paths": ["out.txt"],

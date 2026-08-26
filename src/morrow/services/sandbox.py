@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from morrow.core.capabilities import SensitiveResourcePolicy, ToolRunContext
+from morrow.core.local_tools import validate_workspace_relative_path
 from morrow.services.files import WorkspaceFileService
 
 MAX_SNAPSHOT_FILES = 10_000
@@ -73,6 +74,17 @@ class SandboxChange:
     eligible: bool
     expected_sha256: str | None
     content: str | None
+    source_path: str | None = None
+    destination_path: str | None = None
+    before_size: int | None = None
+    after_size: int | None = None
+    mode: int | None = None
+
+    @property
+    def relative_paths(self) -> tuple[str, ...]:
+        if self.destination_path is None:
+            return (self.relative_path,)
+        return (self.source_path or self.relative_path, self.destination_path)
 
 
 @dataclass(frozen=True)
@@ -87,13 +99,15 @@ class SandboxChangeSet:
 
     @property
     def changed_paths(self) -> tuple[str, ...]:
-        return tuple(change.relative_path for change in self.changes)
+        return tuple(path for change in self.changes for path in change.relative_paths)
 
     def summary(self) -> dict[str, object]:
         return {
             "change_set_id": self.change_set_id,
             "paths": self.changed_paths,
-            "eligible_paths": tuple(change.relative_path for change in self.eligible_changes),
+            "eligible_paths": tuple(
+                path for change in self.eligible_changes for path in change.relative_paths
+            ),
             "truncated": self.truncated,
         }
 
@@ -190,7 +204,8 @@ class SandboxSnapshotService:
             set(session.baseline) | set(current), key=lambda value: (value.casefold(), value)
         )
         changes: list[SandboxChange] = []
-        for relative in paths:
+        truncated = len(paths) > MAX_PROMOTION_FILES * 4
+        for relative in paths[: MAX_PROMOTION_FILES * 4]:
             self._check_cancelled(cancel_event)
             before = session.baseline.get(relative)
             after = current.get(relative)
@@ -207,11 +222,13 @@ class SandboxSnapshotService:
             else:
                 operation = "deleted"
             changes.append(self._change(relative, operation, before, after))
-            if len(changes) >= MAX_PROMOTION_FILES * 4:
-                return SandboxChangeSet(
-                    session.change_set_id, tuple(changes[:MAX_PROMOTION_FILES]), True
-                )
-        return SandboxChangeSet(session.change_set_id, tuple(changes))
+        changes, paired = self._pair_moves(changes)
+        truncated = truncated or paired > MAX_PROMOTION_FILES
+        return SandboxChangeSet(
+            session.change_set_id,
+            tuple(changes[:MAX_PROMOTION_FILES]),
+            truncated,
+        )
 
     def cleanup(self, session: SandboxSession) -> None:
         self._validate_session_root(session)
@@ -242,15 +259,32 @@ class SandboxSnapshotService:
         if not paths or len(paths) > MAX_PROMOTION_FILES or len(set(paths)) != len(paths):
             raise SandboxServiceError("sandbox_selection_invalid", "沙箱变更选择无效")
         selected = []
-        by_path = {change.relative_path: change for change in value.eligible_changes}
+        by_path = {
+            path: change for change in value.eligible_changes for path in change.relative_paths
+        }
         for path in paths:
-            if not path or path.startswith(("/", "\\")) or ".." in path.split("/"):
-                raise SandboxServiceError("sandbox_selection_invalid", "沙箱路径必须是相对路径")
-            change = by_path.get(path)
+            try:
+                relative = validate_workspace_relative_path(path, allow_root=False)
+            except ValueError:
+                raise SandboxServiceError(
+                    "sandbox_selection_invalid", "沙箱路径必须是相对路径"
+                ) from None
+            change = by_path.get(relative)
             if change is None:
                 raise SandboxServiceError("sandbox_change_not_eligible", "沙箱变更不可推广")
-            selected.append(change)
-        return tuple(selected)
+            if change not in selected:
+                selected.append(change)
+        return tuple(
+            sorted(
+                selected,
+                key=lambda change: (
+                    change.relative_path.casefold(),
+                    change.relative_path,
+                    (change.destination_path or "").casefold(),
+                    change.destination_path or "",
+                ),
+            )
+        )
 
     def _copy_tree(
         self,
@@ -444,21 +478,32 @@ class SandboxSnapshotService:
         diff_truncated = False
         content: str | None = None
         eligible = False
-        if is_text and after_raw is not None and (before is None or before_raw is not None):
+        if is_text and (after_raw is not None or before_raw is not None):
             try:
                 before_text = (before_raw or b"").decode("utf-8")
-                after_text = after_raw.decode("utf-8")
+                after_text = (after_raw or b"").decode("utf-8")
             except UnicodeDecodeError:
                 pass
             else:
-                diff, diff_truncated = _bounded_diff(relative, before_text, after_text)
-                mode_changed = before is not None and before.mode != after.mode
-                eligible = (
-                    operation in {"created", "modified"}
-                    and not mode_changed
-                    and len(after_raw) <= self.max_change_content_bytes
+                mode_changed = (
+                    before is not None and after is not None and before.mode != after.mode
                 )
-                if eligible:
+                if operation == "deleted":
+                    diff, diff_truncated = _structural_diff(
+                        f"a/{relative}", "/dev/null", before.size if before else 0
+                    )
+                else:
+                    diff, diff_truncated = _bounded_diff(relative, before_text, after_text)
+                eligible = (
+                    operation in {"created", "modified", "deleted"}
+                    and not mode_changed
+                    and (
+                        len(after_raw) <= self.max_change_content_bytes
+                        if after_raw is not None
+                        else len(before_raw or b"") <= self.max_change_content_bytes
+                    )
+                )
+                if eligible and after_raw is not None:
                     content = after_text
         return SandboxChange(
             relative_path=relative,
@@ -472,7 +517,82 @@ class SandboxSnapshotService:
             eligible=eligible,
             expected_sha256=before.sha256 if before is not None else None,
             content=content,
+            before_size=before.size if before is not None else None,
+            after_size=after.size if after is not None else None,
+            mode=(after.mode if after is not None else before.mode if before is not None else None),
         )
+
+    def _pair_moves(self, changes: list[SandboxChange]) -> tuple[list[SandboxChange], int]:
+        deleted: dict[tuple[str, int, int], list[int]] = {}
+        created: dict[tuple[str, int, int], list[int]] = {}
+        for index, change in enumerate(changes):
+            if not change.eligible:
+                continue
+            if change.operation == "deleted":
+                key = (
+                    change.before_sha256 or "",
+                    change.before_size or 0,
+                    change.mode or 0,
+                )
+                deleted.setdefault(key, []).append(index)
+            elif change.operation == "created":
+                key = (
+                    change.after_sha256 or "",
+                    change.after_size or 0,
+                    change.mode or 0,
+                )
+                created.setdefault(key, []).append(index)
+        paired_indices: set[int] = set()
+        paired: list[SandboxChange] = []
+        for key in sorted(set(deleted) & set(created), key=str):
+            source_indices = deleted[key]
+            destination_indices = created[key]
+            if len(source_indices) != 1 or len(destination_indices) != 1:
+                continue
+            source = changes[source_indices[0]]
+            destination = changes[destination_indices[0]]
+            if source.before_sha256 is None or destination.after_sha256 is None:
+                continue
+            source_path = source.relative_path
+            destination_path = destination.relative_path
+            operation = (
+                "renamed" if Path(source_path).parent == Path(destination_path).parent else "moved"
+            )
+            paired.append(
+                SandboxChange(
+                    relative_path=source_path,
+                    operation=operation,
+                    before_sha256=source.before_sha256,
+                    after_sha256=destination.after_sha256,
+                    diff=_structural_diff(
+                        f"a/{source_path}",
+                        f"b/{destination_path}",
+                        source.before_size or 0,
+                    )[0],
+                    diff_truncated=False,
+                    changed_bytes=0,
+                    eligible=True,
+                    expected_sha256=source.before_sha256,
+                    content=destination.content,
+                    source_path=source_path,
+                    destination_path=destination_path,
+                    before_size=source.before_size,
+                    after_size=destination.after_size,
+                    mode=source.mode,
+                )
+            )
+            paired_indices.update({source_indices[0], destination_indices[0]})
+        remaining = [change for index, change in enumerate(changes) if index not in paired_indices]
+        combined = remaining + paired
+        combined.sort(
+            key=lambda change: (
+                change.relative_path.casefold(),
+                change.relative_path,
+                (change.destination_path or "").casefold(),
+                change.destination_path or "",
+            )
+        )
+        return combined, len(paired)
 
     def _validate_source_root(self, root: Path) -> Path:
         try:
@@ -579,3 +699,7 @@ def _bounded_diff(relative: str, before: str, after: str) -> tuple[str, bool]:
         text = encoded[:MAX_DIFF_BYTES].decode("utf-8", errors="ignore")
         truncated = True
     return text, truncated
+
+
+def _structural_diff(source: str, destination: str, size: int) -> tuple[str, bool]:
+    return f"--- {source}\n+++ {destination}\n@@ move/delete {size} bytes @@\n", False

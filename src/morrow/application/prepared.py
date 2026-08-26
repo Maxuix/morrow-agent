@@ -36,24 +36,77 @@ from morrow.runtime.tools import (
 from morrow.services.files import LocalFileError, MutationPlan
 
 
-def file_evidence_from_plan(plan: MutationPlan) -> FileMutationEvidence:
-    parent = plan.target.parent
+def file_evidence_from_plan(plan: MutationPlan) -> tuple[FileMutationEvidence, ...]:
+    """Convert an in-memory plan to ordered, body-free recovery evidence."""
+
     before = plan.before.revision.sha256 if plan.before is not None else None
-    return FileMutationEvidence(
-        relative_path=plan.relative_path,
-        operation=plan.operation.value,
-        existed_before=plan.before is not None,
-        before_sha256=before,
-        expected_after_sha256=sha256_digest(plan.desired_raw),
-        expected_size=len(plan.desired_raw),
-        expected_kind="file",
-        parent_exists=parent.exists(),
-        parent_is_directory=parent.is_dir(),
-        policy_version="files-v1",
-        conflict_input_digest=sha256_digest(before or "absent"),
-        changed_lines=plan.changed_lines,
-        changed_bytes=plan.changed_bytes,
-        preview_truncated=plan.diff_truncated,
+    if plan.operation.value == "delete":
+        return (
+            FileMutationEvidence(
+                relative_path=plan.relative_path,
+                operation=plan.operation.value,
+                existed_before=True,
+                before_sha256=before,
+                expected_kind="absent",
+                parent_exists=plan.target.parent.exists(),
+                parent_is_directory=plan.target.parent.is_dir(),
+                policy_version="files-v1",
+                conflict_input_digest=sha256_digest(before or "absent"),
+                changed_lines=plan.changed_lines,
+                changed_bytes=plan.changed_bytes,
+                preview_truncated=plan.diff_truncated,
+                status=plan.status.value,
+            ),
+        )
+    if plan.destination_target is not None and plan.destination_relative_path is not None:
+        source_size = plan.before.revision.size if plan.before is not None else None
+        destination = plan.destination_target
+        return (
+            FileMutationEvidence(
+                relative_path=plan.relative_path,
+                operation=plan.operation.value,
+                existed_before=True,
+                before_sha256=before,
+                expected_kind="absent",
+                parent_exists=plan.target.parent.exists(),
+                parent_is_directory=plan.target.parent.is_dir(),
+                policy_version="files-v1",
+                conflict_input_digest=sha256_digest(before or "absent"),
+                status=plan.status.value,
+            ),
+            FileMutationEvidence(
+                relative_path=plan.destination_relative_path,
+                operation=plan.operation.value,
+                existed_before=False,
+                expected_after_sha256=before,
+                expected_size=source_size,
+                expected_kind="file",
+                parent_exists=destination.parent.exists(),
+                parent_is_directory=destination.parent.is_dir(),
+                policy_version="files-v1",
+                conflict_input_digest=sha256_digest(f"{plan.relative_path}:{before or 'absent'}"),
+                status=plan.status.value,
+            ),
+        )
+    parent = plan.target.parent
+    return (
+        FileMutationEvidence(
+            relative_path=plan.relative_path,
+            operation=plan.operation.value,
+            existed_before=plan.before is not None,
+            before_sha256=before,
+            expected_after_sha256=sha256_digest(plan.desired_raw),
+            expected_size=len(plan.desired_raw),
+            expected_kind="file",
+            parent_exists=parent.exists(),
+            parent_is_directory=parent.is_dir(),
+            policy_version="files-v1",
+            conflict_input_digest=sha256_digest(before or "absent"),
+            changed_lines=plan.changed_lines,
+            changed_bytes=plan.changed_bytes,
+            preview_truncated=plan.diff_truncated,
+            status=plan.status.value,
+        ),
     )
 
 
@@ -258,9 +311,11 @@ def _prepare_one(
                 budget=registered.approval_preview_budget,
             )
             if mutation is not None:
-                plan = mutation.cached_plan(run_context.run_id, call.id)
-                if plan is not None:
-                    file_evidence = (file_evidence_from_plan(plan),)
+                plans = mutation.cached_plans(run_context.run_id, call.id)
+                if plans is not None:
+                    file_evidence = tuple(
+                        evidence for plan in plans for evidence in file_evidence_from_plan(plan)
+                    )
             config_evidence = config_evidence_from_arguments(arguments, session)
         except (
             ToolArgumentsValidationError,

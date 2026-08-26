@@ -131,6 +131,8 @@ def item_from_execution(execution, *, report_id: str, item_id: str, workspace_ro
     )
     if observation is not None:
         summary = (*summary, f"观察：{observation.value}")
+    elif observed:
+        summary = (*summary, "观察：" + ", ".join(item.value for item in observed))
     return RecoveryItem(
         item_id=item_id,
         report_id=report_id,
@@ -142,6 +144,7 @@ def item_from_execution(execution, *, report_id: str, item_id: str, workspace_ro
             execution_state=execution.state,
             effect_class=execution.intent.effect_class,
             observation=observation,
+            observations=observed,
             relative_paths=tuple(item.relative_path for item in execution.intent.file_evidence),
             summary=summary,
         ),

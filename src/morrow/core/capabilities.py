@@ -221,6 +221,9 @@ class ToolFactHeader(LocalCapabilityModel):
 class ChangeToolFact(ToolFactHeader):
     kind: Literal["change"] = "change"
     operation: str = Field(min_length=1, max_length=32)
+    status: str | None = Field(default=None, max_length=32)
+    source_path: str | None = Field(default=None, max_length=_RELATIVE_PATH_LIMIT)
+    destination_path: str | None = Field(default=None, max_length=_RELATIVE_PATH_LIMIT)
     before_revision: str | None = Field(default=None, max_length=128)
     after_revision: str | None = Field(default=None, max_length=128)
     edit_count: int = Field(default=0, ge=0, le=128)
@@ -233,6 +236,16 @@ class ChangeToolFact(ToolFactHeader):
     @classmethod
     def valid_operation(cls, value: str) -> str:
         return _clean_code(value, field_name="operation")
+
+    @field_validator("status")
+    @classmethod
+    def valid_status(cls, value: str | None) -> str | None:
+        return None if value is None else _clean_code(value, field_name="status")
+
+    @field_validator("source_path", "destination_path")
+    @classmethod
+    def valid_change_path(cls, value: str | None) -> str | None:
+        return None if value is None else _clean_relative_path(value)
 
 
 class CommandToolFact(ToolFactHeader):

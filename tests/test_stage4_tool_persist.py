@@ -16,6 +16,7 @@ from pydantic import BaseModel, ConfigDict
 from morrow.adapters.state.journal import SqliteOperationalJournal
 from morrow.adapters.state.operational import BusyRetryPolicy, OperationalStore
 from morrow.application.grants import CapabilityGrantService
+from morrow.application.local_tools import make_delete_file_tool, make_rename_file_tool
 from morrow.application.turns import SessionPersistence
 from morrow.core.capabilities import (
     OperationIntent,
@@ -48,6 +49,7 @@ from morrow.runtime.policy import ToolApproval, ToolExecutionPolicy
 from morrow.runtime.session import Session
 from morrow.runtime.tool_cycle import ToolCancellationRequested
 from morrow.runtime.tools import ToolExecutor, ToolRegistry, make_tool
+from morrow.services.changes import ChangeSetService
 from morrow.services.files import (
     WorkspaceFileService,
     WorkspaceMutationService,
@@ -111,6 +113,11 @@ class _ApproveHost:
     async def request(self, request) -> ToolApprovalDecision:
         assert request.approval_id
         assert UNCONFINED_HOST_WARNING in request.preview
+        return ToolApprovalDecision(approved=True)
+
+
+class _ApproveAll:
+    async def request(self, request) -> ToolApprovalDecision:
         return ToolApprovalDecision(approved=True)
 
 
@@ -297,6 +304,90 @@ async def test_write_file_intent_stores_pre_effect_hashes(tmp_path):
         assert listed[0].state is ToolExecutionState.CLOSED
         assert listed[0].result_envelope is not None
         assert listed[0].result_envelope.ok is True
+    finally:
+        handle.close()
+
+
+@pytest.mark.asyncio
+async def test_delete_and_rename_intents_persist_ordered_two_path_evidence(tmp_path):
+    project = tmp_path / "project"
+    project.mkdir()
+    deleted = project / "delete.txt"
+    renamed = project / "old.txt"
+    deleted.write_text("delete\n", encoding="utf-8")
+    renamed.write_text("rename\n", encoding="utf-8")
+    delete_hash = hashlib.sha256(deleted.read_bytes()).hexdigest()
+    rename_hash = hashlib.sha256(renamed.read_bytes()).hexdigest()
+    mutation = WorkspaceMutationService(WorkspaceFileService(WorkspacePathResolver(project)))
+    store, handle, journal, session, persistence = _open(tmp_path, mutation=mutation)
+    session.workspace_capability = WorkspaceCapability(workspace_id="ws_1", root=project)
+    try:
+        registry = ToolRegistry()
+        changes = ChangeSetService()
+        registry.register(make_delete_file_tool(mutation, changes))
+        registry.register(make_rename_file_tool(mutation, changes))
+        executor = ToolExecutor(
+            registry.snapshot(), make_context_builder().run_policy, approval_port=_ApproveAll()
+        )
+        provider = ScriptedModelProvider(
+            [
+                AssistantMessage(
+                    tool_calls=(
+                        FunctionToolCall(
+                            id="delete",
+                            name="delete_file",
+                            arguments=json.dumps(
+                                {"path": "delete.txt", "expected_sha256": delete_hash}
+                            ),
+                        ),
+                        FunctionToolCall(
+                            id="rename",
+                            name="rename_file",
+                            arguments=json.dumps(
+                                {
+                                    "source_path": "old.txt",
+                                    "destination_path": "new.txt",
+                                    "expected_sha256": rename_hash,
+                                }
+                            ),
+                        ),
+                    )
+                ),
+                AssistantMessage(content="done"),
+            ]
+        )
+        loop = AgentLoop(
+            provider,
+            ModelRef(provider_id="p", model_id="m"),
+            make_context_builder(),
+            id_source=FixedIdSource(),
+            tool_executor=executor,
+        )
+        [item async for item in loop.run_task(session, "delete and rename")]
+        run = journal._read_one("SELECT agent_run_id FROM agent_runs LIMIT 1", ())
+        executions = journal.list_executions("ws_1", agent_run_id=str(run[0]))
+        assert [item.tool_name for item in executions] == ["delete_file", "rename_file"]
+        delete_evidence = executions[0].intent.file_evidence
+        assert len(delete_evidence) == 1
+        assert delete_evidence[0].expected_kind == "absent"
+        assert delete_evidence[0].before_sha256 == delete_hash
+        rename_evidence = executions[1].intent.file_evidence
+        assert [item.relative_path for item in rename_evidence] == ["old.txt", "new.txt"]
+        assert rename_evidence[0].expected_kind == "absent"
+        assert rename_evidence[1].expected_kind == "file"
+        assert rename_evidence[1].before_sha256 is None
+        assert rename_evidence[1].expected_after_sha256 == rename_hash
+        assert all(
+            item.result_envelope is not None and item.result_envelope.ok for item in executions
+        )
+        intent_json = json.dumps(
+            [item.intent.model_dump(mode="json") for item in executions], ensure_ascii=False
+        )
+        assert "delete\n" not in intent_json
+        assert "rename\n" not in intent_json
+        assert not deleted.exists()
+        assert not renamed.exists()
+        assert (project / "new.txt").read_text(encoding="utf-8") == "rename\n"
     finally:
         handle.close()
 

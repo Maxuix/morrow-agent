@@ -139,10 +139,14 @@ class ToolExecutionError(Exception):
         message: str,
         *,
         disposition: ToolExecutionDisposition | None = None,
+        facts: tuple[ToolFact, ...] = (),
+        details: tuple[dict[str, str], ...] = (),
     ) -> None:
         super().__init__(message)
         self.code = code
         self.disposition = disposition
+        self.facts = tuple(facts)
+        self.details = tuple(details)
 
 
 def _dump(payload: dict) -> str:
@@ -256,6 +260,24 @@ _STATIC_TOOL_CONTRACTS: Mapping[str, ToolContractExpectation] = MappingProxyType
         ),
         "apply_patch": _static_contract(OperationKind.WORKSPACE_WRITE, ToolEffect.PERSISTENT_WRITE),
         "write_file": _static_contract(OperationKind.WORKSPACE_WRITE, ToolEffect.PERSISTENT_WRITE),
+        "delete_file": _static_contract(
+            OperationKind.WORKSPACE_WRITE,
+            ToolEffect.PERSISTENT_WRITE,
+            policy_effect=ToolEffect.PERSISTENT_WRITE,
+            policy_approval=ToolApproval.REQUIRED,
+        ),
+        "move_file": _static_contract(
+            OperationKind.WORKSPACE_WRITE,
+            ToolEffect.PERSISTENT_WRITE,
+            policy_effect=ToolEffect.PERSISTENT_WRITE,
+            policy_approval=ToolApproval.REQUIRED,
+        ),
+        "rename_file": _static_contract(
+            OperationKind.WORKSPACE_WRITE,
+            ToolEffect.PERSISTENT_WRITE,
+            policy_effect=ToolEffect.PERSISTENT_WRITE,
+            policy_approval=ToolApproval.REQUIRED,
+        ),
         "promote_sandbox_changes": _static_contract(
             OperationKind.WORKSPACE_WRITE,
             ToolEffect.PERSISTENT_WRITE,
@@ -964,12 +986,16 @@ class ToolExecutor:
         except asyncio.CancelledError:
             raise
         except ToolExecutionError as exc:
+            if self._active_run_context is not None and exc.facts:
+                self._active_run_context.record(exc.facts)
             return self._error(
                 call,
                 exc.code,
                 str(exc),
                 limit=limit,
                 disposition=exc.disposition,
+                details=list(exc.details),
+                facts=exc.facts,
             )
         except Exception:
             return self._error(call, ToolErrorCode.EXECUTION_FAILED, "工具执行失败", limit=limit)
@@ -1128,6 +1154,7 @@ class ToolExecutor:
         details: list[dict[str, str]] | None = None,
         expected: str | None = None,
         disposition: ToolExecutionDisposition | None = None,
+        facts: tuple[ToolFact, ...] = (),
     ) -> ToolExecutionOutcome:
         envelope = tool_error_envelope(code, message, details=details, expected=expected)
         if len(envelope) > limit and details:
@@ -1146,6 +1173,7 @@ class ToolExecutor:
             ok=False,
             envelope=envelope,
             error_code=code,
+            facts=facts,
             disposition=disposition,
         )
 

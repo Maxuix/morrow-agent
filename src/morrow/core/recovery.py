@@ -8,6 +8,9 @@ visibility.
 
 from __future__ import annotations
 
+import errno
+import os
+import stat
 from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
@@ -86,6 +89,7 @@ class RecoveryEvidence(ProtocolModel):
     execution_state: ToolExecutionState
     effect_class: EffectClass
     observation: FileObservation | None = None
+    observations: tuple[FileObservation, ...] = ()
     relative_paths: tuple[str, ...] = ()
     summary: tuple[str, ...] = ()
 
@@ -306,21 +310,78 @@ def classify_file_observations(observations: tuple[FileObservation, ...]) -> Rec
 def observe_file(evidence: FileMutationEvidence, *, root: Path) -> FileObservation:
     if evidence.expected_after_sha256 is None and evidence.before_sha256 is None:
         return FileObservation.EVIDENCE_MISSING
-    target = root.joinpath(*evidence.relative_path.split("/"))
-    try:
-        exists = target.exists()
-    except OSError:
+    directory_flag = getattr(os, "O_DIRECTORY", 0)
+    no_follow = getattr(os, "O_NOFOLLOW", 0)
+    if not directory_flag or not no_follow:
         return FileObservation.EVIDENCE_MISSING
-    if not exists:
-        if not evidence.existed_before:
-            return FileObservation.MATCHES_BEFORE
-        return FileObservation.MISSING
+    root_fd: int | None = None
+    parent_fd: int | None = None
+    leaf_fd: int | None = None
     try:
-        if target.is_symlink() or not target.is_file():
+        root_fd = os.open(root, os.O_RDONLY | directory_flag | no_follow)
+        parent_fd = root_fd
+        parts = tuple(evidence.relative_path.split("/"))
+        for part in parts[:-1]:
+            try:
+                next_fd = os.open(
+                    part,
+                    os.O_RDONLY | directory_flag | no_follow,
+                    dir_fd=parent_fd,
+                )
+            except FileNotFoundError:
+                # A missing ancestor is not evidence that the leaf was deleted.
+                return FileObservation.EVIDENCE_MISSING
+            except OSError as exc:
+                if exc.errno in {errno.ELOOP, errno.ENOTDIR}:
+                    return FileObservation.THIRD_PARTY
+                return FileObservation.EVIDENCE_MISSING
+            if parent_fd != root_fd:
+                os.close(parent_fd)
+            parent_fd = next_fd
+        try:
+            leaf_fd = os.open(parts[-1], os.O_RDONLY | no_follow, dir_fd=parent_fd)
+        except FileNotFoundError:
+            if evidence.expected_kind == "absent":
+                return FileObservation.MATCHES_EXPECTED
+            if not evidence.existed_before:
+                return FileObservation.MATCHES_BEFORE
+            return FileObservation.MISSING
+        except OSError as exc:
+            if exc.errno in {errno.ELOOP, errno.ENOTDIR}:
+                return FileObservation.THIRD_PARTY
+            return FileObservation.EVIDENCE_MISSING
+        metadata = os.fstat(leaf_fd)
+        if not stat.S_ISREG(metadata.st_mode):
             return FileObservation.THIRD_PARTY
-        raw = target.read_bytes()
+        raw_parts: list[bytes] = []
+        total = 0
+        while True:
+            chunk = os.read(leaf_fd, min(128 * 1024, 8 * 1024 * 1024 - total + 1))
+            if not chunk:
+                break
+            raw_parts.append(chunk)
+            total += len(chunk)
+            if total > 8 * 1024 * 1024:
+                return FileObservation.THIRD_PARTY
+        raw = b"".join(raw_parts)
     except OSError:
         return FileObservation.EVIDENCE_MISSING
+    finally:
+        if leaf_fd is not None:
+            try:
+                os.close(leaf_fd)
+            except OSError:
+                pass
+        if parent_fd is not None and parent_fd != root_fd:
+            try:
+                os.close(parent_fd)
+            except OSError:
+                pass
+        if root_fd is not None:
+            try:
+                os.close(root_fd)
+            except OSError:
+                pass
     digest = sha256_digest(raw)
     if evidence.expected_after_sha256 is not None and digest == evidence.expected_after_sha256:
         if evidence.expected_size is not None and len(raw) != evidence.expected_size:

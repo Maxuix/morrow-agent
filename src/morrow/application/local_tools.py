@@ -256,6 +256,32 @@ WRITE_FILE_PROVIDER_SCHEMA = _object_schema(
     ),
 )
 
+DELETE_FILE_PROVIDER_SCHEMA = _object_schema(
+    {
+        "path": _path_schema(mutation=True),
+        "expected_sha256": _string_schema(pattern=_SHA256_PATTERN),
+    },
+    required=("path", "expected_sha256"),
+)
+
+MOVE_FILE_PROVIDER_SCHEMA = _object_schema(
+    {
+        "source_path": _path_schema(mutation=True),
+        "destination_path": _path_schema(mutation=True),
+        "expected_sha256": _string_schema(pattern=_SHA256_PATTERN),
+    },
+    required=("source_path", "destination_path", "expected_sha256"),
+)
+
+RENAME_FILE_PROVIDER_SCHEMA = _object_schema(
+    {
+        "source_path": _path_schema(mutation=True),
+        "destination_path": _path_schema(mutation=True),
+        "expected_sha256": _string_schema(pattern=_SHA256_PATTERN),
+    },
+    required=("source_path", "destination_path", "expected_sha256"),
+)
+
 SHOW_CHANGES_PROVIDER_SCHEMA = _object_schema({})
 
 PROMOTE_SANDBOX_PROVIDER_SCHEMA = _object_schema(
@@ -360,6 +386,36 @@ class WriteFileArguments(BaseModel):
         return self
 
 
+class DeleteFileArguments(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    path: WorkspaceMutationPath
+    expected_sha256: str = Field(pattern=_SHA256_PATTERN)
+
+    _valid_path = field_validator("path")(_path)
+
+
+class MoveFileArguments(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    source_path: WorkspaceMutationPath
+    destination_path: WorkspaceMutationPath
+    expected_sha256: str = Field(pattern=_SHA256_PATTERN)
+
+    _valid_source = field_validator("source_path")(_path)
+    _valid_destination = field_validator("destination_path")(_path)
+
+    @model_validator(mode="after")
+    def distinct_paths(self) -> MoveFileArguments:
+        if self.source_path == self.destination_path:
+            raise ValueError("source_path and destination_path must differ")
+        return self
+
+
+class RenameFileArguments(MoveFileArguments):
+    """Same strict wire shape as move; service preflight enforces same-parent rename."""
+
+
 class ShowChangesArguments(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
@@ -415,12 +471,16 @@ def _tool_error(
         "not_found": ToolErrorCode.NOT_FOUND,
         "symlink_not_allowed": ToolErrorCode.SYMLINK_NOT_ALLOWED,
         "conflict": ToolErrorCode.CONFLICT,
+        "source_conflict": ToolErrorCode.CONFLICT,
+        "destination_exists": ToolErrorCode.CONFLICT,
         "edit_not_found": ToolErrorCode.EDIT_NOT_FOUND,
         "edit_not_unique": ToolErrorCode.EDIT_NOT_UNIQUE,
         "edit_overlap": ToolErrorCode.EDIT_OVERLAP,
         "mutation_limit": ToolErrorCode.MUTATION_LIMIT,
         "protected_resource": ToolErrorCode.PROTECTED_RESOURCE,
         "publish_failed": ToolErrorCode.PUBLISH_FAILED,
+        "unsupported_capability": ToolErrorCode.UNSUPPORTED_CAPABILITY,
+        "cross_device": ToolErrorCode.PUBLISH_FAILED,
         "invalid_command": ToolErrorCode.INVALID_COMMAND,
         "spawn_failed": ToolErrorCode.PROCESS_FAILED,
         "process_failed": ToolErrorCode.PROCESS_FAILED,
@@ -703,10 +763,15 @@ def make_promote_sandbox_tool(
         arguments: PromoteSandboxChangesArguments, context: ToolCallContext
     ) -> OperationIntent:
         changes = selected(arguments, context)
+        try:
+            plans = tuple(_promotion_plan(change, mutation, context.run) for change in changes)
+        except LocalFileError as exc:
+            raise _tool_error(exc) from exc
+        mutation.cache_plans(context.run.run_id, context.call_id, plans)
         return OperationIntent(
             kind=OperationKind.WORKSPACE_WRITE,
             effect=ToolEffect.PERSISTENT_WRITE,
-            relative_paths=tuple(change.relative_path for change in changes),
+            relative_paths=tuple(path for change in changes for path in change.relative_paths),
             risk_flags=(RiskFlag.MUTATION_APPROVAL_REQUIRED,),
             preview_summary=(
                 "沙箱变更推广需要审批",
@@ -728,19 +793,13 @@ def make_promote_sandbox_tool(
         arguments: PromoteSandboxChangesArguments, context: ToolCallContext
     ) -> ToolHandlerOutcome:
         changes = selected(arguments, context)
+        plans = mutation.cached_plans(context.run.run_id, context.call_id)
+        if plans is None or len(plans) != len(changes):
+            raise ToolExecutionError(ToolErrorCode.PREFLIGHT_FAILED, "沙箱变更预检不存在")
         results = []
         facts = []
-        for change in changes:
-            mode = "create" if change.operation == "created" else "replace"
+        for index, (_change, plan) in enumerate(zip(changes, plans, strict=True)):
             try:
-                plan = await asyncio.to_thread(
-                    mutation.preflight_write,
-                    change.relative_path,
-                    content=change.content or "",
-                    mode=mode,
-                    expected_sha256=change.expected_sha256,
-                    run=context.run,
-                )
                 result, fact = await asyncio.to_thread(
                     mutation.apply,
                     plan,
@@ -751,6 +810,16 @@ def make_promote_sandbox_tool(
                     run=context.run,
                 )
             except LocalFileError as exc:
+                if facts:
+                    raise ToolExecutionError(
+                        ToolErrorCode.PUBLISH_FAILED,
+                        "部分沙箱变更已生效，其余变更未完成",
+                        facts=tuple(facts),
+                        details=(
+                            {"key": "applied", "value": str(len(facts))},
+                            {"key": "remaining", "value": str(len(changes) - index)},
+                        ),
+                    ) from exc
                 raise _tool_error(exc) from exc
             changes_service.record(context.run, result)
             results.append(result)
@@ -774,6 +843,45 @@ def make_promote_sandbox_tool(
         approval_preview_budget=PROMOTION_PREVIEW_BUDGET,
         recovery_declaration=tool_declaration("promote_sandbox_changes"),
     )
+
+
+def _promotion_plan(change, mutation: WorkspaceMutationService, run):
+    operation = change.operation
+    if operation == "created":
+        return mutation.preflight_write(
+            change.relative_path,
+            content=change.content or "",
+            mode="create",
+            expected_sha256=None,
+            run=run,
+        )
+    if operation == "modified":
+        return mutation.preflight_write(
+            change.relative_path,
+            content=change.content or "",
+            mode="replace",
+            expected_sha256=change.expected_sha256,
+            run=run,
+        )
+    if operation == "deleted":
+        return mutation.preflight_delete(
+            change.relative_path,
+            expected_sha256=change.expected_sha256 or "",
+            run=run,
+        )
+    if operation in {"moved", "renamed"}:
+        source_path = change.source_path or change.relative_path
+        destination_path = change.destination_path
+        if destination_path is None:
+            raise LocalFileError("conflict", "沙箱移动目标缺失")
+        preflight = mutation.preflight_move if operation == "moved" else mutation.preflight_rename
+        return preflight(
+            source_path,
+            destination_path,
+            expected_sha256=change.expected_sha256 or "",
+            run=run,
+        )
+    raise LocalFileError("invalid_target", "沙箱变更类型不受支持")
 
 
 def make_git_status_tool(git: GitInspectionService) -> RegisteredTool:
@@ -882,7 +990,7 @@ def _mutation_intent(
     return OperationIntent(
         kind=OperationKind.WORKSPACE_WRITE,
         effect=ToolEffect.PERSISTENT_WRITE,
-        relative_paths=(plan.relative_path,),
+        relative_paths=plan.relative_paths,
         risk_flags=flags,
         preview_summary=(
             f"文件操作：{plan.operation.value}",
@@ -898,6 +1006,8 @@ def _mutation_preview(plan) -> tuple[str, ...]:
         f"操作：{plan.operation.value}",
         f"变更行数：{plan.changed_lines}，变更字节：{plan.changed_bytes}",
     ]
+    if plan.destination_relative_path is not None:
+        lines.append(f"目标路径：{plan.destination_relative_path}")
     if plan.auxiliary_paths:
         lines.append("新增父目录：" + ", ".join(plan.auxiliary_paths))
     diff_lines = plan.diff.splitlines()
@@ -925,6 +1035,121 @@ async def _blocking_mutation(callback):
         except Exception:
             pass
         raise
+
+
+def _make_destructive_file_tool(
+    *,
+    name: str,
+    description: str,
+    arguments_model: type[BaseModel],
+    provider_schema: dict[str, object],
+    preflight,
+    mutation: WorkspaceMutationService,
+    changes: ChangeSetService,
+) -> RegisteredTool:
+    def resolve(arguments, context: ToolCallContext) -> OperationIntent:
+        try:
+            plan = preflight(arguments, context)
+        except LocalFileError as exc:
+            raise _tool_error(exc) from exc
+        return _mutation_intent(plan, mutation, context)
+
+    def preview(arguments, context: ToolCallContext) -> tuple[str, ...]:
+        del arguments
+        plan = mutation.cached_plan(context.run.run_id, context.call_id)
+        return _mutation_preview(plan) if plan is not None else ("无法生成变更预览",)
+
+    async def handler(arguments, context: ToolCallContext) -> ToolHandlerOutcome:
+        del arguments
+        plan = mutation.cached_plan(context.run.run_id, context.call_id)
+        if plan is None:
+            raise ToolExecutionError(ToolErrorCode.PREFLIGHT_FAILED, "变更预检不存在")
+        try:
+            result, fact = await _blocking_mutation(
+                lambda: mutation.apply(
+                    plan,
+                    call_id=context.call_id,
+                    tool_name=context.tool_name,
+                    ordinal=context.ordinal,
+                    approval_verdict=context.approval_verdict,
+                    run=context.run,
+                )
+            )
+        except LocalFileError as exc:
+            raise _tool_error(exc) from exc
+        changes.record(context.run, result)
+        return ToolHandlerOutcome(payload=result.model_dump(mode="json"), facts=(fact,))
+
+    return make_tool(
+        name=name,
+        description=description,
+        arguments_model=arguments_model,
+        provider_schema=provider_schema,
+        handler=handler,
+        context_handler=handler,
+        intent_resolver=resolve,
+        context_approval_preview=preview,
+        execution_policy=ToolExecutionPolicy(
+            effect=ToolEffect.PERSISTENT_WRITE,
+            approval=ToolApproval.REQUIRED,
+        ),
+        approval_preview_budget=MUTATION_PREVIEW_BUDGET,
+        recovery_declaration=tool_declaration(name),
+    )
+
+
+def make_delete_file_tool(
+    mutation: WorkspaceMutationService, changes: ChangeSetService
+) -> RegisteredTool:
+    return _make_destructive_file_tool(
+        name="delete_file",
+        description="按必需的 SHA-256 删除工作空间内一个普通文件；不删除目录或符号链接。",
+        arguments_model=DeleteFileArguments,
+        provider_schema=DELETE_FILE_PROVIDER_SCHEMA,
+        preflight=lambda arguments, context: mutation.preflight_delete(
+            arguments.path, expected_sha256=arguments.expected_sha256, run=context.run
+        ),
+        mutation=mutation,
+        changes=changes,
+    )
+
+
+def make_move_file_tool(
+    mutation: WorkspaceMutationService, changes: ChangeSetService
+) -> RegisteredTool:
+    return _make_destructive_file_tool(
+        name="move_file",
+        description="按必需的 SHA-256 将一个普通文件原子移动到不存在的工作空间路径。",
+        arguments_model=MoveFileArguments,
+        provider_schema=MOVE_FILE_PROVIDER_SCHEMA,
+        preflight=lambda arguments, context: mutation.preflight_move(
+            arguments.source_path,
+            arguments.destination_path,
+            expected_sha256=arguments.expected_sha256,
+            run=context.run,
+        ),
+        mutation=mutation,
+        changes=changes,
+    )
+
+
+def make_rename_file_tool(
+    mutation: WorkspaceMutationService, changes: ChangeSetService
+) -> RegisteredTool:
+    return _make_destructive_file_tool(
+        name="rename_file",
+        description="按必需的 SHA-256 在同一父目录内原子重命名一个普通文件。",
+        arguments_model=RenameFileArguments,
+        provider_schema=RENAME_FILE_PROVIDER_SCHEMA,
+        preflight=lambda arguments, context: mutation.preflight_rename(
+            arguments.source_path,
+            arguments.destination_path,
+            expected_sha256=arguments.expected_sha256,
+            run=context.run,
+        ),
+        mutation=mutation,
+        changes=changes,
+    )
 
 
 def make_apply_patch_tool(

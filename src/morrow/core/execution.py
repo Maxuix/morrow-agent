@@ -303,6 +303,14 @@ class FileMutationEvidence(ProtocolModel):
             return None
         return _valid_digest(value)
 
+    @model_validator(mode="after")
+    def validate_expected_shape(self) -> FileMutationEvidence:
+        if self.expected_kind == "absent" and (
+            self.expected_after_sha256 is not None or self.expected_size is not None
+        ):
+            raise ValueError("absent evidence cannot carry an expected file hash or size")
+        return self
+
 
 class ConfigMutationEvidence(ProtocolModel):
     document_kind: Literal["global_config", "workspace_profile", "workspace_preferences"]
@@ -780,6 +788,21 @@ PRODUCTION_TOOL_DECLARATIONS: tuple[ToolRecoveryDeclaration, ...] = (
     ),
     _declaration(
         "write_file",
+        EffectClass.RECONCILEABLE_FILE_WRITE,
+        MissingCompletionPolicy.REQUIRES_RECONCILIATION,
+    ),
+    _declaration(
+        "delete_file",
+        EffectClass.RECONCILEABLE_FILE_WRITE,
+        MissingCompletionPolicy.REQUIRES_RECONCILIATION,
+    ),
+    _declaration(
+        "move_file",
+        EffectClass.RECONCILEABLE_FILE_WRITE,
+        MissingCompletionPolicy.REQUIRES_RECONCILIATION,
+    ),
+    _declaration(
+        "rename_file",
         EffectClass.RECONCILEABLE_FILE_WRITE,
         MissingCompletionPolicy.REQUIRES_RECONCILIATION,
     ),

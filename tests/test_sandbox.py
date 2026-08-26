@@ -313,7 +313,7 @@ async def test_sandbox_promotion_conflict_preserves_external_change_and_run_scop
     assert outcome.ok is False
     assert outcome.error_code is ToolErrorCode.CONFLICT
     assert target.read_text() == "print('external')\n"
-    assert approval.request.effect.value == "persistent_write"
+    assert approval.__dict__ == {}
 
     expired = ToolRunContext(run_id="other", session_id="session")
     expired_outcome = await executor.execute_with_context(
