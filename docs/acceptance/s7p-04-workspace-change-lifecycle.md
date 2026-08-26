@@ -144,7 +144,7 @@ finding，也未被计为 PASS。
   既有嵌套 Codex sandbox 的两项 host-level Seatbelt 测试。
 - affected focused aggregate（含 durable 新回归）：`175 passed, 2 skipped in 15.78s`；跳过项为
   既有嵌套 Codex sandbox 的两项 host-level Seatbelt 测试。
-- full offline gate（fallback interpreter）：`1234 passed, 2 skipped, 2 deselected in 52.29s`，
+- full offline gate（fallback interpreter）：`1234 passed, 2 skipped, 2 deselected in 49.13s`，
   `0 failed`。
 - `uv run pytest -m 'not live'`：未能启动，uv cache `/Users/ruirui/.cache/uv` 在受限沙箱中不可写；
   按仓库规则使用当前 worktree 的 `PYTHONPATH=src` 环境完成同等 gate。

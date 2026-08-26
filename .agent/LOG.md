@@ -3165,7 +3165,7 @@
   adapter traversal concerns were explicitly classified as non-findings.
 - Final validation: dedicated S7P-04 `36 passed`; focused plan gates `26 passed`, `33 passed, 2
   skipped`, `36 passed`, `24 passed`; affected aggregate `175 passed, 2 skipped in 15.78s`; full
-  fallback offline `1234 passed, 2 skipped, 2 deselected in 52.29s`; Ruff format/check, compileall,
+  fallback offline `1234 passed, 2 skipped, 2 deselected in 49.13s`; Ruff format/check, compileall,
   both CLI help commands and `git diff --check` passed. `uv run pytest -m 'not live'` remained
   blocked before collection by restricted `/Users/ruirui/.cache/uv` permissions; no live tests ran.
   Topic worktree is clean and remains unmerged for root-owned integration.
