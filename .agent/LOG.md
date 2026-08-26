@@ -2834,3 +2834,21 @@
   39.18s`; Ruff format/check, compileall, CLI help and `git diff --check` passed.
 - Committed the tool repair and acceptance record separately, fast-forward integrated both into
   local `main`, and preserved all pre-existing user changes. No remote push was requested or run.
+
+## 2026-08-26 — Stage 7 Direct full post-fix rerun
+
+- Per the user's request, committed all previously untracked evaluation assets, the real-user
+  simulation skill, improvement list and Roadmap reference in `21d9415`. The ignored evaluation
+  bytecode cache was not staged.
+- Re-ran all ten tasks through a real PTY and the public `morrow --dir ... --permission-mode
+  auto-sandboxed` REPL with the same `opencode-go/mimo-v2.5` model, isolated workspaces and external
+  verifier. All ten drivers exited normally; no pipe/EOF harness path was used.
+- Post-fix result: `2 PASS / 7 FAIL / 1 BLOCKED / 0 NOT RUN / 0 INCONCLUSIVE`, 311 tool calls
+  (257 succeeded, 54 failed). PASS: `EXTERNAL-001`, `EXTERNAL-002`; FAIL: `MORROW-001` through
+  `MORROW-005`, `EXTERNAL-003`, `EXTERNAL-004`; BLOCKED: `MORROW-006` after model connection timeout.
+- Sanitized operational aggregates show 16 intended `run_command` denials (13
+  `destructive_not_enabled`, 3 `outside_workspace`) with persisted reason codes; 39 commands
+  succeeded. No new shared sandbox or denial-recovery tool blocker reproduced. Remaining failures
+  are non-convergent Direct behavior, semantic implementation misses, or the Provider timeout.
+- External workspaces left six Agent-created extra files. This remains a cleanup-quality finding,
+  not a Stage 7-blocking tool defect. Detailed matrix and evidence are in the acceptance report.
