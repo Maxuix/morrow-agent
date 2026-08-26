@@ -126,11 +126,11 @@ class _ApproveAll:
 class _FailFsyncAfterEffect(FileSystemAdapter):
     def __init__(self):
         super().__init__()
-        self.fail = True
+        self.calls = 0
 
     def _fsync_required(self, fd):
-        if self.fail:
-            self.fail = False
+        self.calls += 1
+        if self.calls == 2:
             raise FileSystemMutationError("publication_failed", "injected fsync failure")
         return FileSystemAdapter._fsync_required(fd)
 
@@ -385,9 +385,13 @@ async def test_delete_and_rename_intents_persist_ordered_two_path_evidence(tmp_p
         assert len(delete_evidence) == 1
         assert delete_evidence[0].expected_kind == "absent"
         assert delete_evidence[0].before_sha256 == delete_hash
+        assert delete_evidence[0].staging_relative_path is not None
+        assert delete_evidence[0].staging_relative_path.startswith(".morrow-capture-")
         rename_evidence = executions[1].intent.file_evidence
         assert [item.relative_path for item in rename_evidence] == ["old.txt", "new.txt"]
         assert rename_evidence[0].expected_kind == "absent"
+        assert rename_evidence[0].staging_relative_path is not None
+        assert rename_evidence[0].staging_relative_path.startswith(".morrow-capture-")
         assert rename_evidence[1].expected_kind == "file"
         assert rename_evidence[1].before_sha256 is None
         assert rename_evidence[1].expected_after_sha256 == rename_hash

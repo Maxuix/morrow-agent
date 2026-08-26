@@ -214,6 +214,11 @@ FileMutationResult
 - `delete_file`：仅删除一个已由 SHA-256 证明的工作空间内普通文件；不接受目录、递归或符号链接。
 - `move_file` / `rename_file`：仅移动/重命名一个已由 SHA-256 证明的普通文件，目标必须不存在；使用
   原子 no-clobber primitive，无法证明时 fail closed，不做 copy-delete fallback。
+- destructive adapter 先把源目录项原子捕获到同父目录的不可预测 `.morrow-capture-*` staging 名，
+  再按已打开 regular-file fd 的 dev/ino/type/mode/size/mtime 证据核验；捕获不匹配时只允许有界
+  no-clobber 恢复，恢复失败保留并声明 staging，禁止把第三方条目当作成功 delete/move/rename。
+  staging 正常完成后必须清理并 fsync；残留只通过 ChangeSet、ToolFact、prepared evidence 和恢复
+  观察管理，不持久化文件正文或留下未声明辅助文件。
 - `show_changes`：读取当前运行实际 ChangeSet/Diff，不以模型生成的预览替代；Git 工作树差异留给后续 `git_diff`。
 
 固定约束：

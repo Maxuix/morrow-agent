@@ -136,6 +136,15 @@ def item_from_execution(execution, *, report_id: str, item_id: str, workspace_ro
         summary = (*summary, f"观察：{observation.value}")
     elif observed:
         summary = (*summary, "观察：" + ", ".join(item.value for item in observed))
+    relative_paths: list[str] = []
+    for evidence in execution.intent.file_evidence:
+        if evidence.relative_path not in relative_paths:
+            relative_paths.append(evidence.relative_path)
+        if (
+            evidence.staging_relative_path is not None
+            and evidence.staging_relative_path not in relative_paths
+        ):
+            relative_paths.append(evidence.staging_relative_path)
     return RecoveryItem(
         item_id=item_id,
         report_id=report_id,
@@ -148,7 +157,7 @@ def item_from_execution(execution, *, report_id: str, item_id: str, workspace_ro
             effect_class=execution.intent.effect_class,
             observation=observation,
             observations=observed,
-            relative_paths=tuple(item.relative_path for item in execution.intent.file_evidence),
+            relative_paths=tuple(relative_paths),
             summary=summary,
         ),
         blocking=(

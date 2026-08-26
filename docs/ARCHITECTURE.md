@@ -106,8 +106,14 @@ Profile 配置工具和 `/workspace` 委托给 `ConfigPatchService`；Preference
 混合换行源文件、陈旧 SHA-256、模糊/多匹配编辑和受保护凭据内容，并通过同目录临时文件、文件 `fsync`、
 原子替换和父目录句柄保护发布。S7P-04 的 destructive mutation 只做 regular-file confined unlink，或
 通过 `renameatx_np`/`renameat2` 等已证明的 no-clobber primitive 完成 move/rename；源 regular-file fd 在
-effect 期间保持打开，内容以有界稳定双读核验，并在 effect 前以 dev/ino/type/mode/size/mtime/ctime
-重验目录项身份；无法把源身份绑定到操作时 fail closed。多路径按稳定顺序加锁并在锁内重验，发布后验证
+effect 期间保持打开，内容以有界稳定双读核验。为关闭“最后一次源目录项检查到 effect”之间的 TOCTOU，
+适配器先用同一 no-replace primitive 把源原子捕获到计划中冻结的、workspace-confined、不可预测的
+`.morrow-capture-<random>` sibling，再以 dev/ino/type/mode/size/mtime 证据核验捕获条目；捕获
+不匹配时只做 no-clobber 有界恢复，恢复失败保留 staging 并报告 outcome-unknown，绝不删除或覆盖第三方
+条目。匹配后 delete 只 unlink 捕获名，move/rename 只从捕获名 no-replace publish；每个阶段都 fsync
+受影响父目录并验证 source absence、destination identity/hash/size/mode，staging 残留进入 ChangeSet、
+ToolFact、prepared evidence 和恢复观察，不产生未声明垃圾。无法把源身份绑定到操作时 fail closed。
+多路径按稳定顺序加锁并在锁内重验，发布后验证
 source absence、destination hash/size/mode 与受影响父目录 fsync。prepared intent
 只冻结 hash/size/kind/path evidence：delete 为 source expected-absent，move/rename 为有序 source-absent
 加 destination expected-file；恢复区分 completed、safe-to-retry、mixed/reconciliation 与 outcome-unknown，

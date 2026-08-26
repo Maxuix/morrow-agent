@@ -3124,3 +3124,22 @@
   interpreter was used. Ruff format/check, compileall, both CLI help commands, current-worktree
   import proof and `git diff --check` passed. No live Provider/model/Pi/MCP/network/credential test
   ran. Acceptance evidence and execution state were updated; root integration remains pending.
+
+## 2026-08-27 — Subplan 83 root-acceptance P1-2 atomic-capture follow-up
+
+- Root acceptance rejected `07b71d6` because the first repair still performed `unlink`/no-replace
+  publish by the original source name after the final identity check. This follow-up remains within
+  S7P-04 and does not open S7P-05.
+- Added a plan-frozen, workspace-confined, unpredictable `.morrow-capture-<random>` sibling. The
+  adapter now atomically captures the source with the proven no-replace primitive, compares the
+  captured entry to the held regular-file fd using rename-safe dev/ino/type/mode/size/mtime
+  evidence, and only then deletes or publishes the captured name. Mismatch uses bounded no-clobber
+  restoration; failed restoration or post-capture fsync preserves an outcome-unknown ChangeSet and
+  declares the staging path in result/fact/evidence/recovery. Normal success removes staging and
+  fsyncs the parent; no copy-delete or ordinary rename fallback was added.
+- Added deterministic replacement-after-final-identity-check coverage for delete/move/rename using
+  same-size replacement content, plus capture-fsync staging evidence and recovery classification.
+  Existing post-effect fsync coverage now fails on the post-effect sync rather than the capture sync.
+- Follow-up focused/full validation and the required same-task Averroes directed read-only review
+  remain pending; the branch is intentionally unmerged and user-owned research documents remain
+  untouched.

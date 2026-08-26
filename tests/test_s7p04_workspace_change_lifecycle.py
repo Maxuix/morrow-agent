@@ -28,6 +28,7 @@ from morrow.application.local_tools import (
     make_promote_sandbox_tool,
     make_rename_file_tool,
 )
+from morrow.application.prepared import file_evidence_from_plan
 from morrow.bootstrap import build_application, build_session_application
 from morrow.core.capabilities import (
     PermissionPreset,
@@ -355,6 +356,20 @@ class _ReplaceSourceAfterHash(FileSystemAdapter):
         return fd, metadata, raw
 
 
+class _ReplaceSourceAfterIdentityCheck(FileSystemAdapter):
+    def __init__(self, replacement: Path):
+        super().__init__()
+        self.replacement = replacement
+        self.source: Path | None = None
+        self.swapped = False
+
+    def _assert_entry_identity(self, parent_fd, name, expected):
+        FileSystemAdapter._assert_entry_identity(parent_fd, name, expected)
+        if not self.swapped and self.source is not None and name == self.source.name:
+            os.replace(self.replacement, self.source)
+            self.swapped = True
+
+
 class _ModeDriftAfterMove(FileSystemAdapter):
     def __init__(self, destination: Path):
         super().__init__()
@@ -366,11 +381,24 @@ class _ModeDriftAfterMove(FileSystemAdapter):
         result = FileSystemAdapter._rename_no_replace(
             source_parent_fd, source_name, destination_parent_fd, destination_name
         )
-        self.destination.chmod(0o600)
+        if self.destination.exists():
+            self.destination.chmod(0o600)
         return result
 
 
 class _FsyncAfterEffect(FileSystemAdapter):
+    def __init__(self):
+        super().__init__()
+        self.calls = 0
+
+    def _fsync_required(self, fd):
+        self.calls += 1
+        if self.calls == 2:
+            raise FileSystemMutationError("publication_failed", "injected fsync failure")
+        return FileSystemAdapter._fsync_required(fd)
+
+
+class _FsyncAfterCapture(FileSystemAdapter):
     def __init__(self):
         super().__init__()
         self.fail = True
@@ -412,7 +440,7 @@ def test_destructive_effect_binds_source_entry_identity_before_effect(tmp_path, 
     source = tmp_path / "source.txt"
     source.write_text("source\n", encoding="utf-8")
     replacement = tmp_path / "replacement.txt"
-    replacement.write_text("user file\n", encoding="utf-8")
+    replacement.write_text("user!!\n", encoding="utf-8")
     filesystem = _ReplaceSourceAfterHash(replacement)
     filesystem.source = source
     _, mutation = _services(tmp_path, filesystem=filesystem)
@@ -427,8 +455,39 @@ def test_destructive_effect_binds_source_entry_identity_before_effect(tmp_path, 
         _publish(mutation, plan, call_id=f"source-race-{operation}")
 
     assert error.value.code == "conflict"
-    assert source.read_text(encoding="utf-8") == "user file\n"
+    assert source.read_text(encoding="utf-8") == "user!!\n"
     assert destination is None or not destination.exists()
+
+
+@pytest.mark.parametrize("operation", ("delete", "move", "rename"))
+def test_final_identity_window_does_not_effect_replaced_source(tmp_path, operation):
+    source = tmp_path / "source.txt"
+    source.write_text("source\n", encoding="utf-8")
+    replacement = tmp_path / "replacement.txt"
+    replacement.write_text("user!!\n", encoding="utf-8")
+    filesystem = _ReplaceSourceAfterIdentityCheck(replacement)
+    filesystem.source = source
+    _, mutation = _services(tmp_path, filesystem=filesystem)
+    if operation == "delete":
+        destination = None
+        plan = mutation.preflight_delete(source.name, expected_sha256=_sha(source))
+    else:
+        destination = tmp_path / f"{operation}-destination.txt"
+        plan = (
+            mutation.preflight_move(source.name, destination.name, expected_sha256=_sha(source))
+            if operation == "move"
+            else mutation.preflight_rename(
+                source.name, destination.name, expected_sha256=_sha(source)
+            )
+        )
+
+    with pytest.raises(LocalFileError) as error:
+        _publish(mutation, plan, call_id=f"final-identity-race-{operation}")
+
+    assert error.value.code == "conflict"
+    assert source.read_text(encoding="utf-8") == "user!!\n"
+    assert destination is None or not destination.exists()
+    assert not any(path.name.startswith(".morrow-capture-") for path in tmp_path.iterdir())
 
 
 def test_fifo_leaf_race_is_nonblocking_and_fails_closed(tmp_path, monkeypatch):
@@ -483,6 +542,43 @@ def test_delete_post_effect_fsync_failure_keeps_bounded_unknown_change_fact(tmp_
     assert error.value.facts[0].status == MutationStatus.OUTCOME_UNKNOWN.value
     assert not source.exists()
     assert "source\n" not in repr(error.value.facts)
+
+
+@pytest.mark.parametrize("operation", ("delete", "move", "rename"))
+def test_capture_failure_persists_staging_evidence_and_stays_unknown(tmp_path, operation):
+    source = tmp_path / "source.txt"
+    source.write_text("source\n", encoding="utf-8")
+    _, mutation = _services(tmp_path, filesystem=_FsyncAfterCapture())
+    if operation == "delete":
+        destination = None
+        plan = mutation.preflight_delete(source.name, expected_sha256=_sha(source))
+    else:
+        destination = tmp_path / f"{operation}-destination.txt"
+        plan = (
+            mutation.preflight_move(source.name, destination.name, expected_sha256=_sha(source))
+            if operation == "move"
+            else mutation.preflight_rename(
+                source.name, destination.name, expected_sha256=_sha(source)
+            )
+        )
+
+    with pytest.raises(LocalFileError) as error:
+        _publish(mutation, plan, call_id=f"capture-fsync-{operation}")
+
+    staging = plan.staging_target
+    staging_relative = plan.staging_relative_path
+    assert staging is not None and staging_relative is not None
+    assert staging.exists()
+    assert not source.exists()
+    assert destination is None or not destination.exists()
+    assert error.value.change_result is not None
+    assert error.value.change_result.auxiliary_paths == (staging_relative,)
+    assert error.value.facts[0].relative_paths[-1] == staging_relative
+    evidence = file_evidence_from_plan(plan)
+    assert evidence[0].staging_relative_path == staging_relative
+    observations = tuple(observe_file(item, root=tmp_path) for item in evidence)
+    assert observations[0] is FileObservation.STAGING_PRESENT
+    assert classify_file_observations(observations) is RecoveryClassification.OUTCOME_UNKNOWN
 
 
 class _Approve:

@@ -16,6 +16,8 @@ from pathlib import Path
 
 from morrow.core.local_tools import LocalFileKind
 
+CAPTURE_NAME_PREFIX = ".morrow-capture-"
+
 
 @dataclass(frozen=True)
 class DirectoryItem:
@@ -28,11 +30,19 @@ class DirectoryItem:
 class FileSystemMutationError(RuntimeError):
     """Bounded adapter error for a confined destructive filesystem operation."""
 
-    def __init__(self, code: str, message: str, *, effect_applied: bool = False) -> None:
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        *,
+        effect_applied: bool = False,
+        staging_present: bool = False,
+    ) -> None:
         super().__init__(message)
         self.code = code
         self.message = message
         self.effect_applied = effect_applied
+        self.staging_present = staging_present
 
 
 class FileSystemCapabilityError(FileSystemMutationError):
@@ -223,8 +233,15 @@ class FileSystemAdapter:
         workspace_root: Path,
         expected_sha256: str | None = None,
         max_bytes: int = 8 * 1024 * 1024,
+        staging_name: str | None = None,
     ) -> None:
-        """Unlink one regular file through a no-follow directory descriptor."""
+        """Delete one regular file after atomically capturing its directory entry.
+
+        A held fd alone does not bind ``unlinkat`` to the fd's inode: the name can
+        be replaced after the last name check.  Capture therefore moves the name
+        to a private, unpredictable sibling through the same no-replace primitive;
+        every destructive effect below addresses only that captured name.
+        """
 
         parent_fd: int | None = None
         source_fd: int | None = None
@@ -232,7 +249,9 @@ class FileSystemAdapter:
             self._require_confined_mutation_support()
             if expected_sha256 is None:
                 raise FileSystemMutationError("source_conflict", "源文件版本证据缺失")
+            capture_name = self._capture_name(staging_name)
             parent_fd = self._open_directory_chain(workspace_root, path.parent)
+            self._ensure_capture_absent(parent_fd, capture_name)
             try:
                 metadata = os.stat(path.name, dir_fd=parent_fd, follow_symlinks=False)
             except FileNotFoundError as exc:
@@ -249,28 +268,91 @@ class FileSystemAdapter:
             if hashlib.sha256(raw).hexdigest() != expected_sha256:
                 raise FileSystemMutationError("source_conflict", "源文件版本已变化")
             self._assert_entry_identity(parent_fd, path.name, opened)
-            try:
-                os.unlink(path.name, dir_fd=parent_fd)
-            except FileNotFoundError as exc:
-                raise FileSystemMutationError("source_conflict", "源文件不存在") from exc
-            except OSError as exc:
-                raise FileSystemMutationError("publication_failed", "文件删除失败") from exc
+            captured = self._capture_and_verify(
+                parent_fd,
+                source_name=path.name,
+                capture_name=capture_name,
+                held_fd=source_fd,
+                expected_sha256=expected_sha256,
+                max_bytes=max_bytes,
+            )
             try:
                 self._fsync_required(parent_fd)
             except (FileSystemMutationError, OSError) as exc:
                 raise FileSystemMutationError(
-                    "outcome_unknown", "删除已执行但持久化结果无法确认", effect_applied=True
+                    "outcome_unknown",
+                    "源文件已捕获但捕获结果无法持久化",
+                    effect_applied=True,
+                    staging_present=True,
+                ) from exc
+            try:
+                self._assert_entry_identity(parent_fd, capture_name, captured)
+            except FileSystemMutationError as exc:
+                raise FileSystemMutationError(
+                    "outcome_unknown",
+                    "捕获条目在删除前已发生变化",
+                    effect_applied=True,
+                    staging_present=self._entry_present(parent_fd, capture_name),
+                ) from exc
+            try:
+                os.unlink(capture_name, dir_fd=parent_fd)
+            except FileNotFoundError as exc:
+                raise FileSystemMutationError(
+                    "outcome_unknown",
+                    "捕获文件已消失，删除结果无法确认",
+                    effect_applied=True,
+                    staging_present=False,
+                ) from exc
+            except OSError as exc:
+                raise FileSystemMutationError(
+                    "outcome_unknown",
+                    "捕获文件删除结果无法确认",
+                    effect_applied=True,
+                    staging_present=True,
+                ) from exc
+            try:
+                self._fsync_required(parent_fd)
+            except (FileSystemMutationError, OSError) as exc:
+                raise FileSystemMutationError(
+                    "outcome_unknown",
+                    "删除已执行但持久化结果无法确认",
+                    effect_applied=True,
+                    staging_present=self._entry_present(parent_fd, capture_name),
                 ) from exc
             try:
                 os.stat(path.name, dir_fd=parent_fd, follow_symlinks=False)
             except FileNotFoundError:
+                pass
+            except OSError as exc:
+                raise FileSystemMutationError(
+                    "outcome_unknown",
+                    "删除已执行但源结果无法确认",
+                    effect_applied=True,
+                    staging_present=self._entry_present(parent_fd, capture_name),
+                ) from exc
+            else:
+                raise FileSystemMutationError(
+                    "outcome_unknown",
+                    "删除已执行但源路径已有新文件",
+                    effect_applied=True,
+                    staging_present=self._entry_present(parent_fd, capture_name),
+                )
+            try:
+                os.stat(capture_name, dir_fd=parent_fd, follow_symlinks=False)
+            except FileNotFoundError:
                 return
             except OSError as exc:
                 raise FileSystemMutationError(
-                    "outcome_unknown", "删除已执行但结果无法确认", effect_applied=True
+                    "outcome_unknown",
+                    "删除已执行但结果无法确认",
+                    effect_applied=True,
+                    staging_present=True,
                 ) from exc
             raise FileSystemMutationError(
-                "outcome_unknown", "删除已执行但结果无法确认", effect_applied=True
+                "outcome_unknown",
+                "删除已执行但结果无法确认",
+                effect_applied=True,
+                staging_present=True,
             )
         except FileSystemMutationError:
             raise
@@ -295,6 +377,7 @@ class FileSystemAdapter:
         workspace_root: Path,
         expected_sha256: str | None = None,
         max_bytes: int = 8 * 1024 * 1024,
+        staging_name: str | None = None,
     ) -> None:
         """Compatibility spelling for callers that name the operation unlinkat-style."""
 
@@ -303,6 +386,7 @@ class FileSystemAdapter:
             workspace_root=workspace_root,
             expected_sha256=expected_sha256,
             max_bytes=max_bytes,
+            staging_name=staging_name,
         )
 
     def read_confined_file(
@@ -341,8 +425,14 @@ class FileSystemAdapter:
         workspace_root: Path,
         expected_sha256: str | None = None,
         max_bytes: int = 8 * 1024 * 1024,
+        staging_name: str | None = None,
     ) -> ConfinedFileState:
-        """Atomically move a directory entry without ever clobbering the destination."""
+        """Move one regular file through an atomic captured-entry handoff.
+
+        The source name is never used for the publishing effect.  It is first
+        captured under a no-replace rename, verified against the held fd, and then
+        the captured name is published with the same no-replace primitive.
+        """
 
         source_parent_fd: int | None = None
         destination_parent_fd: int | None = None
@@ -351,6 +441,7 @@ class FileSystemAdapter:
             self._require_confined_mutation_support()
             if expected_sha256 is None:
                 raise FileSystemMutationError("source_conflict", "源文件版本证据缺失")
+            capture_name = self._capture_name(staging_name)
             source_parent_fd = self._open_directory_chain(workspace_root, source.parent)
             if source.parent.absolute() == destination.parent.absolute():
                 destination_parent_fd = source_parent_fd
@@ -358,6 +449,7 @@ class FileSystemAdapter:
                 destination_parent_fd = self._open_directory_chain(
                     workspace_root, destination.parent
                 )
+            self._ensure_capture_absent(source_parent_fd, capture_name)
             try:
                 metadata = os.stat(source.name, dir_fd=source_parent_fd, follow_symlinks=False)
             except FileNotFoundError as exc:
@@ -374,17 +466,74 @@ class FileSystemAdapter:
             if hashlib.sha256(raw).hexdigest() != expected_sha256:
                 raise FileSystemMutationError("source_conflict", "源文件版本已变化")
             self._assert_entry_identity(source_parent_fd, source.name, opened)
+            captured = self._capture_and_verify(
+                source_parent_fd,
+                source_name=source.name,
+                capture_name=capture_name,
+                held_fd=source_fd,
+                expected_sha256=expected_sha256,
+                max_bytes=max_bytes,
+            )
+            try:
+                self._fsync_required(source_parent_fd)
+            except (FileSystemMutationError, OSError) as exc:
+                raise FileSystemMutationError(
+                    "outcome_unknown",
+                    "源文件已捕获但捕获结果无法持久化",
+                    effect_applied=True,
+                    staging_present=True,
+                ) from exc
+            try:
+                self._assert_entry_identity(source_parent_fd, capture_name, captured)
+            except FileSystemMutationError as exc:
+                raise FileSystemMutationError(
+                    "outcome_unknown",
+                    "捕获条目在移动前已发生变化",
+                    effect_applied=True,
+                    staging_present=self._entry_present(source_parent_fd, capture_name),
+                ) from exc
             try:
                 self._rename_no_replace(
                     source_parent_fd,
-                    source.name,
+                    capture_name,
                     destination_parent_fd,
                     destination.name,
                 )
-            except FileSystemMutationError:
-                raise
+            except FileSystemMutationError as exc:
+                if exc.code in {
+                    "destination_exists",
+                    "source_conflict",
+                    "unsupported_capability",
+                    "cross_device",
+                }:
+                    self._restore_captured_entry(
+                        source_parent_fd,
+                        source_name=source.name,
+                        capture_name=capture_name,
+                        expected=captured,
+                    )
+                    raise exc
+                if self._entry_present(source_parent_fd, capture_name):
+                    self._restore_captured_entry(
+                        source_parent_fd,
+                        source_name=source.name,
+                        capture_name=capture_name,
+                        expected=captured,
+                    )
+                raise FileSystemMutationError(
+                    "outcome_unknown",
+                    "原子移动失败且结果无法确认",
+                    effect_applied=True,
+                    staging_present=self._entry_present(source_parent_fd, capture_name),
+                ) from exc
             except OSError as exc:
                 if exc.errno in {errno.EEXIST, errno.ENOTEMPTY}:
+                    self._restore_captured_entry(
+                        source_parent_fd,
+                        source_name=source.name,
+                        capture_name=capture_name,
+                        expected=captured,
+                    )
                     raise FileSystemMutationError("destination_exists", "目标路径已经存在") from exc
                 if exc.errno in {
                     errno.EINVAL,
@@ -392,21 +541,63 @@ class FileSystemAdapter:
                     getattr(errno, "ENOTSUP", errno.EOPNOTSUPP),
                     errno.EOPNOTSUPP,
                 }:
+                    self._restore_captured_entry(
+                        source_parent_fd,
+                        source_name=source.name,
+                        capture_name=capture_name,
+                        expected=captured,
+                    )
                     raise FileSystemCapabilityError(
                         "unsupported_capability", "平台不支持可证明的原子无覆盖移动"
                     ) from exc
                 if exc.errno == errno.EXDEV:
+                    self._restore_captured_entry(
+                        source_parent_fd,
+                        source_name=source.name,
+                        capture_name=capture_name,
+                        expected=captured,
+                    )
                     raise FileSystemMutationError("cross_device", "跨设备移动不受支持") from exc
                 if exc.errno in {errno.ENOENT, errno.ELOOP, errno.ENOTDIR}:
-                    raise FileSystemMutationError("source_conflict", "移动路径已发生变化") from exc
-                raise FileSystemMutationError("publication_failed", "原子移动失败") from exc
+                    if self._entry_present(source_parent_fd, capture_name):
+                        self._restore_captured_entry(
+                            source_parent_fd,
+                            source_name=source.name,
+                            capture_name=capture_name,
+                            expected=captured,
+                        )
+                        raise FileSystemMutationError(
+                            "source_conflict", "移动路径已发生变化"
+                        ) from exc
+                    raise FileSystemMutationError(
+                        "outcome_unknown",
+                        "移动路径已变化且结果无法确认",
+                        effect_applied=True,
+                        staging_present=False,
+                    ) from exc
+                if self._entry_present(source_parent_fd, capture_name):
+                    self._restore_captured_entry(
+                        source_parent_fd,
+                        source_name=source.name,
+                        capture_name=capture_name,
+                        expected=captured,
+                    )
+                raise FileSystemMutationError(
+                    "outcome_unknown",
+                    "原子移动失败且结果无法确认",
+                    effect_applied=True,
+                    staging_present=self._entry_present(source_parent_fd, capture_name),
+                ) from exc
             try:
                 self._fsync_required(source_parent_fd)
                 if destination_parent_fd != source_parent_fd:
                     self._fsync_required(destination_parent_fd)
             except (FileSystemMutationError, OSError) as exc:
                 raise FileSystemMutationError(
-                    "outcome_unknown", "移动已执行但持久化结果无法确认", effect_applied=True
+                    "outcome_unknown",
+                    "移动已执行但持久化结果无法确认",
+                    effect_applied=True,
+                    staging_present=self._entry_present(source_parent_fd, capture_name),
                 ) from exc
             try:
                 os.stat(source.name, dir_fd=source_parent_fd, follow_symlinks=False)
@@ -414,29 +605,73 @@ class FileSystemAdapter:
                 pass
             except OSError as exc:
                 raise FileSystemMutationError(
-                    "outcome_unknown", "移动已执行但源结果无法确认", effect_applied=True
+                    "outcome_unknown",
+                    "移动已执行但源结果无法确认",
+                    effect_applied=True,
+                    staging_present=self._entry_present(source_parent_fd, capture_name),
                 ) from exc
             else:
                 raise FileSystemMutationError(
-                    "outcome_unknown", "移动已执行但源结果无法确认", effect_applied=True
+                    "outcome_unknown",
+                    "移动已执行但源结果无法确认",
+                    effect_applied=True,
+                    staging_present=self._entry_present(source_parent_fd, capture_name),
                 )
+            if self._entry_present(source_parent_fd, capture_name):
+                raise FileSystemMutationError(
+                    "outcome_unknown",
+                    "移动已执行但捕获路径仍存在",
+                    effect_applied=True,
+                    staging_present=True,
+                )
+            destination_fd: int | None = None
             try:
-                published = self._read_file_at(
+                destination_fd, published_metadata, published_raw = self._open_regular_at(
                     destination_parent_fd, destination.name, max_bytes=max_bytes
                 )
             except FileSystemMutationError as exc:
                 raise FileSystemMutationError(
-                    "outcome_unknown", "移动已执行但目标结果无法确认", effect_applied=True
+                    "outcome_unknown",
+                    "移动已执行但目标结果无法确认",
+                    effect_applied=True,
+                    staging_present=False,
                 ) from exc
-            if (
-                hashlib.sha256(published.raw).hexdigest() != expected_sha256
-                or published.size != opened.st_size
-                or published.mode != stat.S_IMODE(opened.st_mode)
-            ):
-                raise FileSystemMutationError(
-                    "outcome_unknown", "移动已执行但目标结果无法确认", effect_applied=True
+            try:
+                try:
+                    self._assert_entry_identity(
+                        destination_parent_fd, destination.name, published_metadata
+                    )
+                except FileSystemMutationError as exc:
+                    raise FileSystemMutationError(
+                        "outcome_unknown",
+                        "移动已执行但目标目录项无法确认",
+                        effect_applied=True,
+                        staging_present=False,
+                    ) from exc
+                if (
+                    not self._same_captured_identity(captured, published_metadata)
+                    or hashlib.sha256(published_raw).hexdigest() != expected_sha256
+                    or published_metadata.st_size != captured.st_size
+                    or stat.S_IMODE(published_metadata.st_mode) != stat.S_IMODE(captured.st_mode)
+                ):
+                    raise FileSystemMutationError(
+                        "outcome_unknown",
+                        "移动已执行但目标结果无法确认",
+                        effect_applied=True,
+                        staging_present=False,
+                    )
+                return ConfinedFileState(
+                    raw=published_raw,
+                    mode=stat.S_IMODE(published_metadata.st_mode),
+                    size=published_metadata.st_size,
+                    mtime_ns=published_metadata.st_mtime_ns,
                 )
-            return published
+            finally:
+                if destination_fd is not None:
+                    try:
+                        os.close(destination_fd)
+                    except OSError:
+                        pass
         except FileSystemMutationError:
             raise
         except OSError as exc:
@@ -466,6 +701,7 @@ class FileSystemAdapter:
         workspace_root: Path,
         expected_sha256: str | None = None,
         max_bytes: int = 8 * 1024 * 1024,
+        staging_name: str | None = None,
     ) -> ConfinedFileState:
         """Compatibility spelling for the atomic no-clobber move primitive."""
 
@@ -475,6 +711,7 @@ class FileSystemAdapter:
             workspace_root=workspace_root,
             expected_sha256=expected_sha256,
             max_bytes=max_bytes,
+            staging_name=staging_name,
         )
 
     @staticmethod
@@ -496,6 +733,211 @@ class FileSystemAdapter:
             raise FileSystemCapabilityError(
                 "unsupported_capability", "平台不支持受限目录 fd 文件操作"
             )
+
+    @staticmethod
+    def _capture_name(value: str | None) -> str:
+        if value is not None and not isinstance(value, str):
+            raise FileSystemMutationError("source_conflict", "内部捕获路径无效")
+        name = value if value is not None else f"{CAPTURE_NAME_PREFIX}{uuid.uuid4().hex}"
+        suffix = name[len(CAPTURE_NAME_PREFIX) :]
+        if (
+            not name.startswith(CAPTURE_NAME_PREFIX)
+            or len(suffix) != 32
+            or any(character not in "0123456789abcdef" for character in suffix)
+            or "/" in name
+            or "\\" in name
+            or "\x00" in name
+        ):
+            raise FileSystemMutationError("source_conflict", "内部捕获路径无效")
+        return name
+
+    @staticmethod
+    def _ensure_capture_absent(parent_fd: int, capture_name: str) -> None:
+        try:
+            os.stat(capture_name, dir_fd=parent_fd, follow_symlinks=False)
+        except FileNotFoundError:
+            return
+        except OSError as exc:
+            raise FileSystemMutationError("source_conflict", "内部捕获路径无法确认") from exc
+        raise FileSystemMutationError("source_conflict", "内部捕获路径已经存在")
+
+    @staticmethod
+    def _entry_present(parent_fd: int, name: str) -> bool:
+        try:
+            os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+        except FileNotFoundError:
+            return False
+        except OSError:
+            # An unobservable entry is conservatively treated as present so a
+            # recovery report cannot omit a possible captured user file.
+            return True
+        return True
+
+    def _capture_and_verify(
+        self,
+        parent_fd: int,
+        *,
+        source_name: str,
+        capture_name: str,
+        held_fd: int,
+        expected_sha256: str,
+        max_bytes: int,
+    ) -> os.stat_result:
+        """Atomically detach the source name, then bind the captured entry to its fd."""
+
+        try:
+            self._rename_no_replace(parent_fd, source_name, parent_fd, capture_name)
+        except FileSystemMutationError:
+            raise
+        except OSError as exc:
+            if exc.errno in {errno.EEXIST, errno.ENOTEMPTY}:
+                raise FileSystemMutationError("source_conflict", "内部捕获路径已经存在") from exc
+            if exc.errno in {
+                errno.EINVAL,
+                errno.ENOSYS,
+                getattr(errno, "ENOTSUP", errno.EOPNOTSUPP),
+                errno.EOPNOTSUPP,
+            }:
+                raise FileSystemCapabilityError(
+                    "unsupported_capability", "平台不支持可证明的原子无覆盖捕获"
+                ) from exc
+            if exc.errno in {errno.ENOENT, errno.ELOOP, errno.ENOTDIR}:
+                raise FileSystemMutationError("source_conflict", "源文件目录项已发生变化") from exc
+            raise FileSystemMutationError("publication_failed", "原子捕获失败") from exc
+
+        try:
+            captured = os.stat(capture_name, dir_fd=parent_fd, follow_symlinks=False)
+        except OSError as exc:
+            raise FileSystemMutationError(
+                "outcome_unknown",
+                "源文件已捕获但捕获条目无法验证",
+                effect_applied=True,
+                staging_present=self._entry_present(parent_fd, capture_name),
+            ) from exc
+        try:
+            held_after, held_raw = self._read_fd_stably(held_fd, max_bytes=max_bytes)
+        except FileSystemMutationError as exc:
+            self._restore_captured_entry(
+                parent_fd,
+                source_name=source_name,
+                capture_name=capture_name,
+                expected=captured,
+            )
+            raise FileSystemMutationError("source_conflict", "源文件在捕获期间已发生变化") from exc
+        if (
+            not self._same_file_identity(held_after, captured)
+            or hashlib.sha256(held_raw).hexdigest() != expected_sha256
+        ):
+            self._restore_captured_entry(
+                parent_fd,
+                source_name=source_name,
+                capture_name=capture_name,
+                expected=captured,
+            )
+            raise FileSystemMutationError("source_conflict", "源文件目录项已发生变化")
+        try:
+            self._assert_entry_identity(parent_fd, capture_name, captured)
+        except FileSystemMutationError as exc:
+            raise FileSystemMutationError(
+                "outcome_unknown",
+                "捕获条目在验证期间已发生变化",
+                effect_applied=True,
+                staging_present=self._entry_present(parent_fd, capture_name),
+            ) from exc
+        return captured
+
+    def _restore_captured_entry(
+        self,
+        parent_fd: int,
+        *,
+        source_name: str,
+        capture_name: str,
+        expected: os.stat_result,
+    ) -> None:
+        """Restore a captured entry without overwriting a third-party source."""
+
+        try:
+            self._assert_entry_identity(parent_fd, capture_name, expected)
+            self._rename_no_replace(parent_fd, capture_name, parent_fd, source_name)
+        except FileSystemMutationError as exc:
+            raise FileSystemMutationError(
+                "outcome_unknown",
+                "捕获文件无法安全恢复",
+                effect_applied=True,
+                staging_present=self._entry_present(parent_fd, capture_name),
+            ) from exc
+        except OSError as exc:
+            raise FileSystemMutationError(
+                "outcome_unknown",
+                "捕获文件无法安全恢复",
+                effect_applied=True,
+                staging_present=self._entry_present(parent_fd, capture_name),
+            ) from exc
+        try:
+            self._fsync_required(parent_fd)
+            restored = os.stat(source_name, dir_fd=parent_fd, follow_symlinks=False)
+        except (FileSystemMutationError, OSError) as exc:
+            raise FileSystemMutationError(
+                "outcome_unknown",
+                "捕获文件恢复结果无法确认",
+                effect_applied=True,
+                staging_present=self._entry_present(parent_fd, capture_name),
+            ) from exc
+        if not self._same_captured_identity(expected, restored):
+            raise FileSystemMutationError(
+                "outcome_unknown",
+                "恢复后的源文件无法验证",
+                effect_applied=True,
+                staging_present=self._entry_present(parent_fd, capture_name),
+            )
+        try:
+            os.stat(capture_name, dir_fd=parent_fd, follow_symlinks=False)
+        except FileNotFoundError:
+            return
+        except OSError as exc:
+            raise FileSystemMutationError(
+                "outcome_unknown",
+                "捕获文件恢复结果无法确认",
+                effect_applied=True,
+                staging_present=True,
+            ) from exc
+        raise FileSystemMutationError(
+            "outcome_unknown",
+            "捕获文件恢复后仍存在内部路径",
+            effect_applied=True,
+            staging_present=True,
+        )
+
+    @staticmethod
+    def _read_fd_stably(fd: int, *, max_bytes: int) -> tuple[os.stat_result, bytes]:
+        """Read a held fd twice without changing ownership or following a path."""
+
+        try:
+            before = os.fstat(fd)
+            if not stat.S_ISREG(before.st_mode):
+                raise FileSystemMutationError("not_regular", "源文件不是普通文件")
+            os.lseek(fd, 0, os.SEEK_SET)
+            raw = FileSystemAdapter._read_fd(fd, max_bytes=max_bytes)
+            after = os.fstat(fd)
+            if (
+                not FileSystemAdapter._same_file_identity(before, after)
+                or len(raw) != after.st_size
+            ):
+                raise FileSystemMutationError("source_conflict", "源文件在读取期间已变化")
+            os.lseek(fd, 0, os.SEEK_SET)
+            second = FileSystemAdapter._read_fd(fd, max_bytes=max_bytes)
+            verified = os.fstat(fd)
+            if (
+                raw != second
+                or not FileSystemAdapter._same_file_identity(after, verified)
+                or len(second) != verified.st_size
+            ):
+                raise FileSystemMutationError("source_conflict", "源文件版本无法稳定读取")
+            return verified, second
+        except FileSystemMutationError:
+            raise
+        except OSError as exc:
+            raise FileSystemMutationError("source_conflict", "源文件无法读取") from exc
 
     @staticmethod
     def _open_regular_at(
@@ -557,6 +999,26 @@ class FileSystemAdapter:
             second.st_size,
             second.st_mtime_ns,
             second.st_ctime_ns,
+        )
+
+    @staticmethod
+    def _same_captured_identity(first: os.stat_result, second: os.stat_result) -> bool:
+        """Compare an inode across rename operations without treating rename ctime as drift."""
+
+        return (
+            first.st_dev,
+            first.st_ino,
+            stat.S_IFMT(first.st_mode),
+            stat.S_IMODE(first.st_mode),
+            first.st_size,
+            first.st_mtime_ns,
+        ) == (
+            second.st_dev,
+            second.st_ino,
+            stat.S_IFMT(second.st_mode),
+            stat.S_IMODE(second.st_mode),
+            second.st_size,
+            second.st_mtime_ns,
         )
 
     @staticmethod

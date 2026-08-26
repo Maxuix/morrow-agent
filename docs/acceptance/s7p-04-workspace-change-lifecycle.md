@@ -6,7 +6,7 @@
 普通文件 delete/move/rename、严格 SHA 冲突、no-clobber、dirfd/symlink confinement、审批、
 durable evidence/recovery、sandbox promotion 和 bounded partial failure 均有可重复的测试证据。
 
-计数：`PASS=30`、`FAIL=0`、`BLOCKED=0`、`NOT RUN=0`、`INCONCLUSIVE=0`（本报告列出的 S7P-04
+计数：`PASS=36`、`FAIL=0`、`BLOCKED=0`、`NOT RUN=0`、`INCONCLUSIVE=0`（本报告列出的 S7P-04
 专用场景）。完整仓库门禁另行以最终命令输出为准。
 
 ## 2. 测试依据
@@ -20,7 +20,7 @@ durable evidence/recovery、sandbox promotion 和 bounded partial failure 均有
 | 公共接口 | `delete_file`、`move_file`、`rename_file`、`promote_sandbox_changes`、`show_changes`，以及既有 `write_file`/`apply_patch` 合同审计 |
 | Provider | 未运行真实 Provider/model/Pi/MCP/network/credential；仅使用确定性 `ScriptedModelProvider` 驱动工具调用 |
 | 安全边界 | 未读取或修改三个用户自有 research 文档；未改变公开事件生命周期、runtime-policy 默认值或依赖 |
-| Formal review | Averroes `01a03f96-8c8b-7ad3-9f44-c767bf550a46`；`gpt-5.6-luna` / reasoning `max`；只读审查；正式结论 `REQUEST CHANGES` |
+| Formal review | Averroes `01a03f96-8c8b-7ad3-9f44-c767bf550a46`；`gpt-5.6-luna` / reasoning `max`；前一轮只读审查 `REQUEST CHANGES`；本轮 P1-2 定向复审待完成 |
 
 ## 3. 用户表面清单
 
@@ -42,8 +42,8 @@ durable evidence/recovery、sandbox promotion 和 bounded partial failure 均有
 |---|---|---|---|---|---|---|
 | S7P04-01 | 开发者删除、移动、重命名普通文件 | 文件存在且有 SHA；目标不存在 | 通过三个显式工具执行 | 内容/模式保持；源消失；ChangeSet 有正确状态 | `test_delete_move_and_rename_publish_only_regular_files_without_overwrite` 检查最终树、mode、status、source/destination | PASS |
 | S7P04-02 | 开发者误选目录、special、symlink 或越界路径 | workspace 含这些对象 | 提交破坏性路径 | 无副作用且返回稳定拒绝 | 专用 preflight 矩阵检查 `invalid_target`/`symlink_not_allowed`/`invalid_path`，外部文件保持不变 | PASS |
-| S7P04-03 | 开发者移动到已被用户占用的目标 | source 已通过预检；目标随后出现 | 执行 move | no-clobber；源和原目标都保持 | destination race 与 unsupported primitive fixture 检查源/目标字节和错误码 | PASS |
-| S7P04-04 | 重启后的操作者判断 delete/rename 是否完成 | durable intent 含 absence/two-path evidence | 观察源/目标并分类 | 仅两项 expected 才 completed；before 可安全重试；mixed/missing/third-party 不成功 | prepared persistence 与 recovery observation/classifier 测试检查有序 evidence、hash/size、无正文 | PASS |
+| S7P04-03 | 开发者移动到已被用户占用的目标或源目录项被替换 | source 已通过预检；最终 identity check 后注入替换 | 执行 delete/move/rename | no-clobber；不把替换文件当作成功 effect；安全恢复或 bounded unknown | destination race、unsupported primitive 与 final-identity-window 三操作 fixture 检查源/目标字节、staging 清理和错误码 | PASS |
+| S7P04-04 | 重启后的操作者判断 delete/rename 是否完成 | durable intent 含 absence/two-path 与 capture evidence | 观察源/目标/staging 并分类 | 仅 expected 才 completed；before 可安全重试；staging/mixed/missing/third-party 不成功 | prepared persistence 与 recovery observation/classifier 测试检查有序 evidence、hash/size、staging presence、无正文 | PASS |
 | S7P04-05 | 用户拒绝或在 handler 前取消破坏性请求 | 工具已预检，审批尚未放行 | reject/cancel approval | handler 不进入，文件不变 | 三个 destructive tool 的拒批参数化测试及 awaiting-approval cancellation 测试 | PASS |
 | S7P04-06 | 用户审核沙箱删除和 rename | snapshot 中有 baseline 文件 | 在沙箱删除/改名，再选择 promotion | preview 与真实结果一致；一个逻辑 rename 携带 source+destination | sandbox promotion 测试检查审批、最终树、两个 ChangeSet entries 和 pair identity | PASS |
 | S7P04-07 | 用户推广多个沙箱修改但后项失败 | 两个 created changes；第二项已产生 effect 后注入 fsync/结果不确定 | 一次选择两项 | 全部先 preflight；前项与不确定项保留；整体失败且 bounded partial/unknown | `test_promotion_preflights_all_then_returns_bounded_partial_failure` 检查两项 ChangeSet/fact、`UNKNOWN` disposition、未回滚 | PASS |
@@ -85,12 +85,13 @@ PYTHONPATH=src /Users/ruirui/Documents/Project/Agent/developing/.venv/bin/python
 `morrow run --help` 与 `git diff --check` 通过，审查 worktree clean。此前卡住的 Euclid
 （`01a03f7f-efef-7b50-b794-697f03af07bb`）已按任务指令中断，不替代正式报告。
 
-确认 findings 与本地修复如下：
+确认 findings 与本地修复如下；根验收随后重新确认 P1-2 的 source-name final-check window 仍可被注入，
+因此本轮又加入原子捕获/恢复修复，定向 follow-up review 尚待返回：
 
 | 级别/编号 | 复核结论 | 修复与回归 |
 |---|---|---|
 | P1-1 recovery evidence 越界读取 | confirmed；`..` 路径探针曾读取 workspace 外文件 | execution/capability validator 与 `observe_file` 统一拒绝空、`.`、`..`、反斜杠和绝对路径，并对 forged evidence fail closed |
-| P1-2 source SHA/目录项 TOCTOU | confirmed；原实现 hash 后按名称 effect | destructive adapter 持有 no-follow regular fd，通过有界稳定双读及 dev/ino/type/mode/size/mtime/ctime 目录项身份重验后才 effect；源替换回归验证不误删/误移用户文件 |
+| P1-2 source SHA/目录项 TOCTOU | confirmed；原实现 hash 后按名称 effect；首轮修复仍在 final identity check 后按源名 effect | destructive adapter 先用 atomic no-replace sibling capture 绑定源目录项，再以 held-fd dev/ino/type/mode/size/mtime 验证；不匹配只做 no-clobber restore，否则 staging 名才可 delete/publish；final-check 后替换回归覆盖 delete/move/rename，staging failure 进入 bounded unknown/recovery |
 | P1-3 FIFO/special 阻塞 | confirmed；leaf open 缺少 non-blocking | mutation/read/recovery leaf open 增加 `O_NONBLOCK`，special/FIFO 只 bounded fail closed |
 | P1-4 effect 后 fsync/验证丢失事实 | confirmed；effect 后错误曾闭合为 success | 增加 `OUTCOME_UNKNOWN`、ChangeSet/ChangeToolFact、durable body-free file evidence 与恢复观察；post-effect failure 不再 success |
 | P2-1 move/rename mode/size 未核验 | confirmed | destination hash、size、mode 均与源 evidence 比较；mode drift 回归为 unknown |
@@ -107,7 +108,7 @@ finding，也未被计为 PASS。
 
 ## 7. 覆盖与缺口
 
-- S7P-04 专用场景：8 个计划用户目标，8 个执行，8/8 `PASS`；专用 pytest 当前包含 30 个通过测试。
+- S7P-04 专用场景：8 个计划用户目标，8 个执行，8/8 `PASS`；专用 pytest 当前包含 36 个通过测试。
 - 高风险组合直接覆盖：三种 destructive tool × 拒批、source dirty；move/rename × destination
   conflict/race；delete/rename × durable evidence；sandbox × ambiguity/partial failure。
 - 状态迁移覆盖：preflight → approval → effect、source before/expected absence、two-path

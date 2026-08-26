@@ -56,6 +56,7 @@ def file_evidence_from_plan(plan: MutationPlan) -> tuple[FileMutationEvidence, .
                 changed_bytes=plan.changed_bytes,
                 preview_truncated=plan.diff_truncated,
                 status=plan.status.value,
+                staging_relative_path=plan.staging_relative_path,
             ),
         )
     if plan.destination_target is not None and plan.destination_relative_path is not None:
@@ -73,6 +74,7 @@ def file_evidence_from_plan(plan: MutationPlan) -> tuple[FileMutationEvidence, .
                 policy_version="files-v1",
                 conflict_input_digest=sha256_digest(before or "absent"),
                 status=plan.status.value,
+                staging_relative_path=plan.staging_relative_path,
             ),
             FileMutationEvidence(
                 relative_path=plan.destination_relative_path,

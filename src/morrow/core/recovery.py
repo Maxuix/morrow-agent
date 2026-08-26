@@ -71,6 +71,7 @@ class FileObservation(StrEnum):
     MISSING = "missing"
     THIRD_PARTY = "third_party"
     EVIDENCE_MISSING = "evidence_missing"
+    STAGING_PRESENT = "staging_present"
     NOT_APPLICABLE = "not_applicable"
 
 
@@ -310,11 +311,80 @@ def classify_file_observations(observations: tuple[FileObservation, ...]) -> Rec
         return RecoveryClassification.SAFE_TO_RETRY
     if any(
         item
-        in {FileObservation.THIRD_PARTY, FileObservation.MISSING, FileObservation.EVIDENCE_MISSING}
+        in {
+            FileObservation.THIRD_PARTY,
+            FileObservation.MISSING,
+            FileObservation.EVIDENCE_MISSING,
+            FileObservation.STAGING_PRESENT,
+        }
         for item in observations
     ):
         return RecoveryClassification.OUTCOME_UNKNOWN
     return RecoveryClassification.REQUIRES_RECONCILIATION
+
+
+def _observe_staging_path(relative: object, *, root: Path) -> FileObservation | None:
+    """Observe only whether a private capture entry remains; never read its body."""
+
+    directory_flag = getattr(os, "O_DIRECTORY", 0)
+    no_follow = getattr(os, "O_NOFOLLOW", 0)
+    if (
+        not directory_flag
+        or not no_follow
+        or not isinstance(relative, str)
+        or not relative
+        or len(relative) > 512
+        or "\x00" in relative
+        or "\\" in relative
+        or relative.startswith("/")
+    ):
+        return FileObservation.EVIDENCE_MISSING
+    parts = tuple(relative.split("/"))
+    if not parts or any(not part or part in {".", ".."} for part in parts):
+        return FileObservation.EVIDENCE_MISSING
+    root_fd: int | None = None
+    parent_fd: int | None = None
+    try:
+        root_fd = os.open(root, os.O_RDONLY | directory_flag | no_follow)
+        parent_fd = root_fd
+        for part in parts[:-1]:
+            try:
+                next_fd = os.open(
+                    part,
+                    os.O_RDONLY | directory_flag | no_follow,
+                    dir_fd=parent_fd,
+                )
+            except FileNotFoundError:
+                return FileObservation.EVIDENCE_MISSING
+            except OSError as exc:
+                if exc.errno in {errno.ELOOP, errno.ENOTDIR}:
+                    return FileObservation.THIRD_PARTY
+                return FileObservation.EVIDENCE_MISSING
+            if parent_fd != root_fd:
+                os.close(parent_fd)
+            parent_fd = next_fd
+        try:
+            os.stat(parts[-1], dir_fd=parent_fd, follow_symlinks=False)
+        except FileNotFoundError:
+            return None
+        except OSError as exc:
+            if exc.errno in {errno.ELOOP, errno.ENOTDIR}:
+                return FileObservation.THIRD_PARTY
+            return FileObservation.EVIDENCE_MISSING
+        return FileObservation.STAGING_PRESENT
+    except OSError:
+        return FileObservation.EVIDENCE_MISSING
+    finally:
+        if parent_fd is not None and parent_fd != root_fd:
+            try:
+                os.close(parent_fd)
+            except OSError:
+                pass
+        if root_fd is not None:
+            try:
+                os.close(root_fd)
+            except OSError:
+                pass
 
 
 def observe_file(evidence: FileMutationEvidence, *, root: Path) -> FileObservation:
@@ -336,6 +406,11 @@ def observe_file(evidence: FileMutationEvidence, *, root: Path) -> FileObservati
         or relative.startswith("/")
     ):
         return FileObservation.EVIDENCE_MISSING
+    staging = getattr(evidence, "staging_relative_path", None)
+    if staging is not None:
+        staging_observation = _observe_staging_path(staging, root=root)
+        if staging_observation is not None:
+            return staging_observation
     parts = tuple(relative.split("/"))
     if not parts or any(not part or part in {".", ".."} for part in parts):
         return FileObservation.EVIDENCE_MISSING

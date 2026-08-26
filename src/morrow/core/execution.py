@@ -281,6 +281,7 @@ class FileMutationEvidence(ProtocolModel):
     actual_after_sha256: str | None = None
     actual_size: int | None = Field(default=None, ge=0)
     status: str | None = Field(default=None, max_length=32)
+    staging_relative_path: str | None = None
 
     @field_validator("relative_path")
     @classmethod
@@ -306,12 +307,35 @@ class FileMutationEvidence(ProtocolModel):
             return None
         return _valid_digest(value)
 
+    @field_validator("staging_relative_path")
+    @classmethod
+    def valid_staging_path(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = _clean_relative_path(value)
+        name = cleaned.rsplit("/", 1)[-1]
+        if not name.startswith(".morrow-capture-") or len(name) != len(".morrow-capture-") + 32:
+            raise ValueError("staging path must be a private capture path")
+        if any(
+            character not in "0123456789abcdef" for character in name[len(".morrow-capture-") :]
+        ):
+            raise ValueError("staging path must be a private capture path")
+        return cleaned
+
     @model_validator(mode="after")
     def validate_expected_shape(self) -> FileMutationEvidence:
         if self.expected_kind == "absent" and (
             self.expected_after_sha256 is not None or self.expected_size is not None
         ):
             raise ValueError("absent evidence cannot carry an expected file hash or size")
+        if self.staging_relative_path is not None and self.operation not in {
+            "delete",
+            "move",
+            "rename",
+        }:
+            raise ValueError("staging evidence is only valid for destructive file operations")
+        if self.staging_relative_path == self.relative_path:
+            raise ValueError("staging evidence must differ from the primary path")
         return self
 
 

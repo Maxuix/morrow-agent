@@ -7,11 +7,13 @@ import hashlib
 import json
 import os
 import stat
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
 from morrow.adapters.local.filesystem import (
+    CAPTURE_NAME_PREFIX,
     ConfinedFileState,
     FileSystemAdapter,
     FileSystemMutationError,
@@ -107,6 +109,8 @@ class MutationPlan:
     source_target: Path | None = None
     destination_target: Path | None = None
     destination_relative_path: str | None = None
+    staging_target: Path | None = None
+    staging_relative_path: str | None = None
 
     @property
     def relative_paths(self) -> tuple[str, ...]:
@@ -121,6 +125,8 @@ class MutationPlan:
             values.append(self.source_target)
         if self.destination_target is not None:
             values.append(self.destination_target)
+        if self.staging_target is not None:
+            values.append(self.staging_target)
         return tuple(values)
 
 
@@ -867,6 +873,24 @@ class WorkspaceMutationService:
             raise LocalFileError("protected_resource", "资源受到本地内容策略保护")
         return target, relative
 
+    def _new_staging_target(self, source: SourceText) -> tuple[Path, str]:
+        """Reserve a bounded, workspace-relative private capture name for one plan."""
+
+        parent_relative = source.relative_path.rpartition("/")[0]
+        for _attempt in range(4):
+            name = f"{CAPTURE_NAME_PREFIX}{uuid.uuid4().hex}"
+            relative = f"{parent_relative}/{name}" if parent_relative else name
+            if len(relative) > MAX_RELATIVE_PATH_CHARS:
+                raise LocalFileError("mutation_limit", "内部捕获路径超过长度限制")
+            target = source.target.parent / name
+            try:
+                os.lstat(target)
+            except FileNotFoundError:
+                return target, relative
+            except OSError as exc:
+                raise LocalFileError("path_unavailable", "内部捕获路径不可用") from exc
+        raise LocalFileError("conflict", "无法保留私有内部捕获路径")
+
     def _destructive_plan(
         self,
         *,
@@ -896,6 +920,7 @@ class WorkspaceMutationService:
                 if operation is MutationOperation.MOVE
                 else MutationStatus.RENAMED
             )
+        staging_target, staging_relative = self._new_staging_target(source)
         return MutationPlan(
             relative_path=source.relative_path,
             target=source.target,
@@ -914,6 +939,8 @@ class WorkspaceMutationService:
             source_target=source.target,
             destination_target=destination,
             destination_relative_path=destination_relative,
+            staging_target=staging_target,
+            staging_relative_path=staging_relative,
         )
 
     def cache_plan(self, run_id: str, call_id: str, plan: MutationPlan) -> None:
@@ -963,6 +990,11 @@ class WorkspaceMutationService:
                                 workspace_root=self.files.resolver.root,
                                 expected_sha256=before.revision.sha256,
                                 max_bytes=MAX_SOURCE_FILE_BYTES,
+                                staging_name=(
+                                    plan.staging_target.name
+                                    if plan.staging_target is not None
+                                    else None
+                                ),
                             )
                         except FileSystemMutationError as exc:
                             if exc.effect_applied:
@@ -973,6 +1005,7 @@ class WorkspaceMutationService:
                                     ordinal=ordinal,
                                     approval_verdict=approval_verdict,
                                     run=run,
+                                    staging_present=exc.staging_present,
                                 ) from exc
                             raise _filesystem_error(exc) from exc
                         after_revision = None
@@ -989,6 +1022,11 @@ class WorkspaceMutationService:
                                 workspace_root=self.files.resolver.root,
                                 expected_sha256=before.revision.sha256,
                                 max_bytes=MAX_SOURCE_FILE_BYTES,
+                                staging_name=(
+                                    plan.staging_target.name
+                                    if plan.staging_target is not None
+                                    else None
+                                ),
                             )
                         except FileSystemMutationError as exc:
                             if exc.effect_applied:
@@ -999,6 +1037,7 @@ class WorkspaceMutationService:
                                     ordinal=ordinal,
                                     approval_verdict=approval_verdict,
                                     run=run,
+                                    staging_present=exc.staging_present,
                                 ) from exc
                             raise _filesystem_error(exc) from exc
                         if not isinstance(published, ConfinedFileState):
@@ -1077,6 +1116,7 @@ class WorkspaceMutationService:
                             ordinal=ordinal,
                             approval_verdict=approval_verdict,
                             run=run,
+                            staging_present=exc.staging_present,
                         ) from exc
                     raise _filesystem_error(exc) from exc
                 except Exception as exc:
@@ -1156,9 +1196,11 @@ class WorkspaceMutationService:
 
     def _revalidate(self, plan: MutationPlan) -> MutationPlan:
         if plan.operation is MutationOperation.DELETE:
+            self._revalidate_staging(plan)
             self._revalidate_destructive_source(plan)
             return plan
         if plan.operation in {MutationOperation.MOVE, MutationOperation.RENAME}:
+            self._revalidate_staging(plan)
             self._revalidate_move(plan)
             return plan
         self._revalidate_parent_chain(
@@ -1202,6 +1244,19 @@ class WorkspaceMutationService:
         if plan.before is None or source.revision.sha256 != plan.before.revision.sha256:
             raise LocalFileError("conflict", "源文件已发生变化")
         return source
+
+    def _revalidate_staging(self, plan: MutationPlan) -> None:
+        target = plan.staging_target
+        if target is None or plan.staging_relative_path is None:
+            raise LocalFileError("conflict", "内部捕获证据不完整")
+        self._revalidate_parent_chain(target, allow_missing=False)
+        try:
+            os.lstat(target)
+        except FileNotFoundError:
+            return
+        except OSError as exc:
+            raise LocalFileError("conflict", "内部捕获路径无法确认") from exc
+        raise LocalFileError("conflict", "内部捕获路径已经存在")
 
     def _revalidate_move(self, plan: MutationPlan) -> None:
         source = plan.source_target
@@ -1329,15 +1384,17 @@ class WorkspaceMutationService:
     ):
         from morrow.core.capabilities import ChangeToolFact
 
+        relative_paths = list(plan.relative_paths)
+        if plan.destination_relative_path is None:
+            relative_paths = [plan.relative_path, *plan.auxiliary_paths]
+        for path in result.auxiliary_paths:
+            if path not in relative_paths:
+                relative_paths.append(path)
         return ChangeToolFact(
             call_id=call_id,
             tool_name=tool_name,
             ordinal=ordinal,
-            relative_paths=(
-                plan.relative_paths
-                if plan.destination_relative_path is not None
-                else (plan.relative_path, *plan.auxiliary_paths)
-            ),
+            relative_paths=tuple(relative_paths),
             approval_verdict=approval_verdict,
             operation=plan.operation.value,
             status=result.status.value,
@@ -1363,12 +1420,14 @@ class WorkspaceMutationService:
         ordinal: int,
         approval_verdict,
         run,
+        staging_present: bool = False,
     ) -> LocalFileError:
         result = self._result(
             plan,
             plan,
             status=MutationStatus.OUTCOME_UNKNOWN,
             change_set_id=_change_set_id(run, call_id, plan),
+            staging_present=staging_present,
         )
         fact = self._fact(
             plan,
@@ -1393,7 +1452,12 @@ class WorkspaceMutationService:
         change_set_id: str,
         after_revision: FileRevision | None = None,
         status: MutationStatus | None = None,
+        staging_present: bool = False,
     ) -> MutationResult:
+        auxiliary_paths = list(plan.auxiliary_paths)
+        if staging_present and plan.staging_relative_path is not None:
+            if plan.staging_relative_path not in auxiliary_paths:
+                auxiliary_paths.append(plan.staging_relative_path)
         return MutationResult(
             path=plan.relative_path,
             operation=plan.operation,
@@ -1405,7 +1469,7 @@ class WorkspaceMutationService:
             diff=plan.diff,
             diff_truncated=plan.diff_truncated,
             change_set_id=change_set_id,
-            auxiliary_paths=plan.auxiliary_paths,
+            auxiliary_paths=tuple(auxiliary_paths),
             source_path=(
                 plan.relative_path
                 if plan.operation

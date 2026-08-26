@@ -10,6 +10,7 @@ Subplan 83 — delete, move, rename and sandbox promotion lifecycle.
 
 ## Tasks
 
+- `[>]` Close root-acceptance P1-2 source final-identity/effect TOCTOU with atomic capture, bounded restore and declared staging recovery evidence.
 - `[x]` Read S7P-04 and reproduce missing operations and ineligible sandbox deletion.
 - `[x]` Freeze regular-file-only, no-overwrite, approval, evidence and recovery decisions.
 - `[x]` Add failing delete/move/rename domain, schema and production inventory tests.
