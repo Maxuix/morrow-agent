@@ -118,7 +118,10 @@ source absence、destination hash/size/mode 与受影响父目录 fsync。prepar
 只冻结 hash/size/kind/path evidence：delete 为 source expected-absent，move/rename 为有序 source-absent
 加 destination expected-file；恢复区分 completed、safe-to-retry、mixed/reconciliation 与 outcome-unknown，
 不以路径缺失伪造成功；effect 后 fsync/验证失败会保留 outcome-unknown ChangeSet/文件 evidence 并进入恢复，
-绝不宣称成功。结果在领域服务内按当前 ToolCall 预算语义截断。Git 工具通过
+绝不宣称成功。durable prepare 已缓存的完整内存 MutationPlan（含 staging 名）在后续
+skip-approval resolver/handler 阶段按 run/call 身份复用；执行阶段只对这个冻结 plan 做锁内重验，
+不重新分配 staging，也不以第二次 preflight 覆盖 PreparedIntent evidence。结果在领域服务内按当前
+ToolCall 预算语义截断。Git 工具通过
 `GitInspectionService` 与固定的 `GitInspectionAdapter` 解析只读状态/Diff，拒绝外部 Git metadata 并禁用
 pager、外部 diff、textconv、hooks-like executable extension points、prompt 和可选锁。`run_command` 通过同一个 `ProcessExecutionService` 选择
 `HostProcessAdapter` 或能力探测通过的 `NativeSandboxProcessAdapter`：Host 命令全部需要审批且不提供操作系统隔离，

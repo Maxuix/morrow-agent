@@ -3143,3 +3143,29 @@
 - Follow-up focused/full validation and the required same-task Averroes directed read-only review
   remain pending; the branch is intentionally unmerged and user-owned research documents remain
   untouched.
+
+## 2026-08-27 — Subplan 83 durable prepared-plan follow-up and final review
+
+- Averroes formally confirmed P1-1: with CapabilityPolicy enabled, durable `skip_approval`
+  execution re-entered the destructive resolver and allocated a second staging path, so the
+  PreparedIntent evidence could describe S1 while the handler used S2. The finding was reproduced
+  first with a production AgentLoop and injected capture-fsync failure for delete, move and rename;
+  the pre-fix regression observed two preflights.
+- Fixed in `f0000ba` by making the destructive production-tool resolver reuse the cached,
+  operation-matched MutationPlan for the `(run_id, call_id)` prepared execution. The handler still
+  routes through `WorkspaceMutationService.apply`, including stable locks and frozen-plan
+  revalidation; a missing or mismatched cache is the only case that performs a new preflight.
+  The regression now observes one preflight per operation, the same staging path in PreparedIntent,
+  ToolFact and the filesystem, and `OUTCOME_UNKNOWN` with staging present after capture-fsync
+  failure. No new reviewer was created and no reviewer modified files.
+- Same-task Averroes (`01a03f96-8c8b-7ad3-9f44-c767bf550a46`, `gpt-5.6-luna`, reasoning `max`)
+  completed the directed read-only follow-up over `9f81e67..f0000ba` and the relevant full
+  `e80c3157d3286116b04566cf76bf01fd192c6b8b...f0000ba` chain with formal `APPROVE`; P0/P1/P2/P3
+  had no confirmed findings. Remaining staging-name guessing, recovery single-read, and direct
+  adapter traversal concerns were explicitly classified as non-findings.
+- Final validation: dedicated S7P-04 `36 passed`; focused plan gates `26 passed`, `33 passed, 2
+  skipped`, `36 passed`, `24 passed`; affected aggregate `175 passed, 2 skipped in 15.78s`; full
+  fallback offline `1234 passed, 2 skipped, 2 deselected in 52.29s`; Ruff format/check, compileall,
+  both CLI help commands and `git diff --check` passed. `uv run pytest -m 'not live'` remained
+  blocked before collection by restricted `/Users/ruirui/.cache/uv` permissions; no live tests ran.
+  Topic worktree is clean and remains unmerged for root-owned integration.

@@ -1,6 +1,6 @@
 # Subplan 83 — S7P-04 Workspace Change Lifecycle
 
-> Status: active; root-acceptance P1-2 atomic-capture follow-up in progress
+> Status: completed locally; root integration pending
 > Branch: `codex/feat/s7p-04-workspace-change-lifecycle`
 > Base: `main@20e6ce3`
 

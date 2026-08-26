@@ -20,7 +20,7 @@ durable evidence/recovery、sandbox promotion 和 bounded partial failure 均有
 | 公共接口 | `delete_file`、`move_file`、`rename_file`、`promote_sandbox_changes`、`show_changes`，以及既有 `write_file`/`apply_patch` 合同审计 |
 | Provider | 未运行真实 Provider/model/Pi/MCP/network/credential；仅使用确定性 `ScriptedModelProvider` 驱动工具调用 |
 | 安全边界 | 未读取或修改三个用户自有 research 文档；未改变公开事件生命周期、runtime-policy 默认值或依赖 |
-| Formal review | Averroes `01a03f96-8c8b-7ad3-9f44-c767bf550a46`；`gpt-5.6-luna` / reasoning `max`；前一轮只读审查 `REQUEST CHANGES`；本轮 P1-2 定向复审待完成 |
+| Formal review | Averroes `01a03f96-8c8b-7ad3-9f44-c767bf550a46`；`gpt-5.6-luna` / reasoning `max`；前一轮 `REQUEST CHANGES` 的 P1-1 已修复；当前定向复审 `APPROVE` |
 
 ## 3. 用户表面清单
 
@@ -31,7 +31,7 @@ durable evidence/recovery、sandbox promotion 和 bounded partial failure 均有
 | `rename_file` | production bootstrap + same-parent preflight | 成功、跨父目录拒绝、目标冲突、dirty source、两路径 evidence | S7P04-01/02/04 | PASS |
 | Sandbox promotion | `SandboxSnapshotService` + same mutation service | delete、无歧义 rename/move、重复内容歧义、稳定 preflight、partial failure | S7P04-06/07 | PASS |
 | ChangeSet/ToolFact | `ChangeSetService` + `ChangeToolFact` | source/destination pair、已生效项保留、错误不宣称成功 | S7P04-01/06/07/08 | PASS |
-| Durable recovery | prepared intent + `observe_file`/classifier | completed、safe-to-retry、mixed/reconciliation、outcome-unknown | S7P04-04/08 | PASS |
+| Durable recovery | prepared intent + `observe_file`/classifier | completed、safe-to-retry、mixed/reconciliation、outcome-unknown；durable skip-approval 复用冻结 staging | S7P04-04/08 | PASS |
 
 发现的旧 Stage-3 清单冲突已在 `docs/roadmap/stage-3-local-tools-and-safety.md` 修正；copy、
 目录/递归 delete、undo、chmod/link、Git write 和真实 Provider 质量测量不属于本验收表面。
@@ -78,7 +78,7 @@ PYTHONPATH=src /Users/ruirui/Documents/Project/Agent/developing/.venv/bin/python
 ## 6. 审查、发现与修复
 
 同一实施任务内的只读 reviewer Averroes（`01a03f96-8c8b-7ad3-9f44-c767bf550a46`，模型
-`gpt-5.6-luna`，reasoning `max`）审查了完整
+`gpt-5.6-luna`，reasoning `max`）第一轮审查了完整
 `e80c3157d3286116b04566cf76bf01fd192c6b8b...751bd02` diff；未修改、创建、删除、暂存或提交文件。
 正式 verdict 为 `REQUEST CHANGES`。审查时记录的完整离线数字为 `1213 passed, 4 failed,
 2 skipped, 2 deselected`，4 个失败均为新增生产工具后的旧 inventory 断言；其 Ruff format/check、
@@ -86,7 +86,7 @@ PYTHONPATH=src /Users/ruirui/Documents/Project/Agent/developing/.venv/bin/python
 （`01a03f7f-efef-7b50-b794-697f03af07bb`）已按任务指令中断，不替代正式报告。
 
 确认 findings 与本地修复如下；根验收随后重新确认 P1-2 的 source-name final-check window 仍可被注入，
-因此本轮又加入原子捕获/恢复修复，定向 follow-up review 尚待返回：
+因此本轮又加入原子捕获/恢复修复：
 
 | 级别/编号 | 复核结论 | 修复与回归 |
 |---|---|---|
@@ -99,6 +99,14 @@ PYTHONPATH=src /Users/ruirui/Documents/Project/Agent/developing/.venv/bin/python
 | P2-3 竞态/effect 后/partial coverage 不足 | confirmed | 增加 source replacement、FIFO、mode drift、fsync unknown、closed unknown recovery 与第二项已 effect 的 partial-failure tests |
 | P3-1 执行状态/验收文档过时 | confirmed | `.agent`、本验收文档、架构说明和日志同步为完成/修复后证据 |
 
+原子捕获修复后的同一 Averroes 定向 follow-up 审查了
+`9f81e67..f0000ba` 新 diff，并核对完整 `e80c3157d3286116b04566cf76bf01fd192c6b8b...f0000ba`
+相关调用链。正式 verdict 为 `APPROVE`，P0/P1/P2/P3 均无 confirmed finding。reviewer 明确确认：
+durable `CapabilityPolicy` + `skip_approval` 路径只复用 prepare 阶段缓存的 operation-matched
+`MutationPlan`，delete/move/rename 的 PreparedIntent、实际 staging、ToolFact、ChangeSet auxiliary
+path 与 recovery observation 保持同一路径；三项新回归均证明 capture-fsync 后是 bounded
+`OUTCOME_UNKNOWN`，没有错误的 `COMPLETED`。本轮仍是只读，reviewer 未修改文件。
+
 修复后没有开放 confirmed finding（`P0/P1/P2/P3=0`）。以下仍是非 finding：Darwin
 `renameatx_np(RENAME_EXCL)`/Linux `renameat2(RENAME_NOREPLACE)` 的 no-clobber primitive 及 fail-closed
 分支已通过静态检查；普通 symlink、目录、special、越界、protected、审批拒绝、handler 前取消、
@@ -109,8 +117,9 @@ finding，也未被计为 PASS。
 ## 7. 覆盖与缺口
 
 - S7P-04 专用场景：8 个计划用户目标，8 个执行，8/8 `PASS`；专用 pytest 当前包含 36 个通过测试。
-- 高风险组合直接覆盖：三种 destructive tool × 拒批、source dirty；move/rename × destination
-  conflict/race；delete/rename × durable evidence；sandbox × ambiguity/partial failure。
+- 高风险组合直接覆盖：三种 destructive tool × 拒批、source dirty、durable
+  CapabilityPolicy/skip-approval；move/rename × destination conflict/race；delete/rename × durable
+  evidence；sandbox × ambiguity/partial failure。
 - 状态迁移覆盖：preflight → approval → effect、source before/expected absence、two-path
   before/expected、mixed/third-party/outcome-unknown、partial effect → failed result。
 - 未覆盖真实 Provider/model 的行为和延迟；按 S7P-04 明确范围与离线门禁要求不运行。
@@ -126,12 +135,16 @@ finding，也未被计为 PASS。
 
 ## 9. 最终门禁与交接状态
 
-修复提交为 `ea19067`（`fix(workspace): close S7P-04 review findings`）；此前实现/验收提交为
-`aecd4ec` 与 `751bd02`。修复后实际结果：
+最终 S7P-04 提交链（从激活基线之后）为：`aecd4ec`、`751bd02`、`ea19067`、`69e323c`、
+`07b71d6`、`9f81e67`、`f0000ba`；其中 `f0000ba` 修复 durable prepare/execute 重复 preflight，
+并加入生产 ToolExecutor/CapabilityPolicy 回归。最终实际结果：
 
-- affected focused suite：`205 passed, 2 skipped in 16.20s`；跳过项为既有嵌套 Codex sandbox
-  的两项 host-level Seatbelt 测试。
-- full offline gate（fallback interpreter）：`1225 passed, 2 skipped, 2 deselected in 50.45s`，
+- dedicated S7P-04 suite：`36 passed`。
+- plan focused gates：`26 passed`；`33 passed, 2 skipped`；`36 passed`；`24 passed`；跳过项为
+  既有嵌套 Codex sandbox 的两项 host-level Seatbelt 测试。
+- affected focused aggregate（含 durable 新回归）：`175 passed, 2 skipped in 15.78s`；跳过项为
+  既有嵌套 Codex sandbox 的两项 host-level Seatbelt 测试。
+- full offline gate（fallback interpreter）：`1234 passed, 2 skipped, 2 deselected in 52.29s`，
   `0 failed`。
 - `uv run pytest -m 'not live'`：未能启动，uv cache `/Users/ruirui/.cache/uv` 在受限沙箱中不可写；
   按仓库规则使用当前 worktree 的 `PYTHONPATH=src` 环境完成同等 gate。
