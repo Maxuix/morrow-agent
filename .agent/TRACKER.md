@@ -15,7 +15,7 @@ reliability checklist. They are not part of Subplan 80 and must remain untouched
 The implementation, read-only Luna Max review, all seven review repairs, and final offline quality
 gates are complete on the dedicated topic branch using `gpt-5.6-luna` with `max` reasoning. The
 reviewer found one P1, five P2, and one P3 finding, with no P0 or uncertain findings; all were
-repaired and the final state is ready for the handoff commit.
+repaired and committed as `c9535d0` for handoff.
 
 ## Located evidence
 
