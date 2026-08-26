@@ -1,8 +1,8 @@
 # Morrow 架构基线
 
 > 状态：阶段 2–5 已完成；Stage 6 Subplans 63–75 已在本地完成（macOS；Linux 原生运行仍
-> unsupported）；Stage 7 preflight S7P-01 已在本地落地并保持独立 topic branch；其余 Stage 7–10
-> 尚未开始
+> unsupported）；Stage 7 preflight S7P-01–S7P-04 已在各自本地实现中，S7P-04 当前保持独立
+> topic branch；其余 Stage 7–10 尚未开始
 
 本文锁定当前依赖方向、数据所有权和安全边界。阶段 3 的能力策略、配置工具、工作空间读搜、冲突安全文件变更、审批后 Host 命令、只读 Git 和当前 macOS 原生沙箱
 已经交付；Linux 原生运行尚未声明支持。Stage 4 已落地数据根 SQLite Operational Store 的
@@ -86,6 +86,12 @@ Snapshot 生成 Chat 或 Structured 投影，按完整 Cycle/turn 控制预算�
 `runtime-policy.toml` 与可选 `config.yaml.runtime_policy` 安全覆盖在 composition root 合并，并解析为任务固定的 RunPolicy 及 Review policy。模型请求白名单、流片段组装与 reasoning/SDK 元数据
 隔离归 Provider Adapter。
 
+S7P-04 在上述现有 ToolCycle 中增加显式的 `delete_file`、`move_file` 和 `rename_file`。
+它们只接受工作空间内的普通文件，源文件必须携带 SHA-256，目标必须在预检和原子发布时均不存在；
+不支持目录、递归、符号链接、special、force/overwrite、copy-delete fallback 或跨设备降级。
+删除通过 no-follow directory-fd unlink，移动/重命名通过平台可证明的 atomic no-replace primitive；
+无法证明能力时 fail closed。公开事件生命周期与 runtime-policy 默认值不因这些工具改变。
+
 Runtime 已提供与具体领域无关的 `PermissionProfile`、`WorkspaceCapability`、`CapabilityPolicy`、
 `ToolExecutionPolicy`、本地 `ToolEffect` 和注入式 `ApprovalPort`；生产组合在 Session 构造时冻结工作区
 能力与权限预设，Executor 按 intent 预检和策略判定后才允许审批或执行。生产配置工具使用
@@ -97,7 +103,12 @@ Profile 配置工具和 `/workspace` 委托给 `ConfigPatchService`；Preference
 统一委托给 `PreferenceWriter`。文件读取与搜索不跟随目录符号链接，
 并把 `.git`、`.morrow`、凭据路径及常见 PEM 私钥内容作为受保护资源；文件变更拒绝符号链接路径、
 混合换行源文件、陈旧 SHA-256、模糊/多匹配编辑和受保护凭据内容，并通过同目录临时文件、文件 `fsync`、
-原子替换和父目录句柄保护发布；结果在领域服务内按当前 ToolCall 预算语义截断。Git 工具通过
+原子替换和父目录句柄保护发布。S7P-04 的 destructive mutation 只做 regular-file confined unlink，或
+通过 `renameatx_np`/`renameat2` 等已证明的 no-clobber primitive 完成 move/rename；多路径按稳定顺序
+加锁并在锁内重验，发布后验证 source absence、destination hash/size 与受影响父目录 fsync。prepared intent
+只冻结 hash/size/kind/path evidence：delete 为 source expected-absent，move/rename 为有序 source-absent
+加 destination expected-file；恢复区分 completed、safe-to-retry、mixed/reconciliation 与 outcome-unknown，
+不以路径缺失伪造成功。结果在领域服务内按当前 ToolCall 预算语义截断。Git 工具通过
 `GitInspectionService` 与固定的 `GitInspectionAdapter` 解析只读状态/Diff，拒绝外部 Git metadata 并禁用
 pager、外部 diff、textconv、hooks-like executable extension points、prompt 和可选锁。`run_command` 通过同一个 `ProcessExecutionService` 选择
 `HostProcessAdapter` 或能力探测通过的 `NativeSandboxProcessAdapter`：Host 命令全部需要审批且不提供操作系统隔离，
@@ -186,12 +197,16 @@ Service 或 Port：
   用户输入、发起终端确认或发布公开事件。
 
 `list_directory`、`read_file`、`find_files` 与 `search_text` 通过注入的文件/搜索服务访问冻结工作空间；
-`apply_patch`、`write_file` 与 `show_changes` 通过注入的 mutation/ChangeSet 服务执行和报告当前运行的实际变更；
+`apply_patch`、`write_file`、`delete_file`、`move_file`、`rename_file` 与 `show_changes` 通过注入的
+mutation/ChangeSet 服务执行和报告当前运行的实际变更；
 `run_command` 通过注入的 `ProcessExecutionService` 执行审批后的 Host 命令，或在 Auto Sandboxed 中执行原生快照命令；
 `run_skill_script` 通过注入的 `SkillScriptExecutionService` 执行已冻结 Skill 包中的脚本，并只发布有界、脱敏的
 声明输出 Artifact；
 `promote_sandbox_changes` 通过注入的 `SandboxSnapshotService`、`WorkspaceMutationService` 与
-`ChangeSetService` 推广并记录当前运行的有界文本变更；
+`ChangeSetService` 推广并记录当前运行的有界文本变更。沙箱删除仅推广预算内的 regular UTF-8 文本；
+只有 deleted+created 按 hash/size/mode 一对一无歧义时才形成携带 source+destination 的 move/rename。
+推广先按稳定顺序完成所有预检，但不宣称 run-level atomic；后项失败时保留已生效 ChangeSet 并返回
+bounded partial failure，不回滚或覆盖用户数据；
 `update_configuration` 通过注入的 `ConfigPatchService` 管理 Profile；`manage_preferences` 通过注入的
 `PreferenceManagementService` 调用同一原子 Writer。旧的 `lookup_record` 与 `calculate` 仅保留在显式测试 fixture 中。
 未来 Git、网络等有状态或有副作用工具必须沿用同一注册与 ToolCycle 协议，并把实际能力委托给相应 Service/Port。模型请求中的 ToolDefinition 保持标准化；

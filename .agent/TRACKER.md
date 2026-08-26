@@ -9,10 +9,11 @@ the plan and untouched.
 
 ## Active task
 
-The root task has reproduced the S7P-04 gaps and frozen the executable design. The next action is to
-commit this activation baseline, create `codex/feat/s7p-04-workspace-change-lifecycle`, and open one
-dedicated `gpt-5.6-luna` / `max` implementation task. That task must implement and run its own
-read-only Luna Max subagent review before returning a clean verified branch.
+The dedicated S7P-04 implementation task is attached to
+`codex/feat/s7p-04-workspace-change-lifecycle` at activation baseline
+`e80c3157d3286116b04566cf76bf01fd192c6b8b`. Implementation is in progress and must complete the
+test-first lifecycle, focused/full offline gates, and the same-task read-only Luna Max review before
+returning a clean verified branch.
 
 ## Located evidence
 
@@ -27,8 +28,9 @@ read-only Luna Max subagent review before returning a clean verified branch.
 
 ## Next action
 
-Activate the topic task from this committed main baseline. Implement only S7P-04, run the declared
-focused/full offline gates and close the same-task reviewer findings. S7P-05 remains unopened.
+Inspect the existing mutation, tool, persistence, recovery and sandbox seams; add failing lifecycle
+contracts first, then implement only S7P-04. Run the declared focused/full offline gates and close
+the same-task reviewer findings. S7P-05 remains unopened.
 
 ## Blockers
 

@@ -179,6 +179,9 @@ FileMutationResult
 | `search_text` | 在受限范围内搜索文本 | read |
 | `apply_patch` | 以 SHA-256 和唯一精确编辑修改单个文件 | workspace write |
 | `write_file` | 创建或按 SHA-256 替换单个 UTF-8 文件 | workspace write |
+| `delete_file` | 按必需 SHA-256 删除一个工作空间内普通文件 | persistent write + approval |
+| `move_file` | 按必需 SHA-256 原子移动到不存在的工作空间路径 | persistent write + approval |
+| `rename_file` | 按必需 SHA-256 在同一父目录内原子重命名 | persistent write + approval |
 | `show_changes` | 查看当前运行实际 ChangeSet/Diff | read |
 | `run_command` | 在审批后的非隔离 Host 执行有界非交互命令 | process |
 
@@ -208,7 +211,9 @@ FileMutationResult
 
 - `apply_patch`：基于上下文的增删改，检测基线不匹配。
 - `write_file`：仅用于新文件或用户明确允许的整文件替换。
-- `delete_path`：不进入 MVP；若加入，必须单独确认并限制范围。
+- `delete_file`：仅删除一个已由 SHA-256 证明的工作空间内普通文件；不接受目录、递归或符号链接。
+- `move_file` / `rename_file`：仅移动/重命名一个已由 SHA-256 证明的普通文件，目标必须不存在；使用
+  原子 no-clobber primitive，无法证明时 fail closed，不做 copy-delete fallback。
 - `show_changes`：读取当前运行实际 ChangeSet/Diff，不以模型生成的预览替代；Git 工作树差异留给后续 `git_diff`。
 
 固定约束：
@@ -218,8 +223,10 @@ FileMutationResult
 - 写入采用同目录临时文件、必要 `fsync` 和原子替换；保持合理权限。
 - 对换行符、结尾换行和编码变化进行显式处理；统一换行风格保持不变，混合换行源文件明确拒绝修改，避免无意重写全文件。
 - Patch 失败不得退化为“猜测位置后强制写入”。
-- 大范围修改、覆盖已有文件和删除操作需要更高风险等级。
-- 当前实现只允许工作空间内的 create/patch/replace；不提供 delete、rename、chmod 或 link。
+- 大范围修改、覆盖已有文件和删除/move/rename 操作需要更高风险等级；后三者始终走 persistent-write
+  approval。
+- 当前实现只允许工作空间内的 create/patch/replace/delete/move/rename；delete/move/rename 不提供
+  overwrite、force、目录/递归、chmod、link 或 copy。
 - Auto Safe 的单次 patch 限制为最多 8 个精确编辑、64 个插入加删除行、4 KiB 变更字节和不超过既有非空行的 25%；超过阈值转审批。
 - 每次变更都记录 before/after revision、实际统一 Diff 和当前运行 ChangeSet fact；陈旧 SHA 返回 conflict。
 
@@ -229,7 +236,7 @@ Morrow 需要一个独立于最终回答的变更事实源：
 
 ```text
 ChangeSet（当前进程内运行范围）
-- entries[]: create | modify | unchanged
+- entries[]: create | modify | unchanged | deleted | moved | renamed
 - before/after metadata
 - unified_diff
 - truncated
@@ -527,7 +534,9 @@ Morrow 读取文件后，测试在写入前模拟外部修改。Patch 返回 con
 - 沙箱无法读取用户 Home、凭据、宿主 Socket 或工作区外测试文件。
 - 网络和 loopback 默认不可用。
 - 沙箱内删除或改写项目文件不会直接改变真实工作区。
-- 沙箱生成的修改只有经过 ChangeSet 预览、冲突检查和适用审批后才能推广。
+- 沙箱生成的 create/modify/delete 以及按 hash/size/mode 一对一识别的 move/rename，只有经过 ChangeSet
+  预览、冲突检查和适用审批后才能推广；多项推广不宣称 run-level atomic，后项失败保留已生效 ChangeSet
+  并返回 bounded partial failure。
 - 快照准备或收集超时后不遗留 `morrow-sandbox-*` 项目副本。
 - 缺少平台后端或后端启动失败时不执行命令，也不回退 Host。
 

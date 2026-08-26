@@ -12,7 +12,7 @@ Subplan 83 — delete, move, rename and sandbox promotion lifecycle.
 
 - `[x]` Read S7P-04 and reproduce missing operations and ineligible sandbox deletion.
 - `[x]` Freeze regular-file-only, no-overwrite, approval, evidence and recovery decisions.
-- `[ ]` Add failing delete/move/rename domain, schema and production inventory tests.
+- `[>]` Add failing delete/move/rename domain, schema and production inventory tests.
 - `[ ]` Implement confined delete and atomic no-replace move/rename publication.
 - `[ ]` Add structured tools, previews, approval/cancellation and ChangeSet facts.
 - `[ ]` Freeze ordered expected-absence/two-path durable evidence and recovery outcomes.
