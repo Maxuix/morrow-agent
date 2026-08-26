@@ -32,7 +32,11 @@ PreferenceManagementOperation = Literal["add", "replace", "remove", "enable", "d
 
 _PREFERENCE_ID_PATTERN = r"^pref_[A-Za-z0-9_-]{1,123}$"
 _EVIDENCE_ID_PATTERN = r"^pev_[A-Za-z0-9_-]{1,124}$"
-_PREFERENCE_TEXT_PATTERN = r"^(?!\s*$)(?!.*[\x00-\x1f\x7f])[\s\S]+$"
+_PREFERENCE_TEXT_PATTERN = (
+    r"^(?!\s*$)(?!.*[\x00-\x1f\x7f-\x9f\u00ad\u0600-\u0605\u061c\u06dd\u070f"
+    r"\u0890-\u0891\u08e2\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064"
+    r"\u2066-\u206f\ufeff\ufff9-\ufffb])[\s\S]+$"
+)
 
 
 def _nullable_string(*, max_length: int, pattern: str | None = None) -> dict[str, object]:

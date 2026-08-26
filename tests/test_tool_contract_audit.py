@@ -359,6 +359,13 @@ def test_provider_wire_rejects_content_above_conservative_budget_bound():
             PREFERENCE_MANAGEMENT_PROVIDER_SCHEMA,
             {
                 "scope": "workspace",
+                "operations": [{"operation": "add", "statement": "keep\u200b"}],
+            },
+        ),
+        (
+            PREFERENCE_MANAGEMENT_PROVIDER_SCHEMA,
+            {
+                "scope": "workspace",
                 "operations": [
                     {
                         "operation": "replace",
