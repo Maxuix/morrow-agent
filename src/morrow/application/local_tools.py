@@ -23,6 +23,7 @@ from morrow.core.local_tools import (
     CommandRequest,
     ExactEdit,
     MutationMode,
+    MutationOperation,
     SearchCase,
     SearchQuery,
     WorkspaceMutationPath,
@@ -1067,14 +1068,21 @@ def _make_destructive_file_tool(
     arguments_model: type[BaseModel],
     provider_schema: dict[str, object],
     preflight,
+    operation: MutationOperation,
     mutation: WorkspaceMutationService,
     changes: ChangeSetService,
 ) -> RegisteredTool:
     def resolve(arguments, context: ToolCallContext) -> OperationIntent:
-        try:
-            plan = preflight(arguments, context)
-        except LocalFileError as exc:
-            raise _tool_error(exc) from exc
+        plan = mutation.cached_plan(context.run.run_id, context.call_id)
+        if plan is None or plan.operation is not operation:
+            try:
+                plan = preflight(arguments, context)
+            except LocalFileError as exc:
+                raise _tool_error(exc) from exc
+        # A durable preparation already reserved the complete plan, including
+        # its private capture name.  Reusing it here keeps the handler and the
+        # persisted PreparedIntent on the same evidence; apply() still
+        # revalidates the frozen plan while holding its path locks.
         return _mutation_intent(plan, mutation, context)
 
     def preview(arguments, context: ToolCallContext) -> tuple[str, ...]:
@@ -1134,6 +1142,7 @@ def make_delete_file_tool(
         preflight=lambda arguments, context: mutation.preflight_delete(
             arguments.path, expected_sha256=arguments.expected_sha256, run=context.run
         ),
+        operation=MutationOperation.DELETE,
         mutation=mutation,
         changes=changes,
     )
@@ -1153,6 +1162,7 @@ def make_move_file_tool(
             expected_sha256=arguments.expected_sha256,
             run=context.run,
         ),
+        operation=MutationOperation.MOVE,
         mutation=mutation,
         changes=changes,
     )
@@ -1172,6 +1182,7 @@ def make_rename_file_tool(
             expected_sha256=arguments.expected_sha256,
             run=context.run,
         ),
+        operation=MutationOperation.RENAME,
         mutation=mutation,
         changes=changes,
     )

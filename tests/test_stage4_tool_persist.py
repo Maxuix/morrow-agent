@@ -17,7 +17,11 @@ from morrow.adapters.local.filesystem import FileSystemAdapter, FileSystemMutati
 from morrow.adapters.state.journal import SqliteOperationalJournal
 from morrow.adapters.state.operational import BusyRetryPolicy, OperationalStore
 from morrow.application.grants import CapabilityGrantService
-from morrow.application.local_tools import make_delete_file_tool, make_rename_file_tool
+from morrow.application.local_tools import (
+    make_delete_file_tool,
+    make_move_file_tool,
+    make_rename_file_tool,
+)
 from morrow.application.turns import SessionPersistence
 from morrow.core.capabilities import (
     OperationIntent,
@@ -132,6 +136,18 @@ class _FailFsyncAfterEffect(FileSystemAdapter):
         self.calls += 1
         if self.calls == 2:
             raise FileSystemMutationError("publication_failed", "injected fsync failure")
+        return FileSystemAdapter._fsync_required(fd)
+
+
+class _FailFsyncAfterCapture(FileSystemAdapter):
+    def __init__(self):
+        super().__init__()
+        self.calls = 0
+
+    def _fsync_required(self, fd):
+        self.calls += 1
+        if self.calls == 1:
+            raise FileSystemMutationError("publication_failed", "injected capture fsync failure")
         return FileSystemAdapter._fsync_required(fd)
 
 
@@ -468,6 +484,101 @@ async def test_post_effect_failure_persists_unknown_result_fact_and_recovery_obs
         assert report.items[0].classification is RecoveryClassification.COMPLETED
         assert report.items[0].blocking is True
         assert not target.exists()
+    finally:
+        handle.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["delete", "move", "rename"])
+async def test_durable_destructive_execution_reuses_prepared_capture(tmp_path, operation):
+    project = tmp_path / "project"
+    project.mkdir()
+    source = project / "source.txt"
+    source.write_text("durable capture\n", encoding="utf-8")
+    expected_sha256 = hashlib.sha256(source.read_bytes()).hexdigest()
+    destination = project / "destination.txt"
+    filesystem = _FailFsyncAfterCapture()
+    mutation = WorkspaceMutationService(
+        WorkspaceFileService(WorkspacePathResolver(project), filesystem=filesystem)
+    )
+    store, handle, journal, session, persistence = _open(tmp_path, mutation=mutation)
+    session.workspace_capability = WorkspaceCapability(workspace_id="ws_1", root=project)
+    try:
+        changes = ChangeSetService()
+        registry = ToolRegistry()
+        preflight_calls: list[tuple[object, ...]] = []
+        preflight_name = f"preflight_{operation}"
+        original_preflight = getattr(mutation, preflight_name)
+
+        def counted_preflight(*args, __original=original_preflight, **kwargs):
+            preflight_calls.append(args)
+            return __original(*args, **kwargs)
+
+        setattr(mutation, preflight_name, counted_preflight)
+        factory = {
+            "delete": make_delete_file_tool,
+            "move": make_move_file_tool,
+            "rename": make_rename_file_tool,
+        }[operation]
+        registry.register(factory(mutation, changes))
+        executor = ToolExecutor(
+            registry.snapshot(),
+            make_context_builder().run_policy,
+            approval_port=_ApproveAll(),
+            capability_policy=CapabilityPolicy(
+                session.permission_profile,
+                session.workspace_capability,
+            ),
+        )
+        arguments = (
+            {"path": "source.txt", "expected_sha256": expected_sha256}
+            if operation == "delete"
+            else {
+                "source_path": "source.txt",
+                "destination_path": "destination.txt",
+                "expected_sha256": expected_sha256,
+            }
+        )
+        provider = ScriptedModelProvider(
+            [
+                AssistantMessage(
+                    tool_calls=(
+                        FunctionToolCall(
+                            id=operation,
+                            name=f"{operation}_file",
+                            arguments=json.dumps(arguments),
+                        ),
+                    )
+                ),
+                AssistantMessage(content="done"),
+            ]
+        )
+        loop = AgentLoop(
+            provider,
+            ModelRef(provider_id="p", model_id="m"),
+            make_context_builder(),
+            id_source=FixedIdSource(),
+            tool_executor=executor,
+        )
+        [item async for item in loop.run_task(session, operation)]
+
+        run = journal._read_one("SELECT agent_run_id FROM agent_runs LIMIT 1", ())
+        execution = journal.list_executions("ws_1", agent_run_id=str(run[0]))[0]
+        assert len(preflight_calls) == 1
+        evidence = execution.intent.file_evidence[0]
+        assert evidence.staging_relative_path is not None
+        staging = project / evidence.staging_relative_path
+        assert staging.exists()
+        assert sorted(project.glob(".morrow-capture-*")) == [staging]
+        assert execution.state is ToolExecutionState.CLOSED
+        assert execution.disposition is ToolExecutionDisposition.UNKNOWN
+        assert execution.facts is not None
+        assert execution.facts.files[0].staging_relative_path == evidence.staging_relative_path
+        report = persistence.recovery.discover("ses_1", session.log)
+        assert report is not None
+        assert report.items[0].classification is RecoveryClassification.OUTCOME_UNKNOWN
+        assert source.exists() is False
+        assert destination.exists() is False
     finally:
         handle.close()
 
