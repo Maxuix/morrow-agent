@@ -2770,3 +2770,65 @@
   permission or approval. Direct matrix: `34 passed`; expanded matrix: `161 passed`; full non-live
   suite: `1077 passed, 2 skipped, 2 deselected in 42.77s`. Ruff format/check, compileall, CLI help
   and `git diff --check` passed. No live/network/credential/user-state path or remote push was run.
+
+## 2026-08-25 — Subplan 78 Stage 7 Direct baseline activated
+
+- The user explicitly opened Stage 7 pre-baseline item 2: run the current Direct Agent against the
+  completed 10-task Code Agent Mini Eval, diagnose real complex-task blockers, and repair only tool
+  defects that would block Stage 7.
+- Created `codex/feat/stage7-direct-baseline` from local
+  `main@05e3603090dce7955d89f72f08f7df2ed2d7b120`. Pre-existing user changes to the roadmap,
+  improvement list, `.agents/` and `evals/` remain intentionally uncommitted and must be preserved.
+- Fixed the evaluation lane to production Direct, `opencode-go/mimo-v2.5`, `auto-sandboxed`, one
+  isolated workspace per task and the external verifier oracle. Provider-backed calls are in scope;
+  Gold/reference solutions, live MCP, Workflow behavior, permission-default changes and unrelated
+  improvements are not.
+
+## 2026-08-25 — Subplan 78 test basis and smoke complete
+
+- The dataset self-check passed all 10 tasks. The isolated evaluation state can resolve the current
+  `opencode-go/mimo-v2.5` credential from Keychain without copying a secret; the Provider readiness
+  probe succeeded.
+- `EXTERNAL-001` passed the workspace-external verifier (`13 passed`). The public terminal summary
+  reported 13 tool calls, 10 successes, 3 failures, two modified files and validation passed; two
+  explicit write approvals were required.
+- The intended `phone_number.py` change passed, but `test_phone_number.py` remained untracked after
+  the Agent said it had cleaned the temporary test. Preserve this as non-pass quality evidence and a
+  possible delete/sandbox-promotion workflow gap; it is not yet a confirmed complex-task blocker.
+
+## 2026-08-25 — Subplan 78 first Direct baseline complete and blockers confirmed
+
+- Executed all 10 tasks once through the production REPL with the fixed model and permission mode.
+  Result: `PASS 2`, `FAIL 8`. The two passing tasks were external simple/medium Python
+  implementations. Both difficult external tasks modified code and self-tested but missed one
+  hidden semantic contract each; those are Agent reasoning failures. All six Morrow-history tasks
+  stopped at the 30 Tool Round limit before modifying a file.
+- The Morrow-history failure pattern is reproducible across simple, medium and difficult tasks:
+  32–49 calls per task, 10–17 non-successes, repeated denied/invalid project test commands, no
+  convergent recovery. The durable denial path retains only `DENY`, discards reviewed reason codes
+  and returns a generic message, so the Agent cannot tell shell redirection/outside-workspace/
+  destructive risks from an unavailable capability or safely reformulate to `argv`.
+- A second independent blocker exists in the production sandbox: its fixed PATH contains only
+  `/usr/bin:/bin`, while `.venv` is deliberately excluded from snapshots and the real workspace is
+  unreadable. Dependency-bearing Python projects therefore cannot use an already installed project
+  test runner even though the operation would remain read-only and sandboxed.
+- Repair scope is fixed to preserving bounded policy reason evidence plus safe command guidance, and
+  exact read-only exposure of the current runtime/workspace `.venv` toolchain. Network, package
+  installation, arbitrary Host PATH, HOME, credential, policy-default and workspace-write boundaries
+  remain unchanged. Agent reasoning errors and temporary-test deletion are not in repair scope.
+
+## 2026-08-26 — Subplan 78 tool repair and baseline closeout complete locally
+
+- Preserved bounded CapabilityPolicy reason codes in durable prepared intent and returned shared,
+  safe `run_command` recovery guidance for both immediate and recovered denial paths. The guidance
+  explains automatic stdout/stderr capture and `argv` reformulation without exposing arguments or
+  suggesting a policy bypass.
+- Exposed only exact validated current-runtime and workspace `.venv` roots read-only to the native
+  sandbox and built PATH from their exact bin directories. Arbitrary Host PATH, HOME, network,
+  dependency installation, Git writes and original-workspace writes remain blocked.
+- Representative reruns of `MORROW-001` and `MORROW-003` reached successful project command/test
+  execution. Both still failed without producing a valid implementation because of Agent behavior
+  or the 30-round budget; no further tool, Workflow, compaction or budget work was added.
+- Published `docs/acceptance/stage7-direct-agent-baseline.md`. Final evidence: focused tool matrix
+  `37 passed`; host-level macOS sandbox `2 passed`; full offline `1081 passed, 2 deselected in
+  39.18s`; Ruff format/check, compileall, CLI help and `git diff --check` passed.

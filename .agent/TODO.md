@@ -2,26 +2,28 @@
 
 ## Current stage
 
-Stage 6 implementation is complete locally through Subplan 77.
+Stage 7 pre-baseline, item 2: test the current Direct Agent and repair only blocking tool gaps.
 
 ## Active subplan
 
-No active implementation subplan. Subplan 77 is complete locally.
+Subplan 78 — Direct Agent baseline and blocking tool gaps.
 
-## Tasks (Subplan 77)
+## Tasks
 
-- `[x]` Preserve bounded Script diagnostic codes/messages through ToolExecutor.
-- `[x]` Preserve only explicitly public-safe diagnostics at the AgentLoop fallback boundary.
-- `[x]` Render frozen `selection_id` in low-authority Skill context.
-- `[x]` Prove unknown/secret-bearing errors remain hidden and context grants no authority.
-- `[x]` Run focused and full offline/quality gates and reconcile execution state.
-- `[x]` Commit verified work, fast-forward local `main`, and retire the topic branch.
+- `[x]` Establish the public-surface test basis, isolated execution setup and Provider readiness.
+- `[x]` Self-check the 10-task dataset and pass one public-interface smoke task.
+- `[x]` Execute the complete 10-task Direct Agent baseline once and capture sanitized evidence.
+- `[x]` Classify every failure and reproduce only suspected Stage 7-blocking tool defects.
+- `[x]` Add focused regression tests and minimally repair each confirmed blocking tool defect.
+- `[x]` Rerun affected evaluations and required focused/full offline and quality gates.
+- `[x]` Persist the evidence-backed baseline report and reconcile execution state.
+- `[>]` Commit verified work, integrate it into local `main`, and retire the topic branch.
 
 ## Boundaries
 
-- Do not change permission defaults, secret/path/schema/payload safety invariants, public events,
-  AgentLoop/ConversationLog ownership, or extension authority.
-- Do not use real credentials, networked MCP Servers, live Providers or user state.
-- Do not expose raw exceptions, tracebacks, credentials, host paths or arbitrary handler text.
-- Do not change public event keys/lifecycle or make Skill context authoritative.
-- Preserve the verified Stage 6 history and all unrelated user changes.
+- Do not use Gold patches or external-task reference solutions to guide the Agent.
+- Do not repair model reasoning, add Workflow/AgentDefinition behavior, or broaden into compaction,
+  steering, plan mode, routing, package management or Git writes without direct blocking evidence.
+- Preserve policy defaults, approval/sandbox/workspace boundaries, recovery ownership, event shape,
+  secret redaction and all unrelated user changes.
+- Provider-backed Direct Agent calls are in scope; live MCP and unrelated network actions are not.

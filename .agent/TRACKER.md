@@ -2,169 +2,57 @@
 
 ## Current status
 
-Subplan 77 is complete locally. Skill Script failures now retain only explicitly reviewed, bounded
-and secret-refusing diagnostics instead of falling through to an information-free internal error;
-frozen Skill context now renders the exact `selection_id` needed by `run_skill_script` without
-changing package-text authority or permission policy.
+Subplan 78 is locally complete on `codex/feat/stage7-direct-baseline` from
+`main@05e3603090dce7955d89f72f08f7df2ed2d7b120`.
 
-Subplans 63 (spike), 64 (per-AgentRun preparation), 65 (Skill package/catalog foundation + v14),
-66, 67, 68, 69, 70, 71, 72 and 73 are complete locally; the Subplan 65 review repairs are also
-complete.
-Subplan 69 adds constrained Skill script execution, Subplan 70 adds the Provider/Model control
-plane, Subplan 71 adds generic dynamic-tool contracts, and Subplan 72 adds the MCP desired-state
-control plane, stdio Catalog discovery and v16 evidence without widening the existing
-AgentLoop/Session/Task boundaries. The verified Subplan 72 checkpoint is committed on local `main`
-as `c1a7132`;
-remote publication is not in scope.
+The 10-task Code Agent Mini Eval is present and enumerable. The current public Direct Agent launch
+path is `morrow --dir WORKSPACE`; the configured model is `opencode-go/mimo-v2.5`. Stage 7's roadmap
+requires this single-Agent success/cost/rework baseline before Workflow work begins.
 
-Subplan 73 is complete on local `main@514a9a6` after a fast-forward merge from
-`codex/feat/stage6-mcp-runtime`.
-It adds ordinary ToolExecutor integration, compound MCP policy, lazy run-scoped lifecycle, bounded
-results, generic outcome-unknown recovery, AgentRun/PermissionSnapshot evidence and bounded doctor
-facts. Subplan 74 is complete on local `main@0dc4e54` after a fast-forward merge from
-`codex/feat/stage6-backup-doctor`, which was then retired cleanly. Integrated acceptance and closeout
-is now active on `codex/feat/stage6-closeout`.
+The starting worktree is intentionally dirty with user-owned changes to `docs/ROADMAP.md`,
+`docs/IMPROVEMENT_OPPORTUNITIES.md`, `.agents/` and `evals/`. They must be preserved and excluded
+from repair commits unless the final evidence report specifically belongs with the completed eval
+dataset.
 
-Subplan 74 adds versioned Backup v2 with online SQLite backup, sanitized current YAML, Artifact
-content, referenced managed Skill packages, canonical per-file/tree/manifest digests, symlink/path
-refusal, cross-store Skill/MCP checks, atomic isolated restore and explicit v1 compatibility. Doctor
-now validates bounded Skill catalog/Binding/run/Draft/Usage evidence and managed package drift while
-preserving older schema gates. Subplan 75 is complete locally after isolated acceptance, one narrow
-generated-Draft Trust evidence repair, CLI v2 backup exposure, documentation reconciliation and the
-final offline/quality gates.
+The dataset self-check passed all 10 items. Provider readiness passed outside the Codex filesystem
+sandbox with the existing Keychain credential; the evaluation uses a disposable state root seeded
+only with the current non-secret global configuration.
 
-## Last completed work (Subplan 72)
+The public-interface `EXTERNAL-001` smoke run passed its external oracle (`13 passed`). Morrow's
+terminal summary reported 13 tool calls, 10 successes, 3 failures, two modified files and validation
+passed. Two write approvals were required. `phone_number.py` was the intended change; an untracked
+`test_phone_number.py` remained even though the Agent said it had cleaned the temporary test. Record
+this as an unexpected modification and possible delete/promotion workflow gap, not yet as a Stage 7
+blocker.
 
-- Added approved official MCP/JSON Schema dependencies, strict stdio Server contracts, bounded
-  Extension YAML add/show/list/enable/disable/remove operations and revision/digest OCC. Add is
-  disabled by default; enable requires a fresh Catalog plus explicit local allowlist/risk mappings.
-- Added a cancellable official-SDK stdio handshake/list/close adapter with bounded stderr counting,
-  schema dialect/local-reference validation, isolated invalid tools, deterministic provider-safe
-  names and non-authoritative annotation evidence.
-- Added v16 Server/Catalog/run-snapshot/Artifact-link tables, SQLite journal/query projections and
-  safe MCP CLI commands. MCP remains unavailable to AgentRun execution until Subplan 73.
-- Validation: MCP/SDK focused suite `8 passed`; affected migration/binding suite `97 passed`; full
-  non-live suite `1044 passed, 2 skipped, 2 deselected`; CLI help, Ruff format/check, compileall
-  and `git diff --check` passed.
+## Active task
 
-## Last completed work (Subplan 66)
+Integrate the verified repair and acceptance record into local `main`, then retire the topic
+branch without absorbing the user's pre-existing roadmap, improvement-list, `.agents/` or `evals/`
+changes.
 
-- Added independent global/workspace Extension YAML authorities with bounded SkillBindings, exact
-  selection modes, reserved MCP state, OCC, last-valid backups, future-schema/corrupt failure
-  classification and scope-safe atomic publication.
-- Added bounded local Skill validation and immutable imported/generated package publication with
-  captured bytes, provenance/digest/permissions/scripts/dependency previews, collision checks and
-  no automatic enablement.
-- Added enable/disable/pin/rollback/remove application services with exact source/version
-  resolution, dependency/reference protections, YAML-authoritative Binding changes and bounded
-  list/show/status projections.
-- Added command-id receipts, global/workspace replay, package/YAML/SQLite saga phase records and
-  recovery for package-published, YAML-published and package-removal boundaries; no AgentLoop
-  lifecycle tools or selection/context injection were added.
-- Validation: focused Skill suite `41 passed`; full non-live suite `1003 passed, 3 skipped,
-  2 deselected`; CLI help, Ruff format/check, compileall and `git diff --check` passed.
+The first full baseline is complete: `PASS 2`, `FAIL 8`, `BLOCKED 0`, `INCONCLUSIVE 0`. All six
+Morrow-history tasks failed before any file modification after 32–49 tool calls and the 30-round
+limit. `EXTERNAL-001` and `EXTERNAL-002` passed. `EXTERNAL-003` and `EXTERNAL-004` reached working
+implementations but failed hidden callback/redefinition semantics and are classified as Agent
+reasoning failures, not tool defects. All four external runs left Agent-created test files.
 
-## Previous completed work (Subplan 65)
+The two narrow repairs are complete. Durable prepared intents retain bounded policy reason codes
+and expose safe recovery guidance; native sandbox execution exposes only exact read-only current
+runtime/workspace `.venv` roots. `MORROW-001` and `MORROW-003` reruns reached viable project command
+execution but remained FAIL because of Agent/round-budget behavior. No additional tool repair is
+justified by the evidence.
 
-- core/skills/: identity rules (skill_id/skv_/display version, reserved names, collision checks),
-  manifest contracts, TrustLevel + effective_trust from local provenance, four-concept catalog
-  contracts, composite (scope, source_kind, skill_id).
-- adapters/skills/: strict manifest parser (SKILL.md frontmatter + morrow.yaml, unknown keys rejected,
-  declarations non-authoritative), canonical tree builder (regular files only; fstat+bytes from one
-  open; exec mode; rejects symlinks/hardlinks/devices/FIFOs/sockets, escape, normalization
-  collisions, reserved names, oversize, non-UTF-8), envelope writer/reader/verifier with digest
-  checks and drift detection, bounded root discovery.
-- application/skills/catalog.py: deterministic projection with exact conflict rules (fold on same
-  digest; identity_conflict; name_conflict), requested vs effective Trust exposed, bounded failures.
-- Operational Store v14 (definitions, versions, catalog operations, reserved AgentRun
-  selections/contexts with scope+scope_id) + SqliteSkillJournal + thin aggregate delegation;
-  version bump 13->14 with fixed checksum.
-- Validation: `tests/test_skill_catalog.py` 17 tests + `tests/test_skill_migration_v14.py` 5 tests;
-  full offline suite `983 passed, 1 skipped (mcp spike), 2 deselected`; ruff/compileall/
-  `git diff --check` green; `pyproject.toml`/`uv.lock` unchanged; pre-existing migration tests'
-  hardcoded version expectations bumped to 14.
-
-## Final status
-
-Stage 6 Subplans 63–77 are complete locally; closeout commit `19432fb` and subsequent repairs are
-merged into local `main`, and the topic branch is retired. The requested full Stage6 Grok review
-was rerun over the complete Stage6
-code surface; its confirmed P1/P2 findings and the independent handshake/Artifact evidence gaps
-were fixed and committed locally. The final offline, quality and CLI gates are green; no remote
-push is in scope.
+The acceptance report is `docs/acceptance/stage7-direct-agent-baseline.md`. Focused tests passed
+(`37 passed`), host-level native sandbox tests passed (`2 passed`), and the full offline gate passed
+(`1081 passed, 2 deselected in 39.18s`). Ruff format/check, compileall, CLI help and diff check passed.
 
 ## Next action
 
-No remaining Stage 6 implementation action; keep local `main` clean. No remote push is in scope.
-
-## Last completed work (Subplan 71)
-
-- Added one bounded `ToolArgumentsValidator` seam, a Pydantic compatibility adapter and a
-  dependency-free explicit Draft 2020-12 JSON Schema subset with input/schema/depth/property/
-  array/string/number budgets, unsupported keyword rejection and local-reference-only behavior.
-- `RegisteredTool` now has one validator and one recovery declaration; all local/configuration/
-  preference/Git/Skill/fixture factories pass explicit declarations. Legacy `arguments_model`
-  callers are constructor-adapted without retaining a second execution authority.
-- Prepared intents freeze the declaration into durable evidence before handler entry; recovery uses
-  that evidence after the current registry changes. Dynamic-tool tests cover validation, approval,
-  execution and crash-classification stability without name-prefix branches.
-- Validation: focused compatibility/dynamic/recovery suites `76 passed`; full non-live gate
-  `1036 passed, 3 skipped, 2 deselected`; Ruff, compileall and `git diff --check` passed.
-
-## Dependency gate
-
-User approved the exact change on 2026-08-24: `mcp >= 2.0.0, < 3` and `jsonschema >= 4.20, < 5`,
-with the rationale and measured impact recorded in the Subplan 63 ADR. No live MCP/Provider test
-is authorized by this approval.
+Commit the closeout records, fast-forward local `main`, verify topic containment, and delete the
+topic branch. Remote push remains out of scope.
 
 ## Blockers
 
-None. No remote push was requested or performed.
-
-## Notes
-
-- `main` is ahead of `origin/main` through the verified Subplan 72 fast-forward. Remote publication
-  was not placed in scope, so no push was made.
-- The spike test file skips cleanly in the default dev env (`importorskip("mcp")`).
-
-## Last completed work (Subplan 69)
-
-- Added strict Skill script request/result contracts with bounded argv, environment names, input
-  Artifact IDs, output paths and timeout; shell strings and overlapping output paths are rejected.
-- Added verified whole-package capture and immediate pre-launch envelope/tree/script digest checks;
-  execution uses an isolated temporary root, read-only Skill copy, declared input Artifacts and
-  declared output files only. Root/output/input symlink and mutation checks fail closed.
-- Registered `run_skill_script` through the existing ToolExecutor/CapabilityPolicy path with a
-  sandbox-required OperationIntent, manifest permission risk flags, approval metadata and an
-  outcome-unknown recovery declaration. Stdout/stderr and output files are redacted/bounded before
-  the output Artifact refs enter the result envelope.
-- Validation: focused suite `82 passed, 2 skipped`; full non-live suite `1023 passed, 3 skipped,
-  2 deselected`; Ruff, compileall and `git diff --check` passed. Commit `73f99db`; no push.
-
-## Last completed work (Subplan 68)
-
-- Added bounded Draft, validation-report and observational Usage contracts; v15 tables, migration,
-  journal ports and digest-checked mappings keep raw user text, model reasoning and full results out
-  of SQLite.
-- Added accepted same-workspace SkillCandidate→Draft generation with replay-safe roots, deterministic
-  manifest/tree/privacy/secret/prompt-injection validation, revision diff/edit/revalidate/reject and
-  lifecycle publication through immutable Skill versions.
-- Draft acceptance records approval evidence but does not enable or repin a Binding; Usage records
-  exact selection/version facts and only provides descriptive or insufficient-data comparisons.
-- Validation: focused Draft/Usage/migration suite `6 passed`; full non-live suite `1017 passed,
-  3 skipped, 2 deselected`; Ruff format/check, compileall, CLI help and `git diff --check` passed.
-
-## Previous completed work (Subplan 67)
-
-- Added deterministic explicit/default/conservative description Skill selection with bounded
-  omission reasons, frozen version/tree/context evidence and same-admission persistence.
-- Added low-authority bounded Skill context injection, journal-only historical rehydration and
-  frozen relative resource reads with drift/traversal/MIME/Artifact limits.
-- Validation: full non-live suite `1011 passed, 3 skipped, 2 deselected`; Ruff format/check,
-  compileall, CLI help and `git diff --check` passed.
-
-## Preserved history
-
-Subplan 63 evidence: ADR + `tests/spikes/`; Subplan 64 evidence: `tests/test_agent_run_preparation.py`;
-Subplan 65 evidence: `tests/test_skill_catalog.py`, `tests/test_skill_migration_v14.py`. Detailed
-history stays in Git; it is not duplicated in this active tracker.
+None. The Direct baseline remains poor but is now a valid Stage 7 comparison baseline; the remaining
+complex-task failures are Agent reasoning/round-budget evidence, not a missing execution tool.
