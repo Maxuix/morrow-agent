@@ -12,6 +12,7 @@ from morrow.core.memory_rendering import (
     render_project_knowledge_block,
 )
 from morrow.core.memory_selection import MemorySelection, MemorySelectionItem
+from morrow.core.prompt import PromptProfileEvidence, PromptProjection
 from morrow.core.skills.context import SkillContextProjection, skill_context_projection_digest
 from morrow.core.skills.selection import SkillSelection
 from morrow.core.store import StorageError, StorageErrorCode
@@ -47,22 +48,39 @@ def load_run_context_projection(
     txn,
     workspace_id: str,
     agent_run_id: str,
+    *,
+    prompt_assembler=None,
+    prompt_projection: PromptProjection | None = None,
 ) -> RunContextProjection:
     """Load and verify one durable AgentRun's complete prompt-facing baseline."""
 
     run = txn.get_agent_run(workspace_id, agent_run_id)
     if run is None:
         raise StorageError(StorageErrorCode.NOT_FOUND, "AgentRun is missing")
-    return build_run_context_projection(txn, workspace_id, run.snapshot)
+    return build_run_context_projection(
+        txn,
+        workspace_id,
+        run.snapshot,
+        prompt_assembler=prompt_assembler,
+        prompt_projection=prompt_projection,
+    )
 
 
 def build_run_context_projection(
     txn,
     workspace_id: str,
     snapshot: AgentRunSnapshot,
+    *,
+    prompt_assembler=None,
+    prompt_projection: PromptProjection | None = None,
 ) -> RunContextProjection:
     """Resolve exact immutable Knowledge revisions without consulting live eligibility."""
 
+    verified_prompt_projection = _load_prompt_projection(
+        snapshot,
+        prompt_assembler=prompt_assembler,
+        prompt_projection=prompt_projection,
+    )
     preference_block = ""
     preference_digest = snapshot.preference_projection_digest
     if preference_digest is not None:
@@ -83,6 +101,7 @@ def build_run_context_projection(
             preference_omitted_count=snapshot.preference_omitted_count,
             preference_source_scopes=snapshot.preference_source_scopes,
             skill_context=skill_context,
+            prompt_projection=verified_prompt_projection,
         )
     if memory_selection_digest(selection) != selection.selection_digest:
         raise StorageError(StorageErrorCode.NEEDS_REPAIR, "memory selection digest is invalid")
@@ -124,7 +143,59 @@ def build_run_context_projection(
         preference_omitted_count=snapshot.preference_omitted_count,
         preference_source_scopes=snapshot.preference_source_scopes,
         skill_context=skill_context,
+        prompt_projection=verified_prompt_projection,
     )
+
+
+def _load_prompt_projection(
+    snapshot: AgentRunSnapshot,
+    *,
+    prompt_assembler,
+    prompt_projection: PromptProjection | None,
+) -> PromptProjection | None:
+    """Verify fresh in-memory prompt content or rehydrate frozen source metadata."""
+    if snapshot.prompt_profile_id is None:
+        if prompt_projection is not None:
+            raise StorageError(
+                StorageErrorCode.NEEDS_REPAIR,
+                "prompt projection exists without frozen profile evidence",
+            )
+        return None
+    try:
+        evidence = PromptProfileEvidence(
+            profile_id=snapshot.prompt_profile_id,
+            profile_version=snapshot.prompt_profile_version,
+            profile_digest=snapshot.prompt_profile_digest,
+            role_prompt_digest=snapshot.role_prompt_digest,
+            project_instruction_resolver_version=snapshot.project_instruction_resolver_version,
+            project_instruction_sources=snapshot.project_instruction_sources,
+            project_instruction_selection_digest=snapshot.project_instruction_selection_digest,
+        )
+        if prompt_projection is not None:
+            if prompt_projection.evidence != evidence:
+                raise ValueError("fresh prompt projection does not match AgentRun evidence")
+            if prompt_assembler is None:
+                if prompt_projection.role_prompt or evidence.project_instruction_sources:
+                    raise ValueError("prompt verifier is unavailable")
+                return None
+            prompt_assembler.verify_projection(prompt_projection)
+            return prompt_projection
+        if prompt_assembler is None:
+            # Keep callers that only rebuild the pre-S7P-03 memory/Skill view
+            # compatible when the frozen run has no external project sources.
+            # A source-bearing prompt must never be reconstructed without the
+            # resolver that can verify its path and content hash.
+            if evidence.project_instruction_sources or evidence.role_prompt_digest is not None:
+                raise ValueError("prompt rehydrator is unavailable")
+            return None
+        return prompt_assembler.rehydrate(evidence)
+    except StorageError:
+        raise
+    except Exception as exc:
+        raise StorageError(
+            StorageErrorCode.NEEDS_REPAIR,
+            "frozen prompt/project-instruction evidence cannot be verified",
+        ) from exc
 
 
 def load_frozen_skill_context(

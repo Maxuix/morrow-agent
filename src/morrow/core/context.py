@@ -23,6 +23,7 @@ from morrow.core.domain import (
 from morrow.core.learning_memory import ProjectKnowledgeHead, ProjectKnowledgeRevision
 from morrow.core.memory_selection import MemorySelection
 from morrow.core.models import ProtocolModel, utc_now
+from morrow.core.prompt import PromptProjection
 from morrow.core.skills.context import SkillContextProjection
 
 CONTEXT_CHECKPOINT_MAX_BYTES = 32 * 1024
@@ -56,6 +57,8 @@ class RunContextProjection:
     preference_omitted_count: int = 0
     preference_source_scopes: tuple[str, ...] = ()
     skill_context: SkillContextProjection | None = None
+    # Prompt bodies are process-local; only their reference metadata is on the snapshot.
+    prompt_projection: PromptProjection | None = None
 
 
 class CheckpointOmissionReason(StrEnum):

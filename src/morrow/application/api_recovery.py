@@ -179,6 +179,16 @@ class RecoveryApplicationService:
                 raise
         except ApplicationError:
             raise
+        except StorageError as exc:
+            api._restore_log_projection(log, report.session_id)
+            if exc.code is StorageErrorCode.NEEDS_REPAIR:
+                row = api.journal.get_session(api.workspace_id, report.session_id)
+                if row is not None and row.health is not SessionHealth.QUARANTINED:
+                    api.journal.save_session(
+                        api.workspace_id,
+                        row.model_copy(update={"health": SessionHealth.QUARANTINED}),
+                    )
+            raise api._translate_exception(exc) from exc
         except Exception as exc:
             api._restore_log_projection(log, report.session_id)
             raise api._translate_exception(exc) from exc
@@ -249,7 +259,12 @@ class RecoveryApplicationService:
                 previous = txn.get_agent_run(api.workspace_id, saved.agent_run_id)
                 if previous is None:
                     raise StorageError(StorageErrorCode.NOT_FOUND, "recovery AgentRun is missing")
-                build_run_context_projection(txn, api.workspace_id, previous.snapshot)
+                build_run_context_projection(
+                    txn,
+                    api.workspace_id,
+                    previous.snapshot,
+                    prompt_assembler=getattr(api.persistence, "prompt_assembler", None),
+                )
                 new_id = api.id_source.new_id(AGENT_RUN_ID_PREFIX)
                 runtime_instance_id = getattr(api.persistence, "runtime_instance_id", None)
                 snapshot = previous.snapshot

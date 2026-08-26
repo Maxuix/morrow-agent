@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 from typing import Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 
 from morrow.core.models import (
     CostMetadata,
@@ -23,6 +23,7 @@ from morrow.core.models import (
     ProviderToolSupport,
     RunPolicy,
 )
+from morrow.core.prompt import ProjectInstructionSourceRef, project_source_selection_digest
 
 DIGEST_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 
@@ -203,6 +204,13 @@ class PreparedAgentRunSpec(ProtocolModel):
     skill_context_id: str | None = Field(default=None, exclude=True)
     skill_selection_digest: str | None = None
     skill_context_digest: str | None = None
+    prompt_profile_id: str | None = None
+    prompt_profile_version: str | None = None
+    prompt_profile_digest: str | None = None
+    role_prompt_digest: str | None = None
+    project_instruction_resolver_version: str | None = None
+    project_instruction_sources: tuple[ProjectInstructionSourceRef, ...] = ()
+    project_instruction_selection_digest: str | None = None
 
     @field_validator("run_policy_digest", "tool_schema_digest")
     @classmethod
@@ -221,6 +229,69 @@ class PreparedAgentRunSpec(ProtocolModel):
         ):
             raise ValueError("MCP run snapshot reference is invalid")
         return value
+
+    @field_validator(
+        "prompt_profile_digest",
+        "role_prompt_digest",
+        "project_instruction_selection_digest",
+    )
+    @classmethod
+    def valid_prompt_digest(cls, value: str | None) -> str | None:
+        if value is not None and not DIGEST_PATTERN.fullmatch(value):
+            raise ValueError("prepared prompt digest must be a SHA-256 hex digest")
+        return value
+
+    @field_validator(
+        "prompt_profile_id", "prompt_profile_version", "project_instruction_resolver_version"
+    )
+    @classmethod
+    def valid_prompt_tokens(cls, value: str | None) -> str | None:
+        if value is not None and (
+            not value.strip() or len(value) > 64 or any(char in value for char in "\x00\r\n")
+        ):
+            raise ValueError("prepared prompt evidence token is invalid")
+        return value
+
+    @field_validator("project_instruction_sources")
+    @classmethod
+    def bounded_project_instruction_sources(
+        cls, value: tuple[ProjectInstructionSourceRef, ...]
+    ) -> tuple[ProjectInstructionSourceRef, ...]:
+        if len(value) > 32 or len({(item.path, item.scope) for item in value}) != len(value):
+            raise ValueError("prepared project instruction references are invalid")
+        if sum(item.byte_count for item in value) > 64 * 1024:
+            raise ValueError("prepared project instruction references exceed the byte budget")
+        return value
+
+    @model_validator(mode="after")
+    def complete_prompt_evidence(self) -> PreparedAgentRunSpec:
+        profile_fields = (
+            self.prompt_profile_id,
+            self.prompt_profile_version,
+            self.prompt_profile_digest,
+        )
+        if any(value is not None for value in profile_fields) and not all(
+            value is not None for value in profile_fields
+        ):
+            raise ValueError("prepared prompt profile evidence is incomplete")
+        if self.role_prompt_digest is not None and self.prompt_profile_id is None:
+            raise ValueError("prepared role prompt evidence has no profile")
+        if self.project_instruction_sources and (
+            self.project_instruction_resolver_version is None
+            or self.project_instruction_selection_digest is None
+        ):
+            raise ValueError("prepared project instruction evidence is incomplete")
+        if self.project_instruction_resolver_version is None and (
+            self.project_instruction_sources
+            or self.project_instruction_selection_digest is not None
+        ):
+            raise ValueError("prepared project instruction resolver evidence is incomplete")
+        if self.project_instruction_resolver_version is not None and (
+            self.project_instruction_selection_digest
+            != project_source_selection_digest(list(self.project_instruction_sources))
+        ):
+            raise ValueError("prepared project instruction selection digest is invalid")
+        return self
 
     @property
     def provider_support(self) -> ProviderToolSupport:

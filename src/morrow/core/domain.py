@@ -24,6 +24,13 @@ from morrow.core.models import (
     RunPolicy,
     utc_now,
 )
+from morrow.core.prompt import (
+    PROMPT_MAX_PROJECT_SOURCES,
+    PROMPT_MAX_PROJECT_TOTAL_BYTES,
+    PROMPT_VERSION_PATTERN,
+    ProjectInstructionSourceRef,
+    project_source_selection_digest,
+)
 
 WORKSPACE_ID_PREFIX = "ws"
 SESSION_ID_PREFIX = "ses"
@@ -567,6 +574,15 @@ class AgentRunSnapshot(ProtocolModel):
     skill_omitted_count: int = Field(default=0, ge=0)
     skill_binding_digest: str | None = None
     skill_catalog_digest: str | None = None
+    # Prompt/project-instruction evidence is reference-only.  Bodies and task text
+    # remain in the in-process RunContextProjection and are never durable.
+    prompt_profile_id: str | None = None
+    prompt_profile_version: str | None = None
+    prompt_profile_digest: str | None = None
+    role_prompt_digest: str | None = None
+    project_instruction_resolver_version: str | None = None
+    project_instruction_sources: tuple[ProjectInstructionSourceRef, ...] = ()
+    project_instruction_selection_digest: str | None = None
     # Optional frozen preparation evidence keeps older snapshots decodable.
     provider_runtime: ProviderRuntimeSnapshot | None = None
     run_policy: RunPolicy | None = None
@@ -626,6 +642,48 @@ class AgentRunSnapshot(ProtocolModel):
             return None
         if not DIGEST_PATTERN.match(value):
             raise ValueError("Skill source digest must be a SHA-256 hex digest")
+        return value
+
+    @field_validator("prompt_profile_id")
+    @classmethod
+    def valid_prompt_profile_id(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if not re.fullmatch(r"^[A-Za-z][A-Za-z0-9_.:-]{0,63}$", value):
+            raise ValueError("prompt profile ID is invalid")
+        return value
+
+    @field_validator("prompt_profile_version", "project_instruction_resolver_version")
+    @classmethod
+    def valid_prompt_version(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if not PROMPT_VERSION_PATTERN.fullmatch(value):
+            raise ValueError("prompt evidence version is invalid")
+        return value
+
+    @field_validator(
+        "prompt_profile_digest", "role_prompt_digest", "project_instruction_selection_digest"
+    )
+    @classmethod
+    def valid_prompt_digest(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if not DIGEST_PATTERN.fullmatch(value):
+            raise ValueError("prompt evidence digest must be a SHA-256 hex digest")
+        return value
+
+    @field_validator("project_instruction_sources")
+    @classmethod
+    def bounded_project_sources(
+        cls, value: tuple[ProjectInstructionSourceRef, ...]
+    ) -> tuple[ProjectInstructionSourceRef, ...]:
+        if len(value) > PROMPT_MAX_PROJECT_SOURCES:
+            raise ValueError("AgentRun contains too many project instruction sources")
+        if len({(item.path, item.scope) for item in value}) != len(value):
+            raise ValueError("AgentRun project instruction sources must be unique")
+        if sum(item.byte_count for item in value) > PROMPT_MAX_PROJECT_TOTAL_BYTES:
+            raise ValueError("AgentRun project instruction sources exceed the byte budget")
         return value
 
     @field_validator("skill_selection_ids", "skill_context_ids")
@@ -715,6 +773,43 @@ class AgentRunSnapshot(ProtocolModel):
             raise ValueError("AgentRun Skill selection digest has no references")
         if not self.skill_context_ids and self.skill_context_digest is not None:
             raise ValueError("AgentRun Skill context digest has no references")
+        prompt_fields = (
+            self.prompt_profile_id,
+            self.prompt_profile_version,
+            self.prompt_profile_digest,
+        )
+        if any(value is not None for value in prompt_fields) and not all(
+            value is not None for value in prompt_fields
+        ):
+            raise ValueError("AgentRun prompt profile evidence is incomplete")
+        if (
+            self.role_prompt_digest is not None
+            or self.project_instruction_resolver_version is not None
+            or self.project_instruction_sources
+            or self.project_instruction_selection_digest is not None
+        ) and not all(value is not None for value in prompt_fields):
+            raise ValueError("AgentRun prompt evidence has no complete profile")
+        if self.role_prompt_digest is not None and self.prompt_profile_id is None:
+            raise ValueError("AgentRun role prompt evidence has no profile")
+        if self.project_instruction_sources and (
+            self.project_instruction_resolver_version is None
+            or self.project_instruction_selection_digest is None
+        ):
+            raise ValueError("AgentRun project instruction evidence is incomplete")
+        if self.project_instruction_resolver_version is not None and (
+            self.project_instruction_selection_digest is None
+        ):
+            raise ValueError("AgentRun project instruction selection digest is missing")
+        if self.project_instruction_resolver_version is None and (
+            self.project_instruction_sources
+            or self.project_instruction_selection_digest is not None
+        ):
+            raise ValueError("AgentRun project instruction resolver evidence is incomplete")
+        if self.project_instruction_resolver_version is not None and (
+            project_source_selection_digest(list(self.project_instruction_sources))
+            != self.project_instruction_selection_digest
+        ):
+            raise ValueError("AgentRun project instruction selection digest is invalid")
         if self.skill_selection_id is None and len(self.skill_selection_ids) == 1:
             object.__setattr__(self, "skill_selection_id", self.skill_selection_ids[0])
         if self.skill_context_id is None and len(self.skill_context_ids) == 1:

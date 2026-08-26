@@ -50,6 +50,7 @@ from morrow.core.models import (
 )
 from morrow.core.ports import IdSource
 from morrow.core.preference_documents import PreferenceDocument
+from morrow.core.prompt import PromptProjection
 from morrow.core.recovery import RecoveryReport, RecoveryReportStatus
 from morrow.core.skills.selection import SkillSelectionPlan
 from morrow.core.store import StorageError, StorageErrorCode
@@ -138,6 +139,7 @@ class TurnSubmissionCoordinator:
         preference_reviews: PreferenceReviewJobEnqueuer | None = None,
         preference_loader: Callable[[], PreferenceRunSources] | None = None,
         skill_selection=None,
+        prompt_assembler=None,
     ) -> None:
         self.journal = journal
         self.workspace_id = workspace_id
@@ -151,6 +153,7 @@ class TurnSubmissionCoordinator:
         self.preference_reviews = preference_reviews
         self.preference_loader = preference_loader
         self.skill_selection = skill_selection
+        self.prompt_assembler = prompt_assembler
         self.memory_selector = MemorySelector(id_source=id_source, clock=clock)
 
     def commit(
@@ -241,6 +244,7 @@ class TurnSubmissionCoordinator:
         tools: tuple[ToolDefinition, ...] = (),
         prepared_spec: PreparedAgentRunSpec | None = None,
         prepared_mcp_run=None,
+        prompt_projection=None,
         writer: DurableConversationWriter,
     ) -> TurnSubmitResult:
         digest = request_digest(user_input)
@@ -249,6 +253,27 @@ class TurnSubmissionCoordinator:
             if result.kind == "recovery" and result.receipt is not None:
                 self._mark_needs_recovery(session)
             return result
+        if prompt_projection is None and self.prompt_assembler is not None:
+            try:
+                prompt_projection = self.prompt_assembler.prepare_for_task(user_input)
+            except Exception as exc:
+                raise StorageError(
+                    StorageErrorCode.NEEDS_REPAIR,
+                    "project instruction projection cannot be prepared",
+                ) from exc
+        if prompt_projection is not None:
+            if self.prompt_assembler is None:
+                raise StorageError(
+                    StorageErrorCode.NEEDS_REPAIR,
+                    "fresh prompt projection cannot be verified",
+                )
+            try:
+                self.prompt_assembler.verify_projection(prompt_projection)
+            except Exception as exc:
+                raise StorageError(
+                    StorageErrorCode.NEEDS_REPAIR,
+                    "fresh prompt projection cannot be verified",
+                ) from exc
 
         preference_sources = (
             self.preference_loader() if self.preference_loader is not None else None
@@ -362,6 +387,7 @@ class TurnSubmissionCoordinator:
                 preference_sources=preference_sources,
                 prepared_spec=prepared_spec,
                 skill_plan=skill_plan,
+                prompt_projection=prompt_projection,
             )
             txn.put_memory_selection(self.workspace_id, selection)
             txn.create_agent_run(
@@ -416,7 +442,11 @@ class TurnSubmissionCoordinator:
             return accepted
         try:
             projection = load_run_context_projection(
-                self.journal, self.workspace_id, accepted.agent_run_id
+                self.journal,
+                self.workspace_id,
+                accepted.agent_run_id,
+                prompt_assembler=self.prompt_assembler,
+                prompt_projection=prompt_projection,
             )
         except StorageError as exc:
             session.run_context_projection = None
@@ -516,12 +546,14 @@ class SessionRestoreCoordinator:
         recovery: RecoveryService,
         clock: Callable[[], datetime],
         state: DurableTurnState,
+        prompt_assembler=None,
     ) -> None:
         self.journal = journal
         self.workspace_id = workspace_id
         self.recovery = recovery
         self.clock = clock
         self.state = state
+        self.prompt_assembler = prompt_assembler
 
     def start_new_session(self, session: Session, session_id: str) -> None:
         stamp = self.clock()
@@ -607,9 +639,23 @@ class SessionRestoreCoordinator:
         if resumed_agent_run_id is not None:
             self.state.agent_run_id = resumed_agent_run_id
             self.state.permission_snapshot_id = None
-            session.run_context_projection = load_run_context_projection(
-                self.journal, self.workspace_id, resumed_agent_run_id
-            )
+            try:
+                session.run_context_projection = load_run_context_projection(
+                    self.journal,
+                    self.workspace_id,
+                    resumed_agent_run_id,
+                    prompt_assembler=self.prompt_assembler,
+                )
+            except StorageError as exc:
+                if exc.code is StorageErrorCode.NEEDS_REPAIR:
+                    session.run_context_projection = None
+                    session.skill_context_projection = None
+                    session.health = SessionHealth.QUARANTINED
+                    self.journal.save_session(
+                        self.workspace_id,
+                        row.model_copy(update={"health": SessionHealth.QUARANTINED}),
+                    )
+                raise
             session.skill_context_projection = session.run_context_projection.skill_context
         elif report.status is RecoveryReportStatus.RESOLVED:
             session.run_context_projection = None
@@ -666,7 +712,10 @@ class SessionRestoreCoordinator:
     def _install_memory_projection(self, session: Session, snapshot: AgentRunSnapshot) -> None:
         try:
             session.run_context_projection = build_run_context_projection(
-                self.journal, self.workspace_id, snapshot
+                self.journal,
+                self.workspace_id,
+                snapshot,
+                prompt_assembler=self.prompt_assembler,
             )
             session.skill_context_projection = session.run_context_projection.skill_context
         except StorageError as exc:
@@ -713,6 +762,7 @@ def build_agent_run_snapshot(
     preference_sources: PreferenceRunSources | None = None,
     prepared_spec: PreparedAgentRunSpec | None = None,
     skill_plan: SkillSelectionPlan | None = None,
+    prompt_projection: PromptProjection | None = None,
 ) -> AgentRunSnapshot:
     def source_digest(presence: StatePresence, value) -> str:
         if value is not None and not hasattr(value, "model_dump"):
@@ -808,6 +858,62 @@ def build_agent_run_snapshot(
         ),
     )
     tool_payload = [tool.model_dump(mode="json") for tool in tools]
+    prompt_evidence = prompt_projection.evidence if prompt_projection is not None else None
+    prompt_values = {
+        "prompt_profile_id": (
+            prompt_evidence.profile_id
+            if prompt_evidence is not None
+            else prepared_spec.prompt_profile_id
+            if prepared_spec is not None
+            else None
+        ),
+        "prompt_profile_version": (
+            prompt_evidence.profile_version
+            if prompt_evidence is not None
+            else prepared_spec.prompt_profile_version
+            if prepared_spec is not None
+            else None
+        ),
+        "prompt_profile_digest": (
+            prompt_evidence.profile_digest
+            if prompt_evidence is not None
+            else prepared_spec.prompt_profile_digest
+            if prepared_spec is not None
+            else None
+        ),
+        "role_prompt_digest": (
+            prompt_evidence.role_prompt_digest
+            if prompt_evidence is not None
+            else prepared_spec.role_prompt_digest
+            if prepared_spec is not None
+            else None
+        ),
+        "project_instruction_resolver_version": (
+            prompt_evidence.project_instruction_resolver_version
+            if prompt_evidence is not None
+            else (
+                prepared_spec.project_instruction_resolver_version
+                if prepared_spec is not None
+                else None
+            )
+        ),
+        "project_instruction_sources": (
+            prompt_evidence.project_instruction_sources
+            if prompt_evidence is not None
+            else prepared_spec.project_instruction_sources
+            if prepared_spec is not None
+            else ()
+        ),
+        "project_instruction_selection_digest": (
+            prompt_evidence.project_instruction_selection_digest
+            if prompt_evidence is not None
+            else (
+                prepared_spec.project_instruction_selection_digest
+                if prepared_spec is not None
+                else None
+            )
+        ),
+    }
     return AgentRunSnapshot(
         profile=session.profile,
         model=model,
@@ -845,6 +951,7 @@ def build_agent_run_snapshot(
         skill_catalog_digest=skill_plan.catalog_digest if skill_plan is not None else None,
         provider_runtime=prepared_spec.provider_runtime if prepared_spec is not None else None,
         run_policy=prepared_spec.run_policy if prepared_spec is not None else None,
+        **prompt_values,
     )
 
 

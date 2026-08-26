@@ -68,6 +68,7 @@ from morrow.application.preferences.tool import (
 )
 from morrow.application.preferences.worker import ReviewWorker
 from morrow.application.preferences.writer import PreferenceWriter
+from morrow.application.prompt import DirectCodingPromptAssembler
 from morrow.application.recovery import RecoveryService
 from morrow.application.skills.bindings import SkillBindingService
 from morrow.application.skills.catalog import SkillCatalogService
@@ -679,6 +680,7 @@ def build_session_application(
         root=Path(identity.path),
         read_only=inspection.read_only,
     )
+    prompt_assembler = DirectCodingPromptAssembler(workspace_capability.root)
     session = Session(
         session_id=resume_session_id or app.id_source.new_id("ses"),
         profile=(
@@ -764,6 +766,7 @@ def build_session_application(
     context_builder = ContextBuilder(
         run_policy=run_policy,
         estimate_request_chars=estimate_request_chars,
+        prompt_assembler=prompt_assembler,
     )
     handle = None
     preference_service = None
@@ -984,6 +987,7 @@ def build_session_application(
             recovery=operational.recovery,
             preference_loader=load_run_preferences,
             skill_selection=skill_services.selection,
+            prompt_assembler=prompt_assembler,
         )
         spec_provider_config = provider_config
         if spec_provider_config is None:
@@ -1004,6 +1008,7 @@ def build_session_application(
             config_revision=global_result.revision,
             run_policy=run_policy,
             tools=tool_executor.definitions if tool_executor is not None else (),
+            prompt_assembler=prompt_assembler,
         )
         legacy_prepared = PreparedAgentRunRuntime(
             spec=legacy_spec,
@@ -1025,6 +1030,7 @@ def build_session_application(
             workspace_id=identity.workspace_id,
             mcp_factory=prepare_mcp,
             mcp_rehydrate_factory=rehydrate_mcp,
+            prompt_assembler=prompt_assembler,
         )
         if resume_session_id:
             persistence.restore_into(session)

@@ -58,6 +58,7 @@ class SessionPersistence:
         clock: Clock | None = None,
         preference_loader=None,
         skill_selection=None,
+        prompt_assembler=None,
     ) -> None:
         self.workspace_id = workspace_id
         self.journal = journal
@@ -68,6 +69,7 @@ class SessionPersistence:
         self.runtime_instance_id = runtime_instance_id
         self.mutation = mutation
         self.artifacts = artifacts
+        self.prompt_assembler = prompt_assembler
         workspace_root = mutation.files.resolver.root if mutation is not None else None
         self.recovery = recovery or RecoveryService(
             journal,
@@ -102,6 +104,7 @@ class SessionPersistence:
             preference_reviews=self.preference_reviews,
             preference_loader=preference_loader,
             skill_selection=skill_selection,
+            prompt_assembler=prompt_assembler,
         )
         self.session_restore = SessionRestoreCoordinator(
             journal,
@@ -109,6 +112,7 @@ class SessionPersistence:
             recovery=self.recovery,
             clock=self._now,
             state=self.turn_state,
+            prompt_assembler=prompt_assembler,
         )
         self.permissions = RunPermissionCoordinator(
             journal,
@@ -241,6 +245,7 @@ class SessionPersistence:
         tools: tuple = (),
         prepared_spec=None,
         prepared_mcp_run=None,
+        prompt_projection=None,
     ) -> TurnSubmitResult:
         if self.writer is None:
             raise RuntimeError("session persistence is not attached")
@@ -253,6 +258,7 @@ class SessionPersistence:
             tools=tools,
             prepared_spec=prepared_spec,
             prepared_mcp_run=prepared_mcp_run,
+            prompt_projection=prompt_projection,
             writer=self.writer,
         )
 

@@ -39,6 +39,7 @@ from morrow.core.observability import (
 from morrow.core.permissions import PermissionSnapshot
 from morrow.core.preference_documents import PreferenceDocument
 from morrow.core.preference_models import PreferenceEntry
+from morrow.core.prompt import PromptProjection
 from morrow.core.skills.context import SkillContextProjection
 from morrow.runtime.conversation import ConversationAppend, ConversationLog
 
@@ -90,6 +91,7 @@ class DurableRunCoordinator(SessionCommitter, Protocol):
         agent_run_id: str,
         tools: tuple[ToolDefinition, ...],
         prepared_spec: PreparedAgentRunSpec | None = None,
+        prompt_projection: PromptProjection | None = None,
     ) -> TurnSubmissionResult: ...
 
     def get_open_run_snapshot(self) -> AgentRunSnapshot | None: ...
@@ -216,6 +218,8 @@ class Session:
     context_checkpoint: ContextCheckpoint | None = None
     run_context_projection: RunContextProjection | None = None
     skill_context_projection: SkillContextProjection | None = None
+    # Fresh prompt bodies remain in memory until the matching AgentRun is admitted.
+    pending_prompt_projection: PromptProjection | None = None
 
     def __post_init__(self) -> None:
         # Hand-built Sessions in tests and local integrations may only provide values.  Infer
@@ -276,6 +280,7 @@ class Session:
         self.context_checkpoint = None
         self.run_context_projection = None
         self.skill_context_projection = None
+        self.pending_prompt_projection = None
         self.pending_full_access_grant = False
 
     def retain_run_facts(

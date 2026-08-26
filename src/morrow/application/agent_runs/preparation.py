@@ -84,6 +84,7 @@ def build_prepared_spec(
     run_policy: RunPolicy,
     tools: tuple[ToolDefinition, ...],
     mcp_run_snapshot_ids: tuple[str, ...] = (),
+    prompt_assembler=None,
 ) -> PreparedAgentRunSpec:
     """Freeze the sanitized evidence one AgentRun will be rebuilt from."""
     api_model_id = provider_config.models[model.model_id].api_model_id
@@ -98,6 +99,18 @@ def build_prepared_spec(
         config_revision=config_revision,
         config_digest=sha256_digest(canonical_json_bytes(provider_config.model_dump(mode="json"))),
     )
+    prompt_values = {}
+    if prompt_assembler is not None:
+        evidence = prompt_assembler.evidence_for()
+        prompt_values = {
+            "prompt_profile_id": evidence.profile_id,
+            "prompt_profile_version": evidence.profile_version,
+            "prompt_profile_digest": evidence.profile_digest,
+            "role_prompt_digest": evidence.role_prompt_digest,
+            "project_instruction_resolver_version": evidence.project_instruction_resolver_version,
+            "project_instruction_sources": evidence.project_instruction_sources,
+            "project_instruction_selection_digest": evidence.project_instruction_selection_digest,
+        }
     return PreparedAgentRunSpec(
         provider_runtime=provider_runtime,
         run_policy=run_policy,
@@ -105,6 +118,7 @@ def build_prepared_spec(
         tool_schema_digest=tool_schema_digest(tools),
         tool_count=len(tools),
         mcp_run_snapshot_ids=mcp_run_snapshot_ids,
+        **prompt_values,
     )
 
 
@@ -126,6 +140,7 @@ class AgentRunPreparationService:
         mcp_factory: Callable[[str, RunPolicy], PreparedMcpRun | None] | None = None,
         mcp_rehydrate_factory: Callable[[AgentRunSnapshot, str], PreparedMcpRun | None]
         | None = None,
+        prompt_assembler=None,
     ) -> None:
         self.global_store = global_store
         self.registry = registry
@@ -138,6 +153,7 @@ class AgentRunPreparationService:
         self.workspace_id = workspace_id
         self.mcp_factory = mcp_factory
         self.mcp_rehydrate_factory = mcp_rehydrate_factory
+        self.prompt_assembler = prompt_assembler
 
     def prepare_new(self, *, agent_run_id: str | None = None) -> PreparedAgentRunRuntime:
         """Prepare the next new AgentRun from the current configuration.
@@ -180,6 +196,7 @@ class AgentRunPreparationService:
         context_builder = ContextBuilder(
             run_policy=run_policy,
             estimate_request_chars=self.estimate_request_chars,
+            prompt_assembler=self.prompt_assembler,
         )
         tool_executor = self.tool_factory(run_policy)
         mcp_run = None
@@ -202,6 +219,7 @@ class AgentRunPreparationService:
             run_policy=run_policy,
             tools=tools,
             mcp_run_snapshot_ids=mcp_run.snapshot_ids if mcp_run is not None else (),
+            prompt_assembler=self.prompt_assembler,
         )
         return PreparedAgentRunRuntime(
             spec=spec,
@@ -247,6 +265,7 @@ class AgentRunPreparationService:
         context_builder = ContextBuilder(
             run_policy=snapshot.run_policy,
             estimate_request_chars=self.estimate_request_chars,
+            prompt_assembler=self.prompt_assembler,
         )
         tool_executor = self.tool_factory(snapshot.run_policy)
         mcp_run = None
@@ -280,6 +299,13 @@ class AgentRunPreparationService:
             skill_selection_digest=snapshot.skill_selection_digest,
             skill_context_digest=snapshot.skill_context_digest,
             mcp_run_snapshot_ids=snapshot.mcp_run_snapshot_ids,
+            prompt_profile_id=snapshot.prompt_profile_id,
+            prompt_profile_version=snapshot.prompt_profile_version,
+            prompt_profile_digest=snapshot.prompt_profile_digest,
+            role_prompt_digest=snapshot.role_prompt_digest,
+            project_instruction_resolver_version=snapshot.project_instruction_resolver_version,
+            project_instruction_sources=snapshot.project_instruction_sources,
+            project_instruction_selection_digest=snapshot.project_instruction_selection_digest,
         )
         return PreparedAgentRunRuntime(
             spec=spec,

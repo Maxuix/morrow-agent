@@ -451,6 +451,40 @@ class AgentLoop:
             context_builder = self.context_builder
             tool_executor = self.tool_executor
             policy = self.run_policy
+        if not resume_current_turn:
+            session.pending_prompt_projection = None
+        prompt_projection = None
+        if not resume_current_turn and startup_error is None:
+            prepare_prompt = getattr(context_builder, "prepare_prompt_projection", None)
+            if callable(prepare_prompt):
+                try:
+                    prompt_projection = prepare_prompt(user_input)
+                    session.pending_prompt_projection = prompt_projection
+                except Exception as exc:
+                    # Project-instruction diagnostics are already bounded and value-free;
+                    # unknown preparation failures stay at the fixed public boundary.
+                    code = getattr(exc, "code", "prompt_assembly")
+                    if not isinstance(code, str) or not code.isidentifier():
+                        code = "prompt_assembly"
+                    startup_error = f"项目指令读取受阻（{code}），请先检查具体文件状态。"
+        prepared_spec = prepared.spec if prepared is not None else None
+        if prepared_spec is not None and prompt_projection is not None:
+            evidence = prompt_projection.evidence
+            prepared_spec = prepared_spec.model_copy(
+                update={
+                    "prompt_profile_id": evidence.profile_id,
+                    "prompt_profile_version": evidence.profile_version,
+                    "prompt_profile_digest": evidence.profile_digest,
+                    "role_prompt_digest": evidence.role_prompt_digest,
+                    "project_instruction_resolver_version": (
+                        evidence.project_instruction_resolver_version
+                    ),
+                    "project_instruction_sources": evidence.project_instruction_sources,
+                    "project_instruction_selection_digest": (
+                        evidence.project_instruction_selection_digest
+                    ),
+                }
+            )
         runner = ModelCallRunner(provider, model)
         tool_cycle = (
             ToolCycleExecutor(tool_executor, policy, wall_now=self._wall_now)
@@ -686,7 +720,8 @@ class AgentLoop:
                         turn_id=state.turn_id,
                         agent_run_id=requested_agent_run_id,
                         tools=tool_executor.definitions if tool_executor else (),
-                        prepared_spec=prepared.spec if prepared is not None else None,
+                        prepared_spec=prepared_spec,
+                        prompt_projection=prompt_projection,
                         prepared_mcp_run=(
                             getattr(prepared, "mcp_run", None) if prepared is not None else None
                         ),

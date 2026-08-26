@@ -84,10 +84,12 @@ class ContextBuilder:
         *,
         run_policy: RunPolicy,
         estimate_request_chars: EstimateRequestChars,
+        prompt_assembler=None,
     ) -> None:
         self.run_policy = run_policy
         self.request_char_limit = run_policy.effective_request_chars
         self.estimate_request_chars = estimate_request_chars
+        self.prompt_assembler = prompt_assembler
 
     @property
     def max_chars(self) -> int:
@@ -172,9 +174,25 @@ class ContextBuilder:
                 state["legacy_preferences"] = projection.snapshot.legacy_preferences.model_dump(
                     exclude_none=True
                 )
-        messages = [
-            SystemMessage(content=render_system_boundary(tools)),
-        ]
+        prompt_projection = (
+            projection.prompt_projection
+            if projection is not None
+            else getattr(session, "pending_prompt_projection", None)
+        )
+        # A persisted projection without verified prompt bodies must never fall
+        # back to re-reading live project instructions during context assembly.
+        use_prompt_profile = self.prompt_assembler is not None and not (
+            projection is not None and prompt_projection is None
+        )
+        if use_prompt_profile:
+            messages = list(
+                self.prompt_assembler.system_messages(
+                    tools=tools,
+                    projection=prompt_projection,
+                )
+            )
+        else:
+            messages = [SystemMessage(content=render_system_boundary(tools))]
         if skill_context is not None and skill_context.entries:
             messages.append(SystemMessage(content=skill_context.block))
         if state is not None:
@@ -206,6 +224,17 @@ class ContextBuilder:
         if checkpoint is not None:
             messages.append(SystemMessage(content=render_checkpoint_projection(checkpoint)))
         return tuple(messages)
+
+    def prepare_prompt_projection(
+        self,
+        task_text: str = "",
+        *,
+        target_paths=None,
+    ):
+        """Resolve one Direct prompt projection before durable admission."""
+        if self.prompt_assembler is None:
+            return None
+        return self.prompt_assembler.prepare_for_task(task_text, target_paths=target_paths)
 
     @staticmethod
     def _chars(messages: tuple[Message, ...] | list[Message]) -> int:
