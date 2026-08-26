@@ -12,12 +12,15 @@ completed Code Agent Mini Eval, then repair only evidence-backed tool gaps that 
 On 2026-08-26 the user approved the ordered Direct Agent reliability checklist and opened S7P-00.
 Subplan 79 completed the evaluation protocol and failure-taxonomy freeze, passed internal review,
 and was fast-forward integrated into local `main` before any measured Direct Agent repair begins.
+The user then requested the remaining items in strict order. Subplan 80 activates S7P-01: safe
+AgentRun observability and a one-shot headless execution entrypoint.
 
 ## Stage 7 reliability sequence
 
 | Order | File | Status |
 |---|---|---|
 | 79 | `79-s7p-00-evaluation-protocol.md` | completed and integrated locally |
+| 80 | `80-s7p-01-observability-headless.md` | active |
 
 ## Stage 7 pre-baseline
 

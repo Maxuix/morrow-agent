@@ -2929,3 +2929,24 @@
   Provider, Pi, network or credential test ran.
 - The three user-owned untracked research documents remain present and unmodified. No remote push
   was requested or performed; local `main` is intentionally ahead of `origin/main`.
+
+## 2026-08-26 — Subplan 80 S7P-01 observability and headless run activated
+
+- The user requested every remaining Stage 7 preflight repair in strict order. Each item must be
+  located and planned in the root session, then implemented in a separate Luna Max Codex task whose
+  own Luna Max subagent reviews the code before repair, validation, commit and root-owned merge.
+- Current-code inspection confirmed that the OpenAI-compatible adapter skips empty-choice usage
+  chunks and returns before standard trailing usage can be retained; ModelEvent has no usage shape;
+  ContextPack reduction facts are discarded by AgentLoop; and schema v16 has no request or terminal
+  AgentRun observation rows.
+- The validator already generates bounded, value-free `{path,type}` diagnostics and the model sees
+  them, but durable handler results retain only the error code and envelope character count. The CLI
+  has a reusable SessionOrchestrator streaming seam but no one-shot JSONL Agent command.
+- Activated `codex/feat/s7p-01-observability-headless` from
+  `main@d8d2752752cf7d0d0b057af9db56b3029fd05120`. The plan adds internal normalized usage,
+  schema-v17 linked observations, bounded durable validation diagnostics, safe query projections and
+  a fail-closed headless wrapper around existing AgentEvents. Public event types/payload/lifecycle,
+  runtime-policy defaults, tool schemas, prompts and later S7P behavior remain unchanged.
+- Only scripted Providers and temporary stores are authorized for S7P-01 validation. Credentials,
+  reasoning, prompts/messages, full tool arguments/results, SDK objects and tracebacks remain barred
+  from Operational Store, events, JSONL, YAML and terminal diagnostics.

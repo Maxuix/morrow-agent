@@ -1,122 +1,147 @@
-# Stage 7 Preflight Reliability Repairs — S7P-00 Evaluation Protocol
+# Stage 7 Preflight Reliability Repairs — S7P-01 Observability and Headless Run
 
-> Status: completed and integrated locally
-> Active subplan: none — Subplan 79 completed and retired
-> Integration: local `main` contains the verified implementation through `bbda7de`
-> Source authority: the user-requested S7P-00 checklist, current code, and deterministic checks
+> Status: active
+> Active subplan: 80 — safe AgentRun observability and a headless execution entrypoint
+> Branch: `codex/feat/s7p-01-observability-headless`
+> Base: verified local `main@d8d2752752cf7d0d0b057af9db56b3029fd05120`
+> Source authority: the user-requested S7P-01 checklist, current code, and deterministic checks
 
 ## 1. Objective
 
-Complete S7P-00 before any Direct Agent reliability repair changes the measured system. Replace the
-current ad-hoc CSV/manual-report workflow with a versioned, immutable and machine-checkable run
-bundle that can:
+Make every later Stage 7 preflight repair diagnosable without weakening Morrow's safety boundaries.
+Persist bounded request/usage/context/stop observations against the exact AgentRun, preserve safe
+invalid-argument diagnostics, and add a non-interactive JSONL execution path that reuses the same
+Session application, AgentLoop and ConversationLog writer as the interactive CLI.
 
-1. recreate an equivalent isolated task workspace from one Run Manifest;
-2. distinguish verifier outcome, task failure class and tool terminal states;
-3. retain raw verifier output, bounded Git evidence, expected/unexpected paths and a structured stop
-   reason;
-4. mechanically derive aggregate counts without merging failed, denied and blocked outcomes; and
-5. enforce two independent repetitions and the frozen Stage 7 entry thresholds.
+S7P-01 does not change tool schemas, Direct Coding prompts, workspace mutation semantics, completion
+truthfulness, round-budget defaults, retry policy, steering/follow-up behavior or public event types.
 
-## 2. Located defect
+## 2. Located defects
 
-The existing `evals/code-agent-mini/eval.py` supports only `list`, `show`, `prepare`, `verify` and
-`self-check`. Its workspace marker records only dataset version, task ID and gold/baseline state.
-`results-template.csv` has no fixed failure enum, tool-state split, stop code, verifier artifact,
-diff evidence, environment/configuration snapshot or integrity linkage. The README still permits a
-single complete baseline and manual repetition. No committed raw run records exist, so the legacy
-report cannot be mechanically regenerated.
+1. `OpenAICompatibleProvider.stream()` skips every `choices=[]` chunk and returns immediately on the
+   finish-bearing choice. Standard trailing usage-only chunks therefore never reach Runtime.
+2. `ModelEvent` and `ModelCallOutcome` have no normalized usage contract. Missing usage cannot be
+   distinguished from a numeric zero.
+3. `ContextPack` calculates request characters, cleared cycles and dropped records, but AgentLoop
+   discards those facts after each request; it does not count dropped turns/cycles explicitly.
+4. `DurableAgentRun` stores only an immutable preparation snapshot. There is no request ledger or
+   terminal aggregate for usage availability, input/output tokens, context pressure, tool/model
+   rounds, or stop code.
+5. Pydantic validation already produces bounded `{path,type}` details and the model receives them in
+   the tool envelope, but `_envelope_from_outcome()` persists only `error_code` and envelope length.
+6. The root CLI always enters a prompt-toolkit REPL. Existing state commands are headless, but there
+   is no one-shot Agent execution command or JSONL projection with Session/TaskRun/AgentRun IDs.
+7. The public `AgentEvent` lifecycle is fixed and validated. S7P-01 can meet the machine-readable
+   requirement by wrapping existing events at the interface boundary; no new public event type or
+   payload field is needed.
 
-This is an evaluation-harness defect. S7P-00 does not require or authorize changes to AgentLoop,
-Provider adapters, public events, Operational Store, runtime-policy defaults or production prompts.
+## 3. Frozen implementation decisions
 
-## 3. Frozen protocol decisions
+- Add internal normalized usage models with explicit `available` / `unavailable` state. Token and
+  cost values are optional; absent Provider data remains unavailable, never zero.
+- Consume a complete Provider stream after its logical finish so a trailing usage-only chunk is
+  retained. Emit no text for usage chunks and accept exactly one bounded usage record per attempt.
+- Add Operational Store schema v17 with an AgentRun terminal-metrics row and ordered model-request
+  rows keyed to the existing AgentRun. Do not mutate the immutable AgentRun preparation snapshot.
+- Record request admission before the Provider call and settle it exactly once as completed, failed
+  or cancelled. A crash-visible open row remains explicit rather than being fabricated as success.
+- Persist only scalar counts, enum/status values, bounded hashes and already-sanitized validation
+  `{path,type}` diagnostics. Never persist prompts, messages, reasoning, tool arguments/results,
+  SDK objects, credentials, URLs containing credentials or tracebacks.
+- Extend `ContextPack` with deterministic dropped-turn/dropped-cycle counts while retaining existing
+  compatibility counters.
+- Keep `PUBLIC_EVENT_TYPES`, `AgentEvent` payload contracts and lifecycle ordering unchanged. The
+  headless command serializes existing events inside a versioned JSONL interface envelope and emits
+  one terminal run record containing correlation IDs and the persisted metric projection.
+- The one-shot command uses `build_session_application()` and `SessionOrchestrator.stream()`. It does
+  not write ConversationLog directly or create a second state machine. Non-interactive approvals
+  fail closed; permission and sandbox policy are not widened.
+- Add read-only application/CLI inspection for one AgentRun, its request metrics and terminal tool
+  states. Full tool arguments/results and unredacted messages remain unavailable.
+- No third-party dependency, runtime-policy default, live Provider call or public-event change is in
+  scope.
 
-- Add a versioned `protocol.toml` as the authority for result classes, tool terminal states,
-  repetition count, required evidence and Stage 7 gate thresholds.
-- Task result classes are exactly `PASS`, `FAIL_MODEL`, `FAIL_TOOL_CONTRACT`, `FAIL_RUNTIME`,
-  `DENIED_POLICY`, `BLOCKED_ENV` and `BUDGET_EXHAUSTED`.
-- Tool states are counted independently as succeeded, failed, denied, cancelled and blocked (or the
-  documented equivalent). A denial never increments failed.
-- A PASS requires verifier success and no unexpected workspace modification. Non-PASS results
-  require one fixed class and a bounded evidence-based explanation.
-- Every baseline task requires two fresh repetitions. A summary with missing/duplicate repetitions,
-  mixed protocol/profile revisions, tampered artifacts or unavailable required evidence is
-  incomplete, never passing.
-- Freeze the S7P-09 hard thresholds now in the versioned protocol. Changing them later requires a
-  new protocol revision; historical manifests retain the original protocol hash.
-- A clean evaluator source checkout is required for comparable baselines. Explicit dirty diagnostic
-  runs may record a bounded path/hash summary but cannot satisfy the comparison gate.
-- Preserve the legacy Stage 7 Direct baseline as historical evidence. Record its known
-  `38 failed + 16 denied = 54 non-success` correction in the new S7P-00 acceptance document without
-  rewriting that snapshot.
+## 4. Data and lifecycle contract
 
-## 4. Run bundle contract
+### Provider usage
 
-Implement the contract with Python standard library code in the existing evaluation harness:
+- Normalize prompt/input, completion/output and total tokens when valid non-negative integers exist.
+- Reject conflicting or malformed duplicate usage as an invalid Provider response.
+- Preserve explicit unavailable status when no usable usage record arrives.
+- Preserve cost availability separately. OpenAI-compatible token usage does not imply a monetary
+  cost when no trusted price/cost fact exists.
 
-```text
-run bundle/
-  run-manifest.json       frozen before Agent execution
-  workspace/              newly prepared isolated Git workspace
-  runtime-evidence.json   sanitized execution/stop/tool-state facts
-  verifier-output.txt     raw external verifier output
-  workspace-diff.patch    evaluation-workspace patch evidence
-  run-result.json         classification plus hashes of every evidence artifact
-```
+### Model-request observation
 
-The manifest captures the evaluator commit and bounded dirty summary, dataset/protocol revisions and
-hashes, task/repetition/workspace baseline tree, Agent/entrypoint, Provider/model revision, sampling
-parameters, Provider-visible tool snapshot, permission policy, budgets, system-prompt version/hash,
-project-instruction sources/hashes and execution/runtime versions. No credential, reasoning, full
-tool arguments/results or traceback is accepted.
+Each ordered request records AgentRun ID, attempt ordinal, state, estimated request characters,
+configured request budget, cleared-cycle count, dropped-turn/cycle/record counts, tool round/call
+counts at admission, normalized finish/error code, usage/cost availability and timestamps.
 
-The CLI must retain the current commands and add narrow lifecycle commands equivalent to:
+### AgentRun terminal metrics
 
-- start a new run bundle from a strict non-secret profile;
-- rebuild and hash-check an equivalent workspace from a manifest;
-- finalize a run by invoking the external verifier and recording Git/runtime evidence; and
-- summarize finalized run results with completeness and gate diagnostics.
+The terminal projection records finish reason, explicit stop code when present, model attempts, tool
+rounds/calls, terminal tool-disposition counts, context reduction totals and normalized aggregate
+usage. Cancellation, failure, budget exhaustion and normal stop all finalize through one bounded
+path; unavailable values stay unavailable.
 
-Exact command names may change during implementation if tests reveal a clearer interface, but the
-artifact and acceptance contracts above may not be weakened.
+### Durable invalid-argument diagnostics
+
+For `invalid_arguments` only, persist at most the configured bounded list of field paths and error
+types already generated by the validator. Never persist the offending values or raw argument JSON.
+
+### Headless JSONL
+
+- A required prompt and explicit workspace directory drive one ordinary turn.
+- The command never prompts for onboarding, credentials, approval or recovery decisions.
+- Every stdout line is valid JSON. Diagnostics go to stderr.
+- Existing AgentEvents retain their original schema and order inside interface envelopes.
+- The terminal record includes `session_id`, `task_run_id`, `agent_run_id`, finish/stop state and the
+  safe metrics view; process exit is zero only for a normally completed turn.
 
 ## 5. Implementation sequence
 
-1. Add regression tests that expose the missing manifest, classification and aggregation contracts.
-2. Freeze protocol v1, strict run-profile shape and per-task expected-change policy without exposing
-   Gold implementations to the Agent.
-3. Implement manifest creation, content hashes, clean-source comparability and workspace rebuild.
-4. Implement verifier/diff/runtime evidence finalization and strict result classification.
-5. Implement mechanical aggregation, two-run completeness checks and frozen gate evaluation.
-6. Replace the legacy CSV instructions with the run-bundle workflow and publish S7P-00 acceptance
-   evidence plus the legacy-statistics erratum.
-7. Run focused tests, the dataset self-check, full offline and repository quality gates.
+1. Add failing adapter/runtime tests for trailing usage, unavailable usage and malformed/conflicting
+   usage without extra text.
+2. Add normalized usage and AgentRun observation domain contracts plus schema-v17 migration, journal
+   ports, SQLite implementation, migration/doctor/backup coverage and query views.
+3. Thread request admission/settlement and terminal finalization through `SessionPersistence` and
+   AgentLoop; extend ContextPack counters without changing ConversationLog ownership.
+4. Retain bounded invalid-argument diagnostics in the existing durable tool-result envelope and add
+   redaction/budget tests.
+5. Add the one-shot JSONL CLI and read-only AgentRun inspection, reusing bootstrap/orchestrator and a
+   fail-closed non-interactive approval adapter.
+6. Add equivalence tests proving interactive dispatch and headless dispatch produce the same
+   ConversationLog and durable terminal state for the same scripted Provider.
+7. Publish `docs/acceptance/s7p-01-observability-headless.md`, update execution state and run all
+   focused/full offline quality gates.
 
 ## 6. Validation
 
 ```bash
-uv run pytest -q tests/test_code_agent_mini_eval.py
-.venv/bin/python evals/code-agent-mini/eval.py self-check
+uv run pytest -q tests/test_provider.py tests/test_context_projections.py
+uv run pytest -q tests/test_agent_run_observability.py tests/test_headless_run.py
+uv run pytest -q tests/test_stage4_tool_persist.py tests/test_operational_store.py
 uv run pytest -m 'not live'
 uv run ruff format --check .
 uv run ruff check .
-uv run python -m compileall -q src tests evals/code-agent-mini
+uv run python -m compileall -q src tests
 uv run morrow --help
+uv run morrow run --help
 git diff --check
 ```
 
-No live Provider, credential, network, Pi or Morrow model run is part of S7P-00.
+No live Provider, credential, network, Pi or MCP test is part of S7P-01. Scripted Providers and
+temporary Operational Stores provide deterministic end-to-end evidence.
 
 ## 7. Completion and integration
 
-- The focused matrix proves rebuild equivalence, tamper detection, PASS strictness, fixed
-  classification, distinct failed/denied/blocked totals, unavailable-not-zero metrics, duplicate
-  rejection and two-run completeness.
-- S7P-00 acceptance evidence maps every checklist item to a command/test/artifact.
-- The implementation receives review from an independent review subagent. All findings are repaired
-  and revalidated after the findings are returned.
-- Verified changes were fast-forward merged into local `main` through `bbda7de`. The clean topic
-  branch and worktree were retired only after ancestry and cleanliness checks. User-owned untracked
-  research documents remain untouched.
-- No remote push is performed unless separately requested.
+- The focused matrix covers usage-only chunks, explicit unavailable metrics, context counters,
+  request/terminal durability, safe validation diagnostics, cancellation/failure/budget terminal
+  states, headless/interactivity equivalence and JSONL/exit semantics.
+- Acceptance evidence maps every S7P-01 checklist item to code, tests and a queryable artifact.
+- The Luna Max implementation session spawns a separate Luna Max review subagent for the full
+  `base...topic` diff. It repairs every confirmed finding and reruns affected plus full gates.
+- Verified changes are committed on the topic branch. This root session then fast-forward merges the
+  branch into local `main`, verifies ancestry/cleanliness and retires the clean worktree/branch.
+- The three user-owned untracked research documents remain untouched. No remote push is performed
+  unless separately requested.

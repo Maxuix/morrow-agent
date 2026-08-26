@@ -2,37 +2,41 @@
 
 ## Current status
 
-S7P-00 implementation, internal independent review, review repairs, offline validation and local
-integration are complete. Verified commits through `bbda7de395c97beac372d60803461caeddefd8db` were
-fast-forward merged into `main`; the clean topic branch and worktree were removed after ancestry
-verification. The evaluation-only harness now has a versioned protocol, strict non-secret profile,
-create-only Run Manifest, rebuild/finalize lifecycle, fail-closed workspace/artifact evidence and
-mechanical aggregation; production runtime files remain unchanged.
+S7P-01 is active as Subplan 80 from verified local
+`main@d8d2752752cf7d0d0b057af9db56b3029fd05120`. The complete checklist has been read, and the
+current implementation was inspected across the OpenAI-compatible adapter, ContextBuilder,
+AgentLoop, SessionPersistence, Operational Store, durable tool envelopes, application API and CLI.
 
 The current worktree also contains three user-owned untracked research documents, including the
-reliability checklist. They are not part of the topic branch and must remain untouched.
+reliability checklist. They are not part of Subplan 80 and must remain untouched.
 
 ## Active task
 
-None. Subplan 79 is completed, integrated and retired.
+The executable Subplan 80 is written and awaiting implementation in a separate Codex project
+worktree task using `gpt-5.6-luna` with `max` reasoning. The same implementation task must spawn a
+Luna Max review subagent, repair all confirmed findings, validate and commit before handoff.
 
 ## Located evidence
 
-- `eval.py --help` exposes compatibility commands plus `start/rebuild/finalize/summarize`.
-- `run-manifest.json` freezes task/repetition/source/dataset/protocol/workspace/profile snapshots;
-  the Agent workspace marker remains free of the expected-change policy.
-- Finalized bundles retain verifier output, bounded staged/unstaged/untracked/ignored Git evidence,
-  runtime/stop evidence and artifact hashes; summary rejects tampering, duplicates, mixed revisions
-  and unavailable metrics.
-- `results-template.csv` is retired and the README documents two fresh repetitions and the bundle
-  workflow.
-- No committed raw result JSON/JSONL exists from which the legacy acceptance totals can be rebuilt.
+- `OpenAICompatibleProvider.stream()` uses `if not choices: continue` and returns on the first
+  finish-bearing choice, so usage-only chunks—especially the standard trailing chunk—are lost.
+- `ModelEvent` has text/completion/error only; `ModelCallOutcome` has no usage projection.
+- `ContextPack` exposes request chars, cleared cycles and dropped records only in process; AgentLoop
+  uses the messages but discards these counters.
+- `DurableAgentRun` stores an immutable start snapshot. Operational schema v16 has no model-request
+  ledger or terminal usage/context/stop metrics.
+- `PydanticArgumentsValidator` already creates bounded `{path,type}` details and ToolExecutor returns
+  them to the model; `_envelope_from_outcome()` persists only `{chars}` plus the error code.
+- The CLI root composes `build_session_application()` and enters `run_repl()`. No one-shot Agent run
+  or JSONL command exists, though `SessionOrchestrator.stream()` is already the correct shared seam.
+- The public event lifecycle is strict but sufficient. A headless interface wrapper can serialize
+  existing AgentEvents without changing their type or payload contracts.
 
 ## Next action
 
-Wait for the user to explicitly open the next ordered Stage 7 reliability item. Do not create the
-next subplan automatically. Keep the three user-owned untracked research documents and the
-historical Stage 7 baseline untouched.
+Commit this plan checkpoint on local `main`, create the requested worktree task from that commit,
+and have Luna Max execute Subplan 80 through implementation, internal Luna Max review, review repair,
+full validation and verified commits. The root task will then inspect and fast-forward integrate it.
 
 ## Blockers
 
