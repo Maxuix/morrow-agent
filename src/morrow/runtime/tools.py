@@ -384,7 +384,13 @@ def audit_registered_tool(
     if declaration is None or declaration.tool_name != name:
         raise _contract_failure(name, "recovery declaration is missing or mismatched")
     check_static_declaration = require_production_declaration or (
-        require_runtime_contract and name in _STATIC_TOOL_CONTRACTS
+        require_runtime_contract
+        and name in _STATIC_TOOL_CONTRACTS
+        and (
+            name != "run_command"
+            or expected_process_isolation is not None
+            or declaration.process_isolation is not None
+        )
     )
     if check_static_declaration:
         declaration_isolation = (

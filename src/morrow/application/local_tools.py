@@ -114,6 +114,7 @@ _NONBLANK_NO_CONTROL = r"^(?!\s*$)(?!.*\x00)(?!.*[\r\n])[\s\S]+$"
 _SHA256_PATTERN = r"^[0-9a-f]{64}$"
 _PROVIDER_WRITE_CONTENT_MAX_CHARS = 10_000
 _PROVIDER_EXACT_EDIT_MAX_CHARS = 256
+_PROVIDER_SINGLE_EDIT_ASCII_MAX_CHARS = 16 * 1024
 _PROVIDER_COMMAND_ARG_MAX_CHARS = 256
 _PROVIDER_COMMAND_SHELL_MAX_CHARS = 10_000
 
@@ -163,14 +164,23 @@ SEARCH_TEXT_PROVIDER_SCHEMA = _object_schema(
     required=("query",),
 )
 
-_EXACT_EDIT_PROVIDER_SCHEMA = _object_schema(
-    {
-        "old_text": _string_schema(
-            min_length=1, max_length=_PROVIDER_EXACT_EDIT_MAX_CHARS, pattern=_NO_NUL
-        ),
-        "new_text": _string_schema(max_length=_PROVIDER_EXACT_EDIT_MAX_CHARS, pattern=_NO_NUL),
-    },
-    required=("old_text", "new_text"),
+
+def _exact_edit_provider_schema(*, max_length: int, pattern: str) -> dict[str, object]:
+    return _object_schema(
+        {
+            "old_text": _string_schema(min_length=1, max_length=max_length, pattern=pattern),
+            "new_text": _string_schema(max_length=max_length, pattern=pattern),
+        },
+        required=("old_text", "new_text"),
+    )
+
+
+_EXACT_EDIT_PROVIDER_SCHEMA = _exact_edit_provider_schema(
+    max_length=_PROVIDER_EXACT_EDIT_MAX_CHARS, pattern=_NO_NUL
+)
+_SINGLE_EDIT_PROVIDER_SCHEMA = _exact_edit_provider_schema(
+    max_length=_PROVIDER_SINGLE_EDIT_ASCII_MAX_CHARS,
+    pattern=r"^(?!.*\x00)[\t\n\r\x20-\x7e]*$",
 )
 
 APPLY_PATCH_PROVIDER_SCHEMA = _object_schema(
@@ -178,10 +188,20 @@ APPLY_PATCH_PROVIDER_SCHEMA = _object_schema(
         "path": _path_schema(mutation=True),
         "expected_sha256": _string_schema(pattern=_SHA256_PATTERN),
         "edits": {
-            "type": "array",
-            "minItems": 1,
-            "maxItems": 16,
-            "items": _EXACT_EDIT_PROVIDER_SCHEMA,
+            "oneOf": [
+                {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 1,
+                    "items": _SINGLE_EDIT_PROVIDER_SCHEMA,
+                },
+                {
+                    "type": "array",
+                    "minItems": 2,
+                    "maxItems": 16,
+                    "items": _EXACT_EDIT_PROVIDER_SCHEMA,
+                },
+            ]
         },
     },
     required=("path", "expected_sha256", "edits"),
