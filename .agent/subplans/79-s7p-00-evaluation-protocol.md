@@ -141,8 +141,8 @@ git diff --check
 
 ## Review and integration gate
 
-Implementation is not complete at the first green commit. The primary session reviews the full
-`main...topic` diff for correctness, reproducibility, secret boundaries, false PASS paths,
-compatibility and test gaps. The Luna Max implementation session repairs every confirmed finding,
-reruns affected and full gates, and makes a final verified commit. Only then may the branch be
-fast-forward merged to local `main` and retired.
+Implementation is not complete at the first green commit. An independent review subagent reviews
+the full `main...topic` diff for correctness, reproducibility, secret boundaries, false PASS paths,
+compatibility and test gaps. After the findings are returned, the implementation session repairs
+every confirmed finding, reruns affected and full gates, and makes a final verified commit. Only
+then may the branch be fast-forward merged to local `main` and retired.

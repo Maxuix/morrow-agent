@@ -1,20 +1,31 @@
 # Morrow Code Agent Mini Eval
 
-这是一个面向本地、低成本对照测试的 10 项 Code Agent 评测集。它用于发现明显能力缺口和比较
-Morrow Direct、未来 Workflow 与 Pi 等 Agent 的相对表现，不用于生成具有统计意义的公开排行榜。
+这是一个面向本地、低成本对照测试的 10 项 Code Agent 评测集。S7P-00 将它从手工 CSV
+升级为可重建、版本化、不可静默篡改的 run bundle；它用于发现能力缺口和比较 Agent，
+不用于生成具有统计意义的公开排行榜。
 
 ## 任务构成
 
 | 范围 | 数量 | 难度 | 说明 |
 |---|---:|---|---|
-| Morrow 历史任务 | 6 | 简单 1 / 中等 2 / 困难 3 | 从真实修复提交提取，包含 CLI、Provider、恢复、持久化、异步 Worker 和 Runtime Policy |
-| 外部任务 | 4 | 简单 1 / 中等 1 / 困难 2 | 固定版本的 Aider/Exercism Python 任务，包含实现、文件处理、响应式传播和解释器 |
+| Morrow 历史任务 | 6 | 简单 1 / 中等 2 / 困难 3 | CLI、Provider、恢复、持久化、异步 Worker 和 Runtime Policy |
+| 外部任务 | 4 | 简单 1 / 中等 1 / 困难 2 | 固定版本的 Aider/Exercism Python 任务 |
 
-每个仓库历史任务只记录基线 Commit、Gold Commit、任务说明和验证选择器。准备时通过本仓库 Git
-对象生成一份没有历史记录的隔离工作区，因此评测集本身不会保存六份 Morrow 源码。外部任务只保存
-必要的 Starter、独立验证器和用于数据集自检的参考实现。
+历史任务只记录基线 Commit、Gold Commit、任务说明和验证选择器。准备时从本仓库 Git 对象
+创建没有历史记录的隔离工作区；外部任务只保存必要的 Starter、独立验证器和 self-check
+参考实现。Gold 只允许进入 `self-check` 的临时目录，不能进入被测 Agent 工作区。
 
-## 快速使用
+## 协议和 profile
+
+`protocol.toml` 是 S7P-00 v1 的权威合同：它冻结七类任务结果、五种独立工具终态、每项
+至少两次重复、必需证据、Stage 7 门槛和四个 Pi 对照任务。修改门槛必须发布新的协议版本。
+
+`profile.template.json` 是严格的非秘密运行 profile 模板。复制到评测目录之外后填写 Agent、
+Provider/model revision、采样、工具 schema hash、权限、预算、system prompt/project
+instructions 快照和执行版本。不能写入 credential、reasoning、完整工具参数/结果或 traceback；
+未知字段会被拒绝，缺省计量必须显式写 `"unavailable"`，不会静默变成零。
+
+## 兼容命令
 
 在 Morrow 仓库根目录执行：
 
@@ -22,78 +33,93 @@ Morrow Direct、未来 Workflow 与 Pi 等 Agent 的相对表现，不用于生�
 .venv/bin/python evals/code-agent-mini/eval.py list
 .venv/bin/python evals/code-agent-mini/eval.py show MORROW-001
 .venv/bin/python evals/code-agent-mini/eval.py prepare MORROW-001 /tmp/morrow-eval-001
-```
-
-`prepare` 会：
-
-1. 创建一个新的目标目录；
-2. 放入修复前源码或外部 Starter；
-3. 写入 Agent 可见的 `TASK.md`；
-4. 初始化只有一个 baseline Commit 的新 Git 仓库。
-
-它拒绝覆盖已存在的路径。建议每次使用新的临时目录。
-
-随后把准备目录作为 Agent 的唯一工作空间，将 `TASK.md` 内容作为任务说明。例如 Morrow 可从项目
-根目录启动：
-
-```bash
-.venv/bin/morrow --dir /tmp/morrow-eval-001
-```
-
-Agent 完成后，从 Morrow 仓库根目录运行工作区外的验证器：
-
-```bash
 .venv/bin/python evals/code-agent-mini/eval.py verify MORROW-001 /tmp/morrow-eval-001
 ```
 
-验证器不会写入被测工作区，也不会把 Gold Patch 放入工作区。仓库任务从固定 Gold Commit 读取目标
-测试，外部任务使用本评测集维护的独立测试。返回码 `0` 表示通过，非零表示失败。
+`prepare` 仍会创建一个新的目录、放入基线源码或外部 Starter、写入 Agent 可见的 `TASK.md`，
+并初始化只有一个 baseline Commit 的 Git 仓库；它拒绝覆盖已存在的路径。`verify` 从固定的
+Gold 测试或独立外部验证器读取测试，不修改被测工作区。
 
-## 数据集自检
+## 可重建的运行流程
 
-以下命令会对每项任务临时构造 baseline 和 gold 工作区，确认 baseline 失败且 gold 通过：
+每项任务至少建立两次新重复。profile 和 run bundle 应放在评测数据集之外；只有
+`run-manifest.json` 生成的 `workspace/` 可交给 Agent：
+
+```bash
+RUNS=/tmp/morrow-s7p-00-runs
+PROFILE=/tmp/morrow-s7p-00-profile.json
+mkdir -p "$RUNS"
+
+.venv/bin/python evals/code-agent-mini/eval.py start MORROW-003 \
+  "$RUNS/morrow-003-1" --repetition 1 --profile "$PROFILE"
+```
+
+`start` 在 Agent 执行前冻结 evaluator commit、数据集/协议/任务/config 哈希、重复编号、
+workspace baseline commit/tree、非秘密 profile、权限和 change allowlist。allowlist 只在
+manifest 中，marker 不包含 Gold 或预期修改策略。Agent 只能在 `.../morrow-003-1/workspace`
+中工作。
+
+Agent 结束后，单独准备不含敏感内容的 `runtime-evidence.json`，只记录工具终态计数、有限的
+诊断计数、usage 和 stop code/reason。例如：
+
+```json
+{
+  "schema_version": 1,
+  "availability": "available",
+  "tool_states": {"succeeded": 12, "failed": 0, "denied": 0, "cancelled": 0, "blocked": 0},
+  "tool_diagnostics": {"invalid_arguments": 0, "unaccounted_tool_calls": 0},
+  "usage": {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2, "cost": 0.0,
+             "duration_ms": 1, "rounds": 1, "user_interventions": 0, "rework_count": 0},
+  "stop": {"code": "completed", "reason": "run completed"}
+}
+```
+
+然后 finalize。它会保存 verifier 原始输出、Git status/diff、预期/意外路径、runtime/stop
+evidence 以及每个 artifact 的 hash：
+
+```bash
+.venv/bin/python evals/code-agent-mini/eval.py finalize \
+  "$RUNS/morrow-003-1/run-manifest.json" \
+  --runtime-evidence /tmp/morrow-003-1-runtime-evidence.json
+
+.venv/bin/python evals/code-agent-mini/eval.py rebuild \
+  "$RUNS/morrow-003-1/run-manifest.json" /tmp/morrow-003-1-rebuilt
+```
+
+`rebuild` 只接受当前匹配的数据集/协议哈希，并验证 fresh workspace 的 baseline tree 和
+marker；源 checkout 必须干净才能成为可比较运行。显式 dirty diagnostic 会保留有限摘要，
+但永远不能通过比较门槛。
+
+完成 10 项各两次后机械汇总：
+
+```bash
+.venv/bin/python evals/code-agent-mini/eval.py summarize "$RUNS" \
+  --output "$RUNS/summary.json"
+```
+
+summary 会重新验证 manifest、结果和所有 evidence hash，拒绝重复 task/repetition、混用
+protocol/profile、缺证据、意外重复和不可用必需计量。`INCOMPLETE` 永远不是 PASS；`unavailable`
+永远不是零。结果类和工具终态分别汇总，`FAIL_*`、`DENIED_POLICY`、`BLOCKED_ENV` 不会被合并。
+只有 verifier 成功、没有意外修改、存在相关预期修改、证据完整且源可比较时，单次结果才可为
+PASS；汇总命令在完整且冻结门槛通过时才返回成功。
+
+## 数据集 self-check
 
 ```bash
 .venv/bin/python evals/code-agent-mini/eval.py self-check
-```
-
-也可以只检查指定任务：
-
-```bash
 .venv/bin/python evals/code-agent-mini/eval.py self-check EXTERNAL-003 MORROW-006
 ```
 
-自检不调用任何模型，不消耗 Token，也不访问网络。
+self-check 只在临时目录构造 baseline 和 Gold，确认 baseline 失败、Gold 通过；不调用模型、
+不消耗 Token、不访问网络。正式评测不能把参考实现复制到 Agent 工作区。
 
-## 低成本运行方案
+## 依赖和边界
 
-日常修改不需要运行全部 10 项：
+运行器只使用 Python 标准库、Git 和项目现有的 Pytest，不增加项目依赖。S7P-00 不运行真实
+Provider、Pi、network 或 credential 测试，也不修改 AgentLoop、Provider、公开事件、
+Operational Store、生产 prompt 或 runtime policy。
 
-- Prompt、工具或 Context 修改：选择 2–3 个相关任务，每项运行一次；
-- Stage 7 前基线：Morrow 跑完整 10 项一次；
-- Pi 对照：先跑 `MORROW-003`、`MORROW-005`、`EXTERNAL-003`、`EXTERNAL-004`；
-- Stage 7 Workflow 对照：只对确认可能受益于多节点协作的困难任务比较 Direct 与 Workflow；
-- 只有结果不稳定或接近发布门禁时才重复运行。
-
-推荐为单次运行固定相同模型版本、权限、网络条件、时间、Tool Round 和 Token 预算。原生产品能力对比
-可以保留各自默认工具；如果目的是比较 Agent Loop，则应另外建立相同工具和沙箱条件的实验组。不要把
-两种实验混成一个分数。
-
-## 记录结果
-
-复制 `results-template.csv` 后记录：
-
-- Agent、模型和重复次数；
-- 是否通过隐藏验证；
-- 总时长、Tool Call 和 Token；
-- 用户干预次数；
-- 失败分类和非预期文件修改。
-
-请不要用参考实现调优 Agent。仓库历史任务的 Gold Commit 和外部任务的 `solution/` 仅用于
-`self-check`；正式运行时 Agent 只能访问 `prepare` 生成的工作区。
-
-## 依赖与来源
-
-- 运行器只使用 Python 标准库、Git 和项目现有的 Pytest，不增加项目依赖。
-- 仓库任务不调用真实 Provider、网络、CredentialStore 或用户状态。
-- 外部材料的固定来源和许可证见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+旧的 `results-template.csv` 已退役；结果必须以 run bundle 和机器汇总 JSON 为准。历史
+Stage 7 Direct baseline 保持不变，已知统计修正记录在
+[`docs/acceptance/s7p-00-evaluation-protocol.md`](../../docs/acceptance/s7p-00-evaluation-protocol.md)。
+外部材料的固定来源和许可证见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。

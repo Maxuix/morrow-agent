@@ -11,6 +11,9 @@ base_commit = "3772222b91bbafa7fa1a7af7a6a614207ec6a7ce"
 gold_commit = "975b547444222d974e2a7c3faa2d9bf1b3964b62"
 test_files = ["tests/test_cli_commands.py", "tests/test_provider.py"]
 test_filter = "unknown_provider_test_returns_controlled_error or provider_test_missing_credential_returns_controlled_error or unknown_provider_show_returns_controlled_error or unknown_workspace_relink_returns_controlled_error or provider_test_distinguishes_unknown_provider_from_missing_credential"
+expected_paths = ["src/morrow/interfaces/cli.py", "src/morrow/services/provider.py"]
+required_paths = ["src/morrow/interfaces/cli.py", "src/morrow/services/provider.py"]
+requires_change = true
 
 [[tasks]]
 id = "MORROW-002"
@@ -22,6 +25,9 @@ base_commit = "039eecd74a552291b45db4c620d8d7dc171a5c0b"
 gold_commit = "61f82f20f73433d814d82acf873455b28c672c90"
 test_files = ["tests/test_cli_commands.py", "tests/test_provider.py"]
 test_filter = "failed_provider_test_returns_non_zero_exit or provider_add_reports_typed_sanitized_connection_failure or sdk_transport_errors_and_wrapped_causes_are_network_without_io"
+expected_paths = ["src/morrow/adapters/models/openai_compatible.py", "src/morrow/core/models.py", "src/morrow/interfaces/cli.py", "src/morrow/services/provider.py"]
+required_paths = ["src/morrow/adapters/models/openai_compatible.py", "src/morrow/core/models.py", "src/morrow/interfaces/cli.py", "src/morrow/services/provider.py"]
+requires_change = true
 
 [[tasks]]
 id = "MORROW-003"
@@ -33,6 +39,9 @@ base_commit = "1636f742bc990dd0bdae38d9c48502000f31992c"
 gold_commit = "8587622041b6f92aa0040fda399703967a7b6d8b"
 test_files = ["tests/test_stage4_cli_operational.py", "tests/test_stage4_recovery_crash.py"]
 test_filter = "recovery_resolve_help_explains_generated_id_and_provider_boundary or session_application_recovery_commands_acknowledge_and_resume"
+expected_paths = ["src/morrow/application/api.py", "src/morrow/application/turns.py", "src/morrow/bootstrap.py", "src/morrow/interfaces/cli.py"]
+required_paths = ["src/morrow/application/api.py", "src/morrow/application/turns.py", "src/morrow/bootstrap.py", "src/morrow/interfaces/cli.py"]
+requires_change = true
 
 [[tasks]]
 id = "MORROW-004"
@@ -44,6 +53,9 @@ base_commit = "606574ff6de3ebe8d510eef4702f6d4c174e5a11"
 gold_commit = "4ad7bbf92bfb850562ff892810316ccb2bf767fe"
 test_files = ["tests/test_preference_writer.py"]
 test_filter = "unreadable_authority_is_persisted_as_needs_resolution"
+expected_paths = ["src/morrow/application/preferences/tool.py", "src/morrow/application/preferences/writer.py"]
+required_paths = ["src/morrow/application/preferences/tool.py", "src/morrow/application/preferences/writer.py"]
+requires_change = true
 
 [[tasks]]
 id = "MORROW-005"
@@ -55,6 +67,9 @@ base_commit = "c0b49c7307834e04c5589db738752f86fe6e8a50"
 gold_commit = "f855c64cadd39f753b63ec7627c7ed076548811f"
 test_files = ["tests/test_preference_cli.py", "tests/test_preference_review_jobs.py", "tests/test_review_worker.py", "tests/test_terminal.py"]
 test_filter = "preference_inbox_review_reports_worker_result or oversized_snapshot_skips_review_without_rolling_back_turn or run_pending_continues_after_retryable_failure or background_worker_schedules_retry_with_injected_scheduler or explicit_review_uses_worker_claim_and_completion or expired_final_attempt_is_marked_exhausted or preference_review_job_queries_expose_bounded_observability or repl_wakes_review_worker_after_dispatch_completes"
+expected_paths = ["src/morrow/application/api.py", "src/morrow/application/preferences/jobs.py", "src/morrow/application/preferences/worker.py", "src/morrow/interfaces/preferences_cli.py", "src/morrow/interfaces/terminal.py"]
+required_paths = ["src/morrow/application/api.py", "src/morrow/application/preferences/jobs.py", "src/morrow/application/preferences/worker.py", "src/morrow/interfaces/preferences_cli.py", "src/morrow/interfaces/terminal.py"]
+requires_change = true
 
 [[tasks]]
 id = "MORROW-006"
@@ -66,6 +81,9 @@ base_commit = "24f8ae8450cbdab14e361266b715d793ec46f51d"
 gold_commit = "aba2785ba4bae4a0518bf67152384701e8f3cd93"
 test_files = ["tests/test_policy.py"]
 test_filter = "bundled_runtime_policy_has_approved_defaults_and_empty_exact_model_table or user_overlay_changes_only_declared_fields_and_revalidates_combinations or user_overlay_rejects_safety_owned_unknown_and_over_ceiling_values or config_yaml_override_is_applied_and_preserved_by_unrelated_writes or invalid_runtime_policy_makes_config_unavailable_instead_of_being_partially_applied"
+expected_paths = ["src/morrow/adapters/state/yaml.py", "src/morrow/application/api.py", "src/morrow/application/learning/runner.py", "src/morrow/application/preferences/reviewer.py", "src/morrow/application/preferences/worker.py", "src/morrow/bootstrap.py", "src/morrow/core/learning.py", "src/morrow/core/models.py", "src/morrow/core/preference_documents.py", "src/morrow/core/runtime_policy.py", "src/morrow/resources/runtime-policy.toml", "src/morrow/runtime/policy.py"]
+required_paths = ["src/morrow/adapters/state/yaml.py", "src/morrow/application/api.py", "src/morrow/application/learning/runner.py", "src/morrow/application/preferences/reviewer.py", "src/morrow/application/preferences/worker.py", "src/morrow/bootstrap.py", "src/morrow/core/learning.py", "src/morrow/core/models.py", "src/morrow/core/preference_documents.py", "src/morrow/core/runtime_policy.py", "src/morrow/resources/runtime-policy.toml", "src/morrow/runtime/policy.py"]
+requires_change = true
 
 [[tasks]]
 id = "EXTERNAL-001"
@@ -77,6 +95,9 @@ starter_dir = "tasks/EXTERNAL-001/starter"
 solution_dir = "tasks/EXTERNAL-001/solution"
 verification_dir = "tasks/EXTERNAL-001/verification"
 test_files = ["test_phone_number.py"]
+expected_paths = ["phone_number.py"]
+required_paths = ["phone_number.py"]
+requires_change = true
 
 [[tasks]]
 id = "EXTERNAL-002"
@@ -88,6 +109,9 @@ starter_dir = "tasks/EXTERNAL-002/starter"
 solution_dir = "tasks/EXTERNAL-002/solution"
 verification_dir = "tasks/EXTERNAL-002/verification"
 test_files = ["test_grep.py"]
+expected_paths = ["grep.py"]
+required_paths = ["grep.py"]
+requires_change = true
 
 [[tasks]]
 id = "EXTERNAL-003"
@@ -99,6 +123,9 @@ starter_dir = "tasks/EXTERNAL-003/starter"
 solution_dir = "tasks/EXTERNAL-003/solution"
 verification_dir = "tasks/EXTERNAL-003/verification"
 test_files = ["test_react.py"]
+expected_paths = ["react.py"]
+required_paths = ["react.py"]
+requires_change = true
 
 [[tasks]]
 id = "EXTERNAL-004"
@@ -110,3 +137,6 @@ starter_dir = "tasks/EXTERNAL-004/starter"
 solution_dir = "tasks/EXTERNAL-004/solution"
 verification_dir = "tasks/EXTERNAL-004/verification"
 test_files = ["test_forth.py"]
+expected_paths = ["forth.py"]
+required_paths = ["forth.py"]
+requires_change = true

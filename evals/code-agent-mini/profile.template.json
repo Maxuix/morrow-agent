@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "profile_id": "direct-coding-v1",
+  "agent": {
+    "id": "morrow-direct",
+    "version": "unavailable",
+    "entrypoint": "morrow"
+  },
+  "provider": {
+    "id": "unavailable",
+    "revision": "unavailable"
+  },
+  "model": {
+    "id": "unavailable",
+    "revision": "unavailable"
+  },
+  "sampling": {
+    "temperature": "unavailable",
+    "top_p": "unavailable",
+    "seed": "unavailable",
+    "max_output_tokens": "unavailable"
+  },
+  "tools": [],
+  "permissions": {
+    "mode": "unavailable",
+    "sandbox": "unavailable",
+    "network": "unavailable",
+    "filesystem": "unavailable"
+  },
+  "budgets": {
+    "input_tokens": "unavailable",
+    "output_tokens": "unavailable",
+    "context_tokens": "unavailable",
+    "rounds": "unavailable",
+    "deadline_seconds": "unavailable",
+    "tool_calls": "unavailable",
+    "model_attempts": "unavailable"
+  },
+  "system_prompt": {
+    "version": "unavailable",
+    "sha256": "unavailable"
+  },
+  "project_instructions": [],
+  "execution": {
+    "python": "unavailable",
+    "morrow": "unavailable",
+    "agent": "unavailable"
+  }
+}

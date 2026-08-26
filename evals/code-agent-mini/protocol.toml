@@ -1,0 +1,49 @@
+# S7P-00 is a versioned measurement contract. Threshold changes require version 2.
+[protocol]
+id = "s7p-00"
+version = 1
+dataset_id = "morrow-code-agent-mini"
+minimum_repetitions = 2
+unavailable_usage = "unavailable"
+incomplete_status = "INCOMPLETE"
+
+[result_classes]
+values = [
+  "PASS",
+  "FAIL_MODEL",
+  "FAIL_TOOL_CONTRACT",
+  "FAIL_RUNTIME",
+  "DENIED_POLICY",
+  "BLOCKED_ENV",
+  "BUDGET_EXHAUSTED",
+]
+
+[tool_terminal_states]
+values = ["succeeded", "failed", "denied", "cancelled", "blocked"]
+
+[evidence]
+required = [
+  "run-manifest.json",
+  "runtime-evidence.json",
+  "verifier-output.txt",
+  "workspace-status.json",
+  "workspace-diff.patch",
+  "run-result.json",
+]
+
+[comparison]
+pi_task_ids = ["MORROW-003", "MORROW-005", "EXTERNAL-003", "EXTERNAL-004"]
+
+[thresholds]
+simple_medium_required_pass = 5
+difficult_required_pass = 2
+minimum_total_pass = 7
+max_fail_runtime = 0
+max_basic_tool_blocked = 0
+max_success_without_expected_diff = 0
+max_unexpected_paths = 0
+max_invalid_arguments_fraction = 0.01
+max_unaccounted_tool_calls = 0
+pi_required_task_count = 4
+pi_max_quality_deficit = 1
+require_complete_usage = true

@@ -114,7 +114,8 @@ No live Provider, credential, network, Pi or Morrow model run is part of S7P-00.
   classification, distinct failed/denied/blocked totals, unavailable-not-zero metrics, duplicate
   rejection and two-run completeness.
 - S7P-00 acceptance evidence maps every checklist item to a command/test/artifact.
-- The implementation receives a separate code review. All findings are repaired and revalidated.
+- The implementation receives review from an independent review subagent. All findings are repaired
+  and revalidated after the findings are returned.
 - Verified changes are committed on the topic branch, fast-forward merged into local `main`, and the
   clean topic worktree/branch is retired. User-owned untracked research documents remain untouched.
 - No remote push is performed unless separately requested.

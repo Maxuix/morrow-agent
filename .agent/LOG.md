@@ -2870,3 +2870,25 @@
 - The legacy acceptance report remains an immutable snapshot. Its later-discovered split of 54
   non-success calls into 38 failed and 16 policy-denied calls will be recorded as an erratum in the
   new S7P-00 acceptance record, not silently rewritten.
+
+## 2026-08-26 — Subplan 79 initial implementation and offline gates complete
+
+- Added `protocol.toml`, strict `profile.template.json`, evaluation-only task change metadata and
+  create-only run-bundle lifecycle commands in `evals/code-agent-mini/eval.py`. The lifecycle
+  freezes non-secret source/dataset/protocol/task/workspace/profile snapshots, rebuilds equivalent
+  baselines, finalizes verifier/Git/runtime/stop evidence, rejects sensitive material and hashes
+  every persisted artifact.
+- Replaced the underspecified CSV workflow with canonical JSON bundles and mechanical summary
+  validation. Failed, denied and blocked result/tool outcomes remain separate; unavailable metrics
+  never become zero; duplicate, extra, mixed-revision, dirty-diagnostic and tampered runs cannot
+  satisfy the comparison gate.
+- Added focused coverage for protocol/profile contracts, fresh starts and rebuild mismatch,
+  strict PASS behavior, evidence tamper detection, distinct outcome counts and two complete
+  synthetic repetitions across all ten tasks. Published the S7P-00 acceptance record and updated
+  the README; the historical Stage 7 baseline was not modified.
+- Validation with the existing primary runtime: focused `9 passed`; self-check `10 tasks`;
+  offline `1088 passed, 2 skipped, 2 deselected in 48.60s`; Ruff format/check passed;
+  compileall, eval CLI help/list, `morrow --help` and `git diff --check` passed. No live Provider,
+  Pi, network or credential test was run.
+- Independent review is intentionally still pending. The topic branch is not merged to `main`,
+  and no branch/worktree was deleted.
