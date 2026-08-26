@@ -1,7 +1,7 @@
 # Stage 7 Pre-Baseline: Direct Agent Evaluation and Blocking Tool Repairs
 
-> Status: completed locally; pending fast-forward integration
-> Active subplan: 78 — Direct Agent baseline and blocking tool gaps (closeout)
+> Status: completed and integrated locally
+> Active subplan: none; Subplan 78 retired
 > Baseline revision: `05e3603090dce7955d89f72f08f7df2ed2d7b120`
 > Branch: `codex/feat/stage7-direct-baseline`
 > Evaluation authority: `evals/code-agent-mini/README.md`

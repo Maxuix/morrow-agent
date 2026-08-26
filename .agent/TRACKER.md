@@ -2,8 +2,8 @@
 
 ## Current status
 
-Subplan 78 is locally complete on `codex/feat/stage7-direct-baseline` from
-`main@05e3603090dce7955d89f72f08f7df2ed2d7b120`.
+Subplan 78 is complete and fast-forward integrated into local `main`. Its baseline revision was
+`05e3603090dce7955d89f72f08f7df2ed2d7b120`.
 
 The 10-task Code Agent Mini Eval is present and enumerable. The current public Direct Agent launch
 path is `morrow --dir WORKSPACE`; the configured model is `opencode-go/mimo-v2.5`. Stage 7's roadmap
@@ -27,9 +27,8 @@ blocker.
 
 ## Active task
 
-Integrate the verified repair and acceptance record into local `main`, then retire the topic
-branch without absorbing the user's pre-existing roadmap, improvement-list, `.agents/` or `evals/`
-changes.
+None. Stage 7 pre-baseline item 2 is complete. The user's pre-existing roadmap,
+improvement-list, `.agents/` and `evals/` changes remain uncommitted and preserved.
 
 The first full baseline is complete: `PASS 2`, `FAIL 8`, `BLOCKED 0`, `INCONCLUSIVE 0`. All six
 Morrow-history tasks failed before any file modification after 32–49 tool calls and the 30-round
@@ -49,8 +48,8 @@ The acceptance report is `docs/acceptance/stage7-direct-agent-baseline.md`. Focu
 
 ## Next action
 
-Commit the closeout records, fast-forward local `main`, verify topic containment, and delete the
-topic branch. Remote push remains out of scope.
+Await an explicit request to begin the next Stage 7 activity. Remote push was not requested and
+remains out of scope.
 
 ## Blockers
 

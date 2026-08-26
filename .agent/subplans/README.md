@@ -7,13 +7,13 @@ runtime-policy and remaining Skill Script diagnostics/context repairs.
 
 On 2026-08-25 the user opened Stage 7 pre-baseline item 2: test the current Direct Agent with the
 completed Code Agent Mini Eval, then repair only evidence-backed tool gaps that block complex Stage
-7 tasks. Subplan 78 is complete locally and is being retired after integration.
+7 tasks. Subplan 78 is complete, integrated into local `main`, and retired.
 
 ## Stage 7 pre-baseline
 
 | Order | File | Status |
 |---|---|---|
-| 78 | `78-stage7-direct-baseline-tool-gaps.md` | completed locally; integration pending |
+| 78 | `78-stage7-direct-baseline-tool-gaps.md` | completed and integrated locally |
 
 ## Stage 6 sequence
 

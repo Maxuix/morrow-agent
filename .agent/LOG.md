@@ -2832,3 +2832,5 @@
 - Published `docs/acceptance/stage7-direct-agent-baseline.md`. Final evidence: focused tool matrix
   `37 passed`; host-level macOS sandbox `2 passed`; full offline `1081 passed, 2 deselected in
   39.18s`; Ruff format/check, compileall, CLI help and `git diff --check` passed.
+- Committed the tool repair and acceptance record separately, fast-forward integrated both into
+  local `main`, and preserved all pre-existing user changes. No remote push was requested or run.

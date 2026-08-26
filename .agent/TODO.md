@@ -17,7 +17,7 @@ Subplan 78 — Direct Agent baseline and blocking tool gaps.
 - `[x]` Add focused regression tests and minimally repair each confirmed blocking tool defect.
 - `[x]` Rerun affected evaluations and required focused/full offline and quality gates.
 - `[x]` Persist the evidence-backed baseline report and reconcile execution state.
-- `[>]` Commit verified work, integrate it into local `main`, and retire the topic branch.
+- `[x]` Commit verified work, integrate it into local `main`, and retire the topic branch.
 
 ## Boundaries
 

@@ -1,6 +1,6 @@
 # Subplan 78 — Stage 7 Direct Baseline and Blocking Tool Gaps
 
-> Status: completed locally; integration pending
+> Status: completed, integrated into local `main`, and retired
 
 ## Goal
 
