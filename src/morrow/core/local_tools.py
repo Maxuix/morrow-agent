@@ -3,10 +3,55 @@
 from __future__ import annotations
 
 from enum import StrEnum
+from typing import Annotated
 
 from pydantic import ConfigDict, Field, field_validator, model_validator
 
 from morrow.core.models import ProtocolModel
+
+WORKSPACE_RELATIVE_PATH_MAX_CHARS = 512
+WORKSPACE_RELATIVE_PATH_PATTERN = (
+    r"^(?:\.$|(?![~/])(?![A-Za-z]:)(?!.*\\)(?!.*\u0000)(?!.*//)"
+    r"(?!.*\/$)(?!.*(?:^|/)\.{1,2}(?:/|$))[\s\S]+)$"
+)
+WORKSPACE_MUTATION_PATH_PATTERN = (
+    r"^(?![~/])(?![A-Za-z]:)(?!.*\\)(?!.*\u0000)(?!.*//)"
+    r"(?!.*\/$)(?!.*(?:^|/)\.{1,2}(?:/|$))[\s\S]+$"
+)
+
+WorkspaceRelativePath = Annotated[
+    str,
+    Field(
+        min_length=1,
+        max_length=WORKSPACE_RELATIVE_PATH_MAX_CHARS,
+    ),
+]
+WorkspaceMutationPath = Annotated[
+    str,
+    Field(
+        min_length=1,
+        max_length=WORKSPACE_RELATIVE_PATH_MAX_CHARS,
+    ),
+]
+
+
+def validate_workspace_relative_path(value: str, *, allow_root: bool = True) -> str:
+    """Apply the shared lexical workspace-path contract used by schemas and services."""
+
+    if not isinstance(value, str) or not value or len(value) > WORKSPACE_RELATIVE_PATH_MAX_CHARS:
+        raise ValueError("path must be a bounded non-empty workspace-relative path")
+    if "\x00" in value or "\\" in value or value.startswith(("/", "~")):
+        raise ValueError("path must be workspace-relative")
+    if len(value) >= 2 and value[1] == ":":
+        raise ValueError("path must be workspace-relative")
+    if value == ".":
+        if allow_root:
+            return value
+        raise ValueError("path must not be the workspace root")
+    parts = value.split("/")
+    if any(not part or part in {".", ".."} for part in parts):
+        raise ValueError("path must not contain empty or parent components")
+    return "/".join(parts)
 
 
 class LocalToolModel(ProtocolModel):
@@ -137,7 +182,7 @@ class CommandStatus(StrEnum):
 class CommandRequest(LocalToolModel):
     """Provider-independent command request admitted by the Host process service."""
 
-    argv: tuple[str, ...] | None = Field(
+    argv: tuple[Annotated[str, Field(min_length=1, max_length=4096)], ...] | None = Field(
         default=None,
         min_length=1,
         max_length=64,
@@ -145,6 +190,7 @@ class CommandRequest(LocalToolModel):
     )
     shell: str | None = Field(
         default=None,
+        min_length=1,
         max_length=16 * 1024,
         description="单一 shell 字符串。必须与 argv 二选一；不要用来安装依赖或访问网络。",
     )

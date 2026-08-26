@@ -14,14 +14,131 @@ from morrow.core.capabilities import (
 )
 from morrow.core.execution import tool_declaration
 from morrow.core.models import ToolEffect
-from morrow.core.preference_models import PreferenceScope
+from morrow.core.preference_models import (
+    PREFERENCE_ENTRY_MAX_CHARS,
+    PREFERENCE_MAX_EVIDENCE_IDS,
+    PREFERENCE_MAX_OPERATIONS,
+    PreferenceScope,
+)
 from morrow.core.preference_operations import (
     reduce_preference_operations,
 )
 from morrow.runtime.policy import ToolApproval, ToolExecutionPolicy
+from morrow.runtime.tool_arguments import SCHEMA_DIALECT
 from morrow.runtime.tools import RegisteredTool, ToolErrorCode, ToolExecutionError, make_tool
 
 PreferenceManagementOperation = Literal["add", "replace", "remove", "enable", "disable"]
+
+
+_PREFERENCE_ID_PATTERN = r"^pref_[A-Za-z0-9_-]{1,127}$"
+_EVIDENCE_ID_PATTERN = r"^pev_[A-Za-z0-9_-]{1,127}$"
+_PREFERENCE_TEXT_PATTERN = r"^(?!.*\x00)[\s\S]+$"
+
+
+def _nullable_string(*, max_length: int, pattern: str | None = None) -> dict[str, object]:
+    value: dict[str, object] = {
+        "type": "string",
+        "maxLength": max_length,
+    }
+    if pattern is not None:
+        value["pattern"] = pattern
+    return {"anyOf": [value, {"type": "null"}]}
+
+
+def _preference_operation_branch(
+    operation: str,
+    *,
+    required: tuple[str, ...],
+    forbidden: tuple[str, ...] = (),
+    required_string_fields: tuple[str, ...] = (),
+) -> dict[str, object]:
+    properties: dict[str, object] = {"operation": {"const": operation}}
+    for name in required_string_fields:
+        if name == "preference_id":
+            properties[name] = {"type": "string", "pattern": _PREFERENCE_ID_PATTERN}
+        elif name == "statement":
+            properties[name] = {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": PREFERENCE_ENTRY_MAX_CHARS,
+                "pattern": _PREFERENCE_TEXT_PATTERN,
+            }
+    branch: dict[str, object] = {"properties": properties, "required": list(required)}
+    if forbidden:
+        branch["not"] = {"anyOf": [{"required": [name]} for name in forbidden]}
+    return branch
+
+
+_PREFERENCE_OPERATION_PROVIDER_SCHEMA = {
+    "$schema": SCHEMA_DIALECT,
+    "type": "object",
+    "properties": {
+        "operation": {
+            "type": "string",
+            "enum": ["add", "replace", "remove", "enable", "disable"],
+        },
+        "preference_id": _nullable_string(max_length=128, pattern=_PREFERENCE_ID_PATTERN),
+        "statement": _nullable_string(
+            max_length=PREFERENCE_ENTRY_MAX_CHARS, pattern=_PREFERENCE_TEXT_PATTERN
+        ),
+        "evidence_ids": {
+            "type": "array",
+            "maxItems": PREFERENCE_MAX_EVIDENCE_IDS,
+            "uniqueItems": True,
+            "items": {"type": "string", "pattern": _EVIDENCE_ID_PATTERN},
+        },
+    },
+    "required": ["operation"],
+    "oneOf": [
+        _preference_operation_branch(
+            "add",
+            required=("statement",),
+            forbidden=("preference_id",),
+            required_string_fields=("statement",),
+        ),
+        _preference_operation_branch(
+            "replace",
+            required=("preference_id", "statement"),
+            required_string_fields=("preference_id", "statement"),
+        ),
+        _preference_operation_branch(
+            "remove",
+            required=("preference_id",),
+            forbidden=("statement", "evidence_ids"),
+            required_string_fields=("preference_id",),
+        ),
+        _preference_operation_branch(
+            "enable",
+            required=("preference_id",),
+            forbidden=("statement", "evidence_ids"),
+            required_string_fields=("preference_id",),
+        ),
+        _preference_operation_branch(
+            "disable",
+            required=("preference_id",),
+            forbidden=("statement", "evidence_ids"),
+            required_string_fields=("preference_id",),
+        ),
+    ],
+    "additionalProperties": False,
+}
+
+PREFERENCE_MANAGEMENT_PROVIDER_SCHEMA = {
+    "$schema": SCHEMA_DIALECT,
+    "type": "object",
+    "properties": {
+        "scope": {"type": "string", "enum": ["workspace", "global"]},
+        "operations": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": PREFERENCE_MAX_OPERATIONS,
+            "items": _PREFERENCE_OPERATION_PROVIDER_SCHEMA,
+        },
+        "expected_revision": {"anyOf": [{"type": "integer", "minimum": 0}, {"type": "null"}]},
+    },
+    "required": ["scope", "operations"],
+    "additionalProperties": False,
+}
 
 
 class ManagePreferenceOperation(BaseModel):
@@ -263,6 +380,8 @@ def make_preference_management_tool(service: PreferenceManagementService) -> Reg
         name="manage_preferences",
         description=PREFERENCE_MANAGEMENT_TOOL_DESCRIPTION,
         arguments_model=ManagePreferencesArguments,
+        provider_schema=PREFERENCE_MANAGEMENT_PROVIDER_SCHEMA,
+        expected_shape="preference_operation_shape",
         handler=handler,
         execution_policy=ToolExecutionPolicy(
             effect=ToolEffect.PERSISTENT_WRITE,

@@ -6,11 +6,12 @@ import asyncio
 import inspect
 import json
 import math
+import re
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from types import MappingProxyType
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
@@ -24,7 +25,7 @@ from morrow.core.capabilities import (
     ToolHandlerOutcome,
     ToolRunContext,
 )
-from morrow.core.domain import ArtifactReference
+from morrow.core.domain import ArtifactReference, canonical_json_bytes, sha256_digest
 from morrow.core.execution import (
     EffectClass,
     MissingCompletionPolicy,
@@ -44,6 +45,7 @@ from morrow.core.ports import ApprovalPort
 from morrow.runtime.capabilities import CapabilityPolicy, CapabilityReason
 from morrow.runtime.policy import RunPolicy, ToolApproval, ToolExecutionPolicy
 from morrow.runtime.tool_arguments import (
+    JsonSchemaArgumentsValidator,
     PydanticArgumentsValidator,
     ToolArgumentsValidationError,
     ToolArgumentsValidator,
@@ -52,6 +54,8 @@ from morrow.runtime.tool_arguments import (
 ENVELOPE_MESSAGE_LIMIT = 200
 APPROVAL_PREVIEW_LINE_LIMIT = 200
 APPROVAL_PREVIEW_LINES_LIMIT = 8
+EXPECTED_SHAPE_LIMIT = 128
+_EXPECTED_SHAPE_PATTERN = re.compile(r"^[A-Za-z0-9_.:,-]{1,128}$")
 
 
 def policy_denial_message(tool_name: str, reason_codes=()) -> str:
@@ -150,12 +154,22 @@ def _dump(payload: dict) -> str:
 
 
 def tool_error_envelope(
-    code: ToolErrorCode, message: str, *, details: list[dict[str, str]] | None = None
+    code: ToolErrorCode,
+    message: str,
+    *,
+    details: list[dict[str, str]] | None = None,
+    expected: str | None = None,
 ) -> str:
     bounded = " ".join(str(message).split())[:ENVELOPE_MESSAGE_LIMIT]
     error: dict = {"code": code.value, "message": bounded}
     if details:
         error["details"] = details
+    if (
+        isinstance(expected, str)
+        and len(expected) <= EXPECTED_SHAPE_LIMIT
+        and _EXPECTED_SHAPE_PATTERN.fullmatch(expected) is not None
+    ):
+        error["expected"] = expected
     return _dump({"ok": False, "error": error})
 
 
@@ -179,7 +193,188 @@ MIN_ERROR_ENVELOPE_CHARS = max(
 
 def tool_parameters_from_model(model: type[BaseModel]) -> dict:
     """Return the complete Pydantic schema used by the standard tool wire."""
-    return model.model_json_schema()
+    return PydanticArgumentsValidator(model).schema
+
+
+class ToolContractAuditError(ValueError):
+    """A registered tool cannot be proven safe and stable for the Provider wire."""
+
+
+@dataclass(frozen=True, slots=True)
+class ToolContractAudit:
+    """Value-free evidence that one registered tool passed the contract audit."""
+
+    tool_name: str
+    schema_digest: str
+    wire_digest: str
+    recovery_name: str
+    has_handler: bool
+    has_intent_resolver: bool
+    has_policy_resolver: bool
+
+
+def _contract_failure(name: str, reason: str) -> ToolContractAuditError:
+    return ToolContractAuditError(f"tool contract audit failed for {name}: {reason}")
+
+
+def _schema_objects_are_closed(schema: dict[str, Any]) -> bool:
+    definitions = schema.get("$defs", {})
+    active_refs: set[str] = set()
+
+    def visit(node: Any) -> bool:
+        if isinstance(node, bool):
+            return True
+        if not isinstance(node, dict):
+            return False
+        ref = node.get("$ref")
+        if ref is not None:
+            name = ref.removeprefix("#/$defs/") if isinstance(ref, str) else ""
+            target = definitions.get(name) if isinstance(definitions, dict) else None
+            if name in active_refs or target is None:
+                return False
+            active_refs.add(name)
+            closed = visit(target)
+            active_refs.remove(name)
+            if not closed:
+                return False
+        node_type = node.get("type")
+        if node_type == "object" or (isinstance(node_type, list) and "object" in node_type):
+            if node.get("additionalProperties", True) is not False:
+                return False
+        properties = node.get("properties")
+        if isinstance(properties, dict) and not all(visit(child) for child in properties.values()):
+            return False
+        for keyword in ("items", "not", "additionalProperties"):
+            child = node.get(keyword)
+            if isinstance(child, (dict, bool)) and not visit(child):
+                return False
+        for keyword in ("prefixItems", "anyOf", "oneOf", "allOf"):
+            children = node.get(keyword)
+            if isinstance(children, list) and not all(visit(child) for child in children):
+                return False
+        return True
+
+    return visit(schema) and all(visit(definition) for definition in definitions.values())
+
+
+def audit_registered_tool(
+    registered: RegisteredTool,
+    *,
+    require_runtime_contract: bool = False,
+    require_closed_schema: bool = False,
+    require_production_declaration: bool = False,
+) -> ToolContractAudit:
+    """Fail closed when a registered tool and its final Provider contract drift apart.
+
+    The audit only retains names, booleans and digests.  It deliberately never formats the
+    validator, handler, arguments, results or exception details into an error or record.
+    """
+
+    name = registered.definition.function.name
+    validator = registered.arguments_validator
+    if validator is None:
+        raise _contract_failure(name, "arguments validator is missing")
+    if not callable(registered.handler):
+        raise _contract_failure(name, "handler is missing")
+    if registered.context_handler is not None and not callable(registered.context_handler):
+        raise _contract_failure(name, "context handler is invalid")
+    if registered.intent_resolver is not None and not callable(registered.intent_resolver):
+        raise _contract_failure(name, "intent resolver is invalid")
+    if registered.policy_resolver is not None and not callable(registered.policy_resolver):
+        raise _contract_failure(name, "policy resolver is invalid")
+    if require_runtime_contract and registered.intent_resolver is None:
+        raise _contract_failure(name, "intent resolver is missing")
+
+    declaration = registered.recovery_declaration
+    if declaration is None or declaration.tool_name != name:
+        raise _contract_failure(name, "recovery declaration is missing or mismatched")
+    if require_production_declaration:
+        try:
+            expected = tool_declaration(
+                name,
+                process_isolation=declaration.process_isolation if name == "run_command" else None,
+                production_only=True,
+            )
+        except UnknownToolDeclarationError:
+            raise _contract_failure(
+                name, "production recovery declaration is unavailable"
+            ) from None
+        if declaration != expected:
+            raise _contract_failure(name, "recovery declaration drifted")
+
+    try:
+        validator_schema = validator.schema
+        normalized = JsonSchemaArgumentsValidator(validator_schema)
+        normalized_schema = normalized.schema
+        validator_digest = getattr(validator, "schema_digest", normalized.schema_digest)
+    except Exception:
+        raise _contract_failure(name, "arguments schema is unsupported") from None
+    if not isinstance(normalized_schema, dict) or normalized_schema.get("type") != "object":
+        raise _contract_failure(name, "arguments schema must be an object")
+    if require_closed_schema and not _schema_objects_are_closed(normalized_schema):
+        raise _contract_failure(name, "production arguments schema must forbid extras")
+    if validator_schema != normalized_schema:
+        raise _contract_failure(name, "validator schema is not normalized")
+    if registered.definition.function.parameters != normalized_schema:
+        raise _contract_failure(name, "definition schema drifted from validator")
+    if validator_digest != normalized.schema_digest:
+        raise _contract_failure(name, "validator schema digest drifted")
+
+    try:
+        from morrow.adapters.models.openai_compatible import serialize_tool
+
+        wire = serialize_tool(registered.definition)
+        if set(wire) != {"type", "function"} or wire.get("type") != "function":
+            raise ValueError
+        function = wire.get("function")
+        if not isinstance(function, dict) or set(function) != {"name", "description", "parameters"}:
+            raise ValueError
+        if function.get("name") != name or function.get("parameters") != normalized_schema:
+            raise ValueError
+        wire_schema = JsonSchemaArgumentsValidator(function["parameters"])
+        if wire_schema.schema != normalized_schema:
+            raise ValueError
+        wire_digest = sha256_digest(canonical_json_bytes(wire))
+    except Exception:
+        raise _contract_failure(name, "Provider wire serialization is unstable") from None
+    return ToolContractAudit(
+        tool_name=name,
+        schema_digest=normalized.schema_digest,
+        wire_digest=wire_digest,
+        recovery_name=declaration.tool_name,
+        has_handler=True,
+        has_intent_resolver=registered.intent_resolver is not None,
+        has_policy_resolver=registered.policy_resolver is not None,
+    )
+
+
+def audit_tool_contracts(
+    registered_tools: Mapping[str, RegisteredTool] | tuple[RegisteredTool, ...],
+    *,
+    require_runtime_contract: bool = False,
+    require_closed_schema: bool = False,
+    require_production_declaration: bool = False,
+) -> tuple[ToolContractAudit, ...]:
+    """Audit a deterministic tool inventory and return only safe audit records."""
+
+    values = (
+        tuple(registered_tools.values())
+        if isinstance(registered_tools, Mapping)
+        else tuple(registered_tools)
+    )
+    audits = tuple(
+        audit_registered_tool(
+            registered,
+            require_runtime_contract=require_runtime_contract,
+            require_closed_schema=require_closed_schema,
+            require_production_declaration=require_production_declaration,
+        )
+        for registered in sorted(values, key=lambda item: item.definition.function.name)
+    )
+    names = [audit.tool_name for audit in audits]
+    if len(names) != len(set(names)):
+        raise ToolContractAuditError("tool contract audit failed: duplicate tool name")
+    return audits
 
 
 ApprovalPreview = Callable[[BaseModel], tuple[str, ...] | list[str]]
@@ -285,10 +480,18 @@ class ToolSet:
 
     tools: Mapping[str, RegisteredTool]
     definitions: tuple[ToolDefinition, ...]
+    audit: tuple[ToolContractAudit, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.tools, MappingProxyType):
             object.__setattr__(self, "tools", MappingProxyType(dict(self.tools)))
+        if set(self.tools) != {
+            registered.definition.function.name for registered in self.tools.values()
+        }:
+            raise ToolContractAuditError("tool contract audit failed: tool mapping drifted")
+        expected = tuple(self.tools[name].definition for name in sorted(self.tools))
+        if self.definitions != expected:
+            raise ToolContractAuditError("tool contract audit failed: tool definitions drifted")
 
 
 class ToolRegistry:
@@ -301,6 +504,7 @@ class ToolRegistry:
         name = tool.definition.function.name
         if name in self._tools:
             raise ValueError(f"duplicate tool registration: {name}")
+        audit_registered_tool(tool)
         self._tools[name] = tool
 
     def get(self, name: str) -> RegisteredTool | None:
@@ -309,10 +513,23 @@ class ToolRegistry:
     def definitions(self) -> tuple[ToolDefinition, ...]:
         return tuple(self._tools[name].definition for name in sorted(self._tools))
 
-    def snapshot(self) -> ToolSet:
+    def snapshot(
+        self,
+        *,
+        require_runtime_contract: bool = False,
+        require_closed_schema: bool = False,
+        require_production_declaration: bool = False,
+    ) -> ToolSet:
+        tools = MappingProxyType(dict(self._tools))
         return ToolSet(
-            tools=MappingProxyType(dict(self._tools)),
+            tools=tools,
             definitions=self.definitions(),
+            audit=audit_tool_contracts(
+                tools,
+                require_runtime_contract=require_runtime_contract,
+                require_closed_schema=require_closed_schema,
+                require_production_declaration=require_production_declaration,
+            ),
         )
 
 
@@ -341,6 +558,10 @@ class ToolExecutor:
         approval_port: ApprovalPort | None = None,
         capability_policy: CapabilityPolicy | None = None,
     ) -> None:
+        self.audit = audit_tool_contracts(
+            tool_set.tools,
+            require_runtime_contract=capability_policy is not None,
+        )
         self.tool_set = tool_set
         self.run_policy = run_policy
         self.approval_port = approval_port
@@ -421,6 +642,7 @@ class ToolExecutor:
                 str(exc),
                 limit=limit,
                 details=list(exc.details[: self.run_policy.max_validation_errors]),
+                expected=exc.expected,
             )
         except Exception:
             return self._error(
@@ -736,10 +958,13 @@ class ToolExecutor:
         *,
         limit: int,
         details: list[dict[str, str]] | None = None,
+        expected: str | None = None,
         disposition: ToolExecutionDisposition | None = None,
     ) -> ToolExecutionOutcome:
-        envelope = tool_error_envelope(code, message, details=details)
+        envelope = tool_error_envelope(code, message, details=details, expected=expected)
         if len(envelope) > limit and details:
+            envelope = tool_error_envelope(code, message, expected=expected)
+        if len(envelope) > limit and expected:
             envelope = tool_error_envelope(code, message)
         if len(envelope) > limit:
             envelope = tool_error_envelope(code, "")
@@ -763,6 +988,9 @@ def make_tool(
     description: str,
     arguments_model: type[BaseModel] | None = None,
     arguments_validator: ToolArgumentsValidator | None = None,
+    provider_schema: Mapping[str, Any] | bool | None = None,
+    arguments_schema: Mapping[str, Any] | bool | None = None,
+    expected_shape: str | None = None,
     handler: Callable[[BaseModel], Awaitable[object]] | ContextHandler,
     execution_policy: ToolExecutionPolicy | None = None,
     approval_preview: ApprovalPreview | None = None,
@@ -773,18 +1001,32 @@ def make_tool(
     approval_preview_budget: ApprovalPreviewBudget | None = None,
     recovery_declaration: ToolRecoveryDeclaration | None = None,
 ) -> RegisteredTool:
+    if provider_schema is not None and arguments_schema is not None:
+        raise ValueError("make_tool accepts only one explicit Provider schema")
+    explicit_schema = provider_schema if provider_schema is not None else arguments_schema
     validator = arguments_validator
     if validator is None and arguments_model is not None:
-        validator = PydanticArgumentsValidator(arguments_model)
+        validator = PydanticArgumentsValidator(
+            arguments_model,
+            provider_schema=explicit_schema,
+            expected_shape=expected_shape,
+        )
+    elif explicit_schema is not None:
+        raise ValueError("an explicit Provider schema requires an arguments model")
     if validator is None:
         raise ValueError("make_tool requires an arguments model or validator")
+    if expected_shape is not None and arguments_model is None:
+        raise ValueError("expected validation shape requires an arguments model")
+    schema = validator.schema
+    if not isinstance(schema, dict):
+        raise ValueError("tool arguments schema must be an object")
     declaration = _recovery_declaration(name, recovery_declaration)
     return RegisteredTool(
         definition=ToolDefinition(
             function=ToolFunction(
                 name=name,
                 description=description,
-                parameters=validator.schema,
+                parameters=schema,
             )
         ),
         handler=handler,

@@ -16,15 +16,21 @@ from morrow.core.capabilities import (
 )
 from morrow.core.execution import tool_declaration
 from morrow.core.local_tools import (
+    WORKSPACE_MUTATION_PATH_PATTERN,
+    WORKSPACE_RELATIVE_PATH_MAX_CHARS,
+    WORKSPACE_RELATIVE_PATH_PATTERN,
     ChangeSetResult,
     CommandRequest,
     ExactEdit,
     MutationMode,
     SearchCase,
     SearchQuery,
+    WorkspaceMutationPath,
+    WorkspaceRelativePath,
 )
 from morrow.core.models import ToolEffect
 from morrow.runtime.policy import ToolApproval, ToolExecutionPolicy
+from morrow.runtime.tool_arguments import MAX_STRING_CHARS, SCHEMA_DIALECT
 from morrow.runtime.tools import (
     ApprovalPreviewBudget,
     RegisteredTool,
@@ -41,17 +47,204 @@ from morrow.services.search import WorkspaceSearchService
 
 
 def _path(value: str) -> str:
-    if not isinstance(value, str) or not value:
-        raise ValueError("path must be a non-empty workspace-relative string")
-    if "\x00" in value or "\\" in value or value.startswith("/") or value.startswith("~"):
-        raise ValueError("path must be workspace-relative")
-    return value
+    from morrow.core.local_tools import validate_workspace_relative_path
+
+    return validate_workspace_relative_path(value)
+
+
+def _path_schema(*, mutation: bool = False) -> dict[str, object]:
+    return {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": WORKSPACE_RELATIVE_PATH_MAX_CHARS,
+        "pattern": (
+            WORKSPACE_MUTATION_PATH_PATTERN if mutation else WORKSPACE_RELATIVE_PATH_PATTERN
+        ),
+    }
+
+
+def _string_schema(
+    *,
+    min_length: int | None = None,
+    max_length: int | None = None,
+    pattern: str | None = None,
+    enum: tuple[str, ...] | None = None,
+) -> dict[str, object]:
+    schema: dict[str, object] = {"type": "string"}
+    if min_length is not None:
+        schema["minLength"] = min_length
+    if max_length is not None:
+        schema["maxLength"] = max_length
+    if pattern is not None:
+        schema["pattern"] = pattern
+    if enum is not None:
+        schema["enum"] = list(enum)
+    return schema
+
+
+def _nullable(schema: dict[str, object]) -> dict[str, object]:
+    return {"anyOf": [schema, {"type": "null"}]}
+
+
+def _object_schema(
+    properties: dict[str, object],
+    *,
+    required: tuple[str, ...] = (),
+    one_of: tuple[dict[str, object], ...] = (),
+) -> dict[str, object]:
+    schema: dict[str, object] = {
+        "$schema": SCHEMA_DIALECT,
+        "type": "object",
+        "properties": properties,
+        "additionalProperties": False,
+    }
+    if required:
+        schema["required"] = list(required)
+    if one_of:
+        schema["oneOf"] = list(one_of)
+    return schema
+
+
+_DISCOVERY_PATTERN = r"^(?![~/])(?!.*\\)(?!.*\x00)(?!.*(?:^|/)\.\.(?:/|$))[\s\S]+$"
+_NO_NUL = r"^(?!.*\x00)[\s\S]*$"
+_NO_CONTROL_CHARS = r"^(?!.*\x00)(?!.*[\r\n])[\s\S]*$"
+_NONBLANK_NO_CONTROL = r"^(?!\s*$)(?!.*\x00)(?!.*[\r\n])[\s\S]+$"
+_SHA256_PATTERN = r"^[0-9a-f]{64}$"
+
+
+LIST_DIRECTORY_PROVIDER_SCHEMA = _object_schema(
+    {
+        "path": _path_schema(),
+        "depth": {"type": "integer", "minimum": 1, "maximum": 4},
+        "max_entries": {"type": "integer", "minimum": 1, "maximum": 500},
+    }
+)
+
+READ_FILE_PROVIDER_SCHEMA = _object_schema(
+    {
+        "path": _path_schema(),
+        "start_line": {"type": "integer", "minimum": 1},
+        "line_count": {"type": "integer", "minimum": 1, "maximum": 400},
+    },
+    required=("path",),
+)
+
+FIND_FILES_PROVIDER_SCHEMA = _object_schema(
+    {
+        "path": _path_schema(),
+        "pattern": _string_schema(min_length=1, max_length=128, pattern=_DISCOVERY_PATTERN),
+        "max_results": {"type": "integer", "minimum": 1, "maximum": 1000},
+    },
+    required=("pattern",),
+)
+
+SEARCH_TEXT_PROVIDER_SCHEMA = _object_schema(
+    {
+        "path": _path_schema(),
+        "query": _string_schema(min_length=1, max_length=256, pattern=r"^(?!.*\x00)[\s\S]+$"),
+        "literal": {"type": "boolean"},
+        "case": _string_schema(enum=("sensitive", "insensitive", "smart")),
+        "glob": _nullable(
+            _string_schema(
+                max_length=128,
+                pattern=r"^(?!/)(?!.*\\)(?!.*\x00)(?!.*(?:^|/)\.\.(?:/|$))[\s\S]*$",
+            )
+        ),
+        "context_lines": {"type": "integer", "minimum": 0, "maximum": 3},
+        "max_results": {"type": "integer", "minimum": 1, "maximum": 100},
+    },
+    required=("query",),
+)
+
+_EXACT_EDIT_PROVIDER_SCHEMA = _object_schema(
+    {
+        "old_text": _string_schema(min_length=1, max_length=MAX_STRING_CHARS, pattern=_NO_NUL),
+        "new_text": _string_schema(max_length=MAX_STRING_CHARS, pattern=_NO_NUL),
+    },
+    required=("old_text", "new_text"),
+)
+
+APPLY_PATCH_PROVIDER_SCHEMA = _object_schema(
+    {
+        "path": _path_schema(mutation=True),
+        "expected_sha256": _string_schema(pattern=_SHA256_PATTERN),
+        "edits": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 16,
+            "items": _EXACT_EDIT_PROVIDER_SCHEMA,
+        },
+    },
+    required=("path", "expected_sha256", "edits"),
+)
+
+RUN_COMMAND_PROVIDER_SCHEMA = _object_schema(
+    {
+        "argv": {
+            "type": "array",
+            "items": _string_schema(min_length=1, max_length=1024, pattern=_NO_CONTROL_CHARS),
+            "minItems": 1,
+            "maxItems": 16,
+        },
+        "shell": _string_schema(min_length=1, max_length=16 * 1024, pattern=_NONBLANK_NO_CONTROL),
+        "cwd": _path_schema(),
+        "timeout_seconds": {"type": "number", "exclusiveMinimum": 0, "maximum": 90},
+    },
+    one_of=(
+        {"required": ["argv"], "not": {"required": ["shell"]}},
+        {"required": ["shell"], "not": {"required": ["argv"]}},
+    ),
+)
+
+WRITE_FILE_PROVIDER_SCHEMA = _object_schema(
+    {
+        "path": _path_schema(mutation=True),
+        "content": _string_schema(max_length=MAX_STRING_CHARS),
+        "mode": _string_schema(enum=("create", "replace")),
+        "expected_sha256": _nullable(_string_schema(pattern=_SHA256_PATTERN)),
+    },
+    required=("path", "content", "mode"),
+    one_of=(
+        {
+            "properties": {"mode": {"const": "create"}},
+            "not": {"required": ["expected_sha256"]},
+        },
+        {
+            "properties": {"mode": {"const": "replace"}},
+            "required": ["expected_sha256"],
+        },
+    ),
+)
+
+SHOW_CHANGES_PROVIDER_SCHEMA = _object_schema({})
+
+PROMOTE_SANDBOX_PROVIDER_SCHEMA = _object_schema(
+    {
+        "change_set_id": _string_schema(pattern=r"^sbx_[0-9a-f]{24}$"),
+        "paths": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 16,
+            "items": _path_schema(mutation=True),
+        },
+    },
+    required=("change_set_id", "paths"),
+)
+
+GIT_STATUS_PROVIDER_SCHEMA = _object_schema({})
+
+GIT_DIFF_PROVIDER_SCHEMA = _object_schema(
+    {
+        "staged": {"type": "boolean"},
+        "paths": {"type": "array", "maxItems": 32, "items": _path_schema()},
+    }
+)
 
 
 class ListDirectoryArguments(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
-    path: str = "."
+    path: WorkspaceRelativePath = "."
     depth: int = Field(default=1, ge=1, le=4)
     max_entries: int = Field(default=500, ge=1, le=500)
 
@@ -61,7 +254,7 @@ class ListDirectoryArguments(BaseModel):
 class ReadFileArguments(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
-    path: str
+    path: WorkspaceRelativePath
     start_line: int = Field(default=1, ge=1)
     line_count: int = Field(default=400, ge=1, le=400)
 
@@ -71,7 +264,7 @@ class ReadFileArguments(BaseModel):
 class FindFilesArguments(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
-    path: str = "."
+    path: WorkspaceRelativePath = "."
     pattern: str = Field(min_length=1, max_length=128)
     max_results: int = Field(default=1000, ge=1, le=1000)
 
@@ -81,8 +274,8 @@ class FindFilesArguments(BaseModel):
 class SearchTextArguments(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
-    path: str = "."
-    pattern: str = Field(min_length=1, max_length=256)
+    path: WorkspaceRelativePath = "."
+    query: str = Field(min_length=1, max_length=256)
     literal: bool = True
     case: SearchCase = SearchCase.SMART
     glob: str | None = Field(default=None, max_length=128)
@@ -95,7 +288,7 @@ class SearchTextArguments(BaseModel):
 class ApplyPatchArguments(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
-    path: str
+    path: WorkspaceMutationPath
     expected_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     # Keep 9-16 edits schema-valid so policy can require approval instead of rejecting them.
     edits: tuple[ExactEdit, ...] = Field(min_length=1, max_length=16)
@@ -106,8 +299,8 @@ class ApplyPatchArguments(BaseModel):
 class WriteFileArguments(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
-    path: str
-    content: str = Field(max_length=1024 * 1024)
+    path: WorkspaceMutationPath
+    content: str = Field(max_length=MAX_STRING_CHARS)
     mode: MutationMode
     expected_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
 
@@ -129,12 +322,16 @@ class ShowChangesArguments(BaseModel):
 class RunCommandArguments(CommandRequest):
     """Strict Provider-facing command schema; environment/stdin/TTY are absent by design."""
 
+    cwd: WorkspaceRelativePath = "."
+
+    _valid_cwd = field_validator("cwd")(_path)
+
 
 class PromoteSandboxChangesArguments(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
     change_set_id: str = Field(pattern=r"^sbx_[0-9a-f]{24}$")
-    paths: tuple[str, ...] = Field(min_length=1, max_length=16)
+    paths: tuple[WorkspaceMutationPath, ...] = Field(min_length=1, max_length=16)
 
     _valid_paths = field_validator("paths")(lambda values: tuple(_path(value) for value in values))
 
@@ -147,7 +344,7 @@ class GitDiffArguments(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
     staged: bool = False
-    paths: tuple[str, ...] = Field(default=(), max_length=32)
+    paths: tuple[WorkspaceRelativePath, ...] = Field(default=(), max_length=32)
 
     _valid_paths = field_validator("paths")(lambda values: tuple(_path(value) for value in values))
 
@@ -243,6 +440,7 @@ def make_list_directory_tool(files: WorkspaceFileService) -> RegisteredTool:
         name="list_directory",
         description="列出工作空间内目录的有界条目；不会穿越目录符号链接或读取文件内容。",
         arguments_model=ListDirectoryArguments,
+        provider_schema=LIST_DIRECTORY_PROVIDER_SCHEMA,
         handler=handler,
         context_handler=handler,
         intent_resolver=resolve,
@@ -271,6 +469,7 @@ def make_read_file_tool(files: WorkspaceFileService) -> RegisteredTool:
         name="read_file",
         description="读取工作空间内 UTF-8 文本文件的有界行窗口；结果包含 revision 与继续读取位置。",
         arguments_model=ReadFileArguments,
+        provider_schema=READ_FILE_PROVIDER_SCHEMA,
         handler=handler,
         context_handler=handler,
         intent_resolver=resolve,
@@ -299,6 +498,7 @@ def make_find_files_tool(files: WorkspaceFileService) -> RegisteredTool:
         name="find_files",
         description="按文件名或 glob 在工作空间内发现文件；结果稳定排序且有界。",
         arguments_model=FindFilesArguments,
+        provider_schema=FIND_FILES_PROVIDER_SCHEMA,
         handler=handler,
         context_handler=handler,
         intent_resolver=resolve,
@@ -309,7 +509,7 @@ def make_find_files_tool(files: WorkspaceFileService) -> RegisteredTool:
 def make_search_text_tool(search: WorkspaceSearchService) -> RegisteredTool:
     async def handler(arguments: SearchTextArguments, context: ToolCallContext):
         query = SearchQuery(
-            pattern=arguments.pattern,
+            pattern=arguments.query,
             literal=arguments.literal,
             case=arguments.case,
             glob=arguments.glob,
@@ -334,6 +534,7 @@ def make_search_text_tool(search: WorkspaceSearchService) -> RegisteredTool:
         name="search_text",
         description="在工作空间内按字面量或正则搜索 UTF-8 文本；结果含匹配行、引擎和有界上下文。",
         arguments_model=SearchTextArguments,
+        provider_schema=SEARCH_TEXT_PROVIDER_SCHEMA,
         handler=handler,
         context_handler=handler,
         intent_resolver=resolve,
@@ -416,6 +617,8 @@ def make_run_command_tool(process: ProcessExecutionService) -> RegisteredTool:
             "npm install、curl 或 wget。项目校验应使用已有解释器、脚本或测试。"
         ),
         arguments_model=RunCommandArguments,
+        provider_schema=RUN_COMMAND_PROVIDER_SCHEMA,
+        expected_shape="exactly_one_of:argv,shell",
         handler=handler,
         context_handler=handler,
         intent_resolver=resolve,
@@ -514,6 +717,7 @@ def make_promote_sandbox_tool(
         name="promote_sandbox_changes",
         description="在当前运行中选择沙箱生成的文本变更，并在明确审批后以冲突安全方式推广到真实工作空间。",
         arguments_model=PromoteSandboxChangesArguments,
+        provider_schema=PROMOTE_SANDBOX_PROVIDER_SCHEMA,
         handler=handler,
         context_handler=handler,
         intent_resolver=resolve,
@@ -552,6 +756,7 @@ def make_git_status_tool(git: GitInspectionService) -> RegisteredTool:
         name="git_status",
         description="读取当前工作空间仓库的分支、HEAD、暂存/未暂存/未跟踪与冲突状态；只读且有界。",
         arguments_model=GitStatusArguments,
+        provider_schema=GIT_STATUS_PROVIDER_SCHEMA,
         handler=handler,
         context_handler=handler,
         intent_resolver=resolve,
@@ -589,6 +794,7 @@ def make_git_diff_tool(git: GitInspectionService) -> RegisteredTool:
         name="git_diff",
         description="读取当前工作空间仓库的有界暂存或未暂存 unified Diff；禁用外部 diff/textconv 且只读。",
         arguments_model=GitDiffArguments,
+        provider_schema=GIT_DIFF_PROVIDER_SCHEMA,
         handler=handler,
         context_handler=handler,
         intent_resolver=resolve,
@@ -720,6 +926,7 @@ def make_apply_patch_tool(
         name="apply_patch",
         description="根据已读取文件的 SHA-256 和唯一精确文本编辑修改一个工作空间文件，并返回实际 Diff。",
         arguments_model=ApplyPatchArguments,
+        provider_schema=APPLY_PATCH_PROVIDER_SCHEMA,
         handler=handler,
         context_handler=handler,
         intent_resolver=resolve,
@@ -774,6 +981,8 @@ def make_write_file_tool(
         name="write_file",
         description="创建或按 SHA-256 版本检查替换一个工作空间 UTF-8 文件，并返回实际 Diff。",
         arguments_model=WriteFileArguments,
+        provider_schema=WRITE_FILE_PROVIDER_SCHEMA,
+        expected_shape="write_file_mode_revision",
         handler=handler,
         context_handler=handler,
         intent_resolver=resolve,
@@ -799,6 +1008,7 @@ def make_show_changes_tool(changes: ChangeSetService) -> RegisteredTool:
         name="show_changes",
         description="显示当前运行中已实际发布的有界 ChangeSet 和 Diff；不读取助手文字。",
         arguments_model=ShowChangesArguments,
+        provider_schema=SHOW_CHANGES_PROVIDER_SCHEMA,
         handler=handler,
         context_handler=handler,
         intent_resolver=resolve,

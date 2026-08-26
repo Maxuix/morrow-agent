@@ -17,6 +17,7 @@ from morrow.core.capabilities import (
     SensitiveResourcePolicy,
 )
 from morrow.core.local_tools import (
+    WORKSPACE_RELATIVE_PATH_MAX_CHARS,
     DirectoryEntry,
     DirectoryListingResult,
     ExactEdit,
@@ -29,9 +30,10 @@ from morrow.core.local_tools import (
     NewlineStyle,
     ProtectedPath,
     ReadFileResult,
+    validate_workspace_relative_path,
 )
 
-MAX_RELATIVE_PATH_CHARS = 512
+MAX_RELATIVE_PATH_CHARS = WORKSPACE_RELATIVE_PATH_MAX_CHARS
 MAX_READ_LINES = 400
 MAX_READ_TEXT_BYTES = 8 * 1024
 MAX_DIRECTORY_ENTRIES = 500
@@ -108,20 +110,10 @@ class WorkspacePathResolver:
 
     @staticmethod
     def validate_relative_path(value: str, *, allow_root: bool = True) -> str:
-        if not isinstance(value, str) or not value or len(value) > MAX_RELATIVE_PATH_CHARS:
-            raise LocalFileError("invalid_path", "路径必须是有界的非空相对路径")
-        if "\x00" in value or "\\" in value or value.startswith("/"):
-            raise LocalFileError("invalid_path", "路径格式不受支持")
-        if value.startswith("~") or (len(value) >= 2 and value[1] == ":"):
-            raise LocalFileError("invalid_path", "路径格式不受支持")
-        if value == ".":
-            if allow_root:
-                return "."
-            raise LocalFileError("invalid_path", "路径不能指向工作空间根目录")
-        parts = value.split("/")
-        if any(not part or part in {".", ".."} for part in parts):
-            raise LocalFileError("invalid_path", "路径不能包含空段或目录回退")
-        return "/".join(parts)
+        try:
+            return validate_workspace_relative_path(value, allow_root=allow_root)
+        except ValueError as exc:
+            raise LocalFileError("invalid_path", str(exc)) from None
 
     def _lexical(self, value: str, *, allow_root: bool = True) -> tuple[Path, str, tuple[str, ...]]:
         relative = self.validate_relative_path(value, allow_root=allow_root)

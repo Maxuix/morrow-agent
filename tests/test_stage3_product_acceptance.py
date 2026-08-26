@@ -81,7 +81,7 @@ async def test_fake_provider_python_locate_patch_fail_correct_validate_and_repor
                     _call(
                         "search",
                         "search_text",
-                        {"path": ".", "pattern": "answer", "literal": True},
+                        {"path": ".", "query": "answer", "literal": True},
                     ),
                 )
             ),

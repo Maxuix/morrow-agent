@@ -16,6 +16,7 @@ from morrow.application.local_tools import (
 from morrow.bootstrap import build_application, build_session_application
 from morrow.core.capabilities import PermissionPreset, PermissionProfile
 from morrow.core.models import AssistantMessage, FunctionToolCall, ModelRef
+from morrow.runtime.tool_arguments import JsonSchemaArgumentsValidator, ToolArgumentsValidationError
 from morrow.runtime.tools import ToolErrorCode
 from morrow.services.files import LocalFileError
 from morrow.services.git import GitServiceError
@@ -31,7 +32,7 @@ def test_read_search_arguments_are_strict_and_workspace_relative():
             {"path": "src", "pattern": "*.py", "extra": 1}, strict=True
         )
     with pytest.raises(ValidationError):
-        SearchTextArguments.model_validate({"path": "src\\main.py", "pattern": "x"}, strict=True)
+        SearchTextArguments.model_validate({"path": "src\\main.py", "query": "x"}, strict=True)
 
 
 def test_local_error_mapping_preserves_recoverable_not_found_and_git_failures():
@@ -109,7 +110,7 @@ async def test_fake_provider_can_list_search_read_continue_and_explain(tmp_path)
                     FunctionToolCall(
                         id="search",
                         name="search_text",
-                        arguments='{"path":"src","pattern":"needle"}',
+                        arguments='{"path":"src","query":"needle"}',
                     ),
                 )
             ),
@@ -225,15 +226,36 @@ def test_run_command_schema_requires_xor_and_forbids_install_or_network(tmp_path
         for tool in session_app.orchestrator.runtime.loop.tool_executor.definitions
         if tool.function.name == "run_command"
     )
-    description = definition.function.description
     schema = definition.function.parameters
-    assert "argv" in description and "shell" in description
-    assert "二选一" in description
-    assert "安装依赖" in description
-    assert "网络" in description
-    assert "python3" in description
-    assert "二选一" in schema["properties"]["argv"]["description"]
-    assert "安装依赖" in schema["properties"]["shell"]["description"]
+    validator = JsonSchemaArgumentsValidator(schema)
+    for payload in (
+        {},
+        {"argv": []},
+        {"argv": None},
+        {"argv": ["pwd\n"]},
+        {"shell": "   "},
+        {"shell": "\x00"},
+        {"shell": "echo\ntrue"},
+        {"argv": ["pwd"], "shell": "pwd"},
+        {"argv": ["pwd"], "extra": True},
+        {"argv": ["x"] * 17},
+        {"argv": ["x" * 1025]},
+    ):
+        with pytest.raises(ToolArgumentsValidationError):
+            validator.validate(json.dumps(payload))
+    assert validator.validate('{"argv":["pwd"]}') == {"argv": ["pwd"]}
+    assert validator.validate('{"shell":"pwd"}') == {"shell": "pwd"}
+    assert schema["additionalProperties"] is False
+    assert len(schema["oneOf"]) == 2
+    assert schema["properties"]["argv"]["maxItems"] == 16
+    assert schema["properties"]["argv"]["items"]["maxLength"] <= 4096
+    assert (
+        schema["properties"]["argv"]["maxItems"]
+        * schema["properties"]["argv"]["items"]["maxLength"]
+        <= 16 * 1024
+    )
+    assert schema["properties"]["shell"]["maxLength"] == 16 * 1024
+    assert schema["properties"]["timeout_seconds"]["maximum"] == 90
 
 
 def test_supported_auto_sandbox_inventory_adds_only_current_run_promotion(tmp_path):
@@ -303,5 +325,5 @@ async def test_invalid_read_path_is_bounded_and_handler_does_not_disclose_outsid
     ]
     payload = json.loads(tool_message.content)
     assert payload["ok"] is False
-    assert payload["error"]["code"] == ToolErrorCode.INVALID_PATH.value
+    assert payload["error"]["code"] == ToolErrorCode.INVALID_ARGUMENTS.value
     assert "outside.txt" not in tool_message.content

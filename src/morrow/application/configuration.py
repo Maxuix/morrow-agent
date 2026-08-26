@@ -7,7 +7,11 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from morrow.application.legacy_configuration import validate_legacy_configuration_fields
+from morrow.application.legacy_configuration import (
+    LEGACY_LIST_PATHS,
+    PROFILE_PATHS,
+    validate_legacy_configuration_fields,
+)
 from morrow.core.capabilities import (
     OperationIntent,
     OperationKind,
@@ -24,11 +28,95 @@ from morrow.core.execution import tool_declaration
 from morrow.core.models import StatePresence, ToolEffect
 from morrow.core.preference_models import PreferenceLifecycleOperation, PreferenceOperation
 from morrow.runtime.policy import ToolApproval, ToolExecutionPolicy
+from morrow.runtime.tool_arguments import MAX_STRING_CHARS, SCHEMA_DIALECT
 from morrow.runtime.tools import RegisteredTool, ToolErrorCode, ToolExecutionError, make_tool
 
 ConfigurationScope = Literal["session", "workspace", "global"]
 ConfigurationTarget = Literal["preferences", "profile"]
 ConfigurationOperation = Literal["set", "unset", "append", "remove", "reset"]
+
+
+def _configuration_string(*, max_length: int, minimum: int = 1) -> dict[str, object]:
+    return {
+        "type": "string",
+        "minLength": minimum,
+        "maxLength": min(max_length, MAX_STRING_CHARS),
+        "pattern": r"^(?!.*\x00)[\s\S]+$",
+    }
+
+
+def _configuration_branch(
+    operation: str,
+    *,
+    path_values: tuple[str, ...] = (),
+    value_schema: dict[str, object] | None = None,
+    required: tuple[str, ...] = (),
+    forbidden: tuple[str, ...] = (),
+) -> dict[str, object]:
+    properties: dict[str, object] = {"operation": {"const": operation}}
+    if path_values:
+        properties["path"] = {"type": "string", "enum": list(path_values)}
+    if value_schema is not None:
+        properties["value"] = value_schema
+    branch: dict[str, object] = {"properties": properties}
+    if required:
+        branch["required"] = list(required)
+    if forbidden:
+        branch["not"] = {"anyOf": [{"required": [name]} for name in forbidden]}
+    return branch
+
+
+_PROFILE_SCALAR_PATHS = tuple(sorted(PROFILE_PATHS - LEGACY_LIST_PATHS))
+_PROFILE_LIST_PATHS = tuple(sorted(PROFILE_PATHS & LEGACY_LIST_PATHS))
+
+CONFIGURATION_PROVIDER_SCHEMA = {
+    "$schema": SCHEMA_DIALECT,
+    "type": "object",
+    "properties": {
+        "scope": {"type": "string", "const": "workspace"},
+        "target": {"type": "string", "const": "profile"},
+        "operation": {
+            "type": "string",
+            "enum": ["set", "unset", "append", "remove", "reset"],
+        },
+        "path": {
+            "anyOf": [
+                {"type": "string", "enum": sorted(PROFILE_PATHS)},
+                {"type": "null"},
+            ]
+        },
+        "value": {},
+    },
+    "required": ["scope", "target", "operation"],
+    "oneOf": [
+        _configuration_branch(
+            "set",
+            path_values=_PROFILE_SCALAR_PATHS,
+            value_schema=_configuration_string(max_length=2048),
+            required=("path", "value"),
+        ),
+        _configuration_branch(
+            "append",
+            path_values=_PROFILE_LIST_PATHS,
+            value_schema=_configuration_string(max_length=512),
+            required=("path", "value"),
+        ),
+        _configuration_branch(
+            "remove",
+            path_values=_PROFILE_LIST_PATHS,
+            value_schema=_configuration_string(max_length=512),
+            required=("path", "value"),
+        ),
+        _configuration_branch(
+            "unset",
+            path_values=("summary",),
+            required=("path",),
+            forbidden=("value",),
+        ),
+        _configuration_branch("reset", forbidden=("path", "value")),
+    ],
+    "additionalProperties": False,
+}
 
 
 def _validate_profile_fields(model: BaseModel, *, validate_values: bool = True) -> None:
@@ -242,6 +330,8 @@ def make_configuration_tool(config_service) -> RegisteredTool:
         name="update_configuration",
         description=CONFIGURATION_TOOL_DESCRIPTION,
         arguments_model=UpdateConfigurationArguments,
+        provider_schema=CONFIGURATION_PROVIDER_SCHEMA,
+        expected_shape="configuration_operation_shape",
         handler=handler,
         execution_policy=ToolExecutionPolicy(
             effect=ToolEffect.PERSISTENT_WRITE,

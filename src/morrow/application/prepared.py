@@ -193,7 +193,11 @@ def _prepare_one(
         else _fallback_declaration(call.name)
     )
     schema_digest = (
-        sha256_digest(canonical_json_bytes(registered.definition.model_dump(mode="json")))
+        getattr(
+            registered.arguments_validator,
+            "schema_digest",
+            sha256_digest(canonical_json_bytes(registered.arguments_validator.schema)),
+        )
         if registered is not None
         else sha256_digest(call.name)
     )

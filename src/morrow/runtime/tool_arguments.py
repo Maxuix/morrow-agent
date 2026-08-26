@@ -6,7 +6,7 @@ import json
 import math
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from pydantic import BaseModel, ValidationError
@@ -76,18 +76,24 @@ class ToolArgumentsValidationError(ValueError):
     """Stable, bounded validation failure; raw argument values never enter it."""
 
     def __init__(
-        self, code: str, message: str, *, details: tuple[dict[str, str], ...] = ()
+        self,
+        code: str,
+        message: str,
+        *,
+        details: tuple[dict[str, str], ...] = (),
+        expected: str | None = None,
     ) -> None:
         super().__init__(message)
         self.code = code
         self.details = details
+        self.expected = expected
 
 
 class ToolArgumentsValidator(Protocol):
     """One synchronous, bounded validation call shared by every RegisteredTool."""
 
     @property
-    def schema(self) -> dict[str, Any]: ...
+    def schema(self) -> dict[str, Any] | bool: ...
 
     def validate(self, raw: str) -> object: ...
 
@@ -168,16 +174,137 @@ def _is_number(value: object) -> bool:
         return False
 
 
+def _normalize_generated_schema(node: Any) -> Any:
+    """Make generated Pydantic bounds no looser than the raw argument budget."""
+
+    if isinstance(node, list):
+        return [_normalize_generated_schema(item) for item in node]
+    if not isinstance(node, dict):
+        return node
+    normalized = {key: _normalize_generated_schema(value) for key, value in node.items()}
+    node_type = normalized.get("type")
+    if node_type == "string" or (isinstance(node_type, list) and "string" in node_type):
+        current = normalized.get("maxLength")
+        normalized["maxLength"] = (
+            MAX_STRING_CHARS if current is None else min(current, MAX_STRING_CHARS)
+        )
+    if node_type == "array" or (isinstance(node_type, list) and "array" in node_type):
+        current = normalized.get("maxItems")
+        normalized["maxItems"] = (
+            MAX_ARRAY_ITEMS if current is None else min(current, MAX_ARRAY_ITEMS)
+        )
+    if node_type == "object" or (isinstance(node_type, list) and "object" in node_type):
+        current = normalized.get("maxProperties")
+        normalized["maxProperties"] = (
+            MAX_OBJECT_PROPERTIES if current is None else min(current, MAX_OBJECT_PROPERTIES)
+        )
+    return normalized
+
+
+def _pydantic_type_for_schema(node: Any) -> str | None:
+    if isinstance(node, dict):
+        schema_type = node.get("type")
+        if schema_type == "integer":
+            return "int_type"
+        if schema_type == "number":
+            return "float_type"
+        if schema_type == "string":
+            return "string_type"
+        if schema_type == "boolean":
+            return "bool_type"
+        if schema_type == "array":
+            return "list_type"
+        if schema_type == "object":
+            return "dict_type"
+    return None
+
+
+def _translate_schema_details(
+    details: tuple[dict[str, str], ...], schema: Any
+) -> tuple[dict[str, str], ...]:
+    """Keep Pydantic-backed diagnostics compatible after the schema-first check."""
+
+    if not isinstance(schema, dict):
+        return details
+    translated: list[dict[str, str]] = []
+    for detail in details:
+        if detail.get("type") != "type":
+            translated.append(detail)
+            continue
+        node: Any = schema
+        for part in detail.get("path", "").split("."):
+            if part == "$" or not isinstance(node, dict):
+                continue
+            properties = node.get("properties")
+            if isinstance(properties, dict) and part in properties:
+                node = properties[part]
+                continue
+            if part.isdigit() and isinstance(node.get("items"), dict):
+                node = node["items"]
+                continue
+            node = None
+            break
+        translated_type = _pydantic_type_for_schema(node)
+        translated.append(
+            {**detail, "type": translated_type} if translated_type is not None else detail
+        )
+    return tuple(translated)
+
+
 @dataclass(frozen=True)
 class PydanticArgumentsValidator:
     model: type[BaseModel]
+    provider_schema: Mapping[str, Any] | bool | None = None
+    expected_shape: str | None = None
+    _compiled: Any = field(init=False, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        if self.expected_shape is not None and (
+            not isinstance(self.expected_shape, str)
+            or not self.expected_shape
+            or len(self.expected_shape) > 128
+            or not self.expected_shape.isascii()
+        ):
+            raise ValueError("expected validation shape must be a bounded ASCII label")
+        schema = (
+            self.model.model_json_schema() if self.provider_schema is None else self.provider_schema
+        )
+        if self.provider_schema is None:
+            schema = _normalize_generated_schema(schema)
+        compiled = JsonSchemaArgumentsValidator(schema)
+        normalized = compiled.schema
+        if not isinstance(normalized, dict) or normalized.get("type") != "object":
+            raise ValueError("Pydantic tool arguments schema must be an object schema")
+        object.__setattr__(self, "_compiled", compiled)
 
     @property
     def schema(self) -> dict[str, Any]:
-        return self.model.model_json_schema()
+        return self._compiled.schema
+
+    @property
+    def schema_digest(self) -> str:
+        return self._compiled.schema_digest
 
     def validate(self, raw: str) -> BaseModel:
-        _json_value(raw)
+        value = _json_value(raw)
+        try:
+            self._compiled.validate_value(value)
+        except ToolArgumentsValidationError as exc:
+            if self.expected_shape is not None and exc.expected is None:
+                raise ToolArgumentsValidationError(
+                    exc.code,
+                    str(exc),
+                    details=_translate_schema_details(exc.details, self.schema),
+                    expected=self.expected_shape,
+                ) from None
+            if exc.details:
+                raise ToolArgumentsValidationError(
+                    exc.code,
+                    str(exc),
+                    details=_translate_schema_details(exc.details, self.schema),
+                    expected=exc.expected,
+                ) from None
+            raise
         try:
             return self.model.model_validate_json(raw, strict=True)
         except ValidationError as exc:
@@ -189,7 +316,10 @@ class PydanticArgumentsValidator:
                 for error in exc.errors(include_url=False)[:16]
             )
             raise ToolArgumentsValidationError(
-                "validation_failed", "工具参数校验失败", details=details
+                "validation_failed",
+                "工具参数校验失败",
+                details=details,
+                expected=self.expected_shape,
             ) from None
 
 
@@ -221,11 +351,7 @@ class JsonSchemaArgumentsValidator:
         self._schema_digest = sha256_digest(encoded)
 
     @property
-    def schema(self) -> dict[str, Any]:
-        if isinstance(self._schema, bool):
-            if self._schema:
-                return {"$schema": SCHEMA_DIALECT, "const": True}
-            return {"$schema": SCHEMA_DIALECT, "not": {}}
+    def schema(self) -> dict[str, Any] | bool:
         return json.loads(json.dumps(self._schema, ensure_ascii=False))
 
     @property
@@ -234,11 +360,15 @@ class JsonSchemaArgumentsValidator:
 
     def validate(self, raw: str) -> object:
         value = _json_value(raw)
+        self.validate_value(value)
+        return value
+
+    def validate_value(self, value: object) -> None:
+        _check_value_budget(value, depth=0)
         try:
             self._validate(self._schema, value, (), depth=0)
         except ToolArgumentsValidationError:
             raise
-        return value
 
     def _check_schema(self, node: Any, *, depth: int, root: bool = False) -> None:
         if isinstance(node, bool):
@@ -459,13 +589,15 @@ class JsonSchemaArgumentsValidator:
     def _validate_object(self, node, value, path, depth) -> None:
         properties = node.get("properties", {})
         required = node.get("required", [])
-        for name in required:
-            if name not in value:
-                raise ToolArgumentsValidationError(
-                    "validation_failed",
-                    "工具参数缺少必填字段",
-                    details=_detail((*path, name), "required"),
-                )
+        missing = [name for name in required if name not in value]
+        if missing:
+            raise ToolArgumentsValidationError(
+                "validation_failed",
+                "工具参数缺少必填字段",
+                details=tuple(
+                    detail for name in missing[:16] for detail in _detail((*path, name), "missing")
+                ),
+            )
         if (
             len(value) > MAX_OBJECT_PROPERTIES
             or len(value) < node.get("minProperties", 0)

@@ -11,9 +11,10 @@ Subplan 81 and must remain untouched.
 
 ## Active task
 
-Create and commit the S7P-02 activation plan, then dispatch its dedicated `gpt-5.6-luna` / `max`
-implementation task. That task owns test-first implementation, same-session read-only Luna Max
-review, repair, full offline validation and topic-branch commits.
+The dedicated `gpt-5.6-luna` / `max` implementation task is active on
+`codex/fix/s7p-02-tool-contracts`. Test-first final-wire mismatch coverage is in place and
+currently fails against the activation baseline; the next action is to add the normalized
+Provider-schema seam and fail-closed audit before repairing the static tools.
 
 ## Located evidence
 
@@ -36,8 +37,8 @@ review, repair, full offline validation and topic-branch commits.
 
 ## Next action
 
-Commit the Subplan 81 activation state on `main`, create `codex/fix/s7p-02-tool-contracts`, then
-start the dedicated Luna Max implementation task from that exact branch.
+Implement and test the shared normalized Provider schema/audit seam, keeping the first three
+contract tests failing until the runtime and final Provider wire use the same bounded schema.
 
 ## Blockers
 

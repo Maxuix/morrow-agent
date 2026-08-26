@@ -13,7 +13,7 @@ Subplan 81 — S7P-02 Tool Contract Audit and argument recovery.
 
 - `[x]` Read S7P-02 and locate schema/runtime/handler mismatches in current code and tests.
 - `[x]` Freeze the Provider-schema, audit, diagnostics, compatibility and validation decisions.
-- `[ ]` Add failing final-wire schema/runtime mismatch tests and a full static inventory audit.
+- `[>]` Add failing final-wire schema/runtime mismatch tests and a full static inventory audit.
 - `[ ]` Add one normalized explicit Provider-schema seam and fail-closed drift checks.
 - `[ ]` Repair run-command XOR, write-file branches/budgets and common path/query contracts.
 - `[ ]` Add bounded actionable invalid-argument feedback and scripted next-call correction coverage.

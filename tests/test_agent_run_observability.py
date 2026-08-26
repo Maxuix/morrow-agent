@@ -16,10 +16,12 @@ from morrow.adapters.state.journal import SqliteOperationalJournal
 from morrow.adapters.state.operational import BusyRetryPolicy, OperationalStore
 from morrow.application.backup import OperationalBackupService
 from morrow.application.doctor import OperationalDoctor
+from morrow.application.local_tools import RUN_COMMAND_PROVIDER_SCHEMA, RunCommandArguments
 from morrow.application.tool_persistence import _envelope_from_outcome
 from morrow.application.turns import SessionPersistence
+from morrow.core.capabilities import ProcessIsolation
 from morrow.core.domain import DurableSession
-from morrow.core.execution import ToolExecutionDisposition, ToolExecutionState
+from morrow.core.execution import ToolExecutionDisposition, ToolExecutionState, tool_declaration
 from morrow.core.models import (
     AgentStopCode,
     AssistantMessage,
@@ -636,6 +638,86 @@ def test_invalid_argument_diagnostics_retain_only_bounded_path_and_type():
     encoded = json.dumps(envelope.model_dump(mode="json"), ensure_ascii=False)
     assert "secret" not in encoded
     assert "value" not in encoded
+
+
+@pytest.mark.asyncio
+async def test_scripted_agent_repairs_command_shape_without_durable_raw_sentinel(tmp_path):
+    async def handler(arguments: RunCommandArguments):
+        return {"status": "executed", "argv": list(arguments.argv or ())}
+
+    registry = ToolRegistry()
+    registry.register(
+        make_tool(
+            name="run_command",
+            description="run command",
+            arguments_model=RunCommandArguments,
+            provider_schema=RUN_COMMAND_PROVIDER_SCHEMA,
+            expected_shape="exactly_one_of:argv,shell",
+            handler=handler,
+            recovery_declaration=tool_declaration(
+                "run_command", process_isolation=ProcessIsolation.HOST
+            ),
+        )
+    )
+    executor = ToolExecutor(registry.snapshot(), make_context_builder().run_policy)
+    handle, journal, session, persistence = _open(tmp_path)
+    sentinel = "raw-command-sentinel"
+    provider = ScriptedModelProvider(
+        [
+            AssistantMessage(
+                tool_calls=(
+                    FunctionToolCall(
+                        id="bad",
+                        name="run_command",
+                        arguments=json.dumps({"argv": ["echo"], "shell": sentinel}),
+                    ),
+                )
+            ),
+            AssistantMessage(
+                tool_calls=(
+                    FunctionToolCall(
+                        id="good",
+                        name="run_command",
+                        arguments='{"argv":["echo"]}',
+                    ),
+                )
+            ),
+            AssistantMessage(content="done"),
+        ]
+    )
+    try:
+        loop = AgentLoop(
+            provider,
+            ModelRef(provider_id="p", model_id="m"),
+            make_context_builder(),
+            id_source=FixedIdSource(),
+            clock=FixedClock(),
+            tool_executor=executor,
+        )
+        events = [event async for event in loop.run_task(session, "run it")]
+
+        assert events[-1].payload["finish_reason"] == FinishReason.STOP.value
+        first_tool_message = provider.stream_calls[1][-1]
+        first_error = json.loads(first_tool_message.content)
+        assert first_error["error"]["code"] == ToolErrorCode.INVALID_ARGUMENTS.value
+        assert first_error["error"]["expected"] == "exactly_one_of:argv,shell"
+        assert sentinel not in first_tool_message.content
+        assert sentinel not in json.dumps([event.payload for event in events], ensure_ascii=False)
+
+        observation = persistence.get_agent_run_observation()
+        assert observation is not None
+        executions = journal.list_executions("ws_1", agent_run_id=observation.agent_run_id)
+        assert len(executions) == 2
+        invalid_envelope = executions[0].result_envelope
+        assert invalid_envelope is not None
+        assert invalid_envelope.validation_diagnostics
+        assert sentinel not in json.dumps(invalid_envelope.model_dump(mode="json"))
+        assert json.loads(provider.stream_calls[2][-1].content)["result"] == {
+            "argv": ["echo"],
+            "status": "executed",
+        }
+    finally:
+        handle.close()
 
 
 @pytest.mark.parametrize(

@@ -39,7 +39,12 @@ from morrow.core.execution import tool_declaration
 from morrow.core.local_tools import CommandStatus
 from morrow.core.models import ToolEffect
 from morrow.core.skills.scripts import (
+    SCRIPT_MAX_ENV_NAMES,
+    SCRIPT_MAX_INPUT_ARTIFACTS,
+    SCRIPT_MAX_OUTPUTS,
+    SCRIPT_MAX_TIMEOUT_SECONDS,
     SCRIPT_OUTPUT_FILE_MAX_BYTES,
+    SCRIPT_PATH_MAX_CHARS,
     SCRIPT_STDIO_MAX_CHARS,
     SCRIPT_TOTAL_OUTPUT_BYTES,
     SkillScriptRequest,
@@ -47,6 +52,7 @@ from morrow.core.skills.scripts import (
     SkillScriptStatus,
 )
 from morrow.core.skills.selection import SkillSelection
+from morrow.runtime.tool_arguments import SCHEMA_DIALECT
 from morrow.runtime.tools import (
     ApprovalPreviewBudget,
     RegisteredTool,
@@ -61,6 +67,84 @@ from morrow.services.process import SecretRedactor
 
 class SkillScriptExecutionError(PublicDiagnosticError):
     """A Skill script failure with a reviewed, user-safe diagnostic."""
+
+
+_SKILL_RELATIVE_PATH_PATTERN = r"^(?!/)(?!.*\\)(?!.*\x00)(?!.*(?:^|/)\.{1,2}(?:/|$))[\s\S]+$"
+_SKILL_SCRIPT_PATH_PATTERN = r"^scripts/(?!$)(?!.*\\)(?!.*\x00)(?!.*(?:^|/)\.{1,2}(?:/|$))[\s\S]+$"
+_SKILL_ARG_PATTERN = r"^(?!.*\x00)(?!.*[\r\n])[\s\S]+$"
+_SKILL_ID_PATTERN = r"^[a-z0-9][a-z0-9_-]{0,63}$"
+_SKV_ID_PATTERN = r"^skv_[A-Za-z0-9_-]{8,64}$"
+_SELECTION_ID_PATTERN = r"^ssel_[A-Za-z0-9_-]{1,127}$"
+_WORKSPACE_ID_PATTERN = r"^ws_[A-Za-z0-9_-]{1,127}$"
+_ARTIFACT_ID_PATTERN = r"^art_[A-Za-z0-9_-]{1,127}$"
+_DIGEST_PATTERN = r"^[0-9a-f]{64}$"
+
+SKILL_SCRIPT_PROVIDER_SCHEMA = {
+    "$schema": SCHEMA_DIALECT,
+    "type": "object",
+    "properties": {
+        "selection_id": {"type": "string", "pattern": _SELECTION_ID_PATTERN},
+        "skill_id": {"type": "string", "pattern": _SKILL_ID_PATTERN},
+        "version_id": {"type": "string", "pattern": _SKV_ID_PATTERN},
+        "tree_digest": {"type": "string", "pattern": _DIGEST_PATTERN},
+        "source_kind": {
+            "type": "string",
+            "enum": ["builtin", "user_authored", "generated", "imported"],
+        },
+        "scope_id": {
+            "anyOf": [
+                {"type": "string", "pattern": _WORKSPACE_ID_PATTERN},
+                {"type": "null"},
+            ]
+        },
+        "script_path": {
+            "type": "string",
+            "minLength": len("scripts/") + 1,
+            "maxLength": SCRIPT_PATH_MAX_CHARS,
+            "pattern": _SKILL_SCRIPT_PATH_PATTERN,
+        },
+        "argv": {
+            "type": "array",
+            "maxItems": 16,
+            "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1024,
+                "pattern": _SKILL_ARG_PATTERN,
+            },
+        },
+        "environment_names": {
+            "type": "array",
+            "maxItems": SCRIPT_MAX_ENV_NAMES,
+            "uniqueItems": True,
+            "items": {"type": "string", "pattern": r"^[A-Z][A-Z0-9_]{0,63}$"},
+        },
+        "input_artifact_ids": {
+            "type": "array",
+            "maxItems": SCRIPT_MAX_INPUT_ARTIFACTS,
+            "uniqueItems": True,
+            "items": {"type": "string", "pattern": _ARTIFACT_ID_PATTERN},
+        },
+        "output_paths": {
+            "type": "array",
+            "maxItems": SCRIPT_MAX_OUTPUTS,
+            "uniqueItems": True,
+            "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": SCRIPT_PATH_MAX_CHARS,
+                "pattern": _SKILL_RELATIVE_PATH_PATTERN,
+            },
+        },
+        "timeout_seconds": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "maximum": SCRIPT_MAX_TIMEOUT_SECONDS,
+        },
+    },
+    "required": ["selection_id", "skill_id", "version_id", "tree_digest", "script_path"],
+    "additionalProperties": False,
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -697,6 +781,7 @@ def make_skill_script_tool(service: SkillScriptExecutionService) -> RegisteredTo
             "输出必须预先声明并作为 Artifact 保存。"
         ),
         arguments_model=SkillScriptRequest,
+        provider_schema=SKILL_SCRIPT_PROVIDER_SCHEMA,
         handler=handler,
         context_handler=handler,
         intent_resolver=resolve,

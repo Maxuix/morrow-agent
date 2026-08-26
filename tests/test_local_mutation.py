@@ -519,9 +519,7 @@ async def test_manual_provider_path_approves_actual_diff_and_show_changes_uses_f
     provider = ScriptedModelProvider(
         [
             AssistantMessage(
-                tool_calls=(
-                    _tool_args("search_text", {"path": ".", "pattern": "needle"}, "search"),
-                )
+                tool_calls=(_tool_args("search_text", {"path": ".", "query": "needle"}, "search"),)
             ),
             AssistantMessage(tool_calls=(_tool_args("read_file", {"path": "sample.txt"}, "read"),)),
             AssistantMessage(
