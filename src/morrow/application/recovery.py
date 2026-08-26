@@ -122,7 +122,10 @@ def item_from_execution(execution, *, report_id: str, item_id: str, workspace_ro
     declaration = declaration_for_execution(execution)
     observed = observations_for(execution, workspace_root=workspace_root)
     classification = classify_execution(
-        state=execution.state, declaration=declaration, observations=observed
+        state=execution.state,
+        declaration=declaration,
+        observations=observed,
+        disposition=execution.disposition,
     )
     observation = observed[0] if len(observed) == 1 else None
     summary = (
@@ -148,7 +151,10 @@ def item_from_execution(execution, *, report_id: str, item_id: str, workspace_ro
             relative_paths=tuple(item.relative_path for item in execution.intent.file_evidence),
             summary=summary,
         ),
-        blocking=execution.state is not ToolExecutionState.CLOSED,
+        blocking=(
+            execution.state is not ToolExecutionState.CLOSED
+            or execution.disposition is ToolExecutionDisposition.UNKNOWN
+        ),
     )
 
 
@@ -174,6 +180,7 @@ class RecoveryService:
             item
             for item in self.journal.list_session_executions(self.workspace_id, session_id)
             if item.state is not ToolExecutionState.CLOSED
+            or item.disposition is ToolExecutionDisposition.UNKNOWN
         ]
         if not executions:
             return None

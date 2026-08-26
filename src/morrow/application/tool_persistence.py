@@ -10,13 +10,14 @@ from morrow.application.artifacts import ArtifactService
 from morrow.application.prepared import prepare_cycle_executions
 from morrow.application.turn_permissions import RunPermissionCoordinator
 from morrow.core.artifacts import ArtifactError
-from morrow.core.capabilities import ToolRunContext
+from morrow.core.capabilities import ChangeToolFact, ToolRunContext
 from morrow.core.domain import ArtifactReference
 from morrow.core.execution import (
     APPROVAL_ID_PREFIX,
     ApprovalResolution,
     DurableApproval,
     DurableToolExecution,
+    DurableToolFacts,
     HandlerResultEnvelope,
     ToolExecutionDisposition,
     ToolExecutionState,
@@ -276,6 +277,11 @@ class DurableToolExecutionCoordinator:
                     artifact_refs.append(reference)
             except (ArtifactError, StorageError):
                 pass
+        durable_facts = None
+        if execution.intent.file_evidence and any(
+            isinstance(fact, ChangeToolFact) for fact in result.facts
+        ):
+            durable_facts = DurableToolFacts(files=execution.intent.file_evidence)
         completed = transition_execution(
             execution,
             ToolExecutionState.HANDLER_COMPLETED,
@@ -284,6 +290,7 @@ class DurableToolExecutionCoordinator:
             now=stamp,
             result_envelope=_envelope_from_outcome(result),
             error_code=result.error_code.value if result.error_code is not None else None,
+            facts=durable_facts,
         )
         if artifact_refs:
             completed = completed.model_copy(update={"artifact_refs": tuple(artifact_refs)})

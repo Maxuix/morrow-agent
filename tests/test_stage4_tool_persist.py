@@ -13,6 +13,7 @@ from types import SimpleNamespace
 import pytest
 from pydantic import BaseModel, ConfigDict
 
+from morrow.adapters.local.filesystem import FileSystemAdapter, FileSystemMutationError
 from morrow.adapters.state.journal import SqliteOperationalJournal
 from morrow.adapters.state.operational import BusyRetryPolicy, OperationalStore
 from morrow.application.grants import CapabilityGrantService
@@ -27,7 +28,7 @@ from morrow.core.capabilities import (
     WorkspaceCapability,
 )
 from morrow.core.domain import DurableSession
-from morrow.core.execution import EffectClass, ToolExecutionState
+from morrow.core.execution import EffectClass, ToolExecutionDisposition, ToolExecutionState
 from morrow.core.faults import FaultPoint, InjectedFault, OnceFaultInjector
 from morrow.core.models import (
     AssistantMessage,
@@ -42,6 +43,7 @@ from morrow.core.permissions import (
     CapabilityName,
     GrantSource,
 )
+from morrow.core.recovery import RecoveryClassification
 from morrow.core.store import StoreOpenMode
 from morrow.runtime.agent import AgentLoop
 from morrow.runtime.capabilities import CapabilityPolicy
@@ -119,6 +121,18 @@ class _ApproveHost:
 class _ApproveAll:
     async def request(self, request) -> ToolApprovalDecision:
         return ToolApprovalDecision(approved=True)
+
+
+class _FailFsyncAfterEffect(FileSystemAdapter):
+    def __init__(self):
+        super().__init__()
+        self.fail = True
+
+    def _fsync_required(self, fd):
+        if self.fail:
+            self.fail = False
+            raise FileSystemMutationError("publication_failed", "injected fsync failure")
+        return FileSystemAdapter._fsync_required(fd)
 
 
 def _host_executor(seen: list[str], session: Session, *, approval_port=None) -> ToolExecutor:
@@ -388,6 +402,68 @@ async def test_delete_and_rename_intents_persist_ordered_two_path_evidence(tmp_p
         assert not deleted.exists()
         assert not renamed.exists()
         assert (project / "new.txt").read_text(encoding="utf-8") == "rename\n"
+    finally:
+        handle.close()
+
+
+@pytest.mark.asyncio
+async def test_post_effect_failure_persists_unknown_result_fact_and_recovery_observation(tmp_path):
+    project = tmp_path / "project"
+    project.mkdir()
+    target = project / "delete.txt"
+    target.write_text("delete\n", encoding="utf-8")
+    mutation = WorkspaceMutationService(
+        WorkspaceFileService(WorkspacePathResolver(project), filesystem=_FailFsyncAfterEffect())
+    )
+    store, handle, journal, session, persistence = _open(tmp_path, mutation=mutation)
+    session.workspace_capability = WorkspaceCapability(workspace_id="ws_1", root=project)
+    try:
+        registry = ToolRegistry()
+        registry.register(make_delete_file_tool(mutation, ChangeSetService()))
+        executor = ToolExecutor(
+            registry.snapshot(), make_context_builder().run_policy, approval_port=_ApproveAll()
+        )
+        provider = ScriptedModelProvider(
+            [
+                AssistantMessage(
+                    tool_calls=(
+                        FunctionToolCall(
+                            id="delete",
+                            name="delete_file",
+                            arguments=json.dumps(
+                                {
+                                    "path": "delete.txt",
+                                    "expected_sha256": hashlib.sha256(
+                                        target.read_bytes()
+                                    ).hexdigest(),
+                                }
+                            ),
+                        ),
+                    )
+                ),
+                AssistantMessage(content="done"),
+            ]
+        )
+        loop = AgentLoop(
+            provider,
+            ModelRef(provider_id="p", model_id="m"),
+            make_context_builder(),
+            id_source=FixedIdSource(),
+            tool_executor=executor,
+        )
+        [item async for item in loop.run_task(session, "delete")]
+        run = journal._read_one("SELECT agent_run_id FROM agent_runs LIMIT 1", ())
+        execution = journal.list_executions("ws_1", agent_run_id=str(run[0]))[0]
+        assert execution.state is ToolExecutionState.CLOSED
+        assert execution.disposition is ToolExecutionDisposition.UNKNOWN
+        assert execution.result_envelope is not None and not execution.result_envelope.ok
+        assert execution.facts is not None
+        assert execution.facts.files[0].expected_kind == "absent"
+        report = persistence.recovery.discover("ses_1", session.log)
+        assert report is not None
+        assert report.items[0].classification is RecoveryClassification.COMPLETED
+        assert report.items[0].blocking is True
+        assert not target.exists()
     finally:
         handle.close()
 

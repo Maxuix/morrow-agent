@@ -28,10 +28,11 @@ class DirectoryItem:
 class FileSystemMutationError(RuntimeError):
     """Bounded adapter error for a confined destructive filesystem operation."""
 
-    def __init__(self, code: str, message: str) -> None:
+    def __init__(self, code: str, message: str, *, effect_applied: bool = False) -> None:
         super().__init__(message)
         self.code = code
         self.message = message
+        self.effect_applied = effect_applied
 
 
 class FileSystemCapabilityError(FileSystemMutationError):
@@ -44,6 +45,7 @@ class ConfinedFileState:
 
     raw: bytes
     mode: int
+    size: int
     mtime_ns: int
 
 
@@ -88,7 +90,8 @@ class FileSystemAdapter:
                 raise ValueError("file is too large")
             flags = os.O_RDONLY
             no_follow = getattr(os, "O_NOFOLLOW", 0)
-            fd = os.open(path, flags | no_follow)
+            non_blocking = getattr(os, "O_NONBLOCK", 0)
+            fd = os.open(path, flags | no_follow | non_blocking)
             try:
                 chunks: list[bytes] = []
                 total = 0
@@ -224,8 +227,11 @@ class FileSystemAdapter:
         """Unlink one regular file through a no-follow directory descriptor."""
 
         parent_fd: int | None = None
+        source_fd: int | None = None
         try:
             self._require_confined_mutation_support()
+            if expected_sha256 is None:
+                raise FileSystemMutationError("source_conflict", "源文件版本证据缺失")
             parent_fd = self._open_directory_chain(workspace_root, path.parent)
             try:
                 metadata = os.stat(path.name, dir_fd=parent_fd, follow_symlinks=False)
@@ -235,29 +241,47 @@ class FileSystemAdapter:
                 raise FileSystemMutationError("publication_failed", "源文件无法检查") from exc
             if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
                 raise FileSystemMutationError("not_regular", "源文件不是普通文件")
-            if expected_sha256 is not None:
-                raw = self._read_bytes_at(parent_fd, path.name, max_bytes=max_bytes)
-                if hashlib.sha256(raw).hexdigest() != expected_sha256:
-                    raise FileSystemMutationError("source_conflict", "源文件版本已变化")
+            source_fd, opened, raw = self._open_regular_at(
+                parent_fd, path.name, max_bytes=max_bytes
+            )
+            if not self._same_file_identity(metadata, opened):
+                raise FileSystemMutationError("source_conflict", "源文件目录项已发生变化")
+            if hashlib.sha256(raw).hexdigest() != expected_sha256:
+                raise FileSystemMutationError("source_conflict", "源文件版本已变化")
+            self._assert_entry_identity(parent_fd, path.name, opened)
             try:
                 os.unlink(path.name, dir_fd=parent_fd)
             except FileNotFoundError as exc:
                 raise FileSystemMutationError("source_conflict", "源文件不存在") from exc
             except OSError as exc:
                 raise FileSystemMutationError("publication_failed", "文件删除失败") from exc
-            self._fsync_required(parent_fd)
+            try:
+                self._fsync_required(parent_fd)
+            except (FileSystemMutationError, OSError) as exc:
+                raise FileSystemMutationError(
+                    "outcome_unknown", "删除已执行但持久化结果无法确认", effect_applied=True
+                ) from exc
             try:
                 os.stat(path.name, dir_fd=parent_fd, follow_symlinks=False)
             except FileNotFoundError:
                 return
             except OSError as exc:
-                raise FileSystemMutationError("publication_failed", "删除结果无法验证") from exc
-            raise FileSystemMutationError("publication_failed", "文件删除结果无法确认")
+                raise FileSystemMutationError(
+                    "outcome_unknown", "删除已执行但结果无法确认", effect_applied=True
+                ) from exc
+            raise FileSystemMutationError(
+                "outcome_unknown", "删除已执行但结果无法确认", effect_applied=True
+            )
         except FileSystemMutationError:
             raise
         except OSError as exc:
             raise FileSystemMutationError("publication_failed", "文件删除路径无法打开") from exc
         finally:
+            if source_fd is not None:
+                try:
+                    os.close(source_fd)
+                except OSError:
+                    pass
             if parent_fd is not None:
                 try:
                     os.close(parent_fd)
@@ -322,8 +346,11 @@ class FileSystemAdapter:
 
         source_parent_fd: int | None = None
         destination_parent_fd: int | None = None
+        source_fd: int | None = None
         try:
             self._require_confined_mutation_support()
+            if expected_sha256 is None:
+                raise FileSystemMutationError("source_conflict", "源文件版本证据缺失")
             source_parent_fd = self._open_directory_chain(workspace_root, source.parent)
             if source.parent.absolute() == destination.parent.absolute():
                 destination_parent_fd = source_parent_fd
@@ -339,10 +366,14 @@ class FileSystemAdapter:
                 raise FileSystemMutationError("publication_failed", "源文件无法检查") from exc
             if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
                 raise FileSystemMutationError("not_regular", "源文件不是普通文件")
-            if expected_sha256 is not None:
-                raw = self._read_bytes_at(source_parent_fd, source.name, max_bytes=max_bytes)
-                if hashlib.sha256(raw).hexdigest() != expected_sha256:
-                    raise FileSystemMutationError("source_conflict", "源文件版本已变化")
+            source_fd, opened, raw = self._open_regular_at(
+                source_parent_fd, source.name, max_bytes=max_bytes
+            )
+            if not self._same_file_identity(metadata, opened):
+                raise FileSystemMutationError("source_conflict", "源文件目录项已发生变化")
+            if hashlib.sha256(raw).hexdigest() != expected_sha256:
+                raise FileSystemMutationError("source_conflict", "源文件版本已变化")
+            self._assert_entry_identity(source_parent_fd, source.name, opened)
             try:
                 self._rename_no_replace(
                     source_parent_fd,
@@ -369,34 +400,53 @@ class FileSystemAdapter:
                 if exc.errno in {errno.ENOENT, errno.ELOOP, errno.ENOTDIR}:
                     raise FileSystemMutationError("source_conflict", "移动路径已发生变化") from exc
                 raise FileSystemMutationError("publication_failed", "原子移动失败") from exc
-            self._fsync_required(source_parent_fd)
-            if destination_parent_fd != source_parent_fd:
-                self._fsync_required(destination_parent_fd)
+            try:
+                self._fsync_required(source_parent_fd)
+                if destination_parent_fd != source_parent_fd:
+                    self._fsync_required(destination_parent_fd)
+            except (FileSystemMutationError, OSError) as exc:
+                raise FileSystemMutationError(
+                    "outcome_unknown", "移动已执行但持久化结果无法确认", effect_applied=True
+                ) from exc
             try:
                 os.stat(source.name, dir_fd=source_parent_fd, follow_symlinks=False)
             except FileNotFoundError:
                 pass
             except OSError as exc:
-                raise FileSystemMutationError("publication_failed", "移动源结果无法验证") from exc
+                raise FileSystemMutationError(
+                    "outcome_unknown", "移动已执行但源结果无法确认", effect_applied=True
+                ) from exc
             else:
-                raise FileSystemMutationError("publication_failed", "移动源结果无法确认")
+                raise FileSystemMutationError(
+                    "outcome_unknown", "移动已执行但源结果无法确认", effect_applied=True
+                )
             try:
                 published = self._read_file_at(
                     destination_parent_fd, destination.name, max_bytes=max_bytes
                 )
             except FileSystemMutationError as exc:
-                raise FileSystemMutationError("publication_failed", "移动目标结果无法验证") from exc
+                raise FileSystemMutationError(
+                    "outcome_unknown", "移动已执行但目标结果无法确认", effect_applied=True
+                ) from exc
             if (
-                expected_sha256 is not None
-                and hashlib.sha256(published.raw).hexdigest() != expected_sha256
+                hashlib.sha256(published.raw).hexdigest() != expected_sha256
+                or published.size != opened.st_size
+                or published.mode != stat.S_IMODE(opened.st_mode)
             ):
-                raise FileSystemMutationError("publication_failed", "移动目标内容无法验证")
+                raise FileSystemMutationError(
+                    "outcome_unknown", "移动已执行但目标结果无法确认", effect_applied=True
+                )
             return published
         except FileSystemMutationError:
             raise
         except OSError as exc:
             raise FileSystemMutationError("publication_failed", "移动路径无法打开") from exc
         finally:
+            if source_fd is not None:
+                try:
+                    os.close(source_fd)
+                except OSError:
+                    pass
             if destination_parent_fd is not None and destination_parent_fd != source_parent_fd:
                 try:
                     os.close(destination_parent_fd)
@@ -438,56 +488,116 @@ class FileSystemAdapter:
 
     @staticmethod
     def _require_confined_mutation_support() -> None:
-        if not getattr(os, "O_NOFOLLOW", 0) or not getattr(os, "O_DIRECTORY", 0):
+        if (
+            not getattr(os, "O_NOFOLLOW", 0)
+            or not getattr(os, "O_DIRECTORY", 0)
+            or not getattr(os, "O_NONBLOCK", 0)
+        ):
             raise FileSystemCapabilityError(
                 "unsupported_capability", "平台不支持受限目录 fd 文件操作"
             )
 
     @staticmethod
-    def _read_bytes_at(parent_fd: int, name: str, *, max_bytes: int) -> bytes:
+    def _open_regular_at(
+        parent_fd: int, name: str, *, max_bytes: int
+    ) -> tuple[int, os.stat_result, bytes]:
         no_follow = getattr(os, "O_NOFOLLOW", 0)
-        fd: int | None = None
+        non_blocking = getattr(os, "O_NONBLOCK", 0)
+        fd = os.open(name, os.O_RDONLY | no_follow | non_blocking, dir_fd=parent_fd)
         try:
-            fd = os.open(name, os.O_RDONLY | no_follow, dir_fd=parent_fd)
-            metadata = os.fstat(fd)
-            if not stat.S_ISREG(metadata.st_mode):
+            before = os.fstat(fd)
+            if not stat.S_ISREG(before.st_mode):
                 raise FileSystemMutationError("not_regular", "源文件不是普通文件")
-            return FileSystemAdapter._read_fd(fd, max_bytes=max_bytes)
+            raw = FileSystemAdapter._read_fd(fd, max_bytes=max_bytes)
+            after = os.fstat(fd)
+            if (
+                not FileSystemAdapter._same_file_identity(before, after)
+                or len(raw) != after.st_size
+            ):
+                raise FileSystemMutationError("source_conflict", "源文件在读取期间已变化")
+            os.lseek(fd, 0, os.SEEK_SET)
+            second = FileSystemAdapter._read_fd(fd, max_bytes=max_bytes)
+            verified = os.fstat(fd)
+            if (
+                raw != second
+                or not FileSystemAdapter._same_file_identity(after, verified)
+                or len(second) != verified.st_size
+            ):
+                raise FileSystemMutationError("source_conflict", "源文件版本无法稳定读取")
+            return fd, verified, second
         except FileSystemMutationError:
-            raise
-        except OSError as exc:
-            raise FileSystemMutationError("source_conflict", "源文件无法读取") from exc
-        finally:
             if fd is not None:
                 try:
                     os.close(fd)
                 except OSError:
                     pass
+            raise
+        except OSError as exc:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+            raise FileSystemMutationError("source_conflict", "源文件无法读取") from exc
+
+    @staticmethod
+    def _same_file_identity(first: os.stat_result, second: os.stat_result) -> bool:
+        return (
+            first.st_dev,
+            first.st_ino,
+            stat.S_IFMT(first.st_mode),
+            stat.S_IMODE(first.st_mode),
+            first.st_size,
+            first.st_mtime_ns,
+            first.st_ctime_ns,
+        ) == (
+            second.st_dev,
+            second.st_ino,
+            stat.S_IFMT(second.st_mode),
+            stat.S_IMODE(second.st_mode),
+            second.st_size,
+            second.st_mtime_ns,
+            second.st_ctime_ns,
+        )
+
+    @staticmethod
+    def _assert_entry_identity(parent_fd: int, name: str, expected: os.stat_result) -> None:
+        try:
+            current = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+        except FileNotFoundError as exc:
+            raise FileSystemMutationError("source_conflict", "源文件目录项已消失") from exc
+        except OSError as exc:
+            raise FileSystemMutationError("source_conflict", "源文件目录项无法检查") from exc
+        if not FileSystemAdapter._same_file_identity(expected, current):
+            raise FileSystemMutationError("source_conflict", "源文件目录项已发生变化")
+
+    @staticmethod
+    def _read_bytes_at(parent_fd: int, name: str, *, max_bytes: int) -> bytes:
+        fd, _metadata, raw = FileSystemAdapter._open_regular_at(
+            parent_fd, name, max_bytes=max_bytes
+        )
+        try:
+            return raw
+        finally:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
 
     @staticmethod
     def _read_file_at(parent_fd: int, name: str, *, max_bytes: int) -> ConfinedFileState:
-        no_follow = getattr(os, "O_NOFOLLOW", 0)
-        fd: int | None = None
+        fd, metadata, raw = FileSystemAdapter._open_regular_at(parent_fd, name, max_bytes=max_bytes)
         try:
-            fd = os.open(name, os.O_RDONLY | no_follow, dir_fd=parent_fd)
-            metadata = os.fstat(fd)
-            if not stat.S_ISREG(metadata.st_mode):
-                raise FileSystemMutationError("not_regular", "文件不是普通文件")
             return ConfinedFileState(
-                raw=FileSystemAdapter._read_fd(fd, max_bytes=max_bytes),
+                raw=raw,
                 mode=stat.S_IMODE(metadata.st_mode),
+                size=metadata.st_size,
                 mtime_ns=metadata.st_mtime_ns,
             )
-        except FileSystemMutationError:
-            raise
-        except OSError as exc:
-            raise FileSystemMutationError("source_conflict", "文件无法读取") from exc
         finally:
-            if fd is not None:
-                try:
-                    os.close(fd)
-                except OSError:
-                    pass
+            try:
+                os.close(fd)
+            except OSError:
+                pass
 
     @staticmethod
     def _read_fd(fd: int, *, max_bytes: int) -> bytes:

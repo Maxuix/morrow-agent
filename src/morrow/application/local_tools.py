@@ -14,7 +14,7 @@ from morrow.core.capabilities import (
     ToolCallContext,
     ToolHandlerOutcome,
 )
-from morrow.core.execution import tool_declaration
+from morrow.core.execution import ToolExecutionDisposition, tool_declaration
 from morrow.core.local_tools import (
     WORKSPACE_MUTATION_PATH_PATTERN,
     WORKSPACE_RELATIVE_PATH_MAX_CHARS,
@@ -479,6 +479,7 @@ def _tool_error(
         "mutation_limit": ToolErrorCode.MUTATION_LIMIT,
         "protected_resource": ToolErrorCode.PROTECTED_RESOURCE,
         "publish_failed": ToolErrorCode.PUBLISH_FAILED,
+        "outcome_unknown": ToolErrorCode.PUBLISH_FAILED,
         "unsupported_capability": ToolErrorCode.UNSUPPORTED_CAPABILITY,
         "cross_device": ToolErrorCode.PUBLISH_FAILED,
         "invalid_command": ToolErrorCode.INVALID_COMMAND,
@@ -510,7 +511,10 @@ def _tool_error(
         "git_failed": ToolErrorCode.GIT_FAILED,
     }
     return ToolExecutionError(
-        mapping.get(error.code, ToolErrorCode.EXECUTION_FAILED), error.message
+        mapping.get(error.code, ToolErrorCode.EXECUTION_FAILED),
+        error.message,
+        disposition=(ToolExecutionDisposition.UNKNOWN if error.code == "outcome_unknown" else None),
+        facts=tuple(getattr(error, "facts", ())),
     )
 
 
@@ -810,15 +814,34 @@ def make_promote_sandbox_tool(
                     run=context.run,
                 )
             except LocalFileError as exc:
+                if exc.change_result is not None:
+                    changes_service.record(context.run, exc.change_result)
+                current_facts = tuple(facts) + tuple(exc.facts)
                 if facts:
                     raise ToolExecutionError(
                         ToolErrorCode.PUBLISH_FAILED,
                         "部分沙箱变更已生效，其余变更未完成",
-                        facts=tuple(facts),
+                        facts=current_facts,
+                        disposition=(
+                            ToolExecutionDisposition.UNKNOWN
+                            if exc.code == "outcome_unknown"
+                            else None
+                        ),
                         details=(
                             {"key": "applied", "value": str(len(facts))},
                             {"key": "remaining", "value": str(len(changes) - index)},
                         ),
+                    ) from exc
+                if current_facts:
+                    raise ToolExecutionError(
+                        ToolErrorCode.PUBLISH_FAILED,
+                        exc.message,
+                        disposition=(
+                            ToolExecutionDisposition.UNKNOWN
+                            if exc.code == "outcome_unknown"
+                            else None
+                        ),
+                        facts=current_facts,
                     ) from exc
                 raise _tool_error(exc) from exc
             changes_service.record(context.run, result)
@@ -1076,6 +1099,8 @@ def _make_destructive_file_tool(
                 )
             )
         except LocalFileError as exc:
+            if exc.change_result is not None:
+                changes.record(context.run, exc.change_result)
             raise _tool_error(exc) from exc
         changes.record(context.run, result)
         return ToolHandlerOutcome(payload=result.model_dump(mode="json"), facts=(fact,))

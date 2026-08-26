@@ -167,6 +167,9 @@ def test_production_declarations_cover_the_frozen_inventory():
         "git_status",
         "git_diff",
         "promote_sandbox_changes",
+        "delete_file",
+        "move_file",
+        "rename_file",
     }
     assert "calculate" not in PRODUCTION_TOOL_NAMES
     assert "lookup_record" not in PRODUCTION_TOOL_NAMES

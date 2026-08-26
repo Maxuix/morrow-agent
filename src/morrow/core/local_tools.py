@@ -156,6 +156,7 @@ class MutationStatus(StrEnum):
     DELETED = "deleted"
     MOVED = "moved"
     RENAMED = "renamed"
+    OUTCOME_UNKNOWN = "outcome_unknown"
 
 
 class MutationResult(LocalToolModel):

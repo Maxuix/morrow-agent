@@ -153,6 +153,9 @@ def test_no_forbidden_tool_capability_is_registered_or_exposed(tmp_path):
         "run_skill_script",
         "git_status",
         "git_diff",
+        "delete_file",
+        "move_file",
+        "rename_file",
     }
     for name in names:
         casefolded = name.casefold()

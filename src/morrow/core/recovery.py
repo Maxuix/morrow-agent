@@ -38,6 +38,7 @@ from morrow.core.execution import (
     FileMutationEvidence,
     MissingCompletionPolicy,
     RecoveryClassification,
+    ToolExecutionDisposition,
     ToolExecutionState,
     ToolRecoveryDeclaration,
 )
@@ -270,7 +271,16 @@ def classify_execution(
     state: ToolExecutionState,
     declaration: ToolRecoveryDeclaration,
     observations: tuple[FileObservation, ...] = (),
+    disposition: ToolExecutionDisposition | None = None,
 ) -> RecoveryClassification:
+    if disposition is ToolExecutionDisposition.UNKNOWN:
+        if declaration.missing_handler_completed is MissingCompletionPolicy.REQUIRES_RECONCILIATION:
+            return (
+                classify_file_observations(observations)
+                if observations
+                else (RecoveryClassification.OUTCOME_UNKNOWN)
+            )
+        return RecoveryClassification.OUTCOME_UNKNOWN
     if state is ToolExecutionState.CLOSED:
         return RecoveryClassification.COMPLETED
     if state is ToolExecutionState.HANDLER_COMPLETED:
@@ -312,7 +322,22 @@ def observe_file(evidence: FileMutationEvidence, *, root: Path) -> FileObservati
         return FileObservation.EVIDENCE_MISSING
     directory_flag = getattr(os, "O_DIRECTORY", 0)
     no_follow = getattr(os, "O_NOFOLLOW", 0)
-    if not directory_flag or not no_follow:
+    non_blocking = getattr(os, "O_NONBLOCK", 0)
+    relative = evidence.relative_path
+    if (
+        not directory_flag
+        or not no_follow
+        or not non_blocking
+        or not isinstance(relative, str)
+        or not relative
+        or len(relative) > 512
+        or "\x00" in relative
+        or "\\" in relative
+        or relative.startswith("/")
+    ):
+        return FileObservation.EVIDENCE_MISSING
+    parts = tuple(relative.split("/"))
+    if not parts or any(not part or part in {".", ".."} for part in parts):
         return FileObservation.EVIDENCE_MISSING
     root_fd: int | None = None
     parent_fd: int | None = None
@@ -320,7 +345,6 @@ def observe_file(evidence: FileMutationEvidence, *, root: Path) -> FileObservati
     try:
         root_fd = os.open(root, os.O_RDONLY | directory_flag | no_follow)
         parent_fd = root_fd
-        parts = tuple(evidence.relative_path.split("/"))
         for part in parts[:-1]:
             try:
                 next_fd = os.open(
@@ -339,7 +363,7 @@ def observe_file(evidence: FileMutationEvidence, *, root: Path) -> FileObservati
                 os.close(parent_fd)
             parent_fd = next_fd
         try:
-            leaf_fd = os.open(parts[-1], os.O_RDONLY | no_follow, dir_fd=parent_fd)
+            leaf_fd = os.open(parts[-1], os.O_RDONLY | no_follow | non_blocking, dir_fd=parent_fd)
         except FileNotFoundError:
             if evidence.expected_kind == "absent":
                 return FileObservation.MATCHES_EXPECTED

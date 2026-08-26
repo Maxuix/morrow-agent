@@ -50,10 +50,19 @@ MAX_RESULT_BYTES = 16 * 1024
 class LocalFileError(RuntimeError):
     """Safe, stable error for a local filesystem operation."""
 
-    def __init__(self, code: str, message: str) -> None:
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        *,
+        facts: tuple[object, ...] = (),
+        change_result: MutationResult | None = None,
+    ) -> None:
         super().__init__(message)
         self.code = code
         self.message = message
+        self.facts = tuple(facts)
+        self.change_result = change_result
 
 
 @dataclass(frozen=True)
@@ -932,8 +941,6 @@ class WorkspaceMutationService:
         approval_verdict,
         run,
     ) -> tuple[MutationResult, object]:
-        from morrow.core.capabilities import ChangeToolFact
-
         with self.files.filesystem.paths_lock(plan.affected_paths):
             current = self._revalidate(plan)
             if current.status is MutationStatus.UNCHANGED:
@@ -958,6 +965,15 @@ class WorkspaceMutationService:
                                 max_bytes=MAX_SOURCE_FILE_BYTES,
                             )
                         except FileSystemMutationError as exc:
+                            if exc.effect_applied:
+                                raise self._outcome_unknown(
+                                    plan,
+                                    call_id=call_id,
+                                    tool_name=tool_name,
+                                    ordinal=ordinal,
+                                    approval_verdict=approval_verdict,
+                                    run=run,
+                                ) from exc
                             raise _filesystem_error(exc) from exc
                         after_revision = None
                     elif plan.operation in {MutationOperation.MOVE, MutationOperation.RENAME}:
@@ -975,6 +991,15 @@ class WorkspaceMutationService:
                                 max_bytes=MAX_SOURCE_FILE_BYTES,
                             )
                         except FileSystemMutationError as exc:
+                            if exc.effect_applied:
+                                raise self._outcome_unknown(
+                                    plan,
+                                    call_id=call_id,
+                                    tool_name=tool_name,
+                                    ordinal=ordinal,
+                                    approval_verdict=approval_verdict,
+                                    run=run,
+                                ) from exc
                             raise _filesystem_error(exc) from exc
                         if not isinstance(published, ConfinedFileState):
                             published = self.files.filesystem.read_confined_file(
@@ -984,14 +1009,37 @@ class WorkspaceMutationService:
                             )
                         after_raw = published.raw
                         if hashlib.sha256(after_raw).hexdigest() != before.revision.sha256:
-                            raise LocalFileError("publish_failed", "移动目标内容无法验证")
+                            raise self._outcome_unknown(
+                                plan,
+                                call_id=call_id,
+                                tool_name=tool_name,
+                                ordinal=ordinal,
+                                approval_verdict=approval_verdict,
+                                run=run,
+                            )
+                        if published.size != before.revision.size or published.mode != stat.S_IMODE(
+                            before.mode
+                        ):
+                            raise self._outcome_unknown(
+                                plan,
+                                call_id=call_id,
+                                tool_name=tool_name,
+                                ordinal=ordinal,
+                                approval_verdict=approval_verdict,
+                                run=run,
+                            )
                         if self.files.sensitive_policy.is_protected_content(after_raw):
-                            raise LocalFileError(
-                                "protected_resource", "发布后的内容受到本地内容策略保护"
+                            raise self._outcome_unknown(
+                                plan,
+                                call_id=call_id,
+                                tool_name=tool_name,
+                                ordinal=ordinal,
+                                approval_verdict=approval_verdict,
+                                run=run,
                             )
                         after_revision = FileRevision(
                             sha256=hashlib.sha256(after_raw).hexdigest(),
-                            size=len(after_raw),
+                            size=published.size,
                             mtime_ns=published.mtime_ns,
                         )
                     else:
@@ -1021,33 +1069,26 @@ class WorkspaceMutationService:
                     raise
                 except FileSystemMutationError as exc:
                     self._cleanup_parents(created_paths)
+                    if exc.effect_applied:
+                        raise self._outcome_unknown(
+                            plan,
+                            call_id=call_id,
+                            tool_name=tool_name,
+                            ordinal=ordinal,
+                            approval_verdict=approval_verdict,
+                            run=run,
+                        ) from exc
                     raise _filesystem_error(exc) from exc
                 except Exception as exc:
                     self._cleanup_parents(created_paths)
                     raise LocalFileError("publish_failed", "文件发布失败") from exc
-            fact = ChangeToolFact(
+            fact = self._fact(
+                plan,
+                result,
                 call_id=call_id,
                 tool_name=tool_name,
                 ordinal=ordinal,
-                relative_paths=(
-                    plan.relative_paths
-                    if plan.destination_relative_path is not None
-                    else (plan.relative_path, *plan.auxiliary_paths)
-                ),
                 approval_verdict=approval_verdict,
-                operation=plan.operation.value,
-                status=result.status.value,
-                source_path=result.source_path,
-                destination_path=result.destination_path,
-                before_revision=(plan.before.revision.sha256 if plan.before is not None else None),
-                after_revision=(
-                    result.after_revision.sha256 if result.after_revision is not None else None
-                ),
-                edit_count=plan.edit_count,
-                changed_lines=result.changed_lines,
-                changed_bytes=result.changed_bytes,
-                diff_truncated=result.diff_truncated,
-                change_set_id=result.change_set_id,
             )
             return result, fact
 
@@ -1277,17 +1318,86 @@ class WorkspaceMutationService:
             raise LocalFileError("conflict", "目标文件已发生变化")
 
     @staticmethod
+    def _fact(
+        plan: MutationPlan,
+        result: MutationResult,
+        *,
+        call_id: str,
+        tool_name: str,
+        ordinal: int,
+        approval_verdict,
+    ):
+        from morrow.core.capabilities import ChangeToolFact
+
+        return ChangeToolFact(
+            call_id=call_id,
+            tool_name=tool_name,
+            ordinal=ordinal,
+            relative_paths=(
+                plan.relative_paths
+                if plan.destination_relative_path is not None
+                else (plan.relative_path, *plan.auxiliary_paths)
+            ),
+            approval_verdict=approval_verdict,
+            operation=plan.operation.value,
+            status=result.status.value,
+            source_path=result.source_path,
+            destination_path=result.destination_path,
+            before_revision=(plan.before.revision.sha256 if plan.before is not None else None),
+            after_revision=(
+                result.after_revision.sha256 if result.after_revision is not None else None
+            ),
+            edit_count=plan.edit_count,
+            changed_lines=result.changed_lines,
+            changed_bytes=result.changed_bytes,
+            diff_truncated=result.diff_truncated,
+            change_set_id=result.change_set_id,
+        )
+
+    def _outcome_unknown(
+        self,
+        plan: MutationPlan,
+        *,
+        call_id: str,
+        tool_name: str,
+        ordinal: int,
+        approval_verdict,
+        run,
+    ) -> LocalFileError:
+        result = self._result(
+            plan,
+            plan,
+            status=MutationStatus.OUTCOME_UNKNOWN,
+            change_set_id=_change_set_id(run, call_id, plan),
+        )
+        fact = self._fact(
+            plan,
+            result,
+            call_id=call_id,
+            tool_name=tool_name,
+            ordinal=ordinal,
+            approval_verdict=approval_verdict,
+        )
+        return LocalFileError(
+            "outcome_unknown",
+            "文件变更已执行但持久化或结果无法确认",
+            facts=(fact,),
+            change_result=result,
+        )
+
+    @staticmethod
     def _result(
         plan: MutationPlan,
         current: MutationPlan,
         *,
         change_set_id: str,
         after_revision: FileRevision | None = None,
+        status: MutationStatus | None = None,
     ) -> MutationResult:
         return MutationResult(
             path=plan.relative_path,
             operation=plan.operation,
-            status=current.status,
+            status=status or current.status,
             before_revision=plan.before.revision if plan.before is not None else None,
             after_revision=after_revision or current.after_revision or plan.after_revision,
             changed_lines=plan.changed_lines,
@@ -1415,6 +1525,7 @@ def _filesystem_error(error: FileSystemMutationError) -> LocalFileError:
         "file_too_large": "file_too_large",
         "unsupported_capability": "unsupported_capability",
         "cross_device": "publish_failed",
+        "outcome_unknown": "outcome_unknown",
     }
     return LocalFileError(mapping.get(error.code, "publish_failed"), error.message)
 

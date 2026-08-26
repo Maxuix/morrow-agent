@@ -11,7 +11,11 @@ import pytest
 from pydantic import ValidationError
 
 from morrow.adapters.credentials.keyring import MemoryCredentialStore
-from morrow.adapters.local.filesystem import FileSystemAdapter, FileSystemCapabilityError
+from morrow.adapters.local.filesystem import (
+    FileSystemAdapter,
+    FileSystemCapabilityError,
+    FileSystemMutationError,
+)
 from morrow.application.local_tools import (
     DELETE_FILE_PROVIDER_SCHEMA,
     MOVE_FILE_PROVIDER_SCHEMA,
@@ -38,11 +42,18 @@ from morrow.core.execution import (
     FileMutationEvidence,
     MissingCompletionPolicy,
     RecoveryClassification,
+    ToolExecutionDisposition,
+    ToolExecutionState,
     tool_declaration,
 )
 from morrow.core.local_tools import MutationOperation, MutationStatus
 from morrow.core.models import AssistantMessage, FunctionToolCall, ModelRef, ToolApprovalDecision
-from morrow.core.recovery import FileObservation, classify_file_observations, observe_file
+from morrow.core.recovery import (
+    FileObservation,
+    classify_execution,
+    classify_file_observations,
+    observe_file,
+)
 from morrow.runtime.capabilities import CapabilityPolicy
 from morrow.runtime.tool_arguments import JsonSchemaArgumentsValidator, ToolArgumentsValidationError
 from morrow.runtime.tools import ToolErrorCode, ToolExecutor, ToolRegistry
@@ -73,6 +84,7 @@ def test_explicit_workspace_change_operations_have_strict_provider_contracts():
         MutationStatus.DELETED,
         MutationStatus.MOVED,
         MutationStatus.RENAMED,
+        MutationStatus.OUTCOME_UNKNOWN,
     } == set(MutationStatus)
 
     with pytest.raises(ValidationError):
@@ -328,6 +340,48 @@ class _UnsupportedMove(FileSystemAdapter):
         )
 
 
+class _ReplaceSourceAfterHash(FileSystemAdapter):
+    def __init__(self, replacement: Path):
+        super().__init__()
+        self.replacement = replacement
+        self.source: Path | None = None
+        self.swapped = False
+
+    def _open_regular_at(self, parent_fd, name, *, max_bytes):
+        fd, metadata, raw = FileSystemAdapter._open_regular_at(parent_fd, name, max_bytes=max_bytes)
+        if not self.swapped and self.source is not None and name == self.source.name:
+            os.replace(self.replacement, self.source)
+            self.swapped = True
+        return fd, metadata, raw
+
+
+class _ModeDriftAfterMove(FileSystemAdapter):
+    def __init__(self, destination: Path):
+        super().__init__()
+        self.destination = destination
+
+    def _rename_no_replace(
+        self, source_parent_fd, source_name, destination_parent_fd, destination_name
+    ):
+        result = FileSystemAdapter._rename_no_replace(
+            source_parent_fd, source_name, destination_parent_fd, destination_name
+        )
+        self.destination.chmod(0o600)
+        return result
+
+
+class _FsyncAfterEffect(FileSystemAdapter):
+    def __init__(self):
+        super().__init__()
+        self.fail = True
+
+    def _fsync_required(self, fd):
+        if self.fail:
+            self.fail = False
+            raise FileSystemMutationError("publication_failed", "injected fsync failure")
+        return FileSystemAdapter._fsync_required(fd)
+
+
 def test_move_no_replace_fails_closed_on_destination_race_and_unsupported_capability(tmp_path):
     source = tmp_path / "source.txt"
     source.write_text("source\n", encoding="utf-8")
@@ -351,6 +405,84 @@ def test_move_no_replace_fails_closed_on_destination_race_and_unsupported_capabi
     assert unsupported_error.value.code == "unsupported_capability"
     assert source.exists()
     assert not (tmp_path / "dest/target.txt").exists()
+
+
+@pytest.mark.parametrize("operation", ("delete", "move"))
+def test_destructive_effect_binds_source_entry_identity_before_effect(tmp_path, operation):
+    source = tmp_path / "source.txt"
+    source.write_text("source\n", encoding="utf-8")
+    replacement = tmp_path / "replacement.txt"
+    replacement.write_text("user file\n", encoding="utf-8")
+    filesystem = _ReplaceSourceAfterHash(replacement)
+    filesystem.source = source
+    _, mutation = _services(tmp_path, filesystem=filesystem)
+    if operation == "delete":
+        plan = mutation.preflight_delete(source.name, expected_sha256=_sha(source))
+        destination = None
+    else:
+        destination = tmp_path / "destination.txt"
+        plan = mutation.preflight_move(source.name, destination.name, expected_sha256=_sha(source))
+
+    with pytest.raises(LocalFileError) as error:
+        _publish(mutation, plan, call_id=f"source-race-{operation}")
+
+    assert error.value.code == "conflict"
+    assert source.read_text(encoding="utf-8") == "user file\n"
+    assert destination is None or not destination.exists()
+
+
+def test_fifo_leaf_race_is_nonblocking_and_fails_closed(tmp_path, monkeypatch):
+    pipe = tmp_path / "pipe"
+    os.mkfifo(pipe)
+    flags_seen: list[int] = []
+    original_open = os.open
+
+    def guarded_open(path, flags, *args, **kwargs):
+        if path == pipe.name:
+            flags_seen.append(flags)
+            raise OSError(40, "injected fifo race")
+        return original_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(os, "open", guarded_open)
+    adapter = FileSystemAdapter()
+    with pytest.raises(FileSystemMutationError):
+        adapter.read_confined_file(pipe, workspace_root=tmp_path)
+    assert flags_seen and flags_seen[0] & os.O_NONBLOCK
+
+
+def test_move_post_effect_mode_drift_is_outcome_unknown(tmp_path):
+    source = tmp_path / "source.txt"
+    destination = tmp_path / "destination.txt"
+    source.write_text("source\n", encoding="utf-8")
+    source.chmod(0o640)
+    _, mutation = _services(tmp_path, filesystem=_ModeDriftAfterMove(destination))
+    plan = mutation.preflight_move(source.name, destination.name, expected_sha256=_sha(source))
+
+    with pytest.raises(LocalFileError) as error:
+        _publish(mutation, plan, call_id="mode-drift")
+
+    assert error.value.code == "outcome_unknown"
+    assert error.value.change_result is not None
+    assert error.value.change_result.status is MutationStatus.OUTCOME_UNKNOWN
+    assert error.value.facts[0].status == MutationStatus.OUTCOME_UNKNOWN.value
+    assert not source.exists()
+    assert destination.exists()
+
+
+def test_delete_post_effect_fsync_failure_keeps_bounded_unknown_change_fact(tmp_path):
+    source = tmp_path / "source.txt"
+    source.write_text("source\n", encoding="utf-8")
+    _, mutation = _services(tmp_path, filesystem=_FsyncAfterEffect())
+    plan = mutation.preflight_delete(source.name, expected_sha256=_sha(source))
+
+    with pytest.raises(LocalFileError) as error:
+        _publish(mutation, plan, call_id="fsync-unknown")
+
+    assert error.value.code == "outcome_unknown"
+    assert error.value.change_result is not None
+    assert error.value.facts[0].status == MutationStatus.OUTCOME_UNKNOWN.value
+    assert not source.exists()
+    assert "source\n" not in repr(error.value.facts)
 
 
 class _Approve:
@@ -631,6 +763,35 @@ def test_expected_absence_and_two_path_recovery_never_turn_missing_or_mixed_into
     )
 
 
+def test_recovery_file_evidence_rejects_parent_traversal_even_if_constructed_unsafely(tmp_path):
+    outside = tmp_path.parent / "s7p04-recovery-traversal.txt"
+    outside.write_bytes(b"outside\n")
+    try:
+        digest = _sha(outside)
+        with pytest.raises(ValidationError):
+            FileMutationEvidence(
+                relative_path="../s7p04-recovery-traversal.txt",
+                operation="delete",
+                existed_before=True,
+                before_sha256=digest,
+                expected_kind="file",
+                policy_version="files-v1",
+                conflict_input_digest=digest,
+            )
+        forged = FileMutationEvidence.model_construct(
+            relative_path="../s7p04-recovery-traversal.txt",
+            operation="delete",
+            existed_before=True,
+            before_sha256=digest,
+            expected_kind="file",
+            policy_version="files-v1",
+            conflict_input_digest=digest,
+        )
+        assert observe_file(forged, root=tmp_path) is FileObservation.EVIDENCE_MISSING
+    finally:
+        outside.unlink(missing_ok=True)
+
+
 def test_recovery_expected_absence_requires_existing_confined_parent(tmp_path):
     source = tmp_path / "nested" / "source.txt"
     source.parent.mkdir()
@@ -658,6 +819,40 @@ def test_recovery_expected_absence_requires_existing_confined_parent(tmp_path):
         (tmp_path / "nested").unlink(missing_ok=True)
         (outside / "source.txt").unlink(missing_ok=True)
         outside.rmdir()
+
+
+def test_closed_unknown_file_execution_is_reconciled_from_ordered_observations():
+    declaration = tool_declaration("rename_file", production_only=True)
+    expected = (FileObservation.MATCHES_EXPECTED, FileObservation.MATCHES_EXPECTED)
+    before = (FileObservation.MATCHES_BEFORE, FileObservation.MATCHES_BEFORE)
+    mixed = (FileObservation.MATCHES_EXPECTED, FileObservation.THIRD_PARTY)
+    assert (
+        classify_execution(
+            state=ToolExecutionState.CLOSED,
+            disposition=ToolExecutionDisposition.UNKNOWN,
+            declaration=declaration,
+            observations=expected,
+        )
+        is RecoveryClassification.COMPLETED
+    )
+    assert (
+        classify_execution(
+            state=ToolExecutionState.CLOSED,
+            disposition=ToolExecutionDisposition.UNKNOWN,
+            declaration=declaration,
+            observations=before,
+        )
+        is RecoveryClassification.SAFE_TO_RETRY
+    )
+    assert (
+        classify_execution(
+            state=ToolExecutionState.CLOSED,
+            disposition=ToolExecutionDisposition.UNKNOWN,
+            declaration=declaration,
+            observations=mixed,
+        )
+        is RecoveryClassification.OUTCOME_UNKNOWN
+    )
 
 
 @pytest.mark.asyncio
@@ -743,7 +938,14 @@ class _FailSecondPromotion(WorkspaceMutationService):
     def apply(self, *args, **kwargs):
         self.calls += 1
         if self.calls == 2:
-            raise LocalFileError("publish_failed", "second publication failed")
+            result, fact = super().apply(*args, **kwargs)
+            unknown_result = result.model_copy(update={"status": MutationStatus.OUTCOME_UNKNOWN})
+            raise LocalFileError(
+                "outcome_unknown",
+                "second publication became uncertain after effect",
+                facts=(fact.model_copy(update={"status": MutationStatus.OUTCOME_UNKNOWN.value}),),
+                change_result=unknown_result,
+            )
         return super().apply(*args, **kwargs)
 
 
@@ -787,9 +989,11 @@ async def test_promotion_preflights_all_then_returns_bounded_partial_failure(tmp
     assert result.ok is False
     assert result.error_code is ToolErrorCode.PUBLISH_FAILED
     assert (workspace / "one.txt").read_text(encoding="utf-8") == "one\n"
-    assert not (workspace / "two.txt").exists()
-    assert len(tuple(entry for entry in run.change_sets if hasattr(entry, "status"))) == 1
-    assert len(run.facts) == 1
+    assert (workspace / "two.txt").read_text(encoding="utf-8") == "two\n"
+    assert len(tuple(entry for entry in run.change_sets if hasattr(entry, "status"))) == 2
+    assert len(run.facts) == 2
+    assert run.facts[-1].status == MutationStatus.OUTCOME_UNKNOWN.value
+    assert result.disposition is ToolExecutionDisposition.UNKNOWN
     assert '"key":"applied"' in result.envelope
 
 

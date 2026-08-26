@@ -179,8 +179,11 @@ class UnknownToolDeclarationError(ValueError):
 def _clean_relative_path(value: str) -> str:
     if not isinstance(value, str) or not value or len(value) > _RELATIVE_PATH_LIMIT:
         raise ValueError("relative path is empty or too long")
-    if "\x00" in value or value.startswith(("/", "\\")):
+    if "\x00" in value or "\\" in value or value.startswith("/"):
         raise ValueError("relative path must not be absolute or contain NUL")
+    parts = value.split("/")
+    if any(not part or part in {".", ".."} for part in parts):
+        raise ValueError("relative path must contain only workspace components")
     return value
 
 
