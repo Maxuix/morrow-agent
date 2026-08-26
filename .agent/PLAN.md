@@ -1,168 +1,173 @@
-# Stage 7 Preflight Reliability Repairs — S7P-04 Workspace Change Lifecycle
+# Stage 7 Preflight Reliability Repairs — S7P-05 Validation and Completion Truth
 
 > Status: active
-> Active subplan: 83 — delete, move, rename and sandbox promotion lifecycle
-> Branch: `codex/feat/s7p-04-workspace-change-lifecycle`
-> Base: verified local `main@20e6ce3`
-> Source authority: the user-requested S7P-04 checklist, current code and deterministic probes
+> Active subplan: 84 — validation facts, outcome contracts and completion gate
+> Branch: `codex/feat/s7p-05-validation-completion-truth`
+> Base: verified local `main@ffa9770`
+> Source authority: the user-requested S7P-05 checklist, current code and deterministic probes
 
 ## 1. Objective
 
-Complete the basic Direct-agent workspace change lifecycle for regular files. Add structured,
-revision-checked delete, move and rename operations beside existing create, patch and replace;
-promote approved sandbox deletes and unambiguous moves; and preserve truthful durable recovery and
-partial-failure evidence. Every effect must continue through the existing ToolExecutor,
-CapabilityPolicy, approval, durable execution and ChangeSet boundaries.
+Make Direct-agent completion an evidence-backed runtime decision. Separate ordinary command success
+from validation, freeze a lightweight task outcome contract before durable admission, and gate a
+model's final `stop` on net workspace changes, required validation, path boundaries, unresolved
+tools and an optional authoritative verifier.
 
-S7P-04 does not add copy, directory mutation, recursive deletion, overwrite-on-move, chmod/link,
-run-level undo, Git writes, completion verification, public-event changes, runtime-policy default
-changes or dependencies.
+S7P-05 does not judge business semantics, add an autonomous reviewer, change permissions or tool
+effects, alter runtime-policy defaults, add dependencies, implement S7P-06 context compression, or
+run live Provider/network/credential tests.
 
-## 2. Located defects
+## 2. Located defects and reproductions
 
-1. `MutationOperation` currently contains only `create`, `patch` and `replace`; production exposes
-   only `apply_patch` and `write_file` for structured file mutation.
-2. `WorkspaceMutationService` has no preflight/apply contract for an expected-revision deletion or
-   a two-path move/rename, and `FileSystemAdapter` has no confined unlink or atomic no-replace move
-   primitive.
-3. A deterministic probe of a deleted sandbox file returns `operation='deleted'` with
-   `eligible=False` and no content, so `promote_sandbox_changes` cannot select it.
-4. Sandbox promotion assumes every eligible change is create/replace text and loops one mutation
-   at a time. It neither represents source/destination identity nor describes partial publication
-   truthfully if a later selected change fails.
-5. Durable prepared intent freezes one `FileMutationEvidence` from `MutationPlan`. Recovery's
-   `observe_file()` treats an expected absence as `MISSING`, so it cannot reconcile a completed
-   delete or the source half of a move.
-6. `MutationResult`/`MutationStatus`, ChangeToolFact and ChangeSet rendering have no deleted/moved/
-   renamed result vocabulary or source/destination structural Diff.
-7. Production tool inventory, recovery declarations, Provider schema audit and local acceptance
-   tests contain no delete/move/rename contracts.
+1. `ToolRunContext.metrics()` derives `validation_outcome` from every `CommandToolFact`: any
+   `status='exited'` command with exit code zero becomes `passed`; any arbitrary non-zero command
+   becomes `failed`. `CommandToolFact` contains no validator identity or validation scope.
+2. `ProcessExecutionService` collapses pytest, Ruff, mypy, uv, npm and make into the broad
+   `project_command` class, while `ls`, `pwd` and `echo` are `opaque`. It discards argv after
+   execution and therefore cannot later distinguish a real verifier from a successful utility.
+3. A deterministic current-main probe records an `opaque` `ls`-equivalent fact with exit code zero
+   and receives `validation_outcome='passed'`.
+4. `AgentLoop` commits any non-empty tool-free `ModelFinishReason.STOP` immediately, freezes
+   permissions, appends the assistant message and closes the turn. A scripted task saying
+   `Please edit src/example.py` completed with ordinary `stop`, user+assistant history and zero
+   `ChangeToolFact` values.
+5. There is no Outcome Contract, workspace baseline, completion checker, verifier port or
+   correction feedback path. `PreparedAgentRunSpec`/`AgentRunSnapshot` freeze prompt/tool/runtime
+   evidence only.
+6. Tool/model round limits have distinct existing stop codes, but missing change, failed required
+   validation, unexpected path and unresolved tool states do not. The terminal summary displays a
+   command-derived validation claim and cannot distinguish executed checks from inferred completion.
+7. The mini-eval owns external verifier and unexpected-path truth only in the test harness; the
+   production loop does not consume an equivalent authority.
 
-Reproduction at the activation baseline:
+Activation reproduction:
 
 ```text
-operations ['create', 'patch', 'replace']
-sandbox [('deleted', False, None)]
+opaque_exit_0_validation= passed
+no_tool_finish_reason= stop
+assistant_committed= ['user', 'assistant']
+change_fact_count= 0
 ```
 
 ## 3. Frozen design decisions
 
-### Operation surface
+### Validation facts are not command facts
 
-- Add three explicit Provider-visible tools: `delete_file`, `move_file` and `rename_file`. Keep
-  `write_file` create/replace and `apply_patch` unchanged. Explicit tool names make approval,
-  recovery and model-correction diagnostics unambiguous.
-- `delete_file(path, expected_sha256)` deletes one existing regular file.
-- `move_file(source_path, destination_path, expected_sha256)` moves one existing regular file to a
-  different workspace-relative path. It may cross workspace directories but not filesystems.
-- `rename_file(source_path, destination_path, expected_sha256)` is the same-parent form and rejects
-  a destination outside the source parent. `move_file` may also target the same parent but remains
-  recorded as `move`; the explicit rename tool is the semantic contract used when rename is asked.
-- Source revision is mandatory. Destination must be absent. There is no `overwrite`, `force`,
-  recursive or best-effort mode. Missing source/destination parent, existing destination, stale
-  source, identity race or path change is a conflict, never success.
-- Only regular files are admitted. Directories, symlinks, hard-to-classify special files and any
-  symlink in either ancestry are rejected. Delete never removes a directory; move/rename never
-  creates destination parents. Protected paths/content remain protected at both source and target.
-- Copy is deliberately omitted: neither the checklist acceptance cases nor the current failures
-  require a distinct copy operation, while create already represents explicit new content.
+- Keep `CommandToolFact` as bounded execution truth only. Add a separate tagged `ValidationFact`
+  with validator kind, normalized workspace-relative scope, terminal status, exit code and a fixed,
+  bounded evidence summary. It must not contain command text, argv, stdout/stderr, source content,
+  secrets, reasoning or tracebacks.
+- Classify at process preflight, while safe argv structure is available. Recognize direct and
+  wrapper forms for pytest, `python -m pytest`, `ruff check`, `ruff format --check`,
+  `python -m compileall` and the repository's declared static/build checks. `uv run` may wrap a
+  recognized validator. A shell form contributes validation only when it parses as one simple
+  command with no control, redirection, substitution or environment syntax; ambiguous shell,
+  generic `project_command`, `ls`, `pwd`, `echo` and `cat` remain command facts only.
+- Normalize scope from cwd plus declared path operands and fail closed to no validation fact when
+  option parsing or confinement is ambiguous. An explicit validation declaration comes from the
+  trusted Outcome Contract/application caller and is satisfied only by a compatible recognized
+  fact; the model cannot self-declare `echo` as a validator.
+- Aggregate the latest fact for each `(validator, scope)` key. A later successful rerun may replace
+  an earlier failure for that same key; unrelated command failures neither create nor poison
+  validation. Timeout/cancel/failure remain distinct. `validation_outcome='passed'` requires at
+  least one actual passing `ValidationFact` and no latest failed validation key.
 
-### Filesystem publication and conflicts
+### Outcome Contract and baseline evidence
 
-- Extend `MutationPlan` into a bounded operation plan capable of describing source and destination
-  evidence without storing file content in durable state. Preserve existing write behavior and
-  compatibility for create/patch/replace.
-- Lock every affected path in stable lexical order, revalidate all parent/source/destination facts
-  under lock, then publish. Delete uses confined directory-fd unlink. Move/rename uses an atomic
-  no-replace primitive (`renameatx_np`/`renameat2` or an equivalently proven adapter operation) and
-  fails closed when no atomic no-clobber primitive can be proven; plain overwrite-capable rename is
-  not an allowed fallback.
-- Same-filesystem atomic move is required. Cross-device errors are bounded failures and do not
-  degrade into copy-plus-delete. After publication, verify expected absence/presence/hash and
-  fsync affected parent directories where supported.
-- Unified result facts add `deleted`, `moved` and `renamed` statuses, source/destination relative
-  paths and bounded structural Diff. Actual ChangeSet entries are recorded immediately after each
-  successful effect; assistant prose is never the change authority.
-- User dirty changes remain visible and safe: every destructive source needs the exact current
-  hash and every destination must be absent at both preflight and atomic publication. No Git reset,
-  checkout, clean or implicit restoration is introduced.
+- Add strict bounded models for `OutcomeContract`, `ValidationRequirement` and baseline evidence.
+  The contract records mode (`change`, `explanation`, or conservative `unspecified`), whether a
+  net write is required, target paths, optional exclusive allowed paths, forbidden paths, required
+  validations, optional verifier id, whether no-change is allowed, and its preparation version.
+- Support an explicit trusted contract at the application/runtime boundary. Otherwise compile a
+  minimal contract deterministically from the user task: explicit edit/fix/create/delete/rename
+  language creates a change contract; explicit explain/review/analyse-only language permits no
+  write; quoted/backticked workspace paths and explicit test commands become path/validation
+  declarations. Ambiguity stays `unspecified` and is reported, not guessed into business truth.
+- Prepare the contract and a read-only workspace baseline before the durable user/AgentRun
+  transaction. In Git workspaces, freeze HEAD/repository state plus bounded hashes for pre-existing
+  dirty/untracked paths so user-owned dirt is not attributed to the run. Use a bounded, no-follow
+  manifest fallback outside Git. Protected metadata, `.git`, environments and caches are excluded;
+  truncation/inability is an explicit inconclusive fact, never a clean baseline.
+- Freeze only value-safe contract/baseline evidence or its verified bounded references in
+  `PreparedAgentRunSpec` and `AgentRunSnapshot`, so recovery reuses the original contract rather
+  than reparsing an empty resume input or accepting post-start workspace state.
 
-### Approval, cancellation and composition
+### Completion gate and one correction
 
-- Delete, move, rename and sandbox promotion of those effects are persistent workspace writes and
-  always carry destructive-mutation approval risk. Ordinary, Auto Safe and Auto Sandboxed modes do
-  not bypass approval for these operations.
-- Intent resolution performs full bounded preflight and produces a value-safe preview before the
-  durable assistant/tool-execution transaction. Handler entry occurs only after durable intent is
-  visible and any approval has been consumed through the current coordinator.
-- Approval denial or cancellation before handler entry has no filesystem effect. Cancellation
-  after synchronous publication begins follows the existing shielded mutation rule: wait for the
-  bounded filesystem operation to reach a truthful terminal observation; never pretend rollback.
-- Register new tools through normal factories and production composition only. Do not add
-  tool-name branches to AgentLoop, ToolExecutor or SessionOrchestrator, and do not change public
-  event lifecycle or runtime-policy defaults.
+- Add a runtime-owned `CompletionChecker` that compares final workspace evidence with the frozen
+  baseline and returns a bounded `CompletionCheckResult`: changed/target/unexpected/forbidden path
+  facts, unresolved call count, required-validation statuses, known failures, verifier status,
+  completion basis and reason/next-action codes. It never claims business correctness.
+- A change contract needs a relevant net diff; a successful write tool whose effect was later
+  reverted does not count. Explicit allowed/forbidden path policy is checked against run-attributed
+  net paths while pre-existing unchanged dirt remains neutral. Baseline truncation or drift that
+  prevents attribution is inconclusive and blocks normal success for a required-change contract.
+- Before accepting final `stop`, check `ConversationLog.unresolved_call_ids`, workspace outcome,
+  required validations and latest known validation failures. If configured, the injected verifier
+  is authoritative: failure/inconclusive blocks success. Without one, record
+  `completion_basis='runtime_evidence_without_verifier'`; do not present it as verifier approval.
+- Buffer each model attempt's text deltas until its finish reason is known. Emit and commit a final
+  candidate only after the completion gate passes. A rejected candidate is never written to chat
+  history or exposed as a successful final claim.
+- If one recoverable completion failure occurs and model/time/tool budgets permit, inject a bounded
+  system feedback projection containing only facts and next actions, then allow exactly one model
+  correction. This projection is not a user message and is not a ConversationLog writer. A second
+  failure or exhausted budget closes with an explicit stop code.
+- Add distinct stop codes for missing required change, validation failure/missing validation,
+  unexpected or forbidden workspace changes, unresolved tools, verifier failure and inconclusive
+  completion. Existing model/tool-call/run-timeout codes remain the distinct budget outcomes. Do
+  not add event types or raw payload fields; reuse the existing error/completion lifecycle.
 
-### Durable evidence and crash recovery
+### Observation, composition and compatibility
 
-- Generalize prepared file evidence to return an ordered tuple. Delete freezes one source item with
-  `before_sha256` and expected kind `absent`. Move/rename freezes two items: source expected absent,
-  destination expected the source digest/size and previously absent.
-- `observe_file()` must treat expected absence as an expected result, while a still-present matching
-  source is before-state. For a move, both observations expected means completed; both before means
-  safe-to-retry; duplicated, mixed, missing-evidence or third-party states require reconciliation
-  or outcome-unknown and never synthesize success.
-- Keep `RECONCILEABLE_FILE_WRITE` with a frozen recovery declaration for all new tools. Add crash
-  tests at prepared/awaiting-approval/executing/handler-completed boundaries. No full arguments,
-  file contents, secrets, tracebacks or SDK objects enter durable intent or recovery reports.
-
-### Sandbox delete/move promotion and multi-operation truth
-
-- Make a deleted regular text file eligible when its baseline bytes/hash fit existing promotion
-  budgets. Preview shows its deletion Diff and promotion calls the same delete mutation service.
-- Detect a move only when one deleted baseline file and one created current file form an
-  unambiguous one-to-one identity by hash, size and mode. Same-parent identity is `renamed`, other
-  identity is `moved`. Ambiguous duplicate-content cases remain separate create/delete changes;
-  the collector must not guess identity.
-- A move selection is one logical change that carries both source and destination paths. Selection,
-  approval preview, changed-path summary and ChangeSet preserve that pair deterministically.
-- Preflight all selected promotion changes in stable order before any effect. Promotion is not
-  advertised as run-level atomic. If a later effect fails after an earlier effect was applied, the
-  tool returns a bounded partial-failure result, the already-applied ChangeSet remains visible, and
-  durable disposition is failed/interrupted rather than success. No rollback overwrites user data.
-- Sandbox preview and promoted real-tree result must match for created, modified, deleted and
-  unambiguous moved/renamed files. Source/destination drift between snapshot and promotion is a
-  conflict.
+- Retain `CompletionCheckResult` and `ValidationFact` on Session as process-local facts. Extend the
+  terminal summary to display command success separately from validation and show verified versus
+  runtime-evidence completion basis.
+- Add only bounded terminal aggregates needed by future schedulers to AgentRun observability:
+  validation outcome, completion outcome/basis and reason code. Use the next additive operational
+  migration with clean old-row defaults; do not persist per-command arguments/results or workspace
+  content.
+- Inject outcome preparation/checking through normal bootstrap/orchestrator composition. Keep
+  `run_turn()` a thin delegate to `run_task()`, Session-owned ConversationLog as the sole chat
+  writer, ToolExecutor frozen per prepared run, and the existing public event type/payload shape.
+- Preserve compatibility for explanation and legacy/unspecified tasks: they may complete without a
+  diff when no explicit write/test/verifier requirement exists, but their basis is reported as
+  inferred runtime evidence rather than verified business completion.
 
 ## 4. Test-first implementation sequence
 
-1. Add failing domain/schema tests for the three operations, strict source/destination arguments,
-   status/result vocabulary, production inventory and recovery declarations.
-2. Add failing mutation-service matrices for success, stale hash, missing source, existing target,
-   outside-root, symlink ancestry/leaf, directory/special-file rejection, protected resources,
-   same-parent rename rule, no destination-parent creation and no-overwrite race.
-3. Implement confined unlink and atomic no-replace move/rename in `FileSystemAdapter`; add fault and
-   capability tests proving unsupported primitives fail closed and no outside/user file changes.
-4. Implement explicit tool factories, previews, approval/cancellation behavior, ChangeToolFact and
-   ChangeSet results. Update bootstrap, capability/tool inventory and static Provider-contract audit.
-5. Generalize prepared file evidence and recovery observation/classification for expected absence
-   and two-path moves. Add intent-before-effect, approval crash and restart reconciliation tests.
-6. Extend sandbox change modelling/collection to eligible deletes and unambiguous identity moves;
-   preserve ambiguity, selection and deterministic ordering. Route promotion through the same
-   mutation service.
-7. Add promotion tests for preview/result parity, deletion, move/rename, stale source/destination,
-   approval denial, stable multi-change order and injected partial failure with visible prior facts.
-8. Add a scripted Direct-agent acceptance task that deletes and renames files through production
-   tools and verifies the final tree/ChangeSet without live Provider claims.
-9. Update `docs/ARCHITECTURE.md` and the stale Stage-3 capability inventory to the actual structure,
-   publish `docs/acceptance/s7p-04-workspace-change-lifecycle.md`, update execution state and run
-   focused plus repository-wide offline gates.
+1. Add failing strict-model and metric tests proving ordinary command facts never set validation,
+   and latest recognized validator facts aggregate by kind/scope/status.
+2. Add table-driven process classification tests for direct/`uv run` pytest, Ruff and compileall;
+   path scope normalization; utility commands; ambiguous/multi-command shell; timeout, signal and
+   redaction boundaries.
+3. Add Outcome Contract compiler/explicit-contract tests for change, explanation and unspecified
+   tasks, target/allowed/forbidden paths, validation requirements and bounded safe serialization.
+4. Implement Git baseline plus no-follow bounded fallback and compare tests covering clean repos,
+   pre-existing dirty/untracked user files, modified dirty content, new unexpected files, reverted
+   writes, symlinks, non-repositories, truncation and scan failure.
+5. Add completion checker matrices for relevant/empty diff, required validation pass/fail/missing,
+   latest rerun, known failures, unresolved calls, unexpected/forbidden paths and verifier
+   pass/fail/inconclusive/no-verifier basis.
+6. Integrate stop gating and buffered deltas into AgentLoop. Prove a rejected final candidate is
+   neither emitted as success nor appended; one bounded correction can succeed; the second failure
+   gets the exact stop code; cancellation/error/history pairing remain legal.
+7. Freeze and rehydrate contract/baseline evidence through fresh/resumed durable runs; add the
+   additive observability migration and exact terminal aggregate/replay/backup/doctor tests.
+8. Add scripted Direct-agent acceptance cases for utility-only false validation, code task with no
+   diff, failed required test plus false prose, unexpected file, successful scoped change+checks,
+   and optional fake verifier authority. No live model is used.
+9. Update architecture and terminal documentation, publish
+   `docs/acceptance/s7p-05-validation-completion-truth.md`, update execution state and run focused
+   plus repository-wide offline gates.
 
 ## 5. Validation
 
 ```bash
-uv run pytest -q tests/test_local_mutation.py tests/test_local_tool_factories.py
-uv run pytest -q tests/test_sandbox.py tests/test_tool_contract_audit.py
-uv run pytest -q tests/test_stage4_tool_persist.py tests/test_stage4_recovery.py tests/test_stage4_recovery_crash.py
+uv run pytest -q tests/test_capabilities.py tests/test_local_process.py
+uv run pytest -q tests/test_agent_tool_loop.py tests/test_context_runtime.py
+uv run pytest -q tests/test_agent_run_observability.py tests/test_operational_store.py
+uv run pytest -q tests/test_stage4_recovery.py tests/test_stage4_journal.py
 uv run pytest -q tests/test_stage3_product_acceptance.py tests/test_code_agent_mini_eval.py
 uv run pytest -m 'not live'
 uv run ruff format --check .
@@ -173,19 +178,20 @@ uv run morrow run --help
 git diff --check
 ```
 
-No live Provider/model/Pi/MCP/network/credential test is authorized. Temporary workspaces, fault
-injection and scripted Providers supply deterministic offline evidence.
+If sandboxed `uv` cannot access its cache, use the current worktree's already-synchronized
+`.venv/bin/python -m pytest`, `.venv/bin/ruff` and `.venv/bin/morrow` equivalents and record the
+restriction plus exact fallback. No live Provider/model/Pi/MCP/network/credential test is allowed.
 
 ## 6. Completion, review and integration
 
 - After coherent verified commits, the dedicated Luna Max implementation task must spawn one
   read-only `gpt-5.6-luna` / `max` subagent in that same task to review the complete activation-
   base...HEAD diff.
-- The review must focus on no-clobber/TOCTOU, symlink and directory-fd confinement, delete/move
-  recovery truth, two-path durable evidence, dirty user changes, sandbox identity ambiguity,
-  promotion partial failure, approval/cancellation and false-positive tests.
+- Review must focus on false-positive validation, command parser bypass, scope mismatch, dirty-user
+  attribution, symlink/scan confinement, buffered false claims, correction/history integrity,
+  recovery freeze, verifier authority, stop-code precision and tests that only prove mocks.
 - The implementation task reproduces and fixes every confirmed finding, reruns affected and full
   offline gates, commits acceptance/execution state and leaves a clean branch.
 - It does not merge, push, delete its branch/worktree, touch the three user-owned research
-  documents or start S7P-05. The root task verifies ancestry/cleanliness, fast-forward merges into
+  documents or start S7P-06. The root task verifies ancestry/cleanliness, fast-forward merges into
   local `main`, then retires clean task resources.

@@ -16,7 +16,8 @@ The user then requested the remaining items in strict order. Subplan 80 complete
 AgentRun observability and a one-shot headless execution entrypoint. Subplan 81 completed S7P-02
 Provider-visible tool contracts and recoverable argument validation and was integrated locally.
 Subplan 82 completed S7P-03 Direct Coding prompt and scoped project-instruction assembly and was
-integrated locally. Subplan 83 now activates S7P-04 workspace change lifecycle repair.
+integrated locally. Subplan 83 completed S7P-04 workspace change lifecycle repair and was integrated
+locally. Subplan 84 now activates S7P-05 validation and completion truth.
 
 ## Stage 7 reliability sequence
 
@@ -26,7 +27,8 @@ integrated locally. Subplan 83 now activates S7P-04 workspace change lifecycle r
 | 80 | `80-s7p-01-observability-headless.md` | completed and integrated locally |
 | 81 | `81-s7p-02-tool-contracts.md` | completed and integrated locally |
 | 82 | `82-s7p-03-direct-coding-prompt.md` | completed and integrated locally |
-| 83 | `83-s7p-04-workspace-change-lifecycle.md` | completed locally; root integration pending |
+| 83 | `83-s7p-04-workspace-change-lifecycle.md` | completed and integrated locally |
+| 84 | `84-s7p-05-validation-completion-truth.md` | active |
 
 ## Stage 7 pre-baseline
 

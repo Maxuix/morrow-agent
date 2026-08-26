@@ -3169,3 +3169,17 @@
   both CLI help commands and `git diff --check` passed. `uv run pytest -m 'not live'` remained
   blocked before collection by restricted `/Users/ruirui/.cache/uv` permissions; no live tests ran.
   Topic worktree is clean and remains unmerged for root-owned integration.
+
+## 2026-08-27 — Subplan 83 integrated and Subplan 84 activated
+
+- Fast-forward merged the verified S7P-04 chain into local `main@ffa9770`, verified no topic-only
+  commits remained, archived the implementation task, removed its clean worktree and deleted the
+  merged branch. Final evidence was dedicated `36 passed`, affected `175 passed, 2 skipped`, full
+  offline `1234 passed, 2 skipped, 2 deselected`, plus Ruff, compileall, CLI help and diff checks.
+- Reproduced S7P-05 on current main: an `opaque` exit-zero command produces
+  `validation_outcome='passed'`; a scripted explicit change task accepts a tool-free final stop,
+  commits assistant history and records zero change facts.
+- Activated Subplan 84 with separate scoped `ValidationFact` truth, a frozen Outcome Contract and
+  workspace baseline, a pre-stop completion/verifier gate, buffered final claims, one bounded
+  fact-only correction and precise outcome stop codes. No business correctness inference, second
+  history writer, raw persisted payload, dependency, runtime-default or S7P-06 work is included.
