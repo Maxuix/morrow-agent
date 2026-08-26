@@ -2,32 +2,32 @@
 
 ## Current stage
 
-Stage 7 preflight reliability repairs, S7P-03: Direct Coding prompt and scoped project instructions.
+Stage 7 preflight reliability repairs, S7P-04: basic workspace change lifecycle.
 
 ## Active subplan
 
-Subplan 82 — Direct Coding profile and project-instruction assembly.
+Subplan 83 — delete, move, rename and sandbox promotion lifecycle.
 
 ## Tasks
 
-- `[x]` Read S7P-03 and reproduce the missing coding protocol/instruction/snapshot evidence.
-- `[x]` Freeze authority order, resolver scope, budgets, recovery and compatibility decisions.
-- `[x]` Add failing final-message prompt assembly and project-instruction resolver tests.
-- `[x]` Implement the reusable Direct Coding profile and bounded role-prompt seam.
-- `[x]` Implement root/nested project-instruction selection with deterministic scoped precedence.
-- `[x]` Freeze metadata on AgentRun and verify exact instruction/profile recovery.
-- `[x]` Prove fail-closed invalid/symlink/oversize/drift handling and no permission expansion.
-- `[x]` Prove production final-wire ordering and no Morrow-generated unexpected task artifacts.
-- `[x]` Publish S7P-03 acceptance evidence and run focused/full offline quality gates.
-- `[x]` Complete same-task Luna Max subagent review and repair every confirmed finding.
-- `[x]` Commit the final verified implementation; leave merge/retirement to the root task.
+- `[x]` Read S7P-04 and reproduce missing operations and ineligible sandbox deletion.
+- `[x]` Freeze regular-file-only, no-overwrite, approval, evidence and recovery decisions.
+- `[ ]` Add failing delete/move/rename domain, schema and production inventory tests.
+- `[ ]` Implement confined delete and atomic no-replace move/rename publication.
+- `[ ]` Add structured tools, previews, approval/cancellation and ChangeSet facts.
+- `[ ]` Freeze ordered expected-absence/two-path durable evidence and recovery outcomes.
+- `[ ]` Promote sandbox deletes and unambiguous moves with deterministic partial-failure truth.
+- `[ ]` Prove dirty-change, conflict, symlink, directory, race and crash boundaries.
+- `[ ]` Prove scripted Direct delete/rename final-tree acceptance.
+- `[ ]` Update architecture, publish acceptance evidence and run focused/full offline gates.
+- `[ ]` Complete same-task Luna Max subagent review and repair every confirmed finding.
+- `[ ]` Commit the final verified implementation; leave merge/retirement to the root task.
 
 ## Boundaries
 
-- Do not start S7P-04 delete/move/rename work or any later repair item.
-- Do not change public event lifecycle, runtime-policy defaults, ToolSet, permission/sandbox
-  authority or add dependencies.
+- Do not implement copy, directories/recursive mutation, overwrite/force, chmod/link, cross-device
+  fallback, run-level undo, Git writes or S7P-05 completion verification.
+- Do not change public events, runtime-policy defaults, permission/sandbox authority or dependencies.
 - Do not run live Provider/model/Pi/MCP/network/credential tests.
-- Do not persist instruction content, task text, credentials, reasoning, full tool arguments/results,
-  SDK objects or tracebacks; durable prompt evidence is bounded metadata only.
+- Preserve ConversationLog ownership and all secret/reasoning/tool-payload boundaries.
 - Preserve the three user-owned untracked research documents.

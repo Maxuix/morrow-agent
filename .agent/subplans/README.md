@@ -15,7 +15,8 @@ and was fast-forward integrated into local `main` before any measured Direct Age
 The user then requested the remaining items in strict order. Subplan 80 completed S7P-01 safe
 AgentRun observability and a one-shot headless execution entrypoint. Subplan 81 completed S7P-02
 Provider-visible tool contracts and recoverable argument validation and was integrated locally.
-Subplan 82 now activates S7P-03 Direct Coding prompt and scoped project-instruction assembly.
+Subplan 82 completed S7P-03 Direct Coding prompt and scoped project-instruction assembly and was
+integrated locally. Subplan 83 now activates S7P-04 workspace change lifecycle repair.
 
 ## Stage 7 reliability sequence
 
@@ -24,7 +25,8 @@ Subplan 82 now activates S7P-03 Direct Coding prompt and scoped project-instruct
 | 79 | `79-s7p-00-evaluation-protocol.md` | completed and integrated locally |
 | 80 | `80-s7p-01-observability-headless.md` | completed and integrated locally |
 | 81 | `81-s7p-02-tool-contracts.md` | completed and integrated locally |
-| 82 | `82-s7p-03-direct-coding-prompt.md` | active |
+| 82 | `82-s7p-03-direct-coding-prompt.md` | completed and integrated locally |
+| 83 | `83-s7p-04-workspace-change-lifecycle.md` | active |
 
 ## Stage 7 pre-baseline
 

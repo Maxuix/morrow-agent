@@ -1,6 +1,6 @@
 # Subplan 82 — S7P-03 Direct Coding Prompt and Project Instructions
 
-> Status: active
+> Status: completed and integrated locally
 > Branch: `codex/feat/s7p-03-direct-coding-prompt`
 > Base: `main@e75c3b2`
 

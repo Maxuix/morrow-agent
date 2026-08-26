@@ -3080,3 +3080,17 @@
   `AGENTS.md` resolver, reference-only AgentRun evidence, exact recovery verification and bounded
   fail-closed diagnostics. S7P-03 changes no public events, runtime-policy defaults, ToolSet,
   permission/sandbox authority or dependencies and runs no live tests.
+
+## 2026-08-27 — Subplan 82 integrated and Subplan 83 activated
+
+- Fast-forward merged the four verified S7P-03 topic commits into local `main@20e6ce3`, verified
+  `main...topic` was `0 0`, archived the Luna Max task, removed its clean worktree and deleted the
+  merged branch. Final S7P-03 evidence is `1193 passed, 2 skipped, 2 deselected`; Ruff, compileall,
+  CLI help and diff checks passed. The three user-owned research documents remain untouched.
+- Reproduced S7P-04: structured mutation operations are only create/patch/replace, while a sandbox
+  deletion is detected but explicitly ineligible for promotion. No delete/move/rename factory,
+  two-path durable evidence or expected-absence recovery observation exists.
+- Activated Subplan 83 with regular-file-only, mandatory-SHA, no-overwrite delete/move/rename;
+  confined unlink and atomic no-replace move; expected-absence/two-path recovery; sandbox delete
+  and unambiguous move promotion; deterministic partial-failure truth. Copy, directory mutation,
+  overwrite/force, Git writes, public-event/default/dependency changes and live tests stay out.
