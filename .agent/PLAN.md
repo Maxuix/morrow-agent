@@ -1,9 +1,9 @@
 # Stage 7 Preflight Reliability Repairs — S7P-02 Tool Contracts
 
-> Status: active
-> Active subplan: 81 — Provider-visible tool schemas and recoverable argument contracts
+> Status: S7P-02 completed on its dedicated topic branch; root-owned merge remains pending
+> Active subplan: 81 — Provider-visible tool schemas and recoverable argument contracts (completed)
 > Branch: `codex/fix/s7p-02-tool-contracts`
-> Base: verified local `main@3f5c7cb`
+> Base: activation baseline `36f3be18d2d9ce813a827a704ea911aa4baa502a`
 > Source authority: the user-requested S7P-02 checklist, current code, and deterministic checks
 
 ## 1. Objective

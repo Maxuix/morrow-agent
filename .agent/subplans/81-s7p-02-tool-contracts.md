@@ -1,8 +1,8 @@
 # Subplan 81 — S7P-02 Provider-visible Tool Contracts
 
-> Status: active
+> Status: completed
 > Branch: `codex/fix/s7p-02-tool-contracts`
-> Base: `main@3f5c7cb`
+> Base: activation baseline `36f3be18d2d9ce813a827a704ea911aa4baa502a`
 > Dependency: S7P-01 completed, integrated and retired
 
 ## Goal

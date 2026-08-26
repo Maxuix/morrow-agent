@@ -3018,3 +3018,28 @@
 - S7P-02 changes no public events, runtime-policy defaults, permissions, sandbox authority or
   dependencies. Scripted/local validation only is authorized; the frozen repeated live <=1%
   invalid-argument threshold remains scheduled for S7P-09 rather than being fabricated offline.
+
+## 2026-08-27 — Subplan 81 implementation, review repair and offline acceptance
+
+- Implemented the normalized Provider-schema seam: raw JSON is checked by the bounded local
+  Draft 2020-12 subset before strict Pydantic construction. The final OpenAI-compatible function
+  wire is captured in tests, and a value-free fail-closed `ToolContractAudit` covers the static
+  Direct inventory, recovery declarations, independent capability/policy expectations, schema
+  closure and serializer/digest stability. Dynamic MCP names continue through their existing
+  bounded runtime-defined schema path.
+- Repaired the hidden `run_command` XOR and `write_file` mode/revision branches, common path/query
+  vocabulary, Skill/Preference/configuration hidden constraints, conservative Unicode/raw-byte
+  budgets, bounded `expected` recovery hints, error-code separation and scripted next-call repair.
+  No public lifecycle, runtime-policy default, permission/sandbox authority or dependency changed.
+- Committed implementation as `8ab32ad`; the required same-session read-only reviewer Laplace
+  (`01a03eae-b43b-7d51-9a81-6b4bfbd15327`, spawn configuration `gpt-5.6-luna`/`max`) returned formal
+  report `codex-s7p02-ro-2026-08-26` with `REQUEST CHANGES` and six findings. All F1–F6 were
+  locally reproduced and repaired in `667fcdd`, `fc1f04c` and `e1b3b1d`; a post-review full gate
+  also caught and fixed one large-edit compatibility regression and four anonymous test-tool
+  isolation compatibility failures.
+- Final focused gates passed `33 passed`; `88 passed, 1 skipped`; and `36 passed`. The expanded
+  affected suite passed `259 passed, 1 skipped`; full offline pytest passed `1166 passed, 2 skipped,
+  2 deselected in 51.25s`. Ruff format/check, compileall, both CLI help commands, current-worktree
+  import proof and `git diff --check` passed. No live Provider/model/Pi/MCP/network/credential test
+  ran. Acceptance evidence is `docs/acceptance/s7p-02-tool-contracts.md`; the topic remains
+  unmerged for root-owned handoff.

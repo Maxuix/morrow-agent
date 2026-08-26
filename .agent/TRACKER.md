@@ -2,43 +2,39 @@
 
 ## Current status
 
-S7P-01 is verified, fast-forward integrated into local `main@3f5c7cb`, and retired. S7P-02 is
-active as Subplan 81. The root session reproduced the Provider/runtime mismatch using the actual
-generated schemas and the same bounded local schema validator used for runtime-defined tools.
+S7P-01 is verified, fast-forward integrated into local `main@3f5c7cb`, and retired. S7P-02
+Subplan 81 is implemented, reviewed, repaired and offline-verified on its dedicated topic branch.
+The root session owns the later merge/retirement steps. The implementation used the actual final
+OpenAI-compatible wire and the same bounded local schema validator used by runtime-defined tools.
 
 The main worktree contains only three user-owned untracked research documents. They are outside
 Subplan 81 and must remain untouched.
 
 ## Active task
 
-The dedicated `gpt-5.6-luna` / `max` implementation task is active on
-`codex/fix/s7p-02-tool-contracts`. Test-first final-wire mismatch coverage is in place and
-currently fails against the activation baseline; the next action is to add the normalized
-Provider-schema seam and fail-closed audit before repairing the static tools.
+The dedicated `gpt-5.6-luna` / `max` implementation task is complete on
+`codex/fix/s7p-02-tool-contracts`. Verified commits are `8ab32ad`, `667fcdd`, `fc1f04c` and
+`e1b3b1d`; the read-only reviewer was Laplace (`01a03eae-b43b-7d51-9a81-6b4bfbd15327`) with
+formal report `codex-s7p02-ro-2026-08-26`. The next action belongs to the root session: inspect
+the clean topic branch and decide the authorized merge/retirement. S7P-03 was not started.
 
-## Located evidence
+## Completed evidence
 
-- Final `RunCommandArguments.model_json_schema()` marks both `argv` and `shell` optional/nullable.
-  Local schema validation accepts `{}` and both fields, while strict Pydantic validation rejects
-  them through an after-validator.
-- The existing test named `test_run_command_schema_requires_xor...` asserts description strings and
-  never validates XOR behavior.
-- `WriteFileArguments.model_json_schema()` cannot express that replace requires a revision and
-  create forbids one; those rules also live only in an after-validator.
-- `write_file.content` advertises 1 MiB, but the shared raw validator rejects strings beyond 64 KiB
-  and JSON beyond 128 KiB before Pydantic/handler execution.
-- Workspace lexical path rules and several operation shapes are runtime-only. `search_text` calls
-  its text input `pattern`, which conflicts with the requested query vocabulary used by coding
-  agents.
-- `PydanticArgumentsValidator.schema` always returns raw Pydantic output. `make_tool()` and
-  `serialize_tool()` provide no explicit conservative schema seam or complete contract audit.
-- S7P-01 already carries bounded `{path,type}` diagnostics; S7P-02 can add a safe model-facing shape
-  hint without expanding the durable projection.
+- The actual final OpenAI-compatible kwargs now carry normalized explicit Provider schemas. Raw
+  JSON is schema-validated before strict Pydantic construction, and the audit rejects schema,
+  declaration, policy, capability or serializer drift without retaining values.
+- `run_command` and `write_file` cross-field branches are executable `oneOf` contracts; Provider
+  bounds are conservative for escaped Unicode and aggregate arrays, while state/containment facts
+  remain typed preflight authority.
+- The static Direct inventory, ordinary/auto-sandboxed captured wires, dynamic MCP compatibility,
+  scripted next-call correction, distinct error codes and value-free diagnostics all have focused
+  regressions. The acceptance document records the exact final gate results and review closure.
 
 ## Next action
 
-Implement and test the shared normalized Provider schema/audit seam, keeping the first three
-contract tests failing until the runtime and final Provider wire use the same bounded schema.
+Keep the topic branch unmerged and clean for root-session handoff. Acceptance evidence is in
+`docs/acceptance/s7p-02-tool-contracts.md`; final focused/full offline gates, Ruff, compileall,
+CLI help, import-path proof and `git diff --check` all passed. No live test ran.
 
 ## Blockers
 
