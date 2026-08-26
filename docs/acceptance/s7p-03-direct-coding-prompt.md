@@ -1,8 +1,8 @@
 # S7P-03 Direct Coding Prompt Acceptance
 
-日期：2026-08-27  
-状态：实现、review、review finding 修复及离线验证完成；等待根会话合并。  
-基线：`30368876457ac740ae36565929190c4cc855e83c`  
+日期：2026-08-27<br>
+状态：实现、review、review finding 修复及离线验证完成；等待根会话合并。<br>
+基线：`30368876457ac740ae36565929190c`
 分支：`codex/feat/s7p-03-direct-coding-prompt`
 
 本记录只覆盖 S7P-03。没有运行真实 Provider、model、Pi、MCP、network 或 credential 测试，
