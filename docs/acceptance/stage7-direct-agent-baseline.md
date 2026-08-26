@@ -151,7 +151,7 @@ Direct 与 Workflow。
 
 | 优先级 | 发现 | 状态 | Stage 7 处置 |
 |---|---|---|---|
-| P1 | durable policy deny 丢失原因，Agent 无法安全恢复 | 已修复 | 纳入公共工具契约 |
+| P1 | durable policy deny 丢失原因，Agent 无法bu y z z z安全恢复 | 已修复 | 纳入公共工具契约 |
 | P1 | native sandbox 无法访问既有只读项目运行时 | 已修复 | 保持精确 root，不扩大 Host 能力 |
 | P2 | Direct Agent 在复杂仓库任务中过度阅读并耗尽 30 轮 | 未修复（非工具） | 作为 Workflow/分解/上下文策略的核心对照指标 |
 | P2 | 隐藏边界语义仍易遗漏 | 未修复（推理） | Stage 7 评估 reviewer/test 节点是否改善 |
