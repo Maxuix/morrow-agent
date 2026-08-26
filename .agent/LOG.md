@@ -2892,3 +2892,26 @@
   Pi, network or credential test was run.
 - Independent review is intentionally still pending. The topic branch is not merged to `main`,
   and no branch/worktree was deleted.
+
+## 2026-08-26 — Subplan 79 independent review repairs completed
+
+- The implementation session spawned the read-only internal collaboration reviewer Boyle
+  (`01a03d84-9c4d-72f3-89f0-40b3f80c6012`) to inspect the frozen
+  `ce9d6abe756291189ae2a6ae5678add259809610..9ffba1a` diff. The reviewer returned 10 P1 and 6 P2
+  findings covering unsafe workspace/artifact paths, required-path enforcement, staged/ignored and
+  rename/delete evidence, source/config drift, tool accounting, controlled stop reasons, secret
+  handling, atomic finalization, partial discovery, timeout, schema hashes, Gold-test isolation
+  and CLI exit semantics.
+- Repaired all confirmed findings in the evaluation-only lane: lstat/regular-file boundaries,
+  explicit required paths and tool diagnostics, baseline-aware binary Git evidence, MORROW-006
+  rename allowlist, source revision/config checks during rebuild, bounded verifier execution,
+  fail-closed sensitive output handling, staged fsync/promote/rollback finalization, partial-bundle
+  discovery and non-PASS CLI status.
+- Added focused regression coverage without copying Gold material into an Agent workspace. The
+  review-repair implementation is committed as `4e48c7e` (`fix(evals): harden s7p-00 evidence
+  protocol`); acceptance and execution-state updates are kept in a following documentation commit.
+- Review-repair validation passed: focused `22 passed`; self-check all 10 baseline/gold pairs;
+  full offline `1101 passed, 2 skipped, 2 deselected in 46.66s`; Ruff format/check `451 files
+  already formatted` / `All checks passed`; compileall; eval lifecycle CLI smoke; `morrow --help`;
+  and `git diff --check`. No live Provider, Pi, network or credential test ran. The topic branch
+  remains unmerged and the worktree remains available for the current/root task.

@@ -144,5 +144,6 @@ git diff --check
 Implementation is not complete at the first green commit. An independent review subagent reviews
 the full `main...topic` diff for correctness, reproducibility, secret boundaries, false PASS paths,
 compatibility and test gaps. After the findings are returned, the implementation session repairs
-every confirmed finding, reruns affected and full gates, and makes a final verified commit. Only
-then may the branch be fast-forward merged to local `main` and retired.
+every confirmed finding, reruns affected and full gates, and makes a final verified commit. The
+current/root task owns any later merge or branch/worktree retirement; this implementation session
+does not merge `main` or delete the topic branch/worktree.

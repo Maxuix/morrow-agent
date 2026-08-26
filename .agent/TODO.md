@@ -17,8 +17,9 @@ Subplan 79 — S7P-00 reproducible evaluation protocol.
 - `[x]` Implement run start/rebuild/finalize/summarize without changing production runtime code.
 - `[x]` Update evaluation documentation and publish S7P-00 acceptance evidence.
 - `[x]` Run focused, self-check, full offline and quality gates.
-- `[ ]` Complete independent code review, repair all findings and rerun affected gates.
-- `[x]` Commit verified implementation; leave review, merge and branch retirement to the next gate.
+- `[x]` Complete independent code review, repair all findings and rerun affected gates.
+- `[x]` Commit verified implementation and review repairs; leave merge and branch/worktree retirement
+  to the current/root task.
 
 ## Boundaries
 
