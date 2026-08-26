@@ -21,6 +21,9 @@ values = [
 [tool_terminal_states]
 values = ["succeeded", "failed", "denied", "cancelled", "blocked"]
 
+[tool_diagnostics]
+fields = ["invalid_arguments", "unaccounted_tool_calls", "total_tool_calls", "basic_tool_blocked"]
+
 [evidence]
 required = [
   "run-manifest.json",

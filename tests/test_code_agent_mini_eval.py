@@ -35,8 +35,8 @@ def _profile() -> dict[str, object]:
         "tools": [
             {
                 "name": "read_file",
-                "schema_hash": "sha256:" + "1" * 64,
                 "schema": {"type": "object", "properties": {}},
+                "schema_hash": eval_module.content_hash({"type": "object", "properties": {}}),
             }
         ],
         "permissions": {
@@ -90,11 +90,17 @@ def _runtime_evidence(
     usage: dict[str, object] | None = None,
     stop_code: str = "completed",
 ) -> dict[str, object]:
+    states = tool_states or {state: 0 for state in eval_module.TOOL_TERMINAL_STATES}
     return {
         "schema_version": 1,
         "availability": "available",
-        "tool_states": tool_states or {state: 0 for state in eval_module.TOOL_TERMINAL_STATES},
-        "tool_diagnostics": {"invalid_arguments": 0, "unaccounted_tool_calls": 0},
+        "tool_states": states,
+        "tool_diagnostics": {
+            "invalid_arguments": 0,
+            "unaccounted_tool_calls": 0,
+            "total_tool_calls": sum(states.values()),
+            "basic_tool_blocked": 0,
+        },
         "usage": usage
         or {
             "input_tokens": 1,
@@ -106,8 +112,20 @@ def _runtime_evidence(
             "user_interventions": 0,
             "rework_count": 0,
         },
-        "stop": {"code": stop_code, "reason": "synthetic test evidence"},
+        "stop": {"code": stop_code, "reason": stop_code},
     }
+
+
+def _passing_verifier(
+    task: eval_module.Task,
+    workspace: Path,
+    *,
+    capture: bool = False,
+    timeout_seconds: float | None = None,
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.CompletedProcess(
+        args=["synthetic-verifier"], returncode=0, stdout="synthetic verifier passed\n"
+    )
 
 
 def test_protocol_freezes_taxonomy_repetitions_and_gate() -> None:
@@ -184,7 +202,9 @@ def test_start_and_rebuild_make_equivalent_fresh_workspaces(tmp_path: Path) -> N
     marker = json.loads((first / "workspace" / eval_module.MARKER_NAME).read_text())
     assert "expected_change_policy" not in marker
 
-    rebuilt = eval_module.rebuild_workspace(first / "run-manifest.json", tmp_path / "rebuilt")
+    rebuilt = eval_module.rebuild_workspace(
+        first / "run-manifest.json", tmp_path / "rebuilt", source_root=source
+    )
     rebuilt_tree = eval_module.git_tree_hash(rebuilt)
     assert rebuilt_tree == first_manifest["workspace"]["baseline_tree_sha256"]
 
@@ -222,7 +242,7 @@ def test_rebuild_rejects_dataset_and_protocol_mismatch(
         )
         with pytest.raises(eval_module.EvalError, match="dataset hash mismatch"):
             eval_module.rebuild_workspace(
-                bundle / "run-manifest.json", tmp_path / "rebuilt-dataset"
+                bundle / "run-manifest.json", tmp_path / "rebuilt-dataset", source_root=source
             )
 
     original_file_hash = eval_module.file_hash
@@ -236,11 +256,13 @@ def test_rebuild_rejects_dataset_and_protocol_mismatch(
         patcher.setattr(eval_module, "file_hash", mismatched_protocol_hash)
         with pytest.raises(eval_module.EvalError, match="protocol hash mismatch"):
             eval_module.rebuild_workspace(
-                bundle / "run-manifest.json", tmp_path / "rebuilt-protocol"
+                bundle / "run-manifest.json", tmp_path / "rebuilt-protocol", source_root=source
             )
 
 
-def test_finalize_requires_verifier_success_and_no_unexpected_paths(tmp_path: Path) -> None:
+def test_rebuild_rejects_source_revision_and_configuration_drift(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     source = _source_repo(tmp_path)
     bundle = eval_module.start_run(
         eval_module.task_by_id("EXTERNAL-001"),
@@ -249,9 +271,165 @@ def test_finalize_requires_verifier_success_and_no_unexpected_paths(tmp_path: Pa
         profile=_profile(),
         source_root=source,
     )
-    eval_module.copy_material(
-        eval_module.DATASET_ROOT / "tasks/EXTERNAL-001/solution", bundle / "workspace"
+    (source / "pyproject.toml").write_text(
+        "[project]\nname = 'fixture'\nversion = 'drifted'\n", encoding="utf-8"
     )
+    subprocess.run(["git", "add", "pyproject.toml"], cwd=source, check=True)
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=Eval Test",
+            "-c",
+            "user.email=eval-test@example.invalid",
+            "commit",
+            "-q",
+            "-m",
+            "drift",
+        ],
+        cwd=source,
+        check=True,
+    )
+    with pytest.raises(eval_module.EvalError, match="evaluator commit mismatch"):
+        eval_module.rebuild_workspace(
+            bundle / "run-manifest.json", tmp_path / "rebuilt-commit", source_root=source
+        )
+
+    recorded_commit = json.loads((bundle / "run-manifest.json").read_text(encoding="utf-8"))[
+        "source"
+    ]["evaluator_commit"]
+    with monkeypatch.context() as patcher:
+        patcher.setattr(eval_module, "_git_commit", lambda root: recorded_commit)
+        with pytest.raises(eval_module.EvalError, match="configuration snapshot mismatch"):
+            eval_module.rebuild_workspace(
+                bundle / "run-manifest.json", tmp_path / "rebuilt-config", source_root=source
+            )
+
+
+def test_profile_schema_hash_and_runtime_accounting_are_verified() -> None:
+    profile = _profile()
+    profile["tools"][0]["schema_hash"] = "sha256:" + "0" * 64
+    with pytest.raises(eval_module.ProfileError, match="schema_hash does not match schema"):
+        eval_module.validate_profile(profile)
+
+    evidence = _runtime_evidence(
+        tool_states={"succeeded": 1, "failed": 0, "denied": 0, "cancelled": 0, "blocked": 0}
+    )
+    evidence["tool_diagnostics"]["total_tool_calls"] = 0
+    with pytest.raises(eval_module.EvalError, match="terminal accounting"):
+        eval_module.normalize_runtime_evidence(evidence)
+
+    evidence = _runtime_evidence()
+    evidence["stop"]["reason"] = "free-form explanation"
+    with pytest.raises(eval_module.EvalError, match="stop reason must equal"):
+        eval_module.normalize_runtime_evidence(evidence)
+
+
+def test_verifier_output_rejects_common_credential_shapes() -> None:
+    for output in ("AKIA1234567890ABCDEF\n", "ghp_" + "a" * 36 + "\n"):
+        with pytest.raises(eval_module.EvalError, match="credential material"):
+            eval_module._read_verifier_output(
+                subprocess.CompletedProcess(
+                    args=["synthetic-verifier"], returncode=0, stdout=output
+                )
+            )
+
+
+def test_verifier_command_has_a_bounded_timeout(tmp_path: Path) -> None:
+    with pytest.raises(eval_module.EvalError, match="timed out"):
+        eval_module.run_command(
+            [sys.executable, "-c", "import time; time.sleep(0.1)"],
+            cwd=tmp_path,
+            capture=True,
+            timeout=0.001,
+        )
+
+
+def test_finalize_is_retryable_after_atomic_artifact_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = _source_repo(tmp_path)
+    bundle = eval_module.start_run(
+        eval_module.task_by_id("EXTERNAL-001"),
+        tmp_path / "run",
+        repetition=1,
+        profile=_profile(),
+        source_root=source,
+    )
+    expected_path = bundle / "workspace" / "phone_number.py"
+    with expected_path.open("a", encoding="utf-8") as handle:
+        handle.write("\n# atomic retry change\n")
+    monkeypatch.setattr(eval_module, "run_verification", _passing_verifier)
+    original_write = eval_module._write_bytes_create
+
+    def fail_result(path: Path, value: bytes) -> None:
+        if path.name == "run-result.json":
+            raise eval_module.EvalError("injected artifact failure")
+        original_write(path, value)
+
+    monkeypatch.setattr(eval_module, "_write_bytes_create", fail_result)
+    with pytest.raises(eval_module.EvalError, match="injected artifact failure"):
+        eval_module.finalize_run(bundle / "run-manifest.json", _runtime_evidence())
+    assert not any((bundle / filename).exists() for filename in eval_module.REQUIRED_EVIDENCE[1:])
+
+    (bundle / "run-result.json").write_text("partial\n", encoding="utf-8")
+    monkeypatch.setattr(eval_module, "_write_bytes_create", original_write)
+    result = eval_module.finalize_run(bundle / "run-manifest.json", _runtime_evidence())
+    assert result["result"]["class"] == "PASS"
+
+
+def test_summary_discovers_manifest_only_partial_bundle(tmp_path: Path) -> None:
+    source = _source_repo(tmp_path)
+    runs_root = tmp_path / "runs"
+    runs_root.mkdir()
+    eval_module.start_run(
+        eval_module.task_by_id("EXTERNAL-001"),
+        runs_root / "partial",
+        repetition=1,
+        profile=_profile(),
+        source_root=source,
+    )
+
+    summary = eval_module.summarize_runs(runs_root)
+    assert summary["status"] == "INCOMPLETE"
+    assert summary["runs"]["discovered"] == 1
+    assert summary["diagnostics"]["invalid_bundles"]
+
+    orphan = runs_root / "orphan"
+    orphan.mkdir()
+    (orphan / "run-result.json").write_text("{}\n", encoding="utf-8")
+    orphan_summary = eval_module.summarize_runs(runs_root)
+    assert orphan_summary["runs"]["discovered"] == 2
+    assert len(orphan_summary["diagnostics"]["invalid_bundles"]) == 2
+
+
+def test_finalize_requires_verifier_success_and_no_unexpected_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = _source_repo(tmp_path)
+    bundle = eval_module.start_run(
+        eval_module.task_by_id("EXTERNAL-001"),
+        tmp_path / "run",
+        repetition=1,
+        profile=_profile(),
+        source_root=source,
+    )
+
+    def synthetic_verifier(
+        task: eval_module.Task,
+        workspace: Path,
+        *,
+        capture: bool = False,
+        timeout_seconds: float | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(
+            args=["synthetic-verifier"], returncode=0, stdout="synthetic verifier passed\n"
+        )
+
+    monkeypatch.setattr(eval_module, "run_verification", synthetic_verifier)
+    expected_path = bundle / "workspace" / "phone_number.py"
+    with expected_path.open("a", encoding="utf-8") as handle:
+        handle.write("\n# synthetic evaluation change\n")
     result = eval_module.finalize_run(bundle / "run-manifest.json", _runtime_evidence())
     assert result["result"]["class"] == "PASS"
     assert result["paths"]["unexpected"] == []
@@ -263,13 +441,116 @@ def test_finalize_requires_verifier_success_and_no_unexpected_paths(tmp_path: Pa
         profile=_profile(),
         source_root=source,
     )
-    eval_module.copy_material(
-        eval_module.DATASET_ROOT / "tasks/EXTERNAL-001/solution", unexpected_bundle / "workspace"
-    )
+    expected_path = unexpected_bundle / "workspace" / "phone_number.py"
+    with expected_path.open("a", encoding="utf-8") as handle:
+        handle.write("\n# synthetic evaluation change\n")
     (unexpected_bundle / "workspace" / "agent-notes.txt").write_text("note", encoding="utf-8")
     result = eval_module.finalize_run(unexpected_bundle / "run-manifest.json", _runtime_evidence())
     assert result["result"]["class"] != "PASS"
     assert result["paths"]["unexpected"] == ["agent-notes.txt"]
+
+
+def test_finalize_requires_every_required_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = _source_repo(tmp_path)
+    bundle = eval_module.start_run(
+        eval_module.task_by_id("EXTERNAL-001"),
+        tmp_path / "run",
+        repetition=1,
+        profile=_profile(),
+        source_root=source,
+    )
+
+    monkeypatch.setattr(eval_module, "run_verification", _passing_verifier)
+    result = eval_module.finalize_run(bundle / "run-manifest.json", _runtime_evidence())
+
+    assert result["result"]["class"] == "FAIL_MODEL"
+    assert result["paths"]["missing_required"] == ["phone_number.py"]
+    assert result["quality"]["required_paths_present"] is False
+    eval_module.validate_run_bundle(bundle)
+
+
+@pytest.mark.parametrize("unsafe_kind", ["symlink", "hardlink"])
+def test_finalize_rejects_unsafe_workspace_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, unsafe_kind: str
+) -> None:
+    source = _source_repo(tmp_path)
+    bundle = eval_module.start_run(
+        eval_module.task_by_id("EXTERNAL-001"),
+        tmp_path / f"run-{unsafe_kind}",
+        repetition=1,
+        profile=_profile(),
+        source_root=source,
+    )
+    expected_path = bundle / "workspace" / "phone_number.py"
+    outside = tmp_path / f"outside-{unsafe_kind}.py"
+    outside.write_text(expected_path.read_text(encoding="utf-8"), encoding="utf-8")
+    expected_path.unlink()
+    if unsafe_kind == "symlink":
+        expected_path.symlink_to(outside)
+    else:
+        expected_path.hardlink_to(outside)
+
+    def verifier_must_not_run(*args: object, **kwargs: object) -> None:
+        raise AssertionError("unsafe workspace reached the external verifier")
+
+    monkeypatch.setattr(eval_module, "run_verification", verifier_must_not_run)
+    result = eval_module.finalize_run(bundle / "run-manifest.json", _runtime_evidence())
+
+    assert result["result"]["class"] == "FAIL_RUNTIME"
+    assert result["verifier"]["status"] == "error"
+    assert result["paths"]["unexpected"] == ["phone_number.py"]
+    eval_module.validate_run_bundle(bundle)
+
+
+def test_finalize_rejects_workspace_root_symlink(tmp_path: Path) -> None:
+    source = _source_repo(tmp_path)
+    bundle = eval_module.start_run(
+        eval_module.task_by_id("EXTERNAL-001"),
+        tmp_path / "run",
+        repetition=1,
+        profile=_profile(),
+        source_root=source,
+    )
+    real_workspace = tmp_path / "outside-workspace"
+    real_workspace.mkdir()
+    shutil.rmtree(bundle / "workspace")
+    (bundle / "workspace").symlink_to(real_workspace, target_is_directory=True)
+
+    with pytest.raises(eval_module.EvalError, match="real directory inside the bundle"):
+        eval_module.finalize_run(bundle / "run-manifest.json", _runtime_evidence())
+
+
+def test_finalize_records_staged_and_ignored_changes_as_evidence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = _source_repo(tmp_path)
+    bundle = eval_module.start_run(
+        eval_module.task_by_id("EXTERNAL-001"),
+        tmp_path / "run",
+        repetition=1,
+        profile=_profile(),
+        source_root=source,
+    )
+    workspace = bundle / "workspace"
+    expected_path = workspace / "phone_number.py"
+    with expected_path.open("a", encoding="utf-8") as handle:
+        handle.write("\n# staged evaluation change\n")
+    subprocess.run(["git", "add", "phone_number.py"], cwd=workspace, check=True)
+    (workspace / ".git" / "info" / "exclude").write_text("agent-notes.txt\n", encoding="utf-8")
+    (workspace / "agent-notes.txt").write_text("ignored note\n", encoding="utf-8")
+
+    monkeypatch.setattr(eval_module, "run_verification", _passing_verifier)
+    result = eval_module.finalize_run(bundle / "run-manifest.json", _runtime_evidence())
+
+    assert result["result"]["class"] == "FAIL_MODEL"
+    assert result["paths"]["changed"] == ["agent-notes.txt", "phone_number.py"]
+    assert result["paths"]["unexpected"] == ["agent-notes.txt"]
+    status = json.loads((bundle / "workspace-status.json").read_text(encoding="utf-8"))
+    assert status["ignored_paths"] == ["agent-notes.txt"]
+    assert b"phone_number.py" in (bundle / "workspace-diff.patch").read_bytes()
+    eval_module.validate_run_bundle(bundle)
 
 
 def test_finalize_persists_raw_evidence_and_tamper_is_detected(tmp_path: Path) -> None:
@@ -296,6 +577,32 @@ def test_finalize_persists_raw_evidence_and_tamper_is_detected(tmp_path: Path) -
 
     (bundle / "runtime-evidence.json").write_text("tampered\n", encoding="utf-8")
     with pytest.raises(eval_module.EvalError, match="hash mismatch"):
+        eval_module.validate_run_bundle(bundle)
+
+
+def test_bundle_artifacts_must_remain_regular_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = _source_repo(tmp_path)
+    bundle = eval_module.start_run(
+        eval_module.task_by_id("EXTERNAL-001"),
+        tmp_path / "run",
+        repetition=1,
+        profile=_profile(),
+        source_root=source,
+    )
+    expected_path = bundle / "workspace" / "phone_number.py"
+    with expected_path.open("a", encoding="utf-8") as handle:
+        handle.write("\n# artifact check\n")
+    monkeypatch.setattr(eval_module, "run_verification", _passing_verifier)
+    eval_module.finalize_run(bundle / "run-manifest.json", _runtime_evidence())
+
+    verifier_output = bundle / "verifier-output.txt"
+    outside = tmp_path / "outside-verifier-output.txt"
+    outside.write_bytes(verifier_output.read_bytes())
+    verifier_output.unlink()
+    verifier_output.symlink_to(outside)
+    with pytest.raises(eval_module.EvalError, match="regular file inside"):
         eval_module.validate_run_bundle(bundle)
 
 
@@ -356,7 +663,13 @@ def test_two_complete_synthetic_repetitions_have_deterministic_summary(
     runs_root = tmp_path / "runs"
     runs_root.mkdir()
 
-    def synthetic_verifier(task: eval_module.Task, workspace: Path, *, capture: bool = False):
+    def synthetic_verifier(
+        task: eval_module.Task,
+        workspace: Path,
+        *,
+        capture: bool = False,
+        timeout_seconds: float | None = None,
+    ):
         return subprocess.CompletedProcess(
             args=["synthetic-verifier"], returncode=0, stdout="synthetic verifier passed\n"
         )
@@ -371,10 +684,11 @@ def test_two_complete_synthetic_repetitions_have_deterministic_summary(
                 profile=_profile(),
                 source_root=source,
             )
-            expected_path = bundle / "workspace" / task.values["expected_paths"][0]
-            expected_path.parent.mkdir(parents=True, exist_ok=True)
-            with expected_path.open("a", encoding="utf-8") as handle:
-                handle.write("\n# synthetic evaluation change\n")
+            for relative in task.values["required_paths"]:
+                expected_path = bundle / "workspace" / relative
+                expected_path.parent.mkdir(parents=True, exist_ok=True)
+                with expected_path.open("a", encoding="utf-8") as handle:
+                    handle.write("\n# synthetic evaluation change\n")
             eval_module.finalize_run(
                 bundle / "run-manifest.json",
                 _runtime_evidence(
@@ -401,3 +715,26 @@ def test_two_complete_synthetic_repetitions_have_deterministic_summary(
         "blocked": 0,
     }
     assert summary["gate"]["status"] == "PASS"
+
+
+def test_gate_uses_explicit_basic_tool_blocker_diagnostic(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = _source_repo(tmp_path)
+    bundle = eval_module.start_run(
+        eval_module.task_by_id("EXTERNAL-001"),
+        tmp_path / "run",
+        repetition=1,
+        profile=_profile(),
+        source_root=source,
+    )
+    expected_path = bundle / "workspace" / "phone_number.py"
+    with expected_path.open("a", encoding="utf-8") as handle:
+        handle.write("\n# gate diagnostic change\n")
+    monkeypatch.setattr(eval_module, "run_verification", _passing_verifier)
+    eval_module.finalize_run(bundle / "run-manifest.json", _runtime_evidence())
+    entry = eval_module.validate_run_bundle(bundle)
+    entry["runtime"]["tool_diagnostics"]["basic_tool_blocked"] = 1
+    gate = eval_module._gate_for_entries([entry], eval_module.load_protocol())
+    assert gate["basic_tool_blocked"] == 1
+    assert "basic-tool environment blocker threshold failed" in gate["diagnostics"]

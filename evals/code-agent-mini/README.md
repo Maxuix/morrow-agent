@@ -67,10 +67,11 @@ Agent 结束后，单独准备不含敏感内容的 `runtime-evidence.json`，�
   "schema_version": 1,
   "availability": "available",
   "tool_states": {"succeeded": 12, "failed": 0, "denied": 0, "cancelled": 0, "blocked": 0},
-  "tool_diagnostics": {"invalid_arguments": 0, "unaccounted_tool_calls": 0},
+  "tool_diagnostics": {"invalid_arguments": 0, "unaccounted_tool_calls": 0,
+                        "total_tool_calls": 12, "basic_tool_blocked": 0},
   "usage": {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2, "cost": 0.0,
              "duration_ms": 1, "rounds": 1, "user_interventions": 0, "rework_count": 0},
-  "stop": {"code": "completed", "reason": "run completed"}
+  "stop": {"code": "completed", "reason": "completed"}
 }
 ```
 
@@ -86,9 +87,14 @@ evidence 以及每个 artifact 的 hash：
   "$RUNS/morrow-003-1/run-manifest.json" /tmp/morrow-003-1-rebuilt
 ```
 
-`rebuild` 只接受当前匹配的数据集/协议哈希，并验证 fresh workspace 的 baseline tree 和
-marker；源 checkout 必须干净才能成为可比较运行。显式 dirty diagnostic 会保留有限摘要，
-但永远不能通过比较门槛。
+`rebuild` 只接受当前匹配的数据集/协议哈希、evaluator commit 和 configuration snapshot，
+并验证 fresh workspace 的 baseline tree 和 marker；源 checkout 必须干净才能成为可比较
+运行。显式 dirty diagnostic 会保留有限摘要，但永远不能通过比较门槛。
+
+`finalize` 会用 staged+unstaged 的 binary Git diff、untracked 文件和 `--ignored` status
+记录变更，也保留 rename/delete 路径。symlink、hardlink、设备/FIFO 等非普通文件以及
+workspace 根目录越界会 fail closed；每个 task 的所有 `required_paths` 都必须出现，才能
+进入 PASS。敏感 verifier 输出会被拒绝而不会写入 bundle；非 PASS 的 `finalize` 返回非零。
 
 完成 10 项各两次后机械汇总：
 
@@ -98,10 +104,10 @@ marker；源 checkout 必须干净才能成为可比较运行。显式 dirty dia
 ```
 
 summary 会重新验证 manifest、结果和所有 evidence hash，拒绝重复 task/repetition、混用
-protocol/profile、缺证据、意外重复和不可用必需计量。`INCOMPLETE` 永远不是 PASS；`unavailable`
-永远不是零。结果类和工具终态分别汇总，`FAIL_*`、`DENIED_POLICY`、`BLOCKED_ENV` 不会被合并。
-只有 verifier 成功、没有意外修改、存在相关预期修改、证据完整且源可比较时，单次结果才可为
-PASS；汇总命令在完整且冻结门槛通过时才返回成功。
+protocol/profile、partial bundle、缺证据、意外重复和不可用必需计量。`INCOMPLETE` 永远不是
+PASS；`unavailable` 永远不是零。结果类和工具终态分别汇总，`FAIL_*`、`DENIED_POLICY`、
+`BLOCKED_ENV` 不会被合并。只有 verifier 成功、没有意外修改、所有 required paths 出现、
+证据完整且源可比较时，单次结果才可为 PASS；汇总命令在完整且冻结门槛通过时才返回成功。
 
 ## 数据集 self-check
 

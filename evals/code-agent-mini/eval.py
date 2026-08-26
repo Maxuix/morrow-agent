@@ -11,6 +11,7 @@ import math
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tarfile
@@ -49,7 +50,12 @@ USAGE_FIELDS = (
     "user_interventions",
     "rework_count",
 )
-TOOL_DIAGNOSTIC_FIELDS = ("invalid_arguments", "unaccounted_tool_calls")
+TOOL_DIAGNOSTIC_FIELDS = (
+    "invalid_arguments",
+    "unaccounted_tool_calls",
+    "total_tool_calls",
+    "basic_tool_blocked",
+)
 FIXED_PI_TASK_IDS = ("MORROW-003", "MORROW-005", "EXTERNAL-003", "EXTERNAL-004")
 FROZEN_THRESHOLDS = {
     "simple_medium_required_pass": 5,
@@ -88,12 +94,18 @@ MAX_TEXT_BYTES = 256 * 1024
 MAX_STATUS_ENTRIES = 512
 MAX_SOURCE_DIRTY_ENTRIES = 64
 MAX_REASON_LENGTH = 240
+DEFAULT_VERIFIER_TIMEOUT_SECONDS = 120.0
 SHA256_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 IDENTIFIER_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
 SECRET_TEXT_RE = re.compile(
     r"(?ix)(?:"
     r"-----BEGIN\s+(?:RSA\s+|EC\s+|OPENSSH\s+)?PRIVATE\s+KEY-----|"
     r"\b(?:sk|rk)-[A-Za-z0-9_-]{16,}\b|"
+    r"\bAKIA[0-9A-Z]{16}\b|"
+    r"\bgh[pousr]_[A-Za-z0-9_]{20,}\b|"
+    r"\bxox[baprs]-[A-Za-z0-9-]{16,}\b|"
+    r"\bAIza[0-9A-Za-z_-]{20,}\b|"
+    r"\bnpm_[A-Za-z0-9]{20,}\b|"
     r"\bBearer\s+[A-Za-z0-9._-]{16,}\b|"
     r"\b(?:api[_-]?key|access[_-]?token|refresh[_-]?token|password|secret)"
     r"\s*[:=]\s*[\"']?[A-Za-z0-9_./+=-]{16,}[\"']?"
@@ -190,6 +202,8 @@ def _write_bytes_create(path: Path, value: bytes) -> None:
     try:
         with path.open("xb") as handle:
             handle.write(value)
+            handle.flush()
+            os.fsync(handle.fileno())
     except FileExistsError as exc:
         raise EvalError(f"output already exists: {path}") from exc
     except OSError as exc:
@@ -369,6 +383,8 @@ def validate_profile(profile: Mapping[str, object]) -> dict[str, object]:
         tool_names.add(name)
         schema_hash = _is_sha256(tool.get("schema_hash"), f"profile.tools[{index}].schema_hash")
         schema = _mapping(tool.get("schema"), f"profile.tools[{index}].schema")
+        if schema_hash != "unavailable" and schema_hash != content_hash(dict(schema)):
+            raise ProfileError(f"profile.tools[{index}].schema_hash does not match schema")
         normalized_tools.append({"name": name, "schema_hash": schema_hash, "schema": dict(schema)})
     normalized["tools"] = normalized_tools
 
@@ -499,6 +515,10 @@ def load_protocol(path: Path = PROTOCOL_PATH) -> dict[str, object]:
     _exact_keys(terminal_states, {"values"}, "protocol.tool_terminal_states")
     if terminal_states.get("values") != list(TOOL_TERMINAL_STATES):
         raise EvalError("protocol tool terminal states do not match the frozen contract")
+    tool_diagnostics = _mapping(protocol.get("tool_diagnostics"), "protocol.tool_diagnostics")
+    _exact_keys(tool_diagnostics, {"fields"}, "protocol.tool_diagnostics")
+    if tool_diagnostics.get("fields") != list(TOOL_DIAGNOSTIC_FIELDS):
+        raise EvalError("protocol tool diagnostics do not match the frozen contract")
 
     evidence = _mapping(protocol.get("evidence"), "protocol.evidence")
     _exact_keys(evidence, {"required"}, "protocol.evidence")
@@ -601,16 +621,21 @@ def run_command(
     cwd: Path,
     env: dict[str, str] | None = None,
     capture: bool = False,
+    timeout: float | None = None,
 ) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        command,
-        cwd=cwd,
-        env=env,
-        check=False,
-        text=True,
-        stdout=subprocess.PIPE if capture else None,
-        stderr=subprocess.STDOUT if capture else None,
-    )
+    try:
+        return subprocess.run(
+            command,
+            cwd=cwd,
+            env=env,
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE if capture else None,
+            stderr=subprocess.STDOUT if capture else None,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise EvalError("evaluation command timed out") from exc
 
 
 def git_archive(
@@ -740,7 +765,11 @@ def verification_command(task: Task, workspace: Path, verifier_root: Path) -> li
 
 
 def run_verification(
-    task: Task, workspace: Path, *, capture: bool = False
+    task: Task,
+    workspace: Path,
+    *,
+    capture: bool = False,
+    timeout_seconds: float | None = None,
 ) -> subprocess.CompletedProcess[str]:
     workspace = workspace.resolve()
     verify_marker(task, workspace)
@@ -762,6 +791,9 @@ def run_verification(
             cwd=workspace,
             env=environment,
             capture=capture,
+            timeout=DEFAULT_VERIFIER_TIMEOUT_SECONDS
+            if timeout_seconds is None
+            else timeout_seconds,
         )
 
 
@@ -791,9 +823,12 @@ def _git_commit(workspace: Path) -> str:
     return result.stdout.strip()
 
 
-def _git_status_lines(workspace: Path) -> list[str]:
+def _git_status_lines(workspace: Path, *, include_ignored: bool = False) -> list[str]:
+    command = ["git", "status", "--porcelain=v1", "--untracked-files=all"]
+    if include_ignored:
+        command.append("--ignored")
     result = subprocess.run(
-        ["git", "status", "--porcelain=v1", "--untracked-files=all"],
+        command,
         cwd=workspace,
         check=False,
         capture_output=True,
@@ -819,18 +854,92 @@ def _status_entries(lines: list[str]) -> list[dict[str, str]]:
     return entries
 
 
-def _git_diff(workspace: Path) -> str:
+def _workspace_unsafe_paths(workspace: Path) -> list[str]:
+    unsafe: list[str] = []
+    pending = [workspace.resolve()]
+    while pending:
+        directory = pending.pop()
+        try:
+            children = sorted(os.scandir(directory), key=lambda entry: entry.name)
+        except OSError as exc:
+            raise EvalError("unable to inspect workspace files") from exc
+        for entry in children:
+            relative = Path(entry.path).relative_to(workspace.resolve())
+            try:
+                entry_stat = entry.stat(follow_symlinks=False)
+            except OSError as exc:
+                raise EvalError("unable to inspect workspace files") from exc
+            mode = entry_stat.st_mode
+            if relative == Path(".git"):
+                if stat.S_ISDIR(mode):
+                    continue
+                unsafe.append(relative.as_posix())
+                continue
+            if relative.parts and relative.parts[0] == ".git":
+                continue
+            if stat.S_ISLNK(mode):
+                unsafe.append(relative.as_posix())
+            elif stat.S_ISDIR(mode):
+                pending.append(Path(entry.path))
+            elif not stat.S_ISREG(mode) or entry_stat.st_nlink > 1:
+                unsafe.append(relative.as_posix())
+    return sorted(set(unsafe))
+
+
+def _validate_workspace_root(bundle: Path, workspace: Path) -> None:
+    try:
+        mode = workspace.lstat().st_mode
+        resolved = workspace.resolve(strict=True)
+    except OSError as exc:
+        raise EvalError("run bundle workspace is missing or unreadable") from exc
+    expected = bundle.resolve() / "workspace"
+    if not stat.S_ISDIR(mode) or resolved != expected:
+        raise EvalError("run bundle workspace must be a real directory inside the bundle")
+
+
+def _git_diff(workspace: Path, entries: list[dict[str, str]]) -> bytes:
     result = subprocess.run(
-        ["git", "diff", "--no-ext-diff", "--binary", "--no-renames"],
+        [
+            "git",
+            "diff",
+            "HEAD",
+            "--no-ext-diff",
+            "--binary",
+            "--no-renames",
+            "--no-color",
+        ],
         cwd=workspace,
         check=False,
         capture_output=True,
-        text=True,
     )
     if result.returncode:
         raise EvalError("unable to collect workspace Git diff")
-    _reject_sensitive_text(result.stdout, "workspace diff")
-    return result.stdout
+    chunks = [result.stdout]
+    unsafe_paths = set(_workspace_unsafe_paths(workspace))
+    for entry in entries:
+        if entry["status"] != "??" or entry["path"] in unsafe_paths:
+            continue
+        untracked = subprocess.run(
+            [
+                "git",
+                "diff",
+                "--no-index",
+                "--binary",
+                "--no-color",
+                "--",
+                "/dev/null",
+                entry["path"],
+            ],
+            cwd=workspace,
+            check=False,
+            capture_output=True,
+        )
+        if untracked.returncode not in {0, 1}:
+            raise EvalError("unable to collect untracked workspace diff")
+        chunks.append(untracked.stdout)
+    value = b"\n".join(chunk for chunk in chunks if chunk)
+    _reject_sensitive_text(value.decode("utf-8", errors="replace"), "workspace diff")
+    return value
 
 
 def _source_status(root: Path, *, diagnostic_dirty: bool) -> dict[str, object]:
@@ -936,6 +1045,9 @@ def start_run(
         output.mkdir(parents=True)
         workspace = output / "workspace"
         prepare_task(task, workspace)
+        unsafe_paths = _workspace_unsafe_paths(workspace)
+        if unsafe_paths:
+            raise EvalError("prepared workspace contains unsafe file types")
         manifest: dict[str, object] = {
             "schema": "morrow.s7p-00.run-manifest.v1",
             "run": {
@@ -949,7 +1061,7 @@ def start_run(
             },
             "source": {
                 "repository": "morrow",
-                "evaluator_commit": _git_commit(REPOSITORY_ROOT),
+                "evaluator_commit": _git_commit(source_root),
                 "dirty": source_dirty,
             },
             "dataset": dataset_snapshot,
@@ -976,11 +1088,22 @@ def start_run(
 
 
 def _manifest_path(value: Path) -> Path:
-    path = value.resolve()
+    path = value.absolute()
     if path.is_dir():
         path = path / "run-manifest.json"
     if path.name != "run-manifest.json":
         raise EvalError("manifest path must name run-manifest.json")
+    return path
+
+
+def _regular_artifact(path: Path, label: str) -> Path:
+    try:
+        mode = path.lstat().st_mode
+        resolved = path.resolve(strict=True)
+    except OSError as exc:
+        raise EvalError(f"{label} is missing or unreadable") from exc
+    if not stat.S_ISREG(mode) or resolved != path:
+        raise EvalError(f"{label} must be a regular file inside the run bundle")
     return path
 
 
@@ -1170,6 +1293,7 @@ def _validate_manifest(manifest: Mapping[str, object]) -> str:
 
 def read_manifest(path: Path) -> dict[str, object]:
     manifest_path = _manifest_path(path)
+    _regular_artifact(manifest_path, "run manifest")
     return _read_json(manifest_path, "run manifest")
 
 
@@ -1180,7 +1304,9 @@ def _current_dataset_snapshot() -> dict[str, str]:
     }
 
 
-def _validate_current_revisions(manifest: Mapping[str, object]) -> None:
+def _validate_current_revisions(
+    manifest: Mapping[str, object], *, source_root: Path | None = None
+) -> None:
     protocol = _mapping(manifest["protocol"], "run manifest.protocol")
     current_protocol = load_protocol()
     if protocol["id"] != current_protocol["protocol"]["id"]:
@@ -1197,6 +1323,14 @@ def _validate_current_revisions(manifest: Mapping[str, object]) -> None:
         or dataset["sha256"] != current_dataset["sha256"]
     ):
         raise EvalError("dataset hash mismatch")
+    if source_root is not None:
+        source_root = source_root.resolve()
+        _source_status(source_root, diagnostic_dirty=False)
+        source = _mapping(manifest["source"], "run manifest.source")
+        if source["evaluator_commit"] != _git_commit(source_root):
+            raise EvalError("evaluator commit mismatch")
+        if manifest["configuration"] != _file_snapshot(source_root):
+            raise EvalError("configuration snapshot mismatch")
 
 
 def rebuild_workspace(
@@ -1210,11 +1344,11 @@ def rebuild_workspace(
     manifest_path = _manifest_path(manifest_path)
     manifest = read_manifest(manifest_path)
     _validate_manifest(manifest)
-    _validate_current_revisions(manifest)
+    source_root = source_root.resolve()
+    _validate_current_revisions(manifest, source_root=source_root)
     task = task_by_id(str(manifest["run"]["task_id"]))
     if manifest["source"]["dirty"]["comparison_eligible"] is False:
         raise EvalError("dirty diagnostic manifest cannot be used for a comparable rebuild")
-    source_root = source_root.resolve()
     output = output.resolve()
     if output.exists():
         raise EvalError(f"output already exists: {output}")
@@ -1222,6 +1356,9 @@ def rebuild_workspace(
         raise EvalError("rebuilt workspace must be outside the evaluator and source checkout")
     try:
         prepare_task(task, output)
+        unsafe_paths = _workspace_unsafe_paths(output)
+        if unsafe_paths:
+            raise EvalError("rebuilt workspace contains unsafe file types")
         expected_workspace = _mapping(manifest["workspace"], "run manifest.workspace")
         if git_tree_hash(output) != expected_workspace["baseline_tree_sha256"]:
             raise EvalError("rebuilt workspace baseline tree mismatch")
@@ -1233,14 +1370,14 @@ def rebuild_workspace(
     return output
 
 
-def _unavailable_runtime(reason: str = "runtime evidence was not supplied") -> dict[str, object]:
+def _unavailable_runtime() -> dict[str, object]:
     return {
         "schema_version": 1,
         "availability": "unavailable",
         "tool_states": {state: "unavailable" for state in TOOL_TERMINAL_STATES},
         "tool_diagnostics": {field: "unavailable" for field in TOOL_DIAGNOSTIC_FIELDS},
         "usage": {field: "unavailable" for field in USAGE_FIELDS},
-        "stop": {"code": "evidence_unavailable", "reason": reason},
+        "stop": {"code": "evidence_unavailable", "reason": "evidence_unavailable"},
     }
 
 
@@ -1321,52 +1458,76 @@ def normalize_runtime_evidence(
     ):
         raise EvalError("unavailable runtime evidence must not contain numeric metrics")
 
+    if availability == "available" and all(
+        value != "unavailable" for section in (states, diagnostics) for value in section.values()
+    ):
+        total_tool_calls = diagnostics["total_tool_calls"]
+        unaccounted_tool_calls = diagnostics["unaccounted_tool_calls"]
+        terminal_tool_calls = sum(states.values())
+        if total_tool_calls != terminal_tool_calls + unaccounted_tool_calls:
+            raise EvalError("runtime evidence tool terminal accounting is inconsistent")
+        if diagnostics["invalid_arguments"] > total_tool_calls:
+            raise EvalError("runtime evidence invalid argument count is inconsistent")
+        if diagnostics["basic_tool_blocked"] > total_tool_calls:
+            raise EvalError("runtime evidence basic-tool blocker count is inconsistent")
+
     stop_mapping = _mapping(raw.get("stop"), "runtime evidence.stop")
     _exact_keys(stop_mapping, {"code", "reason"}, "runtime evidence.stop")
     stop_code = _text(stop_mapping.get("code"), "runtime evidence.stop.code")
     if stop_code not in STOP_CODES:
         raise EvalError("runtime evidence stop code is invalid")
-    normalized["stop"] = {"code": stop_code, "reason": _safe_reason(stop_mapping.get("reason"))}
+    stop_reason = _text(stop_mapping.get("reason"), "runtime evidence.stop.reason")
+    if stop_reason != stop_code:
+        raise EvalError("runtime evidence stop reason must equal its stop code")
     if availability == "unavailable" and stop_code != "evidence_unavailable":
-        normalized["stop"] = {
-            "code": "evidence_unavailable",
-            "reason": "runtime evidence was marked unavailable",
-        }
+        raise EvalError("unavailable runtime evidence must use evidence_unavailable stop code")
+    normalized["stop"] = {"code": stop_code, "reason": stop_code}
     return normalized
 
 
-def _bounded_patch(patch: str) -> tuple[bytes, bool]:
-    raw = patch.encode("utf-8")
-    if len(raw) <= MAX_TEXT_BYTES:
-        return raw, False
-    return raw[:MAX_TEXT_BYTES], True
+def _bounded_patch(patch: bytes) -> tuple[bytes, bool]:
+    if len(patch) <= MAX_TEXT_BYTES:
+        return patch, False
+    return patch[:MAX_TEXT_BYTES], True
 
 
 def _collect_workspace_evidence(workspace: Path) -> tuple[dict[str, object], bytes, bool]:
     try:
-        lines = _git_status_lines(workspace)
+        lines = _git_status_lines(workspace, include_ignored=True)
         entries = _status_entries(lines)
-        patch = _git_diff(workspace)
+        unsafe_paths = _workspace_unsafe_paths(workspace)
+        patch = _git_diff(workspace, entries)
     except EvalError:
         status = {
             "schema_version": 1,
             "availability": "unavailable",
             "error_code": "workspace_git_unavailable",
             "changed_paths": [],
+            "ignored_paths": [],
+            "unsafe_paths": [],
             "entries": [],
             "path_count": 0,
             "truncated": False,
             "patch_truncated": False,
         }
         return status, b"", False
+    all_changed_paths = sorted({entry["path"] for entry in entries} | set(unsafe_paths))
+    changed_paths = all_changed_paths[:MAX_STATUS_ENTRIES]
+    bounded_unsafe_paths = [path for path in unsafe_paths if path in set(changed_paths)]
     patch_bytes, patch_truncated = _bounded_patch(patch)
     status = {
         "schema_version": 1,
         "availability": "available",
         "entries": entries[:MAX_STATUS_ENTRIES],
-        "changed_paths": sorted({entry["path"] for entry in entries}),
-        "path_count": len(entries),
-        "truncated": len(entries) > MAX_STATUS_ENTRIES,
+        "changed_paths": changed_paths,
+        "ignored_paths": sorted(
+            path
+            for path in {entry["path"] for entry in entries if entry["status"] == "!!"}
+            if path in set(changed_paths)
+        ),
+        "unsafe_paths": bounded_unsafe_paths,
+        "path_count": max(len(all_changed_paths), len(entries)),
+        "truncated": max(len(all_changed_paths), len(entries)) > MAX_STATUS_ENTRIES,
         "patch_truncated": patch_truncated,
         "status_sha256": bytes_hash("\n".join(lines).encode("utf-8")),
     }
@@ -1379,6 +1540,7 @@ def _classify(
     verifier_passed: bool,
     unexpected: list[str],
     expected_change_present: bool,
+    required_paths_present: bool,
     runtime: Mapping[str, object],
 ) -> tuple[str, str]:
     if runtime["availability"] == "unavailable":
@@ -1398,6 +1560,8 @@ def _classify(
         return mapped[stop_code], f"run stopped with {stop_code}"
     if verifier_passed and unexpected:
         return "FAIL_MODEL", "verifier passed but unexpected workspace changes were recorded"
+    if verifier_passed and not required_paths_present:
+        return "FAIL_MODEL", "verifier passed but required workspace changes were missing"
     if verifier_passed and not expected_change_present:
         return "FAIL_MODEL", "verifier passed but no expected change was recorded"
     if verifier_passed:
@@ -1418,6 +1582,92 @@ def _read_verifier_output(result: subprocess.CompletedProcess[str]) -> bytes:
     return raw
 
 
+def _verifier_timeout(manifest: Mapping[str, object]) -> float:
+    profile = _mapping(manifest["profile"], "run manifest.profile")
+    budgets = _mapping(profile["budgets"], "run manifest.profile.budgets")
+    deadline = budgets["deadline_seconds"]
+    if deadline == "unavailable":
+        return DEFAULT_VERIFIER_TIMEOUT_SECONDS
+    return min(float(deadline), DEFAULT_VERIFIER_TIMEOUT_SECONDS)
+
+
+def _cleanup_partial_finalization(bundle: Path) -> None:
+    run_result = bundle / "run-result.json"
+    has_run_result = run_result.exists() or run_result.is_symlink()
+    complete_artifacts = all(
+        (bundle / filename).is_file() and not (bundle / filename).is_symlink()
+        for filename in REQUIRED_EVIDENCE[1:]
+    )
+    if has_run_result and complete_artifacts:
+        raise EvalError("run bundle is already finalized: run-result.json")
+    existing = [
+        bundle / filename
+        for filename in REQUIRED_EVIDENCE[1:]
+        if (bundle / filename).exists() or (bundle / filename).is_symlink()
+    ]
+    if has_run_result and run_result not in existing:
+        existing.append(run_result)
+    for path in existing:
+        try:
+            path.unlink()
+        except OSError as exc:
+            raise EvalError("unable to clear incomplete finalization") from exc
+    try:
+        stale_staging = [
+            path
+            for path in bundle.iterdir()
+            if path.name.startswith(".finalize-") and path.is_dir()
+        ]
+        for path in stale_staging:
+            shutil.rmtree(path)
+    except OSError as exc:
+        raise EvalError("unable to clear incomplete finalization") from exc
+
+
+def _fsync_directory(path: Path) -> None:
+    try:
+        descriptor = os.open(path, os.O_RDONLY)
+        try:
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+    except OSError as exc:
+        raise EvalError("unable to commit evaluation artifacts") from exc
+
+
+def _write_finalization_artifacts(bundle: Path, artifacts: Mapping[str, bytes]) -> None:
+    staging: Path | None = None
+    promoted: list[Path] = []
+    try:
+        staging = Path(tempfile.mkdtemp(prefix=".finalize-", dir=bundle))
+        for filename in REQUIRED_EVIDENCE[1:]:
+            if filename not in artifacts:
+                raise EvalError(f"finalization artifact is missing: {filename}")
+            _write_bytes_create(staging / filename, artifacts[filename])
+        _fsync_directory(staging)
+        for filename in REQUIRED_EVIDENCE[1:]:
+            destination = bundle / filename
+            if destination.exists() or destination.is_symlink():
+                raise EvalError(f"run bundle artifact already exists: {filename}")
+            os.replace(staging / filename, destination)
+            promoted.append(destination)
+        _fsync_directory(bundle)
+    except (EvalError, OSError) as exc:
+        for path in reversed(promoted):
+            try:
+                path.unlink()
+            except OSError:
+                pass
+        if staging is not None:
+            shutil.rmtree(staging, ignore_errors=True)
+        if isinstance(exc, EvalError):
+            raise
+        raise EvalError("unable to commit evaluation artifacts") from exc
+    else:
+        if staging is not None:
+            shutil.rmtree(staging, ignore_errors=True)
+
+
 def finalize_run(
     manifest_path: Path,
     runtime_evidence: Mapping[str, object] | Path | None = None,
@@ -1430,26 +1680,33 @@ def finalize_run(
     _validate_manifest(manifest)
     task = task_by_id(str(manifest["run"]["task_id"]))
     workspace = bundle / "workspace"
-    if not workspace.is_dir():
-        raise EvalError("run bundle workspace is missing")
-    for filename in REQUIRED_EVIDENCE[1:]:
-        if (bundle / filename).exists():
-            raise EvalError(f"run bundle is already finalized: {filename}")
+    _validate_workspace_root(bundle, workspace)
+    _cleanup_partial_finalization(bundle)
 
     runtime = normalize_runtime_evidence(runtime_evidence)
     verifier_status = "not_run"
     verifier_returncode: int | str = "unavailable"
     verifier_passed = False
-    try:
-        verification = run_verification(task, workspace, capture=True)
-    except EvalError:
+    unsafe_workspace_paths = _workspace_unsafe_paths(workspace)
+    if unsafe_workspace_paths:
         verifier_status = "error"
-        verifier_bytes = b"external verifier could not be invoked\n"
+        verifier_bytes = b"external verifier skipped: unsafe workspace file types\n"
     else:
-        verifier_status = "completed"
-        verifier_returncode = verification.returncode
-        verifier_passed = verification.returncode == 0
-        verifier_bytes = _read_verifier_output(verification)
+        try:
+            verification = run_verification(
+                task,
+                workspace,
+                capture=True,
+                timeout_seconds=_verifier_timeout(manifest),
+            )
+        except EvalError:
+            verifier_status = "error"
+            verifier_bytes = b"external verifier could not be invoked\n"
+        else:
+            verifier_status = "completed"
+            verifier_returncode = verification.returncode
+            verifier_passed = verification.returncode == 0
+            verifier_bytes = _read_verifier_output(verification)
     status, patch_bytes, git_evidence_complete = _collect_workspace_evidence(workspace)
     changed_paths = list(status["changed_paths"]) if status["availability"] == "available" else []
     policy = _mapping(
@@ -1458,11 +1715,13 @@ def finalize_run(
     allowed_paths = set(policy["allowed_paths"])
     required_paths = set(policy["required_paths"])
     expected_changed = sorted(set(changed_paths) & allowed_paths)
-    unexpected = sorted(set(changed_paths) - allowed_paths)
+    unsafe_paths = set(status.get("unsafe_paths", []))
+    unexpected = sorted((set(changed_paths) - allowed_paths) | unsafe_paths)
     missing_required = sorted(required_paths - set(expected_changed))
     expected_change_present = bool(expected_changed) or not policy["requires_change"]
+    required_paths_present = not missing_required
     evidence_complete = (
-        runtime["availability"] == "available"
+        _runtime_evidence_complete(runtime)
         and status["availability"] == "available"
         and git_evidence_complete
         and verifier_status != "error"
@@ -1472,6 +1731,7 @@ def finalize_run(
         verifier_passed=verifier_passed,
         unexpected=unexpected,
         expected_change_present=expected_change_present,
+        required_paths_present=required_paths_present,
         runtime=runtime,
     )
     pass_eligible = (
@@ -1479,6 +1739,7 @@ def finalize_run(
         and verifier_passed
         and not unexpected
         and expected_change_present
+        and required_paths_present
         and evidence_complete
         and manifest["source"]["dirty"]["comparison_eligible"]
         and _mapping(runtime["stop"], "runtime evidence.stop")["code"] == "completed"
@@ -1527,6 +1788,7 @@ def finalize_run(
             "pass_eligible": pass_eligible,
             "evidence_complete": evidence_complete,
             "expected_change_present": expected_change_present,
+            "required_paths_present": required_paths_present,
             "source_comparison_eligible": manifest["source"]["dirty"]["comparison_eligible"],
         },
         "tool_states": runtime["tool_states"],
@@ -1536,11 +1798,16 @@ def finalize_run(
         "evidence": evidence,
     }
     result["integrity"] = {"algorithm": "sha256", "sha256": content_hash(result)}
-    _write_json_create(bundle / "runtime-evidence.json", runtime)
-    _write_bytes_create(bundle / "verifier-output.txt", verifier_bytes)
-    _write_json_create(bundle / "workspace-status.json", status)
-    _write_bytes_create(bundle / "workspace-diff.patch", patch_bytes)
-    _write_json_create(bundle / "run-result.json", result)
+    _write_finalization_artifacts(
+        bundle,
+        {
+            "runtime-evidence.json": runtime_bytes,
+            "verifier-output.txt": verifier_bytes,
+            "workspace-status.json": status_bytes,
+            "workspace-diff.patch": patch_bytes,
+            "run-result.json": canonical_json(result).encode("utf-8"),
+        },
+    )
     return result
 
 
@@ -1576,6 +1843,8 @@ def _validate_workspace_status(value: Mapping[str, object]) -> dict[str, object]
                 "availability",
                 "entries",
                 "changed_paths",
+                "ignored_paths",
+                "unsafe_paths",
                 "path_count",
                 "truncated",
                 "patch_truncated",
@@ -1591,6 +1860,8 @@ def _validate_workspace_status(value: Mapping[str, object]) -> dict[str, object]
                 "availability",
                 "error_code",
                 "changed_paths",
+                "ignored_paths",
+                "unsafe_paths",
                 "entries",
                 "path_count",
                 "truncated",
@@ -1611,18 +1882,31 @@ def _validate_workspace_status(value: Mapping[str, object]) -> dict[str, object]
         if len(status_code) != 2:
             raise EvalError("workspace status entry code is invalid")
         entry_paths.append(_safe_path(entry.get("path"), "workspace status entry path"))
-    changed_paths = status.get("changed_paths")
-    if not isinstance(changed_paths, list) or any(
-        not isinstance(path, str) for path in changed_paths
-    ):
-        raise EvalError("workspace status changed paths are invalid")
-    normalized_changed = [
-        _safe_path(path, "workspace status changed path") for path in changed_paths
-    ]
-    if normalized_changed != sorted(set(normalized_changed)):
-        raise EvalError("workspace status changed paths are not canonical")
+    normalized_lists: dict[str, list[str]] = {}
+    for field in ("changed_paths", "ignored_paths", "unsafe_paths"):
+        paths = status.get(field)
+        if (
+            not isinstance(paths, list)
+            or len(paths) > MAX_STATUS_ENTRIES
+            or any(not isinstance(path, str) for path in paths)
+        ):
+            raise EvalError(f"workspace status {field} are invalid")
+        normalized_lists[field] = [
+            _safe_path(path, f"workspace status {field} path") for path in paths
+        ]
+        if normalized_lists[field] != sorted(set(normalized_lists[field])):
+            raise EvalError(f"workspace status {field} are not canonical")
+    normalized_changed = normalized_lists["changed_paths"]
+    if not set(normalized_lists["ignored_paths"]).issubset(normalized_changed):
+        raise EvalError("workspace status ignored paths are inconsistent")
+    if not set(normalized_lists["unsafe_paths"]).issubset(normalized_changed):
+        raise EvalError("workspace status unsafe paths are inconsistent")
     path_count = status.get("path_count")
-    if type(path_count) is not int or path_count < len(entries):
+    if (
+        type(path_count) is not int
+        or path_count < len(entries)
+        or path_count < len(normalized_changed)
+    ):
         raise EvalError("workspace status path count is invalid")
     truncated = status.get("truncated")
     patch_truncated = status.get("patch_truncated")
@@ -1630,13 +1914,35 @@ def _validate_workspace_status(value: Mapping[str, object]) -> dict[str, object]
         raise EvalError("workspace status truncation flags are invalid")
     if truncated != (path_count > MAX_STATUS_ENTRIES):
         raise EvalError("workspace status truncation is inconsistent")
-    if not truncated and normalized_changed != sorted(set(entry_paths)):
+    if not truncated and normalized_changed != sorted(
+        set(entry_paths) | set(normalized_lists["unsafe_paths"])
+    ):
         raise EvalError("workspace status changed paths do not match entries")
     if availability == "available":
         _is_sha256(status.get("status_sha256"), "workspace status hash")
-    elif entries or normalized_changed or path_count or truncated or patch_truncated:
+    elif (
+        entries
+        or normalized_changed
+        or normalized_lists["ignored_paths"]
+        or normalized_lists["unsafe_paths"]
+        or path_count
+        or truncated
+        or patch_truncated
+    ):
         raise EvalError("unavailable workspace status contains change evidence")
     return status
+
+
+def _runtime_evidence_complete(runtime: Mapping[str, object]) -> bool:
+    return runtime["availability"] == "available" and all(
+        value != "unavailable"
+        for section in (
+            runtime["tool_states"],
+            runtime["tool_diagnostics"],
+            runtime["usage"],
+        )
+        for value in section.values()
+    )
 
 
 def validate_run_bundle(bundle: Path) -> dict[str, object]:
@@ -1644,10 +1950,12 @@ def validate_run_bundle(bundle: Path) -> dict[str, object]:
 
     bundle = bundle.resolve()
     manifest_path = _manifest_path(bundle)
+    _regular_artifact(manifest_path, "run manifest")
     manifest = read_manifest(manifest_path)
     manifest_hash = _validate_manifest(manifest)
     _validate_current_revisions(manifest)
-    result = _read_json(bundle / "run-result.json", "run result")
+    result_path = _regular_artifact(bundle / "run-result.json", "run result")
+    result = _read_json(result_path, "run result")
     _reject_sensitive_content(result, "run result")
     _exact_keys(
         result,
@@ -1696,16 +2004,17 @@ def validate_run_bundle(bundle: Path) -> dict[str, object]:
         _is_sha256(metadata.get("sha256"), f"run result.evidence.{filename}.sha256")
         if type(metadata.get("bytes")) is not int or metadata["bytes"] < 0:
             raise EvalError("run result evidence byte count is invalid")
-        path = bundle / filename
-        if not path.is_file():
-            raise EvalError(f"missing evidence artifact: {filename}")
+        path = _regular_artifact(bundle / filename, f"evidence artifact {filename}")
         if file_hash(path) != metadata["sha256"] or path.stat().st_size != metadata["bytes"]:
             raise EvalError(f"evidence hash mismatch: {filename}")
     if evidence["run-manifest.json"]["sha256"] != file_hash(manifest_path):
         raise EvalError("run result manifest hash mismatch")
 
     runtime = _validate_runtime_artifact(
-        _read_json(bundle / "runtime-evidence.json", "runtime evidence")
+        _read_json(
+            _regular_artifact(bundle / "runtime-evidence.json", "runtime evidence"),
+            "runtime evidence",
+        )
     )
     if (
         runtime["tool_states"] != result["tool_states"]
@@ -1715,10 +2024,19 @@ def validate_run_bundle(bundle: Path) -> dict[str, object]:
     if runtime["usage"] != result["usage"] or runtime["stop"] != result["stop"]:
         raise EvalError("run result runtime evidence mismatch")
     status = _validate_workspace_status(
-        _read_json(bundle / "workspace-status.json", "workspace status")
+        _read_json(
+            _regular_artifact(bundle / "workspace-status.json", "workspace status"),
+            "workspace status",
+        )
     )
-    _read_bounded_text_file(bundle / "verifier-output.txt", "verifier output")
-    _read_bounded_text_file(bundle / "workspace-diff.patch", "workspace diff")
+    _read_bounded_text_file(
+        _regular_artifact(bundle / "verifier-output.txt", "verifier output"),
+        "verifier output",
+    )
+    _read_bounded_text_file(
+        _regular_artifact(bundle / "workspace-diff.patch", "workspace diff"),
+        "workspace diff",
+    )
 
     result_section = _mapping(result["result"], "run result.result")
     _exact_keys(result_section, {"class", "reason", "reason_code"}, "run result.result")
@@ -1730,8 +2048,8 @@ def validate_run_bundle(bundle: Path) -> dict[str, object]:
     verifier = _mapping(result["verifier"], "run result.verifier")
     _exact_keys(verifier, {"status", "exit_code", "passed"}, "run result.verifier")
     verifier_status = verifier.get("status")
-    if verifier_status not in {"not_run", "completed", "error"}:
-        raise EvalError("run result verifier status is invalid")
+    if verifier_status not in {"completed", "error"}:
+        raise EvalError("finalized run result must contain verifier evidence")
     exit_code = verifier.get("exit_code")
     if verifier_status == "completed":
         if isinstance(exit_code, bool) or not isinstance(exit_code, int):
@@ -1766,7 +2084,8 @@ def validate_run_bundle(bundle: Path) -> dict[str, object]:
     allowed_paths = set(policy["allowed_paths"])
     required_paths = set(policy["required_paths"])
     expected_paths = sorted(set(normalized_paths["changed"]) & allowed_paths)
-    unexpected_paths = sorted(set(normalized_paths["changed"]) - allowed_paths)
+    unsafe_paths = set(status.get("unsafe_paths", []))
+    unexpected_paths = sorted((set(normalized_paths["changed"]) - allowed_paths) | unsafe_paths)
     missing_required = sorted(required_paths - set(expected_paths))
     if (
         normalized_paths["expected"] != expected_paths
@@ -1781,6 +2100,7 @@ def validate_run_bundle(bundle: Path) -> dict[str, object]:
             "pass_eligible",
             "evidence_complete",
             "expected_change_present",
+            "required_paths_present",
             "source_comparison_eligible",
         },
         "run result.quality",
@@ -1788,8 +2108,9 @@ def validate_run_bundle(bundle: Path) -> dict[str, object]:
     if any(not isinstance(quality[field], bool) for field in quality):
         raise EvalError("run result quality evidence is invalid")
     expected_change_present = bool(expected_paths) or not policy["requires_change"]
+    required_paths_present = not missing_required
     evidence_complete = (
-        runtime["availability"] == "available"
+        _runtime_evidence_complete(runtime)
         and status["availability"] == "available"
         and not status["truncated"]
         and not status["patch_truncated"]
@@ -1800,6 +2121,7 @@ def validate_run_bundle(bundle: Path) -> dict[str, object]:
         verifier_passed=verifier["passed"],
         unexpected=unexpected_paths,
         expected_change_present=expected_change_present,
+        required_paths_present=required_paths_present,
         runtime=runtime,
     )
     source_comparison_eligible = manifest["source"]["dirty"]["comparison_eligible"]
@@ -1808,6 +2130,7 @@ def validate_run_bundle(bundle: Path) -> dict[str, object]:
         and verifier["passed"]
         and not unexpected_paths
         and expected_change_present
+        and required_paths_present
         and evidence_complete
         and source_comparison_eligible
         and runtime["stop"]["code"] == "completed"
@@ -1823,6 +2146,7 @@ def validate_run_bundle(bundle: Path) -> dict[str, object]:
         "pass_eligible": pass_eligible,
         "evidence_complete": evidence_complete,
         "expected_change_present": expected_change_present,
+        "required_paths_present": required_paths_present,
         "source_comparison_eligible": source_comparison_eligible,
     }
     if dict(quality) != expected_quality:
@@ -1840,17 +2164,19 @@ def validate_run_bundle(bundle: Path) -> dict[str, object]:
 
 
 def _bundle_paths(root: Path) -> list[Path]:
-    paths: list[Path] = []
     if root.is_file() and root.name == "run-result.json":
+        return [root.parent]
+    if root.is_file() and root.name == "run-manifest.json":
         return [root.parent]
     if not root.is_dir():
         return []
-    for result_path in sorted(root.rglob("run-result.json")):
-        if result_path.is_symlink() or not result_path.parent.is_dir():
-            continue
-        if (result_path.parent / "run-manifest.json").is_file():
-            paths.append(result_path.parent)
-    return paths
+    bundle_paths: set[Path] = set()
+    for filename in ("run-manifest.json", "run-result.json"):
+        for artifact_path in sorted(root.rglob(filename)):
+            if not artifact_path.parent.is_dir():
+                continue
+            bundle_paths.add(artifact_path.parent)
+    return sorted(bundle_paths)
 
 
 def _sum_numeric(entries: list[dict[str, object]], field: str) -> int | float | str:
@@ -1907,39 +2233,62 @@ def _gate_for_entries(
             diagnostics.append(f"repetition {repetition}: FAIL_RUNTIME present")
 
     unexpected_count = sum(len(entry["result"]["paths"]["unexpected"]) for entry in entries)
-    basic_blocked = sum(
-        1
-        for entry in entries
-        if entry["result"]["result"]["class"] == "BLOCKED_ENV"
-        and entry["result"]["result"]["reason_code"] == "environment_blocked"
-    )
     no_diff_success = sum(
         1
         for entry in entries
         if entry["result"]["result"]["class"] == "PASS"
         and not entry["result"]["quality"]["expected_change_present"]
     )
-    invalid_values = [
-        entry["runtime"]["tool_diagnostics"]["invalid_arguments"] for entry in entries
+    diagnostic_values = {
+        field: [entry["runtime"]["tool_diagnostics"][field] for entry in entries]
+        for field in TOOL_DIAGNOSTIC_FIELDS
+    }
+    state_values = [
+        entry["runtime"]["tool_states"][state]
+        for entry in entries
+        for state in TOOL_TERMINAL_STATES
     ]
-    unaccounted_values = [
-        entry["runtime"]["tool_diagnostics"]["unaccounted_tool_calls"] for entry in entries
-    ]
-    tool_values = [value for entry in entries for value in entry["runtime"]["tool_states"].values()]
     metrics_available = not any(
-        value == "unavailable" for value in [*invalid_values, *unaccounted_values, *tool_values]
+        value == "unavailable"
+        for values in [*diagnostic_values.values(), state_values]
+        for value in values
     )
     if metrics_available:
-        invalid_arguments = sum(invalid_values)
-        total_tool_calls = sum(tool_values)
-        unaccounted = sum(unaccounted_values)
-        invalid_fraction = invalid_arguments / total_tool_calls if total_tool_calls else 0.0
+        invalid_arguments = sum(diagnostic_values["invalid_arguments"])
+        total_tool_calls = sum(diagnostic_values["total_tool_calls"])
+        unaccounted = sum(diagnostic_values["unaccounted_tool_calls"])
+        basic_blocked = sum(diagnostic_values["basic_tool_blocked"])
+        invalid_fraction = (
+            invalid_arguments / total_tool_calls if total_tool_calls else "unavailable"
+        )
+        for entry in entries:
+            states = entry["runtime"]["tool_states"]
+            diagnostics_for_entry = entry["runtime"]["tool_diagnostics"]
+            terminal_count = sum(states.values())
+            if diagnostics_for_entry["total_tool_calls"] != (
+                terminal_count + diagnostics_for_entry["unaccounted_tool_calls"]
+            ):
+                diagnostics.append("tool terminal accounting invariant failed")
+            if (
+                diagnostics_for_entry["invalid_arguments"]
+                > diagnostics_for_entry["total_tool_calls"]
+            ):
+                diagnostics.append("invalid argument count exceeded total tool calls")
+            if (
+                diagnostics_for_entry["basic_tool_blocked"]
+                > diagnostics_for_entry["total_tool_calls"]
+            ):
+                diagnostics.append("basic-tool blocker count exceeded total tool calls")
+        if total_tool_calls == 0:
+            diagnostics.append("invalid argument fraction is undefined with zero tool calls")
     else:
         invalid_arguments = "unavailable"
         total_tool_calls = "unavailable"
         unaccounted = "unavailable"
+        basic_blocked = "unavailable"
         invalid_fraction = "unavailable"
-    if basic_blocked > thresholds["max_basic_tool_blocked"]:
+        diagnostics.append("tool diagnostics are unavailable")
+    if basic_blocked != "unavailable" and basic_blocked > thresholds["max_basic_tool_blocked"]:
         diagnostics.append("basic-tool environment blocker threshold failed")
     if no_diff_success > thresholds["max_success_without_expected_diff"]:
         diagnostics.append("success without an expected diff was recorded")
@@ -2162,19 +2511,24 @@ def self_check(selected: tuple[Task, ...]) -> int:
             baseline_result = run_verification(task, baseline, capture=True)
             prepare_task(task, gold, gold=True)
             gold_result = run_verification(task, gold, capture=True)
-            baseline_failed = baseline_result.returncode != 0
-            gold_passed = gold_result.returncode == 0
-            state = "PASS" if baseline_failed and gold_passed else "FAIL"
+            try:
+                _read_verifier_output(baseline_result)
+                _read_verifier_output(gold_result)
+            except EvalError:
+                baseline_failed = False
+                gold_passed = False
+                state = "FAIL"
+            else:
+                baseline_failed = baseline_result.returncode != 0
+                gold_passed = gold_result.returncode == 0
+                state = "PASS" if baseline_failed and gold_passed else "FAIL"
             print(
                 f"{state} {task.id}: baseline={baseline_result.returncode} "
                 f"gold={gold_result.returncode}"
             )
             if state == "FAIL":
                 failures.append(task.id)
-                print("baseline output:")
-                print((baseline_result.stdout or "").strip())
-                print("gold output:")
-                print((gold_result.stdout or "").strip())
+                print("verifier output withheld")
     if failures:
         print(f"self-check failed: {', '.join(failures)}", file=sys.stderr)
         return 1
@@ -2241,7 +2595,9 @@ def main() -> int:
             return 0
         if arguments.command == "verify":
             task = task_by_id(arguments.task_id)
-            return run_verification(task, arguments.workspace).returncode
+            verification = run_verification(task, arguments.workspace, capture=True)
+            _read_verifier_output(verification)
+            return verification.returncode
         if arguments.command == "start":
             bundle = start_run(
                 arguments.task_id,
@@ -2259,7 +2615,7 @@ def main() -> int:
         if arguments.command == "finalize":
             result = finalize_run(arguments.manifest, arguments.runtime_evidence)
             print(canonical_json({"run": result["run"], "result": result["result"]}).strip())
-            return 0
+            return 0 if result["result"]["class"] == "PASS" else 1
         if arguments.command == "summarize":
             summary = summarize_runs(arguments.root, output=arguments.output)
             print(canonical_json(summary).strip())
