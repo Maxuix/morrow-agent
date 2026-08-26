@@ -3119,7 +3119,7 @@
   verification.
 - Final focused affected suite passed `205 passed, 2 skipped in 16.20s`; dedicated S7P-04 suite
   passed `30 passed in 0.81s`; full offline fallback gate passed
-  `1225 passed, 2 skipped, 2 deselected in 50.65s`. `uv run pytest -m 'not live'` could not
+  `1225 passed, 2 skipped, 2 deselected in 50.45s`. `uv run pytest -m 'not live'` could not
   initialize the restricted `/Users/ruirui/.cache/uv`; the documented current-worktree fallback
   interpreter was used. Ruff format/check, compileall, both CLI help commands, current-worktree
   import proof and `git diff --check` passed. No live Provider/model/Pi/MCP/network/credential test
