@@ -2,7 +2,7 @@
 
 > Status: active
 > Branch: `codex/feat/s7p-01-observability-headless`
-> Base: `main@d8d2752752cf7d0d0b057af9db56b3029fd05120`
+> Base: `main@d204a6518d1c7f64193ddb42c33384c8fb320e3d`
 > Dependency: S7P-00 completed and integrated
 
 ## Goal
@@ -217,7 +217,7 @@ acceptance record. Do not run live Provider/model/Pi/MCP/network/credential test
 
 After the first coherent verified implementation commit, the implementation task must spawn a
 Luna Max review subagent. The reviewer is read-only and examines the complete
-`d8d2752752cf7d0d0b057af9db56b3029fd05120...HEAD` diff for:
+`d204a6518d1c7f64193ddb42c33384c8fb320e3d...HEAD` diff for:
 
 - lost or double-counted usage, especially trailing chunks and retries;
 - crash/idempotency and illegal observation transitions;

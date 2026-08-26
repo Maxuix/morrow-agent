@@ -3,7 +3,7 @@
 > Status: active
 > Active subplan: 80 — safe AgentRun observability and a headless execution entrypoint
 > Branch: `codex/feat/s7p-01-observability-headless`
-> Base: verified local `main@d8d2752752cf7d0d0b057af9db56b3029fd05120`
+> Base: verified local `main@d204a6518d1c7f64193ddb42c33384c8fb320e3d`
 > Source authority: the user-requested S7P-01 checklist, current code, and deterministic checks
 
 ## 1. Objective

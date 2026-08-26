@@ -2950,3 +2950,23 @@
 - Only scripted Providers and temporary stores are authorized for S7P-01 validation. Credentials,
   reasoning, prompts/messages, full tool arguments/results, SDK objects and tracebacks remain barred
   from Operational Store, events, JSONL, YAML and terminal diagnostics.
+
+## 2026-08-26 — Subplan 80 initial implementation and offline gates complete
+
+- Corrected the implementation base to `main@d204a6518d1c7f64193ddb42c33384c8fb320e3d` (the earlier
+  activation note above records the stale pre-integration base). Implemented normalized Provider
+  usage with leading/trailing usage-only stream handling, additive v17 AgentRun request/terminal
+  observations, context pressure counters, value-free validation diagnostics, and the fail-closed
+  `morrow run` JSONL wrapper plus read-only AgentRun inspection.
+- AgentLoop admits and settles each Provider attempt against the true durable AgentRun, retains open
+  requests for crash recovery, finalizes safe terminal metrics, closes unresolved durable tools on
+  budget/cancellation/deadline paths, and keeps `ConversationLog` as the sole chat-history writer.
+  Historical pre-v17 AgentRuns remain compatible because observation rows are additive.
+- Focused S7P-01 suite passed `124 passed, 1 skipped`; AgentRun/limit regression passed `35 passed`.
+  `uv sync` resolved 65 packages and checked 59. Full offline pytest passed `1134 passed, 2
+  deselected in 48.98s`; Ruff format/check, compileall, CLI help smoke and `git diff --check` passed.
+  No live Provider, model, Pi, MCP, network or credential test ran.
+- Acceptance evidence is in `docs/acceptance/s7p-01-observability-headless.md`. Initial coherent
+  implementation/acceptance commits and the required read-only Luna Max review remain next. The
+  topic branch is intentionally unmerged; no push, branch deletion, worktree deletion or S7P-02
+  work is authorized.

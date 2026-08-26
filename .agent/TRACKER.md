@@ -3,7 +3,7 @@
 ## Current status
 
 S7P-01 is active as Subplan 80 from verified local
-`main@d8d2752752cf7d0d0b057af9db56b3029fd05120`. The complete checklist has been read, and the
+`main@d204a6518d1c7f64193ddb42c33384c8fb320e3d`. The complete checklist has been read, and the
 current implementation was inspected across the OpenAI-compatible adapter, ContextBuilder,
 AgentLoop, SessionPersistence, Operational Store, durable tool envelopes, application API and CLI.
 
@@ -12,9 +12,10 @@ reliability checklist. They are not part of Subplan 80 and must remain untouched
 
 ## Active task
 
-The executable Subplan 80 is written and awaiting implementation in a separate Codex project
-worktree task using `gpt-5.6-luna` with `max` reasoning. The same implementation task must spawn a
-Luna Max review subagent, repair all confirmed findings, validate and commit before handoff.
+The implementation and initial offline quality gates are complete on the dedicated topic branch
+using `gpt-5.6-luna` with `max` reasoning. The same implementation task must now spawn the required
+read-only Luna Max review subagent, repair every confirmed finding, rerun gates and commit before
+handoff.
 
 ## Located evidence
 
@@ -34,9 +35,10 @@ Luna Max review subagent, repair all confirmed findings, validate and commit bef
 
 ## Next action
 
-Commit this plan checkpoint on local `main`, create the requested worktree task from that commit,
-and have Luna Max execute Subplan 80 through implementation, internal Luna Max review, review repair,
-full validation and verified commits. The root task will then inspect and fast-forward integrate it.
+Create the initial coherent implementation/acceptance commit, spawn the read-only reviewer over the
+full `d204a6518d1c7f64193ddb42c33384c8fb320e3d...HEAD` diff, then verify and repair its findings.
+The delegating/root task owns any later integration; this task must not merge into `main`, delete
+the topic branch/worktree, or push.
 
 ## Blockers
 

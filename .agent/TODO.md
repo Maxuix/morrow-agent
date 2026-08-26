@@ -12,14 +12,14 @@ Subplan 80 — S7P-01 AgentRun observability and headless run.
 
 - `[x]` Read the full reliability checklist and locate S7P-01 against current code and tests.
 - `[x]` Freeze data, lifecycle, safety, compatibility and validation decisions in Subplan 80.
-- `[ ]` Add failing usage, context, persistence, diagnostic and headless-entry tests.
-- `[ ]` Normalize Provider usage and retain usage-only stream chunks without extra text.
-- `[ ]` Add schema-v17 AgentRun request/terminal observations and safe query paths.
-- `[ ]` Persist bounded invalid-argument field/type diagnostics without argument values.
-- `[ ]` Add the one-shot JSONL entrypoint through the existing Session application/orchestrator.
-- `[ ]` Publish S7P-01 acceptance evidence and run focused/full offline quality gates.
+- `[x]` Add failing usage, context, persistence, diagnostic and headless-entry tests.
+- `[x]` Normalize Provider usage and retain usage-only stream chunks without extra text.
+- `[x]` Add schema-v17 AgentRun request/terminal observations and safe query paths.
+- `[x]` Persist bounded invalid-argument field/type diagnostics without argument values.
+- `[x]` Add the one-shot JSONL entrypoint through the existing Session application/orchestrator.
+- `[x]` Publish S7P-01 acceptance evidence and run focused/full offline quality gates.
 - `[ ]` Complete Luna Max subagent code review, repair all confirmed findings and rerun gates.
-- `[ ]` Commit verified implementation, fast-forward merge to `main`, and retire Subplan 80.
+- `[ ]` Commit the final verified implementation; leave merge and Subplan 80 retirement to the root task.
 
 ## Boundaries
 
