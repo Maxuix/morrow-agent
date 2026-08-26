@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import platform
 import shutil
 import threading
@@ -47,6 +48,7 @@ class SandboxBackend:
         private_home: Path,
         cwd: Path,
         blocked_paths: tuple[Path, ...] = (),
+        read_only_paths: tuple[Path, ...] = (),
     ) -> tuple[str, ...]:
         raise NotImplementedError
 
@@ -64,6 +66,8 @@ class NativeSandboxProcessAdapter:
         prepare_timeout_seconds: float = 15.0,
         collect_timeout_seconds: float = 15.0,
         cleanup_timeout_seconds: float = 10.0,
+        toolchain_roots: tuple[Path, ...] = (),
+        toolchain_bin_paths: tuple[Path, ...] = (),
     ) -> None:
         if min(prepare_timeout_seconds, collect_timeout_seconds, cleanup_timeout_seconds) <= 0:
             raise ValueError("sandbox phase timeouts must be positive")
@@ -74,6 +78,9 @@ class NativeSandboxProcessAdapter:
         self.prepare_timeout_seconds = prepare_timeout_seconds
         self.collect_timeout_seconds = collect_timeout_seconds
         self.cleanup_timeout_seconds = cleanup_timeout_seconds
+        self.toolchain_roots, self.toolchain_bin_paths = self._validate_toolchain_paths(
+            toolchain_roots, toolchain_bin_paths
+        )
         self.last_change_set: SandboxChangeSet | None = None
         self.run_identity = ("sandbox-process", "sandbox-call")
 
@@ -123,11 +130,14 @@ class NativeSandboxProcessAdapter:
                 private_home=session.private_home,
                 cwd=sandbox_cwd,
                 blocked_paths=(session.source_root,),
+                read_only_paths=self.toolchain_roots,
             )
             sandbox_environment = dict(environment)
             sandbox_environment.update(
                 {
-                    "PATH": "/usr/bin:/bin",
+                    "PATH": os.pathsep.join(
+                        (*map(str, self.toolchain_bin_paths), "/usr/bin", "/bin")
+                    ),
                     "HOME": str(session.private_home),
                     "TMPDIR": str(session.private_temp),
                     "XDG_CACHE_HOME": str(session.private_cache),
@@ -197,6 +207,34 @@ class NativeSandboxProcessAdapter:
                     raise ProcessAdapterError(
                         "sandbox_cleanup_failed", "沙箱临时目录清理失败"
                     ) from exc
+
+    @staticmethod
+    def _validate_toolchain_paths(
+        roots: tuple[Path, ...], bin_paths: tuple[Path, ...]
+    ) -> tuple[tuple[Path, ...], tuple[Path, ...]]:
+        resolved_roots: list[Path] = []
+        for candidate in roots:
+            try:
+                resolved = Path(candidate).resolve(strict=True)
+            except OSError as exc:
+                raise ValueError("sandbox toolchain root is unavailable") from exc
+            if not resolved.is_dir() or resolved in {Path("/"), Path.home().resolve()}:
+                raise ValueError("sandbox toolchain root is too broad")
+            if resolved not in resolved_roots:
+                resolved_roots.append(resolved)
+        resolved_bins: list[Path] = []
+        for candidate in bin_paths:
+            try:
+                resolved = Path(candidate).resolve(strict=True)
+            except OSError as exc:
+                raise ValueError("sandbox toolchain bin path is unavailable") from exc
+            if not resolved.is_dir() or not any(
+                resolved == root or resolved.is_relative_to(root) for root in resolved_roots
+            ):
+                raise ValueError("sandbox toolchain bin path is outside its read-only root")
+            if resolved not in resolved_bins:
+                resolved_bins.append(resolved)
+        return tuple(resolved_roots), tuple(resolved_bins)
 
     async def _snapshot_phase(
         self,
@@ -281,12 +319,18 @@ class MacOSSeatbeltBackend(SandboxBackend):
         private_home: Path,
         cwd: Path,
         blocked_paths: tuple[Path, ...] = (),
+        read_only_paths: tuple[Path, ...] = (),
     ) -> tuple[str, ...]:
         capability = self.probe()
         if not capability.supported or not self.executable:
             raise SandboxBackendError("sandbox_unavailable", capability.reason)
         profile = self._profile(
-            snapshot_root, temp_root, private_home, cwd, blocked_paths=blocked_paths
+            snapshot_root,
+            temp_root,
+            private_home,
+            cwd,
+            blocked_paths=blocked_paths,
+            read_only_paths=read_only_paths,
         )
         return (self.executable, "-p", profile, "--", *argv)
 
@@ -298,6 +342,7 @@ class MacOSSeatbeltBackend(SandboxBackend):
         cwd: Path,
         *,
         blocked_paths: tuple[Path, ...] = (),
+        read_only_paths: tuple[Path, ...] = (),
     ) -> str:
         """Build a default-deny profile for the resolved workspace and Host data roots."""
 
@@ -305,6 +350,9 @@ class MacOSSeatbeltBackend(SandboxBackend):
         blocked = (Path.home(), *blocked_paths)
         blocked_rules = " ".join(
             f'(deny file-read* (subpath "{path}"))' for path in dict.fromkeys(blocked)
+        )
+        toolchain_rules = " ".join(
+            f'(allow file-read* (subpath "{path}"))' for path in dict.fromkeys(read_only_paths)
         )
         writable = " ".join(
             f'(subpath "{path}")' for path in (snapshot_root, temp_root, private_home)
@@ -317,8 +365,9 @@ class MacOSSeatbeltBackend(SandboxBackend):
             "(allow mach-lookup) "
             "(allow file-read*) "
             '(allow file-read-metadata (subpath "/")) '
-            f"(allow file-write* {writable}) "
             f"{blocked_rules} "
+            f"{toolchain_rules} "
+            f"(allow file-write* {writable}) "
             "(deny network*)"
         )
 
@@ -363,6 +412,7 @@ class LinuxBubblewrapBackend(SandboxBackend):
         private_home: Path,
         cwd: Path,
         blocked_paths: tuple[Path, ...] = (),
+        read_only_paths: tuple[Path, ...] = (),
     ) -> tuple[str, ...]:
         capability = self.probe()
         if not capability.supported or not self.executable:
@@ -375,6 +425,7 @@ class LinuxBubblewrapBackend(SandboxBackend):
             private_home=private_home,
             cwd=cwd,
             blocked_paths=blocked_paths,
+            read_only_paths=read_only_paths,
         )
 
     @staticmethod
@@ -387,6 +438,7 @@ class LinuxBubblewrapBackend(SandboxBackend):
         private_home: Path,
         cwd: Path,
         blocked_paths: tuple[Path, ...] = (),
+        read_only_paths: tuple[Path, ...] = (),
     ) -> tuple[str, ...]:
         # Only explicit bind mounts are visible; blocked Host paths are never mounted.
         del blocked_paths
@@ -405,6 +457,8 @@ class LinuxBubblewrapBackend(SandboxBackend):
         for root in system_roots:
             if Path(root).exists():
                 command.extend(("--ro-bind", root, root))
+        for root in dict.fromkeys(read_only_paths):
+            command.extend(("--ro-bind", str(root), str(root)))
         command.extend(
             (
                 "--bind",

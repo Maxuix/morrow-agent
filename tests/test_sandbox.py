@@ -47,16 +47,19 @@ def _files(root: Path) -> WorkspaceFileService:
 
 def test_platform_backend_builders_are_fixed_and_fail_closed(tmp_path, monkeypatch):
     mac = MacOSSeatbeltBackend(executable="/usr/bin/sandbox-exec")
+    toolchain = tmp_path / "toolchain"
     profile = mac._profile(
         tmp_path / "workspace",
         tmp_path / "tmp",
         tmp_path / "home",
         tmp_path,
         blocked_paths=(tmp_path / "workspace",),
+        read_only_paths=(toolchain,),
     )
     assert "(deny default)" in profile
     assert "(deny network*)" in profile
     assert str(tmp_path / "workspace") in profile
+    assert f'(allow file-read* (subpath "{toolchain}"))' in profile
     monkeypatch.setattr("morrow.adapters.local.sandbox.platform.system", lambda: "Linux")
     linux = LinuxBubblewrapBackend(executable="/usr/bin/bwrap")
     capability = linux.probe()
@@ -114,6 +117,9 @@ def test_snapshot_excludes_sensitive_external_and_cache_paths(tmp_path):
 class _PassThroughSandboxBackend(SandboxBackend):
     name = "test-pass-through"
 
+    def __init__(self):
+        self.last_build = None
+
     def probe(self):
         return SandboxCapability(
             platform="test",
@@ -123,7 +129,41 @@ class _PassThroughSandboxBackend(SandboxBackend):
         )
 
     def build_command(self, **kwargs):
+        self.last_build = kwargs
         return tuple(kwargs["argv"])
+
+
+@pytest.mark.asyncio
+async def test_sandbox_exposes_only_explicit_read_only_toolchain_on_path(tmp_path):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    toolchain = tmp_path / "toolchain"
+    toolchain_bin = toolchain / "bin"
+    toolchain_bin.mkdir(parents=True)
+    executable = toolchain_bin / "project-check"
+    executable.write_text("#!/bin/sh\nprintf 'toolchain-ready\\n'\n", encoding="utf-8")
+    executable.chmod(0o755)
+    backend = _PassThroughSandboxBackend()
+    adapter = NativeSandboxProcessAdapter(
+        workspace,
+        SandboxSnapshotService(_files(workspace), temp_parent=tmp_path),
+        backend,
+        toolchain_roots=(toolchain,),
+        toolchain_bin_paths=(toolchain_bin,),
+    )
+
+    result = await adapter.run(
+        argv=("project-check",),
+        shell=None,
+        cwd=workspace,
+        timeout_seconds=1.0,
+        environment={"PATH": "/untrusted/host/path"},
+        output_limit=1024,
+    )
+
+    assert result.returncode == 0
+    assert result.stdout_tail == b"toolchain-ready\n"
+    assert backend.last_build["read_only_paths"] == (toolchain.resolve(),)
 
 
 class _PrepareTimeoutSnapshots(SandboxSnapshotService):
@@ -318,16 +358,16 @@ async def test_production_auto_sandbox_registers_only_native_tools_and_keeps_rea
     names = {definition.function.name for definition in executor.definitions}
     assert "run_command" in names
     assert "promote_sandbox_changes" in names
-    system_python = "/Library/Frameworks/Python.framework/Versions/3.14/bin/python3"
     call = FunctionToolCall(
         id="sandbox-command",
         name="run_command",
         arguments=json.dumps(
             {
                 "argv": [
-                    system_python,
+                    "python",
                     "-c",
-                    "from pathlib import Path; Path('sandbox-only.txt').write_text('ok')",
+                    "from pathlib import Path; import pydantic; "
+                    "Path('sandbox-only.txt').write_text(pydantic.__name__)",
                 ]
             }
         ),
@@ -344,6 +384,30 @@ async def test_production_auto_sandbox_registers_only_native_tools_and_keeps_rea
     assert result["sandbox_change_set_id"].startswith("sbx_")
     assert result["sandbox_changed_paths"] == ["sandbox-only.txt"]
     assert not (project / "sandbox-only.txt").exists()
+
+
+def test_production_auto_sandbox_selects_workspace_and_runtime_toolchains(tmp_path):
+    project = tmp_path / "project"
+    project_bin = project / ".venv" / "bin"
+    project_bin.mkdir(parents=True)
+    application = build_application(
+        state_root=tmp_path / "state", credentials=MemoryCredentialStore()
+    )
+    identity = application.workspace_service.confirm(application.workspace_service.resolve(project))
+    session_application = build_session_application(
+        application,
+        identity,
+        provider=ScriptedModelProvider(["done"]),
+        model=ModelRef(provider_id="p", model_id="m"),
+        permission_profile=PermissionProfile.from_preset(PermissionPreset.AUTO_SANDBOXED),
+    )
+
+    adapter = session_application.process.adapter
+    assert isinstance(adapter, NativeSandboxProcessAdapter)
+    assert (project / ".venv").resolve() in adapter.toolchain_roots
+    assert project_bin.resolve() in adapter.toolchain_bin_paths
+    assert Path(sys.prefix).resolve() in adapter.toolchain_roots
+    assert Path.home().resolve() not in adapter.toolchain_roots
 
 
 @pytest.mark.skipif(

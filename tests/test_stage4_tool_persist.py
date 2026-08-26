@@ -399,8 +399,14 @@ async def test_full_access_host_policy_deny_closes_before_handler(tmp_path):
         run = journal._read_one("SELECT agent_run_id FROM agent_runs LIMIT 1", ())
         execution = journal.list_executions("ws_1", agent_run_id=str(run[0]))[0]
         assert execution.intent.policy_verdict.value == "deny"
+        assert execution.intent.policy_reason_codes == ("full_access_grant_required",)
         assert execution.state is ToolExecutionState.CLOSED
         assert execution.disposition.value == "denied"
+        tool_messages = [message for message in session.messages if message.role == "tool"]
+        denied = json.loads(tool_messages[0].content)
+        assert "full_access_grant_required" in denied["error"]["message"]
+        assert "argv" in denied["error"]["message"]
+        assert "网络、依赖安装、Git 写入和破坏性操作不可绕过" in denied["error"]["message"]
     finally:
         handle.close()
 

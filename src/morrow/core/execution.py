@@ -354,6 +354,7 @@ class PreparedIntent(ProtocolModel):
     recovery_declaration: ToolRecoveryDeclaration | None = None
     requires_approval: bool = False
     policy_verdict: PolicyVerdict | None = None
+    policy_reason_codes: tuple[str, ...] = ()
     redacted_arguments: dict[str, Any] = Field(default_factory=dict)
     file_evidence: tuple[FileMutationEvidence, ...] = ()
     config_evidence: ConfigMutationEvidence | None = None
@@ -363,6 +364,13 @@ class PreparedIntent(ProtocolModel):
     @classmethod
     def valid_name(cls, value: str) -> str:
         return _valid_tool_name(value)
+
+    @field_validator("policy_reason_codes")
+    @classmethod
+    def valid_policy_reason_codes(cls, values: tuple[str, ...]) -> tuple[str, ...]:
+        if len(values) > 8:
+            raise ValueError("too many policy reason codes")
+        return tuple(_valid_tool_name(value) for value in values)
 
     @field_validator("call_id")
     @classmethod

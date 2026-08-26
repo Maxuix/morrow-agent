@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -555,6 +556,40 @@ def build_operational_api(
     return service
 
 
+def _sandbox_toolchain_paths(workspace_root: Path) -> tuple[tuple[Path, ...], tuple[Path, ...]]:
+    """Select exact existing runtimes; never inherit an arbitrary Host PATH."""
+
+    root = workspace_root.resolve(strict=True)
+    candidates: list[Path] = []
+    workspace_venv = root / ".venv"
+    try:
+        if workspace_venv.is_dir() and not workspace_venv.is_symlink():
+            resolved_venv = workspace_venv.resolve(strict=True)
+            if resolved_venv.is_relative_to(root):
+                candidates.append(resolved_venv)
+    except OSError:
+        pass
+    candidates.extend((Path(sys.prefix), Path(sys.base_prefix)))
+
+    roots: list[Path] = []
+    bins: list[Path] = []
+    for candidate in candidates:
+        try:
+            resolved = candidate.resolve(strict=True)
+        except OSError:
+            continue
+        if not resolved.is_dir() or resolved in {Path("/"), Path.home().resolve()}:
+            continue
+        if resolved not in roots:
+            roots.append(resolved)
+        bin_path = resolved / ("Scripts" if os.name == "nt" else "bin")
+        if bin_path.is_dir():
+            resolved_bin = bin_path.resolve(strict=True)
+            if resolved_bin.is_relative_to(resolved) and resolved_bin not in bins:
+                bins.append(resolved_bin)
+    return tuple(roots), tuple(bins)
+
+
 def build_session_application(
     app: Application,
     identity,
@@ -689,12 +724,15 @@ def build_session_application(
     except CredentialAccessError as exc:
         raise ValueError(exc.message) from None
     if permission_profile.process_isolation is ProcessIsolation.NATIVE_SANDBOX:
+        toolchain_roots, toolchain_bins = _sandbox_toolchain_paths(workspace_capability.root)
         process = ProcessExecutionService(
             files,
             adapter=NativeSandboxProcessAdapter(
                 workspace_capability.root,
                 sandbox,
                 sandbox_backend,
+                toolchain_roots=toolchain_roots,
+                toolchain_bin_paths=toolchain_bins,
             ),
             secrets=(active_credential,) if active_credential else (),
             requires_host=False,

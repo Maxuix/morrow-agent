@@ -54,6 +54,20 @@ APPROVAL_PREVIEW_LINE_LIMIT = 200
 APPROVAL_PREVIEW_LINES_LIMIT = 8
 
 
+def policy_denial_message(tool_name: str, reason_codes=()) -> str:
+    """Return bounded, authority-neutral guidance without echoing tool arguments."""
+
+    codes = tuple(dict.fromkeys(str(reason) for reason in reason_codes if str(reason)))
+    suffix = f"（{', '.join(codes)}）" if codes else ""
+    if tool_name == "run_command":
+        return (
+            f"当前能力策略拒绝此操作{suffix}。run_command 会自动捕获 stdout/stderr；"
+            "项目检查请改用 argv，移除 shell 重定向、管道和工作区外路径。"
+            "网络、依赖安装、Git 写入和破坏性操作不可绕过。"
+        )
+    return f"当前能力策略拒绝此操作{suffix}"
+
+
 class ToolErrorCode(StrEnum):
     """Deterministic tool outcome codes carried inside the envelope."""
 
@@ -460,7 +474,7 @@ class ToolExecutor:
                 return self._error(
                     call,
                     self._policy_error_code(policy_decision.reason_codes),
-                    "当前能力策略拒绝此操作",
+                    policy_denial_message(call.name, policy_decision.reason_codes),
                     limit=limit,
                 )
         if (not skip_approval) and (

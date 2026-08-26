@@ -204,6 +204,7 @@ def _prepare_one(
     config_evidence = None
     preview: tuple[str, ...] = ()
     policy_verdict: PolicyVerdict | None = None
+    policy_reason_codes: tuple[str, ...] = ()
     if registered is not None:
         try:
             arguments = registered.arguments_validator.validate(call.arguments)
@@ -231,6 +232,7 @@ def _prepare_one(
                         allow_unconfined_host=grant_id is not None and call.name == "run_command",
                     )
                     policy_verdict = decision.verdict
+                    policy_reason_codes = tuple(str(reason) for reason in decision.reason_codes)
                     requires_approval = decision.verdict is PolicyVerdict.REQUIRE_APPROVAL
                     policy_preview = tuple(decision.preview_summary)
                     if (
@@ -278,6 +280,7 @@ def _prepare_one(
         recovery_declaration=declaration,
         requires_approval=requires_approval,
         policy_verdict=policy_verdict,
+        policy_reason_codes=policy_reason_codes,
         file_evidence=file_evidence,
         config_evidence=config_evidence,
         preview=preview,

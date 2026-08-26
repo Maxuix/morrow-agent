@@ -21,7 +21,12 @@ from morrow.core.models import FunctionToolCall, ToolApprovalRequest, ToolEffect
 from morrow.core.permissions import PermissionEvidenceError
 from morrow.runtime.policy import RunPolicy
 from morrow.runtime.session import DurableRunCoordinator, Session
-from morrow.runtime.tools import ToolErrorCode, ToolExecutionOutcome, ToolExecutor
+from morrow.runtime.tools import (
+    ToolErrorCode,
+    ToolExecutionOutcome,
+    ToolExecutor,
+    policy_denial_message,
+)
 
 
 class ToolCancellationRequested(Exception):
@@ -71,7 +76,7 @@ class ToolCycleExecutor:
                 denied_result = self.tool_executor.error_outcome(
                     call,
                     ToolErrorCode.PERMISSION_DENIED,
-                    "当前能力策略拒绝此操作",
+                    policy_denial_message(call.name, durable.intent.policy_reason_codes),
                     result_limit=result_limit,
                 )
                 durable = coordinator.deny_execution_before_handler(
