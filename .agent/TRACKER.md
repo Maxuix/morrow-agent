@@ -2,18 +2,13 @@
 
 ## Current status
 
-Subplan 87 is committed at `63236ac` and fast-forward integrated into local `main`. Subplan 85 is
-complete locally on `codex/feat/s7p-06-pi-parity`, with implementation commits `04333c9` and
-`d230126`, and root integration pending. It follows pinned Pi Agent 0.84.2 behavior: no default
-cumulative task caps or no-progress kill, token-window LLM compaction, Pi-style retry/truncation,
-v1 resume compatibility and an external-only evaluation watchdog. The Stage 7 research checklist
-was updated at the documented Phase F point; the other two user-owned research documents remain
-untouched.
+Subplan 85 and its prepared Subplan 88 candidate are integrated on local `main` at `7b52f5f`.
+Subplan 88 is active on `feat/s7p-07-runtime-control`. The implementation adds durable bounded
+steering and follow-up delivery while preserving S7P-06 behavior and ConversationLog ownership.
 
 ## Active task
 
-S7P-06 implementation and closeout are complete on the dedicated topic branch; root owns local
-fast-forward integration and resource retirement.
+Publish Phase A evidence and start the queue/migration tests for S7P-07.
 
 ## Completed evidence
 
@@ -59,9 +54,7 @@ fast-forward integration and resource retirement.
 
 ## Next action
 
-Root should verify ancestry and working-tree ownership, then fast-forward integrate the completed
-`codex/feat/s7p-06-pi-parity` branch. Do not start S7P-07 from this task; the preserved candidate
-remains user-owned and inactive.
+Implement Subplan 88 test-first, then run its declared focused and repository-wide offline gates.
 
 ## Subplan 87 evidence
 

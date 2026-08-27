@@ -19,8 +19,9 @@ Subplan 82 completed S7P-03 Direct Coding prompt and scoped project-instruction 
 integrated locally. Subplan 83 completed S7P-04 workspace change lifecycle repair and was integrated
 locally. Subplan 84 completed S7P-05 validation and completion truth and was integrated locally.
 The subsequent post-fix audit found cross-cutting reliability defects, and the user explicitly
-opened Subplan 86 to repair them before S7P-06. Subplan 85 was then activated on its dedicated
-branch and is now complete locally; the untracked S7P-07 candidate remains preserved and inactive.
+opened Subplan 86 to repair them before S7P-06. Subplan 85 was integrated into local `main`. On
+2026-08-27 the user explicitly opened Subplan 88, which is active on
+`feat/s7p-07-runtime-control`.
 
 ## Stage 7 reliability sequence
 
@@ -32,10 +33,10 @@ branch and is now complete locally; the untracked S7P-07 candidate remains prese
 | 82 | `82-s7p-03-direct-coding-prompt.md` | completed and integrated locally |
 | 83 | `83-s7p-04-workspace-change-lifecycle.md` | completed and integrated locally |
 | 84 | `84-s7p-05-validation-completion-truth.md` | completed and integrated locally |
-| 85 | `85-s7p-06-budget-context-no-progress.md` | completed locally on `codex/feat/s7p-06-pi-parity`; root integration pending |
+| 85 | `85-s7p-06-budget-context-no-progress.md` | completed and integrated locally |
 | 86 | `86-s7p-00-05-audit-remediation.md` | completed and integrated locally |
 | 87 | `87-remove-runtime-outcome-gate.md` | completed and integrated locally |
-| 88 | `88-s7p-07-runtime-control-steering.md` | implementable candidate; prepared 2026-08-27 against the S7P-06 tree; not active; depends on Subplan 85 integration |
+| 88 | `88-s7p-07-runtime-control-steering.md` | active on `feat/s7p-07-runtime-control` |
 
 ## Stage 7 pre-baseline
 

@@ -1,8 +1,7 @@
 # Subplan 88 — S7P-07 Runtime Control: Steering and Follow-Up
 
-> Status: implementable candidate; prepared 2026-08-27 against the implemented S7P-06 tree;
-> **not active** — activate only on explicit user direction, from the latest verified `main`
-> after Subplan 85 (`codex/feat/s7p-06-pi-parity`) is fast-forward integrated.
+> Status: active on `feat/s7p-07-runtime-control`; activated 2026-08-27 from local `main`
+> at `7b52f5f` after Subplan 85 fast-forward integration.
 > User decisions frozen 2026-08-27: scope unified (retry belongs to S7P-06); v1 steering waits
 > for admitted-batch closure; `FinishReason.STEERED` additive enum approved.
 

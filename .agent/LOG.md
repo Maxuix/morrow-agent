@@ -1,5 +1,13 @@
 # Execution Log
 
+## 2026-08-27 — Subplan 88 activated
+
+- Confirmed local `main` and `codex/feat/s7p-06-pi-parity` both resolve to `7b52f5f`; Subplan 85 is
+  already fast-forward integrated despite stale execution-state wording.
+- At explicit user direction, activated Subplan 88 on `feat/s7p-07-runtime-control`. Frozen scope
+  remains steering and follow-up only; S7P-06 retry/compaction/truncation behavior is unchanged.
+- No live Provider/model/Pi/MCP/network/credential test or dependency change is authorized.
+
 ## 2026-08-27 — S7P-03 Direct Coding prompt implementation and review closure
 
 - Implemented `DirectCodingProfile`/`DirectCodingPromptAssembler` with stable ID/version/digest,

@@ -2,27 +2,25 @@
 
 ## Current stage
 
-Subplan 85 is complete locally on `codex/feat/s7p-06-pi-parity`; root integration is pending.
+Subplan 88 is active on `feat/s7p-07-runtime-control`.
 
 ## Active subplan
 
-Subplan 85 is complete. Subplan 87 is integrated; S7P-06 implementation and closeout are complete.
+Subplan 88 — S7P-07 runtime control steering and follow-up.
 
 ## Tasks
 
-- `[x]` Replace the obsolete 30 → 60/no-progress S7P-06 draft with a pinned Pi 0.84.2 parity plan.
-- `[x]` Freeze the executable Pi parity table, scripted fixtures and Morrow v1 compatibility map.
-- `[x]` Implement runtime policy v2 and the uncapped loop.
-- `[x]` Implement token-window compaction and overflow recovery.
-- `[x]` Implement provider retry and Pi-equivalent tool-output truncation.
-- `[x]` Run offline evidence, documentation, review and closeout.
+- `[>]` Activate Subplan 88 and publish the Phase A acceptance evidence.
+- `[ ]` Add the durable bounded runtime-control queue and schema migration.
+- `[ ]` Add `FinishReason.STEERED` and AgentLoop safe-point delivery.
+- `[ ]` Add orchestrator/headless steering and follow-up delivery with crash-safe idempotency.
+- `[ ]` Add terminal in-run input using the pinned Pi mapping.
+- `[ ]` Run focused and offline gates, formal read-only review, remediation and closeout.
 
 ## Boundaries
 
-- Do not infer business correctness or reject a valid model stop based on task/output semantics.
-- Do not run live Provider/model/Pi/MCP/network/credential tests.
+- Do not modify S7P-06 retry, compaction, truncation, loop-default or policy-version behavior.
 - Do not add public event types/fields or create another ConversationLog writer.
-- Do not persist command text, stdout/stderr, file content, secrets, reasoning or tracebacks.
-- Do not run live Provider/model/Pi/MCP/network/credential tests.
-- The Stage 7 research checklist was updated at the documented Phase F point; the other two
-  user-owned research documents remain unchanged.
+- Do not interrupt admitted tool batches or in-flight model streams for steering.
+- Do not persist tool arguments/results, command output, secrets, reasoning or tracebacks.
+- Do not run live Provider/model/Pi/MCP/network/credential tests or add dependencies.

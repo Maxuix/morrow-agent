@@ -1,22 +1,20 @@
 # Stage 7 Preflight Reliability Repairs — Pi-Parity Long-Horizon
 
-> Status: implementation complete locally; root integration pending
-> Active subplan: Subplan 85 is complete; Subplan 87 is complete
-> Branch: `codex/feat/s7p-06-pi-parity`
+> Status: S7P-07 implementation in progress
+> Active subplan: Subplan 88 — runtime control steering and follow-up
+> Branch: `feat/s7p-07-runtime-control`
 > Base: `6a43be5` (plan activation checkpoint; source tree base `1d3ba3706b1ac82cf0b82b56ea207bd2b548090f`)
 > Source authority: current user decision, pinned Pi Agent 0.84.2 behavior, current code and gates
 
 ## 1. Current objective
 
-Implement and verify S7P-06 to replace demo-sized cumulative task limits with Pi Agent's long-horizon behavior:
-continue while the model requests tools, stop normally on a tool-free model response, compact by
-the exact model token window, and use Pi-style retry and tool-output truncation. New default runs do
-not stop on cumulative model requests, tool rounds, tool calls, whole-task elapsed time, repetition
-or inferred no progress.
+Implement and verify S7P-07 so a running Direct Agent can accept bounded durable steering at safe
+turn boundaries and queue follow-up input for the next durable turn without breaking tool pairing,
+cancellation, recovery, or the Session-owned ConversationLog boundary.
 
-Detailed scope and compatibility decisions are owned by activated Subplan 85. The retained
-S7P-05, Subplan 86 and Subplan 87 material below is
-decision history; where it conflicts with future S7P-06 behavior, Subplan 85 wins.
+Detailed scope, frozen decisions and validation are owned by activated Subplan 88. S7P-06 is
+integrated at `7b52f5f`; its retry, compaction, truncation and long-horizon policy remain outside
+S7P-07 ownership.
 
 ## 2. Prior S7P-05 objective
 
