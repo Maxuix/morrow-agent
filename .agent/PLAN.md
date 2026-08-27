@@ -1,8 +1,8 @@
 # Stage 7 Preflight Reliability Repairs — S7P-00–05 Post-audit Remediation
 
-> Status: active
-> Active subplan: 86 — `.agent/subplans/86-s7p-00-05-audit-remediation.md`
-> Branch: `fix/s7p05-audit-remediation`
+> Status: completed and integrated locally
+> Active subplan: none; Subplan 86 is complete
+> Branch: `main`
 > Base: locally integrated S7P-05 at `d570c5c`
 > Source authority: current user request, post-fix audit reproductions, current code and gates
 

@@ -3268,3 +3268,10 @@
   `73 passed`; full offline `1282 passed, 2 skipped, 2 deselected in 61.15s`; Ruff format/check,
   compileall, both CLI help entrypoints and `git diff --check` passed. The two skips are host-only
   Seatbelt checks and the deselected cases are live. No live or network test ran.
+
+## 2026-08-27 — Subplan 86 integrated locally
+
+- Committed the verified remediation as `e161557` (`fix(runtime): close direct agent audit gaps`)
+  and fast-forward merged `fix/s7p05-audit-remediation` into local `main`.
+- The repository was already 39 commits ahead of `origin/main`; no remote push was attempted or
+  authorized. The untracked S7P-06 draft and three user-owned research documents remain preserved.

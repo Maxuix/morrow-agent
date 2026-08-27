@@ -1,6 +1,6 @@
 # Subplan 86 — S7P-00–05 Post-audit Reliability Remediation
 
-> Status: verified; local fast-forward integration pending
+> Status: completed and integrated locally at `e161557`
 
 ## Goal
 

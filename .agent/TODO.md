@@ -2,11 +2,11 @@
 
 ## Current stage
 
-Stage 7 preflight reliability repairs are active on the S7P-00–05 post-audit remediation.
+The S7P-00–05 post-audit remediation is complete and integrated locally.
 
 ## Active subplan
 
-Subplan 86 is active. Subplan 84 remains integrated; the untracked S7P-06 draft is inactive.
+No subplan is active. Subplan 86 is integrated; the untracked S7P-06 draft remains inactive.
 
 ## Tasks
 
@@ -18,7 +18,7 @@ Subplan 86 is active. Subplan 84 remains integrated; the untracked S7P-06 draft 
 - `[x]` Record exact corrected-request size and clean per-call resources on every terminal path.
 - `[x]` Add adversarial, recovery, migration, backup and production-composition regression coverage.
 - `[x]` Run focused/full offline/static/CLI gates and update implementation documents.
-- `[>]` Commit verified progress and fast-forward integrate the completed remediation.
+- `[x]` Commit verified progress and fast-forward integrate the completed remediation.
 
 ## Boundaries
 

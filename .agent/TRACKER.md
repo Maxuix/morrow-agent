@@ -2,13 +2,13 @@
 
 ## Current status
 
-Subplan 86 implementation and all declared offline gates are complete on
-`fix/s7p05-audit-remediation`. The post-fix audit defects are closed without opening S7P-06; its
-untracked draft and the three user-owned research documents remain untouched.
+Subplan 86 is committed at `e161557` and fast-forward integrated into local `main`. The post-fix
+audit defects are closed without opening S7P-06; its untracked draft and the three user-owned
+research documents remain untouched.
 
 ## Active task
 
-Commit the verified remediation, fast-forward integrate it locally and retire the topic branch.
+No implementation task is active. Await explicit user direction before opening S7P-06.
 
 ## Completed evidence
 
@@ -47,7 +47,7 @@ Commit the verified remediation, fast-forward integrate it locally and retire th
 
 ## Next action
 
-Commit, fast-forward integrate locally, verify no topic-only commit remains, and retire the branch.
+Await explicit user direction; do not start the preserved S7P-06 draft automatically.
 
 ## Blockers
 
