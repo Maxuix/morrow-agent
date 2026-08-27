@@ -3,7 +3,7 @@
 ## Current status
 
 S7P-01 through S7P-04 are verified, fast-forward integrated into local `main`, and retired.
-S7P-05 Subplan 84 is implemented and verified on
+S7P-05 Subplan 84 has an implemented, verified and formally reviewed candidate on
 `codex/feat/s7p-05-validation-completion-truth` from activation baseline
 `2c035098263fee3f93d66abc42bc09a36bbb1c42`. The three user-owned research documents remain
 untouched. The topic branch is intentionally unmerged; root owns integration and retirement.
@@ -13,7 +13,8 @@ untouched. The topic branch is intentionally unmerged; root owns integration and
 Implementation is present in `c14de4e`, with the six confirmed findings from the first formal
 review independently reproduced and fixed in `537689a`. Narrow final reviewer Hume returned formal
 `APPROVE — no confirmed P0-P3 findings` for `537689a^..537689a`; acceptance and execution evidence
-are now final for this topic branch.
+are recorded for this topic branch; the overall task remains pending by instruction and is not
+merged.
 
 ## Completed evidence
 
@@ -31,8 +32,8 @@ are now final for this topic branch.
 
 ## Next action
 
-Root task may inspect the clean topic branch and fast-forward integrate it. Do not start S7P-06 in
-this task.
+Root task may inspect the clean topic branch later; do not mark S7P-05 complete or fast-forward
+integrate it in this task. Do not start S7P-06.
 
 ## Blockers
 

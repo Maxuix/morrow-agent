@@ -1,6 +1,6 @@
 # Stage 7 Preflight Reliability Repairs — S7P-05 Validation and Completion Truth
 
-> Status: completed locally; root integration pending
+> Status: active; formal review approved; completion and integration pending
 > Active subplan: 84 — validation facts, outcome contracts and completion gate
 > Branch: `codex/feat/s7p-05-validation-completion-truth`
 > Base: activation baseline `2c035098263fee3f93d66abc42bc09a36bbb1c42`

@@ -2,7 +2,7 @@
 
 ## 1. 结论
 
-S7P-05 的代码实现、正式 review 和离线验证已在当前 topic branch 完成。Direct-agent 的最终 `stop` 现在由运行时有界证据决定；
+S7P-05 的代码实现、正式 review 和离线验证已记录在当前 topic branch；按当前任务要求整体状态仍保持 pending，未合入 main。Direct-agent 的最终 `stop` 现在由运行时有界证据决定；
 普通命令成功不会伪装成 validation，change task 需要可归因的净工作区变化，required validation
 必须是精确 `(validator_kind, scope)` 的 recognized `ValidationFact`，路径越界、禁止路径、未闭合
 调用、known failure 和可选 verifier 都会阻止不真实的完成声明。业务语义正确性不在本项判定范围内。

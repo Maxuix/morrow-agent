@@ -1,8 +1,8 @@
 # Morrow 架构基线
 
 > 状态：阶段 2–5 已完成；Stage 6 Subplans 63–75 已在本地完成（macOS；Linux 原生运行仍
-> unsupported）；Stage 7 preflight S7P-01–S7P-05 已在各自本地实现中，S7P-05 validation/
-> completion truth 已在当前 topic branch 完成，尚未合入 main；其余 Stage 7–10 尚未开始
+> unsupported）；Stage 7 preflight S7P-01–S7P-04 已在各自本地实现中，S7P-05 validation/
+> completion truth 正在当前 topic branch 完成，尚未合入 main；其余 Stage 7–10 尚未开始
 
 本文锁定当前依赖方向、数据所有权和安全边界。阶段 3 的能力策略、配置工具、工作空间读搜、冲突安全文件变更、审批后 Host 命令、只读 Git 和当前 macOS 原生沙箱
 已经交付；Linux 原生运行尚未声明支持。Stage 4 已落地数据根 SQLite Operational Store 的
