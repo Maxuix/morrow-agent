@@ -958,6 +958,17 @@ class WorkspaceMutationService:
     def cached_plans(self, run_id: str, call_id: str) -> tuple[MutationPlan, ...] | None:
         return self._previews.get((run_id, call_id))
 
+    def discard_previews(self, run_id: str, call_id: str) -> None:
+        self._previews.pop((run_id, call_id), None)
+
+    def clear_previews(self, run_id: str | None = None) -> None:
+        if run_id is None:
+            self._previews.clear()
+        else:
+            to_delete = [key for key in self._previews if key[0] == run_id]
+            for key in to_delete:
+                self._previews.pop(key, None)
+
     def apply(
         self,
         plan: MutationPlan,

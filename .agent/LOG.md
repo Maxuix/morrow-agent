@@ -3241,3 +3241,30 @@
   and the three user-owned research documents remain untouched.
 - S7P-05 and Subplan 84 are complete. Per explicit user direction, no S7P-06 plan, branch or task
   was created; the ordered repair sequence is paused here.
+
+## 2026-08-27 — Subplan 86 post-audit remediation verified
+
+- Replaced all production lexical/regex OutcomeContract inference with a bounded strict no-tool
+  semantic intent request. The result schema cannot grant verifier authority, only accepts shared
+  validator kinds, treats ambiguity conservatively and fails closed. Explicit trusted contracts
+  remain authoritative; compatibility callers without a resolver receive `unspecified` rather than
+  keyword guesses.
+- Added schema v19 append-only request evidence for request purpose, exact prompt projection and the
+  resolved contract. Resume restores semantic intent from durable observations while the admission
+  snapshot remains immutable.
+- Added a pre-effect project-instruction scope gate: newly scoped persistent writes are durably
+  deferred until applicable nested rules enter the next model request, all touched scopes are
+  batched without an eight-target loss, and refresh failures stop further effects.
+- Repaired completion obligations so unrelated success cannot erase failures: obligations are
+  family-wide for targetless argument recovery and independently scoped per valid path for
+  multi-target correctness. Centralized validator command definitions and made package-manager
+  forwarded arguments non-path data.
+- Replaced clean-Git full-tree baselines with HEAD plus bounded dirty-path evidence, restored the
+  64 KiB AgentRun snapshot boundary, and added lazy exact HEAD blob attribution for paths changed
+  during the run. Corrected-request telemetry now records the actual validated wire request size.
+- Added generic terminal cleanup for process, mutation and Skill Script cached plans across success,
+  failure, rejection, timeout, cancellation and pre-execution deferral.
+- Validation passed: focused `79 passed`; migration/backup/recovery `98 passed`; final focused
+  `73 passed`; full offline `1282 passed, 2 skipped, 2 deselected in 61.15s`; Ruff format/check,
+  compileall, both CLI help entrypoints and `git diff --check` passed. The two skips are host-only
+  Seatbelt checks and the deselected cases are live. No live or network test ran.

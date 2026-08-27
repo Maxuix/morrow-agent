@@ -20,6 +20,12 @@ from morrow.core.capabilities import (
 )
 from morrow.core.local_tools import CommandRequest, CommandResult, CommandStatus
 from morrow.core.models import ToolEffect
+from morrow.core.validation import (
+    VALIDATION_FLAGS,
+    VALIDATION_FORWARDED_ARG_FAMILIES,
+    VALIDATION_OPTION_PREFIXES,
+    match_validator_action,
+)
 from morrow.services.files import LocalFileError, WorkspaceFileService
 
 MAX_COMMAND_OUTPUT_BYTES = 8 * 1024
@@ -163,6 +169,9 @@ class ProcessExecutionService:
 
     def cached_plan(self, run_id: str, call_id: str) -> CommandPlan | None:
         return self._plans.get((run_id, call_id))
+
+    def discard_plan(self, run_id: str, call_id: str) -> None:
+        self._plans.pop((run_id, call_id), None)
 
     def approval_command(self, plan: CommandPlan) -> str:
         """Render one terminal-only bounded command preview with credential redaction."""
@@ -370,15 +379,6 @@ def _command_class(executable: str, *, shell: bool) -> str:
     return "opaque"
 
 
-_VALIDATION_FLAGS = {
-    "pytest": frozenset({"-q", "-v", "-x", "--quiet", "--verbose", "--lf", "--last-failed"}),
-    "ruff": frozenset({"--quiet", "--output-format=concise", "--output-format=full"}),
-    "compileall": frozenset({"-q"}),
-}
-_VALIDATION_OPTION_PREFIXES = {
-    "pytest": ("--maxfail=", "-k="),
-    "ruff": ("--select=", "--ignore=", "--line-length="),
-}
 _SHELL_CONTROL = re.compile(r"[;&|<>$`(){}\[\]\n\r]")
 _PYTHON_NAMES = frozenset({"python", "python3", "python3.12", "python3.13"})
 
@@ -454,37 +454,8 @@ def _unwrap_validation_tokens(
             return None
         module = tokens[index + 2]
         index += 3
-        if module == "pytest":
-            return "pytest", list(tokens[index:]), "pytest"
-        if module == "compileall":
-            return "compileall", list(tokens[index:]), "compileall"
-        return None
-    if executable == "pytest":
-        return "pytest", list(tokens[index + 1 :]), "pytest"
-    if executable == "ruff":
-        remaining = list(tokens[index + 1 :])
-        if not remaining:
-            return None
-        if remaining[0] == "check":
-            return "ruff_check", remaining[1:], "ruff"
-        if remaining[:2] == ["format", "--check"]:
-            return "ruff_format_check", remaining[2:], "ruff"
-        return None
-    if executable in {"mypy", "pyright"}:
-        return executable, list(tokens[index + 1 :]), executable
-    if executable in {"npm", "pnpm", "yarn"} and len(tokens) > index + 1:
-        if tokens[index + 1] == "test":
-            return f"{executable}_test", list(tokens[index + 2 :]), executable
-        return None
-    if executable == "cargo" and len(tokens) > index + 1:
-        if tokens[index + 1] in {"test", "check"}:
-            return f"cargo_{tokens[index + 1]}", list(tokens[index + 2 :]), "cargo"
-        return None
-    if executable == "make" and len(tokens) > index + 1:
-        if tokens[index + 1] in {"test", "check"}:
-            return f"make_{tokens[index + 1]}", list(tokens[index + 2 :]), "make"
-        return None
-    return None
+        return match_validator_action(module, tokens[index:])
+    return match_validator_action(executable, tokens[index + 1 :])
 
 
 def _validator_executable(token: str, *, allow_current_python: bool) -> str | None:
@@ -503,12 +474,13 @@ def _validator_executable(token: str, *, allow_current_python: bool) -> str | No
 
 
 def _safe_validation_options(operands: list[str], option_family: str) -> list[str] | None:
-    allowed = _VALIDATION_FLAGS.get(option_family, frozenset())
+    allowed = VALIDATION_FLAGS.get(option_family, frozenset())
     paths: list[str] = []
     after_separator = False
     for token in operands:
         if after_separator:
-            paths.append(token)
+            if option_family not in VALIDATION_FORWARDED_ARG_FAMILIES:
+                paths.append(token)
             continue
         if token == "--":
             after_separator = True
@@ -519,8 +491,7 @@ def _safe_validation_options(operands: list[str], option_family: str) -> list[st
         if token in allowed:
             continue
         if any(
-            token.startswith(prefix)
-            for prefix in _VALIDATION_OPTION_PREFIXES.get(option_family, ())
+            token.startswith(prefix) for prefix in VALIDATION_OPTION_PREFIXES.get(option_family, ())
         ):
             continue
         return None

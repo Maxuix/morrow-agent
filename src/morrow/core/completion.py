@@ -131,8 +131,9 @@ class ValidationRequirement(ProtocolModel):
 class OutcomeContract(ProtocolModel):
     """Frozen, bounded proof obligations for one task.
 
-    The application constructs this object from trusted declarations or a
-    conservative compiler.  Model output is never accepted as a contract.
+    The application admits either an explicit trusted declaration or the strict,
+    authority-limited result of the no-tool semantic intent resolver. The model
+    cannot name verifiers or bypass these validators.
     """
 
     mode: OutcomeMode
@@ -200,7 +201,7 @@ class WorkspaceBaselineEntry(ProtocolModel):
     """A hash-only, no-follow observation of one workspace leaf."""
 
     path: str
-    kind: Literal["file", "symlink"]
+    kind: Literal["file", "symlink", "missing"]
     sha256: str
     size: int = Field(ge=0, le=_MAX_BASELINE_FILE_BYTES)
 
@@ -366,217 +367,26 @@ class CompletionVerifierResult(ProtocolModel):
         return None if value is None else _code(value, field_name="verifier reason code")
 
 
-def _quoted_paths(text: str) -> tuple[str, ...]:
-    values: list[str] = []
-    for match in re.finditer(r"(?:`([^`]+)`|['\"]([^'\"]+)['\"])", text):
-        candidate = match.group(1) or match.group(2)
-        try:
-            normalized = normalize_workspace_path(candidate.strip().rstrip(",.;:，。；："))
-        except ValueError:
-            continue
-        if normalized not in values:
-            values.append(normalized)
-    return tuple(values[:_MAX_PATHS])
-
-
-def _validator_declarations(
-    text: str, *, workspace_root: Path | None = None
-) -> tuple[tuple[ValidationRequirement, ...], tuple[str, ...]]:
-    found: list[ValidationRequirement] = []
-    errors: list[str] = []
-
-    def add(kind: str, scope: str = ".") -> None:
-        try:
-            requirement = ValidationRequirement(validator_kind=kind, scope=scope)
-        except ValueError:
-            return
-        if requirement not in found:
-            found.append(requirement)
-
-    words = re.findall(r"[A-Za-z0-9_./-]+", text)
-    for index, word in enumerate(words):
-        lower_word = word.casefold()
-        scope = "."
-        if lower_word == "pytest":
-            scope, invalid = _next_validator_scope(
-                words, index + 1, "pytest", workspace_root=workspace_root
-            )
-            if invalid:
-                errors.append("validation_scope_invalid")
-            else:
-                add("pytest", scope)
-        elif lower_word == "ruff" and index + 1 < len(words):
-            action = words[index + 1].casefold()
-            if action == "check":
-                scope, invalid = _next_validator_scope(
-                    words, index + 2, "ruff", workspace_root=workspace_root
-                )
-                if invalid:
-                    errors.append("validation_scope_invalid")
-                else:
-                    add("ruff_check", scope)
-            elif action == "format" and index + 2 < len(words) and words[index + 2] == "--check":
-                scope, invalid = _next_validator_scope(
-                    words, index + 3, "ruff", workspace_root=workspace_root
-                )
-                if invalid:
-                    errors.append("validation_scope_invalid")
-                else:
-                    add("ruff_format_check", scope)
-        elif lower_word == "compileall":
-            scope, invalid = _next_validator_scope(
-                words, index + 1, "compileall", workspace_root=workspace_root
-            )
-            if invalid:
-                errors.append("validation_scope_invalid")
-            else:
-                add("compileall", scope)
-    return tuple(found[:_MAX_VALIDATIONS]), tuple(dict.fromkeys(errors))
-
-
-def _next_validator_scope(
-    words: list[str], start: int, family: str, *, workspace_root: Path | None = None
-) -> tuple[str, bool]:
-    allowed_flags = {
-        "pytest": {"-q", "-v", "-x", "--quiet", "--verbose", "--lf", "--last-failed"},
-        "ruff": {"--quiet", "--output-format=concise", "--output-format=full"},
-        "compileall": {"-q"},
-    }.get(family, set())
-    option_prefixes = {
-        "pytest": ("--maxfail=", "-k="),
-        "ruff": ("--select=", "--ignore=", "--line-length="),
-    }.get(family, ())
-    for word in words[start:]:
-        if word in allowed_flags or any(word.startswith(prefix) for prefix in option_prefixes):
-            continue
-        if _looks_like_path(word):
-            candidate = word.rstrip(",.;:)")
-            try:
-                return _normalize_declared_scope(candidate, workspace_root=workspace_root), False
-            except ValueError:
-                return ".", True
-        break
-    return ".", False
-
-
-def _normalize_declared_scope(value: str, *, workspace_root: Path | None) -> str:
-    candidate = Path(value)
-    if candidate.is_absolute():
-        if workspace_root is None:
-            raise ValueError("absolute validation scope has no workspace root")
-        try:
-            value = candidate.relative_to(workspace_root).as_posix() or "."
-        except ValueError:
-            raise ValueError("validation scope is outside the workspace") from None
-    return normalize_workspace_path(value)
-
-
-def _looks_like_path(value: str) -> bool:
-    return value == "." or "/" in value or value.startswith(("tests", "src", "test"))
-
-
 class OutcomeContractCompiler:
-    """Conservative deterministic compiler for ordinary direct-agent prompts."""
+    """Compatibility boundary for explicit, trusted completion contracts.
 
-    _CHANGE_MARKERS = (
-        "edit",
-        "fix",
-        "change",
-        "create",
-        "delete",
-        "remove",
-        "rename",
-        "implement",
-        "修改",
-        "修复",
-        "新增",
-        "创建",
-        "删除",
-        "重命名",
-        "实现",
-        "写入",
-        "更新",
-        "编辑",
-        "添加",
-        "移除",
-    )
-    _EXPLANATION_MARKERS = (
-        "explain",
-        "review",
-        "analy",
-        "inspect",
-        "describe",
-        "解释",
-        "分析",
-        "审查",
-        "查看",
-        "说明",
-    )
-    _CONFIGURATION_ONLY_MARKERS = (
-        "工作空间简介",
-        "工作空间名称",
-        "工作区简介",
-        "工作区名称",
-        "配置",
-        "偏好设置",
-    )
+    Natural-language requests are intentionally not interpreted here. Production
+    composition uses the model-backed ``OutcomeIntentResolver``; callers without
+    one receive an unspecified contract rather than lexical guesses.
+    """
 
     def __init__(self, workspace_root: str | Path | None = None) -> None:
-        self.workspace_root = (
-            Path(workspace_root).absolute() if workspace_root is not None else None
-        )
+        del workspace_root
 
     def compile(
         self, user_input: str, *, explicit: OutcomeContract | None = None
     ) -> OutcomeContract:
         if explicit is not None:
             return explicit
-        text = user_input if isinstance(user_input, str) else ""
-        lower = text.casefold()
-        paths = _quoted_paths(text)
-        requirements, contract_errors = _validator_declarations(
-            text, workspace_root=self.workspace_root
-        )
-        words = set(re.findall(r"[a-z0-9_]+", lower))
-        ascii_change = {
-            marker for marker in self._CHANGE_MARKERS if marker.isascii() and marker.isalpha()
-        }
-        ascii_explanation = {
-            marker for marker in self._EXPLANATION_MARKERS if marker.isascii() and marker.isalpha()
-        }
-        has_change = bool(words & ascii_change) or any(
-            marker in text for marker in self._CHANGE_MARKERS if not marker.isascii()
-        )
-        if (
-            has_change
-            and not paths
-            and any(marker in text for marker in self._CONFIGURATION_ONLY_MARKERS)
-        ):
-            # Configuration tools persist outside the workspace baseline. Keep
-            # generic profile/settings language compatible without weakening the
-            # explicit-path or code/file change contract.
-            has_change = False
-        has_explanation = (
-            any(word.startswith("analy") for word in words)
-            or bool(words & (ascii_explanation - {"analy"}))
-            or any(marker in text for marker in self._EXPLANATION_MARKERS if not marker.isascii())
-        )
-        if has_change:
-            mode = OutcomeMode.CHANGE
-            no_change_allowed = False
-        elif has_explanation:
-            mode = OutcomeMode.EXPLANATION
-            no_change_allowed = True
-        else:
-            mode = OutcomeMode.UNSPECIFIED
-            no_change_allowed = True
+        del user_input
         return OutcomeContract(
-            mode=mode,
-            target_paths=paths if mode is OutcomeMode.CHANGE else (),
-            allowed_paths=paths if mode is OutcomeMode.CHANGE and paths else None,
-            required_validations=requirements,
-            no_change_allowed=no_change_allowed,
-            contract_error_codes=contract_errors,
+            mode=OutcomeMode.UNSPECIFIED,
+            no_change_allowed=True,
         )
 
 

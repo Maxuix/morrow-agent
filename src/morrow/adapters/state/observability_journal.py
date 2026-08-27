@@ -7,6 +7,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 
 from morrow.adapters.state.transaction import SqliteJournalBackend
+from morrow.core.completion import OutcomeContract
 from morrow.core.domain import DurableAgentRun
 from morrow.core.models import (
     AgentStopCode,
@@ -22,10 +23,12 @@ from morrow.core.observability import (
     AgentRunObservation,
     AgentRunTerminalMetrics,
     ModelRequestObservation,
+    ModelRequestPurpose,
     ModelRequestState,
     ToolTerminalCounts,
 )
 from morrow.core.ports import IdSource
+from morrow.core.prompt import PromptProfileEvidence
 from morrow.core.store import StorageError, StorageErrorCode
 
 
@@ -41,12 +44,47 @@ def _optional_unix(value: datetime | None) -> int | None:
     return _unix(value) if value is not None else None
 
 
+def _optional_json(value) -> str | None:
+    if value is None:
+        return None
+    return json.dumps(
+        value.model_dump(mode="json"),
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+
+
+def _optional_model(raw: object, schema):
+    if raw is None:
+        return None
+    if not isinstance(raw, str):
+        raise StorageError(
+            StorageErrorCode.NEEDS_REPAIR,
+            "AgentRun request evidence is not safe to read",
+        )
+    try:
+        value = schema.model_validate_json(raw)
+    except (TypeError, ValueError):
+        raise StorageError(
+            StorageErrorCode.NEEDS_REPAIR,
+            "AgentRun request evidence is not safe to read",
+        ) from None
+    if _optional_json(value) != raw:
+        raise StorageError(
+            StorageErrorCode.NEEDS_REPAIR,
+            "AgentRun request evidence is not canonical",
+        )
+    return value
+
+
 _REQUEST_COLUMNS = (
     "model_request_id, workspace_id, agent_run_id, attempt_ordinal, state, admitted_at_unix, "
     "settled_at_unix, estimated_request_chars, request_char_budget, cleared_cycle_count, "
     "dropped_turn_count, dropped_cycle_count, dropped_record_count, tool_rounds, tool_calls, "
     "finish_reason, error_code, usage_availability, input_tokens, output_tokens, total_tokens, "
-    "cost_availability, cost_amount_minor, cost_currency, cost_source"
+    "cost_availability, cost_amount_minor, cost_currency, cost_source, purpose, "
+    "prompt_evidence_json, resolved_outcome_contract_json"
 )
 _METRICS_COLUMNS = (
     "agent_run_id, workspace_id, finish_reason, stop_code, model_attempts, retry_count, "
@@ -89,6 +127,8 @@ class SqliteObservabilityJournal:
         dropped_record_count: int = 0,
         tool_rounds: int = 0,
         tool_calls: int = 0,
+        purpose: ModelRequestPurpose | str = ModelRequestPurpose.AGENT,
+        prompt_evidence: PromptProfileEvidence | None = None,
         model_request_id: str | None = None,
         admitted_at: datetime | None = None,
     ) -> ModelRequestObservation:
@@ -108,6 +148,8 @@ class SqliteObservabilityJournal:
             dropped_record_count=dropped_record_count,
             tool_rounds=tool_rounds,
             tool_calls=tool_calls,
+            purpose=purpose,
+            prompt_evidence=prompt_evidence,
         )
         del run
 
@@ -129,7 +171,7 @@ class SqliteObservabilityJournal:
                     "AgentRun model request identifier is already in use",
                 )
             self.backend.executor().execute(
-                f"INSERT INTO agent_run_model_requests({_REQUEST_COLUMNS}) VALUES ({', '.join('?' for _ in range(25))})",
+                f"INSERT INTO agent_run_model_requests({_REQUEST_COLUMNS}) VALUES ({', '.join('?' for _ in range(28))})",
                 self._request_values(candidate),
             )
             stored = self.get_model_request(workspace_id, candidate.model_request_id)
@@ -152,6 +194,7 @@ class SqliteObservabilityJournal:
         error_code: ModelErrorCode | str | None = None,
         usage: ModelUsage | None = None,
         cost: ModelCost | None = None,
+        resolved_outcome_contract: OutcomeContract | None = None,
         settled_at: datetime | None = None,
     ) -> ModelRequestObservation:
         selected_state = ModelRequestState(state)
@@ -175,6 +218,7 @@ class SqliteObservabilityJournal:
                     "error_code": ModelErrorCode(error_code) if error_code is not None else None,
                     "usage": usage or ModelUsage.unavailable(),
                     "cost": cost or ModelCost.unavailable(),
+                    "resolved_outcome_contract": resolved_outcome_contract,
                 },
                 strict=True,
             )
@@ -199,7 +243,8 @@ class SqliteObservabilityJournal:
                 "UPDATE agent_run_model_requests SET state = ?, settled_at_unix = ?, "
                 "finish_reason = ?, error_code = ?, usage_availability = ?, input_tokens = ?, "
                 "output_tokens = ?, total_tokens = ?, cost_availability = ?, "
-                "cost_amount_minor = ?, cost_currency = ?, cost_source = ? "
+                "cost_amount_minor = ?, cost_currency = ?, cost_source = ?, "
+                "resolved_outcome_contract_json = ? "
                 "WHERE model_request_id = ? AND workspace_id = ? AND state = 'admitted'",
                 (
                     candidate.state.value,
@@ -214,6 +259,7 @@ class SqliteObservabilityJournal:
                     candidate.cost.amount_minor,
                     candidate.cost.currency,
                     candidate.cost.source,
+                    _optional_json(candidate.resolved_outcome_contract),
                     model_request_id,
                     workspace_id,
                 ),
@@ -480,6 +526,9 @@ class SqliteObservabilityJournal:
             request.cost.amount_minor,
             request.cost.currency,
             request.cost.source,
+            request.purpose.value,
+            _optional_json(request.prompt_evidence),
+            _optional_json(request.resolved_outcome_contract),
         )
 
     def _metrics_for_run(
@@ -607,6 +656,9 @@ def _request_from_row(row: tuple[object, ...]) -> ModelRequestObservation:
             error_code=ModelErrorCode(str(row[16])) if row[16] is not None else None,
             usage=_usage_from_columns(row[17], row[18], row[19], row[20]),
             cost=_cost_from_columns(row[21], row[22], row[23], row[24]),
+            purpose=ModelRequestPurpose(str(row[25])),
+            prompt_evidence=_optional_model(row[26], PromptProfileEvidence),
+            resolved_outcome_contract=_optional_model(row[27], OutcomeContract),
         )
     except StorageError:
         raise

@@ -64,8 +64,26 @@ class ToolCycleExecutor:
         total: int,
         result_limit: int,
         remaining_run_seconds: float,
+        preflight_error: tuple[ToolErrorCode, str] | None = None,
     ) -> ToolCallExecution:
         durable = durable_execution
+        if preflight_error is not None:
+            code, message = preflight_error
+            result = self.tool_executor.error_outcome(
+                call, code, message, result_limit=result_limit
+            )
+            if durable is not None:
+                durable = self._coordinator(session).deny_execution_before_handler(
+                    durable, now=self.wall_now(session)
+                )
+            self.tool_executor.cleanup_call(
+                call,
+                run_context=run_context,
+                ordinal=ordinal,
+                total=total,
+                result_limit=result_limit,
+            )
+            return ToolCallExecution(result, durable)
         skip_approval = durable is not None
         denied_result = None
         handler_disposition = None
@@ -91,6 +109,15 @@ class ToolCycleExecutor:
                         now=self.wall_now(session),
                         result_limit=result_limit,
                     )
+                except asyncio.CancelledError:
+                    self.tool_executor.cleanup_call(
+                        call,
+                        run_context=run_context,
+                        ordinal=ordinal,
+                        total=total,
+                        result_limit=result_limit,
+                    )
+                    raise
                 except (
                     ApprovalDecisionError,
                     ExecutionTransitionError,
@@ -181,6 +208,13 @@ class ToolCycleExecutor:
                 now=self.wall_now(session),
                 disposition=handler_disposition,
             )
+        self.tool_executor.cleanup_call(
+            call,
+            run_context=run_context,
+            ordinal=ordinal,
+            total=total,
+            result_limit=result_limit,
+        )
         return ToolCallExecution(result, durable)
 
     def _unknown_after_handler_entry(self, call: FunctionToolCall) -> bool:

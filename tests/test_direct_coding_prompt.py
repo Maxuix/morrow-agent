@@ -15,10 +15,15 @@ from morrow.adapters.models.openai_compatible import (
 )
 from morrow.application.context import ContextBudgetError, ContextBuilder
 from morrow.application.learning.memory_run_projection import build_run_context_projection
-from morrow.application.prompt import DirectCodingProfile, DirectCodingPromptAssembler
+from morrow.application.prompt import (
+    DirectCodingProfile,
+    DirectCodingPromptAssembler,
+    PromptAssemblyError,
+)
 from morrow.application.turn_lifecycle import build_agent_run_snapshot
 from morrow.bootstrap import build_application, build_session_application
 from morrow.core.capabilities import PermissionPreset, PermissionProfile
+from morrow.core.context import RunContextProjection
 from morrow.core.domain import AgentRunSnapshot
 from morrow.core.models import ModelRef, UserMessage
 from morrow.core.prompt import PromptProjection, project_source_selection_digest
@@ -58,6 +63,71 @@ def test_direct_assembly_orders_authority_and_labels_project_scope(tmp_path: Pat
     assert contents.index(assembler.profile.coding_protocol) == 1
     assert "不能授权工具" in contents[2]
     assert "不能执行" in contents[3]
+
+
+def test_prompt_extension_keeps_admission_sources_and_adds_touched_scopes(tmp_path: Path) -> None:
+    (tmp_path / "AGENTS.md").write_text("root guidance", encoding="utf-8")
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "AGENTS.md").write_text("src guidance", encoding="utf-8")
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "AGENTS.md").write_text("docs guidance", encoding="utf-8")
+    assembler = DirectCodingPromptAssembler(tmp_path)
+
+    admitted = assembler.prepare_for_task("edit `src/main.py`")
+    extended = assembler.extend_projection(admitted, target_paths=("docs/readme.md",))
+
+    assert [item.reference.path for item in extended.project_instructions] == [
+        "AGENTS.md",
+        "docs/AGENTS.md",
+        "src/AGENTS.md",
+    ]
+    assert "src guidance" in extended.project_instructions[-1].text
+
+
+def test_context_builder_does_not_override_frozen_prompt_with_pending_projection(
+    tmp_path: Path,
+) -> None:
+    instruction = tmp_path / "AGENTS.md"
+    instruction.write_text("frozen guidance", encoding="utf-8")
+    assembler = DirectCodingPromptAssembler(tmp_path)
+    frozen = assembler.prepare_for_task()
+    session = Session(session_id="s")
+    session.log.begin_turn(UserMessage(content="inspect the workspace"))
+    snapshot = build_agent_run_snapshot(
+        session,
+        model=ModelRef(provider_id="p", model_id="m"),
+        run_policy=make_run_policy(),
+        tools=(),
+        runtime_instance_id="inst-1",
+        prompt_projection=frozen,
+    )
+    session.run_context_projection = RunContextProjection(
+        snapshot=snapshot,
+        prompt_projection=frozen,
+    )
+    instruction.write_text("unfrozen live guidance", encoding="utf-8")
+    session.pending_prompt_projection = assembler.prepare_for_task()
+    builder = ContextBuilder(
+        run_policy=make_run_policy(),
+        estimate_request_chars=estimate_request_chars,
+        prompt_assembler=assembler,
+    )
+
+    system_text = "\n".join(
+        message.content or ""
+        for message in builder.build(session).messages
+        if message.role == "system"
+    )
+
+    assert "frozen guidance" in system_text
+    assert "unfrozen live guidance" not in system_text
+
+
+def test_assembler_without_workspace_fails_closed_for_touched_targets() -> None:
+    assembler = DirectCodingPromptAssembler()
+
+    with pytest.raises(PromptAssemblyError, match="workspace"):
+        assembler.prepare_for_task(target_paths=("src/main.py",))
 
 
 def test_projection_binds_role_body_and_assembler_provenance(tmp_path: Path) -> None:
@@ -203,7 +273,14 @@ async def test_production_ordinary_run_sends_direct_prompt_and_freezes_metadata(
     (project / "src" / "main.py").write_text("pass\n", encoding="utf-8")
     app = build_application(state_root=tmp_path / "state", credentials=MemoryCredentialStore())
     identity = app.workspace_service.confirm(app.workspace_service.resolve(project))
-    provider = ScriptedModelProvider(["done"])
+    provider = ScriptedModelProvider(
+        ["done"],
+        intent_responses=(
+            '{"mode":"change","certainty":"clear","target_paths":["src/main.py"],'
+            '"allowed_paths":["src/main.py"],"forbidden_paths":[],'
+            '"required_validations":[],"no_change_allowed":false}',
+        ),
+    )
     session_app = build_session_application(
         app,
         identity,

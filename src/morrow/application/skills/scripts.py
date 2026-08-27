@@ -254,6 +254,9 @@ class SkillScriptExecutionService:
     def cached_plan(self, run_id: str, call_id: str) -> SkillScriptPlan | None:
         return self._plans.get((run_id, call_id))
 
+    def discard_plan(self, run_id: str, call_id: str) -> None:
+        self._plans.pop((run_id, call_id), None)
+
     def intent(self, plan: SkillScriptPlan) -> OperationIntent:
         request = plan.request
         relative = (
@@ -793,6 +796,7 @@ def make_skill_script_tool(service: SkillScriptExecutionService) -> RegisteredTo
         context_handler=handler,
         intent_resolver=resolve,
         context_approval_preview=preview,
+        context_cleanup=lambda context: service.discard_plan(context.run.run_id, context.call_id),
         execution_policy=ToolExecutionPolicy(
             effect=ToolEffect.SESSION_WRITE,
             approval=ToolApproval.REQUIRED,

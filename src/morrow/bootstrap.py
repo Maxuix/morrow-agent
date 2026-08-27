@@ -966,6 +966,7 @@ def build_session_application(
             id_source=app.id_source,
             tool_executor=tool_executor,
             completion_checker=CompletionChecker(files),
+            resolve_outcome_intent=True,
         )
         skill_services = build_skill_services(
             app,

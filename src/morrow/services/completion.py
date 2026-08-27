@@ -25,11 +25,12 @@ from morrow.core.completion import (
     WorkspaceBaselineStatus,
 )
 from morrow.services.files import WorkspaceFileService
+from morrow.services.git import GitInspectionService, GitServiceError
 
 MAX_BASELINE_ENTRIES = 256
 MAX_BASELINE_FILE_BYTES = 64 * 1024 * 1024
 MAX_BASELINE_TOTAL_BYTES = 256 * 1024 * 1024
-MAX_BASELINE_PATH_CHARS = 24 * 1024
+MAX_BASELINE_PATH_CHARS = 32 * 1024
 MAX_GIT_METADATA_BYTES = 8 * 1024 * 1024
 _EXCLUDED_COMPONENTS = frozenset(
     {
@@ -80,6 +81,9 @@ class WorkspaceBaselineService:
 
     def _scan(self) -> WorkspaceBaseline:
         root = self.files.resolver.root
+        git_baseline = self._git_scan(root)
+        if git_baseline is not None:
+            return git_baseline
         entries: list[WorkspaceBaselineEntry] = []
         directories: list[str] = []
         try:
@@ -249,6 +253,123 @@ class WorkspaceBaselineService:
             repository_state=repository_state,
             git_head=git_head,
             reason_code=reason_code,
+        )
+
+    def _git_scan(self, root: Path) -> WorkspaceBaseline | None:
+        """Capture only dirty Git paths; clean tracked trees are represented by Git."""
+        try:
+            status = GitInspectionService(self.files).status(result_limit=128 * 1024)
+        except GitServiceError:
+            repository_state, git_head = self._repository_evidence(root)
+            if repository_state != "git":
+                return None
+            return WorkspaceBaseline(
+                status=WorkspaceBaselineStatus.INCONCLUSIVE,
+                entries=(),
+                repository_state="git",
+                git_head=git_head,
+                reason_code="baseline_git_status_failed",
+            )
+        if not status.repository:
+            return None
+        repository_state, git_head = self._repository_evidence(root)
+        if git_head is None:
+            return WorkspaceBaseline(
+                status=WorkspaceBaselineStatus.INCONCLUSIVE,
+                entries=(),
+                repository_state="git",
+                reason_code="baseline_repository_evidence_unavailable",
+            )
+        dirty_paths = tuple(
+            dict.fromkeys(
+                path
+                for item in status.entries
+                for path in (item.path, item.original_path)
+                if path is not None
+            )
+        )
+        if status.truncated or len(dirty_paths) > self.max_entries:
+            return WorkspaceBaseline(
+                status=WorkspaceBaselineStatus.TRUNCATED,
+                entries=(),
+                repository_state="git",
+                git_head=git_head,
+                reason_code="baseline_git_status_limit",
+            )
+        entries: list[WorkspaceBaselineEntry] = []
+        total_bytes = 0
+        total_path_chars = 0
+        for path in dirty_paths:
+            if self.files.sensitive_policy.is_protected_path(path):
+                return WorkspaceBaseline(
+                    status=WorkspaceBaselineStatus.INCONCLUSIVE,
+                    entries=tuple(entries),
+                    repository_state="git",
+                    git_head=git_head,
+                    reason_code="baseline_protected_dirty_path",
+                )
+            total_path_chars += len(path)
+            if total_path_chars > MAX_BASELINE_PATH_CHARS:
+                return WorkspaceBaseline(
+                    status=WorkspaceBaselineStatus.TRUNCATED,
+                    entries=tuple(entries),
+                    repository_state="git",
+                    git_head=git_head,
+                    reason_code="baseline_path_limit",
+                )
+            try:
+                entry = self._dirty_entry(path)
+            except (OSError, ValueError):
+                return WorkspaceBaseline(
+                    status=WorkspaceBaselineStatus.INCONCLUSIVE,
+                    entries=tuple(entries),
+                    repository_state="git",
+                    git_head=git_head,
+                    reason_code="baseline_read_failed",
+                )
+            total_bytes += entry.size
+            if total_bytes > self.max_total_bytes:
+                return WorkspaceBaseline(
+                    status=WorkspaceBaselineStatus.TRUNCATED,
+                    entries=tuple(entries),
+                    repository_state="git",
+                    git_head=git_head,
+                    reason_code="baseline_byte_limit",
+                )
+            entries.append(entry)
+        return WorkspaceBaseline(
+            status=WorkspaceBaselineStatus.COMPLETE,
+            entries=tuple(sorted(entries, key=lambda item: item.path)),
+            repository_state="git",
+            git_head=git_head,
+        )
+
+    def _dirty_entry(self, path: str) -> WorkspaceBaselineEntry:
+        resolved = self.files.resolver.resolve_mutation(path)
+        if resolved.kind == "missing":
+            return WorkspaceBaselineEntry(
+                path=resolved.relative_path,
+                kind="missing",
+                sha256=hashlib.sha256(b"morrow-missing\0").hexdigest(),
+                size=0,
+            )
+        if resolved.kind == "symlink":
+            target = os.readlink(resolved.lexical)
+            raw = target.encode("utf-8", errors="surrogateescape")
+            return WorkspaceBaselineEntry(
+                path=resolved.relative_path,
+                kind="symlink",
+                sha256=hashlib.sha256(b"morrow-symlink\0" + raw).hexdigest(),
+                size=len(raw),
+            )
+        if resolved.kind != "file":
+            raise OSError("dirty Git path is not a file")
+        raw = self.files.filesystem.read_bytes(resolved.target, max_bytes=self.max_file_bytes)
+        return WorkspaceBaselineEntry(
+            path=resolved.relative_path,
+            kind="file",
+            sha256=hashlib.sha256(raw).hexdigest(),
+            size=len(raw),
         )
 
     @staticmethod
@@ -712,8 +833,30 @@ class CompletionChecker:
             ):
                 reasons.append("missing_required_change")
                 next_actions.append("change_target_path")
+            attribution_before = dict(before)
+            if (
+                changed_paths
+                and baseline.repository_state == "git"
+                and current.repository_state == "git"
+                and baseline.git_head == current.git_head
+            ):
+                git = GitInspectionService(self.files)
+                for path in changed_paths:
+                    if path in attribution_before:
+                        continue
+                    try:
+                        raw = git.head_blob(path, max_bytes=MAX_BASELINE_FILE_BYTES)
+                    except GitServiceError:
+                        raw = None
+                    if raw is not None:
+                        attribution_before[path] = WorkspaceBaselineEntry(
+                            path=path,
+                            kind="file",
+                            sha256=hashlib.sha256(raw).hexdigest(),
+                            size=len(raw),
+                        )
             if changed_paths and not self._run_attributed(
-                changed_paths, run_context, before, after
+                changed_paths, run_context, attribution_before, after
             ):
                 reasons.append("baseline_drift")
                 next_actions.append("inspect_workspace_baseline")
@@ -917,8 +1060,12 @@ class CompletionChecker:
             matching = tuple(fact for fact in successful if path in fact.relative_paths)
             if not matching:
                 return False
-            expected_revision = before[path].sha256 if path in before else None
-            current_revision = after[path].sha256 if path in after else None
+            expected_revision = (
+                before[path].sha256 if path in before and before[path].kind != "missing" else None
+            )
+            current_revision = (
+                after[path].sha256 if path in after and after[path].kind != "missing" else None
+            )
             applied = False
             for fact in matching:
                 transition: tuple[str | None, str | None] | None = None

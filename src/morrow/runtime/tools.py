@@ -537,6 +537,7 @@ PolicyResolver = Callable[
 ]
 ContextHandler = Callable[[BaseModel, ToolCallContext], Awaitable[object]]
 ContextApprovalPreview = Callable[[BaseModel, ToolCallContext], tuple[str, ...] | list[str]]
+ContextCleanup = Callable[[ToolCallContext], None]
 
 
 @dataclass(frozen=True)
@@ -609,6 +610,7 @@ class RegisteredTool:
     policy_resolver: PolicyResolver | None = None
     context_handler: ContextHandler | None = None
     context_approval_preview: ContextApprovalPreview | None = None
+    context_cleanup: ContextCleanup | None = None
     approval_preview_budget: ApprovalPreviewBudget = field(default_factory=ApprovalPreviewBudget)
     recovery_declaration: ToolRecoveryDeclaration | None = None
     runtime_contract: ToolContractExpectation | None = None
@@ -1059,7 +1061,49 @@ class ToolExecutor:
                 extra["allow_unconfined_host"] = True
             return await self.execute(call, result_limit=result_limit, **extra)
         finally:
+            registered = self.tool_set.tools.get(call.name)
+            if registered is not None and registered.context_cleanup is not None:
+                cleanup_context = ToolCallContext(
+                    run=run_context,
+                    call_id=call.id,
+                    tool_name=call.name,
+                    ordinal=ordinal,
+                    total=total,
+                    result_limit=result_limit or self.run_policy.effective_result_limit,
+                )
+                try:
+                    registered.context_cleanup(cleanup_context)
+                except Exception:
+                    # Prepared plans are an in-memory optimization. Cleanup failure must
+                    # never replace the durable tool outcome or mask cancellation.
+                    pass
             self._active_run_context, self._active_ordinal, self._active_total = previous
+
+    def cleanup_call(
+        self,
+        call: FunctionToolCall,
+        *,
+        run_context: ToolRunContext,
+        ordinal: int,
+        total: int,
+        result_limit: int,
+    ) -> None:
+        """Release ephemeral preparation for a call that never enters execute()."""
+        registered = self.tool_set.tools.get(call.name)
+        if registered is None or registered.context_cleanup is None:
+            return
+        context = ToolCallContext(
+            run=run_context,
+            call_id=call.id,
+            tool_name=call.name,
+            ordinal=ordinal,
+            total=total,
+            result_limit=result_limit,
+        )
+        try:
+            registered.context_cleanup(context)
+        except Exception:
+            pass
 
     @staticmethod
     def _policy_error_code(reason_codes) -> ToolErrorCode:
@@ -1194,6 +1238,7 @@ def make_tool(
     policy_resolver: PolicyResolver | None = None,
     context_handler: ContextHandler | None = None,
     context_approval_preview: ContextApprovalPreview | None = None,
+    context_cleanup: ContextCleanup | None = None,
     approval_preview_budget: ApprovalPreviewBudget | None = None,
     recovery_declaration: ToolRecoveryDeclaration | None = None,
 ) -> RegisteredTool:
@@ -1233,6 +1278,7 @@ def make_tool(
         policy_resolver=policy_resolver,
         context_handler=context_handler,
         context_approval_preview=context_approval_preview,
+        context_cleanup=context_cleanup,
         approval_preview_budget=approval_preview_budget or ApprovalPreviewBudget(),
         recovery_declaration=declaration,
     )

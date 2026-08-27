@@ -23,6 +23,7 @@ from morrow.adapters.state.migrations import (
     V16,
     V17,
     V18,
+    V19,
     MigrationRegistry,
 )
 from morrow.adapters.state.operational import OperationalStore
@@ -50,6 +51,7 @@ def _registry(version: int) -> MigrationRegistry:
         V16,
         V17,
         V18,
+        V19,
     ):
         if migration.version <= version:
             registry.add(migration)
@@ -61,12 +63,13 @@ def test_v14_to_v15_creates_draft_validation_and_usage_tables(tmp_path) -> None:
     OperationalStore(root, registry=_registry(14), maintenance_timeout=0).initialize().close()
     report = OperationalStore(root, maintenance_timeout=0).migrate()
     assert report.from_version == 14
-    assert report.to_version == 18
+    assert report.to_version == 19
     assert report.applied == (
         "skill_drafts_and_usage",
         "mcp_control_catalog_and_snapshots",
         "agent_run_observability",
         "agent_run_completion_truth",
+        "agent_run_request_evidence",
     )
     with OperationalStore(root, maintenance_timeout=0).open(StoreOpenMode.READ_ONLY) as handle:
         names = handle.run_read(
@@ -89,8 +92,12 @@ def test_v16_to_v17_creates_agent_run_observation_tables(tmp_path) -> None:
     report = OperationalStore(root, maintenance_timeout=0).migrate()
 
     assert report.from_version == 16
-    assert report.to_version == 18
-    assert report.applied == ("agent_run_observability", "agent_run_completion_truth")
+    assert report.to_version == 19
+    assert report.applied == (
+        "agent_run_observability",
+        "agent_run_completion_truth",
+        "agent_run_request_evidence",
+    )
     with OperationalStore(root, maintenance_timeout=0).open(StoreOpenMode.READ_ONLY) as handle:
         objects = handle.run_read(
             lambda executor: executor.execute(
@@ -108,7 +115,8 @@ def test_v16_to_v17_creates_agent_run_observation_tables(tmp_path) -> None:
     )
 
 
-def test_v19_is_still_reserved_for_future_work(tmp_path) -> None:
+def test_v20_is_still_reserved_for_future_work(tmp_path) -> None:
+    del tmp_path
     with pytest.raises(StorageError) as error:
-        MigrationRegistry(supported_version=19)
+        MigrationRegistry(supported_version=20)
     assert error.value.code is StorageErrorCode.UNAVAILABLE

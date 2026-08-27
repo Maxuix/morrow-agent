@@ -13,6 +13,7 @@ from enum import StrEnum
 
 from pydantic import Field, field_validator, model_validator
 
+from morrow.core.completion import OutcomeContract
 from morrow.core.domain import (
     AGENT_RUN_ID_PREFIX,
     SESSION_ID_PREFIX,
@@ -32,6 +33,7 @@ from morrow.core.models import (
     UsageAvailability,
     utc_now,
 )
+from morrow.core.prompt import PromptProfileEvidence
 
 MODEL_REQUEST_ID_PREFIX = "mreq"
 
@@ -41,6 +43,11 @@ class ModelRequestState(StrEnum):
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
+
+
+class ModelRequestPurpose(StrEnum):
+    AGENT = "agent"
+    OUTCOME_INTENT = "outcome_intent"
 
 
 ObservationRequestState = ModelRequestState
@@ -84,6 +91,8 @@ class ModelRequestObservation(ProtocolModel):
     workspace_id: str
     agent_run_id: str
     attempt_ordinal: int = Field(ge=1)
+    purpose: ModelRequestPurpose = ModelRequestPurpose.AGENT
+    prompt_evidence: PromptProfileEvidence | None = None
     state: ModelRequestState = ModelRequestState.ADMITTED
     admitted_at: datetime = Field(default_factory=utc_now)
     settled_at: datetime | None = None
@@ -99,6 +108,7 @@ class ModelRequestObservation(ProtocolModel):
     error_code: ModelErrorCode | None = None
     usage: ModelUsage = Field(default_factory=ModelUsage.unavailable)
     cost: ModelCost = Field(default_factory=ModelCost.unavailable)
+    resolved_outcome_contract: OutcomeContract | None = None
 
     @field_validator("model_request_id")
     @classmethod
@@ -131,6 +141,7 @@ class ModelRequestObservation(ProtocolModel):
                 or self.error_code
                 or self.usage.availability is not UsageAvailability.UNAVAILABLE
                 or self.cost.availability is not UsageAvailability.UNAVAILABLE
+                or self.resolved_outcome_contract is not None
             ):
                 raise ValueError("admitted model request must not contain settlement facts")
         elif self.settled_at is None:
@@ -145,6 +156,11 @@ class ModelRequestObservation(ProtocolModel):
                 raise ValueError("failed model request requires an error code")
         elif self.state is ModelRequestState.CANCELLED and self.finish_reason is not None:
             raise ValueError("cancelled model request must not contain a finish reason")
+        if self.resolved_outcome_contract is not None and (
+            self.purpose is not ModelRequestPurpose.OUTCOME_INTENT
+            or self.state is not ModelRequestState.COMPLETED
+        ):
+            raise ValueError("resolved contract requires a completed intent request")
         return self
 
 

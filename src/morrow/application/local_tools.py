@@ -742,6 +742,7 @@ def make_run_command_tool(process: ProcessExecutionService) -> RegisteredTool:
         context_handler=handler,
         intent_resolver=resolve,
         context_approval_preview=preview,
+        context_cleanup=lambda context: process.discard_plan(context.run.run_id, context.call_id),
         approval_preview_budget=COMMAND_PREVIEW_BUDGET,
         recovery_declaration=tool_declaration(
             "run_command",
@@ -869,6 +870,9 @@ def make_promote_sandbox_tool(
         context_handler=handler,
         intent_resolver=resolve,
         context_approval_preview=preview,
+        context_cleanup=lambda context: mutation.discard_previews(
+            context.run.run_id, context.call_id
+        ),
         execution_policy=ToolExecutionPolicy(
             effect=ToolEffect.PERSISTENT_WRITE,
             approval=ToolApproval.REQUIRED,
@@ -1131,6 +1135,9 @@ def _make_destructive_file_tool(
         context_handler=handler,
         intent_resolver=resolve,
         context_approval_preview=preview,
+        context_cleanup=lambda context: mutation.discard_previews(
+            context.run.run_id, context.call_id
+        ),
         execution_policy=ToolExecutionPolicy(
             effect=ToolEffect.PERSISTENT_WRITE,
             approval=ToolApproval.REQUIRED,
@@ -1246,6 +1253,9 @@ def make_apply_patch_tool(
         context_handler=handler,
         intent_resolver=resolve,
         context_approval_preview=preview,
+        context_cleanup=lambda context: mutation.discard_previews(
+            context.run.run_id, context.call_id
+        ),
         approval_preview_budget=MUTATION_PREVIEW_BUDGET,
         recovery_declaration=tool_declaration("apply_patch"),
     )
@@ -1302,6 +1312,9 @@ def make_write_file_tool(
         context_handler=handler,
         intent_resolver=resolve,
         context_approval_preview=preview,
+        context_cleanup=lambda context: mutation.discard_previews(
+            context.run.run_id, context.call_id
+        ),
         approval_preview_budget=MUTATION_PREVIEW_BUDGET,
         recovery_declaration=tool_declaration("write_file"),
     )

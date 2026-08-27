@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import AsyncIterator, Iterable, Sequence
 from datetime import UTC, datetime
 
@@ -141,12 +142,20 @@ def seed_user_turn(session, content, *, assistant=None, finish=None) -> None:
 
 
 class ScriptedModelProvider:
-    def __init__(self, responses: Iterable[object] = ()) -> None:
+    def __init__(
+        self,
+        responses: Iterable[object] = (),
+        *,
+        intent_responses: Iterable[object] = (),
+    ) -> None:
         self.responses = list(responses)
+        self.intent_responses = list(intent_responses)
         self.stream_calls: list[list[Message]] = []
         self.stream_tools: list[tuple[ToolDefinition, ...]] = []
         self.complete_calls: list[list[Message]] = []
+        self.intent_calls: list[list[Message]] = []
         self._index = 0
+        self._intent_index = 0
 
     def _next(self) -> object:
         if not self.responses:
@@ -154,6 +163,56 @@ class ScriptedModelProvider:
         item = self.responses[min(self._index, len(self.responses) - 1)]
         self._index += 1
         return item
+
+    def _default_intent_response(self) -> str:
+        mutation_tools = {
+            "apply_patch",
+            "write_file",
+            "delete_file",
+            "move_file",
+            "rename_file",
+            "promote_sandbox_changes",
+        }
+        paths: list[str] = []
+        has_mutation = False
+        for response in self.responses:
+            if not isinstance(response, AssistantMessage):
+                continue
+            for call in response.tool_calls:
+                if call.name not in mutation_tools:
+                    continue
+                has_mutation = True
+                try:
+                    arguments = json.loads(call.arguments)
+                except (TypeError, ValueError):
+                    arguments = {}
+                if isinstance(arguments, dict):
+                    for key in ("path", "source_path", "destination_path"):
+                        value = arguments.get(key)
+                        if isinstance(value, str) and value not in paths:
+                            paths.append(value)
+        payload = (
+            {
+                "mode": "change",
+                "certainty": "clear",
+                "target_paths": paths,
+                "allowed_paths": None,
+                "forbidden_paths": [],
+                "required_validations": [],
+                "no_change_allowed": False,
+            }
+            if has_mutation
+            else {
+                "mode": "unspecified",
+                "certainty": "ambiguous",
+                "target_paths": [],
+                "allowed_paths": None,
+                "forbidden_paths": [],
+                "required_validations": [],
+                "no_change_allowed": True,
+            }
+        )
+        return json.dumps(payload, separators=(",", ":"))
 
     async def stream(
         self,
@@ -196,6 +255,20 @@ class ScriptedModelProvider:
 
     async def complete(self, model: ModelRef, messages: list[Message]) -> str:
         del model
+        from morrow.runtime.outcome_intent import OUTCOME_INTENT_SYSTEM_MARKER
+
+        if messages and OUTCOME_INTENT_SYSTEM_MARKER in (messages[0].content or ""):
+            self.intent_calls.append(list(messages))
+            if self.intent_responses:
+                response = self.intent_responses[
+                    min(self._intent_index, len(self.intent_responses) - 1)
+                ]
+                self._intent_index += 1
+            else:
+                response = self._default_intent_response()
+            if isinstance(response, BaseException):
+                raise response
+            return str(response)
         self.complete_calls.append(list(messages))
         response = self._next()
         if isinstance(response, BaseException):

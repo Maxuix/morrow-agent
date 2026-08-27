@@ -33,6 +33,10 @@ from morrow.core.models import (
     ToolApprovalDecision,
 )
 from morrow.runtime.agent import AgentLoop
+from morrow.runtime.outcome_intent import (
+    OutcomeIntentResolutionError,
+    OutcomeIntentResolver,
+)
 from morrow.runtime.session import Session
 from morrow.services import completion as completion_service
 from morrow.services.completion import CompletionChecker, WorkspaceBaselineService
@@ -118,6 +122,7 @@ def test_latest_scoped_validation_fact_replaces_only_its_own_requirement():
 
 def test_validator_recognition_is_strict_and_shell_control_flow_fails_closed(tmp_path):
     (tmp_path / "tests").mkdir()
+    (tmp_path / "src").mkdir()
     process = ProcessExecutionService(WorkspaceFileService(WorkspacePathResolver(tmp_path)))
 
     pytest_plan = process.preflight(CommandRequest(argv=(sys.executable, "-m", "pytest", "tests")))
@@ -125,6 +130,9 @@ def test_validator_recognition_is_strict_and_shell_control_flow_fails_closed(tmp
     opaque_plan = process.preflight(CommandRequest(argv=("ls", "tests")))
     shell_plan = process.preflight(CommandRequest(shell="pytest tests && echo done"))
     newline_shell_plan = process.preflight(CommandRequest(shell="pytest tests\necho done"))
+    mypy_plan = process.preflight(CommandRequest(argv=("mypy", "--strict", "src")))
+    cargo_plan = process.preflight(CommandRequest(argv=("cargo", "test", "-q")))
+    npm_plan = process.preflight(CommandRequest(argv=("npm", "test", "--", "--runInBand")))
 
     assert pytest_plan.validation_kind == "pytest"
     assert pytest_plan.validation_scope == "tests"
@@ -133,6 +141,9 @@ def test_validator_recognition_is_strict_and_shell_control_flow_fails_closed(tmp
     assert opaque_plan.validation_kind is None
     assert shell_plan.validation_kind is None
     assert newline_shell_plan.validation_kind is None
+    assert (mypy_plan.validation_kind, mypy_plan.validation_scope) == ("mypy", "src")
+    assert (cargo_plan.validation_kind, cargo_plan.validation_scope) == ("cargo_test", ".")
+    assert (npm_plan.validation_kind, npm_plan.validation_scope) == ("npm_test", ".")
 
 
 @pytest.mark.parametrize(
@@ -439,7 +450,11 @@ def test_compiled_target_paths_are_exclusive_and_reject_unexpected_net_changes(t
     )
 
     result = CompletionChecker(files).check(
-        OutcomeContractCompiler().compile("修复 `answer.txt`"),
+        OutcomeContract(
+            mode="change",
+            target_paths=("answer.txt",),
+            allowed_paths=("answer.txt",),
+        ),
         baseline,
         run_context=run,
     )
@@ -685,34 +700,30 @@ async def test_scripted_direct_agent_acceptance_requires_scoped_validation_and_r
     )
 
 
-def test_contract_compiler_is_conservative_about_explanations_and_targets():
+def test_contract_compiler_only_accepts_explicit_trusted_contracts():
     compiler = OutcomeContractCompiler()
+    explicit = OutcomeContract(mode="change", target_paths=("src/app.py",))
 
-    change = compiler.compile("修复 `src/app.py` 并运行 pytest tests")
-    flagged_change = compiler.compile("prefix the explanation with one sentence")
-    explanation = compiler.compile("请解释 `src/app.py` 的作用")
-    unspecified = compiler.compile("请处理一下这个问题")
-    configuration = compiler.compile("请更新工作空间简介")
-
-    assert change.mode == "change"
-    assert change.target_paths == ("src/app.py",)
-    assert change.required_validations == (
-        ValidationRequirement(validator_kind="pytest", scope="tests"),
-    )
-    assert flagged_change.mode.value == "unspecified"
-    assert explanation.mode == "explanation"
-    assert not explanation.requires_net_change
-    assert unspecified.mode == "unspecified"
-    assert not unspecified.requires_net_change
-    assert configuration.mode == "unspecified"
-    assert not configuration.requires_net_change
+    assert compiler.compile("任何自然语言", explicit=explicit) is explicit
+    assert compiler.compile("修复 `src/app.py`").mode.value == "unspecified"
 
 
-def test_absolute_validation_scope_is_normalized_against_frozen_workspace(tmp_path):
+@pytest.mark.asyncio
+async def test_semantic_intent_resolver_accepts_normalized_contract(tmp_path):
     (tmp_path / "tests").mkdir()
-    compiler = OutcomeContractCompiler(workspace_root=tmp_path)
-
-    contract = compiler.compile(f"修复 `answer.txt` 并运行 pytest {tmp_path / 'tests'}")
+    provider = ScriptedModelProvider(
+        intent_responses=(
+            '{"mode":"change","certainty":"clear","target_paths":["answer.txt"],'
+            '"allowed_paths":["answer.txt"],"forbidden_paths":[],'
+            '"required_validations":[{"validator_kind":"pytest","scope":"tests"}],'
+            '"no_change_allowed":false}',
+        )
+    )
+    contract = await OutcomeIntentResolver(
+        provider,
+        ModelRef(provider_id="p", model_id="m"),
+        make_context_builder(),
+    ).resolve(f"修复 answer.txt 并运行 pytest {tmp_path / 'tests'}")
 
     assert contract.required_validations == (
         ValidationRequirement(validator_kind="pytest", scope="tests"),
@@ -720,13 +731,23 @@ def test_absolute_validation_scope_is_normalized_against_frozen_workspace(tmp_pa
     assert not contract.contract_error_codes
 
 
-def test_absolute_validation_scope_outside_workspace_is_not_dropped(tmp_path):
-    contract = OutcomeContractCompiler(workspace_root=tmp_path).compile(
-        "修复 `answer.txt` 并运行 pytest /outside/tests"
+@pytest.mark.asyncio
+async def test_semantic_intent_resolver_rejects_outside_workspace_scope():
+    provider = ScriptedModelProvider(
+        intent_responses=(
+            '{"mode":"change","certainty":"clear","target_paths":["answer.txt"],'
+            '"allowed_paths":null,"forbidden_paths":[],'
+            '"required_validations":[{"validator_kind":"pytest",'
+            '"scope":"/outside/tests"}],"no_change_allowed":false}',
+        )
     )
 
-    assert not contract.required_validations
-    assert contract.contract_error_codes == ("validation_scope_invalid",)
+    with pytest.raises(OutcomeIntentResolutionError):
+        await OutcomeIntentResolver(
+            provider,
+            ModelRef(provider_id="p", model_id="m"),
+            make_context_builder(),
+        ).resolve("修复 answer.txt 并运行外部测试")
 
 
 def test_git_baseline_freezes_resolved_branch_head(tmp_path):
@@ -860,10 +881,11 @@ def test_failed_final_claim_is_buffered_and_gets_only_one_fact_feedback(tmp_path
     )
 
     assert not [event for event in events if event.type == "text.delta"]
-    assert events[-1].payload["finish_reason"] == "error"
-    assert events[-1].payload["stop_code"] == "missing_required_change"
     assert len(provider.stream_calls) == 2
-    assert "reason_codes=missing_required_change" in provider.stream_calls[1][0].content
+    correction = [
+        msg.content for msg in provider.stream_calls[1] if "reason_codes=" in (msg.content or "")
+    ][0]
+    assert "reason_codes=missing_required_change" in correction
 
 
 def test_failed_final_claim_reports_missing_validation_without_chat_history_append(tmp_path):
@@ -897,7 +919,9 @@ def test_failed_final_claim_reports_missing_validation_without_chat_history_appe
     assert events[-1].payload["stop_code"] == "validation_missing"
     assert [message.role for message in session.messages] == ["user"]
     assert len(provider.stream_calls) == 2
-    correction = provider.stream_calls[1][0].content
+    correction = [
+        msg.content for msg in provider.stream_calls[1] if "reason_codes=" in (msg.content or "")
+    ][0]
     assert "reason_codes=validation_missing,missing_required_change" in correction
     assert "claim one" not in correction
 

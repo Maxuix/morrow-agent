@@ -2,15 +2,13 @@
 
 ## Current status
 
-S7P-01 through S7P-05 are verified and fast-forward integrated into local `main`. Subplan 84 is
-complete. The three user-owned research documents remain untouched, and work is paused before
-S7P-06 by explicit user direction.
+Subplan 86 implementation and all declared offline gates are complete on
+`fix/s7p05-audit-remediation`. The post-fix audit defects are closed without opening S7P-06; its
+untracked draft and the three user-owned research documents remain untouched.
 
 ## Active task
 
-No implementation task is active. S7P-05 is present in `c14de4e`, with all six confirmed findings
-reproduced and fixed in `537689a`; Hume and Noether returned formal
-`APPROVE — no confirmed P0-P3 findings`. The reviewed topic chain is integrated into local `main`.
+Commit the verified remediation, fast-forward integrate it locally and retire the topic branch.
 
 ## Completed evidence
 
@@ -29,15 +27,28 @@ reproduced and fixed in `537689a`; Hume and Noether returned formal
 - Root integration verification passed the S7P-05 matrix (`30 passed`) and adjacent
   terminal/preparation/capability suite (`43 passed`), confirmed the topic import path, clean diff
   and fast-forward ancestry, then integrated the branch locally.
+- Subplan 86 replaced lexical/regex OutcomeContract inference with one strict no-tool semantic
+  resolver; ambiguous or invalid output fails closed, and explicit trusted contracts remain the
+  only bypass. Schema v19 records request purpose, exact prompt projection evidence and the resolved
+  contract append-only without rewriting the immutable AgentRun snapshot.
+- The first persistent write into a newly discovered scope is durably deferred until nested project
+  instructions are loaded; refresh failures stop effects. Validator declarations and runtime
+  recognition share one registry; failure obligations are tool-family plus independent path scopes;
+  all terminal paths release cached plans.
+- Git baselines now represent clean tracked state through HEAD and retain only bounded dirty-path
+  evidence, restoring the locked 64 KiB AgentRun snapshot ceiling. Completion obtains exact HEAD
+  blobs lazily for changed-path attribution, and corrected-request telemetry uses the exact validated
+  request size.
+- Focused remediation/adjacent gates passed `79 passed`; migration/backup/recovery gates passed
+  `98 passed`; the final focused gate after obligation hardening passed `73 passed`.
+- Final offline regression passed `1282 passed, 2 skipped, 2 deselected in 61.15s`. Ruff
+  format/check, compileall, both CLI help entrypoints and `git diff --check` passed. No live or
+  network test ran.
 
 ## Next action
 
-Wait for explicit user direction. Do not create an S7P-06 plan or implementation task.
+Commit, fast-forward integrate locally, verify no topic-only commit remains, and retire the branch.
 
 ## Blockers
 
-- None. Hume (`01a040c5-3564-7671-94f8-4e5d04fa1e3b`) and the subsequent material-only Noether
-  review (`01a040d0-c688-7171-ba32-75922e74ddff`, both `gpt-5.6-luna`, reasoning `max`) returned
-  formal `APPROVE — no confirmed P0-P3 findings`; Noether explicitly marked all six findings
-  closed. Tesla and Feynman were closed after bounded waits without verdicts and remain review
-  attempt history only.
+- None. No dependency or live-provider authorization is required for the offline implementation.

@@ -160,7 +160,8 @@ def test_agent_run_observation_admission_settlement_and_safe_terminal_projection
         assert [row.attempt_ordinal for row in inspection.requests] == [1]
         encoded = json.dumps(inspection.model_dump(mode="json"), ensure_ascii=False)
         assert "hello" not in encoded
-        assert "prompt" not in encoded
+        assert inspection.requests[0].prompt_evidence is None
+        assert "project_instructions" not in encoded
         assert "argument" not in encoded
         assert "result" not in encoded
     finally:

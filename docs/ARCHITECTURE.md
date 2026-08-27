@@ -298,7 +298,7 @@ workspace Preferences 损坏只隔离该层。旧 `handoff.yaml(.bak)` 不属于
 ```
 
 `DataRoot` 暴露 `store_path`、`artifacts_path`、`backups_path` 与 `operational_lock_path`。
-`build_session_application()` 会打开或创建当前 v18 Operational Store，并把对话经 ConversationLog
+`build_session_application()` 会打开或创建当前 v19 Operational Store，并把对话经 ConversationLog
 提交到 Session / TaskRun / Turn / AgentRun / conversation / receipt 表。v3 起有 tool_executions
 与 approvals；v4 增加 recovery_reports / recovery_receipts；v5 增加完整 TaskRun 状态、转移审计、
 TaskOutcome 版本和 Task 命令回执；v6 增加 Artifact 元数据、引用、pin 状态和 `artifact_refs_json`；v7 增加不可变
@@ -315,8 +315,11 @@ MCP Server、Catalog、run snapshot、Tool snapshot 和结果 Artifact 链接。
 ordered attempt、合法状态检查和明确 usage/cost availability 保存 Provider 进度与终态聚合；它不
 修改 immutable `agent_runs.snapshot_json`，也不复制 ConversationLog 或 ToolExecution payload。
 v18 在 terminal metrics 中只增加 validation outcome、completion outcome/basis 与一个安全 reason code，
-旧 terminal rows 迁移为 `not_run`/`not_completed` 默认值；Outcome Contract 与 baseline 本身冻结在
-AgentRun snapshot，仍不保存命令参数、输出、文件内容或 verifier 私有数据。
+旧 terminal rows 迁移为 `not_run`/`not_completed` 默认值。v19 为每个 model request 增加用途、当次
+PromptProfileEvidence，以及 no-tool 语义意图请求解析出的 Outcome Contract；这些均为 append-only
+请求证据，不改写 immutable AgentRun snapshot。显式 Outcome Contract 与 baseline 可在 admission 时
+冻结于 snapshot，语义解析契约则从 v19 request evidence 恢复。两条路径都不保存命令参数、输出、
+项目指令正文、文件内容、模型原始回复或 verifier 私有数据。
 Selection 只引用不可变 Project Knowledge revision，AgentRunSnapshot 保存
 selection/digest/memory revision，运行时由 `RunContextProjection` 重建。Promotion 只保存审计/恢复/来源
 记录，不形成 YAML Active 状态副本。

@@ -109,6 +109,43 @@ class GitInspectionService:
         )
         return self._fit_diff(result, result_limit)
 
+    def head_blob(self, path: str, *, max_bytes: int) -> bytes | None:
+        """Return one exact HEAD blob without exposing content outside this service."""
+        if max_bytes < 1:
+            raise ValueError("Git blob limit must be positive")
+        relative = self._validate_paths((path,))[0]
+        if self.files.sensitive_policy.is_protected_path(relative):
+            raise GitServiceError("protected_resource", "Git 路径受到本地内容策略保护")
+        metadata = self._metadata()
+        if metadata is None:
+            return None
+        listed = self._run(
+            metadata.root,
+            ("ls-tree", "-z", "HEAD", "--", relative),
+            max_output_bytes=4 * 1024,
+        )
+        if listed.returncode != 0 or listed.truncated:
+            raise GitServiceError("git_command_failed", "Git HEAD 路径检查失败")
+        record = listed.stdout.rstrip(b"\0")
+        if not record:
+            return None
+        try:
+            metadata_fields, raw_path = record.split(b"\t", 1)
+            mode, object_type, object_id = metadata_fields.split(b" ", 2)
+            decoded_path = raw_path.decode("utf-8")
+        except (UnicodeDecodeError, ValueError):
+            raise GitServiceError("git_parse_failed", "Git HEAD 路径响应无效") from None
+        if decoded_path != relative or object_type != b"blob" or mode not in {b"100644", b"100755"}:
+            raise GitServiceError("git_parse_failed", "Git HEAD 路径响应无效")
+        blob = self._run(
+            metadata.root,
+            ("cat-file", "blob", object_id.decode("ascii")),
+            max_output_bytes=max_bytes + 1,
+        )
+        if blob.returncode != 0 or blob.truncated or len(blob.stdout) > max_bytes:
+            raise GitServiceError("git_command_failed", "Git HEAD 文件证据不可用")
+        return blob.stdout
+
     def _metadata(self) -> _GitMetadata | None:
         root = self.files.resolver.root
         output = self._run(

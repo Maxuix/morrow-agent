@@ -1,6 +1,6 @@
 """Ordered, checksummed Operational Store migrations.
 
-Production currently owns schema v1–v18. Version 10 adds the governed Learning
+Production currently owns schema v1–v19. Version 10 adds the governed Learning
 foundation, version 11 adds immutable decisions plus Project Knowledge, and version
 12 adds immutable MemorySelection records plus rebuildable lexical terms without
 rewriting older evidence or creating a second configuration authority. Version 13
@@ -12,7 +12,8 @@ Version 16 adds MCP desired-state projections, Catalog revisions, and reserved
 run snapshot/artifact-link tables. Version 17 adds bounded AgentRun model-request
 observations and terminal metrics without mutating the immutable AgentRun snapshot.
 Version 18 adds additive completion-truth observability columns with safe defaults
-for older terminal rows.
+for older terminal rows. Version 19 adds per-request prompt projection evidence and
+append-only structured completion-intent results.
 """
 
 from __future__ import annotations
@@ -26,6 +27,7 @@ from morrow.adapters.state.migrations_v15_skill_learning import V15_NAME, V15_ST
 from morrow.adapters.state.migrations_v16_mcp import V16_NAME, V16_STATEMENTS
 from morrow.adapters.state.migrations_v17_observability import V17_NAME, V17_STATEMENTS
 from morrow.adapters.state.migrations_v18_completion_truth import V18_NAME, V18_STATEMENTS
+from morrow.adapters.state.migrations_v19_request_evidence import V19_NAME, V19_STATEMENTS
 from morrow.core.store import (
     APPLICATION_NAME,
     RESERVED_SCHEMA_VERSIONS,
@@ -1413,6 +1415,7 @@ V15 = SchemaMigration(version=15, name=V15_NAME, statements=V15_STATEMENTS)
 V16 = SchemaMigration(version=16, name=V16_NAME, statements=V16_STATEMENTS)
 V17 = SchemaMigration(version=17, name=V17_NAME, statements=V17_STATEMENTS)
 V18 = SchemaMigration(version=18, name=V18_NAME, statements=V18_STATEMENTS)
+V19 = SchemaMigration(version=19, name=V19_NAME, statements=V19_STATEMENTS)
 
 
 class MigrationRegistry:
@@ -1486,6 +1489,7 @@ def production_registry() -> MigrationRegistry:
     registry.add(V16)
     registry.add(V17)
     registry.add(V18)
+    registry.add(V19)
     return registry
 
 

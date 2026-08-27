@@ -1,12 +1,23 @@
-# Stage 7 Preflight Reliability Repairs — S7P-05 Validation and Completion Truth
+# Stage 7 Preflight Reliability Repairs — S7P-00–05 Post-audit Remediation
 
-> Status: completed and integrated locally; paused before S7P-06
-> Active subplan: none
-> Integrated branch: `codex/feat/s7p-05-validation-completion-truth`
-> Base: activation baseline `2c035098263fee3f93d66abc42bc09a36bbb1c42`
-> Source authority: the user-requested S7P-05 checklist, current code and deterministic probes
+> Status: active
+> Active subplan: 86 — `.agent/subplans/86-s7p-00-05-audit-remediation.md`
+> Branch: `fix/s7p05-audit-remediation`
+> Base: locally integrated S7P-05 at `d570c5c`
+> Source authority: current user request, post-fix audit reproductions, current code and gates
 
-## 1. Objective
+## 1. Current objective
+
+Repair all confirmed S7P-00–05 post-audit findings before S7P-06. Natural-language Outcome
+Contract preparation must use bounded structured semantic resolution rather than lexical keywords
+or regular expressions. Immutable AgentRun evidence, scoped project instructions, completion
+obligations, validator declarations, workspace baselines, telemetry and cached-resource lifecycles
+must remain mutually consistent through fresh, corrected and recovered runs.
+
+Detailed scope, design and acceptance are owned by active Subplan 86. The retained S7P-05 material
+below is decision history; where it conflicts with Subplan 86, the active subplan wins.
+
+## 2. Prior S7P-05 objective
 
 Make Direct-agent completion an evidence-backed runtime decision. Separate ordinary command success
 from validation, freeze a lightweight task outcome contract before durable admission, and gate a
