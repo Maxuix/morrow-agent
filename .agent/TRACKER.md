@@ -9,11 +9,11 @@ the unrelated notes; the next campaign must use a new clean source pin.
 
 ## Active task
 
-Refreeze source/profile/plan pins after `e8981d1` and start a fresh campaign with a 43M campaign
-ceiling. r5 was aborted after ordinal 5 exposed that an `invalid_response` discarded already
-validated stream usage and made the complete AgentRun aggregate unavailable. The adapter now
-retains only usage that passed normalization/merge; malformed or conflicting usage remains
-unavailable. The original checkout remains isolated for the external notes writer.
+Await approval to raise the total ceiling to 80M. r6 verified the validated-usage repair on a real
+Morrow invalid-response path, then exposed that the operator driver omitted request-level known
+tokens whenever finalized runtime usage was unavailable. r6 was aborted after ordinal 8. The next
+driver must count bundle usage first, then durable Morrow request usage or Pi assistant usage as a
+capacity lower bound. The original checkout remains isolated for the external notes writer.
 
 ## Preparation evidence
 
@@ -60,14 +60,15 @@ unavailable. The original checkout remains isolated for the external notes write
 
 ## Next action
 
-Commit the r5/fix record, refreeze source/profile/plan hashes at the new clean commit, pass campaign
-preflight, and execute a new immutable schedule from ordinal 1.
+Do not admit another run. Obtain an 80M total ceiling, update the driver fallback accounting,
+refreeze a clean plan, and execute a new immutable schedule from ordinal 1.
 
 ## Blockers
 
-- Formal admissions account for 6,295,285 tokens plus three failed/interrupted requests with
-  unavailable usage. The approved hard total ceiling remains 50,000,000 tokens with no currency
-  ceiling; the next campaign ceiling is limited to 43,000,000.
+- Formal admissions account for 16,754,419 tokens plus six failed/interrupted requests with
+  unavailable usage. Current samples project about 45.4M tokens for a fresh campaign, so the
+  approved hard total ceiling of 50M is insufficient. The recommended total ceiling is 80M; the
+  currency ceiling remains unset.
 - The unrelated `docs/notes/` are preserved in the named stash
   `checkpoint: preserve docs notes during s7p-09 campaign`; restore it after campaign execution.
 - Remote publication remains unauthorized; raw evidence durability and any push must be reported

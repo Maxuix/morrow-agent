@@ -48,15 +48,14 @@ formal paid run, the harness must still freeze and verify:
 
 Credential checks must report only readiness and must never request or print credential values.
 Pi credential readiness and its exact-model no-tool probe pass without exposing or copying the
-credential. Formal attempts have now accounted for 6,295,285 tokens plus three failed/interrupted
-requests with unavailable usage. Sampled Morrow/Pi usage projects about 17.9M tokens for one fresh complete
-campaign, so the approved 15M total is insufficient. No new admission is allowed without a larger
-token ceiling and a clean source pin. The user subsequently raised the hard total ceiling to
+credential. Formal attempts have now accounted for 16,754,419 tokens plus six failed/interrupted
+requests with unavailable usage. Current Morrow/Pi samples project about 45.4M tokens for one fresh
+complete campaign. The user previously raised the hard total ceiling to
 50,000,000 tokens and authorized a recoverable stash of unrelated untracked notes for the clean
 campaign pin. Because an external process continued creating new notes after the stash, campaign
 execution uses one dedicated clean worktree branch instead of repeatedly moving that external work.
-The next immutable campaign is additionally capped at 43M so known usage plus reservations and a
-bounded allowance for the three unknown requests remain within the 50M total.
+The 50M total is now insufficient for another complete immutable campaign. No new admission is
+allowed without a larger total token ceiling; 80M is the current recommendation.
 
 ## 4. Execution order
 

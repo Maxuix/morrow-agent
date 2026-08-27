@@ -3607,3 +3607,20 @@
 - All formal attempts now account for 6,295,285 tokens plus three failed/interrupted requests with
   unavailable usage. The next campaign is capped at 43M, leaving about 705k of the approved 50M
   total for those unknown requests; its 28 reservations total 42M.
+
+## 2026-08-28 — r6 verified usage repair; capacity fallback gap stopped execution
+
+- Froze r6 at clean source `cd00377` with a 43M campaign ceiling. The real Morrow/MORROW-002 run
+  finalized `BUDGET_EXHAUSTED` with 964,486 tokens and no runner error, verifying the
+  validated-stream-usage repair in the formal path.
+- Through ordinal 6, finalized known usage reached 9,289,249 tokens; Pi/MORROW-005 alone consumed
+  4,851,233. Ordinal 7 then ended Provider timeout with unavailable aggregate usage, while 28
+  completed durable requests retained 1,147,268 known tokens.
+- The operator driver used only finalized bundle usage for dynamic capacity and therefore omitted
+  those request-level known tokens before admitting ordinal 8. Execution was stopped immediately;
+  r6 is preserved as `ABORTED` and will not be reused. Future capacity accounting must fall back to
+  durable request-level/assistant usage when bundle usage is unavailable.
+- Across all formal attempts, 16,754,419 tokens are known and six failed/interrupted requests have
+  unavailable usage. Current observed means project about 45.4M tokens for a fresh 28-run campaign.
+  The approved 50M total is insufficient; an 80M total ceiling is recommended. No further run was
+  admitted.

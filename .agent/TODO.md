@@ -30,9 +30,9 @@ S7P-09 Repeated Direct Evaluation and Same-Condition Pi Baseline.
 - `[x]` Resolve Morrow Agent streaming readiness: repair the OpenAI-compatible schema wire,
   repeated terminal chunk handling and 4xx classification; verify offline and with a bounded probe.
 - `[>]` Refreeze profiles/pins/schedule/evidence root after the verified Pi 0.84.2 event adapter and
-  validated-stream-usage repairs. Use a 43M campaign ceiling within the approved 50M total; token
-  usage is mandatory while cost is optional. The unrelated notes remain isolated from the clean
-  execution worktree.
+  validated-stream-usage repairs. Await a larger total token ceiling because the approved 50M is
+  insufficient for another fresh campaign; token usage is mandatory while cost is optional. The
+  unrelated notes remain isolated from the clean execution worktree.
 - `[ ]` Execute and finalize the exact 20 Morrow primary runs.
 - `[ ]` Execute and finalize the exact 8 counterbalanced Pi comparison runs.
 - `[ ]` Mechanically aggregate, compare, classify every failure and freeze the Direct baseline.
