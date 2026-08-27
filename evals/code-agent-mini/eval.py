@@ -2966,7 +2966,15 @@ def _tool_family(name: object) -> str:
         "show_changes",
     }:
         return "read"
-    if normalized in {"grep", "find", "find_files", "search", "search_files", "search_text"}:
+    if normalized in {
+        "grep",
+        "glob",
+        "find",
+        "find_files",
+        "search",
+        "search_files",
+        "search_text",
+    }:
         return "search"
     if normalized in {
         "edit",
@@ -3081,11 +3089,13 @@ def _pi_annotation(result: object) -> dict[str, object]:
 
 def _trace_usage(message: Mapping[str, object]) -> dict[str, int | float]:
     usage = _mapping(message.get("usage"), "Pi assistant usage")
-    _required_keys(
-        usage,
-        {"input", "output", "cacheRead", "cacheWrite", "totalTokens", "cost"},
-        "Pi assistant usage",
-    )
+    required = {"input", "output", "cacheRead", "cacheWrite", "totalTokens", "cost"}
+    _exact_keys(usage, required | {"reasoning"}, "Pi assistant usage")
+    missing = sorted(required - set(usage))
+    if missing:
+        raise EvalError(f"missing Pi assistant usage field: {missing[0]}")
+    if "reasoning" in usage:
+        _required_number(usage["reasoning"], "Pi reasoning tokens", integer=True)
     cost = _mapping(usage["cost"], "Pi assistant usage cost")
     _required_keys(
         cost, {"input", "output", "cacheRead", "cacheWrite", "total"}, "Pi assistant usage cost"
@@ -3127,6 +3137,7 @@ def normalize_pi_trace(
     if isinstance(duration_ms, bool) or not isinstance(duration_ms, int) or duration_ms < 0:
         raise EvalError("trace duration must be a non-negative integer")
     ignored = {
+        "session",
         "agent_start",
         "agent_end",
         "agent_settled",
@@ -3150,18 +3161,26 @@ def normalize_pi_trace(
     current_round = 0
     usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "cost": 0.0}
     final_stop: str | None = None
+    agent_ended = False
     seen_assistant_messages: set[tuple[int, str, str, int]] = set()
     for index, raw_event in enumerate(events):
         event = _mapping(raw_event, f"Pi event[{index}]")
         event_type = _text(event.get("type"), f"Pi event[{index}].type")
         if event_type == "turn_start":
             turn_index = event.get("turnIndex")
+            if turn_index is None:
+                current_round = rounds + 1
+                continue
             if isinstance(turn_index, bool) or not isinstance(turn_index, int) or turn_index < 0:
                 raise EvalError("Pi turn_start has an invalid turnIndex")
             current_round = turn_index + 1
             continue
         if event_type == "turn_end":
             turn_index = event.get("turnIndex")
+            if turn_index is None:
+                rounds += 1
+                current_round = rounds
+                continue
             if isinstance(turn_index, bool) or not isinstance(turn_index, int) or turn_index < 0:
                 raise EvalError("Pi turn_end has an invalid turnIndex")
             rounds += 1
@@ -3187,6 +3206,12 @@ def normalize_pi_trace(
             stop_reason = message.get("stopReason")
             if stop_reason not in {"pending", "toolUse"}:
                 final_stop = str(stop_reason)
+            continue
+        if event_type == "agent_end":
+            will_retry = event.get("willRetry")
+            if not isinstance(will_retry, bool):
+                raise EvalError("Pi agent_end is missing willRetry")
+            agent_ended = not will_retry
             continue
         if event_type == "tool_execution_start":
             call_id = _text(event.get("toolCallId"), "Pi tool call ID")
@@ -3239,6 +3264,8 @@ def normalize_pi_trace(
         raise EvalError(f"Pi trace contains unsupported event type: {event_type}")
     if open_tools:
         raise EvalError("Pi trace has tool calls without terminal events")
+    if final_stop is None and agent_ended:
+        final_stop = "error"
     tools.sort(key=lambda item: int(item["ordinal"]))
     tools = [{key: value for key, value in tool.items() if key != "call_id"} for tool in tools]
     return _finish_normalized_trace(

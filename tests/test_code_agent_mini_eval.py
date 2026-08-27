@@ -914,6 +914,7 @@ def _pi_usage(*, stop_reason: str = "stop", timestamp: int = 10) -> dict[str, ob
                 "output": 5,
                 "cacheRead": 0,
                 "cacheWrite": 0,
+                "reasoning": 2,
                 "totalTokens": 15,
                 "cost": {
                     "input": 0.1,
@@ -931,6 +932,7 @@ def test_pi_trace_normalizer_pairs_tools_deduplicates_usage_and_excludes_raw_dat
     tmp_path: Path,
 ) -> None:
     events = [
+        {"type": "session", "id": "ephemeral-session-metadata"},
         {"type": "turn_start", "turnIndex": 0, "timestamp": 1},
         {
             "type": "tool_execution_start",
@@ -1008,10 +1010,39 @@ def test_pi_trace_normalizer_fails_closed_on_missing_duplicate_and_unknown_event
         eval_module.normalize_pi_trace([{"type": "new_event_shape"}], duration_ms=1)
 
 
+def test_pi_trace_normalizer_accepts_indexless_turn_events() -> None:
+    normalized = eval_module.normalize_pi_trace(
+        [
+            {"type": "session", "version": 3},
+            {"type": "turn_start"},
+            _pi_usage(),
+            {"type": "turn_end", "message": {}, "toolResults": []},
+        ],
+        duration_ms=1,
+    )
+
+    assert normalized["rounds"] == 1
+    assert normalized["model_attempts"] == 1
+
+
+def test_pi_trace_normalizer_classifies_agent_end_without_semantic_stop_as_runtime_failure() -> (
+    None
+):
+    usage = _pi_usage(stop_reason="toolUse")
+    normalized = eval_module.normalize_pi_trace(
+        [usage, {"type": "agent_end", "messages": [], "willRetry": False}],
+        duration_ms=1,
+    )
+
+    assert normalized["usage"]["total_tokens"] == 15
+    assert normalized["stop"]["code"] == "runtime_failed"
+
+
 @pytest.mark.parametrize(
     ("tool_name", "family"),
     [
         ("find_files", "search"),
+        ("glob", "search"),
         ("search_text", "search"),
         ("git_status", "read"),
         ("git_diff", "read"),
