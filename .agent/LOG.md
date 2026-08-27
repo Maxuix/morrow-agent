@@ -3561,3 +3561,21 @@
   move/rename path endpoints; focused evaluator tests passed `50`, and full offline passed
   `1334 passed, 2 deselected in 83.39s`. Ruff format/check, compileall, CLI help and
   `git diff --check` passed.
+
+## 2026-08-28 — Pi 0.84.2 runtime events repaired; 15M ceiling insufficient
+
+- Preserved r2 after a one-time source-branch drift invalidated revalidation, r3 after its dynamic
+  reservation guard stopped before ordinal 2, and r4 after real Pi normalization exposed adapter
+  gaps. No admitted result was replaced or reused.
+- Real Pi 0.84.2 JSONL adds a nonsemantic `session` event, omits `turnIndex`, reports a validated
+  `reasoning` usage field, names file globbing `glob`, and may end after `toolUse` with
+  `agent_end(willRetry=false)` but no semantic stop reason. The adapter now accepts these known
+  shapes, keeps unknown shapes fail-closed, and classifies the last case as `runtime_failed`.
+- Safe replay of the retained Pi run normalized 18 rounds, 27 tools and 874,324 authoritative
+  tokens without retaining payload content. Focused evaluator tests passed `53`; full offline passed
+  `1337 passed, 2 deselected in 91.24s`. Ruff, compileall, CLI help and diff checks passed.
+- Formal admissions account for 3,567,421 tokens plus one interrupted request with unavailable
+  usage. Current samples project roughly 17.9M tokens for a fresh 28-run campaign; the approved 15M
+  total is insufficient. No new admission is authorized. A 27M total ceiling is recommended.
+- Untracked `docs/notes/` appeared independently in the source checkout. It is preserved unchanged
+  and prevents a clean source pin until its ownership/disposition is resolved.

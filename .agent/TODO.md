@@ -22,14 +22,16 @@ S7P-09 Repeated Direct Evaluation and Same-Condition Pi Baseline.
   composition root; add and offline-test the equivalently confined Pi 0.84.2 runner/extension.
 - `[x]` Run focused/full offline tests and audit the completed harness slice for false-PASS and
   secret-leak paths; commit the verified slice.
-- `[x]` Select and approve the exact common `opencode-go/mimo-v2.5` model, a 5,000,000-token hard
-  campaign ceiling and no currency ceiling; verify Pi 0.84.2 contains the exact catalog entry.
+- `[x]` Select and approve the exact common `opencode-go/mimo-v2.5` model, raise the hard total
+  ceiling to 15,000,000 tokens, and keep no currency ceiling; verify Pi 0.84.2 contains the exact
+  catalog entry.
 - `[x]` Configure Pi through the same Keychain credential reference without copying the secret;
   pass no-secret auth readiness and the exact `opencode-go/mimo-v2.5` no-tool probe.
 - `[x]` Resolve Morrow Agent streaming readiness: repair the OpenAI-compatible schema wire,
   repeated terminal chunk handling and 4xx classification; verify offline and with a bounded probe.
-- `[>]` Freeze profiles/pins/schedule/evidence root and complete both readiness hashes; token usage
-  is mandatory while cost is optional under the approved no-currency-ceiling contract.
+- `[>]` Refreeze profiles/pins/schedule/evidence root after the verified Pi 0.84.2 event adapter
+  repair; token usage is mandatory while cost is optional. Await a larger total token ceiling and
+  a clean source checkout before any new admission.
 - `[ ]` Execute and finalize the exact 20 Morrow primary runs.
 - `[ ]` Execute and finalize the exact 8 counterbalanced Pi comparison runs.
 - `[ ]` Mechanically aggregate, compare, classify every failure and freeze the Direct baseline.

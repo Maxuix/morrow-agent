@@ -2,27 +2,17 @@
 
 ## Current status
 
-Subplan 90 is active on `feat/s7p-09-direct-pi-baseline`, based on verified local
-`main@1fd7e229bef276d1a0361e775ce800ade4b318fc`. S7P-08 is complete. S7P-09 Phase A may implement
-and validate the offline comparison harness; no formal live campaign run has started.
+Subplan 90 remains active. The Pi 0.84.2 runtime-event adapter repair is verified and committed at
+`86e97bc`. Campaigns r2–r4 are retained outside Git as blocked/aborted evidence and will not be
+continued or reused. No new formal admission is allowed under the current token ceiling.
 
 ## Active task
 
-Repair the complete Morrow tool-family projection, commit it, then create a new campaign ID. The
-first formal campaign is preserved as an aborted failed attempt after one admitted run. The Morrow
-Provider repair now narrows
-non-interoperable integer bounds only at the wire, accepts MiMo's nonsemantic repeated terminal
-chunk, and classifies request rejections correctly. The repaired bounded Agent probe completed
-`stop` with 7,139 Provider tokens and zero tools. Cost remains explicitly unavailable on Morrow
-and is optional because the approved campaign has no currency ceiling.
-The first pre-admission plan rehearsal passed all offline checks and exposed that runner output was
-not yet consumable by `finalize`; no run was admitted. The runner now projects the shared normalized
-trace into the existing runtime-evidence contract, and Pi thinking is pinned `off` so both adapters
-omit reasoning-effort controls.
-After refreezing, campaign `s7p-09-mimo-v25-97829ea` admitted Morrow/MORROW-001#1. The model made 16
-successful requests and 29 tool calls, but safe normalization rejected `find_files` because the
-capability map did not cover every production Morrow tool name. The run was finalized truthfully as
-`BLOCKED_ENV`; the campaign has an immutable `ABORTED` record and will not be continued or reused.
+Await explicit approval to raise the total token ceiling, then resolve the unrelated untracked
+`docs/notes/` source change without overwriting it, refreeze a clean source pin, and start a fresh
+campaign. Pi normalization now supports the observed 0.84.2 `session` event, indexless turn events,
+optional reasoning-token usage, `glob`, and `agent_end` without a semantic stop. The last case is
+truthfully classified `runtime_failed`, not completed or evidence-unavailable.
 
 ## Preparation evidence
 
@@ -69,15 +59,16 @@ capability map did not cover every production Morrow tool name. The run was fina
 
 ## Next action
 
-Do not admit another formal run until the complete tool-family repair passes the full gate, is
-committed, and a new campaign ID/evidence root/source pin is frozen. Then execute the new immutable
-schedule from ordinal 1.
+Do not admit another formal run. Ask for a 27,000,000-token total ceiling, then obtain a clean source
+checkout without modifying the unrelated untracked notes, refreeze the source/profile/plan hashes,
+and execute a new immutable schedule from ordinal 1.
 
 ## Blockers
 
-- Formal live campaign: exact served revision/sampling evidence and the final comparison-plan,
-  source and evidence pins are still required.
-- The approved budget is a hard 5,000,000-token ceiling with no currency ceiling. Missing cost is
-  explicit and never inferred as zero, but it does not block the campaign.
+- Formal live campaign: the current 15,000,000-token total ceiling is insufficient. Formal
+  admissions account for 3,567,421 tokens plus one interrupted request with unavailable usage; a
+  fresh complete campaign projects about 17.9M more. The recommended total ceiling is 27,000,000.
+- The source checkout is dirty only because of unrelated untracked `docs/notes/`; ownership and
+  disposition are unresolved, so the evaluator cannot freeze a clean source pin yet.
 - Remote publication remains unauthorized; raw evidence durability and any push must be reported
   honestly rather than assumed.

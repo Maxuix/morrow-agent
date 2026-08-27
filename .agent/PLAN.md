@@ -1,6 +1,6 @@
 # Stage 7 Preflight Reliability — S7P-09 Repeated Direct/Pi Baseline
 
-> Status: active; model and budget approved, live campaign held pending Pi readiness and clean pins
+> Status: active; adapter repair verified, live campaign held pending a larger token ceiling and clean source
 > Active subplan: Subplan 90 — S7P-09 Repeated Direct Evaluation and Same-Condition Pi Baseline
 > Branch: `feat/s7p-09-direct-pi-baseline`
 > Activation base: verified local `main@1fd7e229bef276d1a0361e775ce800ade4b318fc`
@@ -35,8 +35,8 @@ retention policy are owned by activated Subplan 90.
 
 ## 3. Live hold point
 
-The user approved `opencode-go/mimo-v2.5` for both Agents, a hard campaign ceiling of 5,000,000
-tokens, and no currency ceiling. Pi 0.84.2's installed catalog contains the exact model at the same
+The user approved `opencode-go/mimo-v2.5` for both Agents, raised the hard total ceiling from
+5,000,000 to 15,000,000 tokens, and kept no currency ceiling. Pi 0.84.2's installed catalog contains the exact model at the same
 service endpoint, with a 1,000,000-token context window and 128,000-token maximum output. Before a
 formal paid run, the harness must still freeze and verify:
 
@@ -47,7 +47,10 @@ formal paid run, the harness must still freeze and verify:
 
 Credential checks must report only readiness and must never request or print credential values.
 Pi credential readiness and its exact-model no-tool probe pass without exposing or copying the
-credential. Offline harness work may proceed, but no formal admission is allowed.
+credential. Formal attempts have now accounted for 3,567,421 tokens plus one interrupted request
+with unavailable usage. Sampled Morrow/Pi usage projects about 17.9M tokens for one fresh complete
+campaign, so the approved 15M total is insufficient. No new admission is allowed without a larger
+token ceiling and a clean source pin.
 
 ## 4. Execution order
 
