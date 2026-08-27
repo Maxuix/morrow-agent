@@ -3358,3 +3358,11 @@
   `1297 passed, 2 deselected in 84.82s`; all static/CLI/diff gates passed. Final read-only verdict
   was `APPROVE — no confirmed P0-P3 findings`. Herschel (`gpt-5.6-luna`, reasoning `max`) also ran
   `7 passed`, including process-rebuild ERROR replay, and confirmed all five findings closed.
+
+## 2026-08-27 — Subplan 88 integrated locally
+
+- Verified `main` was an ancestor of the clean reviewed topic, then fast-forward merged
+  `feat/s7p-07-runtime-control` at `67aa785` into local `main`.
+- Verified the topic tip is an ancestor of `main` and deleted the clean topic branch. Local `main`
+  is 55 commits ahead of `origin/main`; no remote push was requested or attempted.
+- Subplan 88 is retired and the ordered Stage 7 sequence is paused before S7P-08.

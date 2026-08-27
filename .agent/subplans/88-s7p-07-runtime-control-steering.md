@@ -1,6 +1,6 @@
 # Subplan 88 — S7P-07 Runtime Control: Steering and Follow-Up
 
-> Status: complete and approved on `feat/s7p-07-runtime-control`; local integration pending;
+> Status: complete, approved and fast-forward integrated into local `main` at `67aa785`;
 > activated 2026-08-27 from local `main`
 > at `7b52f5f` after Subplan 85 fast-forward integration.
 > User decisions frozen 2026-08-27: scope unified (retry belongs to S7P-06); v1 steering waits

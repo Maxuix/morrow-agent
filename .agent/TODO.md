@@ -2,11 +2,11 @@
 
 ## Current stage
 
-Subplan 88 is complete and ready for local fast-forward integration.
+Subplan 88 is complete and integrated into local `main`. No subplan is active.
 
 ## Active subplan
 
-Subplan 88 — S7P-07 runtime control steering and follow-up.
+None. S7P-08 was not started automatically.
 
 ## Tasks
 
