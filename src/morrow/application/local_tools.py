@@ -6,6 +6,8 @@ import asyncio
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from morrow.application.artifacts import ArtifactService
+from morrow.core.artifacts import ARTIFACT_MAX_BYTES, ArtifactError, ArtifactErrorCode
 from morrow.core.capabilities import (
     OperationIntent,
     OperationKind,
@@ -14,6 +16,7 @@ from morrow.core.capabilities import (
     ToolCallContext,
     ToolHandlerOutcome,
 )
+from morrow.core.domain import ArtifactReference
 from morrow.core.execution import ToolExecutionDisposition, tool_declaration
 from morrow.core.local_tools import (
     WORKSPACE_MUTATION_PATH_PATTERN,
@@ -30,6 +33,7 @@ from morrow.core.local_tools import (
     WorkspaceRelativePath,
 )
 from morrow.core.models import ToolEffect
+from morrow.core.store import StorageError
 from morrow.runtime.policy import ToolApproval, ToolExecutionPolicy
 from morrow.runtime.tool_arguments import MAX_SAFE_INTEGER, MAX_STRING_CHARS, SCHEMA_DIALECT
 from morrow.runtime.tools import (
@@ -39,8 +43,14 @@ from morrow.runtime.tools import (
     ToolExecutionError,
     make_tool,
 )
+from morrow.runtime.truncation import PI_DEFAULT_MAX_BYTES, PI_DEFAULT_MAX_LINES
 from morrow.services.changes import ChangeSetService
-from morrow.services.files import LocalFileError, WorkspaceFileService, WorkspaceMutationService
+from morrow.services.files import (
+    LEGACY_MAX_READ_LINES,
+    LocalFileError,
+    WorkspaceFileService,
+    WorkspaceMutationService,
+)
 from morrow.services.git import GitInspectionService, GitServiceError
 from morrow.services.process import ProcessExecutionService, ProcessServiceError
 from morrow.services.sandbox import SandboxServiceError, SandboxSnapshotService
@@ -118,6 +128,7 @@ _PROVIDER_EXACT_EDIT_MAX_CHARS = 256
 _PROVIDER_SINGLE_EDIT_ASCII_MAX_CHARS = 16 * 1024
 _PROVIDER_COMMAND_ARG_MAX_CHARS = 256
 _PROVIDER_COMMAND_SHELL_MAX_CHARS = 10_000
+_ARTIFACT_ID_PATTERN = r"^art_[A-Za-z0-9_-]{1,124}$"
 
 
 LIST_DIRECTORY_PROVIDER_SCHEMA = _object_schema(
@@ -133,6 +144,15 @@ READ_FILE_PROVIDER_SCHEMA = _object_schema(
         "path": _path_schema(),
         "start_line": {"type": "integer", "minimum": 1, "maximum": MAX_SAFE_INTEGER},
         "line_count": {"type": "integer", "minimum": 1, "maximum": 400},
+    },
+    required=("path",),
+)
+
+READ_FILE_LONG_HORIZON_PROVIDER_SCHEMA = _object_schema(
+    {
+        "path": _path_schema(),
+        "start_line": {"type": "integer", "minimum": 1, "maximum": MAX_SAFE_INTEGER},
+        "line_count": {"type": "integer", "minimum": 1, "maximum": PI_DEFAULT_MAX_LINES},
     },
     required=("path",),
 )
@@ -163,6 +183,23 @@ SEARCH_TEXT_PROVIDER_SCHEMA = _object_schema(
         "max_results": {"type": "integer", "minimum": 1, "maximum": 100},
     },
     required=("query",),
+)
+
+READ_ARTIFACT_PROVIDER_SCHEMA = _object_schema(
+    {
+        "artifact_id": _string_schema(pattern=_ARTIFACT_ID_PATTERN),
+        "start_byte": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": ARTIFACT_MAX_BYTES,
+        },
+        "max_bytes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": PI_DEFAULT_MAX_BYTES,
+        },
+    },
+    required=("artifact_id",),
 )
 
 
@@ -333,6 +370,16 @@ class ReadFileArguments(BaseModel):
     _valid_path = field_validator("path")(_path)
 
 
+class ReadFileLongHorizonArguments(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    path: WorkspaceRelativePath
+    start_line: int = Field(default=1, ge=1)
+    line_count: int = Field(default=PI_DEFAULT_MAX_LINES, ge=1, le=PI_DEFAULT_MAX_LINES)
+
+    _valid_path = field_validator("path")(_path)
+
+
 class FindFilesArguments(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
@@ -355,6 +402,19 @@ class SearchTextArguments(BaseModel):
     max_results: int = Field(default=100, ge=1, le=100)
 
     _valid_path = field_validator("path")(_path)
+
+
+class ReadArtifactArguments(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    artifact_id: str = Field(pattern=_ARTIFACT_ID_PATTERN)
+    start_byte: int = Field(default=0, ge=0, le=ARTIFACT_MAX_BYTES)
+    max_bytes: int = Field(default=PI_DEFAULT_MAX_BYTES, ge=1, le=PI_DEFAULT_MAX_BYTES)
+
+    @field_validator("artifact_id")
+    @classmethod
+    def valid_artifact_id(cls, value: str) -> str:
+        return ArtifactReference(artifact_id=value).artifact_id
 
 
 class ApplyPatchArguments(BaseModel):
@@ -519,6 +579,25 @@ def _tool_error(
     )
 
 
+def _artifact_tool_error(error: ArtifactError) -> ToolExecutionError:
+    code = {
+        ArtifactErrorCode.MISSING: ToolErrorCode.NOT_FOUND,
+        ArtifactErrorCode.BUDGET: ToolErrorCode.OUTPUT_BUDGET,
+        ArtifactErrorCode.INVALID: ToolErrorCode.INVALID_ARGUMENTS,
+        ArtifactErrorCode.INTEGRITY: ToolErrorCode.READ_FAILED,
+        ArtifactErrorCode.PATH: ToolErrorCode.READ_FAILED,
+        ArtifactErrorCode.UNAVAILABLE: ToolErrorCode.READ_FAILED,
+        ArtifactErrorCode.CONFLICT: ToolErrorCode.READ_FAILED,
+    }.get(error.code, ToolErrorCode.READ_FAILED)
+    message = {
+        ToolErrorCode.NOT_FOUND: "Artifact 不存在、不可用或不属于当前会话",
+        ToolErrorCode.OUTPUT_BUDGET: "Artifact 读取预算不足",
+        ToolErrorCode.INVALID_ARGUMENTS: "Artifact 读取范围无效",
+        ToolErrorCode.READ_FAILED: "Artifact 读取失败",
+    }[code]
+    return ToolExecutionError(code, message)
+
+
 def _intent(path: str, service: WorkspaceFileService, *, directory: bool) -> OperationIntent:
     try:
         resolved = service.preflight_directory(path) if directory else service.preflight_file(path)
@@ -558,7 +637,14 @@ def make_list_directory_tool(files: WorkspaceFileService) -> RegisteredTool:
     )
 
 
-def make_read_file_tool(files: WorkspaceFileService) -> RegisteredTool:
+def make_read_file_tool(
+    files: WorkspaceFileService, *, long_horizon: bool = False
+) -> RegisteredTool:
+    arguments_model = ReadFileLongHorizonArguments if long_horizon else ReadFileArguments
+    provider_schema = (
+        READ_FILE_LONG_HORIZON_PROVIDER_SCHEMA if long_horizon else READ_FILE_PROVIDER_SCHEMA
+    )
+
     async def handler(arguments: ReadFileArguments, context: ToolCallContext):
         try:
             result = await asyncio.to_thread(
@@ -567,6 +653,10 @@ def make_read_file_tool(files: WorkspaceFileService) -> RegisteredTool:
                 start_line=arguments.start_line,
                 line_count=arguments.line_count,
                 result_limit=context.result_limit,
+                max_bytes=context.truncation_max_bytes if context.long_horizon else None,
+                max_lines=(
+                    context.truncation_max_lines if context.long_horizon else LEGACY_MAX_READ_LINES
+                ),
             )
         except LocalFileError as exc:
             raise _tool_error(exc) from exc
@@ -578,8 +668,8 @@ def make_read_file_tool(files: WorkspaceFileService) -> RegisteredTool:
     return make_tool(
         name="read_file",
         description="读取工作空间内 UTF-8 文本文件的有界行窗口；结果包含 revision 与继续读取位置。",
-        arguments_model=ReadFileArguments,
-        provider_schema=READ_FILE_PROVIDER_SCHEMA,
+        arguments_model=arguments_model,
+        provider_schema=provider_schema,
         handler=handler,
         context_handler=handler,
         intent_resolver=resolve,
@@ -632,6 +722,7 @@ def make_search_text_tool(search: WorkspaceSearchService) -> RegisteredTool:
                 arguments.path,
                 query=query,
                 result_limit=context.result_limit,
+                max_line_chars=context.grep_max_line_chars if context.long_horizon else None,
             )
         except LocalFileError as exc:
             raise _tool_error(exc) from exc
@@ -652,15 +743,87 @@ def make_search_text_tool(search: WorkspaceSearchService) -> RegisteredTool:
     )
 
 
+def make_read_artifact_tool(artifacts: ArtifactService) -> RegisteredTool:
+    async def handler(arguments: ReadArtifactArguments, context: ToolCallContext):
+        # ArtifactService shares the owner-thread SQLite handle with the foreground Session;
+        # keep its journal lookup/read on that thread rather than crossing into asyncio.to_thread.
+        metadata = artifacts.get(arguments.artifact_id)
+        if metadata is None or metadata.session_id != context.run.session_id:
+            raise ToolExecutionError(
+                ToolErrorCode.NOT_FOUND,
+                "Artifact 不存在、不可用或不属于当前会话",
+            )
+        read_limit = min(
+            arguments.max_bytes,
+            context.truncation_max_bytes,
+            max(1, context.result_limit - 1024),
+        )
+        try:
+            result = artifacts.read(
+                arguments.artifact_id,
+                max_bytes=read_limit,
+                start_byte=arguments.start_byte,
+            )
+        except ArtifactError as exc:
+            raise _artifact_tool_error(exc) from exc
+        except StorageError as exc:
+            raise ToolExecutionError(ToolErrorCode.READ_FAILED, "Artifact 读取失败") from exc
+        try:
+            content = result.content.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise ToolExecutionError(
+                ToolErrorCode.BINARY_FILE,
+                "Artifact 不是可安全读取的 UTF-8 文本",
+            ) from exc
+        next_start_byte = arguments.start_byte + len(result.content)
+        truncated = next_start_byte < result.metadata.byte_size
+        return ToolHandlerOutcome(
+            payload={
+                "artifact_id": result.metadata.artifact_id,
+                "kind": result.metadata.kind.value,
+                "sha256": result.metadata.sha256,
+                "byte_size": result.metadata.byte_size,
+                "start_byte": arguments.start_byte,
+                "next_start_byte": next_start_byte if truncated else None,
+                "truncated": truncated,
+                "content": content,
+            }
+        )
+
+    def resolve(_: ReadArtifactArguments, __: ToolCallContext) -> OperationIntent:
+        return OperationIntent(kind=OperationKind.INTERNAL_READ)
+
+    return make_tool(
+        name="read_artifact",
+        description=(
+            "按 Artifact 引用分段读取当前会话已安全持久化的文本结果；"
+            "截断时返回 next_start_byte，避免把完整结果一次性放入上下文。"
+        ),
+        arguments_model=ReadArtifactArguments,
+        provider_schema=READ_ARTIFACT_PROVIDER_SCHEMA,
+        handler=handler,
+        context_handler=handler,
+        intent_resolver=resolve,
+        recovery_declaration=tool_declaration("read_artifact"),
+    )
+
+
 def make_read_search_tools(
-    files: WorkspaceFileService, search: WorkspaceSearchService
+    files: WorkspaceFileService,
+    search: WorkspaceSearchService,
+    artifacts: ArtifactService | None = None,
+    *,
+    long_horizon: bool = False,
 ) -> tuple[RegisteredTool, ...]:
-    return (
+    tools = [
         make_list_directory_tool(files),
-        make_read_file_tool(files),
+        make_read_file_tool(files, long_horizon=long_horizon),
         make_find_files_tool(files),
         make_search_text_tool(search),
-    )
+    ]
+    if artifacts is not None:
+        tools.append(make_read_artifact_tool(artifacts))
+    return tuple(tools)
 
 
 COMMAND_PREVIEW_BUDGET = ApprovalPreviewBudget(
@@ -702,7 +865,7 @@ def make_run_command_tool(process: ProcessExecutionService) -> RegisteredTool:
         if plan is None:
             raise ToolExecutionError(ToolErrorCode.PREFLIGHT_FAILED, "命令预检不存在")
         try:
-            result, fact = await process.execute(
+            result, fact, artifact_content = await process.execute_with_artifact(
                 plan,
                 result_limit=context.result_limit,
                 run=context.run,
@@ -710,6 +873,12 @@ def make_run_command_tool(process: ProcessExecutionService) -> RegisteredTool:
                 tool_name=context.tool_name,
                 ordinal=context.ordinal,
                 approval_verdict=context.approval_verdict,
+                truncation_max_bytes=(
+                    context.truncation_max_bytes if context.long_horizon else None
+                ),
+                truncation_max_lines=(
+                    context.truncation_max_lines if context.long_horizon else None
+                ),
             )
         except ProcessServiceError as exc:
             raise _tool_error(exc) from exc
@@ -722,7 +891,11 @@ def make_run_command_tool(process: ProcessExecutionService) -> RegisteredTool:
             approval_verdict=context.approval_verdict,
         )
         facts = (fact,) if validation_fact is None else (fact, validation_fact)
-        return ToolHandlerOutcome(payload=result.model_dump(mode="json"), facts=facts)
+        return ToolHandlerOutcome(
+            payload=result.model_dump(mode="json"),
+            facts=facts,
+            artifact_content=artifact_content,
+        )
 
     return make_tool(
         name="run_command",

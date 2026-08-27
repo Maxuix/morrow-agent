@@ -52,6 +52,7 @@ from morrow.application.local_tools import (
     make_git_status_tool,
     make_move_file_tool,
     make_promote_sandbox_tool,
+    make_read_artifact_tool,
     make_read_search_tools,
     make_rename_file_tool,
     make_run_command_tool,
@@ -118,7 +119,12 @@ from morrow.core.store import (
 from morrow.runtime.agent import AgentRuntime
 from morrow.runtime.capabilities import CapabilityPolicy
 from morrow.runtime.ids import RandomIdSource
-from morrow.runtime.policy import AgentPolicy, RuntimePolicy, load_runtime_policy
+from morrow.runtime.policy import (
+    AgentPolicy,
+    RuntimePolicy,
+    has_legacy_agent_run_overrides,
+    load_runtime_policy,
+)
 from morrow.runtime.session import Session
 from morrow.runtime.tools import ToolExecutor, ToolRegistry
 from morrow.services.changes import ChangeSetService
@@ -315,6 +321,7 @@ def _default_tool_executor(
     mutation: WorkspaceMutationService,
     changes: ChangeSetService,
     process: ProcessExecutionService,
+    artifacts: ArtifactService | None = None,
     git: GitInspectionService,
     skill_scripts: SkillScriptExecutionService | None = None,
     sandbox: SandboxSnapshotService | None = None,
@@ -326,8 +333,10 @@ def _default_tool_executor(
         registry.register(make_configuration_tool(config_service))
     if preference_service is not None:
         registry.register(make_preference_management_tool(preference_service))
-    for tool in make_read_search_tools(files, search):
+    for tool in make_read_search_tools(files, search, long_horizon=run_policy.is_long_horizon):
         registry.register(tool)
+    if run_policy.is_long_horizon and artifacts is not None:
+        registry.register(make_read_artifact_tool(artifacts))
     registry.register(make_apply_patch_tool(mutation, changes))
     registry.register(make_write_file_tool(mutation, changes))
     registry.register(make_delete_file_tool(mutation, changes))
@@ -613,6 +622,7 @@ def build_session_application(
     permission_profile: PermissionProfile | None = None,
     metrics_enabled: bool = True,
     resume_session_id: str | None = None,
+    long_horizon: bool | None = None,
 ):
     inspection = app.workspace_state_service.inspect(identity.workspace_id)
     profile_result = inspection.profile
@@ -764,11 +774,39 @@ def build_session_application(
     )
     adapter_id = provider_config.adapter if provider_config else "openai-compatible"
     adapter_support = app.registry.tool_support(adapter_id)
-    run_policy = app.agent_policy.resolve(
-        model,
-        tool_protocol=adapter_support.tool_protocol,
-        multiple_tool_calls=adapter_support.multiple_tool_calls,
+    configured_model = (
+        provider_config.models.get(model.model_id) if provider_config is not None else None
     )
+    exact_capabilities = exact_model_capabilities(
+        adapter_id,
+        app.registry.capabilities(adapter_id),
+        model,
+        configured_model.capabilities if configured_model is not None else None,
+    )
+    use_long_horizon = (
+        long_horizon
+        if long_horizon is not None
+        else provider_config is not None and exact_capabilities.context_window_tokens is not None
+    )
+    if use_long_horizon:
+        configured_overrides = config.runtime_policy.agent_run if config else None
+        if has_legacy_agent_run_overrides(configured_overrides):
+            raise ValueError(
+                "legacy runtime-policy overrides require migration before a long-horizon run"
+            )
+        run_policy = app.agent_policy.resolve_long_horizon(
+            model,
+            tool_protocol=exact_capabilities.tool_protocol,
+            multiple_tool_calls=exact_capabilities.multiple_tool_calls,
+            context_window_tokens=exact_capabilities.context_window_tokens,
+            settings=app.runtime_policy.long_horizon,
+        )
+    else:
+        run_policy = app.agent_policy.resolve(
+            model,
+            tool_protocol=adapter_support.tool_protocol,
+            multiple_tool_calls=adapter_support.multiple_tool_calls,
+        )
     context_builder = ContextBuilder(
         run_policy=run_policy,
         estimate_request_chars=estimate_request_chars,
@@ -843,6 +881,7 @@ def build_session_application(
                 mutation=mutation,
                 changes=changes,
                 process=process,
+                artifacts=operational.artifacts,
                 skill_scripts=skill_scripts,
                 git=git,
                 sandbox=sandbox,
@@ -1004,9 +1043,6 @@ def build_session_application(
                 base_url="",
                 models={model.model_id: ProviderModelConfig(api_model_id=model.model_id)},
             )
-        exact_capabilities = exact_model_capabilities(
-            adapter_id, app.registry.capabilities(adapter_id), model
-        )
         legacy_spec = build_prepared_spec(
             provider_config=spec_provider_config,
             model=model,
@@ -1037,6 +1073,8 @@ def build_session_application(
             mcp_factory=prepare_mcp,
             mcp_rehydrate_factory=rehydrate_mcp,
             prompt_assembler=prompt_assembler,
+            long_horizon=use_long_horizon,
+            long_horizon_settings=app.runtime_policy.long_horizon,
         )
         if resume_session_id:
             persistence.restore_into(session)

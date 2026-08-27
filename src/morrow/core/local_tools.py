@@ -101,7 +101,7 @@ class NewlineStyle(StrEnum):
 
 class ReadFileResult(LocalToolModel):
     path: str = Field(min_length=1, max_length=512)
-    text: str = Field(max_length=8 * 1024)
+    text: str = Field(max_length=50 * 1024)
     start_line: int = Field(ge=1)
     end_line: int = Field(ge=0)
     total_lines: int = Field(ge=0)
@@ -240,8 +240,8 @@ class CommandResult(LocalToolModel):
     status: CommandStatus
     exit_code: int | None = None
     signal: int | None = Field(default=None, ge=1, le=255)
-    stdout: str = Field(max_length=16 * 1024)
-    stderr: str = Field(max_length=16 * 1024)
+    stdout: str = Field(max_length=50 * 1024)
+    stderr: str = Field(max_length=50 * 1024)
     stdout_original_bytes: int = Field(ge=0, le=10**12)
     stdout_original_lines: int = Field(ge=0, le=10**10)
     stderr_original_bytes: int = Field(ge=0, le=10**12)
@@ -321,7 +321,7 @@ class SearchMatch(LocalToolModel):
     path: str = Field(min_length=1, max_length=512)
     line: int = Field(ge=1)
     column: int = Field(ge=1)
-    snippet: str = Field(min_length=1, max_length=512)
+    snippet: str = Field(min_length=1, max_length=1_024)
     before: tuple[str, ...] = ()
     after: tuple[str, ...] = ()
 

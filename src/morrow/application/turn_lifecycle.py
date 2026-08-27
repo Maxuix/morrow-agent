@@ -8,6 +8,7 @@ from datetime import datetime
 from typing import Literal
 
 from morrow.adapters.state.preference_migration import legacy_entries_from_preferences
+from morrow.application.compaction_persistence import compaction_entries_from_checkpoints
 from morrow.application.preferences.jobs import PreferenceReviewJobEnqueuer
 from morrow.application.preferences.run_projection import select_run_preferences
 from morrow.application.recovery import RecoveryService
@@ -573,6 +574,7 @@ class SessionRestoreCoordinator:
         self.state.reset()
         session.run_context_projection = None
         session.skill_context_projection = None
+        session.restore_compaction_entries(())
         row = self.journal.get_session(self.workspace_id, session.session_id)
         if row is None:
             stamp = self.clock()
@@ -587,6 +589,7 @@ class SessionRestoreCoordinator:
             return
         session.lifecycle = row.lifecycle
         session.health = row.health
+        self._restore_compactions(session, row)
         session.context_checkpoint = self._restore_context_checkpoint(row)
         self.state.task_run_id = row.current_task_run_id
         try:
@@ -619,6 +622,8 @@ class SessionRestoreCoordinator:
         session.log.install_snapshot(restored.snapshot())
         session.health = row.health
         session.lifecycle = row.lifecycle
+        self._restore_compactions(session, row)
+        session.context_checkpoint = self._restore_context_checkpoint(row)
         session.dirty = session.log.has_active_turn
         self.state.reset()
         self.state.task_run_id = row.current_task_run_id
@@ -664,15 +669,35 @@ class SessionRestoreCoordinator:
 
     def _restore_context_checkpoint(self, row: DurableSession) -> ContextCheckpoint | None:
         try:
-            checkpoints = self.journal.list_context_checkpoints(self.workspace_id, row.session_id)
+            checkpoints = tuple(
+                checkpoint
+                for checkpoint in self.journal.list_context_checkpoints(
+                    self.workspace_id, row.session_id
+                )
+                if checkpoint.codec != "pi_compaction"
+            )
             checkpoint = checkpoints[-1] if checkpoints else None
             if checkpoint is None and row.parent_checkpoint_id is not None:
-                checkpoint = self.journal.get_context_checkpoint(
+                parent = self.journal.get_context_checkpoint(
                     self.workspace_id, row.parent_checkpoint_id
                 )
+                if parent is not None and parent.codec != "pi_compaction":
+                    checkpoint = parent
             return checkpoint
         except StorageError:
             return None
+
+    def _restore_compactions(self, session: Session, row: DurableSession) -> None:
+        try:
+            checkpoints = self.journal.list_context_checkpoints(self.workspace_id, row.session_id)
+            entries = compaction_entries_from_checkpoints(checkpoints)
+            session.restore_compaction_entries(entries)
+        except (StorageError, ValueError):
+            # A corrupt projection must never silently fall back to the full recent tail: doing so
+            # could repeat already compacted work.  The immutable ConversationLog remains
+            # available for diagnosis, while this Session is quarantined for explicit recovery.
+            session.restore_compaction_entries(())
+            session.health = SessionHealth.QUARANTINED
 
     def _restore_active_work(self, session: Session) -> None:
         session.run_context_projection = None

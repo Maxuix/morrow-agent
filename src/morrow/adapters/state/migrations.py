@@ -13,7 +13,8 @@ run snapshot/artifact-link tables. Version 17 adds bounded AgentRun model-reques
 observations and terminal metrics without mutating the immutable AgentRun snapshot.
 Version 18 adds additive completion-truth observability columns with safe defaults
 for older terminal rows. Version 19 adds per-request prompt projection evidence and
-append-only structured completion-intent results.
+append-only structured completion-intent results. Version 20 adds bounded
+long-horizon token-accounting, compaction, and overflow-recovery observations.
 """
 
 from __future__ import annotations
@@ -28,6 +29,10 @@ from morrow.adapters.state.migrations_v16_mcp import V16_NAME, V16_STATEMENTS
 from morrow.adapters.state.migrations_v17_observability import V17_NAME, V17_STATEMENTS
 from morrow.adapters.state.migrations_v18_completion_truth import V18_NAME, V18_STATEMENTS
 from morrow.adapters.state.migrations_v19_request_evidence import V19_NAME, V19_STATEMENTS
+from morrow.adapters.state.migrations_v20_long_horizon_observability import (
+    V20_NAME,
+    V20_STATEMENTS,
+)
 from morrow.core.store import (
     APPLICATION_NAME,
     RESERVED_SCHEMA_VERSIONS,
@@ -1416,6 +1421,7 @@ V16 = SchemaMigration(version=16, name=V16_NAME, statements=V16_STATEMENTS)
 V17 = SchemaMigration(version=17, name=V17_NAME, statements=V17_STATEMENTS)
 V18 = SchemaMigration(version=18, name=V18_NAME, statements=V18_STATEMENTS)
 V19 = SchemaMigration(version=19, name=V19_NAME, statements=V19_STATEMENTS)
+V20 = SchemaMigration(version=20, name=V20_NAME, statements=V20_STATEMENTS)
 
 
 class MigrationRegistry:
@@ -1490,6 +1496,7 @@ def production_registry() -> MigrationRegistry:
     registry.add(V17)
     registry.add(V18)
     registry.add(V19)
+    registry.add(V20)
     return registry
 
 

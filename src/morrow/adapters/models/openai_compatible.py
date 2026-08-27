@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 from collections.abc import AsyncIterator, Mapping
 
 from morrow.core.models import (
@@ -258,6 +259,23 @@ def _error_chain(error: BaseException) -> tuple[BaseException, ...]:
     return tuple(chain)
 
 
+def _retry_after_seconds(error: BaseException) -> float | None:
+    """Read only a bounded numeric Retry-After hint from an SDK exception."""
+
+    for item in _error_chain(error):
+        headers = getattr(item, "headers", None)
+        if not isinstance(headers, Mapping):
+            continue
+        value = headers.get("retry-after") or headers.get("Retry-After")
+        try:
+            parsed = float(value)
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(parsed) and parsed >= 0:
+            return min(parsed, 60.0)
+    return None
+
+
 def classify_error(error: BaseException) -> ModelErrorCode:
     errors = _error_chain(error)
     for item in errors:
@@ -268,6 +286,22 @@ def classify_error(error: BaseException) -> ModelErrorCode:
         for item in errors
     ):
         return ModelErrorCode.AUTH
+    if any(
+        any(
+            marker in str(item).casefold()
+            for marker in (
+                "context length",
+                "context window",
+                "maximum context",
+                "max context",
+                "too many tokens",
+                "prompt is too long",
+            )
+        )
+        or getattr(item, "status_code", None) == 413
+        for item in errors
+    ):
+        return ModelErrorCode.CONTEXT_OVERFLOW
     if any(
         getattr(item, "status_code", None) == 429 or "rate" in type(item).__name__.casefold()
         for item in errors
@@ -327,7 +361,9 @@ async def discover_openai_compatible_models(config, credential: str) -> tuple[Di
     try:
         from openai import AsyncOpenAI
 
-        client = AsyncOpenAI(api_key=credential, base_url=config.base_url, timeout=60.0)
+        client = AsyncOpenAI(
+            api_key=credential, base_url=config.base_url, timeout=60.0, max_retries=0
+        )
         response = await client.models.list()
         result: list[DiscoveredModel] = []
         for item in getattr(response, "data", ()) or ():
@@ -343,7 +379,11 @@ async def discover_openai_compatible_models(config, credential: str) -> tuple[Di
         raise
     except Exception as exc:
         code = classify_error(exc)
-        raise ModelProviderError(code, provider_error_message(code)) from None
+        raise ModelProviderError(
+            code,
+            provider_error_message(code),
+            retry_after_seconds=_retry_after_seconds(exc),
+        ) from None
     finally:
         await _close_client(client)
 
@@ -372,7 +412,10 @@ class OpenAICompatibleProvider:
             from openai import AsyncOpenAI
 
             self._client = AsyncOpenAI(
-                api_key=self.credential, base_url=self.base_url, timeout=self.timeout
+                api_key=self.credential,
+                base_url=self.base_url,
+                timeout=self.timeout,
+                max_retries=0,
             )
         return self._client
 
@@ -480,6 +523,7 @@ class OpenAICompatibleProvider:
                 kind="error",
                 error_code=code,
                 error_message=provider_error_message(code),
+                retry_after_seconds=_retry_after_seconds(exc),
                 made_progress=accumulator.made_progress,
                 usage=safe_usage,
             )
@@ -507,7 +551,11 @@ class OpenAICompatibleProvider:
             raise
         except Exception as exc:
             code = classify_error(exc)
-            raise ModelProviderError(code, provider_error_message(code)) from None
+            raise ModelProviderError(
+                code,
+                provider_error_message(code),
+                retry_after_seconds=_retry_after_seconds(exc),
+            ) from None
 
 
 def make_openai_compatible(config, credential: str) -> OpenAICompatibleProvider:

@@ -31,7 +31,11 @@ from morrow.core.models import (
     RunPolicy,
     ToolDefinition,
 )
-from morrow.runtime.policy import AgentPolicy
+from morrow.runtime.policy import (
+    AgentPolicy,
+    LongHorizonPolicySettings,
+    has_legacy_agent_run_overrides,
+)
 from morrow.runtime.tools import ToolExecutor, ToolRegistry
 
 
@@ -141,6 +145,8 @@ class AgentRunPreparationService:
         mcp_rehydrate_factory: Callable[[AgentRunSnapshot, str], PreparedMcpRun | None]
         | None = None,
         prompt_assembler=None,
+        long_horizon: bool = False,
+        long_horizon_settings: LongHorizonPolicySettings | None = None,
     ) -> None:
         self.global_store = global_store
         self.registry = registry
@@ -154,6 +160,8 @@ class AgentRunPreparationService:
         self.mcp_factory = mcp_factory
         self.mcp_rehydrate_factory = mcp_rehydrate_factory
         self.prompt_assembler = prompt_assembler
+        self.long_horizon = long_horizon
+        self.long_horizon_settings = long_horizon_settings
 
     def prepare_new(self, *, agent_run_id: str | None = None) -> PreparedAgentRunRuntime:
         """Prepare the next new AgentRun from the current configuration.
@@ -187,11 +195,27 @@ class AgentRunPreparationService:
             model,
             model_config.capabilities,
         )
-        run_policy = self.agent_policy.resolve(
-            model,
-            tool_protocol=exact.tool_protocol,
-            multiple_tool_calls=exact.multiple_tool_calls,
-        )
+        if self.long_horizon:
+            configured_overrides = (
+                config.runtime_policy.agent_run if config.runtime_policy else None
+            )
+            if has_legacy_agent_run_overrides(configured_overrides):
+                raise AgentRunPreparationError(
+                    "legacy runtime-policy overrides require migration before a long-horizon run"
+                )
+            run_policy = self.agent_policy.resolve_long_horizon(
+                model,
+                tool_protocol=exact.tool_protocol,
+                multiple_tool_calls=exact.multiple_tool_calls,
+                context_window_tokens=exact.context_window_tokens,
+                settings=self.long_horizon_settings,
+            )
+        else:
+            run_policy = self.agent_policy.resolve(
+                model,
+                tool_protocol=exact.tool_protocol,
+                multiple_tool_calls=exact.multiple_tool_calls,
+            )
         provider = self.registry.create(provider_config, credential)
         context_builder = ContextBuilder(
             run_policy=run_policy,

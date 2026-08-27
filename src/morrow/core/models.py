@@ -246,28 +246,77 @@ class ModelCapabilityOverrides(ProtocolModel):
     structured_output: bool | None = None
     safe_request_chars: int | None = Field(default=None, gt=0)
     safe_context_chars: int | None = Field(default=None, gt=0)
+    context_window_tokens: int | None = Field(default=None, gt=0)
     input_types: tuple[InputModality, ...] | None = None
     cost_metadata: CostMetadata | None = None
 
 
 class RunPolicy(ProtocolModel):
-    """Immutable per-AgentRun budget and tool-support policy."""
+    """Immutable per-AgentRun policy, including v1 compatibility and v2 Pi parity."""
 
-    max_tool_rounds: int = Field(gt=0)
-    max_model_attempts: int = Field(gt=0)
-    max_tool_calls: int = Field(gt=0)
-    max_tool_calls_per_cycle: int = Field(gt=0)
-    max_run_seconds: float = Field(gt=0)
-    tool_timeout_seconds: float = Field(gt=0)
-    model_retry_limit: int = Field(ge=0)
-    effective_request_chars: int = Field(gt=0)
-    effective_result_limit: int = Field(gt=0)
-    effective_cycle_limit: int = Field(gt=0)
-    max_validation_errors: int = Field(gt=0)
-    loop_detection_enabled: bool
-    loop_repeat_limit: int = Field(ge=2)
-    loop_max_pattern_cycles: int = Field(gt=0)
+    policy_schema_version: Literal[1, 2] = 1
+    task_lifetime_mode: Literal["bounded", "long_horizon"] = "bounded"
+    # ``None`` is the explicit v2 representation of a retired cumulative control.  It is never
+    # replaced by a sentinel integer and v1 snapshots continue to carry their original numbers.
+    max_tool_rounds: int | None = Field(default=None, gt=0)
+    max_model_attempts: int | None = Field(default=None, gt=0)
+    max_tool_calls: int | None = Field(default=None, gt=0)
+    max_tool_calls_per_cycle: int | None = Field(default=None, gt=0)
+    max_run_seconds: float | None = Field(default=None, gt=0)
+    tool_timeout_seconds: float = Field(default=300.0, gt=0)
+    model_retry_limit: int | None = Field(default=None, ge=0)
+    effective_request_chars: int = Field(default=1, gt=0)
+    effective_result_limit: int = Field(default=1, gt=0)
+    effective_cycle_limit: int | None = Field(default=None, gt=0)
+    max_validation_errors: int = Field(default=1, gt=0)
+    loop_detection_enabled: bool = False
+    loop_repeat_limit: int | None = Field(default=None, ge=2)
+    loop_max_pattern_cycles: int | None = Field(default=None, gt=0)
+    compaction_enabled: bool = False
+    context_window_tokens: int | None = Field(default=None, gt=0)
+    reserve_tokens: int = Field(default=16_384, gt=0)
+    keep_recent_tokens: int = Field(default=20_000, gt=0)
+    retry_enabled: bool = False
+    max_retries: int = Field(default=0, ge=0)
+    retry_base_delay_seconds: float = Field(default=2.0, gt=0)
+    max_provider_retry_delay_seconds: float = Field(default=60.0, gt=0)
+    truncation_max_bytes: int = Field(default=50 * 1024, gt=0)
+    truncation_max_lines: int = Field(default=2_000, gt=0)
+    grep_max_line_chars: int = Field(default=500, gt=0)
+    host_stop_source: Literal["none", "provided"] = "none"
     provider_tool_support: ProviderToolSupport
+
+    @model_validator(mode="after")
+    def version_contract(self) -> RunPolicy:
+        if self.policy_schema_version == 1:
+            if self.task_lifetime_mode != "bounded":
+                raise ValueError("v1 RunPolicy must use bounded task lifetime")
+            return self
+        if self.task_lifetime_mode != "long_horizon":
+            raise ValueError("v2 RunPolicy must use long_horizon task lifetime")
+        retired = (
+            self.max_tool_rounds,
+            self.max_model_attempts,
+            self.max_tool_calls,
+            self.max_tool_calls_per_cycle,
+            self.max_run_seconds,
+            self.model_retry_limit,
+            self.loop_repeat_limit,
+            self.loop_max_pattern_cycles,
+        )
+        if any(value is not None for value in retired):
+            raise ValueError("v2 RunPolicy must not carry active v1 cumulative controls")
+        if self.context_window_tokens is None:
+            raise ValueError("v2 RunPolicy requires an exact context window")
+        if self.reserve_tokens >= self.context_window_tokens:
+            raise ValueError("reserve_tokens must be below the context window")
+        if self.max_provider_retry_delay_seconds < self.retry_base_delay_seconds:
+            raise ValueError("provider retry cap must cover the base retry delay")
+        return self
+
+    @property
+    def is_long_horizon(self) -> bool:
+        return self.policy_schema_version == 2 and self.task_lifetime_mode == "long_horizon"
 
 
 class ModelRef(MorrowModel):
@@ -284,6 +333,7 @@ class ModelErrorCode(StrEnum):
     RATE_LIMIT = "rate_limit"
     TIMEOUT = "timeout"
     INVALID_RESPONSE = "invalid_response"
+    CONTEXT_OVERFLOW = "context_overflow"
     INTERNAL = "internal"
 
 
@@ -379,9 +429,12 @@ NormalizedCost = ModelCost
 
 
 class ModelProviderError(RuntimeError):
-    def __init__(self, code: ModelErrorCode, message: str) -> None:
+    def __init__(
+        self, code: ModelErrorCode, message: str, *, retry_after_seconds: float | None = None
+    ) -> None:
         super().__init__(message)
         self.code = code
+        self.retry_after_seconds = retry_after_seconds
 
 
 def provider_error_message(code: ModelErrorCode, *, phase: str | None = None) -> str:
@@ -397,6 +450,7 @@ def provider_error_message(code: ModelErrorCode, *, phase: str | None = None) ->
         ModelErrorCode.RATE_LIMIT: "模型服务限流，请稍后重试",
         ModelErrorCode.TIMEOUT: "等待模型响应超时，请稍后重试",
         ModelErrorCode.INVALID_RESPONSE: "模型响应无效，请检查 Provider 地址和模型配置",
+        ModelErrorCode.CONTEXT_OVERFLOW: "模型上下文长度超过限制",
         ModelErrorCode.INTERNAL: "模型服务暂时不可用，请稍后重试",
     }[code]
 
@@ -448,6 +502,7 @@ class ModelEvent(MorrowModel):
     message: AssistantMessage | None = None
     error_code: ModelErrorCode | None = None
     error_message: str | None = None
+    retry_after_seconds: float | None = Field(default=None, ge=0, le=60)
     made_progress: bool = False
     usage: ModelUsage = Field(default_factory=ModelUsage.unavailable)
     cost: ModelCost = Field(default_factory=ModelCost.unavailable)

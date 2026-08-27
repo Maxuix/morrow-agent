@@ -321,8 +321,12 @@ def test_foreign_sqlite_file_is_left_intact(tmp_path):
 def test_future_schema_is_refused_and_left_intact(tmp_path):
     root, store = _initialized(tmp_path)
     raw = sqlite3.connect(store.layout.database)
-    raw.execute("PRAGMA user_version = 20")
-    raw.execute("UPDATE store_identity SET schema_version = 20 WHERE singleton = 1")
+    future_version = SUPPORTED_SCHEMA_VERSION + 1
+    raw.execute(f"PRAGMA user_version = {future_version}")
+    raw.execute(
+        "UPDATE store_identity SET schema_version = ? WHERE singleton = 1",
+        (future_version,),
+    )
     raw.commit()
     raw.close()
     before = store.layout.database.read_bytes()
@@ -632,6 +636,7 @@ def test_ordered_checksummed_migration_rolls_back_a_failed_step(tmp_path):
         "agent_run_observability",
         "agent_run_completion_truth",
         "agent_run_request_evidence",
+        "agent_run_long_horizon_observability",
     )
     assert report.backup_name
     assert (store.layout.backups_dir / report.backup_name).is_file()

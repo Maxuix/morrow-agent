@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 
 from morrow.core.capabilities import PolicyVerdict, ToolRunContext
@@ -63,7 +64,7 @@ class ToolCycleExecutor:
         ordinal: int,
         total: int,
         result_limit: int,
-        remaining_run_seconds: float,
+        remaining_run_seconds: float | None,
         preflight_error: tuple[ToolErrorCode, str] | None = None,
     ) -> ToolCallExecution:
         durable = durable_execution
@@ -153,7 +154,9 @@ class ToolCycleExecutor:
                     skip_approval=skip_approval,
                     allow_unconfined_host=allow_unconfined_host,
                 )
-                timeout = min(self.run_policy.tool_timeout_seconds, remaining_run_seconds)
+                timeout = self.run_policy.tool_timeout_seconds
+                if remaining_run_seconds is not None:
+                    timeout = min(timeout, remaining_run_seconds)
                 result = await asyncio.wait_for(
                     self.await_with_cancellation(execution, session, durable),
                     timeout=timeout,
@@ -208,6 +211,16 @@ class ToolCycleExecutor:
                 now=self.wall_now(session),
                 disposition=handler_disposition,
             )
+        if self.run_policy.is_long_horizon:
+            result = self._attach_artifact_references(
+                result,
+                (
+                    *result.artifact_refs,
+                    *result.mcp_result_artifact_refs,
+                    *(durable.artifact_refs if durable is not None else ()),
+                ),
+                result_limit=result_limit,
+            )
         self.tool_executor.cleanup_call(
             call,
             run_context=run_context,
@@ -216,6 +229,89 @@ class ToolCycleExecutor:
             result_limit=result_limit,
         )
         return ToolCallExecution(result, durable)
+
+    @staticmethod
+    def _attach_artifact_references(
+        result: ToolExecutionOutcome,
+        references,
+        *,
+        result_limit: int,
+    ) -> ToolExecutionOutcome:
+        """Expose only opaque durable links in the v2 model projection.
+
+        The durable coordinator owns publication and retention.  This small projection makes a
+        published result fetchable by the v2 ``read_artifact`` tool without copying any artifact
+        bytes into a second event or history record.
+        """
+
+        unique = []
+        for reference in references:
+            if reference not in unique:
+                unique.append(reference)
+        if not unique:
+            return result
+        try:
+            payload = json.loads(result.envelope)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return result
+        if not isinstance(payload, dict):
+            return result
+        serialized_refs = [reference.model_dump(mode="json") for reference in unique]
+        body = payload.get("result")
+        if isinstance(body, dict):
+            updated = dict(body)
+            existing = updated.get("artifact_refs")
+            if isinstance(existing, list):
+                serialized_refs = existing + [
+                    item for item in serialized_refs if item not in existing
+                ]
+            updated["artifact_refs"] = serialized_refs
+            candidate_payload = {**payload, "result": updated}
+        elif "error" in payload:
+            # Preserve a failed tool outcome as failed.  The reference is metadata for a
+            # separately readable artifact, not permission to turn an error into success.
+            candidate_payload = {**payload, "artifact_refs": serialized_refs}
+        else:
+            candidate_payload = {
+                **payload,
+                "result": {"artifact_refs": serialized_refs},
+            }
+        candidate = json.dumps(
+            candidate_payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        if len(candidate) <= result_limit:
+            return replace(result, envelope=candidate, artifact_refs=tuple(unique))
+        # Keep the reference usable even when the original result consumed the entire per-call
+        # budget.  The omitted bytes remain in the managed Artifact, not in this fallback envelope.
+        compact_payload = {
+            "ok": bool(result.ok),
+            "result": {
+                "truncated": True,
+                "original_chars": len(result.envelope),
+                "content": "",
+                "artifact_refs": serialized_refs,
+            },
+        }
+        if not result.ok and isinstance(payload.get("error"), dict):
+            compact_payload["error"] = payload["error"]
+        compact = json.dumps(
+            compact_payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        if len(compact) > result_limit:
+            return result
+        return replace(
+            result,
+            envelope=compact,
+            truncated=True,
+            original_chars=len(result.envelope),
+            artifact_refs=tuple(unique),
+        )
 
     def _unknown_after_handler_entry(self, call: FunctionToolCall) -> bool:
         declaration = self.tool_executor.recovery_declaration(call.name)

@@ -7,6 +7,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 
 from morrow.adapters.state.transaction import SqliteJournalBackend
+from morrow.core.compaction import TokenAccountingBasis
 from morrow.core.domain import DurableAgentRun
 from morrow.core.models import (
     AgentStopCode,
@@ -41,6 +42,17 @@ def _from_unix(value: object) -> datetime:
 
 def _optional_unix(value: datetime | None) -> int | None:
     return _unix(value) if value is not None else None
+
+
+def _optional_bool(value: object) -> bool | None:
+    if value is None:
+        return None
+    if value not in (0, 1, False, True):
+        raise StorageError(
+            StorageErrorCode.NEEDS_REPAIR,
+            "AgentRun boolean observation is not safe to read",
+        )
+    return bool(value)
 
 
 def _optional_json(value) -> str | None:
@@ -83,7 +95,9 @@ _REQUEST_COLUMNS = (
     "dropped_turn_count, dropped_cycle_count, dropped_record_count, tool_rounds, tool_calls, "
     "finish_reason, error_code, usage_availability, input_tokens, output_tokens, total_tokens, "
     "cost_availability, cost_amount_minor, cost_currency, cost_source, purpose, "
-    "prompt_evidence_json, resolved_outcome_contract_json"
+    "prompt_evidence_json, resolved_outcome_contract_json, policy_schema_version, "
+    "estimated_context_tokens, context_window_tokens, reserve_tokens, keep_recent_tokens, "
+    "accounting_basis, compaction_required"
 )
 _METRICS_COLUMNS = (
     "agent_run_id, workspace_id, finish_reason, stop_code, model_attempts, retry_count, "
@@ -92,8 +106,12 @@ _METRICS_COLUMNS = (
     "usage_availability, input_tokens, output_tokens, total_tokens, cost_availability, "
     "cost_amount_minor, cost_currency, cost_source, tool_terminal_counts_json, "
     "validation_outcome, completion_outcome, completion_basis, completion_reason_code, "
-    "finalized_at_unix"
+    "finalized_at_unix, policy_schema_version, max_context_tokens, last_context_tokens, "
+    "context_window_tokens, reserve_tokens, keep_recent_tokens, accounting_basis, "
+    "compaction_count, overflow_recovery_count"
 )
+_REQUEST_VALUE_COUNT = 35
+_METRICS_VALUE_COUNT = 37
 
 
 class SqliteObservabilityJournal:
@@ -128,6 +146,13 @@ class SqliteObservabilityJournal:
         tool_calls: int = 0,
         purpose: ModelRequestPurpose | str = ModelRequestPurpose.AGENT,
         prompt_evidence: PromptProfileEvidence | None = None,
+        policy_schema_version: int | None = None,
+        estimated_context_tokens: int | None = None,
+        context_window_tokens: int | None = None,
+        reserve_tokens: int | None = None,
+        keep_recent_tokens: int | None = None,
+        accounting_basis: TokenAccountingBasis | str | None = None,
+        compaction_required: bool | None = None,
         model_request_id: str | None = None,
         admitted_at: datetime | None = None,
     ) -> ModelRequestObservation:
@@ -149,6 +174,13 @@ class SqliteObservabilityJournal:
             tool_calls=tool_calls,
             purpose=purpose,
             prompt_evidence=prompt_evidence,
+            policy_schema_version=policy_schema_version,
+            estimated_context_tokens=estimated_context_tokens,
+            context_window_tokens=context_window_tokens,
+            reserve_tokens=reserve_tokens,
+            keep_recent_tokens=keep_recent_tokens,
+            accounting_basis=accounting_basis,
+            compaction_required=compaction_required,
         )
         del run
 
@@ -170,7 +202,7 @@ class SqliteObservabilityJournal:
                     "AgentRun model request identifier is already in use",
                 )
             self.backend.executor().execute(
-                f"INSERT INTO agent_run_model_requests({_REQUEST_COLUMNS}) VALUES ({', '.join('?' for _ in range(28))})",
+                f"INSERT INTO agent_run_model_requests({_REQUEST_COLUMNS}) VALUES ({', '.join('?' for _ in range(_REQUEST_VALUE_COUNT))})",
                 self._request_values(candidate),
             )
             stored = self.get_model_request(workspace_id, candidate.model_request_id)
@@ -288,6 +320,15 @@ class SqliteObservabilityJournal:
         dropped_record_count: int | None = None,
         usage: ModelUsage | None = None,
         cost: ModelCost | None = None,
+        policy_schema_version: int | None = None,
+        max_context_tokens: int | None = None,
+        last_context_tokens: int | None = None,
+        context_window_tokens: int | None = None,
+        reserve_tokens: int | None = None,
+        keep_recent_tokens: int | None = None,
+        accounting_basis: TokenAccountingBasis | str | None = None,
+        compaction_count: int = 0,
+        overflow_recovery_count: int = 0,
         validation_outcome: str = "not_run",
         finalized_at: datetime | None = None,
     ) -> AgentRunTerminalMetrics:
@@ -370,6 +411,15 @@ class SqliteObservabilityJournal:
             usage=aggregate_usage,
             cost=aggregate_cost,
             tool_terminal_counts=counts,
+            policy_schema_version=policy_schema_version,
+            max_context_tokens=max_context_tokens,
+            last_context_tokens=last_context_tokens,
+            context_window_tokens=context_window_tokens,
+            reserve_tokens=reserve_tokens,
+            keep_recent_tokens=keep_recent_tokens,
+            accounting_basis=accounting_basis,
+            compaction_count=compaction_count,
+            overflow_recovery_count=overflow_recovery_count,
             validation_outcome=validation_outcome,
             finalized_at=finalized_at or self.backend.now(),
         )
@@ -387,7 +437,7 @@ class SqliteObservabilityJournal:
                     "AgentRun terminal metrics were already finalized differently",
                 )
             self.backend.executor().execute(
-                f"INSERT INTO agent_run_terminal_metrics({_METRICS_COLUMNS}) VALUES ({', '.join('?' for _ in range(28))})",
+                f"INSERT INTO agent_run_terminal_metrics({_METRICS_COLUMNS}) VALUES ({', '.join('?' for _ in range(_METRICS_VALUE_COUNT))})",
                 self._metrics_values(candidate),
             )
             stored = self._metrics_for_run(workspace_id, agent_run_id)
@@ -518,6 +568,13 @@ class SqliteObservabilityJournal:
             request.purpose.value,
             _optional_json(request.prompt_evidence),
             None,
+            request.policy_schema_version,
+            request.estimated_context_tokens,
+            request.context_window_tokens,
+            request.reserve_tokens,
+            request.keep_recent_tokens,
+            request.accounting_basis.value if request.accounting_basis else None,
+            int(request.compaction_required) if request.compaction_required is not None else None,
         )
 
     def _metrics_for_run(
@@ -590,6 +647,15 @@ class SqliteObservabilityJournal:
             "not_completed",
             None,
             _unix(metrics.finalized_at),
+            metrics.policy_schema_version,
+            metrics.max_context_tokens,
+            metrics.last_context_tokens,
+            metrics.context_window_tokens,
+            metrics.reserve_tokens,
+            metrics.keep_recent_tokens,
+            metrics.accounting_basis.value if metrics.accounting_basis else None,
+            metrics.compaction_count,
+            metrics.overflow_recovery_count,
         )
 
 
@@ -647,6 +713,13 @@ def _request_from_row(row: tuple[object, ...]) -> ModelRequestObservation:
             cost=_cost_from_columns(row[21], row[22], row[23], row[24]),
             purpose=ModelRequestPurpose(str(row[25])),
             prompt_evidence=_optional_model(row[26], PromptProfileEvidence),
+            policy_schema_version=int(row[28]) if row[28] is not None else None,
+            estimated_context_tokens=int(row[29]) if row[29] is not None else None,
+            context_window_tokens=int(row[30]) if row[30] is not None else None,
+            reserve_tokens=int(row[31]) if row[31] is not None else None,
+            keep_recent_tokens=int(row[32]) if row[32] is not None else None,
+            accounting_basis=(TokenAccountingBasis(str(row[33])) if row[33] is not None else None),
+            compaction_required=_optional_bool(row[34]),
         )
     except StorageError:
         raise
@@ -695,6 +768,15 @@ def _metrics_from_row(
             tool_terminal_counts=counts,
             validation_outcome=str(row[23]),
             finalized_at=_from_unix(row[27]),
+            policy_schema_version=int(row[28]) if row[28] is not None else None,
+            max_context_tokens=int(row[29]) if row[29] is not None else None,
+            last_context_tokens=int(row[30]) if row[30] is not None else None,
+            context_window_tokens=int(row[31]) if row[31] is not None else None,
+            reserve_tokens=int(row[32]) if row[32] is not None else None,
+            keep_recent_tokens=int(row[33]) if row[33] is not None else None,
+            accounting_basis=(TokenAccountingBasis(str(row[34])) if row[34] is not None else None),
+            compaction_count=int(row[35]),
+            overflow_recovery_count=int(row[36]),
         )
     except StorageError:
         raise

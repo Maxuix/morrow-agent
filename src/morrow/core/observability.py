@@ -13,6 +13,7 @@ from enum import StrEnum
 
 from pydantic import Field, field_validator, model_validator
 
+from morrow.core.compaction import TokenAccountingBasis
 from morrow.core.domain import (
     AGENT_RUN_ID_PREFIX,
     SESSION_ID_PREFIX,
@@ -103,6 +104,15 @@ class ModelRequestObservation(ProtocolModel):
     dropped_record_count: int = Field(default=0, ge=0)
     tool_rounds: int = Field(default=0, ge=0)
     tool_calls: int = Field(default=0, ge=0)
+    # These fields are bounded accounting facts, not prompt or tool payloads.  They are optional
+    # so observations written before schema v20 remain readable without being backfilled.
+    policy_schema_version: int | None = Field(default=None, ge=1, le=2)
+    estimated_context_tokens: int | None = Field(default=None, ge=0)
+    context_window_tokens: int | None = Field(default=None, gt=0)
+    reserve_tokens: int | None = Field(default=None, gt=0)
+    keep_recent_tokens: int | None = Field(default=None, gt=0)
+    accounting_basis: TokenAccountingBasis | None = None
+    compaction_required: bool | None = None
     finish_reason: ModelFinishReason | None = None
     error_code: ModelErrorCode | None = None
     usage: ModelUsage = Field(default_factory=ModelUsage.unavailable)
@@ -179,6 +189,17 @@ class AgentRunTerminalMetrics(ProtocolModel):
     usage: ModelUsage = Field(default_factory=ModelUsage.unavailable)
     cost: ModelCost = Field(default_factory=ModelCost.unavailable)
     tool_terminal_counts: ToolTerminalCounts = Field(default_factory=ToolTerminalCounts)
+    # The terminal row keeps only bounded aggregates of the v2 accounting decision.  Individual
+    # request rows retain the per-attempt current value and decision.
+    policy_schema_version: int | None = Field(default=None, ge=1, le=2)
+    max_context_tokens: int | None = Field(default=None, ge=0)
+    last_context_tokens: int | None = Field(default=None, ge=0)
+    context_window_tokens: int | None = Field(default=None, gt=0)
+    reserve_tokens: int | None = Field(default=None, gt=0)
+    keep_recent_tokens: int | None = Field(default=None, gt=0)
+    accounting_basis: TokenAccountingBasis | None = None
+    compaction_count: int = Field(default=0, ge=0)
+    overflow_recovery_count: int = Field(default=0, ge=0)
     validation_outcome: str = Field(
         default="not_run", pattern=r"^(not_run|passed|failed|timeout|cancelled)$"
     )

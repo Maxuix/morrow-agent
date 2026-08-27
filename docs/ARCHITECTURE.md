@@ -16,8 +16,9 @@ AgentRun 注入。v13 DDL 与 checksum 保持不变。
 Stage 6 的当前所有权如下：`application/skills/` 负责 Catalog、生命周期、Selection/Context、Draft、Usage、脚本和
 Doctor；`application/mcp/` 负责 desired-state、Catalog、run-scoped runtime、策略桥接和结果归一化；Provider/Model
 控制面仍由 Provider service 与 Adapter Registry 持有。SkillBinding、MCP desired state、Provider/Model 非敏感配置和
-Workspace 扩展配置继续由 YAML 持有，CredentialStore 是唯一凭据权威。Operational Store v14–v17 持有 Skill/MCP
-运行证据与 AgentRun 观测；v17 的 request ledger 与 v18 completion-truth terminal metrics 独立于不可变
+Workspace 扩展配置继续由 YAML 持有，CredentialStore 是唯一凭据权威。Operational Store v14–v20 持有 Skill/MCP
+运行证据与 AgentRun 观测；v17–v20 的 request ledger、completion-truth 兼容列与 long-horizon accounting
+独立于不可变
 AgentRun admission snapshot。
 `application/backup_v2.py` 组合在线 SQLite、Artifact、脱敏 YAML 和被引用 managed Skill 版本，并以新目标
 目录执行原子、隔离 restore。v1 backup verifier 保持向后兼容，Backup v2 不复制凭据。
@@ -284,7 +285,7 @@ workspace Preferences 损坏只隔离该层。旧 `handoff.yaml(.bak)` 不属于
 `config.yaml` 是聚合文档，Provider、全局 Preferences 与可选 runtime-policy 覆盖的写入必须在同一事务锁内保留对方字段。
 `workspace-index.yaml` 由独立 WorkspaceIndexStore 管理。
 
-### Operational Store 与 Artifact 布局（v17）
+### Operational Store 与 Artifact 布局（v20）
 
 数据根（`--state-root` 或 `~/.morrow`）下的保留路径：
 
@@ -298,7 +299,7 @@ workspace Preferences 损坏只隔离该层。旧 `handoff.yaml(.bak)` 不属于
 ```
 
 `DataRoot` 暴露 `store_path`、`artifacts_path`、`backups_path` 与 `operational_lock_path`。
-`build_session_application()` 会打开或创建当前 v19 Operational Store，并把对话经 ConversationLog
+`build_session_application()` 会打开或创建当前 v20 Operational Store，并把对话经 ConversationLog
 提交到 Session / TaskRun / Turn / AgentRun / conversation / receipt 表。v3 起有 tool_executions
 与 approvals；v4 增加 recovery_reports / recovery_receipts；v5 增加完整 TaskRun 状态、转移审计、
 TaskOutcome 版本和 Task 命令回执；v6 增加 Artifact 元数据、引用、pin 状态和 `artifact_refs_json`；v7 增加不可变
@@ -314,20 +315,29 @@ MCP Server、Catalog、run snapshot、Tool snapshot 和结果 Artifact 链接。
 `agent_run_model_requests` 与 `agent_run_terminal_metrics`，以 AgentRun 外键、workspace guard、
 ordered attempt、合法状态检查和明确 usage/cost availability 保存 Provider 进度与终态聚合；它不
 修改 immutable `agent_runs.snapshot_json`，也不复制 ConversationLog 或 ToolExecution payload。
-v18 在 terminal metrics 中只增加 validation outcome、completion outcome/basis 与一个安全 reason code，
-旧 terminal rows 迁移为 `not_run`/`not_completed` 默认值。v19 为每个 model request 增加用途、当次
-PromptProfileEvidence，以及 no-tool 语义意图请求解析出的 Outcome Contract；这些均为 append-only
-请求证据，不改写 immutable AgentRun snapshot。显式 Outcome Contract 与 baseline 可在 admission 时
-冻结于 snapshot，语义解析契约则从 v19 request evidence 恢复。两条路径都不保存命令参数、输出、
-项目指令正文、文件内容、模型原始回复或 verifier 私有数据。
+v18 在 terminal metrics 中增加了历史 validation/completion 字段，v19 为每个 model request 增加用途、
+当次 PromptProfileEvidence 以及历史 no-tool 语义意图请求证据；这些字段仍可供旧数据读取，但 S7P-06
+的新运行不把已移除的 completion gate 当作运行时权威。v20 以追加列记录 long-horizon policy version、
+精确 context-window accounting、compaction-required、compaction/overflow-recovery 计数及有界 retry
+观测，不改写 immutable AgentRun snapshot，也不复制 ConversationLog 或 ToolExecution payload。
+v2 新运行只有在 exact model capability 提供 context window 时才会启用；缺失 capability 不猜测小型
+字符窗口，显式请求 v2 时直接失败。v1 恢复仍按冻结的旧 RunPolicy 执行。上述路径都不保存命令参数、
+输出、项目指令正文、文件内容、模型原始回复或 verifier 私有数据。
 Selection 只引用不可变 Project Knowledge revision，AgentRunSnapshot 保存
 selection/digest/memory revision，运行时由 `RunContextProjection` 重建。Promotion 只保存审计/恢复/来源
 记录，不形成 YAML Active 状态副本。
-命令输出 Artifact 只接收既有有界脱敏结果，不保存 raw stream；单个 Artifact 上限 64 MiB，单个
+命令输出 Artifact 只接收有界捕获后再脱敏的结果，不保存 raw stream；单个 Artifact 上限 64 MiB，单个
 TaskRun 预留字节上限 256 MiB，元数据/Excerpt 上限分别为 32 KiB/8 KiB。发布顺序是 staging 元数据、
 用户私有临时文件写入与 fsync、hash/size 校验、原子 rename、父目录 fsync、available 元数据事务。
 重启时扫描未闭合执行并分类，
 Host/sandbox 缺 `handler_completed` 一律 `outcome_unknown`。YAML 与凭据权威不变。
+
+Long-horizon compaction 只改变模型可见的 projection：完整 ConversationLog 与 ToolCycle 仍是唯一
+聊天/工具事实来源。每次压缩以 `pi_compaction` codec 写入既有 immutable ContextCheckpoint，内容是
+有界结构化摘要、来源范围、digest、token accounting、模型/提示身份和累计文件引用；恢复时重建
+summary + recent tail，不能删除或重放已经持久化的对话/工具记录。模型请求的瞬态 retry 由 AgentLoop
+单独拥有，默认使用 Pi 的 3 次、2/4/8 秒退避和 60 秒 provider-delay cap；工具 timeout、输出/Artifact
+保留上限仍是独立的 per-operation 安全边界。
 
 `OperationalDoctor` 使用 diagnose/read-only 连接检查 schema、SQLite integrity/FK、Conversation grammar、
 Task/Execution、Review/Evidence/Candidate/Promotion/Knowledge、Memory Selection/AgentRun/derived terms、Skill/MCP

@@ -267,7 +267,9 @@ class DurableToolExecutionCoordinator:
         if self.artifacts is not None and execution.tool_name == "run_command":
             try:
                 artifact = self.artifacts.publish_command_output(
-                    result.envelope,
+                    result.artifact_content
+                    if result.artifact_content is not None
+                    else result.envelope,
                     session_id=execution.session_id,
                     task_run_id=execution.task_run_id,
                     tool_execution_id=execution.tool_execution_id,

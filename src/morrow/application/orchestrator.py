@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from morrow.application.agent_runs.preparation import AgentRunPreparationError
+from morrow.application.context import ContextBudgetError
 from morrow.core.application import ApplicationError
 from morrow.core.domain import SessionLifecycle, session_can_start_work
 from morrow.core.models import AgentEvent
@@ -59,6 +60,29 @@ class SessionOrchestrator:
         """Yield model events as they arrive, then a terminal dispatch result."""
         if text.startswith("/"):
             result = self.command_service.execute(text)
+            if result.action == "compact":
+                instructions = result.value if isinstance(result.value, str) else ""
+                try:
+                    compact_idle = getattr(self.runtime, "compact_idle", None)
+                    if not callable(compact_idle):
+                        raise ContextBudgetError("上下文压缩接口不可用")
+                    compacted = await compact_idle(self.session, instructions=instructions)
+                except ContextBudgetError:
+                    result = type(result)(
+                        ["当前无法安全执行上下文压缩，请先确保 Session 空闲且上下文可用。"],
+                        action="compact",
+                    )
+                else:
+                    result = type(
+                        result,
+                    )(
+                        [
+                            "上下文压缩已完成。"
+                            if compacted
+                            else "当前没有可安全压缩的已完成上下文。"
+                        ],
+                        action="compact",
+                    )
             yield DispatchResult(
                 lines=result.lines,
                 action=result.action,

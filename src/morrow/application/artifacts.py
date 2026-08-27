@@ -183,7 +183,7 @@ class ArtifactService:
     def get(self, artifact_id: str) -> ArtifactMetadata | None:
         return self.journal.get_artifact(self.workspace_id, artifact_id)
 
-    def read(self, artifact_id: str, *, max_bytes: int) -> ArtifactRead:
+    def read(self, artifact_id: str, *, max_bytes: int, start_byte: int = 0) -> ArtifactRead:
         metadata = self.journal.get_artifact(self.workspace_id, artifact_id)
         if metadata is None:
             raise ArtifactError(ArtifactErrorCode.MISSING, "artifact metadata is missing")
@@ -194,8 +194,10 @@ class ArtifactService:
                 else ArtifactErrorCode.INTEGRITY
             )
             raise ArtifactError(code, "artifact is not available")
+        if start_byte < 0 or start_byte > metadata.byte_size:
+            raise ArtifactError(ArtifactErrorCode.INVALID, "artifact read offset is invalid")
         try:
-            content = self.filesystem.read(metadata, max_bytes=max_bytes)
+            content = self.filesystem.read(metadata, max_bytes=max_bytes, start_byte=start_byte)
         except ArtifactIntegrityError as exc:
             target = (
                 ArtifactState.MISSING

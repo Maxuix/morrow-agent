@@ -6,6 +6,7 @@ import json
 
 from morrow.adapters.local.search import LocalSearchAdapter, SearchAdapterError
 from morrow.core.local_tools import SearchQuery, SearchTextResult
+from morrow.runtime.truncation import PI_GREP_MAX_LINE_CHARS
 from morrow.services.files import (
     MAX_RESULT_BYTES,
     LocalFileError,
@@ -32,7 +33,14 @@ class WorkspaceSearchService:
         *,
         query: SearchQuery,
         result_limit: int = MAX_RESULT_BYTES,
+        max_line_chars: int | None = None,
     ) -> SearchTextResult:
+        if max_line_chars is not None and (
+            isinstance(max_line_chars, bool)
+            or not isinstance(max_line_chars, int)
+            or not 1 <= max_line_chars <= PI_GREP_MAX_LINE_CHARS
+        ):
+            raise LocalFileError("invalid_limit", "搜索行长度限制超出边界")
         resolved = self.files.resolver.resolve_directory(path)
         try:
             scan = self.adapter.search(
@@ -41,6 +49,7 @@ class WorkspaceSearchService:
                 relative_root=resolved.relative_path,
                 query=query,
                 sensitive_policy=self.files.sensitive_policy,
+                max_line_chars=max_line_chars,
             )
         except SearchAdapterError as exc:
             raise LocalFileError(exc.code, exc.message) from exc

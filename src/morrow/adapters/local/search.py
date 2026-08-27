@@ -21,11 +21,19 @@ from morrow.core.local_tools import (
     SearchMatch,
     SearchQuery,
 )
+from morrow.runtime.truncation import PI_GREP_MAX_LINE_CHARS, truncate_line
 
 SEARCH_TIMEOUT_SECONDS = 10.0
 PYTHON_MAX_FILES = 10_000
 PYTHON_MAX_BYTES = 32 * 1024 * 1024
 MAX_SNIPPET_CHARS = 512
+
+
+def _snippet(value: str, max_line_chars: int | None) -> str:
+    if max_line_chars is None:
+        return value[:MAX_SNIPPET_CHARS]
+    bounded, _truncated = truncate_line(value, max_line_chars)
+    return bounded
 
 
 class SearchAdapterError(RuntimeError):
@@ -59,7 +67,14 @@ class LocalSearchAdapter:
         relative_root: str,
         query: SearchQuery,
         sensitive_policy: SensitiveResourcePolicy,
+        max_line_chars: int | None = None,
     ) -> SearchScan:
+        if max_line_chars is not None and (
+            isinstance(max_line_chars, bool)
+            or not isinstance(max_line_chars, int)
+            or not 1 <= max_line_chars <= PI_GREP_MAX_LINE_CHARS
+        ):
+            raise SearchAdapterError("invalid_limit", "搜索行长度限制超出边界")
         effective_case = _effective_case(query.case, query.pattern)
         if not query.literal:
             try:
@@ -77,6 +92,7 @@ class LocalSearchAdapter:
                     query=query,
                     sensitive_policy=sensitive_policy,
                     rg_path=rg_path,
+                    max_line_chars=max_line_chars,
                 )
             except SearchAdapterError as exc:
                 if exc.code != "rg_unavailable":
@@ -87,6 +103,7 @@ class LocalSearchAdapter:
             relative_root=relative_root,
             query=query,
             sensitive_policy=sensitive_policy,
+            max_line_chars=max_line_chars,
         )
 
     def _search_rg(
@@ -97,6 +114,7 @@ class LocalSearchAdapter:
         query: SearchQuery,
         sensitive_policy: SensitiveResourcePolicy,
         rg_path: str,
+        max_line_chars: int | None,
     ) -> SearchScan:
         argv = [
             rg_path,
@@ -152,6 +170,7 @@ class LocalSearchAdapter:
             workspace_root=workspace_root,
             relative_root=relative_root,
             sensitive_policy=sensitive_policy,
+            max_line_chars=max_line_chars,
         )
 
     def _parse_rg_output(
@@ -162,6 +181,7 @@ class LocalSearchAdapter:
         workspace_root: Path,
         relative_root: str,
         sensitive_policy: SensitiveResourcePolicy,
+        max_line_chars: int | None,
     ) -> SearchScan:
         contexts: dict[tuple[str, int], str] = {}
         match_records: list[tuple[str, int, int, str]] = []
@@ -195,13 +215,13 @@ class LocalSearchAdapter:
             ):
                 protected[relative] = ProtectedPath(path=relative)
                 continue
-            contexts[(relative, line_number)] = snippet[:MAX_SNIPPET_CHARS]
+            contexts[(relative, line_number)] = _snippet(snippet, max_line_chars)
             if event.get("type") != "match":
                 continue
             submatches = data.get("submatches") or []
             column = int(submatches[0].get("start", 0)) + 1 if submatches else 1
             match_records.append(
-                (relative, line_number, column, snippet[:MAX_SNIPPET_CHARS] or " ")
+                (relative, line_number, column, _snippet(snippet, max_line_chars) or " ")
             )
         matches: list[SearchMatch] = []
         for relative, line_number, column, snippet in match_records:
@@ -222,7 +242,7 @@ class LocalSearchAdapter:
                     path=relative,
                     line=line_number,
                     column=column,
-                    snippet=snippet[:MAX_SNIPPET_CHARS] or " ",
+                    snippet=_snippet(snippet, max_line_chars) or " ",
                     before=before,
                     after=after,
                 )
@@ -245,6 +265,7 @@ class LocalSearchAdapter:
         relative_root: str,
         query: SearchQuery,
         sensitive_policy: SensitiveResourcePolicy,
+        max_line_chars: int | None,
     ) -> SearchScan:
         effective_case = _effective_case(query.case, query.pattern)
         regex = None if query.literal else re.compile(query.pattern, _regex_flags(effective_case))
@@ -336,9 +357,9 @@ class LocalSearchAdapter:
                                 path=relative,
                                 line=index,
                                 column=column,
-                                snippet=line[:MAX_SNIPPET_CHARS] or " ",
-                                before=tuple(item[:MAX_SNIPPET_CHARS] for item in before),
-                                after=tuple(item[:MAX_SNIPPET_CHARS] for item in after),
+                                snippet=_snippet(line, max_line_chars) or " ",
+                                before=tuple(_snippet(item, max_line_chars) for item in before),
+                                after=tuple(_snippet(item, max_line_chars) for item in after),
                             )
                         )
                         if len(matches) >= query.max_results:

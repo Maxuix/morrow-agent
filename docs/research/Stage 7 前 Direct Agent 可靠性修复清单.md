@@ -343,25 +343,35 @@ Workflow Reviewer 不能建立在虚假的叶子节点完成状态上。否则 S
 
 ---
 
-### S7P-06：冻结双倍轮次预算并修复上下文、无进展循环
+### S7P-06：采用 Pi 长时任务循环并修复上下文、重试与输出边界
 
 **优先级：P0；依赖：S7P-01、S7P-02、S7P-05**
 
-#### 已存在的问题
+#### 历史问题与当前结论
 
-- 默认最大工具轮次为 30，四个任务达到上限。
-- 没有预算对照，所以不能确认增大预算是否提高成功率，还是只增加成本。
-- 当前长上下文处理会清空旧工具结果并丢弃旧 turn，没有语义摘要。
-- durable ConversationLog 对工具参数和结果强脱敏，重启后只凭现有摘要可能失去完成复杂任务所需的语义。
-- 已有重复模式检测，但缺少基于任务进展、错误重复和工作区变化的统一无进展判断。
+- 默认最大工具轮次为 30，四个历史任务曾达到上限；该数值属于历史 v1 运行证据，不是
+  v2 的目标预算。
+- 旧实现按字符预算清空旧工具结果并丢弃旧 turn，没有语义摘要、精确 token window 或
+  可恢复的 Artifact continuation。
+- 旧实现缺少 Pi 风格的 context-overflow recovery、Provider retry/backoff 和工具族输出
+  截断边界。
+- 重复模式和推断无进展不能成为 v2 的默认终止条件；它们保留为 v1 历史兼容字段或观测，
+  不得以别名重新启用任务级 stop。
 
-#### 已冻结的预算决策
+#### 已冻结的当前决策
 
-- 将 Stage 7 前候选配置的 max_tool_rounds 从 30 一次性放宽到 60。
-- 60 轮在本轮修复和最终重复评测中保持不变，不再插入 45 轮中间档反复调参。
-- 只放宽已经被四个任务实际命中的工具轮次上限。deadline、token/context、model attempts、total tool calls 和单工具超时是独立安全预算，除非观测证据显示它们也在阻塞，否则不机械翻倍。
-- 保留硬 deadline、总调用上限、取消和循环检测；加入基于进展的提前停止，使明显死循环不必消耗满 60 轮。
-- 30 轮历史结果作为 before 基线，60 轮作为固定 candidate。若 60 轮仍失败，先按轨迹归因，不继续自动上调。
+- 新 v2 运行继续直到模型返回无工具的正常 stop、abort 或 error；不设置累计 model request、
+  tool round、tool call、task-time、重复或 inferred-no-progress stop。
+- v2 必须绑定 exact model `context_window_tokens`，按 Pi 的
+  `contextTokens > contextWindow - reserveTokens` 触发压缩，默认
+  `reserveTokens=16384`、`keepRecentTokens=20000`。
+- 压缩写入不可变 `pi_compaction` ContextCheckpoint，保留结构化摘要、来源 digest、完整
+  ToolCycle 边界、recent tail 和累计文件列表；原始 ConversationLog 不被覆盖。
+- Provider retry 默认最多 3 次，退避 2/4/8 秒，provider delay 上限 60 秒；上下文溢出只走
+  一次压缩恢复。read/search 使用 2000 行/50 KiB/500 字符的 Pi 对应边界，命令输出使用
+  tail 截断并提供安全 Artifact continuation。
+- v1 snapshot/resume 继续使用历史有界字段；显式 v2 缺少精确 context capability 时失败，
+  不回退到猜测的小型字符窗口。评测 watchdog 仍属于外部 S7-09 harness。
 
 #### 为什么会阻塞 Stage 7
 
@@ -369,31 +379,35 @@ Stage 7 会将预算下发到每个 AgentRun，并聚合 Workflow 总预算。�
 
 #### 解决方向
 
-按以下顺序实施：
+本项已按以下顺序完成：
 
-1. 使用 S7P-01 指标重跑失败任务，绘制每轮上下文、工具错误、文件变化、验证和模型停止轨迹。
-2. 将 max_tool_rounds 改为 60，并通过策略、边界组合和循环检测测试验证新的预算关系；修改 bundled runtime-policy 默认值时单独记录这一显式决策。
-3. 在完全相同条件下将历史 30 轮基线与固定 60 轮 candidate 比较成功率、token、耗时、无效调用、首次有效写入和返工。
-4. 为被压缩的旧内容生成确定性、可验证的工作摘要，至少保留：
+1. 以确定性 Provider/fake clock fixture 验证了长于 120 次模型请求、512 次工具调用、3600 秒
+   假时间以及重复循环后成功 stop 的轨迹。
+2. 实现了显式 v1/v2 RunPolicy、exact capability admission、v1 resume 兼容和无默认累计/无进展
+   终止；旧 v1 字段不以 sentinel integer 表示 v2 的 unlimited。
+3. 为被压缩的旧内容生成有界、可验证的结构化摘要，至少保留：
    - 用户目标与约束；
    - 已查看文件和关键发现；
    - 已做变更及 diff 摘要；
    - 已运行验证及结果；
    - 未解决错误与下一步；
    - 安全的工具错误诊断。
-5. 摘要必须有来源范围和 hash，可重建而不覆盖原始 durable 事实；不得保存 reasoning、秘密或完整敏感参数。
-6. 建立进展信号：新证据、新相关 diff、错误类型变化、验证改善。连续无进展时先给模型一次明确诊断，再以确定 stop code 结束。
+4. 摘要具有来源范围和 hash，可通过 immutable checkpoint 重建而不覆盖原始 durable 事实；不
+   保存 reasoning、秘密或完整敏感参数。
+5. 实现了 Pi 风格 context accounting/compaction chain、一次 overflow recovery、retry/backoff、
+   UTF-8 安全的 head/tail truncation、continuation 和 redacted Artifact 读取。
+6. 取消、异常、重启、工具配对和 retry 路径均由离线回归覆盖；无进展/重复只作为观测或 v1
+   兼容行为，不作为 v2 的 stop。
 
 #### 验收条件
 
-- [ ] max_tool_rounds=60 的策略、边界组合、预算耗尽和循环检测测试通过。
-- [ ] 提交历史 30 轮与固定 60 轮 candidate 对照报告，结论同时呈现成功率和成本。
-- [ ] 最终评测全过程保持 60 轮，不为单个失败任务再次提高上限。
-- [ ] 上下文压缩前后，用户目标、相关修改、验证失败和下一步保持可回答。
-- [ ] 重启恢复后，Agent 不会因为工具消息被完全脱语义而重复同一失败操作。
-- [ ] 同一 invalid_arguments、not_found 或无 diff 模式连续重复时能被识别。
-- [ ] 无进展停止不会误杀正在产生新 diff 或验证改善的运行。
-- [ ] 任何预算耗尽都保留合法 ToolCycle、明确 stop code 和可继续的 TaskRun 状态。
+- [x] v2 长时循环、重复循环后正常 stop、host stop 边界与 v1 resume 兼容测试通过。
+- [ ] 同模型 Pi/Morrow 30 轮与 60 轮 candidate 对照报告——旧 30/60 设计已被当前决策
+      取代，正式 A/B 延后到 S7P-09，届时使用外部等价 watchdog 与新的评测协议。
+- [x] 上下文压缩前后，用户目标、约束、进展、下一步和累计文件列表保持可回答且有界。
+- [x] immutable checkpoint 重启恢复不会覆盖或重复 durable 对话/工具事实。
+- [x] 同一 invalid_arguments、not_found 或无 diff 模式不会触发 v2 的隐式任务级 stop。
+- [x] 任何模型/工具/取消/上下文错误都保留合法 ToolCycle、明确既有 stop code 和可恢复状态。
 
 ---
 

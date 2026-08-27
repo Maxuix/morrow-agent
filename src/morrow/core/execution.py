@@ -781,6 +781,7 @@ PRODUCTION_TOOL_DECLARATIONS: tuple[ToolRecoveryDeclaration, ...] = (
     _declaration("read_file", EffectClass.BOUNDED_READ, MissingCompletionPolicy.SAFE_TO_RETRY),
     _declaration("find_files", EffectClass.BOUNDED_READ, MissingCompletionPolicy.SAFE_TO_RETRY),
     _declaration("search_text", EffectClass.BOUNDED_READ, MissingCompletionPolicy.SAFE_TO_RETRY),
+    _declaration("read_artifact", EffectClass.BOUNDED_READ, MissingCompletionPolicy.SAFE_TO_RETRY),
     _declaration(
         "show_changes",
         EffectClass.DURABLE_STATE_READ,

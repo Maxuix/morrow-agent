@@ -444,9 +444,9 @@ class ToolRunContext:
         return RunMetricsSnapshot(
             run_id=self.run_id,
             finish_reason=finish_reason,
-            tool_calls=self._tool_calls,
-            successful_tool_calls=self._successful_tool_calls,
-            failed_tool_calls=self._failed_tool_calls,
+            tool_calls=min(128, self._tool_calls),
+            successful_tool_calls=min(128, self._successful_tool_calls),
+            failed_tool_calls=min(128, self._failed_tool_calls),
             approval_requests=min(128, self._approval_requests + approval_facts),
             approval_rejections=self._approval_rejections,
             timeout_count=min(
@@ -470,11 +470,22 @@ class ToolCallContext:
     total: int
     result_limit: int
     approval_verdict: PolicyVerdict = PolicyVerdict.ALLOW
+    long_horizon: bool = False
+    truncation_max_bytes: int = 8 * 1024
+    truncation_max_lines: int = 400
+    grep_max_line_chars: int = 512
 
     def __post_init__(self) -> None:
         if not self.call_id.strip() or not self.tool_name.strip():
             raise ValueError("ToolCallContext identifiers must be non-empty")
-        if self.ordinal < 1 or self.total < self.ordinal or self.result_limit < 1:
+        if (
+            self.ordinal < 1
+            or self.total < self.ordinal
+            or self.result_limit < 1
+            or self.truncation_max_bytes < 1
+            or self.truncation_max_lines < 1
+            or self.grep_max_line_chars < 1
+        ):
             raise ValueError("invalid ToolCallContext bounds")
 
 
@@ -486,6 +497,7 @@ class ToolHandlerOutcome:
     facts: tuple[ToolFact, ...] = ()
     artifact_refs: tuple[ArtifactReference, ...] = ()
     mcp_result_artifact_refs: tuple[ArtifactReference, ...] = ()
+    artifact_content: bytes | None = field(default=None, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         facts = tuple(self.facts)
@@ -505,6 +517,8 @@ class ToolHandlerOutcome:
             raise ValueError(
                 "ToolHandlerOutcome MCP artifact refs must be included in artifact refs"
             )
+        if self.artifact_content is not None and not isinstance(self.artifact_content, bytes):
+            raise TypeError("ToolHandlerOutcome artifact content must be bytes")
         object.__setattr__(self, "artifact_refs", artifact_refs)
         object.__setattr__(self, "mcp_result_artifact_refs", mcp_result_artifact_refs)
 

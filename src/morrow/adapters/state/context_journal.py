@@ -195,8 +195,17 @@ class SqliteContextJournal:
         if checkpoint.source_end_position - 1 not in by_position:
             raise StorageError(StorageErrorCode.UNAVAILABLE, "checkpoint source end is missing")
         end_record = by_position[checkpoint.source_end_position - 1]
-        if end_record.record_id != checkpoint.source_end_record_id or end_record.kind != "terminal":
-            raise StorageError(StorageErrorCode.UNAVAILABLE, "checkpoint must end at a closed Turn")
+        if end_record.record_id != checkpoint.source_end_record_id:
+            raise StorageError(StorageErrorCode.UNAVAILABLE, "checkpoint source end is invalid")
+        if end_record.kind != "terminal":
+            if not (
+                checkpoint.codec == "pi_compaction"
+                and end_record.kind == "message"
+                and end_record.payload.get("role") == "tool"
+            ):
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE, "checkpoint must end at a closed Turn"
+                )
         if checkpoint.source_start_position:
             start_record = by_position.get(checkpoint.source_start_position)
             if start_record is None or start_record.record_id != checkpoint.source_start_record_id:

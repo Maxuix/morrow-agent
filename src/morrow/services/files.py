@@ -40,7 +40,8 @@ from morrow.core.local_tools import (
 )
 
 MAX_RELATIVE_PATH_CHARS = WORKSPACE_RELATIVE_PATH_MAX_CHARS
-MAX_READ_LINES = 400
+LEGACY_MAX_READ_LINES = 400
+MAX_READ_LINES = 2_000
 MAX_READ_TEXT_BYTES = 8 * 1024
 MAX_DIRECTORY_ENTRIES = 500
 MAX_DIRECTORY_DEPTH = 4
@@ -418,11 +419,22 @@ class WorkspaceFileService:
         path: str,
         *,
         start_line: int = 1,
-        line_count: int = MAX_READ_LINES,
+        line_count: int = LEGACY_MAX_READ_LINES,
         result_limit: int = MAX_RESULT_BYTES,
+        max_bytes: int | None = None,
+        max_lines: int | None = None,
     ) -> ReadFileResult:
         if start_line < 1 or line_count < 1 or line_count > MAX_READ_LINES:
             raise LocalFileError("invalid_range", "读取行范围超出限制")
+        selected_max_bytes = MAX_READ_TEXT_BYTES if max_bytes is None else max_bytes
+        selected_max_lines = MAX_READ_LINES if max_lines is None else max_lines
+        if (
+            selected_max_bytes < 1
+            or selected_max_bytes > 50 * 1024
+            or selected_max_lines < 1
+            or selected_max_lines > 2_000
+        ):
+            raise LocalFileError("invalid_limit", "读取输出限制超出边界")
         resolved = self.resolver.resolve_file(path)
         relative = resolved.relative_path
         if self.is_protected_resolved(relative, resolved.target):
@@ -437,8 +449,8 @@ class WorkspaceFileService:
         text = source.text
         lines = text.splitlines(keepends=True)
         total_lines = len(lines)
-        selected = lines[start_line - 1 : start_line - 1 + line_count]
-        selected, truncated = _fit_lines(selected, max_bytes=MAX_READ_TEXT_BYTES)
+        selected = lines[start_line - 1 : start_line - 1 + min(line_count, selected_max_lines)]
+        selected, truncated = _fit_lines(selected, max_bytes=selected_max_bytes)
         end_line = start_line + len(selected) - 1 if selected else start_line - 1
         if end_line < total_lines:
             truncated = True

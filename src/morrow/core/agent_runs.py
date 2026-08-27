@@ -43,6 +43,7 @@ class ProviderCapabilities(ProtocolModel):
     structured_output: bool = False
     safe_request_chars: int | None = Field(default=None, gt=0)
     safe_context_chars: int | None = Field(default=None, gt=0)
+    context_window_tokens: int | None = Field(default=None, gt=0)
     input_types: tuple[InputModality, ...] = ("text",)
     cost_metadata: CostMetadata | None = None
 
@@ -69,6 +70,7 @@ class ExactModelCapabilities(ProtocolModel):
     structured_output: bool
     safe_request_chars: int | None = None
     safe_context_chars: int | None = None
+    context_window_tokens: int | None = None
     input_types: tuple[InputModality, ...] = ("text",)
     cost_metadata: CostMetadata | None = None
 
@@ -132,6 +134,11 @@ def exact_model_capabilities(
         safe_context_chars=narrowed_limit(model_caps.safe_context_chars, adapter.safe_context_chars)
         if model_caps is not None
         else adapter.safe_context_chars,
+        context_window_tokens=narrowed_limit(
+            model_caps.context_window_tokens, adapter.context_window_tokens
+        )
+        if model_caps is not None
+        else adapter.context_window_tokens,
         input_types=narrowed_input_types(model_caps.input_types, adapter.input_types)
         if model_caps is not None
         else adapter.input_types,

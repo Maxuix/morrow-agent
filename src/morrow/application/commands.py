@@ -238,6 +238,15 @@ class CommandService(LearningCommandMixin):
         if not parts:
             return CommandResult([])
         command = parts[0]
+        if command == "/compact":
+            instructions = raw.strip()[len(command) :].strip()
+            if len(instructions) > 512:
+                return CommandResult(["/compact 的说明不能超过 512 个字符。"])
+            return CommandResult(
+                ["正在请求空闲 Session 的上下文压缩。"],
+                action="compact",
+                value=instructions,
+            )
         if command == "/exit":
             if self.session.persisted:
                 return CommandResult(["正在退出。已保存的对话会保留。"], action="exit")

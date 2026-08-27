@@ -138,13 +138,13 @@ class FilesystemArtifactStore:
     def verify(self, metadata: ArtifactMetadata) -> None:
         self._verify_path(self.existing_final_path(metadata.artifact_id), metadata)
 
-    def read(self, metadata: ArtifactMetadata, *, max_bytes: int) -> bytes:
+    def read(self, metadata: ArtifactMetadata, *, max_bytes: int, start_byte: int = 0) -> bytes:
         if max_bytes > ARTIFACT_MAX_BYTES:
             raise ArtifactBudgetError("artifact read budget exceeded")
-        if max_bytes < 0:
+        if max_bytes < 0 or start_byte < 0 or start_byte > metadata.byte_size:
             raise ArtifactIntegrityError(message="artifact read limit is invalid")
         return self._read_verified(
-            self.existing_final_path(metadata.artifact_id), metadata, max_bytes
+            self.existing_final_path(metadata.artifact_id), metadata, max_bytes, start_byte
         )
 
     def orphan_report(
@@ -193,7 +193,11 @@ class FilesystemArtifactStore:
         self._read_verified(path, metadata, None)
 
     def _read_verified(
-        self, path: Path, metadata: ArtifactMetadata, max_bytes: int | None
+        self,
+        path: Path,
+        metadata: ArtifactMetadata,
+        max_bytes: int | None,
+        start_byte: int = 0,
     ) -> bytes:
         descriptor: int | None = None
         try:
@@ -231,12 +235,16 @@ class FilesystemArtifactStore:
                 chunk = os.read(descriptor, 1024 * 1024)
                 if not chunk:
                     break
+                chunk_start = total
                 total += len(chunk)
                 if total > ARTIFACT_MAX_BYTES:
                     raise ArtifactIntegrityError(message="artifact file exceeds the byte budget")
                 digest.update(chunk)
                 if max_bytes is not None and len(prefix) < max_bytes:
-                    prefix.extend(chunk[: max_bytes - len(prefix)])
+                    selection_start = max(0, start_byte - chunk_start)
+                    selection_end = min(len(chunk), start_byte + max_bytes - chunk_start)
+                    if selection_start < selection_end:
+                        prefix.extend(chunk[selection_start:selection_end])
         except ArtifactIntegrityError:
             raise
         except OSError as exc:

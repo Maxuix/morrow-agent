@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from morrow.adapters.local.process import HostProcessAdapter, ProcessAdapterError
+from morrow.core.artifacts import ARTIFACT_MAX_BYTES
 from morrow.core.capabilities import (
     OperationIntent,
     OperationKind,
@@ -25,6 +26,11 @@ from morrow.core.validation import (
     VALIDATION_FORWARDED_ARG_FAMILIES,
     VALIDATION_OPTION_PREFIXES,
     match_validator_action,
+)
+from morrow.runtime.truncation import (
+    PI_DEFAULT_MAX_BYTES,
+    PI_DEFAULT_MAX_LINES,
+    truncate_tail,
 )
 from morrow.services.files import LocalFileError, WorkspaceFileService
 
@@ -213,9 +219,54 @@ class ProcessExecutionService:
         tool_name: str,
         ordinal: int,
         approval_verdict,
+        truncation_max_bytes: int | None = None,
+        truncation_max_lines: int | None = None,
     ) -> tuple[CommandResult, object]:
+        result, fact, _ = await self.execute_with_artifact(
+            plan,
+            result_limit=result_limit,
+            run=run,
+            call_id=call_id,
+            tool_name=tool_name,
+            ordinal=ordinal,
+            approval_verdict=approval_verdict,
+            truncation_max_bytes=truncation_max_bytes,
+            truncation_max_lines=truncation_max_lines,
+        )
+        return result, fact
+
+    async def execute_with_artifact(
+        self,
+        plan: CommandPlan,
+        *,
+        result_limit: int,
+        run: ToolRunContext,
+        call_id: str,
+        tool_name: str,
+        ordinal: int,
+        approval_verdict,
+        truncation_max_bytes: int | None = None,
+        truncation_max_lines: int | None = None,
+    ) -> tuple[CommandResult, object, bytes]:
         environment = self._minimal_environment()
-        output_limit = min(MAX_COMMAND_OUTPUT_BYTES, max(1, result_limit))
+        pi_truncation = truncation_max_bytes is not None or truncation_max_lines is not None
+        if truncation_max_bytes is not None and (
+            isinstance(truncation_max_bytes, bool)
+            or not isinstance(truncation_max_bytes, int)
+            or not 1 <= truncation_max_bytes <= PI_DEFAULT_MAX_BYTES
+        ):
+            raise ProcessServiceError("invalid_limit", "命令输出字节限制超出边界")
+        if truncation_max_lines is not None and (
+            isinstance(truncation_max_lines, bool)
+            or not isinstance(truncation_max_lines, int)
+            or not 1 <= truncation_max_lines <= PI_DEFAULT_MAX_LINES
+        ):
+            raise ProcessServiceError("invalid_limit", "命令输出行数限制超出边界")
+        max_bytes = PI_DEFAULT_MAX_BYTES if truncation_max_bytes is None else truncation_max_bytes
+        max_lines = PI_DEFAULT_MAX_LINES if truncation_max_lines is None else truncation_max_lines
+        output_limit = min(
+            max_bytes if pi_truncation else MAX_COMMAND_OUTPUT_BYTES, max(1, result_limit)
+        )
         try:
             if hasattr(self.adapter, "run_identity"):
                 self.adapter.run_identity = (run.run_id, call_id)
@@ -235,8 +286,14 @@ class ProcessExecutionService:
         sandbox_change_set = getattr(self.adapter, "last_change_set", None)
         if sandbox_change_set is not None:
             run.retain_change_set(sandbox_change_set.change_set_id, sandbox_change_set)
-        stdout = _tail_text(stdout, output_limit)
-        stderr = _tail_text(stderr, output_limit)
+        if pi_truncation:
+            stdout_truncation = truncate_tail(stdout, max_lines=max_lines, max_bytes=output_limit)
+            stderr_truncation = truncate_tail(stderr, max_lines=max_lines, max_bytes=output_limit)
+            stdout = stdout_truncation.content
+            stderr = stderr_truncation.content
+        else:
+            stdout = _tail_text(stdout, output_limit)
+            stderr = _tail_text(stderr, output_limit)
         flags = tuple(dict.fromkeys((*stdout_flags, *stderr_flags)))
         redaction_count = stdout_redactions + stderr_redactions
         result = CommandResult(
@@ -249,9 +306,16 @@ class ProcessExecutionService:
             stdout_original_lines=output.stdout_original_lines,
             stderr_original_bytes=output.stderr_original_bytes,
             stderr_original_lines=output.stderr_original_lines,
-            stdout_truncated=output.stdout_truncated,
-            stderr_truncated=output.stderr_truncated,
-            output_truncated=output.stdout_truncated or output.stderr_truncated,
+            stdout_truncated=output.stdout_truncated
+            or (pi_truncation and stdout_truncation.truncated),
+            stderr_truncated=output.stderr_truncated
+            or (pi_truncation and stderr_truncation.truncated),
+            output_truncated=(
+                output.stdout_truncated
+                or output.stderr_truncated
+                or (pi_truncation and stdout_truncation.truncated)
+                or (pi_truncation and stderr_truncation.truncated)
+            ),
             duration_ms=output.duration_ms,
             command_class=plan.command_class,
             cwd=plan.cwd_relative,
@@ -285,7 +349,28 @@ class ProcessExecutionService:
             redaction_flags=result.redaction_flags,
             redaction_count=result.redaction_count,
         )
-        return result, fact
+        return result, fact, self._command_artifact(output)
+
+    def _command_artifact(self, output) -> bytes:
+        """Render a bounded, redacted command stream for the Artifact store."""
+
+        stdout_raw = getattr(output, "stdout_full", None)
+        stderr_raw = getattr(output, "stderr_full", None)
+        stdout_raw = output.stdout_tail if stdout_raw is None else stdout_raw
+        stderr_raw = output.stderr_tail if stderr_raw is None else stderr_raw
+        stdout, _, _ = self.redactor.redact(stdout_raw)
+        stderr, _, _ = self.redactor.redact(stderr_raw)
+        retention_truncated = bool(getattr(output, "full_output_truncated", False))
+        prefix = (
+            "[morrow command output; Artifact retention is bounded and truncated]\n"
+            if retention_truncated
+            else ""
+        )
+        content = f"{prefix}[stdout]\n{stdout}\n[stderr]\n{stderr}"
+        encoded = content.encode("utf-8")
+        if len(encoded) <= ARTIFACT_MAX_BYTES:
+            return encoded
+        return encoded[:ARTIFACT_MAX_BYTES].decode("utf-8", errors="ignore").encode("utf-8")
 
     @staticmethod
     def validation_fact(

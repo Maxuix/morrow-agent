@@ -182,7 +182,7 @@ async def test_output_is_bounded_redacted_and_invalid_utf8_is_deterministic(tmp_
         "print('known-secret password=abc123 Bearer abcdefghijkl')"
     )
     plan = service.preflight(CommandRequest(argv=_python(code)))
-    result, _ = await service.execute(
+    result, _, artifact_content = await service.execute_with_artifact(
         plan,
         result_limit=800,
         run=_run(),
@@ -199,6 +199,10 @@ async def test_output_is_bounded_redacted_and_invalid_utf8_is_deterministic(tmp_
     assert result.output_truncated is True
     assert "invalid_utf8" in result.redaction_flags
     assert len(result.model_dump_json()) <= 800
+    artifact = artifact_content.decode("utf-8")
+    assert "known-secret" not in artifact
+    assert "abc123" not in artifact
+    assert "x" * 1_000 in artifact
 
 
 @pytest.mark.asyncio

@@ -9,7 +9,10 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from morrow.core.artifacts import ARTIFACT_MAX_BYTES
 from morrow.core.local_tools import CommandStatus
+
+_ARTIFACT_STREAM_CAPTURE_BYTES = ARTIFACT_MAX_BYTES // 4
 
 
 class ProcessAdapterError(RuntimeError):
@@ -34,6 +37,9 @@ class ProcessOutput:
     stdout_truncated: bool
     stderr_truncated: bool
     duration_ms: int
+    stdout_full: bytes | None = None
+    stderr_full: bytes | None = None
+    full_output_truncated: bool = False
 
 
 class _TailBuffer:
@@ -61,6 +67,29 @@ class _TailBuffer:
         return value, lines, self.original_bytes > self.limit
 
 
+class _HeadCaptureBuffer:
+    """Retain a bounded head for the redacted command Artifact projection."""
+
+    def __init__(self, limit: int, overlap: int) -> None:
+        self.limit = limit
+        self.capacity = limit + max(0, overlap)
+        self.data = bytearray()
+        self.original_bytes = 0
+
+    def add(self, chunk: bytes) -> None:
+        self.original_bytes += len(chunk)
+        if len(self.data) < self.capacity:
+            remaining = self.capacity - len(self.data)
+            self.data.extend(chunk[:remaining])
+
+    @property
+    def truncated(self) -> bool:
+        return self.original_bytes > self.limit
+
+    def value(self) -> bytes:
+        return bytes(self.data)
+
+
 class HostProcessAdapter:
     """Run one non-interactive command without inheriting the caller's environment."""
 
@@ -83,6 +112,8 @@ class HostProcessAdapter:
         started = time.monotonic()
         stdout_buffer = _TailBuffer(output_limit, redaction_overlap)
         stderr_buffer = _TailBuffer(output_limit, redaction_overlap)
+        stdout_capture = _HeadCaptureBuffer(_ARTIFACT_STREAM_CAPTURE_BYTES, redaction_overlap)
+        stderr_capture = _HeadCaptureBuffer(_ARTIFACT_STREAM_CAPTURE_BYTES, redaction_overlap)
         process = None
         readers: tuple[asyncio.Task, ...] = ()
         timed_out = False
@@ -101,8 +132,8 @@ class HostProcessAdapter:
             else:
                 process = await asyncio.create_subprocess_exec(*argv, **kwargs)
             readers = (
-                asyncio.create_task(self._drain(process.stdout, stdout_buffer)),
-                asyncio.create_task(self._drain(process.stderr, stderr_buffer)),
+                asyncio.create_task(self._drain(process.stdout, stdout_buffer, stdout_capture)),
+                asyncio.create_task(self._drain(process.stderr, stderr_buffer, stderr_capture)),
             )
             try:
                 await asyncio.wait_for(process.wait(), timeout=timeout_seconds)
@@ -162,10 +193,17 @@ class HostProcessAdapter:
             stdout_truncated=stdout_truncated,
             stderr_truncated=stderr_truncated,
             duration_ms=min(120_000, max(0, int((time.monotonic() - started) * 1000))),
+            stdout_full=stdout_capture.value(),
+            stderr_full=stderr_capture.value(),
+            full_output_truncated=stdout_capture.truncated or stderr_capture.truncated,
         )
 
     @staticmethod
-    async def _drain(stream, buffer: _TailBuffer) -> None:
+    async def _drain(
+        stream,
+        buffer: _TailBuffer,
+        capture: _HeadCaptureBuffer | None = None,
+    ) -> None:
         if stream is None:
             return
         while True:
@@ -173,6 +211,8 @@ class HostProcessAdapter:
             if not chunk:
                 return
             buffer.add(chunk)
+            if capture is not None:
+                capture.add(chunk)
 
     async def _terminate(self, process) -> None:
         if process.returncode is not None:

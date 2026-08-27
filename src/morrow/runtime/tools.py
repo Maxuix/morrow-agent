@@ -243,6 +243,7 @@ _STATIC_TOOL_CONTRACTS: Mapping[str, ToolContractExpectation] = MappingProxyType
         "read_file": _static_contract(OperationKind.WORKSPACE_READ),
         "find_files": _static_contract(OperationKind.WORKSPACE_READ),
         "search_text": _static_contract(OperationKind.WORKSPACE_READ),
+        "read_artifact": _static_contract(OperationKind.INTERNAL_READ),
         "show_changes": _static_contract(OperationKind.INTERNAL_READ),
         "git_status": _static_contract(OperationKind.GIT_READ),
         "git_diff": _static_contract(OperationKind.GIT_READ),
@@ -711,6 +712,7 @@ class ToolExecutionOutcome:
     disposition: ToolExecutionDisposition | None = None
     artifact_refs: tuple[ArtifactReference, ...] = ()
     mcp_result_artifact_refs: tuple[ArtifactReference, ...] = ()
+    artifact_content: bytes | None = field(default=None, repr=False, compare=False)
 
 
 class ToolExecutor:
@@ -735,6 +737,12 @@ class ToolExecutor:
         self.approval_port = approval_port
         self.capability_policy = capability_policy
         self.expected_process_isolation = resolved_isolation
+        self.long_horizon = run_policy.is_long_horizon
+        self.truncation_max_bytes = (
+            run_policy.truncation_max_bytes if self.long_horizon else 8 * 1024
+        )
+        self.truncation_max_lines = run_policy.truncation_max_lines if self.long_horizon else 400
+        self.grep_max_line_chars = run_policy.grep_max_line_chars if self.long_horizon else 512
         self._active_run_context: ToolRunContext | None = None
         self._active_ordinal = 1
         self._active_total = 1
@@ -827,6 +835,10 @@ class ToolExecutor:
             ordinal=self._active_ordinal,
             total=self._active_total,
             result_limit=limit,
+            long_horizon=self.long_horizon,
+            truncation_max_bytes=self.truncation_max_bytes,
+            truncation_max_lines=self.truncation_max_lines,
+            grep_max_line_chars=self.grep_max_line_chars,
         )
         policy_decision = None
         if self.capability_policy is not None:
@@ -972,6 +984,7 @@ class ToolExecutor:
                         failed,
                         artifact_refs=outcome.artifact_refs,
                         mcp_result_artifact_refs=outcome.mcp_result_artifact_refs,
+                        artifact_content=outcome.artifact_content,
                     )
                 return failed
             return ToolExecutionOutcome(
@@ -984,6 +997,7 @@ class ToolExecutor:
                 facts=outcome.facts,
                 artifact_refs=outcome.artifact_refs,
                 mcp_result_artifact_refs=outcome.mcp_result_artifact_refs,
+                artifact_content=outcome.artifact_content,
             )
         except asyncio.CancelledError:
             raise
@@ -1070,6 +1084,10 @@ class ToolExecutor:
                     ordinal=ordinal,
                     total=total,
                     result_limit=result_limit or self.run_policy.effective_result_limit,
+                    long_horizon=self.long_horizon,
+                    truncation_max_bytes=self.truncation_max_bytes,
+                    truncation_max_lines=self.truncation_max_lines,
+                    grep_max_line_chars=self.grep_max_line_chars,
                 )
                 try:
                     registered.context_cleanup(cleanup_context)
@@ -1099,6 +1117,10 @@ class ToolExecutor:
             ordinal=ordinal,
             total=total,
             result_limit=result_limit,
+            long_horizon=self.long_horizon,
+            truncation_max_bytes=self.truncation_max_bytes,
+            truncation_max_lines=self.truncation_max_lines,
+            grep_max_line_chars=self.grep_max_line_chars,
         )
         try:
             registered.context_cleanup(context)

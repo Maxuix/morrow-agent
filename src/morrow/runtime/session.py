@@ -14,6 +14,7 @@ from morrow.core.capabilities import (
     ValidationFact,
     WorkspaceCapability,
 )
+from morrow.core.compaction import CompactionEntry, CompactionSummary
 from morrow.core.context import ContextCheckpoint, RunContextProjection
 from morrow.core.domain import SessionHealth, SessionLifecycle
 from morrow.core.execution import (
@@ -26,6 +27,7 @@ from morrow.core.models import (
     AssistantMessage,
     FinishReason,
     Message,
+    ModelUsage,
     Preferences,
     Profile,
     StatePresence,
@@ -184,6 +186,8 @@ class DurableRunCoordinator(SessionCommitter, Protocol):
 
     def synchronize_task_projection(self, task_run_id: str | None) -> None: ...
 
+    def persist_compaction_entry(self, entry: CompactionEntry) -> None: ...
+
 
 @dataclass
 class Session:
@@ -222,6 +226,14 @@ class Session:
     skill_context_projection: SkillContextProjection | None = None
     # Fresh prompt bodies remain in memory until the matching AgentRun is admitted.
     pending_prompt_projection: PromptProjection | None = None
+    # Compaction is a model-context projection; ConversationLog remains authoritative and is not
+    # rewritten when these fields advance.
+    compaction_entries: tuple[CompactionEntry, ...] = ()
+    compaction_boundary_sequence: int = 0
+    compaction_summary: CompactionSummary | None = None
+    compaction_in_progress: bool = False
+    latest_model_usage: ModelUsage = field(default_factory=ModelUsage.unavailable)
+    latest_model_usage_context_digest: str | None = None
 
     def __post_init__(self) -> None:
         # Hand-built Sessions in tests and local integrations may only provide values.  Infer
@@ -269,6 +281,53 @@ class Session:
         if self.persisted:
             self.dirty = False
 
+    def append_compaction_entry(self, entry: CompactionEntry) -> None:
+        """Install one immutable context projection boundary after durable validation."""
+
+        if entry.session_id != self.session_id:
+            raise ValueError("compaction entry belongs to another Session")
+        self._validate_compaction_order(entry)
+        persist = (
+            getattr(self.durable_runtime, "persist_compaction_entry", None)
+            if self.durable_runtime is not None
+            else None
+        )
+        if callable(persist):
+            persist(entry)
+        self._install_compaction_entry(entry)
+
+    def restore_compaction_entries(self, entries: tuple[CompactionEntry, ...]) -> None:
+        """Install persisted projection entries without publishing them again."""
+
+        self.compaction_entries = ()
+        self.compaction_boundary_sequence = 0
+        self.compaction_summary = None
+        for entry in entries:
+            if entry.session_id != self.session_id:
+                raise ValueError("compaction entry belongs to another Session")
+            self._validate_compaction_order(entry)
+            self._install_compaction_entry(entry)
+
+    def _validate_compaction_order(self, entry: CompactionEntry) -> None:
+        if (
+            self.compaction_entries
+            and entry.source_end_sequence <= self.compaction_entries[-1].source_end_sequence
+        ):
+            raise ValueError("compaction entries must advance monotonically")
+        if entry.first_retained_sequence <= self.compaction_boundary_sequence:
+            raise ValueError("compaction boundary must advance monotonically")
+
+    def _install_compaction_entry(self, entry: CompactionEntry) -> None:
+        if (
+            self.compaction_entries
+            and entry.source_end_sequence <= self.compaction_entries[-1].source_end_sequence
+        ):
+            raise ValueError("compaction entries must advance monotonically")
+        self.compaction_entries = (*self.compaction_entries, entry)
+        self.compaction_boundary_sequence = entry.first_retained_sequence
+        self.compaction_summary = entry.summary
+        self.dirty = self.dirty or self.has_active_turn
+
     def reset(self, session_id: str) -> None:
         self.session_id = session_id
         self.log.reset()
@@ -284,6 +343,12 @@ class Session:
         self.run_context_projection = None
         self.skill_context_projection = None
         self.pending_prompt_projection = None
+        self.compaction_entries = ()
+        self.compaction_boundary_sequence = 0
+        self.compaction_summary = None
+        self.compaction_in_progress = False
+        self.latest_model_usage = ModelUsage.unavailable()
+        self.latest_model_usage_context_digest = None
         self.pending_full_access_grant = False
 
     def retain_run_facts(

@@ -6,6 +6,7 @@ from datetime import datetime
 
 from morrow.adapters.state.journal import SqliteOperationalJournal
 from morrow.adapters.state.operational import OperationalStoreSession
+from morrow.application.compaction_persistence import checkpoint_for_compaction
 from morrow.application.preferences.jobs import PreferenceReviewJobEnqueuer
 from morrow.application.recovery import RecoveryService
 from morrow.application.tasks import TaskService
@@ -20,6 +21,7 @@ from morrow.application.turn_lifecycle import (
     TurnSubmitResult,
 )
 from morrow.application.turn_permissions import RunPermissionCoordinator
+from morrow.core.compaction import CompactionEntry
 from morrow.core.domain import AgentRunSnapshot
 from morrow.core.execution import (
     DurableApproval,
@@ -315,6 +317,15 @@ class SessionPersistence:
         """Synchronize the foreground Task after a committed Task command."""
 
         self.turn_state.task_run_id = task_run_id
+
+    def persist_compaction_entry(self, entry: CompactionEntry) -> None:
+        """Persist one model-context projection without appending a chat record."""
+
+        if self._session is not None and entry.session_id != self._session.session_id:
+            raise ValueError("compaction entry belongs to another Session")
+        records = self.journal.load_effective_records(self.workspace_id, entry.session_id)
+        checkpoint = checkpoint_for_compaction(self.workspace_id, entry, records)
+        self.journal.put_context_checkpoint(self.workspace_id, checkpoint)
 
     def synchronize_recovery_projection(
         self, report: RecoveryReport, *, resumed_agent_run_id: str | None = None
