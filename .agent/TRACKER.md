@@ -8,8 +8,10 @@ and validate the offline comparison harness; no formal live campaign run has sta
 
 ## Active task
 
-Add the strict comparison plan and exact counterbalanced 28-run schedule, then normalize scripted
-Morrow and Pi event fixtures into the same bounded, secret-safe evidence schema.
+Complete the two agent-specific offline runners. Morrow must inject the bounded evaluation
+ApprovalPort only through ordinary CapabilityPolicy/ToolExecutor/bootstrap composition and derive
+the normalized trace from actual safe process-local facts. Pi must run with a content-hashed policy
+extension plus OS confinement and emit the same safe schema. No live model request is authorized.
 
 ## Preparation evidence
 
@@ -27,11 +29,22 @@ Morrow and Pi event fixtures into the same bounded, secret-safe evidence schema.
   exact model. No credential readiness check or live model call was made during plan preparation.
 - The campaign requires 20 Morrow and 8 Pi primary runs. Each uses a fresh workspace and state;
   paired order is counterbalanced before outcomes are observed.
+- The verified harness slice now freezes the strict plan/hold approval, 28-entry schedule, safe
+  Morrow/Pi normalizers, real CapabilityPolicy equivalence matrix, create-only admission and
+  budget boundaries, watchdog/raw hash capture and mechanical paired comparison/baseline output.
+- Focused evaluator tests passed `35`; dataset self-check passed `10/10`; S7P-08 regression passed
+  `3`; full non-live passed `1313`, with two live deselections. Ruff, compileall, CLI and diff gates
+  passed. No live Provider/Pi/credential/network action occurred.
+- Audit confirmed ordinary `morrow run` intentionally uses `HeadlessApprovalPort` and therefore
+  cannot execute approval-requiring project commands for the formal AUTO_SAFE lane. The evaluation
+  port exists but is not yet wired into the production composition path; generic process capture
+  alone is not being mislabeled as the complete Morrow runner.
 
 ## Next action
 
-Implement the comparison-plan validator and offline event/permission conformance fixtures. Do not
-start paid execution until the common-model and spend hold point is resolved.
+Wire and test the agent-specific runners without a live model call, then commit the final Phase A
+harness candidate. Do not start paid execution until the common-model and spend hold point is
+resolved.
 
 ## Blockers
 

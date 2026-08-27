@@ -3438,3 +3438,26 @@
 - Raw reasoning, transcripts, full tool payloads and credentials remain outside Git. Only bounded
   normalized facts, content hashes, summaries and the final baseline may be committed. S7P-10 is
   not started automatically.
+
+## 2026-08-27 — Subplan 90 strict harness slice verified
+
+- Added a strict comparison-plan contract with resolved source/profile/model/policy/readiness pins,
+  explicit user-approved hold-point evidence, exact token/currency ceilings, create-only integrity
+  and the immutable counterbalanced 28-entry schedule.
+- Added Pi 0.84.2 authoritative-event and Morrow safe-fact normalizers. Raw prompt/response,
+  reasoning, complete arguments/results, stdout/stderr, credential-shaped text and tracebacks are
+  excluded; unknown events/stops, duplicated messages and missing tool terminals fail closed.
+- Added the real Morrow CapabilityPolicy/Pi-adapter equivalence matrix, a bounded evaluation
+  ApprovalPort, protected evidence/admission/budget/watchdog primitives and mechanical comparison
+  that revalidates all 20+8 bundles and creates the sanitized Direct baseline record.
+- Focused evaluator tests passed `35`; all ten dataset self-check pairs passed; S7P-08 regression
+  passed `3`; final full offline passed `1313 passed, 2 deselected in 87.19s`. Ruff format/check,
+  compileall, CLI help and `git diff --check` passed. Final focused/static reruns followed the
+  false-PASS audit.
+- The audit found that ordinary `morrow run` intentionally injects a denying headless ApprovalPort.
+  The generic bounded process runner is therefore not claimed as the complete Agent runner. The
+  next offline task is to wire the evaluation port and safe fact collector through the ordinary
+  composition and to freeze the equivalently confined Pi extension/runner.
+- Pi's offline catalog exposes local `openai-codex` and `xai` candidates, but Morrow is configured
+  only for `opencode-go/mimo-v2.5`; no exact common candidate was selected. No credential check,
+  model probe, live run, network access, dependency change, remote action or merge occurred.

@@ -15,10 +15,13 @@ S7P-09 Repeated Direct Evaluation and Same-Condition Pi Baseline.
   0.84.2 availability.
 - `[x]` Activate Subplan 90 with its 28-run campaign, fairness contract, evidence boundary and live
   hold point.
-- `[>]` Add strict comparison-plan/schedule contracts and offline Morrow/Pi trace normalizers.
-- `[ ]` Add bounded Agent runners, permission-equivalence proof, campaign budget enforcement and
-  mechanical paired comparison.
-- `[ ]` Run focused/offline tests, audit false-PASS and secret-leak paths, and commit the harness.
+- `[x]` Add strict comparison-plan/schedule contracts and offline Morrow/Pi trace normalizers.
+- `[x]` Add permission-equivalence proof, create-only admission/budget enforcement, bounded raw
+  process capture and mechanical paired comparison.
+- `[>]` Wire the evaluation ApprovalPort and safe trace collector through the ordinary Morrow
+  composition root; add and offline-test the equivalently confined Pi 0.84.2 runner/extension.
+- `[x]` Run focused/full offline tests and audit the completed harness slice for false-PASS and
+  secret-leak paths; commit the verified slice.
 - `[!]` Select and approve one exact common Provider/model plus total token/currency ceiling. The
   current `opencode-go/mimo-v2.5` candidate is not exposed by Pi 0.84.2.
 - `[ ]` Create a clean evaluation worktree, freeze profiles/pins/schedule/evidence root and pass

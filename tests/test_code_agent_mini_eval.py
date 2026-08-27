@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import importlib.util
 import json
 import shutil
@@ -58,6 +59,75 @@ def _profile() -> dict[str, object]:
         "project_instructions": [{"source": "AGENTS.md", "sha256": "unavailable"}],
         "execution": {"python": "3.12-test", "morrow": "test", "agent": "test"},
     }
+
+
+def _comparison_plan() -> dict[str, object]:
+    morrow = _profile()
+    pi = _profile()
+    sampling = {"temperature": 0.0, "top_p": 1.0, "seed": 7, "max_output_tokens": 4_096}
+    morrow["sampling"] = dict(sampling)
+    pi["sampling"] = dict(sampling)
+    pi["profile_id"] = "pi-coding-v1"
+    pi["agent"] = {"id": "pi", "version": "0.84.2", "entrypoint": "pi"}
+    source_hash = "sha256:" + "1" * 64
+    plan: dict[str, object] = {
+        "schema": eval_module.COMPARISON_PLAN_SCHEMA,
+        "campaign_id": "s7p-09-fixture",
+        "protocol": {"id": "s7p-00", "version": 1, "sha256": source_hash},
+        "dataset": {"id": "morrow-code-agent-mini", "sha256": source_hash},
+        "source": {
+            "morrow_commit": "a" * 40,
+            "morrow_source_sha256": source_hash,
+            "pi_version": "0.84.2",
+            "pi_package_sha256": source_hash,
+            "pi_executable_sha256": source_hash,
+            "clean": True,
+        },
+        "profiles": {
+            "morrow": {"profile": morrow, "sha256": eval_module.content_hash(morrow)},
+            "pi": {"profile": pi, "sha256": eval_module.content_hash(pi)},
+        },
+        "common_model": {
+            "provider_family": "fake",
+            "service": "fake-rev",
+            "canonical_model_id": "fake/model",
+            "model_revision": "model-rev",
+            "context_window": 16_384,
+            "max_output_tokens": 4_096,
+            "sampling": sampling,
+        },
+        "permissions": {
+            "capabilities": list(eval_module.CAPABILITY_FAMILIES),
+            "denials": [
+                "credential_access",
+                "external_filesystem",
+                "git_mutation",
+                "privilege_escalation",
+                "task_network",
+            ],
+            "morrow_policy_sha256": source_hash,
+            "pi_extension_sha256": source_hash,
+        },
+        "deadlines": {"run_seconds": 1_800, "tool_seconds": 120},
+        "ceilings": {"total_tokens": 1_000_000, "currency": "USD", "total_cost": 100.0},
+        "schedule": eval_module.frozen_campaign_schedule(),
+        "evidence_root": {
+            "id": "fixture-root",
+            "path_sha256": source_hash,
+            "minimum_free_bytes": 1_000_000,
+        },
+        "start_not_before": "2020-01-01T00:00:00+00:00",
+        "hold_point": {
+            "status": "approved",
+            "scope": "common_model_and_campaign_ceilings",
+            "approved_at": "2020-01-01T00:00:00+00:00",
+            "morrow_readiness_sha256": source_hash,
+            "pi_readiness_sha256": source_hash,
+            "model_probe_sha256": source_hash,
+        },
+    }
+    plan["integrity"] = eval_module.content_hash(plan)
+    return plan
 
 
 def _source_repo(tmp_path: Path) -> Path:
@@ -738,3 +808,431 @@ def test_gate_uses_explicit_basic_tool_blocker_diagnostic(
     gate = eval_module._gate_for_entries([entry], eval_module.load_protocol())
     assert gate["basic_tool_blocked"] == 1
     assert "basic-tool environment blocker threshold failed" in gate["diagnostics"]
+
+
+def test_comparison_plan_freezes_exact_counterbalanced_schedule_and_profiles() -> None:
+    plan = eval_module.validate_comparison_plan(_comparison_plan())
+
+    schedule = plan["schedule"]
+    assert len(schedule) == 28
+    assert sum(entry["agent"] == "morrow" for entry in schedule) == 20
+    assert sum(entry["agent"] == "pi" for entry in schedule) == 8
+    for task_id in eval_module.FIXED_PI_TASK_IDS:
+        rep1 = [
+            entry["agent"]
+            for entry in schedule
+            if entry["task_id"] == task_id and entry["repetition"] == 1
+        ]
+        rep2 = [
+            entry["agent"]
+            for entry in schedule
+            if entry["task_id"] == task_id and entry["repetition"] == 2
+        ]
+        assert rep1 == ["morrow", "pi"]
+        assert rep2 == ["pi", "morrow"]
+
+    drifted = _comparison_plan()
+    drifted["schedule"][0], drifted["schedule"][1] = (
+        drifted["schedule"][1],
+        drifted["schedule"][0],
+    )
+    drifted["integrity"] = eval_module.content_hash(
+        {key: value for key, value in drifted.items() if key != "integrity"}
+    )
+    with pytest.raises(eval_module.EvalError, match="frozen 28-run order"):
+        eval_module.validate_comparison_plan(drifted)
+
+
+def test_comparison_plan_rejects_unknown_sensitive_mixed_and_unapproved_values() -> None:
+    unknown = _comparison_plan()
+    unknown["extra"] = True
+    with pytest.raises(eval_module.EvalError, match="unknown comparison plan field"):
+        eval_module.validate_comparison_plan(unknown)
+
+    sensitive = _comparison_plan()
+    sensitive["provider_secret"] = "sk-" + "x" * 32
+    with pytest.raises(eval_module.EvalError, match="forbidden sensitive field"):
+        eval_module.validate_comparison_plan(sensitive)
+
+    mixed = _comparison_plan()
+    mixed["profiles"]["pi"]["profile"]["model"]["id"] = "other/model"
+    mixed["profiles"]["pi"]["sha256"] = eval_module.content_hash(mixed["profiles"]["pi"]["profile"])
+    mixed["integrity"] = eval_module.content_hash(
+        {key: value for key, value in mixed.items() if key != "integrity"}
+    )
+    with pytest.raises(eval_module.EvalError, match="canonical model"):
+        eval_module.validate_comparison_plan(mixed)
+
+    no_budget = _comparison_plan()
+    no_budget["ceilings"]["total_cost"] = 0
+    no_budget["integrity"] = eval_module.content_hash(
+        {key: value for key, value in no_budget.items() if key != "integrity"}
+    )
+    with pytest.raises(eval_module.EvalError, match="positive number"):
+        eval_module.validate_comparison_plan(no_budget)
+
+    unapproved = _comparison_plan()
+    unapproved["hold_point"]["status"] = "pending"
+    unapproved["integrity"] = eval_module.content_hash(
+        {key: value for key, value in unapproved.items() if key != "integrity"}
+    )
+    with pytest.raises(eval_module.EvalError, match="has not been approved"):
+        eval_module.validate_comparison_plan(unapproved)
+
+    unpinned = _comparison_plan()
+    unpinned["source"]["pi_package_sha256"] = "unavailable"
+    unpinned["integrity"] = eval_module.content_hash(
+        {key: value for key, value in unpinned.items() if key != "integrity"}
+    )
+    with pytest.raises(eval_module.EvalError, match="cannot be unavailable"):
+        eval_module.validate_comparison_plan(unpinned)
+
+
+def _pi_usage(*, stop_reason: str = "stop", timestamp: int = 10) -> dict[str, object]:
+    return {
+        "type": "message_end",
+        "message": {
+            "role": "assistant",
+            "provider": "fake",
+            "model": "fake/model",
+            "timestamp": timestamp,
+            "stopReason": stop_reason,
+            "content": [{"type": "text", "text": "raw response must not survive"}],
+            "usage": {
+                "input": 10,
+                "output": 5,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 15,
+                "cost": {
+                    "input": 0.1,
+                    "output": 0.2,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "total": 0.3,
+                },
+            },
+        },
+    }
+
+
+def test_pi_trace_normalizer_pairs_tools_deduplicates_usage_and_excludes_raw_data(
+    tmp_path: Path,
+) -> None:
+    events = [
+        {"type": "turn_start", "turnIndex": 0, "timestamp": 1},
+        {
+            "type": "tool_execution_start",
+            "toolCallId": "call-1",
+            "toolName": "read",
+            "args": {"path": str(tmp_path / "src" / "demo.py"), "api_key": "hidden-value"},
+        },
+        {
+            "type": "tool_execution_end",
+            "toolCallId": "call-1",
+            "toolName": "read",
+            "isError": False,
+            "result": {"content": [{"type": "text", "text": "ghp_" + "x" * 36}]},
+        },
+        {
+            "type": "tool_execution_start",
+            "toolCallId": "call-2",
+            "toolName": "bash",
+            "args": {"command": "uv run pytest -q", "password": "do-not-retain"},
+        },
+        {
+            "type": "tool_execution_end",
+            "toolCallId": "call-2",
+            "toolName": "bash",
+            "isError": True,
+            "result": {
+                "details": {"evaluation": {"validation_status": "failed"}},
+                "content": [{"type": "text", "text": "Traceback (most recent call last)"}],
+            },
+        },
+        _pi_usage(stop_reason="stop"),
+        {"type": "turn_end", "turnIndex": 0, "message": {}, "toolResults": []},
+        {"type": "compaction_start", "reason": "overflow"},
+        {"type": "compaction_end", "reason": "overflow", "aborted": False, "willRetry": True},
+        {
+            "type": "auto_retry_start",
+            "attempt": 1,
+            "maxAttempts": 2,
+            "delayMs": 1,
+            "errorMessage": "secret raw",
+        },
+        {"type": "auto_retry_end", "success": True, "attempt": 1},
+    ]
+
+    normalized = eval_module.normalize_pi_trace(events, duration_ms=50, workspace=tmp_path)
+    serialized = json.dumps(normalized)
+    assert normalized["rounds"] == 1
+    assert normalized["model_attempts"] == 1
+    assert normalized["usage"]["total_tokens"] == 15
+    assert normalized["usage"]["cost"] == pytest.approx(0.3)
+    assert normalized["tool_states"]["succeeded"] == 1
+    assert normalized["tool_states"]["failed"] == 1
+    assert normalized["context"]["first_relevant_read_round"] == 1
+    assert normalized["context"]["first_validation_round"] == 1
+    assert normalized["context"]["overflow_recoveries"] == 1
+    assert "hidden-value" not in serialized
+    assert "ghp_" not in serialized
+    assert "Traceback" not in serialized
+    assert "raw response" not in serialized
+
+
+def test_pi_trace_normalizer_fails_closed_on_missing_duplicate_and_unknown_events() -> None:
+    missing_end = [
+        {"type": "tool_execution_start", "toolCallId": "call", "toolName": "read", "args": {}},
+        _pi_usage(),
+    ]
+    with pytest.raises(eval_module.EvalError, match="without terminal events"):
+        eval_module.normalize_pi_trace(missing_end, duration_ms=1)
+
+    duplicated = [_pi_usage(), _pi_usage()]
+    with pytest.raises(eval_module.EvalError, match="repeats an authoritative"):
+        eval_module.normalize_pi_trace(duplicated, duration_ms=1)
+
+    with pytest.raises(eval_module.EvalError, match="unsupported event type"):
+        eval_module.normalize_pi_trace([{"type": "new_event_shape"}], duration_ms=1)
+
+
+@pytest.mark.parametrize(
+    ("stop_reason", "stop_code"),
+    [
+        ("stop", "completed"),
+        ("length", "budget_exhausted"),
+        ("error", "runtime_failed"),
+        ("aborted", "cancelled"),
+    ],
+)
+def test_pi_trace_stop_mapping_is_frozen(stop_reason: str, stop_code: str) -> None:
+    trace = eval_module.normalize_pi_trace([_pi_usage(stop_reason=stop_reason)], duration_ms=1)
+    assert trace["stop"] == {"code": stop_code, "reason": stop_code}
+
+
+def test_morrow_trace_normalizer_computes_rework_and_rejects_sensitive_projection() -> None:
+    trace = {
+        "schema_version": 1,
+        "rounds": 3,
+        "model_attempts": 3,
+        "tool_calls": [
+            {
+                "ordinal": 1,
+                "round": 1,
+                "capability": "edit",
+                "state": "succeeded",
+                "paths": ["demo.py"],
+                "validator_kind": None,
+                "effective_write": True,
+                "validation_status": "not_run",
+                "invalid_arguments": False,
+                "basic_tool_blocked": False,
+            },
+            {
+                "ordinal": 2,
+                "round": 2,
+                "capability": "command",
+                "state": "failed",
+                "paths": [],
+                "validator_kind": "pytest",
+                "effective_write": False,
+                "validation_status": "failed",
+                "invalid_arguments": False,
+                "basic_tool_blocked": False,
+            },
+            {
+                "ordinal": 3,
+                "round": 3,
+                "capability": "edit",
+                "state": "succeeded",
+                "paths": ["demo.py"],
+                "validator_kind": None,
+                "effective_write": True,
+                "validation_status": "not_run",
+                "invalid_arguments": False,
+                "basic_tool_blocked": False,
+            },
+        ],
+        "compactions": 0,
+        "overflow_recoveries": 0,
+        "retries": 0,
+        "usage": {"input_tokens": 30, "output_tokens": 10, "total_tokens": 40, "cost": 1.0},
+        "duration_ms": 20,
+        "stop_code": "completed",
+    }
+    normalized = eval_module.normalize_morrow_trace(trace)
+    assert normalized["usage"]["rework_count"] == 1
+    assert normalized["context"]["first_effective_write_round"] == 1
+    assert normalized["context"]["latest_validation_outcome"] == "failed"
+
+    trace["reasoning"] = "must never enter safe evidence"
+    with pytest.raises(eval_module.EvalError, match="forbidden sensitive field"):
+        eval_module.normalize_morrow_trace(trace)
+
+
+def test_permission_equivalence_and_evaluation_approval_remain_fail_closed(tmp_path: Path) -> None:
+    from morrow.core.models import ToolApprovalRequest, ToolEffect
+
+    matrix = eval_module.permission_equivalence_matrix(tmp_path)
+    assert matrix["status"] == "PASS"
+    assert matrix["mismatches"] == []
+    assert {row["case_id"] for row in matrix["rows"]} == {
+        "workspace_read",
+        "workspace_write",
+        "project_command",
+        "external_filesystem",
+        "task_network",
+        "credential_access",
+        "git_mutation",
+        "privilege_escalation",
+    }
+
+    port = eval_module.EvaluationApprovalPort()
+    approved = asyncio.run(
+        port.request(
+            ToolApprovalRequest(
+                call_id="safe-command",
+                effect=ToolEffect.NONE,
+                reason_codes=("host_process_approval_required",),
+            )
+        )
+    )
+    denied = asyncio.run(
+        port.request(
+            ToolApprovalRequest(
+                call_id="unknown",
+                effect=ToolEffect.NONE,
+                reason_codes=("legacy_static_approval",),
+            )
+        )
+    )
+    assert approved.approved is True
+    assert denied.approved is False
+    assert (port.approvals, port.rejections) == (1, 1)
+
+
+def test_campaign_admission_is_create_only_ordered_confined_and_budgeted(tmp_path: Path) -> None:
+    plan = _comparison_plan()
+    evidence_root = tmp_path / "protected-evidence"
+    plan["evidence_root"]["path_sha256"] = eval_module.bytes_hash(
+        str(evidence_root.resolve()).encode("utf-8")
+    )
+    plan["integrity"] = eval_module.content_hash(
+        {key: value for key, value in plan.items() if key != "integrity"}
+    )
+    first = eval_module.admit_campaign_run(
+        plan,
+        evidence_root,
+        ordinal=1,
+        reserve_tokens=10_000,
+        reserve_cost=1.0,
+    )
+    assert first.name.startswith("01-morrow-")
+    assert (first / "admission.json").is_file()
+    assert first.parent.stat().st_mode & 0o077 == 0
+
+    with pytest.raises(eval_module.EvalError, match="out of frozen schedule order"):
+        eval_module.admit_campaign_run(
+            plan,
+            evidence_root,
+            ordinal=3,
+            reserve_tokens=10_000,
+            reserve_cost=1.0,
+        )
+
+    too_expensive = _comparison_plan()
+    too_expensive["ceilings"]["total_cost"] = 1.5
+    too_expensive["evidence_root"]["path_sha256"] = eval_module.bytes_hash(
+        str((tmp_path / "other-evidence").resolve()).encode("utf-8")
+    )
+    too_expensive["integrity"] = eval_module.content_hash(
+        {key: value for key, value in too_expensive.items() if key != "integrity"}
+    )
+    other_root = tmp_path / "other-evidence"
+    eval_module.admit_campaign_run(
+        too_expensive,
+        other_root,
+        ordinal=1,
+        reserve_tokens=10_000,
+        reserve_cost=1.0,
+    )
+    with pytest.raises(eval_module.EvalError, match="currency ceiling"):
+        eval_module.admit_campaign_run(
+            too_expensive,
+            other_root,
+            ordinal=2,
+            reserve_tokens=10_000,
+            reserve_cost=1.0,
+        )
+
+
+def test_bounded_process_retains_only_hash_metadata_and_refuses_overwrite(tmp_path: Path) -> None:
+    evidence = tmp_path / "evidence"
+    evidence.mkdir(mode=0o700)
+    result = eval_module.run_bounded_process(
+        [sys.executable, "-c", "print('raw-secret-like-output')"],
+        cwd=tmp_path,
+        evidence_dir=evidence,
+        timeout_seconds=5,
+    )
+    assert result["returncode"] == 0
+    assert result["stdout"]["sha256"].startswith("sha256:")
+    assert "raw-secret-like-output" not in json.dumps(result)
+    with pytest.raises(eval_module.EvalError, match="raw output already exists"):
+        eval_module.run_bounded_process(
+            [sys.executable, "-c", "pass"],
+            cwd=tmp_path,
+            evidence_dir=evidence,
+            timeout_seconds=5,
+        )
+
+
+def _paired_entry(task_id: str, repetition: int, result_class: str = "PASS") -> dict[str, object]:
+    return {
+        "manifest": {
+            "run": {"task_id": task_id, "repetition": repetition},
+            "source": {"dirty": {"comparison_eligible": True}},
+        },
+        "result": {"result": {"class": result_class}},
+        "runtime": {
+            "usage": {
+                "input_tokens": 1,
+                "output_tokens": 1,
+                "total_tokens": 2,
+                "cost": 0.1,
+                "duration_ms": 1,
+                "rounds": 1,
+                "user_interventions": 0,
+                "rework_count": 0,
+            },
+            "tool_diagnostics": {"basic_tool_blocked": 0},
+        },
+    }
+
+
+def test_paired_comparison_is_mechanical_and_rejects_quality_or_tool_deficits() -> None:
+    morrow = [
+        _paired_entry(task_id, repetition)
+        for task_id in eval_module.FIXED_PI_TASK_IDS
+        for repetition in (1, 2)
+    ]
+    pi = [
+        _paired_entry(task_id, repetition)
+        for task_id in eval_module.FIXED_PI_TASK_IDS
+        for repetition in (1, 2)
+    ]
+    passed = eval_module._paired_comparison_gate(morrow, pi)
+    assert passed["status"] == "PASS"
+    assert passed["quality_deficit"] == 0
+
+    for entry in morrow:
+        if entry["manifest"]["run"]["task_id"] in {"MORROW-003", "MORROW-005"}:
+            entry["result"]["result"]["class"] = "FAIL_MODEL"
+    failed = eval_module._paired_comparison_gate(morrow, pi)
+    assert failed["status"] == "FAIL"
+    assert failed["quality_deficit"] == 2
+
+    morrow[0]["runtime"]["tool_diagnostics"]["basic_tool_blocked"] = 1
+    failed = eval_module._paired_comparison_gate(morrow, pi)
+    assert any("Morrow-only basic tool blocker" in item for item in failed["diagnostics"])

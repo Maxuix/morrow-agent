@@ -109,6 +109,56 @@ PASS；`unavailable` 永远不是零。结果类和工具终态分别汇总，`F
 `BLOCKED_ENV` 不会被合并。只有 verifier 成功、没有意外修改、所有 required paths 出现、
 证据完整且源可比较时，单次结果才可为 PASS；汇总命令在完整且冻结门槛通过时才返回成功。
 
+## S7P-09 Morrow/Pi 重复基线
+
+S7P-09 在上述不可变 bundle 之上增加严格的共同条件计划、28-run counterbalanced schedule、
+Pi 0.84.2 JSONL 归一化、Morrow 安全 trace 归一化、权限等价证明、campaign admission/budget
+边界和机械 paired comparison。模板 `comparison-plan.template.json` 故意不能直接通过校验；
+所有 `REPLACE` 值、两个完整 profile、精确 28 项 schedule 和最终 integrity 都必须在 hold point
+审批后冻结，不能把占位符当作运行默认值。
+
+以下命令全部是离线合同检查，不读取 credential，也不发出模型请求：
+
+```bash
+.venv/bin/python evals/code-agent-mini/eval.py schedule
+.venv/bin/python evals/code-agent-mini/eval.py permission-check /tmp
+.venv/bin/python evals/code-agent-mini/eval.py plan-check /protected/comparison-plan.json
+.venv/bin/python evals/code-agent-mini/eval.py campaign-preflight \
+  /protected/comparison-plan.json /protected/raw-evidence
+```
+
+`campaign-preflight` 验证干净的 Morrow commit/tracked-source hash、dataset/protocol、Pi 0.84.2
+executable/package hash、evidence-root 身份/权限/空间、start-not-before 和权限矩阵。credential readiness
+与 no-tool model probe 明确报告为未执行；它们只能在用户批准精确模型与总 Token/货币上限后运行。
+
+受保护的 Pi JSONL 不进入 Git。归一化命令只创建 bounded JSON，并且 stdout 只显示输出路径与 hash：
+
+```bash
+.venv/bin/python evals/code-agent-mini/eval.py normalize-pi /protected/pi.raw.jsonl \
+  /protected/pi.normalized.json --duration-ms 1234 --workspace /protected/run/workspace
+.venv/bin/python evals/code-agent-mini/eval.py normalize-morrow /protected/morrow.safe.json \
+  /protected/morrow.normalized.json
+```
+
+归一化器只保留 round/attempt、工具 ordinal/capability/终态、workspace 相对路径、validator
+kind/status、首读/首写/首验证、compaction/retry、usage/cost/duration、rework/intervention 和 stop
+facts；prompt、response、reasoning、完整参数/结果、stdout/stderr 与 traceback 不会进入输出。未知 Pi
+事件、重复 authoritative message、未终结工具调用或未知 stop reason 都 fail closed。
+
+正式 compare 还要求 28 个 create-only admission 与冻结 schedule 完全一致，并从 20 个 Morrow
+和 8 个 Pi bundle 重新验证 profile/dataset/protocol/evidence hash、完整 metrics、Morrow gate、四任务
+stable quality deficit、Morrow-only basic-tool blocker 与总预算：
+
+```bash
+.venv/bin/python evals/code-agent-mini/eval.py compare /protected/comparison-plan.json \
+  /protected/morrow-runs /protected/pi-runs --admissions-root /protected/admissions \
+  --output /protected/comparison-summary.json
+```
+
+输出使用 create-only 写入，并同时生成同目录 `baseline.json`。在共同 Provider/model/revision 与总
+预算未获明确批准前，不得执行 admission 或任何 Agent runner；当前离线 harness 通过不等于
+S7P-09 campaign PASS。
+
 ## 数据集 self-check
 
 ```bash
