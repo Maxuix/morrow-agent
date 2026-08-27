@@ -507,7 +507,11 @@ class OpenAICompatibleProvider:
                     )
                     return
                 first = False
-                usage = _merge_usage(usage, _normalize_usage(getattr(chunk, "usage", None)))
+                try:
+                    usage = _merge_usage(usage, _normalize_usage(getattr(chunk, "usage", None)))
+                except (TypeError, ValueError):
+                    usage = ModelUsage.unavailable()
+                    raise
                 choices = getattr(chunk, "choices", None) or []
                 if not choices:
                     continue
@@ -557,16 +561,13 @@ class OpenAICompatibleProvider:
             raise
         except Exception as exc:
             code = classify_error(exc)
-            safe_usage = (
-                usage if code is not ModelErrorCode.INVALID_RESPONSE else ModelUsage.unavailable()
-            )
             yield ModelEvent(
                 kind="error",
                 error_code=code,
                 error_message=provider_error_message(code),
                 retry_after_seconds=_retry_after_seconds(exc),
                 made_progress=accumulator.made_progress,
-                usage=safe_usage,
+                usage=usage,
             )
         finally:
             if response is not None:
