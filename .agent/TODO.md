@@ -18,13 +18,15 @@ S7P-09 Repeated Direct Evaluation and Same-Condition Pi Baseline.
 - `[x]` Add strict comparison-plan/schedule contracts and offline Morrow/Pi trace normalizers.
 - `[x]` Add permission-equivalence proof, create-only admission/budget enforcement, bounded raw
   process capture and mechanical paired comparison.
-- `[>]` Wire the evaluation ApprovalPort and safe trace collector through the ordinary Morrow
+- `[x]` Wire the evaluation ApprovalPort and safe trace collector through the ordinary Morrow
   composition root; add and offline-test the equivalently confined Pi 0.84.2 runner/extension.
 - `[x]` Run focused/full offline tests and audit the completed harness slice for false-PASS and
   secret-leak paths; commit the verified slice.
-- `[!]` Select and approve one exact common Provider/model plus total token/currency ceiling. The
-  current `opencode-go/mimo-v2.5` candidate is not exposed by Pi 0.84.2.
-- `[ ]` Create a clean evaluation worktree, freeze profiles/pins/schedule/evidence root and pass
+- `[x]` Select and approve the exact common `opencode-go/mimo-v2.5` model, a 5,000,000-token hard
+  campaign ceiling and no currency ceiling; verify Pi 0.84.2 contains the exact catalog entry.
+- `[!]` Configure no-secret Pi credential readiness and freeze the served revision/sampling probe;
+  Pi currently has no `OPENCODE_API_KEY` or stored provider credential available.
+- `[>]` Create a clean evaluation worktree, freeze profiles/pins/schedule/evidence root and pass
   no-secret readiness plus dataset self-check.
 - `[ ]` Execute and finalize the exact 20 Morrow primary runs.
 - `[ ]` Execute and finalize the exact 8 counterbalanced Pi comparison runs.

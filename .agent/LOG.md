@@ -3461,3 +3461,35 @@
 - Pi's offline catalog exposes local `openai-codex` and `xai` candidates, but Morrow is configured
   only for `opencode-go/mimo-v2.5`; no exact common candidate was selected. No credential check,
   model probe, live run, network access, dependency change, remote action or merge occurred.
+
+## 2026-08-27 — Subplan 90 model and Token budget approved
+
+- The user approved `opencode-go/mimo-v2.5` for both Agents, a hard 5,000,000-token campaign
+  ceiling, no currency ceiling, the permission mapping and bounded no-tool readiness probes.
+- Corrected the stale catalog finding: Pi 0.84.2's installed `opencode-go` data includes exact
+  `mimo-v2.5` metadata at `https://opencode.ai/zen/go/v1`, with a 1,000,000-token context window
+  and 128,000-token maximum output. Pi's global default selection now points to that built-in entry;
+  no duplicate model override was created.
+- Pi has neither a current `OPENCODE_API_KEY` nor a stored `opencode-go` credential available, so
+  its no-secret readiness check and model probe remain blocked. No credential value was read,
+  printed or copied, and no live model request was attempted.
+- The comparison-plan contract now uses `total_cost: null` for the explicitly approved absence of
+  a currency ceiling. Provider cost remains mandatory evidence; only the 5,000,000-token limit is
+  enforced as a campaign scheduling/summary ceiling.
+
+## 2026-08-27 — Subplan 90 Agent-specific runners verified offline
+
+- Added `run-morrow`, which supplies the fail-closed EvaluationApprovalPort to ordinary
+  `build_session_application` composition and projects only public tool terminal events, in-memory
+  safe ToolFacts and terminal accounting. Full tool arguments/results, prompts, responses and
+  credential values are discarded rather than serialized.
+- Added the sole Pi evaluation policy extension and `run-pi`. The invocation pins Pi 0.84.2,
+  `opencode-go/mimo-v2.5`, its tool set and ephemeral session while disabling mutable user
+  extensions, skills and templates. The extension preflights workspace paths and prohibited
+  commands, and overrides bash with dependency-free macOS Seatbelt confinement that denies network
+  and `.git` writes and enforces the 120-second command ceiling.
+- Pi 0.84.2 parsed the extension in offline mode. Focused evaluator tests passed `37`; dataset
+  self-check passed `10/10`; S7P-08 regression passed `3`; full non-live passed `1315 passed,
+  2 deselected in 87.58s`. Ruff format/check, compileall, CLI help and `git diff --check` passed.
+- The approved bounded Morrow Provider readiness probe succeeded. Pi's no-secret auth check
+  reported `credentials_not_configured`, so no Pi model probe or formal admission was attempted.

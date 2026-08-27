@@ -30,12 +30,13 @@ silently replaced after seeing its result.
    version and are outside this subplan.
 3. The installed Pi executable reports `0.84.2`. Phase A must additionally freeze its resolved
    package identity, executable target and content hash; a version string alone is insufficient.
-4. The current Morrow active model is `opencode-go/mimo-v2.5`. Pi 0.84.2's current model catalog
-   does not expose that exact model, so the current configuration is **not eligible** for a formal
-   same-model A/B.
-5. The evaluator can start/finalize Morrow-shaped bundles and aggregate the 20-run Morrow gate, but
-   it cannot yet execute either Agent, normalize Pi JSONL, enforce a paired schedule or replace the
-   summary's `pi_comparison=NOT_EVALUATED` with mechanical evidence.
+4. The user approved `opencode-go/mimo-v2.5` for both Agents. Pi 0.84.2's installed catalog contains
+   that exact provider/model and service endpoint with a 1,000,000-token context window and
+   128,000-token maximum output. Served revision, sampling and credential readiness still require
+   no-secret probe evidence before a formal same-model A/B.
+5. The evaluator can start/finalize bundles, execute either Agent through its confined runner,
+   normalize both traces, enforce the paired schedule and mechanically compare completed campaign
+   evidence. Formal execution remains gated by readiness and clean immutable pins.
 6. Morrow headless mode fails closed on approval. A fair automated campaign therefore needs a
    bounded evaluation ApprovalPort that uses the ordinary CapabilityPolicy path; it may not bypass
    preflight, permission snapshots, ToolExecutor, AgentLoop, TaskRun or ConversationLog ownership.
@@ -79,8 +80,9 @@ No production behavior is changed merely to improve a score.
 
 ## 5. Live campaign hold point
 
-Before the first paid/model run, freeze one strict `comparison-plan.json` and obtain the user's
-explicit approval of its exact Provider/model and total campaign cost ceiling. The plan must prove:
+Before the first formal campaign run, freeze one strict `comparison-plan.json`. The user approved
+the exact Provider/model, a 5,000,000-token hard ceiling and no currency ceiling. The plan must
+prove:
 
 1. **Common model.** Both Morrow and Pi resolve the same Provider family, endpoint/service,
    canonical model ID and model revision. Aliases are accepted only when a no-secret readiness
@@ -94,9 +96,9 @@ explicit approval of its exact Provider/model and total campaign cost ceiling. T
 4. **Exact model capability.** Both sides agree on context window and maximum output. Morrow must
    admit RunPolicy v2 for that exact model; Pi must resolve the same capability from its frozen
    catalog/runtime evidence.
-5. **Budget approval.** The user approves explicit campaign-wide maximum token and currency spend.
-   The harness stops scheduling new runs before exceeding either ceiling. Already admitted runs
-   still finalize truthfully.
+5. **Budget approval.** The user approved an explicit 5,000,000-token campaign maximum and no
+   currency maximum. The harness stops scheduling before the Token ceiling; it still requires and
+   reports Provider cost for every run. Already admitted runs finalize truthfully.
 6. **External watchdog.** Both agents use the same 1,800-second per-run external deadline. It is an
    evaluator `budget_exhausted` result, not a Morrow/Pi internal stop code. Both use a 120-second
    per-tool execution bound where the product supports a tool timeout.
@@ -199,7 +201,7 @@ Add a strict, canonical, create-only comparison plan containing:
 - both full non-secret profiles and their hashes;
 - common Provider/model/sampling/capability contract;
 - permission-equivalence map and policy-extension hash;
-- external/tool deadlines, total token ceiling and total currency ceiling;
+- external/tool deadlines, total token ceiling and explicit nullable currency ceiling;
 - exact 28-entry schedule;
 - raw evidence root identity and start-not-before timestamp.
 
@@ -310,7 +312,7 @@ not support a public statistical ranking.
 
 The primary 28 runs remain authoritative. If a failed deficit could reflect sampling variance,
 additional repetitions may be proposed only as a separate, predeclared diagnostic campaign with a
-new plan hash and new user-approved cost ceiling. They cannot overwrite primary keys or convert a
+new plan hash and new user-approved Token ceiling. They cannot overwrite primary keys or convert a
 failed v1 gate into PASS without a separately approved protocol/campaign decision.
 
 ## 10. Failure and remediation protocol
@@ -371,7 +373,7 @@ auditability.
 8. Create a clean dedicated evaluation worktree at the harness commit. All official `start`, run,
    finalize and compare commands execute there; `.agent/` updates occur elsewhere.
 9. Select a mutually supported exact Provider/model. Run no-secret readiness checks and one bounded
-   no-tool probe on each Agent only after the user approves the probe and campaign cost ceiling.
+   no-tool probe on each Agent only after the user approves the probe and campaign Token ceiling.
 10. Freeze profiles, common capability/sampling contract, Pi package hashes, permission adapter,
     raw evidence root and counterbalanced schedule.
 11. Run the eval self-check and comparison preflight. Present the exact 28-run plan, expected upper
@@ -431,7 +433,8 @@ fallback. No command is reported as passed unless it actually completed.
 Subplan 90 is complete only when:
 
 - the strict harness and permission-equivalence tests pass offline;
-- the exact common Provider/model and total spend ceiling were explicitly approved;
+- the exact common Provider/model and 5,000,000-token ceiling with no currency ceiling were
+  explicitly approved;
 - all 28 primary run bundles are complete, valid, immutable and comparison-eligible;
 - Morrow's two repetition gates pass;
 - the four-task stable Pi quality deficit is at most one;

@@ -1,6 +1,6 @@
 # Stage 7 Preflight Reliability — S7P-09 Repeated Direct/Pi Baseline
 
-> Status: active; live campaign held pending exact common-model and spend approval
+> Status: active; model and budget approved, live campaign held pending Pi readiness and clean pins
 > Active subplan: Subplan 90 — S7P-09 Repeated Direct Evaluation and Same-Condition Pi Baseline
 > Branch: `feat/s7p-09-direct-pi-baseline`
 > Activation base: verified local `main@1fd7e229bef276d1a0361e775ce800ade4b318fc`
@@ -35,13 +35,15 @@ retention policy are owned by activated Subplan 90.
 
 ## 3. Live hold point
 
-The current Morrow model is `opencode-go/mimo-v2.5`, which is not available in the installed Pi
-0.84.2 model catalog. Before a paid run, the user must approve:
+The user approved `opencode-go/mimo-v2.5` for both Agents, a hard campaign ceiling of 5,000,000
+tokens, and no currency ceiling. Pi 0.84.2's installed catalog contains the exact model at the same
+service endpoint, with a 1,000,000-token context window and 128,000-token maximum output. Before a
+formal paid run, the harness must still freeze and verify:
 
-1. one exact Provider/model supported by both Agents;
-2. its verified sampling/context/output contract;
-3. a campaign-wide token ceiling and currency ceiling;
-4. the non-secret comparison plan and equivalent permission mapping.
+1. the exact served model revision and equal sampling contract;
+2. credential readiness for both Agents without exposing or copying credentials;
+3. the non-secret comparison plan and equivalent permission mapping;
+4. the clean runner/source/evidence pins and bounded no-tool readiness probes.
 
 Credential checks must report only readiness and must never request or print credential values.
 Offline harness implementation and testing may proceed before this decision.

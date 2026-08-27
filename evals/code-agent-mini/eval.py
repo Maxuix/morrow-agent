@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import hashlib
 import io
 import json
@@ -2856,9 +2857,12 @@ def validate_comparison_plan(plan: Mapping[str, object]) -> dict[str, object]:
     currency = _text(ceilings["currency"], "comparison plan currency")
     if not re.fullmatch(r"[A-Z]{3}", currency):
         raise EvalError("comparison plan currency must be a three-letter code")
+    total_cost = ceilings["total_cost"]
+    if total_cost is not None:
+        total_cost = _positive_number(total_cost, "comparison plan total cost")
     ceilings_normalized = {
         "currency": currency,
-        "total_cost": _positive_number(ceilings["total_cost"], "comparison plan total cost"),
+        "total_cost": total_cost,
         "total_tokens": _positive_number(
             ceilings["total_tokens"], "comparison plan total tokens", integer=True
         ),
@@ -3490,6 +3494,205 @@ class EvaluationApprovalPort:
         return ToolApprovalDecision(approved=approved)
 
 
+def _object_value(value: object, name: str, default: object = None) -> object:
+    if isinstance(value, Mapping):
+        return value.get(name, default)
+    return getattr(value, name, default)
+
+
+def _morrow_terminal_state(status: object, error_code: object) -> str:
+    code = getattr(error_code, "value", error_code)
+    if status == "succeeded":
+        return "succeeded"
+    if status == "cancelled" or code == "cancelled":
+        return "cancelled"
+    if code in {"approval_rejected", "approval_unavailable", "permission_denied"}:
+        return "denied"
+    if status == "skipped" or code in {"budget_exhausted", "preflight_failed"}:
+        return "blocked"
+    return "failed"
+
+
+def project_morrow_safe_trace(
+    *,
+    events: list[object],
+    tool_cycles: list[list[object]],
+    facts: tuple[object, ...],
+    metrics: object,
+    duration_ms: int,
+    workspace: Path | None = None,
+) -> dict[str, object]:
+    """Project one completed ordinary Morrow run without retaining model/tool payloads."""
+
+    if metrics is None:
+        raise EvalError("Morrow AgentRun terminal metrics are unavailable")
+    calls: list[dict[str, object]] = []
+    call_by_id: dict[str, dict[str, object]] = {}
+    for round_number, cycle in enumerate(tool_cycles, start=1):
+        for raw_call in cycle:
+            call_id = _text(_object_value(raw_call, "id"), "Morrow tool call ID")
+            if call_id in call_by_id:
+                raise EvalError("Morrow trace contains a duplicate tool call ID")
+            name = _object_value(raw_call, "name")
+            raw_arguments = _object_value(raw_call, "arguments", "")
+            try:
+                arguments = json.loads(raw_arguments) if isinstance(raw_arguments, str) else {}
+            except json.JSONDecodeError:
+                arguments = {}
+            projected = {
+                "call_id": call_id,
+                "ordinal": len(calls) + 1,
+                "round": round_number,
+                "capability": _tool_family(name),
+                "paths": _trace_paths(arguments, workspace),
+                "validator_kind": _validator_kind(arguments),
+                "state": None,
+                "effective_write": False,
+                "validation_status": "not_run",
+                "invalid_arguments": False,
+                "basic_tool_blocked": False,
+            }
+            calls.append(projected)
+            call_by_id[call_id] = projected
+
+    terminal_ids: set[str] = set()
+    for raw_event in events:
+        event_type = _object_value(raw_event, "type")
+        if event_type != "tool.status":
+            continue
+        payload = _object_value(raw_event, "payload", {})
+        if not isinstance(payload, Mapping) or payload.get("status") == "running":
+            continue
+        call_id = _text(payload.get("call_id"), "Morrow tool status call ID")
+        call = call_by_id.get(call_id)
+        if call is None or call_id in terminal_ids:
+            raise EvalError("Morrow tool terminal event is unmatched or duplicated")
+        terminal_ids.add(call_id)
+        error_code = payload.get("error_code")
+        call["state"] = _morrow_terminal_state(payload.get("status"), error_code)
+        call["invalid_arguments"] = error_code == "invalid_arguments"
+
+    for fact in facts:
+        call_id = _text(_object_value(fact, "call_id"), "Morrow ToolFact call ID")
+        call = call_by_id.get(call_id)
+        if call is None:
+            raise EvalError("Morrow ToolFact does not match a tool call")
+        fact_paths = _object_value(fact, "relative_paths", ())
+        if not isinstance(fact_paths, (list, tuple)):
+            raise EvalError("Morrow ToolFact paths are invalid")
+        safe_fact_paths = {
+            _safe_path(path, "Morrow ToolFact path") for path in fact_paths if path != "."
+        }
+        call["paths"] = sorted(set(call["paths"]) | safe_fact_paths)
+        kind = _object_value(fact, "kind")
+        if kind == "change":
+            before = _object_value(fact, "before_revision")
+            after = _object_value(fact, "after_revision")
+            changed_bytes = _object_value(fact, "changed_bytes", 0)
+            call["effective_write"] = bool(changed_bytes or (after and after != before))
+        elif kind == "validation":
+            validator_kind = _text(_object_value(fact, "validator_kind"), "Morrow validator kind")
+            if not IDENTIFIER_RE.fullmatch(validator_kind):
+                raise EvalError("Morrow validator kind is not bounded")
+            call["validator_kind"] = validator_kind
+            call["validation_status"] = (
+                "passed" if _object_value(fact, "status") == "passed" else "failed"
+            )
+
+    if len(terminal_ids) != len(calls):
+        raise EvalError("Morrow trace has tool calls without terminal events")
+    terminal_metrics = (
+        metrics.model_dump(mode="json") if hasattr(metrics, "model_dump") else metrics
+    )
+    terminal_metrics = _mapping(terminal_metrics, "Morrow terminal metrics")
+    usage = _mapping(terminal_metrics.get("usage"), "Morrow terminal usage")
+    cost = _mapping(terminal_metrics.get("cost"), "Morrow terminal cost")
+    if usage.get("availability") != "available" or cost.get("availability") != "available":
+        raise EvalError("Morrow Provider usage or cost is unavailable")
+    stop_code = terminal_metrics.get("stop_code")
+    if terminal_metrics.get("finish_reason") == "stop":
+        normalized_stop = "completed"
+    elif stop_code in {"run_timeout", "tool_call_limit", "model_attempt_limit"}:
+        normalized_stop = "budget_exhausted"
+    elif stop_code == "cancelled":
+        normalized_stop = "cancelled"
+    else:
+        normalized_stop = "runtime_failed"
+    safe_calls = [{key: value for key, value in call.items() if key != "call_id"} for call in calls]
+    return {
+        "schema_version": 1,
+        "rounds": int(terminal_metrics["model_attempts"]),
+        "model_attempts": int(terminal_metrics["model_attempts"]),
+        "tool_calls": safe_calls,
+        "compactions": int(terminal_metrics.get("compaction_count", 0)),
+        "overflow_recoveries": int(terminal_metrics.get("overflow_recovery_count", 0)),
+        "retries": int(terminal_metrics.get("retry_count", 0)),
+        "usage": {
+            "input_tokens": usage.get("input_tokens"),
+            "output_tokens": usage.get("output_tokens"),
+            "total_tokens": usage.get("total_tokens"),
+            "cost": float(cost["amount_minor"]) / 100.0,
+        },
+        "duration_ms": duration_ms,
+        "stop_code": normalized_stop,
+    }
+
+
+def run_morrow_agent(
+    *, workspace: Path, state_root: Path, prompt: str, output: Path
+) -> dict[str, object]:
+    """Run Morrow through ordinary composition with the bounded evaluation ApprovalPort."""
+
+    from morrow.bootstrap import build_application, build_session_application
+    from morrow.core.capabilities import PermissionPreset, PermissionProfile
+    from morrow.core.models import AgentEvent, AssistantMessage
+    from morrow.services.workspace import WorkspaceWriterLock
+
+    if not prompt.strip():
+        raise EvalError("Morrow evaluation prompt is empty")
+    application = build_application(state_root=state_root.resolve())
+    resolution = application.workspace_service.resolve(workspace.resolve())
+    identity = application.workspace_service.confirm(resolution)
+    started = datetime.now(UTC)
+    events: list[object] = []
+    with WorkspaceWriterLock(application.data_root, identity.workspace_id):
+        session_app = build_session_application(
+            app=application,
+            identity=identity,
+            approval_port=EvaluationApprovalPort(),
+            permission_profile=PermissionProfile.from_preset(PermissionPreset.AUTO_SAFE),
+        )
+
+        async def collect() -> None:
+            async for item in session_app.orchestrator.stream(prompt):
+                if isinstance(item, AgentEvent):
+                    events.append(item)
+
+        asyncio.run(collect())
+        persistence = session_app.persistence
+        agent_run_id = getattr(persistence, "current_agent_run_id", None)
+        if not agent_run_id or session_app.api is None:
+            raise EvalError("Morrow evaluation AgentRun was not admitted")
+        observation = session_app.api.get_agent_run_observation(agent_run_id)
+        if observation is None:
+            raise EvalError("Morrow evaluation observation is unavailable")
+        tool_cycles: list[list[object]] = []
+        for message in session_app.session.log.messages_view():
+            if isinstance(message, AssistantMessage) and message.tool_calls:
+                tool_cycles.append(list(message.tool_calls))
+        safe_trace = project_morrow_safe_trace(
+            events=events,
+            tool_cycles=tool_cycles,
+            facts=session_app.session.latest_tool_facts,
+            metrics=observation.terminal_metrics,
+            duration_ms=max(0, int((datetime.now(UTC) - started).total_seconds() * 1000)),
+            workspace=workspace.resolve(),
+        )
+    normalized = normalize_morrow_trace(safe_trace)
+    _write_json_create(output.resolve(), normalized)
+    return {"output": str(output.resolve()), "sha256": file_hash(output.resolve())}
+
+
 def permission_equivalence_matrix(workspace: Path) -> dict[str, object]:
     """Evaluate the frozen intent matrix through Morrow policy and the Pi policy adapter."""
 
@@ -3640,7 +3843,8 @@ def admit_campaign_run(
     reserved_cost = sum(float(record["reservation"]["cost"]) for record in records)
     if reserved_tokens + reserve_tokens > normalized["ceilings"]["total_tokens"]:
         raise EvalError("campaign token ceiling would be exceeded")
-    if reserved_cost + reserve_cost > normalized["ceilings"]["total_cost"]:
+    total_cost_ceiling = normalized["ceilings"]["total_cost"]
+    if total_cost_ceiling is not None and reserved_cost + reserve_cost > total_cost_ceiling:
         raise EvalError("campaign currency ceiling would be exceeded")
     entry = normalized["schedule"][ordinal - 1]
     run_dir = root / _campaign_run_key(entry)
@@ -3794,6 +3998,71 @@ def run_bounded_process(
         "duration_ms": duration,
         "stdout": {"sha256": file_hash(stdout_path), "bytes": stdout_path.stat().st_size},
         "stderr": {"sha256": file_hash(stderr_path), "bytes": stderr_path.stat().st_size},
+    }
+
+
+def pi_agent_command(prompt: str, extension: Path) -> list[str]:
+    """Build the pinned Pi 0.84.2 invocation without credentials or mutable user resources."""
+
+    if not prompt.strip() or not extension.resolve().is_file():
+        raise EvalError("Pi evaluation prompt or policy extension is unavailable")
+    return [
+        "pi",
+        "--print",
+        "--mode",
+        "json",
+        "--provider",
+        "opencode-go",
+        "--model",
+        "mimo-v2.5",
+        "--thinking",
+        "medium",
+        "--no-session",
+        "--no-extensions",
+        "--extension",
+        str(extension.resolve()),
+        "--no-skills",
+        "--no-prompt-templates",
+        "--no-themes",
+        "--tools",
+        "read,bash,edit,write,grep,find,ls",
+        "--approve",
+        prompt,
+    ]
+
+
+def run_pi_agent(
+    *, workspace: Path, evidence_dir: Path, prompt: str, output: Path
+) -> dict[str, object]:
+    """Run pinned Pi under the content-hashed evaluation policy and normalize its JSONL."""
+
+    extension = DATASET_ROOT / "pi-evaluation-policy.ts"
+    process = run_bounded_process(
+        pi_agent_command(prompt, extension),
+        cwd=workspace.resolve(),
+        evidence_dir=evidence_dir.resolve(),
+        timeout_seconds=EXTERNAL_DEADLINE_SECONDS,
+        environment={**os.environ, "PI_TELEMETRY": "0"},
+    )
+    stdout_path = evidence_dir.resolve() / "agent-stdout.raw"
+    events: list[object] = []
+    try:
+        for line in stdout_path.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                events.append(json.loads(line))
+    except (OSError, UnicodeError, ValueError) as exc:
+        raise EvalError("Pi evaluation stream is not valid JSONL") from exc
+    normalized = normalize_pi_trace(
+        events,
+        duration_ms=int(process["duration_ms"]),
+        workspace=workspace.resolve(),
+        watchdog_expired=bool(process["watchdog_expired"]),
+    )
+    _write_json_create(output.resolve(), normalized)
+    return {
+        "output": str(output.resolve()),
+        "sha256": file_hash(output.resolve()),
+        "raw": {"stdout": process["stdout"], "stderr": process["stderr"]},
     }
 
 
@@ -3951,7 +4220,8 @@ def compare_campaign(
     budget_diagnostics: list[str] = []
     if actual_tokens > plan["ceilings"]["total_tokens"]:
         budget_diagnostics.append("actual campaign tokens exceeded the approved ceiling")
-    if actual_cost > plan["ceilings"]["total_cost"]:
+    total_cost_ceiling = plan["ceilings"]["total_cost"]
+    if total_cost_ceiling is not None and actual_cost > total_cost_ceiling:
         budget_diagnostics.append("actual campaign cost exceeded the approved ceiling")
     overall = (
         "PASS"
@@ -4090,6 +4360,20 @@ def build_parser() -> argparse.ArgumentParser:
     )
     normalize_morrow.add_argument("trace", type=Path)
     normalize_morrow.add_argument("output", type=Path)
+    run_morrow = subparsers.add_parser(
+        "run-morrow", help="run one ordinary Morrow evaluation turn into a safe trace"
+    )
+    run_morrow.add_argument("workspace", type=Path)
+    run_morrow.add_argument("state_root", type=Path)
+    run_morrow.add_argument("prompt", type=Path)
+    run_morrow.add_argument("output", type=Path)
+    run_pi = subparsers.add_parser(
+        "run-pi", help="run one confined Pi evaluation turn into a safe trace"
+    )
+    run_pi.add_argument("workspace", type=Path)
+    run_pi.add_argument("evidence_dir", type=Path)
+    run_pi.add_argument("prompt", type=Path)
+    run_pi.add_argument("output", type=Path)
     compare = subparsers.add_parser("compare", help="mechanically compare Morrow and Pi campaigns")
     compare.add_argument("plan", type=Path)
     compare.add_argument("morrow_root", type=Path)
@@ -4207,6 +4491,32 @@ def main() -> int:
                     }
                 ).strip()
             )
+            return 0
+        if arguments.command == "run-morrow":
+            try:
+                prompt = arguments.prompt.read_text(encoding="utf-8")
+            except (OSError, UnicodeError) as exc:
+                raise EvalError("Morrow evaluation prompt is unavailable") from exc
+            result = run_morrow_agent(
+                workspace=arguments.workspace,
+                state_root=arguments.state_root,
+                prompt=prompt,
+                output=arguments.output,
+            )
+            print(canonical_json(result).strip())
+            return 0
+        if arguments.command == "run-pi":
+            try:
+                prompt = arguments.prompt.read_text(encoding="utf-8")
+            except (OSError, UnicodeError) as exc:
+                raise EvalError("Pi evaluation prompt is unavailable") from exc
+            result = run_pi_agent(
+                workspace=arguments.workspace,
+                evidence_dir=arguments.evidence_dir,
+                prompt=prompt,
+                output=arguments.output,
+            )
+            print(canonical_json(result).strip())
             return 0
         if arguments.command == "compare":
             summary = compare_campaign(

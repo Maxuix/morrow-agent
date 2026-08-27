@@ -871,6 +871,17 @@ def test_comparison_plan_rejects_unknown_sensitive_mixed_and_unapproved_values()
     with pytest.raises(eval_module.EvalError, match="positive number"):
         eval_module.validate_comparison_plan(no_budget)
 
+    unlimited_cost = _comparison_plan()
+    unlimited_cost["ceilings"]["total_cost"] = None
+    unlimited_cost["integrity"] = eval_module.content_hash(
+        {key: value for key, value in unlimited_cost.items() if key != "integrity"}
+    )
+    assert eval_module.validate_comparison_plan(unlimited_cost)["ceilings"] == {
+        "currency": "USD",
+        "total_cost": None,
+        "total_tokens": 1_000_000,
+    }
+
     unapproved = _comparison_plan()
     unapproved["hold_point"]["status"] = "pending"
     unapproved["integrity"] = eval_module.content_hash(
@@ -1071,6 +1082,93 @@ def test_morrow_trace_normalizer_computes_rework_and_rejects_sensitive_projectio
         eval_module.normalize_morrow_trace(trace)
 
 
+def test_morrow_runner_projection_uses_safe_facts_and_discards_arguments() -> None:
+    calls = [
+        [
+            {
+                "id": "call-read",
+                "name": "read_file",
+                "arguments": json.dumps({"path": "src/demo.py", "secret": "sk-" + "x" * 24}),
+            },
+            {
+                "id": "call-write",
+                "name": "write_file",
+                "arguments": json.dumps({"path": "src/demo.py", "content": "private payload"}),
+            },
+        ],
+        [
+            {
+                "id": "call-test",
+                "name": "run_command",
+                "arguments": json.dumps({"command": "uv run pytest -q"}),
+            }
+        ],
+    ]
+    events = [
+        {
+            "type": "tool.status",
+            "payload": {"call_id": call_id, "status": "succeeded"},
+        }
+        for call_id in ("call-read", "call-write", "call-test")
+    ]
+    facts = (
+        {
+            "kind": "change",
+            "call_id": "call-write",
+            "relative_paths": ("src/demo.py",),
+            "before_revision": "sha256:" + "1" * 64,
+            "after_revision": "sha256:" + "2" * 64,
+            "changed_bytes": 12,
+        },
+        {
+            "kind": "validation",
+            "call_id": "call-test",
+            "relative_paths": (".",),
+            "validator_kind": "pytest",
+            "status": "passed",
+        },
+    )
+    metrics = {
+        "finish_reason": "stop",
+        "stop_code": None,
+        "model_attempts": 3,
+        "retry_count": 0,
+        "compaction_count": 0,
+        "overflow_recovery_count": 0,
+        "usage": {
+            "availability": "available",
+            "input_tokens": 100,
+            "output_tokens": 20,
+            "total_tokens": 120,
+        },
+        "cost": {
+            "availability": "available",
+            "amount_minor": 2,
+            "currency": "USD",
+            "source": "fixture",
+        },
+    }
+
+    projected = eval_module.project_morrow_safe_trace(
+        events=events,
+        tool_cycles=calls,
+        facts=facts,
+        metrics=metrics,
+        duration_ms=50,
+    )
+    normalized = eval_module.normalize_morrow_trace(projected)
+
+    assert normalized["usage"]["total_tokens"] == 120
+    assert normalized["usage"]["cost"] == 0.02
+    assert normalized["context"]["first_relevant_read_round"] == 1
+    assert normalized["context"]["first_effective_write_round"] == 1
+    assert normalized["context"]["first_validation_round"] == 2
+    assert normalized["context"]["latest_validation_outcome"] == "passed"
+    serialized = json.dumps(normalized)
+    assert "private payload" not in serialized
+    assert "sk-" not in serialized
+
+
 def test_permission_equivalence_and_evaluation_approval_remain_fail_closed(tmp_path: Path) -> None:
     from morrow.core.models import ToolApprovalRequest, ToolEffect
 
@@ -1166,6 +1264,23 @@ def test_campaign_admission_is_create_only_ordered_confined_and_budgeted(tmp_pat
             reserve_cost=1.0,
         )
 
+    unlimited_cost = _comparison_plan()
+    unlimited_cost["ceilings"]["total_cost"] = None
+    unlimited_root = tmp_path / "unlimited-cost-evidence"
+    unlimited_cost["evidence_root"]["path_sha256"] = eval_module.bytes_hash(
+        str(unlimited_root.resolve()).encode("utf-8")
+    )
+    unlimited_cost["integrity"] = eval_module.content_hash(
+        {key: value for key, value in unlimited_cost.items() if key != "integrity"}
+    )
+    eval_module.admit_campaign_run(
+        unlimited_cost,
+        unlimited_root,
+        ordinal=1,
+        reserve_tokens=10_000,
+        reserve_cost=1_000_000.0,
+    )
+
 
 def test_bounded_process_retains_only_hash_metadata_and_refuses_overwrite(tmp_path: Path) -> None:
     evidence = tmp_path / "evidence"
@@ -1186,6 +1301,30 @@ def test_bounded_process_retains_only_hash_metadata_and_refuses_overwrite(tmp_pa
             evidence_dir=evidence,
             timeout_seconds=5,
         )
+
+
+def test_pi_agent_command_pins_model_policy_and_resources() -> None:
+    extension = EVAL_PATH.parent / "pi-evaluation-policy.ts"
+    command = eval_module.pi_agent_command("fixture prompt", extension)
+
+    assert command[:8] == [
+        "pi",
+        "--print",
+        "--mode",
+        "json",
+        "--provider",
+        "opencode-go",
+        "--model",
+        "mimo-v2.5",
+    ]
+    assert command[command.index("--extension") + 1] == str(extension.resolve())
+    assert command[command.index("--tools") + 1] == "read,bash,edit,write,grep,find,ls"
+    assert "--no-session" in command
+    assert "--no-extensions" in command
+    assert "--no-skills" in command
+    assert "--no-prompt-templates" in command
+    assert "--no-context-files" not in command
+    assert "--api-key" not in command
 
 
 def _paired_entry(task_id: str, repetition: int, result_class: str = "PASS") -> dict[str, object]:

@@ -129,7 +129,24 @@ Pi 0.84.2 JSONL 归一化、Morrow 安全 trace 归一化、权限等价证明�
 
 `campaign-preflight` 验证干净的 Morrow commit/tracked-source hash、dataset/protocol、Pi 0.84.2
 executable/package hash、evidence-root 身份/权限/空间、start-not-before 和权限矩阵。credential readiness
-与 no-tool model probe 明确报告为未执行；它们只能在用户批准精确模型与总 Token/货币上限后运行。
+与 no-tool model probe 明确报告为未执行。用户已批准 `opencode-go/mimo-v2.5`、5,000,000 Token
+硬上限、无货币上限和 bounded probe；Pi credential 未就绪时 probe 仍 fail closed。
+
+两侧正式 runner 都创建 normalized trace。Morrow runner 通过普通 bootstrap/AgentLoop/ToolExecutor
+组合注入 bounded EvaluationApprovalPort；Pi runner 只加载 content-hashed policy extension，禁用用户
+extension/skill/template/session，并用 macOS Seatbelt 约束 bash：
+
+```bash
+.venv/bin/python evals/code-agent-mini/eval.py run-morrow \
+  /protected/run/workspace /protected/run/morrow-state /protected/run/prompt.txt \
+  /protected/run/morrow.normalized.json
+.venv/bin/python evals/code-agent-mini/eval.py run-pi \
+  /protected/run/workspace /protected/run/pi-raw /protected/run/prompt.txt \
+  /protected/run/pi.normalized.json
+```
+
+`run-pi` 的 evidence directory 必须预先以 mode `0700` 创建；raw stdout/stderr 只保留在该非 Git
+目录，命令输出仅返回 normalized 文件和 raw stream 的 hash/byte count。
 
 受保护的 Pi JSONL 不进入 Git。归一化命令只创建 bounded JSON，并且 stdout 只显示输出路径与 hash：
 
@@ -155,9 +172,9 @@ stable quality deficit、Morrow-only basic-tool blocker 与总预算：
   --output /protected/comparison-summary.json
 ```
 
-输出使用 create-only 写入，并同时生成同目录 `baseline.json`。在共同 Provider/model/revision 与总
-预算未获明确批准前，不得执行 admission 或任何 Agent runner；当前离线 harness 通过不等于
-S7P-09 campaign PASS。
+输出使用 create-only 写入，并同时生成同目录 `baseline.json`。共同 Provider/model 与 Token 预算
+已获批准；在 Pi credential、served revision/sampling、两侧 readiness hash 及 clean source/evidence
+pins 全部通过前，仍不得执行 formal admission。当前离线 harness 通过不等于 S7P-09 campaign PASS。
 
 ## 数据集 self-check
 

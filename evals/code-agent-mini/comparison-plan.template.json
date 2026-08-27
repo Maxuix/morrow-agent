@@ -16,12 +16,12 @@
     "pi": {"profile": "REPLACE_WITH_STRICT_PROFILE_OBJECT", "sha256": "REPLACE_SHA256"}
   },
   "common_model": {
-    "provider_family": "REPLACE",
-    "service": "REPLACE_EXACT_SERVICE",
-    "canonical_model_id": "REPLACE_EXACT_MODEL",
+    "provider_family": "opencode-go",
+    "service": "https://opencode.ai/zen/go/v1",
+    "canonical_model_id": "mimo-v2.5",
     "model_revision": "REPLACE_EXACT_REVISION",
-    "context_window": 1,
-    "max_output_tokens": 1,
+    "context_window": 1000000,
+    "max_output_tokens": 128000,
     "sampling": {
       "temperature": 0,
       "top_p": 1,
@@ -42,7 +42,7 @@
     "pi_extension_sha256": "REPLACE_SHA256"
   },
   "deadlines": {"run_seconds": 1800, "tool_seconds": 120},
-  "ceilings": {"total_tokens": 1, "currency": "USD", "total_cost": 1},
+  "ceilings": {"total_tokens": 5000000, "currency": "USD", "total_cost": null},
   "schedule": "GENERATE_WITH_eval.py_schedule",
   "evidence_root": {
     "id": "REPLACE",
