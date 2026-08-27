@@ -437,7 +437,13 @@ class AgentLoop:
         self.grant_provider = grant_provider
         self.monotonic = monotonic or time.monotonic
         self.completion_checker = completion_checker
-        self.outcome_contract_compiler = outcome_contract_compiler or OutcomeContractCompiler()
+        if outcome_contract_compiler is not None:
+            self.outcome_contract_compiler = outcome_contract_compiler
+        else:
+            workspace_root = getattr(getattr(completion_checker, "files", None), "resolver", None)
+            self.outcome_contract_compiler = OutcomeContractCompiler(
+                workspace_root=getattr(workspace_root, "root", None)
+            )
         self.tool_cycle = (
             ToolCycleExecutor(
                 tool_executor,

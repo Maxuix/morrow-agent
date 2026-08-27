@@ -14,7 +14,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Annotated, Literal, Protocol
 
-from pydantic import ConfigDict, Field, field_validator
+from pydantic import ConfigDict, Field, field_validator, model_validator
 
 from morrow.core.domain import ArtifactReference
 from morrow.core.models import ProtocolModel, ToolEffect
@@ -308,6 +308,12 @@ class ValidationFact(ToolFactHeader):
     @classmethod
     def valid_validation_scope(cls, value: str) -> str:
         return _clean_relative_path(value)
+
+    @model_validator(mode="after")
+    def scope_path_consistency(self) -> ValidationFact:
+        if self.relative_paths != (self.scope,):
+            raise ValueError("validation fact paths must contain exactly its scope")
+        return self
 
 
 class GitToolFact(ToolFactHeader):

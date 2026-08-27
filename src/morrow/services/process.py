@@ -6,6 +6,7 @@ import json
 import os
 import re
 import shlex
+import sys
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -434,7 +435,9 @@ def _unwrap_validation_tokens(
     if not tokens:
         return None
     index = 0
-    executable = Path(tokens[index]).name.casefold()
+    executable = _validator_executable(tokens[index], allow_current_python=True)
+    if executable is None:
+        return None
     if executable == "uv":
         if len(tokens) < 3 or tokens[1] != "run":
             return None
@@ -443,7 +446,9 @@ def _unwrap_validation_tokens(
         # redirect environments or hide the actual executable.
         if tokens[index].startswith("-"):
             return None
-        executable = Path(tokens[index]).name.casefold()
+        executable = _validator_executable(tokens[index], allow_current_python=True)
+        if executable is None:
+            return None
     if executable in _PYTHON_NAMES:
         if len(tokens) <= index + 2 or tokens[index + 1 : index + 2] != ("-m",):
             return None
@@ -480,6 +485,21 @@ def _unwrap_validation_tokens(
             return f"make_{tokens[index + 1]}", list(tokens[index + 2 :]), "make"
         return None
     return None
+
+
+def _validator_executable(token: str, *, allow_current_python: bool) -> str | None:
+    """Return a trusted validator executable name without basename matching."""
+
+    if "/" not in token and "\\" not in token:
+        return token.casefold()
+    if not allow_current_python or not Path(token).is_absolute():
+        return None
+    try:
+        if Path(token).resolve(strict=True) != Path(sys.executable).resolve(strict=True):
+            return None
+    except OSError:
+        return None
+    return "python"
 
 
 def _safe_validation_options(operands: list[str], option_family: str) -> list[str] | None:

@@ -10,6 +10,7 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable
 from enum import StrEnum
+from pathlib import Path
 from typing import Literal
 
 from pydantic import Field, field_validator, model_validator
@@ -143,6 +144,7 @@ class OutcomeContract(ProtocolModel):
     verifier_id: str | None = Field(default=None, max_length=128)
     no_change_allowed: bool = False
     preparation_version: str = Field(default="s7p05.v1", max_length=32)
+    contract_error_codes: tuple[str, ...] = Field(default=(), max_length=_MAX_CODES)
 
     @field_validator("target_paths", "forbidden_paths")
     @classmethod
@@ -167,6 +169,11 @@ class OutcomeContract(ProtocolModel):
         if not re.fullmatch(r"^[a-z][a-z0-9_.-]{0,31}$", value):
             raise ValueError("preparation version is invalid")
         return value
+
+    @field_validator("contract_error_codes")
+    @classmethod
+    def valid_contract_error_codes(cls, values: tuple[str, ...]) -> tuple[str, ...]:
+        return _codes(values, field_name="contract error codes")
 
     @model_validator(mode="after")
     def contract_consistency(self) -> OutcomeContract:
@@ -215,6 +222,7 @@ class WorkspaceBaseline(ProtocolModel):
 
     status: WorkspaceBaselineStatus
     entries: tuple[WorkspaceBaselineEntry, ...] = Field(max_length=_MAX_BASELINE_ENTRIES)
+    directory_paths: tuple[str, ...] = Field(default=(), max_length=_MAX_BASELINE_ENTRIES)
     repository_state: str = "unknown"
     git_head: str | None = Field(default=None, max_length=128)
     reason_code: str | None = Field(default=None, max_length=64)
@@ -236,6 +244,11 @@ class WorkspaceBaseline(ProtocolModel):
     def valid_reason_code(cls, value: str | None) -> str | None:
         return None if value is None else _code(value, field_name="baseline reason code")
 
+    @field_validator("directory_paths")
+    @classmethod
+    def valid_directory_paths(cls, values: tuple[str, ...]) -> tuple[str, ...]:
+        return _paths(values, field_name="directory paths")
+
     @model_validator(mode="after")
     def status_consistency(self) -> WorkspaceBaseline:
         if self.status is WorkspaceBaselineStatus.COMPLETE and self.reason_code is not None:
@@ -245,6 +258,8 @@ class WorkspaceBaseline(ProtocolModel):
         paths = tuple(entry.path for entry in self.entries)
         if len(set(paths)) != len(paths):
             raise ValueError("workspace baseline entries must have unique paths")
+        if len(set(self.directory_paths)) != len(self.directory_paths):
+            raise ValueError("workspace baseline directories must have unique paths")
         return self
 
 
@@ -364,8 +379,11 @@ def _quoted_paths(text: str) -> tuple[str, ...]:
     return tuple(values[:_MAX_PATHS])
 
 
-def _validator_declarations(text: str) -> tuple[ValidationRequirement, ...]:
+def _validator_declarations(
+    text: str, *, workspace_root: Path | None = None
+) -> tuple[tuple[ValidationRequirement, ...], tuple[str, ...]]:
     found: list[ValidationRequirement] = []
+    errors: list[str] = []
 
     def add(kind: str, scope: str = ".") -> None:
         try:
@@ -380,20 +398,45 @@ def _validator_declarations(text: str) -> tuple[ValidationRequirement, ...]:
         lower_word = word.casefold()
         scope = "."
         if lower_word == "pytest":
-            scope = _next_validator_scope(words, index + 1, "pytest")
-            add("pytest", scope)
+            scope, invalid = _next_validator_scope(
+                words, index + 1, "pytest", workspace_root=workspace_root
+            )
+            if invalid:
+                errors.append("validation_scope_invalid")
+            else:
+                add("pytest", scope)
         elif lower_word == "ruff" and index + 1 < len(words):
             action = words[index + 1].casefold()
             if action == "check":
-                add("ruff_check", _next_validator_scope(words, index + 2, "ruff"))
+                scope, invalid = _next_validator_scope(
+                    words, index + 2, "ruff", workspace_root=workspace_root
+                )
+                if invalid:
+                    errors.append("validation_scope_invalid")
+                else:
+                    add("ruff_check", scope)
             elif action == "format" and index + 2 < len(words) and words[index + 2] == "--check":
-                add("ruff_format_check", _next_validator_scope(words, index + 3, "ruff"))
+                scope, invalid = _next_validator_scope(
+                    words, index + 3, "ruff", workspace_root=workspace_root
+                )
+                if invalid:
+                    errors.append("validation_scope_invalid")
+                else:
+                    add("ruff_format_check", scope)
         elif lower_word == "compileall":
-            add("compileall", _next_validator_scope(words, index + 1, "compileall"))
-    return tuple(found[:_MAX_VALIDATIONS])
+            scope, invalid = _next_validator_scope(
+                words, index + 1, "compileall", workspace_root=workspace_root
+            )
+            if invalid:
+                errors.append("validation_scope_invalid")
+            else:
+                add("compileall", scope)
+    return tuple(found[:_MAX_VALIDATIONS]), tuple(dict.fromkeys(errors))
 
 
-def _next_validator_scope(words: list[str], start: int, family: str) -> str:
+def _next_validator_scope(
+    words: list[str], start: int, family: str, *, workspace_root: Path | None = None
+) -> tuple[str, bool]:
     allowed_flags = {
         "pytest": {"-q", "-v", "-x", "--quiet", "--verbose", "--lf", "--last-failed"},
         "ruff": {"--quiet", "--output-format=concise", "--output-format=full"},
@@ -407,9 +450,25 @@ def _next_validator_scope(words: list[str], start: int, family: str) -> str:
         if word in allowed_flags or any(word.startswith(prefix) for prefix in option_prefixes):
             continue
         if _looks_like_path(word):
-            return word.rstrip(",.;:)")
+            candidate = word.rstrip(",.;:)")
+            try:
+                return _normalize_declared_scope(candidate, workspace_root=workspace_root), False
+            except ValueError:
+                return ".", True
         break
-    return "."
+    return ".", False
+
+
+def _normalize_declared_scope(value: str, *, workspace_root: Path | None) -> str:
+    candidate = Path(value)
+    if candidate.is_absolute():
+        if workspace_root is None:
+            raise ValueError("absolute validation scope has no workspace root")
+        try:
+            value = candidate.relative_to(workspace_root).as_posix() or "."
+        except ValueError:
+            raise ValueError("validation scope is outside the workspace") from None
+    return normalize_workspace_path(value)
 
 
 def _looks_like_path(value: str) -> bool:
@@ -462,6 +521,11 @@ class OutcomeContractCompiler:
         "偏好设置",
     )
 
+    def __init__(self, workspace_root: str | Path | None = None) -> None:
+        self.workspace_root = (
+            Path(workspace_root).absolute() if workspace_root is not None else None
+        )
+
     def compile(
         self, user_input: str, *, explicit: OutcomeContract | None = None
     ) -> OutcomeContract:
@@ -470,7 +534,9 @@ class OutcomeContractCompiler:
         text = user_input if isinstance(user_input, str) else ""
         lower = text.casefold()
         paths = _quoted_paths(text)
-        requirements = _validator_declarations(text)
+        requirements, contract_errors = _validator_declarations(
+            text, workspace_root=self.workspace_root
+        )
         words = set(re.findall(r"[a-z0-9_]+", lower))
         ascii_change = {
             marker for marker in self._CHANGE_MARKERS if marker.isascii() and marker.isalpha()
@@ -510,13 +576,19 @@ class OutcomeContractCompiler:
             allowed_paths=paths if mode is OutcomeMode.CHANGE and paths else None,
             required_validations=requirements,
             no_change_allowed=no_change_allowed,
+            contract_error_codes=contract_errors,
         )
 
 
 def compile_outcome_contract(
-    user_input: str, *, explicit: OutcomeContract | None = None
+    user_input: str,
+    *,
+    explicit: OutcomeContract | None = None,
+    workspace_root: str | Path | None = None,
 ) -> OutcomeContract:
-    return OutcomeContractCompiler().compile(user_input, explicit=explicit)
+    return OutcomeContractCompiler(workspace_root=workspace_root).compile(
+        user_input, explicit=explicit
+    )
 
 
 __all__ = [

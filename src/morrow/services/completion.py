@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 import stat
 from collections.abc import Callable
 from pathlib import Path
@@ -29,6 +30,7 @@ MAX_BASELINE_ENTRIES = 256
 MAX_BASELINE_FILE_BYTES = 64 * 1024 * 1024
 MAX_BASELINE_TOTAL_BYTES = 256 * 1024 * 1024
 MAX_BASELINE_PATH_CHARS = 24 * 1024
+MAX_GIT_METADATA_BYTES = 8 * 1024 * 1024
 _EXCLUDED_COMPONENTS = frozenset(
     {
         ".git",
@@ -79,10 +81,11 @@ class WorkspaceBaselineService:
     def _scan(self) -> WorkspaceBaseline:
         root = self.files.resolver.root
         entries: list[WorkspaceBaselineEntry] = []
+        directories: list[str] = []
         try:
             root_descriptor = self._open_directory(root)
         except OSError:
-            return self._inconclusive(entries, root, "baseline_scan_failed")
+            return self._inconclusive(entries, directories, root, "baseline_scan_failed")
         stack: list[tuple[str, int]] = [(".", root_descriptor)]
         total_bytes = 0
         total_path_chars = 0
@@ -95,7 +98,9 @@ class WorkspaceBaselineService:
                     try:
                         children = self._directory_names(descriptor)
                     except OSError:
-                        return self._inconclusive(entries, root, "baseline_scan_failed")
+                        return self._inconclusive(
+                            entries, directories, root, "baseline_scan_failed"
+                        )
                     for child_name in children:
                         relative = (
                             child_name if relative_dir == "." else f"{relative_dir}/{child_name}"
@@ -115,6 +120,18 @@ class WorkspaceBaselineService:
                             reason_code = "baseline_stat_failed"
                             continue
                         if stat.S_ISDIR(child_stat.st_mode):
+                            if len(entries) + len(directories) >= self.max_entries:
+                                status = WorkspaceBaselineStatus.TRUNCATED
+                                reason_code = "baseline_scan_limit"
+                                self._close_stack(stack)
+                                break
+                            if total_path_chars + len(relative) > MAX_BASELINE_PATH_CHARS:
+                                status = WorkspaceBaselineStatus.TRUNCATED
+                                reason_code = "baseline_path_limit"
+                                self._close_stack(stack)
+                                break
+                            directories.append(relative)
+                            total_path_chars += len(relative)
                             child_descriptor: int | None = None
                             try:
                                 child_descriptor = self._open_directory(
@@ -132,7 +149,10 @@ class WorkspaceBaselineService:
                                 ):
                                     os.close(child_descriptor)
                                     return self._inconclusive(
-                                        entries, root, "baseline_directory_changed"
+                                        entries,
+                                        directories,
+                                        root,
+                                        "baseline_directory_changed",
                                     )
                             except OSError:
                                 if child_descriptor is not None:
@@ -141,7 +161,10 @@ class WorkspaceBaselineService:
                                     except OSError:
                                         pass
                                 return self._inconclusive(
-                                    entries, root, "baseline_directory_open_failed"
+                                    entries,
+                                    directories,
+                                    root,
+                                    "baseline_directory_open_failed",
                                 )
                             stack.append((relative, child_descriptor))
                             continue
@@ -149,7 +172,7 @@ class WorkspaceBaselineService:
                             stat.S_ISREG(child_stat.st_mode) or stat.S_ISLNK(child_stat.st_mode)
                         ):
                             continue
-                        if len(entries) >= self.max_entries:
+                        if len(entries) + len(directories) >= self.max_entries:
                             status = WorkspaceBaselineStatus.TRUNCATED
                             reason_code = "baseline_scan_limit"
                             self._close_stack(stack)
@@ -216,9 +239,13 @@ class WorkspaceBaselineService:
                 except OSError:
                     pass
         repository_state, git_head = self._repository_evidence(root)
+        if repository_state == "git" and git_head is None:
+            status = WorkspaceBaselineStatus.INCONCLUSIVE
+            reason_code = reason_code or "baseline_repository_evidence_unavailable"
         return WorkspaceBaseline(
             status=status,
             entries=tuple(sorted(entries, key=lambda entry: entry.path)),
+            directory_paths=tuple(sorted(directories)),
             repository_state=repository_state,
             git_head=git_head,
             reason_code=reason_code,
@@ -250,19 +277,23 @@ class WorkspaceBaselineService:
 
     @staticmethod
     def _inconclusive(
-        entries: list[WorkspaceBaselineEntry], root: Path, reason_code: str
+        entries: list[WorkspaceBaselineEntry],
+        directories: list[str],
+        root: Path,
+        reason_code: str,
     ) -> WorkspaceBaseline:
         repository_state, git_head = WorkspaceBaselineService._repository_evidence(root)
         return WorkspaceBaseline(
             status=WorkspaceBaselineStatus.INCONCLUSIVE,
             entries=tuple(sorted(entries, key=lambda entry: entry.path)),
+            directory_paths=tuple(sorted(directories)),
             repository_state=repository_state,
             git_head=git_head,
             reason_code=reason_code,
         )
 
-    @staticmethod
-    def _repository_evidence(root: Path) -> tuple[str, str | None]:
+    @classmethod
+    def _repository_evidence(cls, root: Path) -> tuple[str, str | None]:
         try:
             git_entry = os.lstat(root / ".git")
         except FileNotFoundError:
@@ -272,38 +303,266 @@ class WorkspaceBaselineService:
         if not (stat.S_ISDIR(git_entry.st_mode) or stat.S_ISREG(git_entry.st_mode)):
             return "unknown", None
         try:
-            git_fd = WorkspaceBaselineService._open_directory(root / ".git")
+            git_fd = cls._open_directory(root / ".git")
         except OSError:
             if not stat.S_ISREG(git_entry.st_mode):
                 return "git", None
-            return "git", WorkspaceBaselineService._hash_git_pointer(root / ".git")
-        try:
-            head_fd = os.open("HEAD", os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0), dir_fd=git_fd)
             try:
-                raw = os.read(head_fd, 257)
-            finally:
-                os.close(head_fd)
-        except OSError:
-            return "git", None
+                pointer = cls._read_git_pointer(root / ".git")
+                git_fd = cls._open_git_pointer_directory(root, pointer)
+            except OSError:
+                return "git", None
+        try:
+            return "git", cls._git_state_digest(git_fd)
         finally:
             os.close(git_fd)
-        if len(raw) > 256:
-            return "git", None
-        return "git", hashlib.sha256(b"morrow-git-head\0" + raw).hexdigest()
 
     @staticmethod
-    def _hash_git_pointer(path: Path) -> str | None:
+    def _read_git_pointer(path: Path) -> str:
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+        fd = os.open(path, flags)
         try:
-            fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
-            try:
-                raw = os.read(fd, 257)
-            finally:
-                os.close(fd)
+            raw = os.read(fd, 257)
+        finally:
+            os.close(fd)
+        if len(raw) > 256:
+            raise OSError("gitdir pointer is too large")
+        try:
+            text = raw.decode("utf-8").strip()
+        except UnicodeDecodeError as exc:
+            raise OSError("gitdir pointer is not UTF-8") from exc
+        if not text.startswith("gitdir: "):
+            raise OSError("gitdir pointer is malformed")
+        pointer = text[8:].strip()
+        if not pointer or "\x00" in pointer or "\n" in pointer or "\r" in pointer:
+            raise OSError("gitdir pointer is malformed")
+        return pointer
+
+    @classmethod
+    def _open_git_pointer_directory(cls, root: Path, pointer: str) -> int:
+        target = Path(pointer)
+        if not target.is_absolute():
+            target = root / target
+        return cls._open_absolute_directory(target)
+
+    @staticmethod
+    def _open_absolute_directory(path: Path) -> int:
+        if not path.is_absolute():
+            raise OSError("git directory path must be absolute")
+        flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+        parts = path.parts
+        descriptor = os.open(parts[0], flags)
+        try:
+            for part in parts[1:]:
+                if part in {"", "."}:
+                    continue
+                child = os.open(part, flags, dir_fd=descriptor)
+                os.close(descriptor)
+                descriptor = child
+            return descriptor
+        except OSError:
+            os.close(descriptor)
+            raise
+
+    @classmethod
+    def _git_state_digest(cls, git_fd: int) -> str | None:
+        try:
+            common_fd = cls._common_git_directory(git_fd)
         except OSError:
             return None
+        try:
+            try:
+                head = cls._read_relative_file(git_fd, ("HEAD",), 256)
+            except OSError:
+                return None
+            if len(head) > 256:
+                return None
+            try:
+                head_text = head.decode("ascii").strip()
+            except UnicodeDecodeError:
+                return None
+            resolved = cls._resolve_git_head(common_fd, head_text)
+            if resolved is None:
+                return None
+            index_exists, index_digest = cls._hash_relative_file(git_fd, ("index",))
+            if index_digest is None:
+                if index_exists:
+                    return None
+                index_digest = hashlib.sha256(b"morrow-git-index-missing").hexdigest()
+            payload = b"morrow-git-state\0" + head + b"\0" + resolved.encode("ascii")
+            payload += b"\0" + index_digest.encode("ascii")
+            return hashlib.sha256(payload).hexdigest()
+        finally:
+            os.close(common_fd)
+
+    @classmethod
+    def _common_git_directory(cls, git_fd: int) -> int:
+        try:
+            raw = cls._read_relative_file(git_fd, ("commondir",), 256)
+        except FileNotFoundError:
+            return os.dup(git_fd)
         if len(raw) > 256:
+            raise OSError("git common directory is too large")
+        try:
+            value = raw.decode("utf-8").strip()
+        except UnicodeDecodeError as exc:
+            raise OSError("git common directory is not UTF-8") from exc
+        if not value or "\x00" in value or "\n" in value or "\r" in value:
+            raise OSError("git common directory is malformed")
+        target = Path(value)
+        return (
+            cls._open_absolute_directory(target)
+            if target.is_absolute()
+            else cls._open_relative_directory(git_fd, tuple(value.split("/")))
+        )
+
+    @classmethod
+    def _resolve_git_head(cls, git_fd: int, head: str) -> str | None:
+        if re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", head):
+            return head
+        if not head.startswith("ref: "):
             return None
-        return hashlib.sha256(b"morrow-gitdir-pointer\0" + raw).hexdigest()
+        reference = head[5:].strip()
+        if not re.fullmatch(r"refs/[A-Za-z0-9._/-]+", reference):
+            return None
+        try:
+            raw = cls._read_relative_file(git_fd, tuple(reference.split("/")), 128)
+        except FileNotFoundError:
+            raw = None
+        except OSError:
+            return None
+        oid = cls._git_oid(raw) if raw is not None else None
+        if oid is None:
+            try:
+                packed = cls._read_relative_file(git_fd, ("packed-refs",), MAX_GIT_METADATA_BYTES)
+            except FileNotFoundError:
+                return None
+            except OSError:
+                return None
+            oid = cls._packed_ref_oid(packed, reference)
+        return f"{reference}\0{oid}" if oid is not None else None
+
+    @staticmethod
+    def _git_oid(raw: bytes | None) -> str | None:
+        if raw is None:
+            return None
+        try:
+            value = raw.decode("ascii").strip()
+        except UnicodeDecodeError:
+            return None
+        return value if re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", value) else None
+
+    @classmethod
+    def _packed_ref_oid(cls, raw: bytes, reference: str) -> str | None:
+        if len(raw) > MAX_GIT_METADATA_BYTES:
+            return None
+        for line in raw.splitlines():
+            if line.startswith((b"#", b"^")):
+                continue
+            fields = line.split()
+            if len(fields) != 2:
+                continue
+            try:
+                candidate = fields[1].decode("ascii")
+            except UnicodeDecodeError:
+                continue
+            if candidate == reference:
+                return cls._git_oid(fields[0] + b"\n")
+        return None
+
+    @classmethod
+    def _read_relative_file(cls, base_fd: int, components: tuple[str, ...], limit: int) -> bytes:
+        fd = cls._open_relative_file(base_fd, components)
+        try:
+            opened = os.fstat(fd)
+            if not stat.S_ISREG(opened.st_mode):
+                raise OSError("git metadata is not a regular file")
+            raw = cls._read_fd(fd, limit)
+            closed = os.fstat(fd)
+            if cls._file_identity(opened) != cls._file_identity(closed):
+                raise OSError("git metadata changed while reading")
+            return raw
+        finally:
+            os.close(fd)
+
+    @classmethod
+    def _open_relative_file(cls, base_fd: int, components: tuple[str, ...]) -> int:
+        if not components or any(
+            not component or component in {".", ".."} for component in components
+        ):
+            raise OSError("invalid git metadata path")
+        flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+        current = os.dup(base_fd)
+        try:
+            for component in components[:-1]:
+                child = os.open(component, flags, dir_fd=current)
+                os.close(current)
+                current = child
+            file_fd = os.open(
+                components[-1], os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0), dir_fd=current
+            )
+            os.close(current)
+            return file_fd
+        except OSError:
+            os.close(current)
+            raise
+
+    @staticmethod
+    def _open_relative_directory(base_fd: int, components: tuple[str, ...]) -> int:
+        if not components or any(not component for component in components):
+            raise OSError("invalid git common directory")
+        flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+        current = os.dup(base_fd)
+        try:
+            for component in components:
+                if component == ".":
+                    continue
+                child = os.open(component, flags, dir_fd=current)
+                os.close(current)
+                current = child
+            return current
+        except OSError:
+            os.close(current)
+            raise
+
+    @staticmethod
+    def _read_fd(fd: int, limit: int) -> bytes:
+        chunks: list[bytes] = []
+        total = 0
+        while total <= limit:
+            chunk = os.read(fd, min(1024 * 1024, limit + 1 - total))
+            if not chunk:
+                return b"".join(chunks)
+            chunks.append(chunk)
+            total += len(chunk)
+        return b"".join(chunks)
+
+    @classmethod
+    def _hash_relative_file(
+        cls, base_fd: int, components: tuple[str, ...]
+    ) -> tuple[bool, str | None]:
+        try:
+            fd = cls._open_relative_file(base_fd, components)
+        except FileNotFoundError:
+            return False, None
+        except OSError:
+            return True, None
+        try:
+            opened = os.fstat(fd)
+            if not stat.S_ISREG(opened.st_mode) or opened.st_size > MAX_GIT_METADATA_BYTES:
+                return True, None
+            digest = hashlib.sha256()
+            while True:
+                chunk = os.read(fd, 1024 * 1024)
+                if not chunk:
+                    break
+                digest.update(chunk)
+            closed = os.fstat(fd)
+            if WorkspaceBaselineService._file_identity(opened) != cls._file_identity(closed):
+                return True, None
+            return True, digest.hexdigest()
+        finally:
+            os.close(fd)
 
     def _hash_regular(
         self,
@@ -321,16 +580,8 @@ class WorkspaceBaselineService:
             opened = os.fstat(fd)
             if not stat.S_ISREG(opened.st_mode) or opened.st_size > self.max_file_bytes:
                 raise _BaselineLimit
-            if expected_stat is not None and (
-                opened.st_dev,
-                opened.st_ino,
-                opened.st_size,
-                opened.st_mtime_ns,
-            ) != (
-                expected_stat.st_dev,
-                expected_stat.st_ino,
-                expected_stat.st_size,
-                expected_stat.st_mtime_ns,
+            if expected_stat is not None and (*self._file_identity(opened),) != (
+                *self._file_identity(expected_stat),
             ):
                 raise _BaselineRace
             digest = hashlib.sha256()
@@ -345,12 +596,7 @@ class WorkspaceBaselineService:
                         raise _BaselineLimit
                     digest.update(chunk)
             closed = os.fstat(fd)
-            if (opened.st_dev, opened.st_ino, opened.st_size, opened.st_mtime_ns) != (
-                closed.st_dev,
-                closed.st_ino,
-                closed.st_size,
-                closed.st_mtime_ns,
-            ):
+            if self._file_identity(opened) != self._file_identity(closed):
                 raise _BaselineRace
             return size, digest.hexdigest()
         finally:
@@ -359,6 +605,16 @@ class WorkspaceBaselineService:
     @staticmethod
     def _excluded(relative: str) -> bool:
         return any(part in _EXCLUDED_COMPONENTS for part in relative.split("/"))
+
+    @staticmethod
+    def _file_identity(value: os.stat_result) -> tuple[int, int, int, int, int]:
+        return (
+            value.st_dev,
+            value.st_ino,
+            value.st_size,
+            value.st_mtime_ns,
+            value.st_ctime_ns,
+        )
 
 
 class _BaselineLimit(Exception):
@@ -394,6 +650,9 @@ class CompletionChecker:
         changed_paths = tuple(
             sorted(path for path in set(before) | set(after) if before.get(path) != after.get(path))
         )
+        changed_directories = tuple(
+            sorted(set(baseline.directory_paths) ^ set(current.directory_paths))
+        )
         facts = tuple(validation_facts or ())
         if run_context is not None:
             facts = tuple(fact for fact in run_context.validation_facts)
@@ -401,7 +660,11 @@ class CompletionChecker:
         unresolved = tuple(unresolved_tool_ids) + tuple(unresolved_calls)
         reasons: list[str] = []
         next_actions: list[str] = []
-        validations = self._validation_results(contract, facts, reasons, next_actions)
+        reasons.extend(contract.contract_error_codes)
+        next_actions.extend("resolve_completion_contract" for _ in contract.contract_error_codes)
+        validations = self._validation_results(
+            contract, facts, reasons, next_actions, run_context=run_context
+        )
         unexpected = tuple(
             path
             for path in changed_paths
@@ -411,8 +674,15 @@ class CompletionChecker:
         forbidden = tuple(
             path for path in changed_paths if self._matches_any(path, contract.forbidden_paths)
         )
+        directory_unexpected, directory_forbidden = self._directory_policy_changes(
+            contract, changed_paths, changed_directories
+        )
+        unexpected = tuple(sorted(set(unexpected) | set(directory_unexpected)))
+        forbidden = tuple(sorted(set(forbidden) | set(directory_forbidden)))
         if contract.mode.value in {"explanation", "unspecified"} and changed_paths:
-            unexpected = changed_paths
+            unexpected = tuple(sorted(set(unexpected) | set(changed_paths)))
+        if contract.mode.value in {"explanation", "unspecified"} and changed_directories:
+            unexpected = tuple(sorted(set(unexpected) | set(changed_directories)))
         if unexpected:
             reasons.append("unexpected_workspace_change")
             next_actions.append("restore_unexpected_paths")
@@ -551,15 +821,34 @@ class CompletionChecker:
         facts: tuple[ValidationFact, ...],
         reasons: list[str],
         next_actions: list[str],
+        *,
+        run_context=None,
     ) -> tuple[ValidationCheckResult, ...]:
         latest: dict[tuple[str, str], ValidationFact] = {}
         for fact in facts:
-            if isinstance(fact, ValidationFact):
+            if isinstance(fact, ValidationFact) and fact.relative_paths == (fact.scope,):
                 latest[(fact.validator_kind, fact.scope)] = fact
+        latest_change_position = -1
+        fact_positions: dict[int, int] = {}
+        if run_context is not None:
+            ordered_facts = run_context.facts
+            fact_positions = {id(fact): index for index, fact in enumerate(ordered_facts)}
+            latest_change_position = max(
+                (
+                    index
+                    for index, fact in enumerate(ordered_facts)
+                    if isinstance(fact, ChangeToolFact)
+                    and fact.status in {"created", "modified", "deleted", "moved", "renamed"}
+                ),
+                default=-1,
+            )
         results: list[ValidationCheckResult] = []
         for requirement in contract.required_validations:
             fact = latest.get((requirement.validator_kind, requirement.scope))
-            if fact is None:
+            fact_position = fact_positions.get(id(fact), -1) if fact is not None else -1
+            if fact is None or (
+                run_context is not None and fact_position <= latest_change_position
+            ):
                 result = ValidationCheckResult(
                     requirement=requirement,
                     status=ValidationStatus.NOT_RUN,
@@ -586,6 +875,28 @@ class CompletionChecker:
                     next_actions.append("rerun_required_validation")
             results.append(result)
         return tuple(results)
+
+    @classmethod
+    def _directory_policy_changes(
+        cls,
+        contract: OutcomeContract,
+        changed_paths: tuple[str, ...],
+        changed_directories: tuple[str, ...],
+    ) -> tuple[tuple[str, ...], tuple[str, ...]]:
+        unexpected: list[str] = []
+        forbidden: list[str] = []
+        for directory in changed_directories:
+            if cls._matches_any(directory, contract.forbidden_paths):
+                forbidden.append(directory)
+            if contract.mode.value in {"explanation", "unspecified"}:
+                unexpected.append(directory)
+                continue
+            # A directory that is only the parent of an already-attributed leaf
+            # is structural.  An empty or otherwise unattributed directory is a
+            # real workspace change and must not disappear from the diff.
+            if not any(path.startswith(directory + "/") for path in changed_paths):
+                unexpected.append(directory)
+        return tuple(sorted(set(unexpected))), tuple(sorted(set(forbidden)))
 
     @staticmethod
     def _run_attributed(

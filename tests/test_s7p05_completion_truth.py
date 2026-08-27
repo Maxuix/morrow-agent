@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -33,6 +34,7 @@ from morrow.core.models import (
 )
 from morrow.runtime.agent import AgentLoop
 from morrow.runtime.session import Session
+from morrow.services import completion as completion_service
 from morrow.services.completion import CompletionChecker, WorkspaceBaselineService
 from morrow.services.files import WorkspaceFileService, WorkspacePathResolver
 from morrow.services.process import ProcessExecutionService
@@ -77,6 +79,7 @@ def _validation(
         tool_name="run_command",
         ordinal=ordinal,
         approval_verdict=PolicyVerdict.ALLOW,
+        relative_paths=(scope,),
         validator_kind=validator_kind,
         scope=scope,
         status=status,
@@ -130,6 +133,20 @@ def test_validator_recognition_is_strict_and_shell_control_flow_fails_closed(tmp
     assert opaque_plan.validation_kind is None
     assert shell_plan.validation_kind is None
     assert newline_shell_plan.validation_kind is None
+
+
+@pytest.mark.parametrize(
+    "argv",
+    (("./pytest", "tests"), ("/tmp/pytest", "tests"), ("./python", "-m", "pytest", "tests")),
+)
+def test_path_qualified_validator_names_fail_closed(tmp_path, argv):
+    (tmp_path / "tests").mkdir()
+    process = ProcessExecutionService(WorkspaceFileService(WorkspacePathResolver(tmp_path)))
+
+    plan = process.preflight(CommandRequest(argv=argv))
+
+    assert plan.validation_kind is None
+    assert plan.validation_scope is None
 
 
 def test_recognized_process_result_projects_only_a_validation_fact(tmp_path):
@@ -209,6 +226,48 @@ def test_workspace_baseline_reports_scan_truncation(tmp_path):
     assert len(baseline.entries) == 1
 
 
+def test_workspace_baseline_detects_new_empty_directory(tmp_path):
+    target = tmp_path / "answer.txt"
+    target.write_text("before", encoding="utf-8")
+    before_sha256 = hashlib.sha256(target.read_bytes()).hexdigest()
+    files = WorkspaceFileService(WorkspacePathResolver(tmp_path))
+    baseline = WorkspaceBaselineService(files).prepare()
+    target.write_text("after", encoding="utf-8")
+    after_sha256 = hashlib.sha256(target.read_bytes()).hexdigest()
+    (tmp_path / "unexpected-dir").mkdir()
+    run = ToolRunContext(run_id="run-1", session_id="session-1")
+    run.record(
+        (
+            ChangeToolFact(
+                call_id="edit",
+                tool_name="apply_patch",
+                ordinal=1,
+                approval_verdict=PolicyVerdict.ALLOW,
+                relative_paths=("answer.txt",),
+                operation="patch",
+                status="modified",
+                before_revision=before_sha256,
+                after_revision=after_sha256,
+                changed_lines=1,
+                changed_bytes=5,
+            ),
+        )
+    )
+
+    result = CompletionChecker(files).check(
+        OutcomeContract(
+            mode="change",
+            target_paths=("answer.txt",),
+            allowed_paths=("answer.txt",),
+        ),
+        baseline,
+        run_context=run,
+    )
+
+    assert not result.passed
+    assert result.unexpected_paths == ("unexpected-dir",)
+
+
 def test_change_completion_requires_net_change_and_declared_validation(tmp_path):
     target = tmp_path / "answer.txt"
     target.write_text("before", encoding="utf-8")
@@ -243,6 +302,7 @@ def test_change_completion_requires_net_change_and_declared_validation(tmp_path)
                 tool_name="run_command",
                 ordinal=2,
                 approval_verdict=PolicyVerdict.ALLOW,
+                relative_paths=(".",),
                 validator_kind="pytest",
                 scope=".",
                 status="passed",
@@ -328,6 +388,7 @@ def test_completion_requires_exact_validation_scope_and_run_attribution(tmp_path
                 tool_name="run_command",
                 ordinal=1,
                 approval_verdict=PolicyVerdict.ALLOW,
+                relative_paths=("other",),
                 validator_kind="pytest",
                 scope="other",
                 status="passed",
@@ -461,6 +522,63 @@ def test_completion_does_not_trust_change_fact_after_external_mutation(tmp_path)
     assert "baseline_drift" in result.reason_codes
 
 
+def test_passed_validation_before_final_change_is_not_current_evidence(tmp_path):
+    target = tmp_path / "answer.txt"
+    target.write_text("before", encoding="utf-8")
+    before_sha256 = hashlib.sha256(target.read_bytes()).hexdigest()
+    files = WorkspaceFileService(WorkspacePathResolver(tmp_path))
+    baseline = WorkspaceBaselineService(files).prepare()
+    target.write_text("first", encoding="utf-8")
+    first_sha256 = hashlib.sha256(target.read_bytes()).hexdigest()
+    target.write_text("final", encoding="utf-8")
+    final_sha256 = hashlib.sha256(target.read_bytes()).hexdigest()
+    run = ToolRunContext(run_id="run-1", session_id="session-1")
+    run.record(
+        (
+            ChangeToolFact(
+                call_id="edit-1",
+                tool_name="apply_patch",
+                ordinal=1,
+                approval_verdict=PolicyVerdict.ALLOW,
+                relative_paths=("answer.txt",),
+                operation="patch",
+                status="modified",
+                before_revision=before_sha256,
+                after_revision=first_sha256,
+                changed_lines=1,
+                changed_bytes=5,
+            ),
+            _validation(ordinal=2),
+            ChangeToolFact(
+                call_id="edit-2",
+                tool_name="apply_patch",
+                ordinal=3,
+                approval_verdict=PolicyVerdict.ALLOW,
+                relative_paths=("answer.txt",),
+                operation="patch",
+                status="modified",
+                before_revision=first_sha256,
+                after_revision=final_sha256,
+                changed_lines=1,
+                changed_bytes=5,
+            ),
+        )
+    )
+
+    result = CompletionChecker(files).check(
+        OutcomeContract(
+            mode="change",
+            target_paths=("answer.txt",),
+            required_validations=(ValidationRequirement(validator_kind="pytest", scope="."),),
+        ),
+        baseline,
+        run_context=run,
+    )
+
+    assert not result.passed
+    assert "validation_missing" in result.reason_codes
+
+
 @pytest.mark.parametrize(
     ("verifier", "outcome", "basis"),
     [
@@ -588,6 +706,134 @@ def test_contract_compiler_is_conservative_about_explanations_and_targets():
     assert not unspecified.requires_net_change
     assert configuration.mode == "unspecified"
     assert not configuration.requires_net_change
+
+
+def test_absolute_validation_scope_is_normalized_against_frozen_workspace(tmp_path):
+    (tmp_path / "tests").mkdir()
+    compiler = OutcomeContractCompiler(workspace_root=tmp_path)
+
+    contract = compiler.compile(f"修复 `answer.txt` 并运行 pytest {tmp_path / 'tests'}")
+
+    assert contract.required_validations == (
+        ValidationRequirement(validator_kind="pytest", scope="tests"),
+    )
+    assert not contract.contract_error_codes
+
+
+def test_absolute_validation_scope_outside_workspace_is_not_dropped(tmp_path):
+    contract = OutcomeContractCompiler(workspace_root=tmp_path).compile(
+        "修复 `answer.txt` 并运行 pytest /outside/tests"
+    )
+
+    assert not contract.required_validations
+    assert contract.contract_error_codes == ("validation_scope_invalid",)
+
+
+def test_git_baseline_freezes_resolved_branch_head(tmp_path):
+    refs = tmp_path / ".git" / "refs" / "heads"
+    refs.mkdir(parents=True)
+    (tmp_path / ".git" / "HEAD").write_text("ref: refs/heads/main\n", encoding="ascii")
+    ref = refs / "main"
+    ref.write_text("a" * 40 + "\n", encoding="ascii")
+    files = WorkspaceFileService(WorkspacePathResolver(tmp_path))
+
+    baseline = WorkspaceBaselineService(files).prepare()
+    ref.write_text("b" * 40 + "\n", encoding="ascii")
+    current = WorkspaceBaselineService(files).prepare()
+
+    assert baseline.status.value == "complete"
+    assert baseline.git_head is not None
+    assert current.git_head != baseline.git_head
+
+
+def test_linked_git_baseline_freezes_target_head(tmp_path):
+    common_git_dir = tmp_path / "shared-git"
+    refs = common_git_dir / "refs" / "heads"
+    refs.mkdir(parents=True)
+    ref = refs / "main"
+    ref.write_text("a" * 40 + "\n", encoding="ascii")
+    git_dir = tmp_path / "worktree-git"
+    git_dir.mkdir()
+    (git_dir / "HEAD").write_text("ref: refs/heads/main\n", encoding="ascii")
+    (git_dir / "commondir").write_text("../shared-git\n", encoding="ascii")
+    worktree = tmp_path / "worktree"
+    worktree.mkdir()
+    (worktree / ".git").write_text(f"gitdir: {git_dir}\n", encoding="utf-8")
+    files = WorkspaceFileService(WorkspacePathResolver(worktree))
+
+    baseline = WorkspaceBaselineService(files).prepare()
+    ref.write_text("b" * 40 + "\n", encoding="ascii")
+    current = WorkspaceBaselineService(files).prepare()
+
+    assert baseline.status.value == "complete"
+    assert current.git_head != baseline.git_head
+
+
+def test_git_head_read_failure_is_inconclusive(tmp_path):
+    (tmp_path / ".git").mkdir()
+    files = WorkspaceFileService(WorkspacePathResolver(tmp_path))
+
+    baseline = WorkspaceBaselineService(files).prepare()
+
+    assert baseline.status.value == "inconclusive"
+
+
+def test_baseline_hash_rejects_same_size_mtime_rewrite(tmp_path, monkeypatch):
+    target = tmp_path / "race.txt"
+    target.write_bytes(b"a" * (2 * 1024 * 1024))
+    files = WorkspaceFileService(WorkspacePathResolver(tmp_path))
+    service = WorkspaceBaselineService(files)
+    original_stat = os.stat(target, follow_symlinks=False)
+    real_fdopen = completion_service.os.fdopen
+    mutated = False
+
+    class _MutatingStream:
+        def __init__(self, stream):
+            self.stream = stream
+
+        def __enter__(self):
+            self.stream.__enter__()
+            return self
+
+        def __exit__(self, *args):
+            return self.stream.__exit__(*args)
+
+        def read(self, size=-1):
+            nonlocal mutated
+            chunk = self.stream.read(size)
+            if chunk and not mutated:
+                target.write_bytes(b"b" * (2 * 1024 * 1024))
+                os.utime(
+                    target,
+                    ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns),
+                    follow_symlinks=False,
+                )
+                mutated = True
+            return chunk
+
+    def wrapped_fdopen(
+        fd, mode="r", buffering=-1, encoding=None, errors=None, newline=None, closefd=True
+    ):
+        return _MutatingStream(
+            real_fdopen(
+                fd,
+                mode,
+                buffering=buffering,
+                encoding=encoding,
+                errors=errors,
+                newline=newline,
+                closefd=closefd,
+            )
+        )
+
+    monkeypatch.setattr(completion_service.os, "fdopen", wrapped_fdopen)
+
+    with pytest.raises(completion_service._BaselineRace):
+        service._hash_regular(
+            target,
+            original_stat.st_size,
+            expected_stat=original_stat,
+        )
 
 
 def test_failed_final_claim_is_buffered_and_gets_only_one_fact_feedback(tmp_path):
