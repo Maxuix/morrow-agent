@@ -1,9 +1,9 @@
 # Stage 7 Preflight Reliability Repairs — Pi-Parity Long-Horizon
 
-> Status: S7P-07 implementation in progress
+> Status: S7P-07 complete and approved; local integration pending
 > Active subplan: Subplan 88 — runtime control steering and follow-up
 > Branch: `feat/s7p-07-runtime-control`
-> Base: `6a43be5` (plan activation checkpoint; source tree base `1d3ba3706b1ac82cf0b82b56ea207bd2b548090f`)
+> Base: `7b52f5f` (latest verified local `main` at Subplan 88 activation)
 > Source authority: current user decision, pinned Pi Agent 0.84.2 behavior, current code and gates
 
 ## 1. Current objective

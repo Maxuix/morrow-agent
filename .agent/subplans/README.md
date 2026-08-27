@@ -20,8 +20,8 @@ integrated locally. Subplan 83 completed S7P-04 workspace change lifecycle repai
 locally. Subplan 84 completed S7P-05 validation and completion truth and was integrated locally.
 The subsequent post-fix audit found cross-cutting reliability defects, and the user explicitly
 opened Subplan 86 to repair them before S7P-06. Subplan 85 was integrated into local `main`. On
-2026-08-27 the user explicitly opened Subplan 88, which is active on
-`feat/s7p-07-runtime-control`.
+2026-08-27 the user explicitly opened Subplan 88. Its implementation and remediation are complete
+and formally approved on `feat/s7p-07-runtime-control`; local integration is pending.
 
 ## Stage 7 reliability sequence
 
@@ -36,7 +36,7 @@ opened Subplan 86 to repair them before S7P-06. Subplan 85 was integrated into l
 | 85 | `85-s7p-06-budget-context-no-progress.md` | completed and integrated locally |
 | 86 | `86-s7p-00-05-audit-remediation.md` | completed and integrated locally |
 | 87 | `87-remove-runtime-outcome-gate.md` | completed and integrated locally |
-| 88 | `88-s7p-07-runtime-control-steering.md` | active on `feat/s7p-07-runtime-control` |
+| 88 | `88-s7p-07-runtime-control-steering.md` | complete and approved; integration pending |
 
 ## Stage 7 pre-baseline
 

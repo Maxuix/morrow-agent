@@ -3327,3 +3327,34 @@
   at the allowed Phase F point. The same-model Pi/Morrow A/B remains deferred to S7P-09. The branch
   remains unmerged and unpushed; root task owns integration. The user-owned S7P-07 candidate file
   remains untracked and unchanged.
+## 2026-08-27 — Subplan 88 implementation and remediation verified
+
+- Added schema v22 durable bounded FIFO runtime-control entries, atomic consumption with normal
+  Turn admission, AgentLoop steering safe points, ordinary durable follow-up drain, and exact
+  pinned Pi terminal input mapping while keeping Ctrl+C cancellation unchanged.
+- The required Luna Max read-only review found three confirmed defects: STEERED accepted a final
+  assistant, queued delivery skipped the first loop-top poll, and closed replay rewrote every
+  terminal reason to STOP. Reproduced and fixed all three in `dd2090e`; added consecutive-steering
+  and STOP/STEERED/CANCELLED/ERROR replay regressions.
+- Focused matrix passed `164 passed`. Full offline passed `1295 passed, 2 deselected in 79.45s`;
+  `uv sync`, Ruff format/check, compileall, both CLI help entrypoints and `git diff --check` passed.
+  One earlier full run exposed the repaired synthetic-receipt compatibility case; a later run hit
+  one non-reproducible pre-existing S7P-06 overflow test failure, which then passed ten consecutive
+  isolated runs and the final full suite.
+- No live Provider/model/Pi/MCP/network/credential test, dependency addition, remote push or merge
+  was performed. Final Luna Max review follow-up is pending.
+
+## 2026-08-27 — Subplan 88 second review remediation verified
+
+- The Luna Max follow-up confirmed the first two findings closed but found two P2 gaps: replay
+  fallback was not receipt-scoped when terminal metrics were missing, and STEERED replay omitted
+  its distinct terminal status cue.
+- `b4ec3e6` persists `turn_id` and ERROR stop code in each durable terminal record. Closed replay
+  selects the exact receipt terminal and therefore preserves ERROR/provider-auth across the
+  metrics-finalization crash window and never borrows a later STOP/assistant. STEERED replay now
+  emits `status.changed: steered` before completion.
+- Added explicit metrics-missing crash regressions and old-CANCELLED-after-new-STOP isolation.
+  Focused validation passed `166 passed`; full offline passed
+  `1297 passed, 2 deselected in 84.82s`; all static/CLI/diff gates passed. Final read-only verdict
+  was `APPROVE — no confirmed P0-P3 findings`. Herschel (`gpt-5.6-luna`, reasoning `max`) also ran
+  `7 passed`, including process-rebuild ERROR replay, and confirmed all five findings closed.

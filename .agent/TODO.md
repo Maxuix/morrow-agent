@@ -2,7 +2,7 @@
 
 ## Current stage
 
-Subplan 88 is active on `feat/s7p-07-runtime-control`.
+Subplan 88 is complete and ready for local fast-forward integration.
 
 ## Active subplan
 
@@ -10,12 +10,12 @@ Subplan 88 — S7P-07 runtime control steering and follow-up.
 
 ## Tasks
 
-- `[>]` Activate Subplan 88 and publish the Phase A acceptance evidence.
-- `[ ]` Add the durable bounded runtime-control queue and schema migration.
-- `[ ]` Add `FinishReason.STEERED` and AgentLoop safe-point delivery.
-- `[ ]` Add orchestrator/headless steering and follow-up delivery with crash-safe idempotency.
-- `[ ]` Add terminal in-run input using the pinned Pi mapping.
-- `[ ]` Run focused and offline gates, formal read-only review, remediation and closeout.
+- `[x]` Activate Subplan 88 and publish the Phase A acceptance evidence.
+- `[x]` Add the durable bounded runtime-control queue and schema migration.
+- `[x]` Add `FinishReason.STEERED` and AgentLoop safe-point delivery.
+- `[x]` Add orchestrator/headless steering and follow-up delivery with crash-safe idempotency.
+- `[x]` Add terminal in-run input using the pinned Pi mapping.
+- `[x]` Run focused and offline gates, formal read-only review, remediation and closeout.
 
 ## Boundaries
 

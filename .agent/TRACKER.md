@@ -3,12 +3,14 @@
 ## Current status
 
 Subplan 85 and its prepared Subplan 88 candidate are integrated on local `main` at `7b52f5f`.
-Subplan 88 is active on `feat/s7p-07-runtime-control`. The implementation adds durable bounded
-steering and follow-up delivery while preserving S7P-06 behavior and ConversationLog ownership.
+Subplan 88 implementation and remediation are complete on `feat/s7p-07-runtime-control` through
+`b4ec3e6`. Durable bounded steering and follow-up delivery preserve S7P-06 behavior and
+ConversationLog ownership. Final Luna Max review returned APPROVE with no P0-P3 findings.
 
 ## Active task
 
-Publish Phase A evidence and start the queue/migration tests for S7P-07.
+Fast-forward integrate the verified topic branch into local `main`, verify ancestry and retire the
+clean topic branch. Do not start S7P-08 automatically.
 
 ## Completed evidence
 
@@ -54,7 +56,26 @@ Publish Phase A evidence and start the queue/migration tests for S7P-07.
 
 ## Next action
 
-Implement Subplan 88 test-first, then run its declared focused and repository-wide offline gates.
+Fast-forward integrate Subplan 88 into local `main`, verify no topic commit is absent, and retire
+the clean topic branch without starting S7P-08.
+
+## Subplan 88 evidence
+
+- Schema v22 persists a bounded FIFO runtime-control queue. Queue consumption and durable Turn
+  admission share one transaction and each entry owns an idempotent `client_message_id`.
+- AgentLoop polls steering at loop top, before final STOP and after admitted-batch closure. An
+  admitted tool batch is never interrupted; follow-ups drain only after normal STOP.
+- Terminal Enter while streaming maps to steering and Alt+Enter maps to follow-up, matching the
+  pinned Pi 0.84.2 mapping; Ctrl+C cancellation remains unchanged.
+- The initial Luna Max review found three confirmed issues; `dd2090e` closed the ConversationLog
+  and loop-top defects. Follow-up review found two P2 crash/replay gaps. `b4ec3e6` persists
+  receipt-scoped terminal `turn_id` and ERROR stop code and emits the STEERED replay status event.
+- Focused S7P-07/adjacent matrix passed `166 passed`; full offline passed
+  `1297 passed, 2 deselected` in `84.82s`. `uv sync`, Ruff format/check, compileall, both CLI help
+  entrypoints and `git diff --check` passed. No live or network test ran.
+- Herschel (`gpt-5.6-luna`, reasoning `max`) returned
+  `APPROVE — no confirmed P0-P3 findings` over `7b52f5f..b4ec3e6`; its final targeted checks passed
+  `7 passed`, including a process-rebuild ERROR replay proof.
 
 ## Subplan 87 evidence
 

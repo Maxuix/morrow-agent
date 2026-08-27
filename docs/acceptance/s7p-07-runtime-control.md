@@ -23,24 +23,24 @@ Reference: Pi Agent 0.84.2 at commit
 
 ## Acceptance checklist
 
-- [ ] Queue entries are FIFO, text is at most 4096 characters, and a session has at most 32
+- [x] Queue entries are FIFO, text is at most 4096 characters, and a session has at most 32
   pending entries; overflow rejects the newest entry.
-- [ ] Every entry owns a fresh `cmsg` identifier and consumption is atomic with the matching Turn
+- [x] Every entry owns a fresh `cmsg` identifier and consumption is atomic with the matching Turn
   submission.
-- [ ] `FinishReason.STEERED` is legal only with closed tool pairing, requires no final assistant,
+- [x] `FinishReason.STEERED` is legal only with closed tool pairing, requires no final assistant,
   and round-trips through replay, backup, restore, doctor and terminal rendering.
-- [ ] Steering is observed only at loop start, after an admitted batch, or before final STOP commit;
+- [x] Steering is observed only at loop start, after an admitted batch, or before final STOP commit;
   it never interrupts a tool, model stream, or retry backoff.
-- [ ] Steering and follow-up are delivered one-at-a-time through ordinary durable user Turns in
+- [x] Steering and follow-up are delivered one-at-a-time through ordinary durable user Turns in
   the same TaskRun and ConversationLog remains the only chat-history writer.
-- [ ] Cancel/error/host-stop do not auto-drain follow-ups. Pending steering survives cancel and is
+- [x] Cancel/error/host-stop do not auto-drain follow-ups. Pending steering survives cancel and is
   delivered at the next run start.
-- [ ] Crash/recovery neither loses nor duplicates pending entries and every terminal path preserves
+- [x] Crash/recovery neither loses nor duplicates pending entries and every terminal path preserves
   legal tool-call/tool-result pairing.
-- [ ] Scripted retry interaction proves cancel during backoff remains immediate and steering waits
+- [x] Scripted retry interaction proves cancel during backoff remains immediate and steering waits
   until the next safe point. Retry classification/backoff itself is S7P-06 acceptance evidence.
 - [x] Terminal in-run input uses the exact pinned Pi TUI mapping; Ctrl+C cancellation is unchanged.
-- [ ] Focused gates, the full offline suite, Ruff, compileall, both CLI help commands and
+- [x] Focused gates, the full offline suite, Ruff, compileall, both CLI help commands and
   `git diff --check` pass.
 
 ## Deferred
@@ -57,3 +57,21 @@ The pinned `interactive-mode.ts` maps ordinary Enter while `session.isStreaming`
 - Ctrl+C retains Morrow's existing foreground cancellation behavior.
 
 Source: [Pi Agent 0.84.2 interactive mode](https://raw.githubusercontent.com/earendil-works/pi/209bc7b9a89b01c8fd05861cf5bbdda3e300037a/packages/coding-agent/src/modes/interactive/interactive-mode.ts).
+
+## Validation evidence
+
+- Focused runtime-control and adjacent matrix: `166 passed`.
+- Full offline suite: `1297 passed, 2 deselected` in `84.82s`.
+- `uv sync`, Ruff format/check, compileall, `morrow --help`, `morrow run --help`, and
+  `git diff --check` passed.
+- The initial formal Luna Max review found three issues. Commit `dd2090e` now rejects a final
+  assistant for STEERED, polls every queued steering Turn at loop top, and replays the durable
+  STOP/STEERED/CANCELLED/ERROR terminal reason (including ERROR stop code) without model work.
+- Follow-up review found two P2 crash/replay gaps. Commit `b4ec3e6` records terminal `turn_id` and
+  ERROR stop code in the durable Conversation terminal, so a receipt never borrows a newer Turn's
+  outcome when metrics are missing, and emits the same `status.changed: steered` terminal cue on
+  closed replay.
+- Final Herschel review (`gpt-5.6-luna`, reasoning `max`) returned
+  `APPROVE — no confirmed P0-P3 findings` for `7b52f5f..b4ec3e6`; its targeted verification passed
+  `7 passed`, including process-rebuild ERROR replay.
+- No live Provider/model/Pi/MCP/network/credential test ran.
