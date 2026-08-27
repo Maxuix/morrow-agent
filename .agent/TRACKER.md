@@ -2,50 +2,40 @@
 
 ## Current status
 
-Subplan 89 is complete and fast-forward integrated into local `main` through evidence tip
-`a5a5d61`. All 18 cells, Lanes A–G, the real current-macOS Seatbelt gate, complete offline suite and
-quality gates passed. S7P-09 is not active.
+Subplan 90 is active on `feat/s7p-09-direct-pi-baseline`, based on verified local
+`main@1fd7e229bef276d1a0361e775ce800ade4b318fc`. S7P-08 is complete. S7P-09 Phase A may implement
+and validate the offline comparison harness; no formal live campaign run has started.
 
 ## Active task
 
-None. Await an explicit user decision before opening S7P-09.
+Add the strict comparison plan and exact counterbalanced 28-run schedule, then normalize scripted
+Morrow and Pi event fixtures into the same bounded, secret-safe evidence schema.
 
 ## Preparation evidence
 
-- Current non-live collection discovers `1297` selected tests; two live tests are deselected. This
-  is collection evidence only, not a regression-pass claim.
-- The S7P-08 checklist contains 18 required capability surfaces and explicitly requires failure
-  and recovery evidence for high-risk paths.
-- Existing tests already expose two real macOS Seatbelt selectors guarded against nested Codex
-  Seatbelt execution. Both are mandatory host-level gates for this subplan.
-- Subplan 87 removed Runtime completion inference. The S7P-08 validation cell will test scoped
-  validation telemetry and model-owned stop truth, not revive the superseded gate.
-- No live Provider/model/Pi/MCP/network/credential run, dependency change or production mutation
-  occurred during preparation.
-- `tests/acceptance/s7p08_single_agent_matrix.json` contains exactly 18 unique capability rows,
-  executed positive selectors, and explicit failure/recovery selectors for every high-risk row.
-- Its strict contract rejected seven initially stale guessed selectors; all were replaced with
-  current collected node IDs. It also records the superseded Stage 2 structured/handoff file and
-  the Subplan 87 validation-stop replacement instead of counting them as current evidence.
-- The focused ledger behavior command passed `94 passed in 12.52s`. A new production-composition
-  test proves interactive and headless dispatch share AgentLoop, frozen Provider/Model, RunPolicy,
-  ToolSet, Permission, Preference, Skill and prompt/context evidence, plus terminal stop meaning.
-- No focused failure required production-code repair.
-- Lane results: A `157 passed, 1 deselected`; B `132 passed`; C `137 passed`; D `243 passed`;
-  E `260 passed, 1 deselected`; F `157 passed`; G `198 passed`.
-- On Darwin with no enclosing `CODEX_SANDBOX`, both exact macOS Seatbelt selectors ran and passed:
-  `2 passed in 0.75s`, zero skip.
-- Final collection found `1300` offline selections and two live deselections. Mini Eval self-check
-  passed all 10 tasks. The final offline rerun passed `1300 passed, 2 deselected in 91.64s`.
-- `uv sync`, Ruff format/check, compileall, both CLI help entrypoints and `git diff --check` passed.
-  The final base-to-tip audit found no production, dependency, runtime-default or public-event
-  change and strengthened two initially permissive evidence assertions.
+- S7P-00 protocol v1 freezes two repetitions, all seven result classes, tool accounting, Morrow
+  thresholds, Pi task IDs `MORROW-003`, `MORROW-005`, `EXTERNAL-003`, `EXTERNAL-004`, and maximum
+  Pi quality deficit `1`.
+- `eval.py` currently supports `start`, `rebuild`, `finalize`, `summarize` and `self-check`; its
+  summary deliberately reports Pi comparison as `NOT_EVALUATED`.
+- Installed Pi reports version `0.84.2` and supports non-interactive JSON event output with final
+  message usage, tool start/end, turn, compaction and retry events.
+- Morrow's headless record exposes safe AgentRun terminal metrics, but the default headless
+  ApprovalPort denies commands that need approval. The planned evaluation ApprovalPort must remain
+  behind the ordinary CapabilityPolicy and cannot override denial.
+- The current Morrow active model is `opencode-go/mimo-v2.5`; Pi's model catalog does not list that
+  exact model. No credential readiness check or live model call was made during plan preparation.
+- The campaign requires 20 Morrow and 8 Pi primary runs. Each uses a fresh workspace and state;
+  paired order is counterbalanced before outcomes are observed.
 
 ## Next action
 
-Do not start S7P-09 automatically.
+Implement the comparison-plan validator and offline event/permission conformance fixtures. Do not
+start paid execution until the common-model and spend hold point is resolved.
 
 ## Blockers
 
-Remote publication is not authorized. Local `main` is ahead of `origin/main`; no push was attempted,
-and remote synchronization remains pending explicit authorization.
+- Formal live campaign: exact common Provider/model and a total token/currency ceiling require user
+  selection and approval. The current active Morrow model is ineligible for same-model Pi A/B.
+- Remote publication remains unauthorized; raw evidence durability and any push must be reported
+  honestly rather than assumed.

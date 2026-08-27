@@ -22,9 +22,12 @@ The subsequent post-fix audit found cross-cutting reliability defects, and the u
 opened Subplan 86 to repair them before S7P-06. Subplan 85 was integrated into local `main`. On
 2026-08-27 the user explicitly opened Subplan 88. Its implementation and remediation are complete,
 formally approved and fast-forward integrated into local `main`; the sequence is paused before
-S7P-08. The user then explicitly opened S7P-08. Subplan 89 is active on a dedicated branch and owns
-the 18-cell offline single-Agent matrix, published Stage 1–6 regression, real current-platform
-Seatbelt gate and current acceptance evidence. It does not start the S7P-09 real-model/Pi lane.
+S7P-08. The user then explicitly opened S7P-08. Subplan 89 completed the 18-cell offline
+single-Agent matrix, published Stage 1–6 regression, real current-platform Seatbelt gate and
+current acceptance evidence, and was integrated locally. The user then explicitly opened S7P-09;
+Subplan 90 is active and owns the repeated Morrow campaign,
+same-condition Pi comparison and immutable Direct baseline. Its live lane is held until an exact
+common Provider/model and campaign spend ceiling are approved.
 
 ## Stage 7 reliability sequence
 
@@ -41,6 +44,7 @@ Seatbelt gate and current acceptance evidence. It does not start the S7P-09 real
 | 87 | `87-remove-runtime-outcome-gate.md` | completed and integrated locally |
 | 88 | `88-s7p-07-runtime-control-steering.md` | completed and integrated locally |
 | 89 | `89-s7p-08-single-agent-function-matrix.md` | completed and integrated locally |
+| 90 | `90-s7p-09-repeated-direct-pi-baseline.md` | active; live campaign at hold point |
 
 ## Stage 7 pre-baseline
 

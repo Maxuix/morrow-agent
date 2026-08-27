@@ -3420,3 +3420,21 @@
   `chore/s7p-08-single-agent-matrix` into local `main`. Verified `a5a5d61` is contained by `main`.
 - Remote publication was not authorized. Local `main` remains ahead of `origin/main`; no push was
   attempted. The sequence is paused before S7P-09.
+
+## 2026-08-27 — Subplan 90 S7P-09 baseline activated
+
+- The user explicitly opened S7P-09. Created `feat/s7p-09-direct-pi-baseline` from verified local
+  `main@1fd7e229bef276d1a0361e775ce800ade4b318fc` and activated Subplan 90.
+- Froze the primary campaign at 20 Morrow runs (10 tasks × 2) plus 8 Pi 0.84.2 runs (four pinned
+  tasks × 2), with fresh state/workspaces, counterbalanced paired order, immutable admitted results,
+  equal task/model/sampling/verifier/deadline conditions and mechanical protocol-v1 thresholds.
+- Located the actual harness gap: S7P-00 can start/finalize/summarize Morrow-shaped bundles but has
+  no Agent runner, Pi JSONL normalizer, permission-equivalence proof, paired schedule or evaluated
+  Pi comparison. Phase A owns those offline additions without changing product scoring behavior.
+- Confirmed installed Pi reports `0.84.2`. Current Morrow active model is
+  `opencode-go/mimo-v2.5`, while Pi's catalog does not expose that exact model. No auth check, live
+  Provider call or credential access occurred. Formal execution is held until the user approves a
+  common exact Provider/model and total token/currency ceiling.
+- Raw reasoning, transcripts, full tool payloads and credentials remain outside Git. Only bounded
+  normalized facts, content hashes, summaries and the final baseline may be committed. S7P-10 is
+  not started automatically.

@@ -1,55 +1,66 @@
-# Stage 7 Preflight Reliability — S7P-08 Single-Agent Function Matrix
+# Stage 7 Preflight Reliability — S7P-09 Repeated Direct/Pi Baseline
 
-> Status: completed and integrated locally; paused before S7P-09
-> Active subplan: none
-> Integrated evidence tip: `a5a5d61`
-> Activation base: verified local `main@d84ac0d`
-> Source authority: current user request, current code/tests, S7P-08 checklist, completed S7P-01–07
+> Status: active; live campaign held pending exact common-model and spend approval
+> Active subplan: Subplan 90 — S7P-09 Repeated Direct Evaluation and Same-Condition Pi Baseline
+> Branch: `feat/s7p-09-direct-pi-baseline`
+> Activation base: verified local `main@1fd7e229bef276d1a0361e775ce800ade4b318fc`
+> Source authority: current user request, S7P-00 protocol v1, completed S7P-08, current code/tools
 
 ## 1. Current objective
 
-S7P-08 proved that the current Direct Agent preserves the frozen 18-cell basic single-Agent
-function matrix. All current selectors, Stage 1–6/S7P lanes, real macOS Seatbelt selectors and final
-offline/static gates passed, and the evidence is integrated into local `main`.
+Build and run the auditable S7P-09 campaign: 10 Morrow tasks × 2 fresh repetitions plus the four
+protocol-pinned Pi tasks × 2 fresh repetitions under one exact Provider/model and a frozen
+same-condition contract. Publish success, cost, latency, rework, intervention, tool, context and
+failure evidence as an immutable Direct baseline for Stage 7.
 
-No implementation subplan is active. A separate user decision is required to begin S7P-09.
+Detailed data contracts, fairness rules, campaign schedule, thresholds, failure handling and
+retention policy are owned by activated Subplan 90.
 
-## 2. Frozen boundaries
+## 2. Frozen decisions
 
-- S7P-08 is an offline product-regression gate, not a new feature package.
-- The S7P-09 real-model/Pi A/B, repeated task baseline and threshold decision remain deferred.
-- Subplan 87's model-owned final stop is current. Do not restore Runtime completion inference or a
-  CompletionChecker; validation remains truthful scoped execution telemetry.
-- Do not add Workflow/multi-Agent models, dependencies, runtime-policy default changes or public
-  event changes.
-- Do not run live Provider/model/MCP/network/credential tests.
-- The two current-platform macOS Seatbelt integration selectors are a separate real host gate and
-  cannot be waived by an unexplained skip.
-- Session-owned `ConversationLog` remains the only chat-history writer; ordinary chat continues
-  through `AgentLoop.run_task()` and retained `run_turn()` remains its thin delegate.
+- S7P-00 protocol v1 thresholds and task/verifier data are immutable in this subplan.
+- The primary campaign has exactly 28 admitted runs: Morrow 20 and Pi 8. Formal results are never
+  discarded or replaced after observation.
+- Morrow and Pi use the same canonical Provider/model/revision, task bytes, sampling contract,
+  baseline tree, verifier and 1,800-second external deadline.
+- Product-native prompts and tool schemas may differ, but capability/permission boundaries must be
+  equivalent, content-hashed and proved offline before live execution.
+- Morrow runs use ordinary bootstrap, TaskRun, AgentRun, AgentLoop, ToolExecutor, permission and
+  ConversationLog boundaries. Evaluation approval can confirm an already-confined policy decision
+  but cannot override denial or grant broader authority.
+- Raw events, reasoning, full tool payloads, credentials and tracebacks stay outside Git. Only
+  bounded normalized evidence, hashes, summaries and the baseline record are committed.
+- S7P-09 measures the frozen Agent. It does not tune thresholds/tasks after results, restore the
+  removed CompletionChecker or begin Workflow/S7P-10 work.
 
-## 3. Execution order
+## 3. Live hold point
 
-1. Freeze the exact coverage ledger and current acceptance-reference mapping.
-2. Add tests for uncovered positive, failure, recovery, snapshot and entrypoint seams.
-3. Reproduce and narrowly repair any current-contract product regression.
-4. Run the focused matrix, Stage 1–6/S7P lanes and real host Seatbelt gate.
-5. Run the full offline/static/CLI gates and publish the S7P-08 acceptance record.
-6. Review, remediate, commit, integrate and retire the verified topic. Do not start S7P-09.
+The current Morrow model is `opencode-go/mimo-v2.5`, which is not available in the installed Pi
+0.84.2 model catalog. Before a paid run, the user must approve:
 
-## 4. Required evidence
+1. one exact Provider/model supported by both Agents;
+2. its verified sampling/context/output contract;
+3. a campaign-wide token ceiling and currency ceiling;
+4. the non-secret comparison plan and equivalent permission mapping.
 
-- Every matrix cell has at least one executed deterministic offline behavior test.
-- High-risk paths include executed failure and recovery evidence.
-- Provider, Skill, MCP, Preference, Knowledge, ToolSet, permission and context policy evidence is
-  frozen or referenced reproducibly by the admitted AgentRun without unsafe payloads.
-- Historical acceptance selectors are mapped to current selectors; stale names are reported, not
-  silently counted.
-- Full offline, Ruff, compileall, CLI help, eval self-check, diff check and both real Seatbelt host
-  selectors pass with exact current results.
+Credential checks must report only readiness and must never request or print credential values.
+Offline harness implementation and testing may proceed before this decision.
 
-## 5. Integration
+## 4. Execution order
 
-Use the dedicated branch from `d84ac0d`, keep commits small and verified, then fast-forward into
-`main` only after Subplan 89's gate is fully satisfied. Push only with authorized remote access;
-otherwise record the upstream blocker. A separate user decision is required to begin S7P-09.
+1. Implement and offline-test strict comparison planning, Morrow/Pi runners, safe trace
+   normalization, permission equivalence and mechanical comparison.
+2. Commit the harness and create a clean evaluation worktree pinned to that commit.
+3. Resolve the common model, readiness and spend hold point; freeze the 28-entry counterbalanced
+   schedule and evidence root.
+4. Run and immediately finalize each campaign entry without state/workspace reuse.
+5. Validate Morrow's two protocol gates and the four-task stable Pi quality deficit.
+6. Publish the immutable baseline/evidence index and exact S7P-09 PASS/FAIL/BLOCKED report.
+7. Run final offline/static gates, integrate verified work and stop before S7P-10.
+
+## 5. Completion
+
+Completion requires all 28 primary bundles, complete metrics, exact failure attribution, zero
+unaccounted tool calls, the frozen Morrow thresholds, Pi quality deficit ≤ 1, safe evidence
+publication and all offline quality gates. Anything less is reported as S7P-09 FAIL or BLOCKED,
+never as a conditional PASS.
