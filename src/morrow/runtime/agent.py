@@ -350,6 +350,7 @@ class _AgentRunState:
     tool_calls: int = 0
     retry_count: int = 0
     total_retry_count: int = 0
+    summary_retry_count: int = 0
     max_estimated_request_chars: int = 0
     request_char_budget: int = 1
     cleared_cycle_count: int = 0
@@ -821,12 +822,24 @@ class AgentLoop:
                 bases = {item.accounting_basis for item in context_requests}
                 state.accounting_basis = bases.pop() if len(bases) == 1 else None
             settled_before_latest = requests[:-1] if latest_is_open else requests
+            retry_progress = getattr(observation, "retry_progress", None)
+            if retry_progress is not None:
+                state.total_retry_count = retry_progress.total_retry_count
+                state.retry_count = retry_progress.consecutive_model_retries
+                state.summary_retry_count = retry_progress.summary_retry_count
+                return
+
+            # Older stores have no explicit retry-progress row.  Recover only transient failures;
+            # an arbitrary non-retryable or overflow failure must never consume the v2 budget.
+            transient_codes = TRANSIENT_MODEL_ERRORS
             state.total_retry_count = sum(
-                item.state.value == "failed" for item in settled_before_latest
+                item.state.value == "failed" and item.error_code in transient_codes
+                for item in settled_before_latest
             )
             trailing_failures = 0
-            for item in reversed(settled_before_latest):
-                if item.state.value != "failed":
+            for index in range(len(settled_before_latest) - 1, -1, -1):
+                item = settled_before_latest[index]
+                if item.state.value != "failed" or item.error_code not in transient_codes:
                     break
                 trailing_failures += 1
             state.retry_count = trailing_failures
@@ -855,6 +868,30 @@ class AgentLoop:
                 # A failed observation write remains visible as an open request;
                 # it must never replace the existing public terminal lifecycle.
                 return
+
+        def persist_retry_progress() -> None:
+            if (
+                observation_runtime is None
+                or state.agent_run_id is None
+                or not callable(getattr(observation_runtime, "record_retry_progress", None))
+            ):
+                return
+            try:
+                observation_runtime.record_retry_progress(
+                    agent_run_id=state.agent_run_id,
+                    consecutive_model_retries=state.retry_count,
+                    total_retry_count=state.total_retry_count,
+                    summary_retry_count=state.summary_retry_count,
+                )
+            except Exception:
+                # Retry telemetry is bounded best-effort evidence and must not replace the
+                # existing public AgentLoop lifecycle when its storage write is unavailable.
+                return
+
+        def observe_compaction_retry(_delay: float) -> None:
+            state.total_retry_count += 1
+            state.summary_retry_count += 1
+            persist_retry_progress()
 
         def finalize_observation() -> None:
             if (
@@ -1159,9 +1196,10 @@ class AgentLoop:
                             yield item
                         return
                     context = context_builder.build(session, tools=tools)
-                    if policy.is_long_horizon and context.compaction_required:
+                    while policy.is_long_horizon and context.compaction_required:
                         if not policy.compaction_enabled:
                             raise ContextBudgetError("模型上下文需要压缩，但自动压缩已禁用")
+                        previous_boundary = session.compaction_boundary_sequence
                         yield event("status.changed", {"status": "compacting"})
                         if not await self._compact_context(
                             session,
@@ -1169,11 +1207,11 @@ class AgentLoop:
                             model,
                             context_builder,
                             tools=tools,
-                            retry_observer=lambda _delay: setattr(
-                                state, "total_retry_count", state.total_retry_count + 1
-                            ),
+                            retry_observer=observe_compaction_retry,
                         ):
                             raise ContextBudgetError("当前上下文没有可安全压缩的完整边界")
+                        if session.compaction_boundary_sequence <= previous_boundary:
+                            raise ContextBudgetError("上下文压缩未推进有效边界")
                         state.compaction_count += 1
                         context = context_builder.build(session, tools=tools)
                         yield event("status.changed", {"status": "compacted"})
@@ -1352,9 +1390,7 @@ class AgentLoop:
                                     model,
                                     context_builder,
                                     tools=tools,
-                                    retry_observer=lambda _delay: setattr(
-                                        state, "total_retry_count", state.total_retry_count + 1
-                                    ),
+                                    retry_observer=observe_compaction_retry,
                                 )
                             except ContextBudgetError as exc:
                                 for item in terminal_error(str(exc), AgentStopCode.CONTEXT_BUDGET):
@@ -1377,6 +1413,7 @@ class AgentLoop:
                     if can_retry:
                         state.retry_count += 1
                         state.total_retry_count += 1
+                        persist_retry_progress()
                         payload = {"status": "retrying"}
                         if policy.is_long_horizon:
                             exponential = policy.retry_base_delay_seconds * (
@@ -1397,10 +1434,13 @@ class AgentLoop:
                         stop_code = AgentStopCode.CONTENT_FILTERED
                     else:
                         stop_code = MODEL_ERROR_STOPS[outcome.error_code]
+                    state.retry_count = 0
+                    persist_retry_progress()
                     for item in terminal_error(outcome.error_message or "模型调用失败", stop_code):
                         yield item
                     return
                 state.retry_count = 0
+                persist_retry_progress()
                 message = outcome.message
                 is_final_text = (
                     outcome.finish_reason == ModelFinishReason.STOP

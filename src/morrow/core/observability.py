@@ -245,6 +245,40 @@ class AgentRunTerminalMetrics(ProtocolModel):
         return self
 
 
+class AgentRunRetryProgress(ProtocolModel):
+    """Mutable, bounded retry counters used to resume one open AgentRun safely."""
+
+    agent_run_id: str
+    workspace_id: str
+    consecutive_model_retries: int = Field(default=0, ge=0)
+    total_retry_count: int = Field(default=0, ge=0)
+    summary_retry_count: int = Field(default=0, ge=0)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+    @field_validator("agent_run_id")
+    @classmethod
+    def valid_agent_run_id(cls, value: str) -> str:
+        return validate_prefixed_id(value, AGENT_RUN_ID_PREFIX)
+
+    @field_validator("workspace_id")
+    @classmethod
+    def valid_workspace_id(cls, value: str) -> str:
+        return validate_prefixed_id(value, WORKSPACE_ID_PREFIX)
+
+    @field_validator("updated_at")
+    @classmethod
+    def valid_updated_at(cls, value: datetime) -> datetime:
+        return _aware(value)
+
+    @model_validator(mode="after")
+    def counter_contract(self) -> AgentRunRetryProgress:
+        if self.consecutive_model_retries > self.total_retry_count:
+            raise ValueError("consecutive model retries cannot exceed total retries")
+        if self.summary_retry_count > self.total_retry_count:
+            raise ValueError("summary retries cannot exceed total retries")
+        return self
+
+
 class AgentRunObservation(ProtocolModel):
     """Safe complete inspection of one AgentRun and its observation rows."""
 
@@ -256,6 +290,7 @@ class AgentRunObservation(ProtocolModel):
     resume_of_agent_run_id: str | None = None
     created_at: datetime
     terminal_metrics: AgentRunTerminalMetrics | None = None
+    retry_progress: AgentRunRetryProgress | None = None
     requests: tuple[ModelRequestObservation, ...] = ()
 
     @field_validator("agent_run_id")
@@ -307,6 +342,11 @@ class AgentRunObservation(ProtocolModel):
             or self.terminal_metrics.workspace_id != self.workspace_id
         ):
             raise ValueError("terminal metrics belong to another AgentRun")
+        if self.retry_progress is not None and (
+            self.retry_progress.agent_run_id != self.agent_run_id
+            or self.retry_progress.workspace_id != self.workspace_id
+        ):
+            raise ValueError("retry progress belongs to another AgentRun")
         return self
 
 
@@ -318,6 +358,7 @@ ModelRequestRecord = ModelRequestObservation
 __all__ = [
     "AgentRunMetrics",
     "AgentRunObservation",
+    "AgentRunRetryProgress",
     "AgentRunTerminalMetrics",
     "MODEL_REQUEST_ID_PREFIX",
     "ModelRequestObservation",

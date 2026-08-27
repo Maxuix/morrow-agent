@@ -15,6 +15,7 @@ Version 18 adds additive completion-truth observability columns with safe defaul
 for older terminal rows. Version 19 adds per-request prompt projection evidence and
 append-only structured completion-intent results. Version 20 adds bounded
 long-horizon token-accounting, compaction, and overflow-recovery observations.
+Version 21 adds mutable, bounded retry progress for safe AgentRun resume.
 """
 
 from __future__ import annotations
@@ -33,6 +34,7 @@ from morrow.adapters.state.migrations_v20_long_horizon_observability import (
     V20_NAME,
     V20_STATEMENTS,
 )
+from morrow.adapters.state.migrations_v21_retry_progress import V21_NAME, V21_STATEMENTS
 from morrow.core.store import (
     APPLICATION_NAME,
     RESERVED_SCHEMA_VERSIONS,
@@ -1422,6 +1424,7 @@ V17 = SchemaMigration(version=17, name=V17_NAME, statements=V17_STATEMENTS)
 V18 = SchemaMigration(version=18, name=V18_NAME, statements=V18_STATEMENTS)
 V19 = SchemaMigration(version=19, name=V19_NAME, statements=V19_STATEMENTS)
 V20 = SchemaMigration(version=20, name=V20_NAME, statements=V20_STATEMENTS)
+V21 = SchemaMigration(version=21, name=V21_NAME, statements=V21_STATEMENTS)
 
 
 class MigrationRegistry:
@@ -1497,6 +1500,7 @@ def production_registry() -> MigrationRegistry:
     registry.add(V18)
     registry.add(V19)
     registry.add(V20)
+    registry.add(V21)
     return registry
 
 

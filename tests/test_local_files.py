@@ -146,6 +146,54 @@ def test_read_file_allows_an_empty_mid_file_window_when_result_budget_trims_ever
     assert result.next_start_line == 2
 
 
+def test_v2_read_file_splits_an_oversized_utf8_line_with_byte_continuation(tmp_path):
+    content = "😀" * 20_000
+    (tmp_path / "huge-line.txt").write_text(content, encoding="utf-8")
+    files = _files(tmp_path)
+
+    first = files.read_file(
+        "huge-line.txt",
+        line_count=2_000,
+        max_lines=2_000,
+        max_bytes=50 * 1024,
+    )
+    assert first.truncated is True
+    assert first.next_start_byte == 50 * 1024
+    assert first.next_start_line is None
+    assert first.text.encode("utf-8") == content.encode("utf-8")[: 50 * 1024]
+
+    second = files.read_file(
+        "huge-line.txt",
+        start_line=1,
+        line_count=2_000,
+        max_lines=2_000,
+        max_bytes=50 * 1024,
+        start_byte=first.next_start_byte,
+    )
+    assert second.truncated is False
+    assert second.next_start_byte is None
+    assert first.text + second.text == content
+
+
+def test_v2_byte_window_continuation_does_not_fall_back_to_relative_line_numbers(tmp_path):
+    content = "first\nsecond\nthird\n"
+    (tmp_path / "window.txt").write_text(content, encoding="utf-8")
+    files = _files(tmp_path)
+
+    first = files.read_file("window.txt", start_byte=6, line_count=1, max_lines=2_000)
+    second = files.read_file(
+        "window.txt",
+        start_byte=first.next_start_byte,
+        line_count=2_000,
+        max_lines=2_000,
+    )
+
+    assert first.text == "second\n"
+    assert first.next_start_line is None
+    assert first.next_start_byte == 13
+    assert second.text == "third\n"
+
+
 @pytest.mark.parametrize("raw", [b"\x00binary", b"\xff\xfeinvalid"])
 def test_read_rejects_binary_and_invalid_utf8_without_content(tmp_path, raw):
     (tmp_path / "bad.bin").write_bytes(raw)

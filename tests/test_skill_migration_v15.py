@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from morrow.adapters.state.migrations import (
     V1,
     V2,
@@ -25,10 +23,11 @@ from morrow.adapters.state.migrations import (
     V18,
     V19,
     V20,
+    V21,
     MigrationRegistry,
 )
 from morrow.adapters.state.operational import OperationalStore
-from morrow.core.store import StorageError, StorageErrorCode, StoreOpenMode
+from morrow.core.store import StoreOpenMode
 
 
 def _registry(version: int) -> MigrationRegistry:
@@ -54,6 +53,7 @@ def _registry(version: int) -> MigrationRegistry:
         V18,
         V19,
         V20,
+        V21,
     ):
         if migration.version <= version:
             registry.add(migration)
@@ -65,7 +65,7 @@ def test_v14_to_v15_creates_draft_validation_and_usage_tables(tmp_path) -> None:
     OperationalStore(root, registry=_registry(14), maintenance_timeout=0).initialize().close()
     report = OperationalStore(root, maintenance_timeout=0).migrate()
     assert report.from_version == 14
-    assert report.to_version == 20
+    assert report.to_version == 21
     assert report.applied == (
         "skill_drafts_and_usage",
         "mcp_control_catalog_and_snapshots",
@@ -73,6 +73,7 @@ def test_v14_to_v15_creates_draft_validation_and_usage_tables(tmp_path) -> None:
         "agent_run_completion_truth",
         "agent_run_request_evidence",
         "agent_run_long_horizon_observability",
+        "agent_run_retry_progress",
     )
     with OperationalStore(root, maintenance_timeout=0).open(StoreOpenMode.READ_ONLY) as handle:
         names = handle.run_read(
@@ -95,12 +96,13 @@ def test_v16_to_v17_creates_agent_run_observation_tables(tmp_path) -> None:
     report = OperationalStore(root, maintenance_timeout=0).migrate()
 
     assert report.from_version == 16
-    assert report.to_version == 20
+    assert report.to_version == 21
     assert report.applied == (
         "agent_run_observability",
         "agent_run_completion_truth",
         "agent_run_request_evidence",
         "agent_run_long_horizon_observability",
+        "agent_run_retry_progress",
     )
     with OperationalStore(root, maintenance_timeout=0).open(StoreOpenMode.READ_ONLY) as handle:
         objects = handle.run_read(
@@ -119,8 +121,25 @@ def test_v16_to_v17_creates_agent_run_observation_tables(tmp_path) -> None:
     )
 
 
-def test_v21_is_still_reserved_for_future_work(tmp_path) -> None:
-    del tmp_path
-    with pytest.raises(StorageError) as error:
-        MigrationRegistry(supported_version=21)
-    assert error.value.code is StorageErrorCode.UNAVAILABLE
+def test_v21_adds_resumable_retry_progress_table(tmp_path) -> None:
+    root = tmp_path / "state"
+    OperationalStore(root, registry=_registry(20), maintenance_timeout=0).initialize().close()
+
+    report = OperationalStore(root, maintenance_timeout=0).migrate()
+
+    assert report.from_version == 20
+    assert report.to_version == 21
+    assert report.applied == ("agent_run_retry_progress",)
+    with OperationalStore(root, maintenance_timeout=0).open(StoreOpenMode.READ_ONLY) as handle:
+        objects = handle.run_read(
+            lambda executor: executor.execute(
+                "SELECT type, name FROM sqlite_master WHERE name LIKE 'agent_run_retry_progress%' "
+                "ORDER BY type, name"
+            )
+        )
+    assert objects == (
+        ("index", "agent_run_retry_progress_workspace"),
+        ("table", "agent_run_retry_progress"),
+        ("trigger", "agent_run_retry_progress_workspace_guard_insert"),
+        ("trigger", "agent_run_retry_progress_workspace_guard_update"),
+    )

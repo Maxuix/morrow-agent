@@ -36,6 +36,7 @@ from morrow.core.models import (
 )
 from morrow.core.observability import (
     AgentRunObservation,
+    AgentRunRetryProgress,
     AgentRunTerminalMetrics,
     ModelRequestObservation,
 )
@@ -108,6 +109,8 @@ class DurableRunCoordinator(SessionCommitter, Protocol):
     def get_agent_run_observation(
         self, agent_run_id: str | None = None
     ) -> AgentRunObservation | None: ...
+
+    def record_retry_progress(self, **kwargs) -> AgentRunRetryProgress: ...
 
     def freeze_permission_snapshot(
         self,

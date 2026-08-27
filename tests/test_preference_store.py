@@ -111,7 +111,7 @@ def test_v13_schema_is_created_with_preference_tables(tmp_path):
         "preference_write_batch_proposals",
         "preference_write_batches",
     }
-    assert session.schema_version == 20
+    assert session.schema_version == 21
     session.close()
 
 

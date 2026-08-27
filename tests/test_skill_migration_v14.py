@@ -32,7 +32,12 @@ from morrow.core.skills.catalog import (
     SkillVersion,
 )
 from morrow.core.skills.trust import SourceKind, TrustLevel
-from morrow.core.store import StorageError, StorageErrorCode, StoreOpenMode
+from morrow.core.store import (
+    SUPPORTED_SCHEMA_VERSION,
+    StorageError,
+    StorageErrorCode,
+    StoreOpenMode,
+)
 from test_operational_store import _retry
 
 NOW = datetime(2026, 8, 1, 12, 0, 0, tzinfo=UTC)
@@ -134,7 +139,7 @@ def test_interrupted_v14_rolls_back_to_v13(tmp_path) -> None:
 
 def test_future_schema_version_is_refused() -> None:
     with pytest.raises(StorageError) as error:
-        MigrationRegistry(supported_version=21)
+        MigrationRegistry(supported_version=SUPPORTED_SCHEMA_VERSION + 1)
     assert error.value.code is StorageErrorCode.UNAVAILABLE
 
 

@@ -21,6 +21,7 @@ from morrow.core.models import (
 from morrow.core.observability import (
     MODEL_REQUEST_ID_PREFIX,
     AgentRunObservation,
+    AgentRunRetryProgress,
     AgentRunTerminalMetrics,
     ModelRequestObservation,
     ModelRequestPurpose,
@@ -112,6 +113,11 @@ _METRICS_COLUMNS = (
 )
 _REQUEST_VALUE_COUNT = 35
 _METRICS_VALUE_COUNT = 37
+_RETRY_COLUMNS = (
+    "agent_run_id, workspace_id, consecutive_model_retries, total_retry_count, "
+    "summary_retry_count, updated_at_unix"
+)
+_RETRY_PROGRESS_SCHEMA_VERSION = 21
 
 
 class SqliteObservabilityJournal:
@@ -492,8 +498,96 @@ class SqliteObservabilityJournal:
             resume_of_agent_run_id=run.resume_of_agent_run_id,
             created_at=run.created_at,
             terminal_metrics=metrics,
+            retry_progress=self.get_retry_progress(workspace_id, agent_run_id),
             requests=self.list_model_requests(workspace_id, agent_run_id),
         )
+
+    def get_retry_progress(
+        self, workspace_id: str, agent_run_id: str
+    ) -> AgentRunRetryProgress | None:
+        # Read-only inspection intentionally remains compatible with a v20 store that has
+        # not been migrated yet.  A current-schema store must still surface a missing table
+        # as a storage-integrity error rather than silently hiding corruption.
+        if self.backend.schema_version() < _RETRY_PROGRESS_SCHEMA_VERSION:
+            return None
+        row = self.backend.read_one(
+            f"SELECT {_RETRY_COLUMNS} FROM agent_run_retry_progress "
+            "WHERE workspace_id = ? AND agent_run_id = ?",
+            (workspace_id, agent_run_id),
+        )
+        return _retry_progress_from_row(row) if row is not None else None
+
+    def record_retry_progress(
+        self,
+        workspace_id: str,
+        *,
+        agent_run_id: str,
+        consecutive_model_retries: int,
+        total_retry_count: int,
+        summary_retry_count: int,
+        updated_at: datetime | None = None,
+    ) -> AgentRunRetryProgress:
+        self._require_run(workspace_id, agent_run_id)
+        candidate = AgentRunRetryProgress(
+            agent_run_id=agent_run_id,
+            workspace_id=workspace_id,
+            consecutive_model_retries=consecutive_model_retries,
+            total_retry_count=total_retry_count,
+            summary_retry_count=summary_retry_count,
+            updated_at=updated_at or self.backend.now(),
+        )
+
+        def work() -> AgentRunRetryProgress:
+            current = self.get_retry_progress(workspace_id, agent_run_id)
+            if current is not None:
+                if (
+                    candidate.total_retry_count < current.total_retry_count
+                    or candidate.summary_retry_count < current.summary_retry_count
+                ):
+                    raise StorageError(
+                        StorageErrorCode.UNAVAILABLE,
+                        "AgentRun retry progress cannot move backwards",
+                    )
+                if (
+                    candidate.consecutive_model_retries == current.consecutive_model_retries
+                    and candidate.total_retry_count == current.total_retry_count
+                    and candidate.summary_retry_count == current.summary_retry_count
+                ):
+                    return current
+                self.backend.executor().execute(
+                    "UPDATE agent_run_retry_progress SET consecutive_model_retries = ?, "
+                    "total_retry_count = ?, summary_retry_count = ?, updated_at_unix = ? "
+                    "WHERE workspace_id = ? AND agent_run_id = ?",
+                    (
+                        candidate.consecutive_model_retries,
+                        candidate.total_retry_count,
+                        candidate.summary_retry_count,
+                        _unix(candidate.updated_at),
+                        workspace_id,
+                        agent_run_id,
+                    ),
+                )
+            else:
+                self.backend.executor().execute(
+                    f"INSERT INTO agent_run_retry_progress({_RETRY_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?)",
+                    (
+                        candidate.agent_run_id,
+                        candidate.workspace_id,
+                        candidate.consecutive_model_retries,
+                        candidate.total_retry_count,
+                        candidate.summary_retry_count,
+                        _unix(candidate.updated_at),
+                    ),
+                )
+            stored = self.get_retry_progress(workspace_id, agent_run_id)
+            if stored is None:
+                raise StorageError(
+                    StorageErrorCode.NEEDS_REPAIR,
+                    "AgentRun retry progress could not be read after update",
+                )
+            return stored
+
+        return self.backend.transact(work)
 
     def _require_run(self, workspace_id: str, agent_run_id: str) -> DurableAgentRun:
         run = self.get_agent_run(workspace_id, agent_run_id)
@@ -686,6 +780,22 @@ def _cost_from_columns(availability: object, amount_minor, currency, source) -> 
     except (TypeError, ValueError) as exc:
         raise StorageError(
             StorageErrorCode.NEEDS_REPAIR, "AgentRun cost observation is not safe to read"
+        ) from exc
+
+
+def _retry_progress_from_row(row: tuple[object, ...]) -> AgentRunRetryProgress:
+    try:
+        return AgentRunRetryProgress(
+            agent_run_id=str(row[0]),
+            workspace_id=str(row[1]),
+            consecutive_model_retries=int(row[2]),
+            total_retry_count=int(row[3]),
+            summary_retry_count=int(row[4]),
+            updated_at=_from_unix(row[5]),
+        )
+    except (IndexError, TypeError, ValueError) as exc:
+        raise StorageError(
+            StorageErrorCode.NEEDS_REPAIR, "AgentRun retry progress is not safe to read"
         ) from exc
 
 

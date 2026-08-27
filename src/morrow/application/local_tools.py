@@ -153,6 +153,11 @@ READ_FILE_LONG_HORIZON_PROVIDER_SCHEMA = _object_schema(
         "path": _path_schema(),
         "start_line": {"type": "integer", "minimum": 1, "maximum": MAX_SAFE_INTEGER},
         "line_count": {"type": "integer", "minimum": 1, "maximum": PI_DEFAULT_MAX_LINES},
+        "start_byte": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 8 * 1024 * 1024,
+        },
     },
     required=("path",),
 )
@@ -195,7 +200,7 @@ READ_ARTIFACT_PROVIDER_SCHEMA = _object_schema(
         },
         "max_bytes": {
             "type": "integer",
-            "minimum": 1,
+            "minimum": 4,
             "maximum": PI_DEFAULT_MAX_BYTES,
         },
     },
@@ -376,6 +381,7 @@ class ReadFileLongHorizonArguments(BaseModel):
     path: WorkspaceRelativePath
     start_line: int = Field(default=1, ge=1)
     line_count: int = Field(default=PI_DEFAULT_MAX_LINES, ge=1, le=PI_DEFAULT_MAX_LINES)
+    start_byte: int | None = Field(default=None, ge=0, le=8 * 1024 * 1024)
 
     _valid_path = field_validator("path")(_path)
 
@@ -409,7 +415,7 @@ class ReadArtifactArguments(BaseModel):
 
     artifact_id: str = Field(pattern=_ARTIFACT_ID_PATTERN)
     start_byte: int = Field(default=0, ge=0, le=ARTIFACT_MAX_BYTES)
-    max_bytes: int = Field(default=PI_DEFAULT_MAX_BYTES, ge=1, le=PI_DEFAULT_MAX_BYTES)
+    max_bytes: int = Field(default=PI_DEFAULT_MAX_BYTES, ge=4, le=PI_DEFAULT_MAX_BYTES)
 
     @field_validator("artifact_id")
     @classmethod
@@ -598,6 +604,20 @@ def _artifact_tool_error(error: ArtifactError) -> ToolExecutionError:
     return ToolExecutionError(code, message)
 
 
+def _complete_utf8_prefix(content: bytes) -> tuple[bytes, str]:
+    """Decode a chunk without exposing an incomplete trailing UTF-8 code point."""
+
+    try:
+        return content, content.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        if exc.reason != "unexpected end of data" or exc.end != len(content):
+            raise
+        complete = content[: exc.start]
+        if not complete:
+            raise
+        return complete, complete.decode("utf-8")
+
+
 def _intent(path: str, service: WorkspaceFileService, *, directory: bool) -> OperationIntent:
     try:
         resolved = service.preflight_directory(path) if directory else service.preflight_file(path)
@@ -656,6 +676,9 @@ def make_read_file_tool(
                 max_bytes=context.truncation_max_bytes if context.long_horizon else None,
                 max_lines=(
                     context.truncation_max_lines if context.long_horizon else LEGACY_MAX_READ_LINES
+                ),
+                start_byte=(
+                    getattr(arguments, "start_byte", None) if context.long_horizon else None
                 ),
             )
         except LocalFileError as exc:
@@ -758,24 +781,42 @@ def make_read_artifact_tool(artifacts: ArtifactService) -> RegisteredTool:
             context.truncation_max_bytes,
             max(1, context.result_limit - 1024),
         )
+        requested_start = arguments.start_byte
+        lookbehind = min(3, requested_start)
+        read_start = requested_start - lookbehind
         try:
             result = artifacts.read(
                 arguments.artifact_id,
-                max_bytes=read_limit,
-                start_byte=arguments.start_byte,
+                max_bytes=min(ARTIFACT_MAX_BYTES, read_limit + lookbehind),
+                start_byte=read_start,
             )
         except ArtifactError as exc:
             raise _artifact_tool_error(exc) from exc
         except StorageError as exc:
             raise ToolExecutionError(ToolErrorCode.READ_FAILED, "Artifact 读取失败") from exc
         try:
-            content = result.content.decode("utf-8")
+            relative_start = requested_start - read_start
+            while (
+                relative_start > 0
+                and relative_start < len(result.content)
+                and result.content[relative_start] & 0xC0 == 0x80
+            ):
+                relative_start -= 1
+            actual_start = read_start + relative_start
+            chunk, content = _complete_utf8_prefix(
+                result.content[relative_start : relative_start + read_limit]
+            )
         except UnicodeDecodeError as exc:
             raise ToolExecutionError(
                 ToolErrorCode.BINARY_FILE,
                 "Artifact 不是可安全读取的 UTF-8 文本",
             ) from exc
-        next_start_byte = arguments.start_byte + len(result.content)
+        if result.content[relative_start:] and not chunk:
+            raise ToolExecutionError(
+                ToolErrorCode.INVALID_ARGUMENTS,
+                "Artifact 读取预算不足以返回一个完整 UTF-8 字符",
+            )
+        next_start_byte = actual_start + len(chunk)
         truncated = next_start_byte < result.metadata.byte_size
         return ToolHandlerOutcome(
             payload={
@@ -783,7 +824,7 @@ def make_read_artifact_tool(artifacts: ArtifactService) -> RegisteredTool:
                 "kind": result.metadata.kind.value,
                 "sha256": result.metadata.sha256,
                 "byte_size": result.metadata.byte_size,
-                "start_byte": arguments.start_byte,
+                "start_byte": actual_start,
                 "next_start_byte": next_start_byte if truncated else None,
                 "truncated": truncated,
                 "content": content,

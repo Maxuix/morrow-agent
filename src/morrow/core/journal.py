@@ -37,6 +37,7 @@ from morrow.core.mcp import (
 )
 from morrow.core.observability import (
     AgentRunObservation,
+    AgentRunRetryProgress,
     AgentRunTerminalMetrics,
     ModelRequestObservation,
 )
@@ -289,6 +290,14 @@ class AgentRunObservabilityPort(Protocol):
     def get_agent_run_observation(
         self, workspace_id: str, agent_run_id: str
     ) -> AgentRunObservation | None: ...
+
+    def get_agent_run_retry_progress(
+        self, workspace_id: str, agent_run_id: str
+    ) -> AgentRunRetryProgress | None: ...
+
+    def record_agent_run_retry_progress(
+        self, workspace_id: str, **kwargs
+    ) -> AgentRunRetryProgress: ...
 
 
 class SkillRunJournalPort(Protocol):

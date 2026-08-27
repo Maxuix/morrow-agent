@@ -35,6 +35,7 @@ from morrow.core.domain import (
     sha256_digest,
 )
 from morrow.core.models import (
+    AgentStopCode,
     AssistantMessage,
     FinishReason,
     FunctionToolCall,
@@ -347,6 +348,31 @@ async def test_context_overflow_has_one_compaction_recovery_path():
 
 
 @pytest.mark.asyncio
+async def test_v2_compaction_rechecks_threshold_before_model_admission():
+    provider = OverflowProvider()
+    policy = _v2_policy(context_window_tokens=1_024, reserve_tokens=64, keep_recent_tokens=40)
+    session = Session(session_id="s")
+    seed_user_turn(session, "old request", assistant="old answer")
+    seed_user_turn(session, "another old request", assistant="another answer")
+    loop = AgentLoop(
+        provider,
+        MODEL,
+        ContextBuilder(
+            run_policy=policy,
+            estimate_request_chars=lambda messages, tools: 1,
+            estimate_request_tokens=lambda messages, tools: 2_000,
+        ),
+    )
+
+    events = [event async for event in loop.run_task(session, "current request")]
+
+    assert provider.stream_calls == 0
+    assert provider.complete_calls == 1
+    assert events[-1].payload["finish_reason"] == FinishReason.ERROR.value
+    assert events[-1].payload["stop_code"] == AgentStopCode.CONTEXT_BUDGET.value
+
+
+@pytest.mark.asyncio
 async def test_compaction_summary_uses_bounded_transient_retries():
     provider = CompactionRetryProvider()
     delays: list[float] = []
@@ -615,6 +641,48 @@ async def test_v2_truncation_artifact_is_model_visible_and_bounded_readable(tmp_
         second_payload = json.loads(second.envelope)["result"]
         assert second_payload["content"] == "6789abcdef"
         assert second_payload["truncated"] is False
+
+        unicode_metadata = artifacts.publish_bytes(
+            "前😀后".encode(),
+            kind="command_output",
+            session_id="ses_1",
+            already_redacted=True,
+        )
+        unicode_first = await executor.execute_with_context(
+            FunctionToolCall(
+                id="call_4",
+                name="read_artifact",
+                arguments=json.dumps(
+                    {"artifact_id": unicode_metadata.artifact_id, "max_bytes": 4},
+                    separators=(",", ":"),
+                ),
+            ),
+            run_context=context,
+            ordinal=1,
+            total=1,
+        )
+        unicode_payload = json.loads(unicode_first.envelope)["result"]
+        assert unicode_payload["content"] == "前"
+        assert unicode_payload["next_start_byte"] == 3
+
+        unicode_second = await executor.execute_with_context(
+            FunctionToolCall(
+                id="call_5",
+                name="read_artifact",
+                arguments=json.dumps(
+                    {
+                        "artifact_id": unicode_metadata.artifact_id,
+                        "start_byte": unicode_payload["next_start_byte"],
+                        "max_bytes": 64,
+                    },
+                    separators=(",", ":"),
+                ),
+            ),
+            run_context=context,
+            ordinal=1,
+            total=1,
+        )
+        assert json.loads(unicode_second.envelope)["result"]["content"] == "😀后"
 
         denied = await executor.execute_with_context(
             FunctionToolCall(

@@ -299,6 +299,14 @@ class SessionPersistence:
             return None
         return self.journal.get_agent_run_observation(self.workspace_id, selected)
 
+    def record_retry_progress(self, **kwargs):
+        """Persist only bounded retry counters needed to resume an open AgentRun."""
+
+        kwargs.setdefault("agent_run_id", self.current_agent_run_id)
+        if kwargs["agent_run_id"] is None:
+            raise RuntimeError("retry progress requires an open AgentRun")
+        return self.journal.record_agent_run_retry_progress(self.workspace_id, **kwargs)
+
     def start_new_session(self, session: Session, session_id: str) -> None:
         self.session_restore.start_new_session(session, session_id)
         self.attach(session)

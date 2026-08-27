@@ -1415,6 +1415,12 @@ class SqliteOperationalJournal:
     def get_agent_run_observation(self, workspace_id: str, agent_run_id: str):
         return self._observability_journal.get_agent_run_observation(workspace_id, agent_run_id)
 
+    def get_agent_run_retry_progress(self, workspace_id: str, agent_run_id: str):
+        return self._observability_journal.get_retry_progress(workspace_id, agent_run_id)
+
+    def record_agent_run_retry_progress(self, workspace_id: str, **kwargs):
+        return self._observability_journal.record_retry_progress(workspace_id, **kwargs)
+
     def get_permission_snapshot(
         self, workspace_id: str, permission_snapshot_id: str
     ) -> PermissionSnapshot | None:

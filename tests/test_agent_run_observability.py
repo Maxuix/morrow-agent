@@ -512,6 +512,40 @@ async def test_agent_loop_observation_records_retry_attempts(tmp_path):
         assert observation.terminal_metrics is not None
         assert observation.terminal_metrics.model_attempts == 2
         assert observation.terminal_metrics.retry_count == 1
+        assert observation.retry_progress is not None
+        assert observation.retry_progress.total_retry_count == 1
+        assert observation.retry_progress.consecutive_model_retries == 0
+    finally:
+        handle.close()
+
+
+def test_retry_progress_is_bounded_and_monotonic(tmp_path):
+    handle, _journal, session, persistence = _open(tmp_path)
+    try:
+        persistence.submit_user(
+            session,
+            "hello",
+            "cmsg_1",
+            turn_id="turn_1",
+            agent_run_id="arun_1",
+        )
+        saved = persistence.record_retry_progress(
+            agent_run_id="arun_1",
+            consecutive_model_retries=1,
+            total_retry_count=2,
+            summary_retry_count=1,
+        )
+        assert saved.total_retry_count == 2
+        assert persistence.get_agent_run_observation("arun_1").retry_progress == saved
+
+        with pytest.raises(StorageError) as error:
+            persistence.record_retry_progress(
+                agent_run_id="arun_1",
+                consecutive_model_retries=0,
+                total_retry_count=1,
+                summary_retry_count=1,
+            )
+        assert error.value.code is StorageErrorCode.UNAVAILABLE
     finally:
         handle.close()
 

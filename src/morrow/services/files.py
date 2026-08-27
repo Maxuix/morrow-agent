@@ -423,9 +423,12 @@ class WorkspaceFileService:
         result_limit: int = MAX_RESULT_BYTES,
         max_bytes: int | None = None,
         max_lines: int | None = None,
+        start_byte: int | None = None,
     ) -> ReadFileResult:
         if start_line < 1 or line_count < 1 or line_count > MAX_READ_LINES:
             raise LocalFileError("invalid_range", "读取行范围超出限制")
+        if start_byte is not None and start_byte < 0:
+            raise LocalFileError("invalid_range", "读取字节位置超出限制")
         selected_max_bytes = MAX_READ_TEXT_BYTES if max_bytes is None else max_bytes
         selected_max_lines = MAX_READ_LINES if max_lines is None else max_lines
         if (
@@ -447,17 +450,49 @@ class WorkspaceFileService:
             raise
         raw = source.raw
         text = source.text
-        lines = text.splitlines(keepends=True)
-        total_lines = len(lines)
-        selected = lines[start_line - 1 : start_line - 1 + min(line_count, selected_max_lines)]
-        selected, truncated = _fit_lines(selected, max_bytes=selected_max_bytes)
+        text_bytes = text.encode("utf-8")
+        all_lines = text.splitlines(keepends=True)
+        if start_byte is not None:
+            if start_byte > len(text_bytes):
+                raise LocalFileError("invalid_range", "读取字节位置超出文件范围")
+            try:
+                window_text = text_bytes[start_byte:].decode("utf-8", errors="strict")
+            except UnicodeDecodeError as exc:
+                raise LocalFileError("invalid_range", "读取字节位置不是 UTF-8 字符边界") from exc
+            lines = window_text.splitlines(keepends=True)
+            window_start_byte = start_byte
+        else:
+            lines = all_lines
+            window_start_byte = len("".join(lines[: start_line - 1]).encode("utf-8"))
+        total_lines = len(all_lines)
+        if start_byte is None:
+            selected = lines[start_line - 1 : start_line - 1 + min(line_count, selected_max_lines)]
+        else:
+            selected = lines[: min(line_count, selected_max_lines)]
+        selected, truncated, partial_line = _fit_lines(selected, max_bytes=selected_max_bytes)
+        if partial_line and not selected:
+            raise LocalFileError("invalid_limit", "UTF-8 读取预算不足以返回一个完整字符")
         end_line = start_line + len(selected) - 1 if selected else start_line - 1
-        if end_line < total_lines:
+        if start_byte is None and end_line < total_lines:
             truncated = True
-        next_start = end_line + 1 if truncated and end_line >= start_line else None
+        elif start_byte is not None and len(selected) < len(lines):
+            truncated = True
+        output = "".join(selected)
+        next_start_byte = None
+        if start_byte is not None:
+            if truncated:
+                next_start_byte = window_start_byte + len(output.encode("utf-8"))
+            next_start = None
+        else:
+            if partial_line:
+                partial_start = window_start_byte + len("".join(selected[:-1]).encode("utf-8"))
+                next_start_byte = partial_start + len(selected[-1].encode("utf-8"))
+            next_start = (
+                end_line + 1 if truncated and not partial_line and end_line >= start_line else None
+            )
         payload = ReadFileResult(
             path=relative,
-            text="".join(selected),
+            text=output,
             start_line=start_line,
             end_line=end_line,
             total_lines=total_lines,
@@ -468,6 +503,8 @@ class WorkspaceFileService:
             newline=source.newline,
             truncated=truncated,
             next_start_line=next_start,
+            start_byte=(window_start_byte if start_byte is not None or partial_line else None),
+            next_start_byte=next_start_byte,
         )
         return self._fit_read_result(payload, result_limit)
 
@@ -632,6 +669,28 @@ class WorkspaceFileService:
     def _fit_read_result(result: ReadFileResult, result_limit: int) -> ReadFileResult:
         if _json_size(result.model_dump(mode="json")) <= result_limit:
             return result
+        if result.start_byte is not None or result.next_start_byte is not None:
+            start_byte = result.start_byte or 0
+            text = result.text
+            while text:
+                next_byte = start_byte + len(text.encode("utf-8"))
+                candidate = result.model_copy(
+                    update={
+                        "text": text,
+                        "end_line": (
+                            result.start_line + len(text.splitlines(keepends=True)) - 1
+                            if text
+                            else result.start_line - 1
+                        ),
+                        "truncated": True,
+                        "next_start_line": None,
+                        "next_start_byte": next_byte,
+                    }
+                )
+                if _json_size(candidate.model_dump(mode="json")) <= result_limit:
+                    return candidate
+                text = text[:-1]
+            raise LocalFileError("output_budget", "读取结果无法放入当前预算")
         selected = result.text.splitlines(keepends=True)
         while (
             selected
@@ -1684,18 +1743,40 @@ def _join_relative(directory: str, name: str) -> str:
     return name if directory == "." else f"{directory}/{name}"
 
 
-def _fit_lines(lines: list[str], *, max_bytes: int) -> tuple[list[str], bool]:
+def _fit_lines(lines: list[str], *, max_bytes: int) -> tuple[list[str], bool, bool]:
     selected: list[str] = []
     total = 0
     truncated = False
+    partial_line = False
     for line in lines:
         size = len(line.encode("utf-8"))
         if total + size > max_bytes:
             truncated = True
+            remaining = max_bytes - total
+            if remaining > 0:
+                prefix = _take_utf8_prefix(line, remaining)
+                if prefix:
+                    selected.append(prefix)
+                    partial_line = True
             break
         selected.append(line)
         total += size
-    return selected, truncated
+    return selected, truncated, partial_line
+
+
+def _take_utf8_prefix(value: str, max_bytes: int) -> str:
+    encoded = value.encode("utf-8")
+    if len(encoded) <= max_bytes:
+        return value
+    used = 0
+    end = 0
+    for index, character in enumerate(value):
+        size = len(character.encode("utf-8"))
+        if used + size > max_bytes:
+            break
+        used += size
+        end = index + 1
+    return value[:end]
 
 
 def _newline_style(text: str) -> NewlineStyle:

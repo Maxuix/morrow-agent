@@ -112,6 +112,11 @@ class ReadFileResult(LocalToolModel):
     newline: NewlineStyle = NewlineStyle.NONE
     truncated: bool = False
     next_start_line: int | None = Field(default=None, ge=1)
+    # v2 may split one oversized UTF-8 line.  Byte offsets are over the decoded text payload
+    # (the optional UTF-8 BOM is not part of the offset space), so a caller can resume without
+    # dropping the remainder of that line.
+    start_byte: int | None = Field(default=None, ge=0, le=8 * 1024 * 1024)
+    next_start_byte: int | None = Field(default=None, ge=0, le=8 * 1024 * 1024)
     protected: bool = False
 
     @field_validator("end_line")
@@ -121,6 +126,17 @@ class ReadFileResult(LocalToolModel):
         if start is not None and value < start - 1:
             raise ValueError("end_line must not precede the empty window before start_line")
         return value
+
+    @model_validator(mode="after")
+    def valid_continuation(self) -> ReadFileResult:
+        if self.next_start_line is not None and self.next_start_byte is not None:
+            raise ValueError("read result must use one continuation coordinate")
+        if self.next_start_byte is not None:
+            if self.start_byte is None or self.next_start_byte <= self.start_byte:
+                raise ValueError("byte continuation must advance from its start")
+            if not self.truncated:
+                raise ValueError("byte continuation requires a truncated result")
+        return self
 
 
 class ExactEdit(LocalToolModel):

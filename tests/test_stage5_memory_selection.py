@@ -182,7 +182,7 @@ def test_v11_store_upgrades_to_v13_without_rewriting_v11(tmp_path):
     report = upgraded.migrate()
 
     assert report.from_version == 11
-    assert report.to_version == 20
+    assert report.to_version == 21
     assert report.applied == (
         V12_NAME,
         V13_NAME,
@@ -193,9 +193,10 @@ def test_v11_store_upgrades_to_v13_without_rewriting_v11(tmp_path):
         "agent_run_completion_truth",
         "agent_run_request_evidence",
         "agent_run_long_horizon_observability",
+        "agent_run_retry_progress",
     )
     with upgraded.open(StoreOpenMode.READ_WRITE) as session:
-        assert session.schema_version == 20
+        assert session.schema_version == 21
         tables = session.run_read(
             lambda executor: executor.execute(
                 "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ("
