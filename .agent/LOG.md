@@ -3579,3 +3579,11 @@
   total is insufficient. No new admission is authorized. A 27M total ceiling is recommended.
 - Untracked `docs/notes/` appeared independently in the source checkout. It is preserved unchanged
   and prevents a clean source pin until its ownership/disposition is resolved.
+
+## 2026-08-28 — 50M total token ceiling and clean-pin stash approved
+
+- The user raised the hard total token ceiling to 50,000,000 tokens; the currency ceiling remains
+  unset. Previously accounted formal usage remains part of this total.
+- The user authorized a recoverable stash of unrelated `docs/notes/`. They are preserved in the
+  named stash `checkpoint: preserve docs notes during s7p-09 campaign` and must be restored after
+  the campaign. The source checkout is clean for refreezing after this authorization record commits.

@@ -4,12 +4,13 @@
 
 Subplan 90 remains active. The Pi 0.84.2 runtime-event adapter repair is verified and committed at
 `86e97bc`. Campaigns r2–r4 are retained outside Git as blocked/aborted evidence and will not be
-continued or reused. No new formal admission is allowed under the current token ceiling.
+continued or reused. The user approved a 50,000,000-token total ceiling and a recoverable stash of
+the unrelated notes; the next campaign must use a new clean source pin.
 
 ## Active task
 
-Await explicit approval to raise the total token ceiling, then resolve the unrelated untracked
-`docs/notes/` source change without overwriting it, refreeze a clean source pin, and start a fresh
+Refreeze a clean source/profile/plan pin at the committed 50M authorization state and start a fresh
+campaign. The unrelated `docs/notes/` are preserved in a named stash and must be restored after the
 campaign. Pi normalization now supports the observed 0.84.2 `session` event, indexless turn events,
 optional reasoning-token usage, `glob`, and `agent_end` without a semantic stop. The last case is
 truthfully classified `runtime_failed`, not completed or evidence-unavailable.
@@ -59,16 +60,14 @@ truthfully classified `runtime_failed`, not completed or evidence-unavailable.
 
 ## Next action
 
-Do not admit another formal run. Ask for a 27,000,000-token total ceiling, then obtain a clean source
-checkout without modifying the unrelated untracked notes, refreeze the source/profile/plan hashes,
-and execute a new immutable schedule from ordinal 1.
+Commit the 50M authorization record, refreeze the source/profile/plan hashes from that clean commit,
+pass campaign preflight, and execute a new immutable schedule from ordinal 1.
 
 ## Blockers
 
-- Formal live campaign: the current 15,000,000-token total ceiling is insufficient. Formal
-  admissions account for 3,567,421 tokens plus one interrupted request with unavailable usage; a
-  fresh complete campaign projects about 17.9M more. The recommended total ceiling is 27,000,000.
-- The source checkout is dirty only because of unrelated untracked `docs/notes/`; ownership and
-  disposition are unresolved, so the evaluator cannot freeze a clean source pin yet.
+- Formal admissions account for 3,567,421 tokens plus one interrupted request with unavailable
+  usage. The approved hard total ceiling is now 50,000,000 tokens with no currency ceiling.
+- The unrelated `docs/notes/` are preserved in the named stash
+  `checkpoint: preserve docs notes during s7p-09 campaign`; restore it after campaign execution.
 - Remote publication remains unauthorized; raw evidence durability and any push must be reported
   honestly rather than assumed.

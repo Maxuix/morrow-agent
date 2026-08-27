@@ -1,6 +1,6 @@
 # Stage 7 Preflight Reliability — S7P-09 Repeated Direct/Pi Baseline
 
-> Status: active; adapter repair verified, live campaign held pending a larger token ceiling and clean source
+> Status: active; adapter repair and 50M token ceiling approved, refreezing clean live campaign
 > Active subplan: Subplan 90 — S7P-09 Repeated Direct Evaluation and Same-Condition Pi Baseline
 > Branch: `feat/s7p-09-direct-pi-baseline`
 > Activation base: verified local `main@1fd7e229bef276d1a0361e775ce800ade4b318fc`
@@ -50,7 +50,9 @@ Pi credential readiness and its exact-model no-tool probe pass without exposing 
 credential. Formal attempts have now accounted for 3,567,421 tokens plus one interrupted request
 with unavailable usage. Sampled Morrow/Pi usage projects about 17.9M tokens for one fresh complete
 campaign, so the approved 15M total is insufficient. No new admission is allowed without a larger
-token ceiling and a clean source pin.
+token ceiling and a clean source pin. The user subsequently raised the hard total ceiling to
+50,000,000 tokens and authorized a recoverable stash of unrelated untracked notes for the clean
+campaign pin.
 
 ## 4. Execution order
 
