@@ -9,9 +9,10 @@ the unrelated notes; the next campaign must use a new clean source pin.
 
 ## Active task
 
-Refreeze a clean source/profile/plan pin at the committed 50M authorization state and start a fresh
-campaign. The unrelated `docs/notes/` are preserved in a named stash and must be restored after the
-campaign. Pi normalization now supports the observed 0.84.2 `session` event, indexless turn events,
+Create the recorded clean execution worktree branch, refreeze source/profile/plan pins there, and
+start a fresh campaign. The original checkout remains available to the external notes writer; the
+initial notes are preserved in a named stash and must be restored after the campaign. Pi
+normalization now supports the observed 0.84.2 `session` event, indexless turn events,
 optional reasoning-token usage, `glob`, and `agent_end` without a semantic stop. The last case is
 truthfully classified `runtime_failed`, not completed or evidence-unavailable.
 
@@ -60,7 +61,7 @@ truthfully classified `runtime_failed`, not completed or evidence-unavailable.
 
 ## Next action
 
-Commit the 50M authorization record, refreeze the source/profile/plan hashes from that clean commit,
+Create the clean execution worktree at the recorded branch, refreeze source/profile/plan hashes,
 pass campaign preflight, and execute a new immutable schedule from ordinal 1.
 
 ## Blockers

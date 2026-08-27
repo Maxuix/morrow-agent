@@ -3,6 +3,7 @@
 > Status: active; adapter repair and 50M token ceiling approved, refreezing clean live campaign
 > Active subplan: Subplan 90 — S7P-09 Repeated Direct Evaluation and Same-Condition Pi Baseline
 > Branch: `feat/s7p-09-direct-pi-baseline`
+> Execution worktree branch: `feat/s7p-09-direct-pi-baseline-run` (intentional clean-pin stack)
 > Activation base: verified local `main@1fd7e229bef276d1a0361e775ce800ade4b318fc`
 > Source authority: current user request, S7P-00 protocol v1, completed S7P-08, current code/tools
 
@@ -52,7 +53,8 @@ with unavailable usage. Sampled Morrow/Pi usage projects about 17.9M tokens for 
 campaign, so the approved 15M total is insufficient. No new admission is allowed without a larger
 token ceiling and a clean source pin. The user subsequently raised the hard total ceiling to
 50,000,000 tokens and authorized a recoverable stash of unrelated untracked notes for the clean
-campaign pin.
+campaign pin. Because an external process continued creating new notes after the stash, campaign
+execution uses one dedicated clean worktree branch instead of repeatedly moving that external work.
 
 ## 4. Execution order
 

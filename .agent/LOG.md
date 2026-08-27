@@ -3587,3 +3587,6 @@
 - The user authorized a recoverable stash of unrelated `docs/notes/`. They are preserved in the
   named stash `checkpoint: preserve docs notes during s7p-09 campaign` and must be restored after
   the campaign. The source checkout is clean for refreezing after this authorization record commits.
+- An external writer created another notes file immediately after the stash. To avoid repeatedly
+  moving unrelated work, the formal campaign will run from one dedicated clean worktree branch
+  `feat/s7p-09-direct-pi-baseline-run`; this intentional stack is retired after integration.
