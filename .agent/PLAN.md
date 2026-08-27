@@ -1,20 +1,22 @@
-# Stage 7 Preflight Reliability Repairs — Remove Runtime Outcome Gate
+# Stage 7 Preflight Reliability Repairs — Pi-Parity Long-Horizon Candidate
 
-> Status: completed and integrated locally
-> Active subplan: none; Subplan 87 is complete
+> Status: revised candidate plan prepared; implementation not active
+> Active subplan: none; Subplan 87 is complete; revised Subplan 85 awaits activation
 > Branch: `main`
-> Base: locally integrated S7P-05 at `d570c5c`
-> Source authority: current user request, post-fix audit reproductions, current code and gates
+> Planning base: `1d3ba3706b1ac82cf0b82b56ea207bd2b548090f`
+> Source authority: current user decision, pinned Pi Agent 0.84.2 behavior, current code and gates
 
 ## 1. Current objective
 
-Remove the runtime-owned OutcomeContract/output-fact completion gate. A valid model `stop` decides
-when the answer is complete; the runtime must not reject otherwise useful outputs based on inferred
-task semantics, workspace diffs, required validators or verifier policy. Preserve tool protocol,
-permission, durability, cancellation, unresolved-call and validation telemetry boundaries.
+Prepare S7P-06 to replace demo-sized cumulative task limits with Pi Agent's long-horizon behavior:
+continue while the model requests tools, stop normally on a tool-free model response, compact by
+the exact model token window, and use Pi-style retry and tool-output truncation. New default runs do
+not stop on cumulative model requests, tool rounds, tool calls, whole-task elapsed time, repetition
+or inferred no progress.
 
-Detailed scope and compatibility decisions are owned by active Subplan 87. The retained S7P-05 and
-Subplan 86 material below is decision history; where it conflicts, Subplan 87 wins.
+Detailed scope and compatibility decisions are owned by revised Subplan 85, which remains inactive
+until explicitly activated. The retained S7P-05, Subplan 86 and Subplan 87 material below is
+decision history; where it conflicts with future S7P-06 behavior, Subplan 85 wins.
 
 ## 2. Prior S7P-05 objective
 

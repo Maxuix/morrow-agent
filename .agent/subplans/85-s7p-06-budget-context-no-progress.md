@@ -1,222 +1,330 @@
-# Subplan 85 — S7P-06 Frozen Double Tool-Round Budget, Context Compression and No-Progress Repair
+# Subplan 85 — S7P-06 Pi-Parity Long-Horizon Loop, Context Compaction and Retry
 
 > Status: planned, pending activation
-> Priority: P0; depends on S7P-01, S7P-02, S7P-05 (all completed and integrated into local `main`
-> through `d570c5c`)
-> Source authority: `docs/research/Stage 7 前 Direct Agent 可靠性修复清单.md` section S7P-06,
-> including its frozen budget decision; current code on local `main`; S7P-01 observability and
-> S7P-05 completion-truth implementations.
+> Priority: P0; depends on the integrated S7P-01, S7P-02 and S7P-05 foundations
+> Planning base: local `main` at `1d3ba3706b1ac82cf0b82b56ea207bd2b548090f`
+> Behavioral reference: `@earendil-works/pi-coding-agent` 0.84.2, repository commit
+> `209bc7b9a89b01c8fd05861cf5bbdda3e300037a`
+> Source authority: current user decision (“Pi Agent 项目怎么干就怎么干”); pinned Pi source and
+> documentation; current Morrow code. This decision supersedes the earlier frozen 30 → 60 budget,
+> deterministic-only summary and no-progress-stop proposal.
 
 ## 1. Objective
 
-Prove, under a fixed 60-tool-round candidate budget, whether the historical 30-round ceiling was a
-real blocker or only correlated cost; make context compression semantically survivable through a
-deterministic, rebuildable work summary; and replace blind full-budget consumption with
-progress-signal-based early stopping. All three changes land behind measured evidence, not tuning
-by feel.
+Replace Morrow's demo-sized cumulative task ceilings with Pi Agent's long-horizon execution model:
+the agent continues while the model produces tool calls, ends normally when the model produces no
+more tool calls, compacts context when the model window requires it, and retries transient provider
+failures using Pi's policy. There is no default product stop based on total tool rounds, total model
+requests, total tool calls, whole-task wall time, repetition or inferred “no progress”.
 
-S7P-06 does not change any other budget dimension, does not introduce LLM-generated summaries, does
-not add a second ConversationLog writer, does not change public event types/fields, does not add
-dependencies, and does not run live Provider/Pi/MCP/network/credential tests.
+This is behavioral parity, not a request to copy Pi's TypeScript architecture. Morrow keeps its
+existing permission, tool-protocol, cancellation, durability, redaction and Session-owned
+`ConversationLog` invariants. A Morrow-specific difference is allowed only when one of those
+boundaries requires it; every difference must be documented with a focused test and must not
+silently reintroduce a task-lifetime budget.
 
-## 2. Pre-activation gate (root task, before branch creation)
+S7P-06 also replaces character-count context deletion with Pi-style token-window compaction and
+brings Pi-style provider retry into this subplan, because compaction overflow recovery and retry are
+one long-running-session contract. The retry portion is removed from S7P-07; S7P-07 remains the
+later steering/follow-up/runtime-control subplan.
 
-1. **Resolve the dirty `main` working tree.** At planning time, `main` (`d570c5c`) carries
-   uncommitted modifications in `src/morrow/application/context.py`, `application/prompt.py`,
-   `core/completion.py`, `core/domain.py`, `runtime/agent.py`, `services/completion.py`,
-   `services/files.py`, `tests/test_s7p05_completion_truth.py`, `tests/test_stage4_execution.py`,
-   plus untracked `tests/test_s7p05_audit_remediation.py`. These are post-integration S7P-05
-   remediation changes. The S7P-06 topic branch must start from a **verified clean** `main`; the
-   root task must first confirm with the user whether this remediation set is to be committed as
-   S7P-05 follow-up or checkpointed separately. The S7P-06 task must never absorb, revert or
-   silently rebase over this state.
-2. Preserve the three user-owned untracked research documents under `docs/research/`.
-3. Base the topic branch on the latest verified local `main` after gate 1 resolves; record the base
-   commit in `.agent/PLAN.md` at activation.
+## 2. Reference contract
 
-## 3. Located current facts (verified against code)
+### 2.1 Pinned Pi authority
 
-| Fact | Location | Consequence for S7P-06 |
-|---|---|---|
-| Bundled default `max_tool_rounds = 30` | `src/morrow/resources/runtime-policy.toml:4` | The single value this subplan changes to 60 |
-| Safety ceiling `AGENT_MAX_TOOL_ROUNDS = 100` | `src/morrow/core/runtime_policy.py:13` | 60 fits; no ceiling change needed |
-| Round limit enforced with `AgentStopCode.TOOL_CALL_LIMIT` | `src/morrow/runtime/agent.py:935` | Existing stop semantics; reused, not replaced |
-| Combination validator `loop_repeat_limit * loop_max_pattern_cycles <= max_tool_rounds` | `src/morrow/runtime/policy.py:103` | 3×4=12 ≤ 60 stays valid; boundary tests must pin this |
-| Loop detection = repeated identical cycle signatures only | `src/morrow/runtime/agent.py:222-230, 1394-1402`; `AgentStopCode.LOOP_DETECTED` | No progress-based judgment exists; repeated-but-varying failures (same error code, different args) are invisible to it |
-| Context compression clears old tool results, drops old turns/cycles; no semantic summary | `src/morrow/application/context.py:296-380` (`ContextBuilder._chat`) | Cleared/dropped content loses all task semantics; resume/eval evidence exists only as counts |
-| Deterministic checkpoint machinery already exists | `src/morrow/core/context.py` (`ContextCheckpoint`, sections, omissions), `application/checkpoints.py`, `application/context.py:435-466` | The work summary must extend this deterministic pattern, not invent a parallel mechanism |
-| Per-request observability records estimated chars, budget, cleared/dropped counts, tool rounds/calls | `observation_runtime.admit_model_request` at `src/morrow/runtime/agent.py:987-999`; `core/observability.py` | S7P-01 already provides the trajectory raw material; Phase A consumes it, no new metric plumbing needed first |
-| Terminal aggregates carry stop code, validation outcome, completion outcome/basis/reason | `src/morrow/core/observability.py:151-232` | Comparison report reads these; new no-progress stop code needs an additive migration like v17/v18 |
-| Completion gate, one fact-only correction, stop-code mapping | `src/morrow/core/completion.py:278-356`, `services/completion.py:628`, `runtime/agent.py:245-256` | No-progress diagnosis reuses the bounded system-feedback projection pattern; it is not a user message and not a history writer |
-| Eval protocol, Run Manifest, 2-repetition rule, frozen taxonomy | `evals/code-agent-mini/protocol.toml`, `eval.py`; `docs/acceptance/s7p-00-evaluation-protocol.md` | The 30v60 comparison runs through this harness unchanged; protocol/profile/evaluator are not modified by this subplan |
-| Headless one-shot entrypoint | S7P-01 deliverable (`tests/test_headless_run.py`) | Scripted comparison runs use it; interactive CLI is not part of the measurement path |
-| Historical 30-round results | `docs/acceptance/stage7-direct-agent-baseline.md` (immutable snapshot) | Treated as the "before" baseline; never rewritten |
+Implementation must first pin executable behavior from the reference revision, rather than rely on
+memory or latest-branch drift:
+
+- Agent loop:
+  `packages/agent/src/agent-loop.ts` at commit
+  `209bc7b9a89b01c8fd05861cf5bbdda3e300037a`.
+- Session compaction, overflow recovery and retry:
+  `packages/coding-agent/src/core/agent-session.ts` at the same commit.
+- Compaction implementation and summary format: the corresponding pinned
+  `packages/coding-agent/src/core/compaction/` sources.
+- Tool-result truncation: the pinned coding-agent tool sources and truncation helpers.
+- User-facing defaults: the version-matched settings and compaction documentation. Latest docs may
+  be used only to locate behavior; pinned source wins if they differ.
+
+Before production edits, publish a small checked-in parity table in the acceptance document with
+the exact source symbol/line, observed Pi behavior and planned Morrow location. At minimum it must
+prove:
+
+1. Pi's loop has no default cumulative turn/model-request/tool-call/whole-task deadline.
+2. Pi continues after a tool-using assistant turn and stops after a tool-free assistant turn,
+   abort/error, or an optional host `shouldStopAfterTurn` decision.
+3. Automatic compaction is triggered by model context-window pressure using token estimates,
+   reserve tokens and a recent-context tail; repeated compaction chains from prior summaries.
+4. Compaction uses an LLM-generated structured summary, persists a compaction entry, respects tool
+   call/result boundaries and has one overflow-recovery path.
+5. Retry defaults, exponential delays, provider `retry-after` handling/cap, reset-after-success and
+   user-abort behavior match the pinned Pi revision.
+6. Tool outputs use Pi's exact head/tail, byte/line and continuation behavior for the corresponding
+   read/search/command tool family. Do not freeze guessed constants in this plan.
+
+### 2.2 Adoption rule
+
+Classify every reference behavior before implementation:
+
+- **Adopt:** identical observable behavior is compatible with Morrow's invariants.
+- **Adapt:** the behavior is preserved but implemented through Morrow ports, immutable run state,
+  safe projections or durable records.
+- **Harden:** only content safety, path confinement, permission, legal tool pairing, cancellation or
+  crash recovery requires a stricter boundary. Hardening may redact or fail closed; it may not add
+  an ordinary-task stop heuristic.
+- **Defer:** Pi steering/follow-up/UI behavior belongs to S7P-07. Deferral must not weaken the loop,
+  compaction or retry behavior delivered here.
+
+Unexplained deviations fail acceptance. “Safer” is not sufficient justification for a new default
+cumulative cap or no-progress kill.
+
+## 3. Located Morrow facts and superseded assumptions
+
+| Current fact | Consequence |
+|---|---|
+| Bundled defaults are `max_tool_rounds=30`, `max_model_attempts=40`, `max_tool_calls=128`, `max_run_seconds=1800`; code ceilings are 100/120/512/3600 | These are active task-lifetime limits and must not govern new Pi-parity runs. Raising one number does not solve the contract. |
+| `AgentLoop` checks model-attempt exhaustion before tool-round exhaustion | The old 60-round proposal was internally unreachable with the 40-attempt default. Its planned comparison cannot establish long-horizon support. |
+| `max_tool_calls_per_cycle=32` rejects a provider response before executing all calls | Pi parity requires processing the valid tool-call batch; this behavioral cap is retired for new runs. |
+| `loop_detection_enabled=true` terminates repeated cycle signatures | Pi has no default repeated/no-progress kill. Existing loop telemetry may remain observational, but it cannot terminate a new default run. |
+| Context sizing is character-based and unknown models fall back to 160,000 chars | Pi compaction is model-window/token based. New runs require an exact model context window and a Pi-equivalent estimator fallback, not model-name guessing or char ratios. |
+| Compression clears old tool results and drops turns/cycles without a semantic summary | Replace the model-visible projection with Pi-style summary + recent tail; never erase the immutable durable conversation/tool history. |
+| `model_retry_limit=1` is coupled to the attempt budget | Replace it with Pi's retry state machine and defaults, independent of any cumulative model-attempt budget. |
+| Morrow already has cancellation, per-operation tool timeouts, permission checks, legal ToolCycle/history rules and durable run state | Preserve these execution boundaries. A per-operation timeout is not a whole-task deadline and must be modeled separately. |
+| S7P-01 observability records request/tool trajectories and terminal outcomes | Retain/extend bounded metrics for diagnosis, but metrics do not become a no-progress judge. |
+
+The earlier plan's following decisions are explicitly void: `max_tool_rounds=60` as the product
+default; a fixed 30-vs-60 product-budget experiment; deterministic-only `WorkSummary`; a
+three-cycle diagnosis/`NO_PROGRESS` stop; and keeping the other cumulative caps unchanged.
 
 ## 4. Frozen design decisions
 
-### Budget freeze
+### 4.1 Pi-parity loop and terminal conditions
 
-- Change the bundled `runtime-policy.toml` default `max_tool_rounds` from 30 to **60**, once.
-  Authority: the user-approved checklist section "S7P-06 已冻结的预算决策", which satisfies the
-  AGENTS.md ask-first rule for bundled runtime-policy defaults; record this explicit decision in
-  `.agent/LOG.md` and the acceptance document.
-- **No other budget moves.** `max_run_seconds` (1800), `max_model_attempts` (40),
-  `max_tool_calls` (128), `max_tool_calls_per_cycle` (32), `tool_timeout_seconds` (120),
-  `model_retry_limit` (1) and all context/result char limits stay unchanged unless Phase A
-  observability evidence shows a specific one also blocking; any such later change is a separate
-  recorded decision, never a silent bundle.
-- 60 stays fixed through this subplan's repair and the final repeated evaluation. No 45-round
-  intermediate step, no per-task upward adjustment. If 60 still fails a task, attribute by
-  trajectory first.
-- Hard deadline, total call ceiling, cancellation and loop detection remain in force; progress-based
-  early stop is added so obvious dead loops need not burn all 60 rounds.
-- Loop-detection parameters (`loop_repeat_limit=3`, `loop_max_pattern_cycles=4`) remain valid under
-  60 and are not retuned in this subplan.
+- A new default run has no cumulative limit on total model requests, tool rounds, tool calls or
+  whole-task elapsed time. Do not replace the current limits with larger sentinel values.
+- Continue the inner loop whenever the completed assistant response contains valid tool calls or
+  queued input requires another turn. A tool-free completed assistant response is the ordinary
+  successful stop, matching Pi.
+- Terminal paths are limited to: normal model stop; explicit user/host abort; unrecoverable provider
+  failure after Pi-style retries; unrecoverable context overflow after the one Pi-style recovery;
+  fatal tool-protocol/history/durability/internal failure; permission refusal where current Morrow
+  policy requires termination; or an explicitly supplied host `shouldStopAfterTurn` equivalent.
+- The host stop hook is absent by default, checked at the same turn boundary as Pi, externally
+  attributable and covered by tests. It is not a bundled timeout or hidden scheduler budget.
+- `LOOP_DETECTED`, `MODEL_CALL_LIMIT`, round/total `TOOL_CALL_LIMIT` and `RUN_TIMEOUT` remain
+  readable for historical v1 runs and stored data. New default v2 runs do not emit them for
+  cumulative/repetition conditions. Do not add `NO_PROGRESS`.
+- Per-tool/provider payload validity, permission and local operation timeout boundaries remain.
+  They report their actual failure and may be recoverable by the model; they are not counted into a
+  synthetic whole-task cap.
 
-### Deterministic work summary for compressed content
+### 4.2 Runtime policy v2 and compatibility
 
-- When `ContextBuilder._chat` clears tool results or drops turns/cycles, produce a bounded,
-  deterministic **WorkSummary** derived only from durable facts already owned by the Session/run
-  (durable tool envelopes' safe fields, `ChangeToolFact`/`ValidationFact` values, frozen Outcome
-  Contract, known failure codes, validation results). No LLM call, no free-text generation.
-- The summary preserves at minimum: user goal and constraints (from the frozen contract/task
-  projection, not re-parsed prose); viewed files and key findings (bounded path + fact digest
-  references); applied changes with diff-stat digests; validations run and their latest
-  `(validator, scope)` outcomes; unresolved errors with safe error codes; declared next step.
-- Every section carries its source sequence range and a content hash, so the summary is rebuildable
-  from the durable ConversationLog and verifiable against it. The summary never overwrites or
-  mutates durable facts; it is a projection.
-- The summary contains no reasoning, secrets, raw command text, stdout/stderr, file contents or
-  full tool arguments — the same safety envelope as existing durable records and checkpoint
-  projections.
-- Freeze summary evidence into the run snapshot path so a resumed run reuses the original
-  projection instead of re-deriving from an emptied resume input (same contract as S7P-05
-  contract/baseline freeze).
+- Introduce an explicit v2 agent-run policy/snapshot contract rather than weakening validation of
+  v1 fields or encoding “unlimited” as a huge integer. New runs use v2; persisted in-flight v1 runs
+  resume with their frozen v1 limits and terminal semantics.
+- Retire active v2 enforcement of `max_tool_rounds`, `max_model_attempts`, `max_tool_calls`, the
+  behavioral `max_tool_calls_per_cycle`, `max_run_seconds`, loop-stop parameters and the old
+  `model_retry_limit`. Retire char/ratio context fields after token-window migration.
+- Keep bounded fields that serve a different purpose: per-operation timeouts, permission/effect
+  policy, safe output truncation, validation-display bounds and persistence/event size bounds.
+  Rename or separate ambiguous fields so they cannot be mistaken for a task deadline.
+- Old snapshots/config data remain strict and readable. A user-owned config containing legacy
+  task-lifetime overrides must receive an explicit migration error/instruction for new v2 runs; it
+  must not be silently ignored or silently converted to a bundled default. Embedders that need a
+  limit use the optional host stop hook, analogous to Pi.
+- Record `policy_schema_version` and the presence/source of a host stop in run evidence. Do not
+  persist executable callbacks or expose new raw payload fields.
 
-### Progress signals and no-progress stop
+### 4.3 Exact model window and token accounting
 
-- Define per-tool-cycle progress signals from existing runtime facts: new relevant diff
-  (ChangeToolFact/promotion), new evidence (first read of a previously untouched relevant path),
-  error-type change (error code set differs from the previous failing cycle), validation improvement
-  (a `(validator, scope)` key moves failed → passed, or a required validation first appears).
-- A cycle with none of these signals increments a bounded no-progress counter; any signal resets it.
-  Repeated identical cycles are still caught earlier by existing loop detection; no-progress
-  detection covers the "varying but sterile" case loop detection cannot see.
-- At the configured threshold (default candidate: 3 consecutive no-progress cycles, pinned by tests
-  and recorded in policy only if evidence supports the value), inject exactly one bounded fact-only
-  diagnosis through the existing completion-feedback projection pattern (reason codes + next-action
-  codes + changed-path facts; no prose generation). If the following cycles still show no progress,
-  terminate with a new deterministic stop code `NO_PROGRESS`.
-- `NO_PROGRESS` is added to `AgentStopCode` as an additive enum member with terminal-aggregate and
-  migration support (mirroring the v18 additive migration); it must never be emitted for a run that
-  produced new diffs or validation improvement within the window.
-- The diagnosis projection is not a user message, not a ConversationLog writer, and must survive
-  the same cancellation/error/history-pairing legality tests as the S7P-05 correction feedback.
+- Extend exact provider/model capability discovery with `context_window_tokens`. The value must come
+  from a registered/verified capability, never model-name guessing. If unavailable, fail before a
+  long tool run with a bounded configuration error instead of applying a small unknown-model char
+  fallback.
+- Use provider-reported usage when available and Pi's estimator behavior when it is not. Freeze in
+  the parity table which message parts/tool schemas are counted and how images/non-text content are
+  represented.
+- Record the accounting basis (`provider_usage` or the named estimator), estimated/current tokens,
+  context window, reserve, keep-recent target and compaction decision as bounded observability.
+  Estimates are operational evidence, not billing truth.
+- Automatic compaction threshold follows Pi exactly:
+  `contextTokens > contextWindow - reserveTokens`, with Pi's version-matched default reserve and
+  recent-tail token targets unless pinned source proves different values.
+
+### 4.4 Pi-style compaction and immutable history
+
+- The authoritative `ConversationLog` and durable tool-cycle records remain complete and immutable.
+  Compaction changes only the model-visible context projection.
+- Persist a separate immutable compaction/checkpoint entry containing at minimum: generated
+  structured summary, first retained durable position, tokens before compaction, model/prompt
+  identity, accounting basis, compaction request usage/cost when available, cumulative read/modified
+  file lists, source ranges and integrity hashes. It is not a second chat-history writer.
+- Build subsequent model context as stable system/tool prompt + latest compaction summary + retained
+  recent tail. Repeated compaction summarizes from the prior summary plus newly compacted content,
+  matching Pi's chained behavior.
+- Never split a tool call from its result. Match Pi's turn-boundary and split-turn behavior for an
+  oversized current turn. Resume/recovery must rebuild the exact same projection from durable
+  records and must not repeat compacted-away work merely because it is absent from the recent tail.
+- Use an LLM-generated structured summary with Pi's sections: Goal; Constraints & Preferences;
+  Progress (Done/In Progress/Blocked); Key Decisions; Next Steps; Critical Context; Files Read; Files
+  Modified. Preserve Pi's cumulative file tracking and optional user compaction instructions.
+- The summary is a non-authoritative memory aid. It may contain only the safe projection already
+  eligible for model context. It must not expose hidden reasoning, credentials, protected content,
+  raw SDK objects, tracebacks or unrestricted full tool arguments/results. A summary provider
+  failure leaves durable history intact and follows Pi's failure/recovery behavior.
+- Support automatic threshold compaction, one automatic overflow recovery and an idle manual
+  `/compact [instructions]` equivalent. The manual operation cannot race an active run.
+
+### 4.5 Pi-style provider retry
+
+- Implement the pinned Pi retry state machine and defaults exactly, including enabled default,
+  maximum retry count, exponential base delay, provider-supplied delay handling/cap, retryable
+  status/error classification, retry-state notifications and reset after a successful response.
+- Ensure only one layer owns retries. Configure the provider SDK/adapter consistently with the
+  pinned Pi behavior so hidden SDK retries cannot multiply Agent-level attempts.
+- Abort/cancel interrupts backoff immediately. Fake clocks drive tests; no wall-clock sleeps.
+- A context-length failure routes through the single compaction-overflow recovery before final
+  failure; it is not repeatedly treated as an ordinary transient retry.
+- Retrying a model request does not duplicate committed assistant messages, tool calls/results,
+  user messages, usage or durable attempt state.
+
+### 4.6 Pi-style tool-output truncation
+
+- Match the pinned Pi tool family behavior and exact limits discovered in Phase A. Read/search-like
+  output keeps the same end Pi keeps; command output keeps the same head/tail Pi keeps; limits are
+  evaluated using Pi-equivalent bytes/lines, not the old request-char ratios.
+- A truncated result includes Pi-equivalent continuation guidance and a safe Artifact reference so
+  the agent can fetch omitted data without injecting it all into context. Artifact retention is
+  bounded and subject to existing redaction/path policy.
+- Truncation is model-context shaping, not deletion of durable execution evidence and not a reason
+  to terminate the task.
+
+### 4.7 Evaluation watchdog is outside the product loop
+
+- Offline tests and later same-model Pi/Morrow evaluations need a finite harness watchdog. Apply the
+  same declared watchdog to both systems through the evaluation runner/process boundary, not
+  `AgentLoop` or runtime-policy defaults.
+- A watchdog expiry is recorded as evaluator outcome `watchdog_timeout` with the manifest value; it
+  is not an `AgentStopCode`, model stop or evidence that the product should use that timeout.
+- The manifest also records model, provider, reference revision, retry/compaction settings and
+  environment. Compare completion, cost/tokens, elapsed time, compactions, retries, invalid calls
+  and evaluator watchdogs together.
+- No live Provider/Pi run is authorized in S7P-06. Build scripted parity fixtures here; execute the
+  same-model Pi/Morrow A/B only in S7P-09 or after separate explicit authorization and credentials.
 
 ## 5. Ordered execution
 
-### Phase A — Measurement first (no production behavior change)
+### Phase A — Freeze the executable Pi parity table
 
-1. Build a trajectory extraction over the S7P-01 observability store: per model request, plot
-   estimated request chars vs budget, cleared/dropped counts, tool rounds/calls, stop code, and
-   join with terminal aggregates (validation outcome, completion outcome/reason). Output is a
-   machine-readable report artifact, not a new runtime feature.
-2. Re-run the historically failed 30-round tasks (MORROW-002 … MORROW-005 as applicable) through
-   the frozen eval harness on the current integrated code, capturing per-round trajectories.
-   Classify each failure against the S7P-00 taxonomy; identify whether termination was
-   budget-shaped, loop-shaped, contract-shaped or completion-shaped. This step writes the "before"
-   half of the comparison report.
-3. If Phase A shows a non-tool-round budget also terminating tasks, record it as a separate
-   finding; do not change that budget in this subplan.
+1. Create the topic branch from a verified clean latest `main`; activate this subplan in the
+   execution-state files and record the exact base/reference commits.
+2. Inspect the pinned Pi loop, session, compaction, retry and truncation sources. Publish the parity
+   table with exact defaults, constants, state transitions, terminal cases and source permalinks.
+3. Turn the table into scripted black-box Pi-shaped fixtures/traces for: more than the current round
+   and call caps; repeated identical cycles followed by success; compaction chaining; overflow
+   recovery; transient retries; provider retry delay; abort during backoff; and tool truncation.
+4. Inventory every Morrow use of the v1 cumulative/char/loop fields, including snapshot,
+   observability, migration, CLI/config and test factories. Record the v2 compatibility map before
+   changing production behavior.
 
-### Phase B — Budget change to 60 (test-first)
+### Phase B — Runtime policy v2 and uncapped loop (test-first)
 
-4. Lock failing policy tests: bundled default parses to 60; combination validator holds
-   (`3*4 <= 60`); user overlay boundaries unchanged; ceiling still 100.
-5. Change `runtime-policy.toml` `max_tool_rounds` to 60. Add/extend boundary tests: a scripted run
-   reaching exactly round 60 terminates with `TOOL_CALL_LIMIT` and legal history; rounds 30–60
-   behave identically to 1–30; loop detection still fires before the new ceiling on identical
-   cycles; `max_model_attempts=40` interplay is pinned (attempt limit still precedes round limit
-   where the existing test matrix requires it).
-6. Record the explicit bundled-default decision in `.agent/LOG.md` and the acceptance doc.
+5. Add failing strict-model/config/snapshot tests for v2 new-run behavior, v1 resume behavior,
+   explicit legacy override migration errors and historical stop-code reads.
+6. Add failing AgentLoop parity tests proving a scripted run can exceed 120 model cycles, 512 total
+   tool calls and 3,600 seconds of fake monotonic time, and can repeat identical cycles before a
+   later successful tool-free model stop. No cumulative/loop stop code may appear.
+7. Implement the tagged v2 policy and prepared-run/snapshot plumbing. Remove v2 cumulative checks
+   and default loop termination; preserve v1 frozen execution for recovered old runs.
+8. Add the absent-by-default host `shouldStopAfterTurn` equivalent and cancellation tests. Prove it
+   is checked only at the reference boundary, is externally attributable and leaves legal history.
+9. Separate per-operation timeout/output/persistence bounds from task lifetime. Preserve exact tool
+   failure recovery, permissions and multi-call ordering without a per-cycle behavioral ceiling.
 
-### Phase C — Deterministic work summary (test-first)
+### Phase C — Token-window context and compaction (test-first)
 
-7. Lock failing tests: after forced compression (small char budget + scripted multi-cycle run), the
-   model-visible context still answers: task goal, which files were changed, which validations ran
-   and their outcomes, what error is unresolved, what the declared next step is. Baseline today:
-   these answers are lost when cycles are cleared/dropped.
-8. Implement the WorkSummary projection at clear/drop time inside the existing context pipeline;
-   carry provenance ranges + hashes; verify rebuildability from the durable log in tests.
-9. Freeze/rehydrate summary evidence across fresh and resumed durable runs; prove a resumed run
-   does not repeat an operation whose earlier failure is recorded only in compressed-away cycles.
-10. Safety tests: summary sections contain no reasoning/secret/raw-payload markers; oversized or
-    unverifiable summary input fails closed to the existing clear/drop behavior plus a bounded
-    diagnostic, never to fabricated content.
+10. Add exact-model capability and token-accounting tests for provider usage, estimator fallback,
+    unknown context window, tool schemas, tool results and non-text content.
+11. Add failing compaction fixtures matching pinned Pi: threshold boundary, reserve/recent targets,
+    normal turn boundary, oversized split turn, tool call/result indivisibility, cumulative file
+    lists, repeated compaction chaining and manual instructions.
+12. Implement the structured compaction prompt/result schema and model request. Validate bounded
+    structure, preserve safe model-visible facts and fail closed on unsafe/unparseable output
+    without mutating the durable log.
+13. Persist immutable compaction entries and rebuild the summary + recent-tail projection across
+    restart. Prove recovery yields the same hashes/retained boundary and avoids repeating a prior
+    compacted-away tool operation.
+14. Implement automatic threshold compaction, one context-overflow recovery and the idle manual
+    compact operation. Prove abort/error/race paths leave valid conversation/tool pairing.
 
-### Phase D — Progress signals and no-progress stop (test-first)
+### Phase D — Retry and tool-output parity (test-first)
 
-11. Lock failing matrices:
-    - recognized: same `invalid_arguments` repeated with varying args; `not_found` on successive
-      guessed paths; repeated cycles with no new diff on a change task;
-    - not killed: new diff each window; validation improving; error codes changing;
-      explanation/unspecified tasks making normal progress;
-    - one diagnosis then stop: after diagnosis, continued sterility terminates `NO_PROGRESS`;
-      after diagnosis, resumed progress resets and the run may complete normally.
-12. Implement signal extraction from existing facts, the bounded counter, the single diagnosis
-    projection, and the `NO_PROGRESS` stop code with additive migration and terminal aggregates.
-13. Prove no false kills on the S7P-05 acceptance scenarios and the scripted Direct-agent suite:
-    every previously passing scripted run still completes with its original terminal state.
+15. Add a table-driven retry matrix from pinned Pi: each retryable/non-retryable class, attempt
+    count, exponential delays, provider delay/cap, success reset, exhaustion, context overflow and
+    abort during fake-clock backoff.
+16. Implement one retry owner in the session/provider boundary and bounded retry observability.
+    Prove no message/tool/usage duplication across attempts or restart.
+17. Add exact truncation fixtures for each corresponding tool family, including UTF-8 byte/line
+    boundaries, command head/tail behavior, continuation notice, Artifact access and redaction.
+18. Replace the old request-char-ratio shaping with the pinned Pi-equivalent truncation path for v2;
+    retain v1 read/resume compatibility.
 
-### Phase E — Fixed 30v60 comparison report
+### Phase E — Offline long-horizon and regression evidence
 
-14. Under identical Run Manifests (same evaluator revision, dataset, profile shape, scripted/
-    recorded conditions, 2 repetitions per task per arm), compare the frozen 30-round historical
-    arm against the fixed 60-round candidate on: pass/fail taxonomy, token usage and cost (with
-    explicit `unavailable` where absent), wall time, invalid-argument rate, first relevant read /
-    first effective write / first validation round, rework count, unexpected files, compression
-    events and recovery outcomes.
-15. Publish the comparison as `docs/acceptance/s7p-06-budget-30v60-comparison.md`, presenting
-    success rate and cost together; no conclusion may hide a cost regression behind a pass-rate
-    gain or vice versa. The report states the frozen decision: 60 remains for the final evaluation
-    regardless of per-task temptation.
+19. Run the scripted parity suite with external fake-clock/process watchdogs. Include successful
+    tasks beyond every retired ceiling, repeated/no-progress-looking stretches that later recover,
+    multiple compactions and transient provider failure.
+20. Assert trajectory and terminal evidence: normal model stop remains normal; evaluator watchdog
+    remains external; no hidden cumulative limit, loop kill or `NO_PROGRESS` emission appears.
+21. Run recovery/cancellation/tool-protocol/history tests across each phase boundary, including
+    crash after summary persistence, during retry backoff and between parallel tool results.
+22. Run the full S7P-01…S7P-05 regression and repository offline/static/CLI gates. Do not run a live
+    model, Pi, MCP, network or credential test.
 
-### Phase F — Closeout
+### Phase F — Documentation, review and closeout
 
-16. Publish `docs/acceptance/s7p-06-budget-context-no-progress.md` mapping every S7P-06 checklist
-    acceptance box to its test/report evidence.
-17. Update `docs/ARCHITECTURE.md` only where actual structure changed (work summary projection,
-    progress-signal stop); update `.agent` execution state.
-18. Same-task `gpt-5.6-luna` / `max` read-only review of the complete base…HEAD diff; reproduce and
-    fix every confirmed finding; rerun affected and full offline gates; clean coherent commits.
-19. The implementation task does not merge, push, delete its branch/worktree, touch the three
-    user-owned research documents, or start S7P-07. Root task verifies ancestry/cleanliness,
-    fast-forward merges into local `main`, retires clean resources.
+23. Publish `docs/acceptance/s7p-06-pi-parity-long-horizon.md` with the parity table, deviations,
+    scripted evidence, v1/v2 migration, metrics and unresolved live A/B destination. Update
+    `docs/ARCHITECTURE.md`, human runtime-policy/config documentation and the Stage 7 research
+    checklist because the current user decision supersedes its 60-round/no-progress design.
+24. Run the required read-only implementation review, fix every reproduced finding, rerun affected
+    and full gates, make coherent commits and update execution state. Root performs integration and
+    resource retirement under the repository Git rules; S7P-07 is not started automatically.
 
 ## 6. Required test matrices
 
-- **Policy**: default 60 parses; combination validator at and around boundaries; overlay cannot
-  exceed ceiling; exact round-60 termination with legal ToolCycle/history; attempt-vs-round
-  precedence unchanged.
-- **Summary**: goal/changes/validations/errors/next-step answerable after compression; provenance
-  range and hash verify against durable log; rebuild determinism; resumed-run no-repeat; safety
-  redaction; fail-closed on unverifiable input.
-- **No-progress**: every recognition and false-kill matrix row in Phase D; diagnosis projection is
-  bounded, non-user, non-history-writer; cancellation/error mid-diagnosis keeps call pairing legal;
-  `NO_PROGRESS` never co-occurs with new-diff or validation-improvement evidence.
-- **Durability**: budget exhaustion, `NO_PROGRESS`, `LOOP_DETECTED` and normal completion each
-  leave legal ToolCycles, exact stop codes and continuable TaskRun state; old snapshot/row
-  compatibility through the additive migration.
-- **Regression**: full S7P-01…S7P-05 acceptance suites unchanged; no public event type/field added;
-  YAML/events/DB/terminal show no credentials, reasoning, full params/results or tracebacks.
+- **Loop:** tool-free normal stop; tool continuation; queued-input continuation seam; user/host
+  abort; host stop hook; fatal provider/protocol/durability paths; >120 model cycles; >512 calls;
+  fake elapsed >3,600 seconds; repeated identical/varying sterile cycles followed by success;
+  multiple calls in one assistant turn.
+- **Policy/migration:** strict v2 new run; exact v1 resume; old snapshot/row/stop-code reads; explicit
+  legacy user override error; no huge-number sentinel; no default host hook; per-operation timeout
+  remains distinct and finite.
+- **Token accounting:** exact context window; provider usage; estimator; threshold just below/at/
+  above boundary; tool schema/results; Unicode/non-text inputs; missing capability failure.
+- **Compaction:** structured sections; safe input projection; recent tail; split turn; tool-pair
+  integrity; cumulative files; chained summary; manual instructions; summary failure; one overflow
+  recovery; deterministic durable rebuild; restart no-repeat; bounded persistence.
+- **Retry:** pinned defaults and attempts; every retryable/non-retryable class; exponential and
+  provider-directed delay; cap; reset; exhaustion; abort; overflow routing; no double retry; no
+  duplicated conversation/tool/usage state.
+- **Truncation:** exact pinned constants and head/tail choices; byte and line boundary; UTF-8;
+  continuation; safe Artifact reference; redaction; durable evidence remains available.
+- **Evaluation:** identical external watchdog for Pi/Morrow arms; watchdog outcome is evaluator-only;
+  manifest completeness; no product policy mutation; no live run in this subplan.
+- **Safety/durability:** Session remains the only chat-history writer; no reasoning, secrets, full
+  unsafe arguments/results, SDK objects or tracebacks in events/YAML/DB/terminal; cancellation and
+  every failure retain legal tool pairing and continuable durable state.
 
 ## 7. Validation
+
+The implementation task refines focused paths after Phase A, then runs at least:
 
 ```bash
 uv run pytest -q tests/test_policy.py tests/test_agent_limits.py
 uv run pytest -q tests/test_agent_tool_loop.py tests/test_context_runtime.py
 uv run pytest -q tests/test_agent_run_observability.py tests/test_operational_store.py
-uv run pytest -q tests/test_s7p05_completion_truth.py tests/test_s7p05_audit_remediation.py
 uv run pytest -q tests/test_stage4_recovery.py tests/test_stage4_journal.py
 uv run pytest -q tests/test_code_agent_mini_eval.py tests/test_headless_run.py
 uv run pytest -m 'not live'
@@ -228,40 +336,48 @@ uv run morrow run --help
 git diff --check
 ```
 
-If sandboxed `uv` cannot reach its cache, use the worktree's synchronized `.venv/bin/python -m
-pytest`, `.venv/bin/ruff` and `.venv/bin/morrow` equivalents and record the restriction plus exact
-fallback. No live Provider/model/Pi/MCP/network/credential test is allowed.
+Use scripted Providers, fake SDK chunks and fake clocks. Do not assert duration with wall-clock
+sleeps. If sandboxed `uv` cannot access its cache, use the synchronized worktree `.venv` commands
+and record the exact fallback. No live Provider/model/Pi/MCP/network/credential test is allowed
+without a new explicit authorization.
 
 ## 8. Boundaries and exclusions
 
-- Do not change `max_run_seconds`, model attempts, total tool calls, tool timeout or any char
-  budget; do not tune loop-detection parameters; do not raise the 100-round safety ceiling.
-- Do not introduce LLM-generated summaries, a second history writer, new public event types/fields,
-  dependencies, or permission/tool-effect changes.
-- Do not modify the eval protocol, taxonomy, thresholds or historical baseline documents; the
-  30-round baseline is immutable evidence.
-- Do not implement S7P-07 (retry/backoff/steering) or any Workflow concept.
-- Do not run live/network tests; scripted Providers and recorded fixtures only.
-- Do not start from or sweep up the current dirty `main` tree (section 2 gate).
+- Do not implement “unlimited” by raising 30 to 60/100/1,000 or by using maximum integers.
+- Do not add a default no-progress/repetition stop, loop killer, model-request cap, tool-call cap or
+  task deadline under another name. Progress metrics may be observed only.
+- Do not make deterministic extraction the primary compaction summary; Pi's LLM summary is the
+  standard. Deterministic bounded metadata/hashes may support safety and recovery.
+- Do not erase or rewrite durable chat/tool history during compaction, create another chat-history
+  writer, change public event types, weaken permissions/confinement, or expose protected payloads.
+- Do not add a dependency without asking first. Do not implement MCP, Skills, background work,
+  Workflow concepts or S7P-07 steering/follow-up in this subplan.
+- Do not change the evaluation protocol/taxonomy to hide watchdog, cost, retry or compaction
+  failures. Historical 30-round evidence remains historical and is not presented as the new target.
+- Do not run live/network tests or begin implementation merely because this revised plan exists.
 
-## 9. Acceptance (maps to the S7P-06 checklist)
+## 9. Acceptance
 
-- [ ] `max_tool_rounds=60` policy, boundary-combination, budget-exhaustion and loop-detection tests
-      pass (Phase B matrix).
-- [ ] 30-round vs fixed-60-round comparison report committed, presenting success rate and cost
-      together (Phase E artifact).
-- [ ] The final evaluation keeps 60 rounds throughout; no per-task ceiling raise (decision record).
-- [ ] After compression, user goal, relevant changes, validation failures and next step remain
-      answerable (Phase C matrix).
-- [ ] After restart/recovery, the Agent does not repeat an operation whose failure exists only in
-      compressed-away cycles (Phase C durability tests).
-- [ ] Consecutive repeated `invalid_arguments` / `not_found` / no-diff patterns are recognized
-      (Phase D matrix).
-- [ ] No-progress stop never kills runs producing new diffs or validation improvement (false-kill
-      matrix).
-- [ ] Every budget exhaustion leaves legal ToolCycles, an exact stop code and a continuable
-      TaskRun state (durability matrix).
+- [ ] The pinned Pi parity table is complete; every adopted/adapted/hardened/deferred row has source
+      evidence, a Morrow owner and a focused test.
+- [ ] New default runs have no cumulative model-request/tool-round/tool-call/task-time or
+      repetition/no-progress termination; scripted successful runs exceed all retired ceilings.
+- [ ] Normal continuation/stop, abort, optional host stop and fatal terminal behavior match Pi while
+      preserving Morrow permissions, durability and legal tool history.
+- [ ] Exact model windows and Pi-equivalent token accounting drive automatic compaction; missing
+      capability never falls back to a guessed small char window.
+- [ ] Automatic, overflow-recovery and manual compaction match Pi's structure, tail/boundary and
+      chaining behavior; restart reconstructs it without erasing or repeating durable work.
+- [ ] Provider retry and tool-output truncation match the pinned Pi defaults/state transitions/
+      limits, with no double retry or duplicated durable effects.
+- [ ] Historical v1 runs/data remain readable and resumable under v1; new v2 config/snapshots are
+      strict; legacy user overrides are never silently ignored.
+- [ ] Evaluation watchdogs live only in the harness, apply equally to Pi and Morrow and never appear
+      as product Agent stop codes.
+- [ ] Full offline regression, Ruff, compileall, CLI help and `git diff --check` pass; acceptance and
+      architecture/config documentation describe actual behavior and every justified deviation.
 
-Each completion claim additionally attaches: problem reproduction, code/contract change, automated
-verification, scripted-task verification, safety/persistence check, metric impact, and unresolved
-items with their destination — per the checklist's implementation discipline.
+Every completion claim attaches the reference row, problem reproduction, code/contract change,
+automated verification, scripted long-horizon evidence, safety/persistence result, metric impact and
+unresolved live A/B work. S7P-06 does not claim same-model Pi equivalence until S7P-09 (or a separately
+authorized run) executes that comparison.

@@ -2,14 +2,16 @@
 
 ## Current status
 
-Subplan 87 is committed at `63236ac` and fast-forward integrated into local `main`. The user-
-superseded OutcomeContract/output-fact gate is removed without opening S7P-06. Its untracked draft
-and the three user-owned research documents remain untouched.
+Subplan 87 is committed at `63236ac` and fast-forward integrated into local `main`. Candidate
+Subplan 85 has now been rewritten around pinned Pi Agent 0.84.2 behavior: no default cumulative
+task caps or no-progress kill, token-window LLM compaction, Pi-style retry/truncation, v1 resume
+compatibility and an external-only evaluation watchdog. S7P-06 implementation is not active; the
+three research documents remain untouched.
 
 ## Active task
 
-No implementation task is active. Model-owned completion is integrated; await explicit user
-direction before opening S7P-06.
+No implementation task is active. The revised S7P-06 plan is ready for review and explicit
+activation.
 
 ## Completed evidence
 
@@ -48,7 +50,7 @@ direction before opening S7P-06.
 
 ## Next action
 
-Await explicit user direction; do not start the preserved S7P-06 draft automatically.
+Await explicit user direction; do not activate or implement revised Subplan 85 automatically.
 
 ## Subplan 87 evidence
 
