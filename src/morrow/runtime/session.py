@@ -24,6 +24,7 @@ from morrow.core.execution import (
 )
 from morrow.core.faults import FaultPoint
 from morrow.core.models import (
+    AgentStopCode,
     AssistantMessage,
     FinishReason,
     Message,
@@ -276,10 +277,18 @@ class Session:
         self.commit_append(self.log.plan_append_tool_result(tool_call_id, content))
 
     def finish_turn(
-        self, reason: FinishReason, *, interrupted_call_ids: tuple[str, ...] = ()
+        self,
+        reason: FinishReason,
+        *,
+        interrupted_call_ids: tuple[str, ...] = (),
+        stop_code: AgentStopCode | None = None,
     ) -> None:
         self.commit_append(
-            self.log.plan_finish_turn(reason, interrupted_call_ids=interrupted_call_ids)
+            self.log.plan_finish_turn(
+                reason,
+                interrupted_call_ids=interrupted_call_ids,
+                stop_code=stop_code,
+            )
         )
         if self.persisted:
             self.dirty = False

@@ -49,6 +49,8 @@ def conversation_record_from_durable(record: DurableConversationRecord):
             sequence=record.conversation_position,
             finish_reason=FinishReason(str(record.payload.get("finish_reason", "error"))),
             interrupted_call_ids=tuple(str(item) for item in interrupted),
+            stop_code=record.payload.get("stop_code"),
+            turn_id=record.payload.get("turn_id"),
         )
     return MessageRecord(
         sequence=record.conversation_position,
@@ -85,6 +87,10 @@ def durable_from_conversation_record(
                 durable_call_id(call_id) for call_id in record.interrupted_call_ids
             ],
         }
+        if record.stop_code is not None:
+            payload["stop_code"] = record.stop_code.value
+        if record.turn_id is not None:
+            payload["turn_id"] = record.turn_id
         kind = "terminal"
     else:
         payload = _redacted_message_payload(record)

@@ -5,9 +5,10 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 
 from morrow.core.models import (
+    AgentStopCode,
     AssistantMessage,
     FinishReason,
     Message,
@@ -26,6 +27,8 @@ class TurnTerminalRecord(ProtocolModel):
     sequence: int
     finish_reason: FinishReason
     interrupted_call_ids: tuple[str, ...] = ()
+    stop_code: AgentStopCode | None = None
+    turn_id: str | None = None
 
     @field_validator("interrupted_call_ids")
     @classmethod
@@ -35,6 +38,12 @@ class TurnTerminalRecord(ProtocolModel):
         if len(value) != len(set(value)):
             raise ValueError("interrupted call IDs must be unique")
         return value
+
+    @model_validator(mode="after")
+    def legal_stop_code(self) -> TurnTerminalRecord:
+        if self.finish_reason is not FinishReason.ERROR and self.stop_code is not None:
+            raise ValueError("only an error terminal may contain a stop code")
+        return self
 
 
 ConversationRecord = MessageRecord | TurnTerminalRecord
@@ -343,7 +352,11 @@ class ConversationLog:
         return ConversationAppend(added=tuple(added), snapshot=snapshot)
 
     def plan_finish_turn(
-        self, reason: FinishReason, *, interrupted_call_ids: tuple[str, ...] = ()
+        self,
+        reason: FinishReason,
+        *,
+        interrupted_call_ids: tuple[str, ...] = (),
+        stop_code: AgentStopCode | None = None,
     ) -> ConversationAppend:
         if not self._active:
             raise ConversationLogError("no active turn")
@@ -364,6 +377,7 @@ class ConversationLog:
                 sequence=self._sequence + 1,
                 finish_reason=reason,
                 interrupted_call_ids=interrupted_call_ids,
+                stop_code=stop_code,
             ),
             require_closed=True,
         )
@@ -406,10 +420,18 @@ class ConversationLog:
         self.apply_committed(self.plan_append_tool_result(tool_call_id, content))
 
     def finish_turn(
-        self, reason: FinishReason, *, interrupted_call_ids: tuple[str, ...] = ()
+        self,
+        reason: FinishReason,
+        *,
+        interrupted_call_ids: tuple[str, ...] = (),
+        stop_code: AgentStopCode | None = None,
     ) -> None:
         self.apply_committed(
-            self.plan_finish_turn(reason, interrupted_call_ids=interrupted_call_ids)
+            self.plan_finish_turn(
+                reason,
+                interrupted_call_ids=interrupted_call_ids,
+                stop_code=stop_code,
+            )
         )
 
     def snapshot(self) -> ConversationSnapshot:

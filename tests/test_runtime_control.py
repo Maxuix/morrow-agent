@@ -517,6 +517,89 @@ async def test_consecutive_steering_is_polled_at_each_new_turn_loop_top(tmp_path
             )
         ]
         assert replay[-1].payload["finish_reason"] == FinishReason.STEERED.value
+        assert any(
+            event.type == "status.changed" and event.payload.get("status") == "steered"
+            for event in replay
+        )
+        assert not any(event.type == "text.delta" for event in replay)
+    finally:
+        products.persistence.store_session.close()
+
+
+@pytest.mark.asyncio
+async def test_error_replay_uses_receipt_terminal_when_metrics_are_missing(tmp_path: Path) -> None:
+    _identity, products = _session_products(tmp_path, _TerminalErrorProvider())
+    client_message_id = "replay-error-crash"
+    try:
+        first = [
+            event
+            async for event in products.orchestrator.runtime.run_turn(
+                products.session,
+                "request",
+                client_message_id=client_message_id,
+            )
+        ]
+        assert first[-1].payload["stop_code"] == "provider_auth"
+        products.persistence.store_session.run_write(
+            lambda executor: executor.execute("DELETE FROM agent_run_terminal_metrics")
+        )
+
+        replay = [
+            event
+            async for event in products.orchestrator.runtime.run_turn(
+                products.session,
+                "request",
+                client_message_id=client_message_id,
+            )
+        ]
+        assert replay[-1].payload["finish_reason"] == FinishReason.ERROR.value
+        assert replay[-1].payload["stop_code"] == "provider_auth"
+    finally:
+        products.persistence.store_session.close()
+
+
+@pytest.mark.asyncio
+async def test_old_cancelled_replay_does_not_borrow_a_newer_stop_turn(tmp_path: Path) -> None:
+    provider = _BlockingProvider(("unused", "new answer"))
+    _identity, products = _session_products(tmp_path, provider)
+    try:
+        cancelled_task = asyncio.create_task(
+            _collect_events(
+                products.orchestrator.runtime.run_turn(
+                    products.session,
+                    "cancel me",
+                    client_message_id="replay-old-cancelled",
+                )
+            )
+        )
+        await provider.started.wait()
+        cancelled_task.cancel()
+        cancelled = await cancelled_task
+        assert cancelled[-1].payload["finish_reason"] == FinishReason.CANCELLED.value
+        products.persistence.store_session.run_write(
+            lambda executor: executor.execute("DELETE FROM agent_run_terminal_metrics")
+        )
+
+        provider.release.set()
+        newer = [
+            event
+            async for event in products.orchestrator.runtime.run_turn(
+                products.session,
+                "new request",
+                client_message_id="newer-stop",
+            )
+        ]
+        assert newer[-1].payload["finish_reason"] == FinishReason.STOP.value
+
+        replay = [
+            event
+            async for event in products.orchestrator.runtime.run_turn(
+                products.session,
+                "cancel me",
+                client_message_id="replay-old-cancelled",
+            )
+        ]
+        assert replay[-1].payload["finish_reason"] == FinishReason.CANCELLED.value
         assert not any(event.type == "text.delta" for event in replay)
     finally:
         products.persistence.store_session.close()

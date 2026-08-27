@@ -60,6 +60,7 @@ from morrow.runtime.conversation import (
     ConversationAppend,
     ConversationLog,
     ConversationLogError,
+    ConversationSnapshot,
     TurnTerminalRecord,
 )
 from morrow.runtime.durable_log import (
@@ -171,6 +172,12 @@ class TurnSubmissionCoordinator:
         if not isinstance(terminal, TurnTerminalRecord):
             writer.commit(planned)
             return
+        if terminal.turn_id is None and self.state.turn_id is not None:
+            terminal = terminal.model_copy(update={"turn_id": self.state.turn_id})
+            planned = ConversationAppend(
+                added=(*planned.added[:-1], terminal),
+                snapshot=ConversationSnapshot(records=(*planned.snapshot.records[:-1], terminal)),
+            )
 
         def work(txn: TurnLifecycleJournalPort) -> bool:
             writer.persist_with_records(planned)
@@ -794,14 +801,14 @@ def _classify_receipt(
     if receipt.request_digest != digest:
         return TurnSubmitResult("conflict", receipt.turn_id, receipt)
     if receipt.disposition is TurnSubmitDisposition.ACCEPTED_CLOSED:
-        finish_reason, stop_code = _closed_turn_finish(journal, workspace_id, session, receipt)
+        finish_reason, stop_code, assistant_text = _closed_turn_replay(
+            journal, workspace_id, session, receipt
+        )
         return TurnSubmitResult(
             "closed_replay",
             receipt.turn_id,
             receipt,
-            assistant_text=(
-                _last_assistant_text(session.log) if finish_reason is FinishReason.STOP else None
-            ),
+            assistant_text=assistant_text,
             finish_reason=finish_reason,
             stop_code=stop_code,
         )
@@ -1023,31 +1030,31 @@ def _turn_health_error(health: SessionHealth) -> ApplicationError:
     )
 
 
-def _last_assistant_text(log: ConversationLog) -> str | None:
-    for message in reversed(log.messages_view()):
-        if message.role == "assistant" and message.content:
-            return message.content
-    return None
-
-
-def _closed_turn_finish(
+def _closed_turn_replay(
     journal: TurnLifecycleJournalPort,
     workspace_id: str,
     session: Session,
     receipt: TurnSubmitReceipt,
-) -> tuple[FinishReason, AgentStopCode | None]:
+) -> tuple[FinishReason, AgentStopCode | None, str | None]:
+    metrics = None
     for run in reversed(journal.list_session_agent_runs(workspace_id, session.session_id)):
         if run.turn_id != receipt.turn_id:
             continue
         metrics = journal.get_agent_run_terminal_metrics(workspace_id, run.agent_run_id)
-        if metrics is not None:
-            return metrics.finish_reason, metrics.stop_code
-    turns = session.log.snapshot().public_turns(require_closed=True)
-    if turns:
-        terminal = turns[-1].terminal
-        if terminal is not None:
-            return terminal.finish_reason, None
+        break
+    public_turns = session.log.snapshot().public_turns(require_closed=True)
+    for turn in public_turns:
+        terminal = turn.terminal
+        if terminal is None or terminal.turn_id != receipt.turn_id:
+            continue
+        stop_code = terminal.stop_code or (metrics.stop_code if metrics is not None else None)
+        assistant_text = None
+        if terminal.finish_reason is FinishReason.STOP and turn.final_assistant is not None:
+            assistant_text = turn.final_assistant.message.content
+        return terminal.finish_reason, stop_code, assistant_text
+    if metrics is not None:
+        return metrics.finish_reason, metrics.stop_code, None
     # A concurrent loser can observe an older/synthetic closed receipt before the
     # winner's durable Turn and terminal metrics are visible. Preserve the legacy
     # empty-STOP replay in that evidence-free compatibility case.
-    return FinishReason.STOP, None
+    return FinishReason.STOP, None, None

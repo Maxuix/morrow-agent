@@ -454,7 +454,11 @@ class _RunEventEmitter:
         *,
         interrupted: tuple[str, ...] = (),
     ) -> tuple[AgentEvent, AgentEvent]:
-        self.session.finish_turn(FinishReason.ERROR, interrupted_call_ids=interrupted)
+        self.session.finish_turn(
+            FinishReason.ERROR,
+            interrupted_call_ids=interrupted,
+            stop_code=stop_code,
+        )
         self.retain_facts(FinishReason.ERROR.value)
         return self.fatal(message, stop_code)
 
@@ -1012,7 +1016,10 @@ class AgentLoop:
                 yield event("turn.started", {})
                 if session.log.has_active_turn:
                     try:
-                        session.finish_turn(FinishReason.ERROR)
+                        session.finish_turn(
+                            FinishReason.ERROR,
+                            stop_code=AgentStopCode.INTERNAL,
+                        )
                     except ConversationLogError:
                         pass
                 state.settled = True
@@ -1091,6 +1098,8 @@ class AgentLoop:
                                     "error",
                                     {"message": "先前回合已失败", "stop_code": stop_code.value},
                                 )
+                            elif finish_reason is FinishReason.STEERED:
+                                yield event("status.changed", {"status": "steered"})
                             state.terminal_finish_reason = finish_reason
                             retain_facts(finish_reason.value)
                             yield event(
@@ -1827,7 +1836,11 @@ class AgentLoop:
                 yield status_event
             if session.log.has_active_turn:
                 try:
-                    session.finish_turn(FinishReason.ERROR, interrupted_call_ids=interrupted)
+                    session.finish_turn(
+                        FinishReason.ERROR,
+                        interrupted_call_ids=interrupted,
+                        stop_code=AgentStopCode.INTERNAL,
+                    )
                 except ConversationLogError:
                     pass
             state.terminal_finish_reason = FinishReason.ERROR
