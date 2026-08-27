@@ -1,9 +1,9 @@
 # Stage 7 Preflight Reliability Repairs — Pi-Parity Long-Horizon Candidate
 
-> Status: revised candidate plan prepared; implementation not active
-> Active subplan: none; Subplan 87 is complete; revised Subplan 85 awaits activation
-> Branch: `main`
-> Planning base: `1d3ba3706b1ac82cf0b82b56ea207bd2b548090f`
+> Status: implementation active — Phase A
+> Active subplan: Subplan 85; Subplan 87 is complete
+> Branch: `codex/feat/s7p-06-pi-parity`
+> Base: `6a43be5` (plan activation checkpoint; source tree base `1d3ba3706b1ac82cf0b82b56ea207bd2b548090f`)
 > Source authority: current user decision, pinned Pi Agent 0.84.2 behavior, current code and gates
 
 ## 1. Current objective
@@ -14,8 +14,8 @@ the exact model token window, and use Pi-style retry and tool-output truncation.
 not stop on cumulative model requests, tool rounds, tool calls, whole-task elapsed time, repetition
 or inferred no progress.
 
-Detailed scope and compatibility decisions are owned by revised Subplan 85, which remains inactive
-until explicitly activated. The retained S7P-05, Subplan 86 and Subplan 87 material below is
+Detailed scope and compatibility decisions are owned by activated Subplan 85. The retained
+S7P-05, Subplan 86 and Subplan 87 material below is
 decision history; where it conflicts with future S7P-06 behavior, Subplan 85 wins.
 
 ## 2. Prior S7P-05 objective

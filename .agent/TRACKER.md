@@ -2,16 +2,16 @@
 
 ## Current status
 
-Subplan 87 is committed at `63236ac` and fast-forward integrated into local `main`. Candidate
-Subplan 85 has now been rewritten around pinned Pi Agent 0.84.2 behavior: no default cumulative
-task caps or no-progress kill, token-window LLM compaction, Pi-style retry/truncation, v1 resume
-compatibility and an external-only evaluation watchdog. S7P-06 implementation is not active; the
-three research documents remain untouched.
+Subplan 87 is committed at `63236ac` and fast-forward integrated into local `main`. Subplan 85 is
+now active on `codex/feat/s7p-06-pi-parity`, based at `6a43be5`, and follows pinned Pi Agent 0.84.2
+behavior: no default cumulative task caps or no-progress kill, token-window LLM compaction, Pi-style
+retry/truncation, v1 resume compatibility and an external-only evaluation watchdog. Phase A is
+freezing executable reference evidence and the Morrow compatibility map; the three research
+documents remain untouched until the documented checklist-update phase.
 
 ## Active task
 
-No implementation task is active. The revised S7P-06 plan is ready for review and explicit
-activation.
+S7P-06 implementation is active; Phase A is the current task on the dedicated topic branch.
 
 ## Completed evidence
 
@@ -50,7 +50,8 @@ activation.
 
 ## Next action
 
-Await explicit user direction; do not activate or implement revised Subplan 85 automatically.
+Complete the pinned parity table, scripted black-box fixtures and v1/v2 field inventory, then add
+the first failing policy/loop tests before production behavior changes.
 
 ## Subplan 87 evidence
 

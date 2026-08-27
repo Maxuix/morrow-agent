@@ -32,7 +32,7 @@ inactive.
 | 82 | `82-s7p-03-direct-coding-prompt.md` | completed and integrated locally |
 | 83 | `83-s7p-04-workspace-change-lifecycle.md` | completed and integrated locally |
 | 84 | `84-s7p-05-validation-completion-truth.md` | completed and integrated locally |
-| 85 | `85-s7p-06-budget-context-no-progress.md` | preserved draft; inactive |
+| 85 | `85-s7p-06-budget-context-no-progress.md` | active on `codex/feat/s7p-06-pi-parity` |
 | 86 | `86-s7p-00-05-audit-remediation.md` | completed and integrated locally |
 | 87 | `87-remove-runtime-outcome-gate.md` | completed and integrated locally |
 
