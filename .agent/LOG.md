@@ -3493,3 +3493,21 @@
   2 deselected in 87.58s`. Ruff format/check, compileall, CLI help and `git diff --check` passed.
 - The approved bounded Morrow Provider readiness probe succeeded. Pi's no-secret auth check
   reported `credentials_not_configured`, so no Pi model probe or formal admission was attempted.
+
+## 2026-08-27 — Pi import completed; Morrow streaming readiness blocked
+
+- Pi now selects the built-in `opencode-go/mimo-v2.5` by default and resolves the existing Morrow
+  Keychain entry through a command reference in Pi's private model configuration. No credential
+  value was copied into JSON, read by the evaluator or printed. `pi auth check --no-refresh`
+  returned `ready/api_key`, and the catalog exposed the exact 1M-context/128K-output model.
+- The approved Pi no-tool probe completed normally on exact provider/model `opencode-go/mimo-v2.5`
+  with 404 total tokens and complete cost. Raw content remains only in a mode-0700 non-Git
+  temporary directory; the terminal reported safe status/hash facts only.
+- Morrow's non-stream Provider test passed, but two bounded Agent no-tool probes both admitted one
+  request and ended `internal` before any tool call, with unavailable usage/cost. The bounded retry
+  allowance is exhausted; no formal run key was admitted and no further request was attempted.
+- Local code inspection shows the OpenAI-compatible Morrow streaming adapter emits
+  `ModelCost.unavailable()` even for a successful stream. This is incompatible with S7P-09's
+  frozen complete-cost reporting gate, although the user-approved budget itself has no currency
+  ceiling. Formal execution remains blocked pending an explicit accounting decision and Morrow
+  streaming readiness repair or external recovery.

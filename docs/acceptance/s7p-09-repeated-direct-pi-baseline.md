@@ -1,12 +1,13 @@
 # S7P-09 Repeated Direct/Pi Baseline — Offline Harness Evidence
 
 > Status: Phase A offline harness/runners verified; model and Token budget approved; formal
-> campaign BLOCKED on Pi credential readiness and clean pins. This is not an S7P-09 PASS claim.
+> campaign BLOCKED on Morrow Agent streaming readiness and cost accounting. This is not an S7P-09
+> PASS claim.
 
 ## Scope and boundary
 
 This slice implements and verifies the harness/runners without credential-value inspection, paid
-task execution or task network access. One approved bounded Morrow readiness probe was run:
+task execution or task network access. Approved bounded readiness probes were run separately:
 
 - strict create-only comparison-plan validation, including full pins, approved hold-point evidence,
   exact common Provider/model/revision, equal sampling/capability facts, an explicit total Token
@@ -45,9 +46,9 @@ writes while limiting workspace writes and command duration.
   not guessed from a generic failure or blocked state.
 - Comparison rejects missing/extra/duplicate results, source/profile/protocol/dataset drift,
   different paired baseline trees/task contracts, incomplete metrics and non-monotonic admissions.
-- No credential value, live Pi run, task network access, dependency addition, runtime-policy
-  change or public event change occurred. A bounded Morrow Provider readiness probe succeeded; Pi
-  auth status was checked without credentials and reported `credentials_not_configured`.
+- No credential value, formal task run, task network access, dependency addition, runtime-policy
+  change or public event change occurred. Pi uses the same Keychain credential by reference, not by
+  copied value. Its exact-model no-tool probe passed; two Morrow Agent probes failed identically.
 
 ## Offline validation on 2026-08-27
 
@@ -64,8 +65,10 @@ writes while limiting workspace writes and command duration.
 | `uv run morrow --help` / `uv run morrow run --help` | passed |
 | `uv run python evals/code-agent-mini/eval.py --help` | passed |
 | Pi offline extension load | passed; policy parsed by Pi 0.84.2 without a model request |
-| Morrow Provider readiness | passed; bounded approved probe |
-| Pi no-secret auth check | blocked; `credentials_not_configured` |
+| Morrow non-stream Provider readiness | passed |
+| Morrow Agent no-tool probe | blocked twice; `internal`, zero tool calls |
+| Pi no-secret auth check | passed; `ready/api_key` |
+| Pi exact-model no-tool probe | passed; `mimo-v2.5`, stop, 404 tokens |
 | `git diff --check` | passed |
 
 The focused evaluator and static gates were rerun after the final fail-closed audit changes. The
@@ -76,9 +79,11 @@ final branch gate is recorded in `.agent/LOG.md`; no command is represented as l
 The user approved `opencode-go/mimo-v2.5` for both Agents. Pi 0.84.2's installed catalog exposes the
 exact entry at `https://opencode.ai/zen/go/v1`, with a 1,000,000-token context window and
 128,000-token maximum output. Pi's default selection points to it; no credential value was read or
-copied, and Pi credential readiness is absent in the current process/auth store.
+copied. Pi auth readiness is `ready/api_key`, and its bounded no-tool probe returned the exact
+provider/model with a normal stop, 404 total tokens and complete Provider cost.
 
 The approved budget is a hard 5,000,000-token ceiling with no currency ceiling; Provider cost is
-still mandatory evidence. Formal work remains blocked on Pi credential readiness, exact served
-revision/sampling evidence and clean source/evidence pins. Only after those gates may the first
-create-only formal admission occur.
+still mandatory evidence. Morrow's non-stream Provider test succeeds, but two bounded Agent probes
+failed `internal` before any tool call and without usage/cost. The current Morrow adapter also emits
+cost as unavailable even on a successful stream. Formal work remains blocked on those two facts,
+exact served revision/sampling evidence and final pins. No formal admission may start.

@@ -24,10 +24,12 @@ S7P-09 Repeated Direct Evaluation and Same-Condition Pi Baseline.
   secret-leak paths; commit the verified slice.
 - `[x]` Select and approve the exact common `opencode-go/mimo-v2.5` model, a 5,000,000-token hard
   campaign ceiling and no currency ceiling; verify Pi 0.84.2 contains the exact catalog entry.
-- `[!]` Configure no-secret Pi credential readiness and freeze the served revision/sampling probe;
-  Pi currently has no `OPENCODE_API_KEY` or stored provider credential available.
-- `[>]` Create a clean evaluation worktree, freeze profiles/pins/schedule/evidence root and pass
-  no-secret readiness plus dataset self-check.
+- `[x]` Configure Pi through the same Keychain credential reference without copying the secret;
+  pass no-secret auth readiness and the exact `opencode-go/mimo-v2.5` no-tool probe.
+- `[!]` Resolve Morrow Agent streaming readiness: non-stream Provider test passes, but two bounded
+  no-tool Agent probes ended `internal` with zero tools and unavailable usage/cost.
+- `[!]` Freeze profiles/pins/schedule/evidence root and complete both readiness hashes; the clean
+  evaluation checkout and Pi evidence are ready, but Morrow Agent readiness is blocked.
 - `[ ]` Execute and finalize the exact 20 Morrow primary runs.
 - `[ ]` Execute and finalize the exact 8 counterbalanced Pi comparison runs.
 - `[ ]` Mechanically aggregate, compare, classify every failure and freeze the Direct baseline.

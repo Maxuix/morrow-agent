@@ -40,13 +40,14 @@ tokens, and no currency ceiling. Pi 0.84.2's installed catalog contains the exac
 service endpoint, with a 1,000,000-token context window and 128,000-token maximum output. Before a
 formal paid run, the harness must still freeze and verify:
 
-1. the exact served model revision and equal sampling contract;
-2. credential readiness for both Agents without exposing or copying credentials;
-3. the non-secret comparison plan and equivalent permission mapping;
-4. the clean runner/source/evidence pins and bounded no-tool readiness probes.
+1. Morrow Agent streaming readiness after two identical bounded `internal` failures;
+2. a cost-accounting contract compatible with Morrow's unavailable Provider cost;
+3. the exact served model revision and equal sampling contract;
+4. the final non-secret comparison plan and clean source/evidence pins.
 
 Credential checks must report only readiness and must never request or print credential values.
-Offline harness implementation and testing may proceed before this decision.
+Pi credential readiness and its exact-model no-tool probe pass without exposing or copying the
+credential. Offline harness work may proceed, but no formal admission is allowed.
 
 ## 4. Execution order
 

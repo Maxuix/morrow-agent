@@ -8,11 +8,11 @@ and validate the offline comparison harness; no formal live campaign run has sta
 
 ## Active task
 
-Freeze the clean campaign source/profile/evidence pins and complete no-secret readiness. The two
-agent-specific offline runners are implemented: Morrow injects the bounded approval port through
-ordinary bootstrap/CapabilityPolicy/ToolExecutor composition and projects only in-memory safe
-facts; Pi uses an explicit policy extension plus Seatbelt-confined bash. The formal 28-run campaign
-remains held until every gate passes.
+Resolve the Morrow Agent streaming readiness blocker before freezing the final comparison plan.
+The checkout is clean and both runners are implemented. Pi now resolves the same Keychain-backed
+credential without copying it, passes auth readiness and completed its exact-model no-tool probe.
+Morrow's non-stream Provider test passes, but its two bounded Agent probes both failed `internal`
+before any tool call. The formal 28-run campaign remains held.
 
 ## Preparation evidence
 
@@ -47,19 +47,28 @@ remains held until every gate passes.
   content. Pi disables mutable user resources, pins the approved model and tool set, and loads only
   the content-hashed policy extension. The extension confines bash with macOS Seatbelt, denies task
   network and `.git` writes, bounds commands to 120 seconds and preflights workspace paths.
-- Morrow's no-secret Provider readiness probe passed. Pi auth check returned only
-  `credentials_not_configured`; no Pi model request was attempted.
+- Pi now uses a command reference to the existing Morrow Keychain entry, with no secret in Pi
+  configuration. `pi auth check --no-refresh` returned `ready/api_key`; the exact no-tool probe
+  completed on `opencode-go/mimo-v2.5` with `stop`, 404 total tokens and Provider cost.
+- Morrow's non-stream Provider readiness test passed. Two bounded Agent no-tool probes then failed
+  identically with request/terminal code `internal`, zero tool calls and unavailable usage/cost.
+  The retry bound is exhausted; no further model request was made.
+- Local adapter inspection confirms Morrow's OpenAI-compatible stream currently emits
+  `ModelCost.unavailable()` even on success. The approved budget needs no currency ceiling, but the
+  original complete-cost evidence gate cannot pass without an explicit accounting-contract change.
 
 ## Next action
 
-Run the complete offline/static gate, commit this verified Phase A/B slice, then create the clean
-evaluation worktree and freeze exact profiles/source/evidence pins. Do not admit a formal run until
-Pi credential readiness and both model-probe hashes are available.
+Do not admit a formal run. First resolve or explicitly reclassify the repeatable Morrow streaming
+failure, then decide whether complete cost remains mandatory or a frozen derived/optional cost
+contract is authorized. Re-run only the bounded Morrow probe after that blocker changes.
 
 ## Blockers
 
-- Formal live campaign: Pi credential readiness, exact served revision/sampling evidence and the
-  remaining clean source/evidence pins are still required.
+- Formal live campaign: Morrow Agent streaming readiness, exact served revision/sampling evidence
+  and the final comparison-plan/evidence pins are still required.
+- Complete cost evidence is incompatible with the current Morrow adapter, which reports cost as
+  unavailable; no currency ceiling is enforced, but the original reporting gate remains frozen.
 - The approved budget is a hard 5,000,000-token ceiling with no currency ceiling. Cost remains a
   mandatory measured metric and is never inferred as zero.
 - Remote publication remains unauthorized; raw evidence durability and any push must be reported
