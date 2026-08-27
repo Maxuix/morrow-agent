@@ -2,7 +2,7 @@
 
 ## 1. 结论
 
-S7P-05 已在当前 topic branch 完成实现。Direct-agent 的最终 `stop` 现在由运行时有界证据决定：
+S7P-05 的代码实现、正式 review 和离线验证已在当前 topic branch 完成。Direct-agent 的最终 `stop` 现在由运行时有界证据决定；
 普通命令成功不会伪装成 validation，change task 需要可归因的净工作区变化，required validation
 必须是精确 `(validator_kind, scope)` 的 recognized `ValidationFact`，路径越界、禁止路径、未闭合
 调用、known failure 和可选 verifier 都会阻止不真实的完成声明。业务语义正确性不在本项判定范围内。
@@ -61,23 +61,37 @@ S7P-05 已在当前 topic branch 完成实现。Direct-agent 的最终 `stop` �
 
 | Gate | 结果 |
 |---|---|
-| S7P-05 completion/terminal/agent context focused regression | `90 passed` |
-| capabilities/process/tool-loop/context focused gates | 待最终实现提交后记录 |
-| observability/store/preparation focused gates | 待最终实现提交后记录 |
-| recovery/journal/product acceptance/mini-eval focused gates | 待最终实现提交后记录 |
-| full offline pytest (`not live`) | 待最终实现提交后记录 |
-| Ruff format/check | 受影响文件已通过；repository-wide gate 待最终记录 |
-| compileall | 待最终实现提交后记录 |
-| CLI help (`morrow`, `morrow run`) | 待最终实现提交后记录 |
-| `git diff --check` | 待最终实现提交后记录 |
+| capabilities/process focused gate | `18 passed` |
+| agent/tool-loop/context focused gate | `34 passed` |
+| observability/store/preparation focused gates | `63 passed` |
+| recovery/journal focused gate | `28 passed` |
+| product acceptance/mini-eval focused gate | `24 passed` |
+| S7P-05 completion regression | `30 passed` |
+| terminal/stage2/guardrails focused gate | `37 passed` |
+| compatibility focused gate | `3 passed` |
+| full offline pytest (`not live`) | `1266 passed, 2 skipped, 2 deselected in 56.24s` |
+| Ruff format/check | `472 files already formatted`; `All checks passed!` |
+| compileall | passed |
+| CLI help (`morrow`, `morrow run`) | passed |
+| import proof | `morrow.__file__` points to this worktree's `src/morrow/__init__.py` |
+| `git diff --check` | passed |
 
 ## 6. 审查记录
 
-按本任务要求，提交实现与初步验证后启动只读 `gpt-5.6-luna` / reasoning `max` reviewer，审查
-完整 `2c035098263fee3f93d66abc42bc09a36bbb1c42...HEAD` diff，重点包括 false-positive validation、
-命令解析绕过、scope、脏文件归因、symlink/扫描、文本泄漏、history、freeze/rehydration、verifier
-authority、stop-code 精度和只证明 mock 的测试。正式 reviewer id、verdict、confirmed findings
-及修复后的重新验证将在 reviewer 返回后补录。
+初始实现由只读 Boole (`01a04073-5571-7642-8596-9aba4b4e8b99`, `gpt-5.6-luna`, reasoning
+`max`) 审查；其范围为 activation baseline 到 `c14de4e`，正式结论不是 APPROVE，并确认六项
+P1/P2 风险：path-qualified validator spoof、过期 validation、空目录、绝对 scope、真实/linked
+Git HEAD 证据与读取失败、以及 same-size/mtime TOCTOU。六项均先由本任务复现，再由
+`537689a` 修复；受影响回归与完整 offline gate 已重跑通过。
+
+按要求又启动了两个 post-fix 只读 Luna Max reviewer：Tesla
+(`01a0409f-d5af-7613-b0c6-bf77e53bffdf`) 和 Feynman
+(`01a040aa-97ef-7871-b100-4bdc566ce5e5`)，目标均为完整
+`2c035098263fee3f93d66abc42bc09a36bbb1c42...HEAD` 快速扫查并重点复核 `537689a` 闭环。两者
+均在有界等待内未返回正式 APPROVE/findings，随后被关闭。按后续要求启动的极窄只读 reviewer
+Hume (`01a040c5-3564-7671-94f8-4e5d04fa1e3b`, `gpt-5.6-luna`, reasoning `max`) 仅审查
+`537689a^..537689a` 的五个实现文件及六项回归，未运行测试，并正式返回：
+`APPROVE — no confirmed P0-P3 findings`。因此六个已知 finding 已闭环，未确认新的 P0-P3。
 
 ## 7. 明确缺口
 

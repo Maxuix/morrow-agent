@@ -3183,3 +3183,35 @@
   workspace baseline, a pre-stop completion/verifier gate, buffered final claims, one bounded
   fact-only correction and precise outcome stop codes. No business correctness inference, second
   history writer, raw persisted payload, dependency, runtime-default or S7P-06 work is included.
+
+## 2026-08-27 — Subplan 84 implementation, six finding repairs and final review
+
+- Implemented S7P-05 in `c14de4e` on `codex/feat/s7p-05-validation-completion-truth`, using
+  activation baseline `2c035098263fee3f93d66abc42bc09a36bbb1c42`. The implementation separates
+  `CommandToolFact` from scoped `ValidationFact`, freezes the Outcome Contract and no-follow
+  workspace baseline, gates final stop on bounded runtime evidence, buffers rejected claims and
+  preserves Session/ConversationLog sole chat-write ownership.
+- Formal read-only Boole (`01a04073-5571-7642-8596-9aba4b4e8b99`, `gpt-5.6-luna`, reasoning
+  `max`) reviewed the pre-fix implementation range and reported six confirmed findings: path-
+  qualified validator spoof, stale validation after mutation, empty-directory policy bypass,
+  silently dropped absolute scope, incomplete real/linked Git HEAD evidence, and same-size/mtime
+  TOCTOU. Each was reproduced with a focused regression before patching.
+- Repaired all six in `537689a`: validator executable/path checks, validation ordering by fact
+  position, directory manifests/policy, absolute-scope validation, component-safe Git state
+  evidence and ctime-aware stable hashing. Added the scoped-fact path invariant and reran the
+  affected matrix plus full offline gate.
+- Focused gates passed `18`, `34`, `63`, `28`, `24`, `30`, `37`, and `3` tests. The complete
+  offline fallback passed `1266 passed, 2 skipped, 2 deselected in 56.24s`; Ruff format/check,
+  compileall, both CLI help commands, import proof and `git diff --check` passed. The synced
+  absolute `.venv` was used because `uv` cache permissions and temporary-cache DNS/download
+  access were unavailable; no live Provider/model/Pi/MCP/network/credential test ran.
+- The required post-fix reviewer Tesla (`01a0409f-d5af-7613-b0c6-bf77e53bffdf`,
+  `gpt-5.6-luna`, reasoning `max`) and follow-up Feynman
+  (`01a040aa-97ef-7871-b100-4bdc566ce5e5`, `gpt-5.6-luna`, reasoning `max`) were closed after
+  bounded waits without formal results. The final narrow reviewer Hume
+  (`01a040c5-3564-7671-94f8-4e5d04fa1e3b`, `gpt-5.6-luna`, reasoning `max`) then reviewed
+  `537689a^..537689a` without tests and formally returned `APPROVE — no confirmed P0-P3 findings`.
+- Updated architecture, acceptance and execution-state evidence after the formal verdict. The
+  branch remains unmerged and unpushed, and its three user-owned research documents remain
+  untouched. Root task owns fast-forward integration and worktree retirement; S7P-06 was not
+  started.

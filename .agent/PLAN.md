@@ -1,9 +1,9 @@
 # Stage 7 Preflight Reliability Repairs — S7P-05 Validation and Completion Truth
 
-> Status: active
+> Status: completed locally; root integration pending
 > Active subplan: 84 — validation facts, outcome contracts and completion gate
 > Branch: `codex/feat/s7p-05-validation-completion-truth`
-> Base: verified local `main@ffa9770`
+> Base: activation baseline `2c035098263fee3f93d66abc42bc09a36bbb1c42`
 > Source authority: the user-requested S7P-05 checklist, current code and deterministic probes
 
 ## 1. Objective
@@ -195,3 +195,17 @@ restriction plus exact fallback. No live Provider/model/Pi/MCP/network/credentia
 - It does not merge, push, delete its branch/worktree, touch the three user-owned research
   documents or start S7P-06. The root task verifies ancestry/cleanliness, fast-forward merges into
   local `main`, then retires clean task resources.
+
+Preliminary implementation evidence for this activation:
+
+- `c14de4e` contains the test-first implementation; `537689a` reproduces and closes all six
+  confirmed findings from the first formal read-only review. The six regression cases and the
+  expanded S7P-05 matrix pass, and the repository-wide offline fallback gate passes.
+- Formal reviewer Boole (`01a04073-5571-7642-8596-9aba4b4e8b99`, `gpt-5.6-luna`, reasoning
+  `max`) reviewed the pre-fix range and reported six confirmed findings; all were independently
+  reproduced before the `537689a` repair.
+- Replacement reviewers Tesla (`01a0409f-d5af-7613-b0c6-bf77e53bffdf`) and Feynman
+  (`01a040aa-97ef-7871-b100-4bdc566ce5e5`), both requested as `gpt-5.6-luna`/`max`, were closed
+  after bounded waits without a formal result. The narrow final reviewer Hume
+  (`01a040c5-3564-7671-94f8-4e5d04fa1e3b`, `gpt-5.6-luna`/`max`) then returned formal
+  `APPROVE — no confirmed P0-P3 findings` for `537689a^..537689a`.

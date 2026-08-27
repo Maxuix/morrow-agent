@@ -10,18 +10,20 @@ Subplan 84 — validation facts, outcome contracts and completion gate.
 
 ## Tasks
 
-- `[>]` Activate the verified S7P-05 plan and hand it to a dedicated Luna Max task.
-- `[ ]` Separate recognized scoped `ValidationFact` values from ordinary command success.
-- `[ ]` Freeze and rehydrate a lightweight Outcome Contract plus safe workspace baseline.
-- `[ ]` Compare run-attributed net changes without absorbing pre-existing dirty user files.
-- `[ ]` Gate final stop on change, validation, path, unresolved-tool and verifier facts.
-- `[ ]` Buffer final claims and allow one fact-only correction without a second history writer.
-- `[ ]` Add exact completion/validation/verifier/budget stop and result states.
-- `[ ]` Extend bounded terminal observability and terminal summary without raw payloads.
-- `[ ]` Add scripted Direct-agent and durable recovery acceptance coverage.
-- `[ ]` Update architecture/acceptance/execution evidence and run focused/full offline gates.
-- `[ ]` Complete same-task Luna Max subagent review and repair every confirmed finding.
-- `[ ]` Commit the final verified implementation; leave merge/retirement to the root task.
+- `[x]` Activate the verified S7P-05 plan and hand it to a dedicated Luna Max task.
+- `[x]` Separate recognized scoped `ValidationFact` values from ordinary command success.
+- `[x]` Freeze and rehydrate a lightweight Outcome Contract plus safe workspace baseline.
+- `[x]` Compare run-attributed net changes without absorbing pre-existing dirty user files.
+- `[x]` Gate final stop on change, validation, path, unresolved-tool and verifier facts.
+- `[x]` Buffer final claims and allow one fact-only correction without a second history writer.
+- `[x]` Add exact completion/validation/verifier/budget stop and result states.
+- `[x]` Extend bounded terminal observability and terminal summary without raw payloads.
+- `[x]` Add scripted Direct-agent and durable recovery acceptance coverage.
+- `[x]` Update architecture/acceptance/execution evidence and run focused/full offline gates.
+- `[x]` Complete same-task Luna Max subagent review and repair every confirmed finding; Boole's six
+  findings were reproduced and fixed, and narrow final reviewer Hume returned formal APPROVE with
+  no confirmed P0-P3 findings.
+- `[x]` Commit the final verified implementation; leave merge/retirement to the root task.
 
 ## Boundaries
 
