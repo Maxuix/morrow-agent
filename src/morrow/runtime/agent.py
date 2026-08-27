@@ -500,6 +500,7 @@ class AgentLoop:
         monotonic=None,
         should_stop_after_turn=None,
         retry_sleep=None,
+        runtime_control=None,
     ) -> None:
         self.runner = ModelCallRunner(provider, model)
         self.context_builder = context_builder
@@ -511,6 +512,7 @@ class AgentLoop:
         self.monotonic = monotonic or time.monotonic
         self.should_stop_after_turn = should_stop_after_turn
         self.retry_sleep = retry_sleep or asyncio.sleep
+        self.runtime_control = runtime_control
         self.tool_cycle = (
             ToolCycleExecutor(
                 tool_executor,
@@ -570,6 +572,15 @@ class AgentLoop:
         if inspect.isawaitable(result):
             result = await result
         return bool(result)
+
+    async def _steering_pending(self, session: Session) -> bool:
+        control = self.runtime_control
+        if control is None:
+            return False
+        result = control.peek_steering(session.session_id)
+        if inspect.isawaitable(result):
+            result = await result
+        return result is not None
 
     async def _compact_context(
         self,
@@ -691,6 +702,7 @@ class AgentLoop:
         prepared: PreparedAgentRunRuntime | None = None,
         startup_error: str | None = None,
         agent_run_id: str | None = None,
+        runtime_control_delivery: bool = False,
     ) -> AsyncIterator[AgentEvent]:
         client_message_id = client_message_id or self._id("cmsg")
         if prepared is not None:
@@ -1160,10 +1172,26 @@ class AgentLoop:
                         for prior_call in prior_message.tool_calls:
                             _remember_call_paths(state, prior_call)
 
+            first_loop_iteration = True
             while True:
                 if _pending_cancellation():
                     _consume_cancellation_request()
                     raise asyncio.CancelledError
+                if not (
+                    runtime_control_delivery and first_loop_iteration
+                ) and await self._steering_pending(session):
+                    session.finish_turn(FinishReason.STEERED)
+                    state.settled = True
+                    state.terminal_finish_reason = FinishReason.STEERED
+                    state.stop_code = None
+                    retain_facts(FinishReason.STEERED.value)
+                    yield event("status.changed", {"status": "steered"})
+                    yield event(
+                        "turn.completed",
+                        completion_payload(FinishReason.STEERED, state.visible),
+                    )
+                    return
+                first_loop_iteration = False
                 if state.deadline is not None and self.monotonic() >= state.deadline:
                     for item in terminal_error("任务超过总运行时间", AgentStopCode.RUN_TIMEOUT):
                         yield item
@@ -1449,6 +1477,18 @@ class AgentLoop:
                 )
                 if is_final_text:
                     candidate_text = message.content or "".join(candidate_chunks)
+                    if await self._steering_pending(session):
+                        session.finish_turn(FinishReason.STEERED)
+                        state.settled = True
+                        state.terminal_finish_reason = FinishReason.STEERED
+                        state.stop_code = None
+                        retain_facts(FinishReason.STEERED.value)
+                        yield event("status.changed", {"status": "steered"})
+                        yield event(
+                            "turn.completed",
+                            completion_payload(FinishReason.STEERED, state.visible),
+                        )
+                        return
                     try:
                         freeze_permissions()
                         session.append_assistant(message)
@@ -1707,6 +1747,18 @@ class AgentLoop:
                         completion_payload(FinishReason.CANCELLED, state.visible),
                     )
                     return
+                if await self._steering_pending(session):
+                    session.finish_turn(FinishReason.STEERED)
+                    state.settled = True
+                    state.terminal_finish_reason = FinishReason.STEERED
+                    state.stop_code = None
+                    retain_facts(FinishReason.STEERED.value)
+                    yield event("status.changed", {"status": "steered"})
+                    yield event(
+                        "turn.completed",
+                        completion_payload(FinishReason.STEERED, state.visible),
+                    )
+                    return
         except InjectedFault:
             state.settled = True
             state.crashed = True
@@ -1937,6 +1989,7 @@ class AgentRuntime:
         grant_provider=None,
         should_stop_after_turn=None,
         retry_sleep=None,
+        runtime_control=None,
     ) -> None:
         self._loop = AgentLoop(
             provider,
@@ -1948,6 +2001,7 @@ class AgentRuntime:
             grant_provider=grant_provider,
             should_stop_after_turn=should_stop_after_turn,
             retry_sleep=retry_sleep,
+            runtime_control=runtime_control,
         )
 
     @property
@@ -1963,6 +2017,7 @@ class AgentRuntime:
         prepared: PreparedAgentRunRuntime | None = None,
         startup_error: str | None = None,
         agent_run_id: str | None = None,
+        runtime_control_delivery: bool = False,
     ) -> AsyncIterator[AgentEvent]:
         return self._loop.run_task(
             session,
@@ -1971,6 +2026,7 @@ class AgentRuntime:
             prepared=prepared,
             startup_error=startup_error,
             agent_run_id=agent_run_id,
+            runtime_control_delivery=runtime_control_delivery,
         )
 
     async def compact_idle(self, session: Session, *, instructions: str = "") -> bool:

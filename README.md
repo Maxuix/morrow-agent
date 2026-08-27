@@ -126,7 +126,10 @@ AgentRun 授予 `unconfined_host_process`，且每次 opaque Host 命令仍要�
 `next_cursor`；`--json` 保留 `items` 和 `next_cursor`，适合脚本分页。`state doctor`
 仍会输出完整诊断报告，但只有 health OK 时 exit 0，其他状态 exit 2。
 
-`Ctrl+C` 在模型或工具活动期间取消当前任务，之后可以直接继续对话。`/new` 创建并切换到新的
+Agent 运行时可继续输入：Enter 将文本作为 steering，在下一个安全点结束当前 Turn 并提交新的
+持久化 Turn；Alt+Enter 将文本作为 follow-up，仅在 Agent 正常停止后按 FIFO 执行。已接纳的工具
+批次不会因 steering 被跳过或中断。`Ctrl+C` 仍在模型或工具活动期间取消当前任务，之后可以直接
+继续对话。`/new` 创建并切换到新的
 Session，不删除或归档旧会话；仅当对话仍只存在于进程内时才要求确认丢弃。`/exit` 和输入 EOF 在
 已持久化会话上直接退出并保留历史；仅进程内未保存对话仍需确认丢弃，取消则留在 REPL，确认提示
 期间 EOF 返回 2 且不重置会话。

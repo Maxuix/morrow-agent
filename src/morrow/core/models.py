@@ -466,6 +466,7 @@ class ModelFinishReason(StrEnum):
 
 class FinishReason(StrEnum):
     STOP = "stop"
+    STEERED = "steered"
     CANCELLED = "cancelled"
     ERROR = "error"
 

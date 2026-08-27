@@ -6,6 +6,7 @@ import asyncio
 from dataclasses import replace
 
 from prompt_toolkit import PromptSession
+from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.patch_stdout import patch_stdout
 from rich.console import Console
 
@@ -22,6 +23,7 @@ from morrow.core.permissions import UNCONFINED_HOST_APPROVAL_LANGUAGE
 _MODEL_WAIT_MESSAGE = "正在连接模型并等待首个响应…（Ctrl+C 取消）"
 _MODEL_CONTINUE_MESSAGE = "正在等待模型继续响应…（Ctrl+C 取消）"
 _MODEL_RETRY_MESSAGE = "模型暂时不可用，正在重试…（Ctrl+C 取消）"
+_STEERED_MESSAGE = "已接收运行中指引，正在开始新的 Turn。"
 _STOP_HINTS = {
     "provider_auth": "请检查 API Key 或重新配置 Provider。",
     "provider_network": "请检查网络后重试。",
@@ -36,6 +38,9 @@ class Terminal:
         self.console = console or Console()
         self._text_open = False
         self._tool_activity = False
+        self._runtime_input_task: asyncio.Task | None = None
+        self._runtime_input_allowed = asyncio.Event()
+        self._runtime_input_allowed.set()
 
     def show_event(self, event) -> None:
         if event.type == "turn.started":
@@ -46,6 +51,11 @@ class Terminal:
             if self._text_open:
                 self.console.print()
             self.console.print(_MODEL_RETRY_MESSAGE)
+            self._text_open = False
+        elif event.type == "status.changed" and event.payload.get("status") == "steered":
+            if self._text_open:
+                self.console.print()
+            self.console.print(_STEERED_MESSAGE)
             self._text_open = False
         elif event.type == "text.delta":
             self.console.print(event.payload.get("text", ""), end="")
@@ -123,6 +133,42 @@ class Terminal:
     async def prompt(self, session: PromptSession, message: str = "你 > ") -> str:
         return await session.prompt_async(message)
 
+    async def prompt_runtime_control(
+        self, session: PromptSession, message: str = "运行中 > "
+    ) -> tuple[str, str]:
+        """Pi mapping: Enter steers; Alt+Enter queues a follow-up."""
+
+        mode = "steer"
+        bindings = KeyBindings()
+
+        @bindings.add("escape", "enter")
+        def follow_up(event) -> None:
+            nonlocal mode
+            mode = "follow_up"
+            event.current_buffer.validate_and_handle()
+
+        task = asyncio.current_task()
+        self._runtime_input_task = task
+        try:
+            await self._runtime_input_allowed.wait()
+            text = await session.prompt_async(message, key_bindings=bindings)
+            return mode, text
+        finally:
+            if self._runtime_input_task is task:
+                self._runtime_input_task = None
+
+    def suspend_runtime_input(self) -> None:
+        self._runtime_input_allowed.clear()
+        self.cancel_runtime_input()
+
+    def resume_runtime_input(self) -> None:
+        self._runtime_input_allowed.set()
+
+    def cancel_runtime_input(self) -> None:
+        task = self._runtime_input_task
+        if task is not None and not task.done():
+            task.cancel()
+
 
 class TerminalApprovalPort:
     """Terminal-only adapter for the generic Core approval boundary."""
@@ -132,6 +178,9 @@ class TerminalApprovalPort:
         self.prompt_session = prompt_session
 
     async def request(self, request: ToolApprovalRequest) -> ToolApprovalDecision:
+        suspend = getattr(self.terminal, "suspend_runtime_input", None)
+        if callable(suspend):
+            suspend()
         lines = request.preview or ("未提供额外预览。",)
         self.terminal.console.print("\n".join(lines))
         elevated = any(line.startswith("unconfined_host:") for line in lines)
@@ -149,6 +198,10 @@ class TerminalApprovalPort:
             answer = await self.terminal.prompt(self.prompt_session, prompt)
         except (EOFError, KeyboardInterrupt):
             raise asyncio.CancelledError from None
+        finally:
+            resume = getattr(self.terminal, "resume_runtime_input", None)
+            if callable(resume):
+                resume()
         return ToolApprovalDecision(approved=answer.strip().casefold() in {"y", "yes", "是"})
 
 
@@ -210,14 +263,21 @@ async def _run_repl_loop(
                 continue
             if not text.strip():
                 continue
-            dispatch_task = asyncio.create_task(
-                _consume_dispatch(orchestrator, text.strip(), terminal)
-            )
             try:
-                result = await dispatch_task
+                if (
+                    callable(getattr(orchestrator, "steer", None))
+                    and callable(getattr(orchestrator, "follow_up", None))
+                    and callable(getattr(prompt_session, "prompt_async", None))
+                ):
+                    result = await _consume_dispatch_with_runtime_input(
+                        orchestrator,
+                        text.strip(),
+                        terminal,
+                        prompt_session,
+                    )
+                else:
+                    result = await _consume_dispatch(orchestrator, text.strip(), terminal)
             except KeyboardInterrupt:
-                dispatch_task.cancel()
-                await asyncio.gather(dispatch_task, return_exceptions=True)
                 terminal.console.print("\n已取消当前操作。")
                 continue
             if review_worker is not None:
@@ -477,6 +537,64 @@ async def _consume_dispatch(orchestrator, text: str, terminal: Terminal) -> Disp
     if completed and getattr(orchestrator, "session", None) is not None:
         terminal.show_run_summary(orchestrator.session)
     return result
+
+
+async def _consume_dispatch_with_runtime_input(
+    orchestrator,
+    text: str,
+    terminal: Terminal,
+    prompt_session: PromptSession,
+) -> DispatchResult:
+    dispatch_task = asyncio.create_task(_consume_dispatch(orchestrator, text, terminal))
+    listen = True
+    try:
+        while not dispatch_task.done():
+            if not listen:
+                return await dispatch_task
+            input_task = asyncio.create_task(terminal.prompt_runtime_control(prompt_session))
+            done, _pending = await asyncio.wait(
+                {dispatch_task, input_task}, return_when=asyncio.FIRST_COMPLETED
+            )
+            if dispatch_task in done:
+                input_task.cancel()
+                await asyncio.gather(input_task, return_exceptions=True)
+                return await dispatch_task
+            try:
+                mode, queued_text = input_task.result()
+            except asyncio.CancelledError:
+                # Approval temporarily owns the same PromptSession. Resume listening after it
+                # releases the prompt unless the foreground run has already ended.
+                await asyncio.sleep(0)
+                continue
+            except EOFError:
+                listen = False
+                continue
+            except KeyboardInterrupt:
+                dispatch_task.cancel()
+                await asyncio.gather(dispatch_task, return_exceptions=True)
+                raise
+            queued_text = queued_text.strip()
+            if not queued_text:
+                continue
+            try:
+                if mode == "follow_up":
+                    await orchestrator.follow_up(queued_text)
+                    terminal.console.print("已排队 follow-up（Agent 正常停止后执行）。")
+                else:
+                    await orchestrator.steer(queued_text)
+                    terminal.console.print("已排队 steering（下一个安全点生效）。")
+            except (RuntimeError, ValueError) as exc:
+                terminal.console.print(f"运行中输入未排队：{exc}")
+        return await dispatch_task
+    finally:
+        cancel_input = getattr(terminal, "cancel_runtime_input", None)
+        if callable(cancel_input):
+            cancel_input()
+        else:
+            terminal.suspend_runtime_input()
+        if not dispatch_task.done():
+            dispatch_task.cancel()
+            await asyncio.gather(dispatch_task, return_exceptions=True)
 
 
 def _command_service(orchestrator):

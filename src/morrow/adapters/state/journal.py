@@ -21,6 +21,7 @@ from morrow.adapters.state.operational import OperationalStoreSession, SqliteExe
 from morrow.adapters.state.permission_journal import SqliteRunPermissionJournal
 from morrow.adapters.state.preference_journal import SqlitePreferenceJournal
 from morrow.adapters.state.recovery_journal import SqliteRecoveryJournal
+from morrow.adapters.state.runtime_control_journal import SqliteRuntimeControlJournal
 from morrow.adapters.state.skill_journal import SqliteSkillJournal
 from morrow.adapters.state.task_journal import SqliteTaskJournal
 from morrow.adapters.state.tool_journal import SqliteToolJournal
@@ -100,6 +101,11 @@ from morrow.core.preference_models import (
     PreferenceWriteBatchStatus,
 )
 from morrow.core.recovery import RecoveryReceipt, RecoveryReport
+from morrow.core.runtime_control import (
+    RuntimeControlEntry,
+    RuntimeControlKind,
+    RuntimeControlStatus,
+)
 from morrow.core.store import StorageError, StorageErrorCode
 from morrow.runtime.ids import RandomIdSource
 
@@ -199,6 +205,7 @@ class SqliteOperationalJournal:
         self._preference_journal = SqlitePreferenceJournal(self._backend)
         self._skill_journal = SqliteSkillJournal(self._backend)
         self._mcp_journal = SqliteMcpJournal(self._backend)
+        self._runtime_control_journal = SqliteRuntimeControlJournal(self._backend)
 
     def now(self) -> datetime:
         return self._backend.now()
@@ -211,6 +218,63 @@ class SqliteOperationalJournal:
 
     def transaction_is_active(self) -> bool:
         return self._backend.transaction.active
+
+    def enqueue_runtime_control(
+        self,
+        workspace_id: str,
+        *,
+        session_id: str,
+        kind: RuntimeControlKind,
+        client_message_id: str,
+        text: str,
+        created_at: datetime,
+    ) -> RuntimeControlEntry:
+        return self._runtime_control_journal.enqueue(
+            workspace_id,
+            session_id=session_id,
+            kind=kind,
+            client_message_id=client_message_id,
+            text=text,
+            created_at=created_at,
+        )
+
+    def get_runtime_control(
+        self, workspace_id: str, session_id: str, client_message_id: str
+    ) -> RuntimeControlEntry | None:
+        return self._runtime_control_journal.get(workspace_id, session_id, client_message_id)
+
+    def peek_runtime_control(
+        self,
+        workspace_id: str,
+        session_id: str,
+        *,
+        kind: RuntimeControlKind,
+    ) -> RuntimeControlEntry | None:
+        return self._runtime_control_journal.peek(workspace_id, session_id, kind=kind)
+
+    def list_runtime_controls(
+        self,
+        workspace_id: str,
+        session_id: str,
+        *,
+        status: RuntimeControlStatus | None = None,
+    ) -> tuple[RuntimeControlEntry, ...]:
+        return self._runtime_control_journal.list_entries(workspace_id, session_id, status=status)
+
+    def consume_runtime_control(
+        self,
+        workspace_id: str,
+        session_id: str,
+        client_message_id: str,
+        *,
+        consumed_at: datetime,
+    ) -> RuntimeControlEntry:
+        return self._runtime_control_journal.consume(
+            workspace_id,
+            session_id,
+            client_message_id,
+            consumed_at=consumed_at,
+        )
 
     @property
     def preference_journal(self) -> SqlitePreferenceJournal:

@@ -39,11 +39,21 @@ Reference: Pi Agent 0.84.2 at commit
   legal tool-call/tool-result pairing.
 - [ ] Scripted retry interaction proves cancel during backoff remains immediate and steering waits
   until the next safe point. Retry classification/backoff itself is S7P-06 acceptance evidence.
-- [ ] Terminal in-run input uses the exact pinned Pi TUI mapping; Ctrl+C cancellation is unchanged.
+- [x] Terminal in-run input uses the exact pinned Pi TUI mapping; Ctrl+C cancellation is unchanged.
 - [ ] Focused gates, the full offline suite, Ruff, compileall, both CLI help commands and
   `git diff --check` pass.
 
 ## Deferred
 
 Pi TUI extensions, images, extension-command expansion and the `all` queue mode are outside v1.
-The exact terminal key/prefix mapping is recorded here when Phase 2 pins it from the same Pi commit.
+## Terminal mapping evidence
+
+The pinned `interactive-mode.ts` maps ordinary Enter while `session.isStreaming` to
+`streamingBehavior: "steer"` (lines 2877–2885). Its Alt+Enter handler maps streaming input to
+`streamingBehavior: "followUp"` (lines 3760–3768). Morrow therefore uses the same mapping:
+
+- Enter during a foreground run queues steering.
+- Alt+Enter during a foreground run queues follow-up.
+- Ctrl+C retains Morrow's existing foreground cancellation behavior.
+
+Source: [Pi Agent 0.84.2 interactive mode](https://raw.githubusercontent.com/earendil-works/pi/209bc7b9a89b01c8fd05861cf5bbdda3e300037a/packages/coding-agent/src/modes/interactive/interactive-mode.ts).

@@ -1,8 +1,7 @@
 # Morrow 架构基线
 
-> 状态：阶段 2–5 已完成；Stage 6 Subplans 63–75 已在本地完成（macOS；Linux 原生运行仍
-> unsupported）；Stage 7 preflight S7P-01–S7P-04 已在各自本地实现中，S7P-05 validation/
-> completion truth 正在当前 topic branch 完成，尚未合入 main；其余 Stage 7–10 尚未开始
+> 状态：阶段 2–6 已完成；Stage 7 preflight S7P-01–S7P-06 已集成，S7P-07 runtime control
+> 正在当前 topic branch 实施（macOS；Linux 原生运行仍 unsupported）
 
 本文锁定当前依赖方向、数据所有权和安全边界。阶段 3 的能力策略、配置工具、工作空间读搜、冲突安全文件变更、审批后 Host 命令、只读 Git 和当前 macOS 原生沙箱
 已经交付；Linux 原生运行尚未声明支持。Stage 4 已落地数据根 SQLite Operational Store 的
@@ -16,9 +15,9 @@ AgentRun 注入。v13 DDL 与 checksum 保持不变。
 Stage 6 的当前所有权如下：`application/skills/` 负责 Catalog、生命周期、Selection/Context、Draft、Usage、脚本和
 Doctor；`application/mcp/` 负责 desired-state、Catalog、run-scoped runtime、策略桥接和结果归一化；Provider/Model
 控制面仍由 Provider service 与 Adapter Registry 持有。SkillBinding、MCP desired state、Provider/Model 非敏感配置和
-Workspace 扩展配置继续由 YAML 持有，CredentialStore 是唯一凭据权威。Operational Store v14–v21 持有 Skill/MCP
+Workspace 扩展配置继续由 YAML 持有，CredentialStore 是唯一凭据权威。Operational Store v14–v22 持有 Skill/MCP
 运行证据与 AgentRun 观测；v17–v20 的 request ledger、completion-truth 兼容列与 long-horizon accounting，
-以及 v21 的有界 retry progress 独立于不可变
+以及 v21 的有界 retry progress、v22 的 durable runtime-control queue 独立于不可变
 AgentRun admission snapshot。
 `application/backup_v2.py` 组合在线 SQLite、Artifact、脱敏 YAML 和被引用 managed Skill 版本，并以新目标
 目录执行原子、隔离 restore。v1 backup verifier 保持向后兼容，Backup v2 不复制凭据。
@@ -160,7 +159,7 @@ Slash `CommandService` 是薄适配器，CLI、REPL 和未来客户端不直接�
 拥有 command replay、application event/receipt、时钟、ID 和错误翻译。Artifact、Task、Checkpoint/Fork、Grant、Recovery 与 durable conversation 服务依赖
 `core/journal.py` 的窄端口；只有 composition、跨域事务聚合、诊断和备份持有具体 SQLite adapter。
 `SqliteOperationalJournal` 只保留 Session 聚合与兼容委托；application event、Artifact、Context、
-Conversation/Turn、Permission、Recovery、Task 与 Tool SQL 分属有界 repository。全部 repository 共享
+Conversation/Turn、Permission、Recovery、RuntimeControl、Task 与 Tool SQL 分属有界 repository。全部 repository 共享
 一个 `SqliteJournalBackend` 的外层事务、时间戳、replayability 与 touched-Session 状态，因此拆分不会
 拆散跨域原子事务，也不会形成 repository 对父 facade 的反向依赖。
 配置补丁显式分派到 Preferences 或 Profile，不存在兜底目标。`build_session_application()` 返回命名的
@@ -285,7 +284,7 @@ workspace Preferences 损坏只隔离该层。旧 `handoff.yaml(.bak)` 不属于
 `config.yaml` 是聚合文档，Provider、全局 Preferences 与可选 runtime-policy 覆盖的写入必须在同一事务锁内保留对方字段。
 `workspace-index.yaml` 由独立 WorkspaceIndexStore 管理。
 
-### Operational Store 与 Artifact 布局（v21）
+### Operational Store 与 Artifact 布局（v22）
 
 数据根（`--state-root` 或 `~/.morrow`）下的保留路径：
 
@@ -299,7 +298,7 @@ workspace Preferences 损坏只隔离该层。旧 `handoff.yaml(.bak)` 不属于
 ```
 
 `DataRoot` 暴露 `store_path`、`artifacts_path`、`backups_path` 与 `operational_lock_path`。
-`build_session_application()` 会打开或创建当前 v21 Operational Store，并把对话经 ConversationLog
+`build_session_application()` 会打开或创建当前 v22 Operational Store，并把对话经 ConversationLog
 提交到 Session / TaskRun / Turn / AgentRun / conversation / receipt 表。v3 起有 tool_executions
 与 approvals；v4 增加 recovery_reports / recovery_receipts；v5 增加完整 TaskRun 状态、转移审计、
 TaskOutcome 版本和 Task 命令回执；v6 增加 Artifact 元数据、引用、pin 状态和 `artifact_refs_json`；v7 增加不可变
@@ -319,9 +318,17 @@ v18 在 terminal metrics 中增加了历史 validation/completion 字段，v19 �
 当次 PromptProfileEvidence 以及历史 no-tool 语义意图请求证据；这些字段仍可供旧数据读取，但 S7P-06
 的新运行不把已移除的 completion gate 当作运行时权威。v20 以追加列记录 long-horizon policy version、
 精确 context-window accounting、compaction-required、compaction/overflow-recovery 计数；v21 以单独的
-有界可变 retry-progress 行记录连续模型重试、累计重试与摘要重试计数。两者都不改写 immutable
-AgentRun snapshot，也不复制 ConversationLog 或 ToolExecution payload。未迁移的 v20 只读观测仍可
-读取，只是不提供 v21 retry-progress 行。
+有界可变 retry-progress 行记录连续模型重试、累计重试与摘要重试计数；v22 增加每 Session 最多
+32 条、单条最多 4096 字符的 FIFO steering/follow-up queue，并让 `steered` AgentRun 终态可观测。
+队列消费与下一 Turn admission 同事务，消息仍只通过 ConversationLog 写入；这些投影都不改写
+immutable AgentRun snapshot，也不复制 ToolExecution payload。未迁移的 v20 只读观测仍可读取，
+只是不提供 v21 retry-progress 或 v22 runtime-control 行。
+
+`SessionOrchestrator` 是 runtime control 的应用边界。AgentLoop 只在循环顶部、完整工具批次之后和
+最终 STOP 提交之前轮询 steering；它不会中断模型流、retry backoff 或已接纳工具批次。命中 steering
+时当前 Turn 以 `FinishReason.STEERED` 合法闭合，随后队列文本用其 `client_message_id` 经普通
+probe → prepare → Turn admission 路径提交。正常 STOP 后才按 FIFO 一次 drain 一个 follow-up；
+cancel/error/host stop 不自动消费 follow-up。
 v2 新运行只有在 exact model capability 提供 context window 时才会启用；缺失 capability 不猜测小型
 字符窗口，显式请求 v2 时直接失败。v1 恢复仍按冻结的旧 RunPolicy 执行。上述路径都不保存命令参数、
 输出、项目指令正文、文件内容、模型原始回复或 verifier 私有数据。

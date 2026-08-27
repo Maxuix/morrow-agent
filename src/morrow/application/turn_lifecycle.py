@@ -432,6 +432,21 @@ class TurnSubmissionCoordinator:
                 ),
             )
             writer.persist(planned)
+            runtime_control = txn.get_runtime_control(
+                self.workspace_id, session.session_id, client_message_id
+            )
+            if runtime_control is not None:
+                if runtime_control.text != user_input:
+                    raise StorageError(
+                        StorageErrorCode.UNAVAILABLE,
+                        "runtime control entry does not match the submitted Turn",
+                    )
+                txn.consume_runtime_control(
+                    self.workspace_id,
+                    session.session_id,
+                    client_message_id,
+                    consumed_at=stamp,
+                )
             return _AcceptedTurn(turn_id, task_id, stored_agent_run_id)
 
         accepted = self.journal.transact(work)
@@ -493,6 +508,8 @@ class TurnSubmissionCoordinator:
         task = txn.get_task_run(self.workspace_id, self.state.task_run_id)
         if task is None:
             raise RuntimeError("durable TaskRun is missing for the active turn")
+        if terminal.finish_reason is FinishReason.STEERED:
+            return False
         if terminal.finish_reason is FinishReason.STOP:
             target = TaskRunStatus.READY_FOR_ACCEPTANCE
             trigger = None

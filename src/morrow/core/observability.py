@@ -237,7 +237,11 @@ class AgentRunTerminalMetrics(ProtocolModel):
 
     @model_validator(mode="after")
     def terminal_contract(self) -> AgentRunTerminalMetrics:
-        if self.finish_reason in (FinishReason.STOP, FinishReason.CANCELLED):
+        if self.finish_reason in (
+            FinishReason.STOP,
+            FinishReason.STEERED,
+            FinishReason.CANCELLED,
+        ):
             if self.stop_code is not None:
                 raise ValueError("successful or cancelled AgentRun must not contain a stop code")
         elif self.stop_code is None:

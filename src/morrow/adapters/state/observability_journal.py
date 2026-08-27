@@ -349,7 +349,8 @@ class SqliteObservabilityJournal:
                 "AgentRun terminal metrics finish facts are invalid",
             ) from None
         if (
-            selected_finish_reason in (FinishReason.STOP, FinishReason.CANCELLED)
+            selected_finish_reason
+            in (FinishReason.STOP, FinishReason.STEERED, FinishReason.CANCELLED)
             and selected_stop_code is not None
         ) or (selected_finish_reason is FinishReason.ERROR and selected_stop_code is None):
             raise StorageError(

@@ -43,6 +43,7 @@ from morrow.core.observability import (
 )
 from morrow.core.permissions import CapabilityGrant, PermissionSnapshot
 from morrow.core.recovery import RecoveryReceipt, RecoveryReport
+from morrow.core.runtime_control import RuntimeControlEntry, RuntimeControlKind
 from morrow.core.skills.context import SkillContextEntry
 from morrow.core.skills.drafts import SkillDraft, SkillDraftValidationReport
 from morrow.core.skills.selection import SkillSelection
@@ -440,6 +441,29 @@ class TurnSubmitReceiptPort(Protocol):
     ) -> TurnSubmitReceipt: ...
 
 
+class RuntimeControlJournalPort(Protocol):
+    def get_runtime_control(
+        self, workspace_id: str, session_id: str, client_message_id: str
+    ) -> RuntimeControlEntry | None: ...
+
+    def peek_runtime_control(
+        self,
+        workspace_id: str,
+        session_id: str,
+        *,
+        kind: RuntimeControlKind,
+    ) -> RuntimeControlEntry | None: ...
+
+    def consume_runtime_control(
+        self,
+        workspace_id: str,
+        session_id: str,
+        client_message_id: str,
+        *,
+        consumed_at,
+    ) -> RuntimeControlEntry: ...
+
+
 class TurnLifecycleJournalPort(
     SessionLifecyclePort,
     AgentRunPort,
@@ -448,6 +472,7 @@ class TurnLifecycleJournalPort(
     SkillRunJournalPort,
     SkillDraftUsageJournalPort,
     TurnSubmitReceiptPort,
+    RuntimeControlJournalPort,
     TransactionalJournalPort,
     Protocol,
 ):

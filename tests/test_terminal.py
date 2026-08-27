@@ -174,6 +174,75 @@ def test_terminal_segments_mixed_text_tool_and_final_text_without_replay_or_payl
     )
 
 
+def test_terminal_renders_steered_as_distinct_from_cancelled():
+    console = ConsoleStub()
+    terminal = terminal_module.Terminal(console=console)
+    terminal.show_event(
+        AgentEvent(
+            type="status.changed",
+            event_id="evt_1",
+            session_id="ses_1",
+            turn_id="turn_1",
+            sequence=1,
+            payload={"status": "steered"},
+        )
+    )
+    assert any("运行中指引" in line for line in console.lines)
+    assert all("取消" not in line for line in console.lines)
+
+
+@pytest.mark.asyncio
+async def test_runtime_input_enter_steers_and_alt_enter_queues_follow_up():
+    class RuntimeInputTerminal:
+        def __init__(self) -> None:
+            self.console = ConsoleStub()
+            self.inputs = [("steer", "correct it"), ("follow_up", "then explain")]
+
+        async def prompt_runtime_control(self, _session):
+            await asyncio.sleep(0)
+            return self.inputs.pop(0)
+
+        def show_event(self, _event) -> None:
+            return None
+
+        def show_run_summary(self, _session) -> None:
+            return None
+
+        def suspend_runtime_input(self) -> None:
+            return None
+
+    class RuntimeInputOrchestrator:
+        def __init__(self) -> None:
+            self.controls: list[tuple[str, str]] = []
+            self.ready = asyncio.Event()
+            self.session = None
+
+        async def stream(self, _text):
+            await self.ready.wait()
+            yield DispatchResult()
+
+        async def steer(self, text):
+            self.controls.append(("steer", text))
+
+        async def follow_up(self, text):
+            self.controls.append(("follow_up", text))
+            self.ready.set()
+
+    terminal = RuntimeInputTerminal()
+    orchestrator = RuntimeInputOrchestrator()
+    result = await terminal_module._consume_dispatch_with_runtime_input(
+        orchestrator, "start", terminal, object()
+    )
+
+    assert result.degraded is False
+    assert orchestrator.controls == [
+        ("steer", "correct it"),
+        ("follow_up", "then explain"),
+    ]
+    assert any("steering" in line for line in terminal.console.lines)
+    assert any("follow-up" in line for line in terminal.console.lines)
+
+
 def test_terminal_summary_separates_commands_and_validation_telemetry():
     class RecordingConsole:
         def __init__(self):

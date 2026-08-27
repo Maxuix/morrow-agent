@@ -74,6 +74,7 @@ from morrow.application.preferences.worker import ReviewWorker
 from morrow.application.preferences.writer import PreferenceWriter
 from morrow.application.prompt import DirectCodingPromptAssembler
 from morrow.application.recovery import RecoveryService
+from morrow.application.runtime_control import RuntimeControlService
 from morrow.application.skills.bindings import SkillBindingService
 from morrow.application.skills.catalog import SkillCatalogService
 from morrow.application.skills.drafts import SkillDraftService
@@ -997,12 +998,19 @@ def build_session_application(
             )
 
         tool_executor = make_tools(run_policy)
+        runtime_control = RuntimeControlService(
+            journal,
+            workspace_id=identity.workspace_id,
+            id_source=app.id_source,
+            clock=journal.now,
+        )
         runtime = AgentRuntime(
             provider,
             model,
             context_builder,
             id_source=app.id_source,
             tool_executor=tool_executor,
+            runtime_control=runtime_control,
         )
         skill_services = build_skill_services(
             app,
@@ -1144,6 +1152,7 @@ def build_session_application(
             context_builder=context_builder,
             id_source=app.id_source,
             preparation=preparation,
+            runtime_control=runtime_control,
         )
         products = SessionApplication(
             session=session,

@@ -10,7 +10,12 @@ from morrow.application.agent_runs.preparation import AgentRunPreparationError
 from morrow.application.context import ContextBudgetError
 from morrow.core.application import ApplicationError
 from morrow.core.domain import SessionLifecycle, session_can_start_work
-from morrow.core.models import AgentEvent
+from morrow.core.models import AgentEvent, FinishReason
+from morrow.core.runtime_control import (
+    RuntimeControlEntry,
+    RuntimeControlError,
+    RuntimeControlErrorCode,
+)
 
 if TYPE_CHECKING:
     from morrow.application.agent_runs.preparation import (
@@ -38,6 +43,7 @@ class SessionOrchestrator:
         context_builder,
         id_source=None,
         preparation: AgentRunPreparationService | None = None,
+        runtime_control=None,
     ) -> None:
         self.session = session
         self.runtime = runtime
@@ -45,6 +51,30 @@ class SessionOrchestrator:
         self.context_builder = context_builder
         self.id_source = id_source
         self.preparation = preparation
+        self.runtime_control = runtime_control
+        self._run_active = False
+
+    @property
+    def run_active(self) -> bool:
+        return self._run_active
+
+    async def steer(self, text: str) -> RuntimeControlEntry:
+        if not self._run_active or self.runtime_control is None:
+            raise RuntimeControlError(
+                RuntimeControlErrorCode.IDLE,
+                "steering requires an active foreground run",
+            )
+        return self.runtime_control.enqueue_steering(self.session.session_id, text)
+
+    async def follow_up(self, text: str):
+        if self._run_active:
+            if self.runtime_control is None:
+                raise RuntimeControlError(
+                    RuntimeControlErrorCode.IDLE,
+                    "follow-up queue is unavailable",
+                )
+            return self.runtime_control.enqueue_follow_up(self.session.session_id, text)
+        return await self.dispatch(text)
 
     def reset_session(self) -> None:
         if self.id_source is None:
@@ -102,8 +132,50 @@ class SessionOrchestrator:
         if self.session.lifecycle is not SessionLifecycle.ACTIVE:
             yield DispatchResult(lines=["当前 Session 已归档，无法开始新的 Turn。"])
             return
-        client_message_id = None
-        if self.id_source is not None:
+        if self._run_active:
+            yield DispatchResult(lines=["当前已有前台 AgentRun 正在运行。"], degraded=True)
+            return
+        self._run_active = True
+        try:
+            next_text = text
+            next_client_message_id = None
+            while True:
+                terminal_reason: FinishReason | None = None
+                async for event in self._stream_turn(
+                    next_text,
+                    client_message_id=next_client_message_id,
+                    runtime_control_delivery=next_client_message_id is not None,
+                ):
+                    if event.type == "turn.completed":
+                        try:
+                            terminal_reason = FinishReason(event.payload.get("finish_reason"))
+                        except (TypeError, ValueError):
+                            terminal_reason = FinishReason.ERROR
+                    yield event
+                if self.runtime_control is None or terminal_reason not in {
+                    FinishReason.STOP,
+                    FinishReason.STEERED,
+                }:
+                    break
+                entry = self.runtime_control.peek_steering(self.session.session_id)
+                if entry is None and terminal_reason is FinishReason.STOP:
+                    entry = self.runtime_control.peek_follow_up(self.session.session_id)
+                if entry is None:
+                    break
+                next_text = entry.text
+                next_client_message_id = entry.client_message_id
+        finally:
+            self._run_active = False
+        yield DispatchResult()
+
+    async def _stream_turn(
+        self,
+        text: str,
+        *,
+        client_message_id: str | None = None,
+        runtime_control_delivery: bool = False,
+    ):
+        if client_message_id is None and self.id_source is not None:
             client_message_id = self.id_source.new_id("cmsg")
         prepared: PreparedAgentRunRuntime | None = None
         startup_error: str | None = None
@@ -140,6 +212,7 @@ class SessionOrchestrator:
                 prepared=prepared,
                 startup_error=startup_error,
                 agent_run_id=prepared_agent_run_id,
+                runtime_control_delivery=runtime_control_delivery,
             ):
                 yield event
         finally:
@@ -151,7 +224,6 @@ class SessionOrchestrator:
                     result = close()
                     if inspect.isawaitable(result):
                         await result
-        yield DispatchResult()
 
     async def dispatch(self, text: str) -> DispatchResult:
         """Compatibility wrapper that collects the streaming dispatch."""
@@ -170,8 +242,13 @@ class SessionOrchestrator:
 
         if not session_can_start_work(self.session.lifecycle, self.session.health):
             raise RuntimeError("only an active healthy Session can resume a Turn")
+        if self._run_active:
+            raise RuntimeError("a foreground AgentRun is already active")
+        self._run_active = True
+        terminal_reason: FinishReason | None = None
         prepared = None
         startup_error: str | None = None
+        resume_completed = False
         try:
             if self.preparation is not None and self.session.durable_runtime is not None:
                 snapshot = self.session.durable_runtime.get_open_run_snapshot()
@@ -192,7 +269,13 @@ class SessionOrchestrator:
                 prepared=prepared,
                 startup_error=startup_error,
             ):
+                if event.type == "turn.completed":
+                    try:
+                        terminal_reason = FinishReason(event.payload.get("finish_reason"))
+                    except (TypeError, ValueError):
+                        terminal_reason = FinishReason.ERROR
                 yield event
+            resume_completed = True
         finally:
             if prepared is not None:
                 close = getattr(prepared, "aclose", None)
@@ -202,6 +285,32 @@ class SessionOrchestrator:
                     result = close()
                     if inspect.isawaitable(result):
                         await result
+            if not resume_completed:
+                self._run_active = False
+        try:
+            while self.runtime_control is not None and terminal_reason in {
+                FinishReason.STOP,
+                FinishReason.STEERED,
+            }:
+                entry = self.runtime_control.peek_steering(self.session.session_id)
+                if entry is None and terminal_reason is FinishReason.STOP:
+                    entry = self.runtime_control.peek_follow_up(self.session.session_id)
+                if entry is None:
+                    break
+                terminal_reason = None
+                async for event in self._stream_turn(
+                    entry.text,
+                    client_message_id=entry.client_message_id,
+                    runtime_control_delivery=True,
+                ):
+                    if event.type == "turn.completed":
+                        try:
+                            terminal_reason = FinishReason(event.payload.get("finish_reason"))
+                        except (TypeError, ValueError):
+                            terminal_reason = FinishReason.ERROR
+                    yield event
+        finally:
+            self._run_active = False
 
 
 def _preparation_error_message(error: Exception) -> str:
