@@ -8,8 +8,9 @@ and validate the offline comparison harness; no formal live campaign run has sta
 
 ## Active task
 
-Close the runner-to-finalize integration gap, commit it, then refreeze the final comparison plan
-and readiness hashes. The Morrow Provider repair now narrows
+Repair the complete Morrow tool-family projection, commit it, then create a new campaign ID. The
+first formal campaign is preserved as an aborted failed attempt after one admitted run. The Morrow
+Provider repair now narrows
 non-interoperable integer bounds only at the wire, accepts MiMo's nonsemantic repeated terminal
 chunk, and classifies request rejections correctly. The repaired bounded Agent probe completed
 `stop` with 7,139 Provider tokens and zero tools. Cost remains explicitly unavailable on Morrow
@@ -18,6 +19,10 @@ The first pre-admission plan rehearsal passed all offline checks and exposed tha
 not yet consumable by `finalize`; no run was admitted. The runner now projects the shared normalized
 trace into the existing runtime-evidence contract, and Pi thinking is pinned `off` so both adapters
 omit reasoning-effort controls.
+After refreezing, campaign `s7p-09-mimo-v25-97829ea` admitted Morrow/MORROW-001#1. The model made 16
+successful requests and 29 tool calls, but safe normalization rejected `find_files` because the
+capability map did not cover every production Morrow tool name. The run was finalized truthfully as
+`BLOCKED_ENV`; the campaign has an immutable `ABORTED` record and will not be continued or reused.
 
 ## Preparation evidence
 
@@ -64,9 +69,9 @@ omit reasoning-effort controls.
 
 ## Next action
 
-Do not admit a formal run until the integration repair is committed and the comparison plan,
-evidence root, source pins, sampling facts and readiness hashes are refrozen. Then execute the
-immutable schedule.
+Do not admit another formal run until the complete tool-family repair passes the full gate, is
+committed, and a new campaign ID/evidence root/source pin is frozen. Then execute the new immutable
+schedule from ordinal 1.
 
 ## Blockers
 

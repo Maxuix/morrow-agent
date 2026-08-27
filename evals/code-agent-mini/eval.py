@@ -2956,15 +2956,31 @@ def load_comparison_plan(path: Path) -> dict[str, object]:
 
 def _tool_family(name: object) -> str:
     normalized = _text(name, "tool name").casefold()
-    if normalized in {"read", "read_file", "ls", "list_directory"}:
+    if normalized in {
+        "read",
+        "read_file",
+        "ls",
+        "list_directory",
+        "git_status",
+        "git_diff",
+        "show_changes",
+    }:
         return "read"
-    if normalized in {"grep", "find", "search", "search_files"}:
+    if normalized in {"grep", "find", "find_files", "search", "search_files", "search_text"}:
         return "search"
-    if normalized in {"edit", "apply_patch", "replace"}:
+    if normalized in {
+        "edit",
+        "apply_patch",
+        "replace",
+        "delete_file",
+        "move_file",
+        "rename_file",
+        "update_configuration",
+    }:
         return "edit"
     if normalized in {"write", "write_file", "create_file"}:
         return "create"
-    if normalized in {"bash", "shell", "command", "run_command"}:
+    if normalized in {"bash", "shell", "command", "run_command", "run_skill_script"}:
         return "command"
     raise EvalError("trace contains an unknown tool capability")
 
@@ -2973,7 +2989,7 @@ def _trace_paths(args: object, workspace: Path | None) -> list[str]:
     if not isinstance(args, Mapping):
         return []
     paths: list[str] = []
-    for key in ("path", "file_path", "cwd"):
+    for key in ("path", "file_path", "source_path", "destination_path", "cwd"):
         raw = args.get(key)
         if not isinstance(raw, str) or not raw:
             continue

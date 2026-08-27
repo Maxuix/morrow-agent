@@ -3544,3 +3544,20 @@
 - Focused evaluator tests passed `39`; full offline passed `1323 passed, 2 deselected in 88.99s`.
   Ruff format/check, compileall, CLI help and `git diff --check` passed. The superseded
   pre-admission plan will not be used because its source pin predates this integration repair.
+
+## 2026-08-28 — First formal campaign attempt aborted without replacement
+
+- Froze campaign `s7p-09-mimo-v25-97829ea` at source `97829ea`, passed comparison-plan validation,
+  clean-source/dataset/Pi/evidence preflight, and admitted only ordinal 1
+  (`morrow/MORROW-001#1`) with a 178,000-token reservation.
+- Fresh state initially lacked `active_model`; because no model request had been admitted, seeded
+  only the non-secret Provider/model configuration and Keychain reference into the same run state,
+  then continued the same campaign key without replacement.
+- The Agent completed 16 Provider requests and 29 tool calls, but normalization rejected the
+  production `find_files` name as an unknown capability. Runtime evidence was therefore honestly
+  unavailable and the immutable run finalized `BLOCKED_ENV/evidence_unavailable`.
+- Wrote a create-only `ABORTED` campaign record with one admitted/finalized run. The campaign will
+  not be continued or reused. Added complete mappings for all production Morrow tool names and
+  move/rename path endpoints; focused evaluator tests passed `50`, and full offline passed
+  `1334 passed, 2 deselected in 83.39s`. Ruff format/check, compileall, CLI help and
+  `git diff --check` passed.

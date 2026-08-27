@@ -1009,6 +1009,31 @@ def test_pi_trace_normalizer_fails_closed_on_missing_duplicate_and_unknown_event
 
 
 @pytest.mark.parametrize(
+    ("tool_name", "family"),
+    [
+        ("find_files", "search"),
+        ("search_text", "search"),
+        ("git_status", "read"),
+        ("git_diff", "read"),
+        ("show_changes", "read"),
+        ("delete_file", "edit"),
+        ("move_file", "edit"),
+        ("rename_file", "edit"),
+        ("update_configuration", "edit"),
+        ("run_skill_script", "command"),
+    ],
+)
+def test_trace_tool_family_covers_the_complete_morrow_inventory(tool_name, family) -> None:
+    assert eval_module._tool_family(tool_name) == family
+
+
+def test_trace_paths_covers_move_and_rename_endpoints(tmp_path: Path) -> None:
+    assert eval_module._trace_paths(
+        {"source_path": "old.py", "destination_path": "src/new.py"}, tmp_path
+    ) == ["old.py", "src/new.py"]
+
+
+@pytest.mark.parametrize(
     ("stop_reason", "stop_code"),
     [
         ("stop", "completed"),

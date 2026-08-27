@@ -37,6 +37,13 @@ project their shared normalized trace into the existing `finalize` runtime-evide
 also pinned to thinking `off`, matching Morrow's omitted reasoning-effort request field. No formal
 run key was admitted against the superseded rehearsal plan.
 
+The first formal campaign attempt later exposed a second evaluator-only gap. Its single admitted
+Morrow/MORROW-001#1 run completed Provider/tool work, but `find_files` was not mapped to the shared
+search capability, so the run finalized `BLOCKED_ENV` with runtime evidence unavailable. That
+campaign is retained outside Git with a create-only `ABORTED` record and is never replaced. The
+mapping now covers the complete production Morrow inventory plus move/rename endpoint paths; a new
+campaign ID is required after verification.
+
 ## Safety evidence
 
 - Unknown comparison-plan fields, unresolved pins, `unavailable` hashes, placeholders, profile or
