@@ -29,9 +29,10 @@ S7P-09 Repeated Direct Evaluation and Same-Condition Pi Baseline.
   pass no-secret auth readiness and the exact `opencode-go/mimo-v2.5` no-tool probe.
 - `[x]` Resolve Morrow Agent streaming readiness: repair the OpenAI-compatible schema wire,
   repeated terminal chunk handling and 4xx classification; verify offline and with a bounded probe.
-- `[>]` Refreeze profiles/pins/schedule/evidence root after the verified Pi 0.84.2 event adapter
-  repair under the approved 50,000,000-token total ceiling; token usage is mandatory while cost is
-  optional. The unrelated notes are recoverably stashed for a clean source checkout.
+- `[>]` Refreeze profiles/pins/schedule/evidence root after the verified Pi 0.84.2 event adapter and
+  validated-stream-usage repairs. Use a 43M campaign ceiling within the approved 50M total; token
+  usage is mandatory while cost is optional. The unrelated notes remain isolated from the clean
+  execution worktree.
 - `[ ]` Execute and finalize the exact 20 Morrow primary runs.
 - `[ ]` Execute and finalize the exact 8 counterbalanced Pi comparison runs.
 - `[ ]` Mechanically aggregate, compare, classify every failure and freeze the Direct baseline.

@@ -3590,3 +3590,20 @@
 - An external writer created another notes file immediately after the stash. To avoid repeatedly
   moving unrelated work, the formal campaign will run from one dedicated clean worktree branch
   `feat/s7p-09-direct-pi-baseline-run`; this intentional stack is retired after integration.
+
+## 2026-08-28 — r5 exposed validated-usage loss on invalid stream
+
+- Froze r5 at clean source `98a4539` with a 46M campaign ceiling. Ordinal 1 finalized
+  `BUDGET_EXHAUSTED` with 1,172,080 tokens; ordinal 2 was a zero-request Morrow environment block;
+  repaired Pi ordinal 3 finalized `FAIL_RUNTIME` with 775,753 tokens.
+- Morrow ordinal 4 completed 27 Provider requests and 53 tools before a final `invalid_response`.
+  The request journal retained 771,093 validated tokens, but the adapter deliberately erased usage
+  on every invalid response, making terminal aggregate usage unavailable. r5 was aborted after
+  ordinal 5 admission and will not be reused.
+- The adapter now clears usage only when normalization/merge itself fails. A later semantic stream
+  error retains already validated usage while error classification remains `invalid_response`.
+  Focused Provider/observability/evaluator tests passed `138` with one live skip; full offline
+  passed `1338 passed, 2 deselected in 91.77s`. Ruff, compileall, CLI and diff checks passed.
+- All formal attempts now account for 6,295,285 tokens plus three failed/interrupted requests with
+  unavailable usage. The next campaign is capped at 43M, leaving about 705k of the approved 50M
+  total for those unknown requests; its 28 reservations total 42M.

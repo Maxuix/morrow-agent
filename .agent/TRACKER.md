@@ -9,12 +9,11 @@ the unrelated notes; the next campaign must use a new clean source pin.
 
 ## Active task
 
-Create the recorded clean execution worktree branch, refreeze source/profile/plan pins there, and
-start a fresh campaign. The original checkout remains available to the external notes writer; the
-initial notes are preserved in a named stash and must be restored after the campaign. Pi
-normalization now supports the observed 0.84.2 `session` event, indexless turn events,
-optional reasoning-token usage, `glob`, and `agent_end` without a semantic stop. The last case is
-truthfully classified `runtime_failed`, not completed or evidence-unavailable.
+Refreeze source/profile/plan pins after `e8981d1` and start a fresh campaign with a 43M campaign
+ceiling. r5 was aborted after ordinal 5 exposed that an `invalid_response` discarded already
+validated stream usage and made the complete AgentRun aggregate unavailable. The adapter now
+retains only usage that passed normalization/merge; malformed or conflicting usage remains
+unavailable. The original checkout remains isolated for the external notes writer.
 
 ## Preparation evidence
 
@@ -61,13 +60,14 @@ truthfully classified `runtime_failed`, not completed or evidence-unavailable.
 
 ## Next action
 
-Create the clean execution worktree at the recorded branch, refreeze source/profile/plan hashes,
-pass campaign preflight, and execute a new immutable schedule from ordinal 1.
+Commit the r5/fix record, refreeze source/profile/plan hashes at the new clean commit, pass campaign
+preflight, and execute a new immutable schedule from ordinal 1.
 
 ## Blockers
 
-- Formal admissions account for 3,567,421 tokens plus one interrupted request with unavailable
-  usage. The approved hard total ceiling is now 50,000,000 tokens with no currency ceiling.
+- Formal admissions account for 6,295,285 tokens plus three failed/interrupted requests with
+  unavailable usage. The approved hard total ceiling remains 50,000,000 tokens with no currency
+  ceiling; the next campaign ceiling is limited to 43,000,000.
 - The unrelated `docs/notes/` are preserved in the named stash
   `checkpoint: preserve docs notes during s7p-09 campaign`; restore it after campaign execution.
 - Remote publication remains unauthorized; raw evidence durability and any push must be reported
