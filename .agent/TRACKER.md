@@ -36,6 +36,8 @@ this task.
 
 ## Blockers
 
-- None. Hume (`01a040c5-3564-7671-94f8-4e5d04fa1e3b`, `gpt-5.6-luna`, reasoning `max`) returned
-  formal `APPROVE — no confirmed P0-P3 findings`; Tesla and Feynman were closed after bounded
-  waits without verdicts, and are retained only as review-attempt history.
+- None. Hume (`01a040c5-3564-7671-94f8-4e5d04fa1e3b`) and the subsequent material-only Noether
+  review (`01a040d0-c688-7171-ba32-75922e74ddff`, both `gpt-5.6-luna`, reasoning `max`) returned
+  formal `APPROVE — no confirmed P0-P3 findings`; Noether explicitly marked all six findings
+  closed. Tesla and Feynman were closed after bounded waits without verdicts and remain review
+  attempt history only.
