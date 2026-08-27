@@ -1,6 +1,7 @@
 # Subplan 89 — S7P-08 Single-Agent Basic Function Matrix Regression
 
-> Status: active; activated 2026-08-27 from verified local `main@d84ac0d`
+> Status: verified; pending local integration; activated 2026-08-27 from verified local
+> `main@d84ac0d`
 > Branch: `chore/s7p-08-single-agent-matrix`
 > Dependencies: S7P-01 through S7P-07 are complete and integrated locally
 > Gate type: P0 pre-Stage-7 evidence gate; no live Provider/model/Pi/MCP/network/credential run

@@ -2,15 +2,15 @@
 
 ## Current status
 
-Subplan 89 is active on `chore/s7p-08-single-agent-matrix`, based on verified local
-`main@d84ac0d`. The strict 18-cell ledger now resolves to current collected selectors, and its
-focused behavior run passed all 94 selected tests. No current-contract product regression was
-reproduced; the only evidence gap was closed with a cross-entrypoint integration test.
+Subplan 89 implementation and evidence are verified on `chore/s7p-08-single-agent-matrix`, based
+on local `main@d84ac0d`. All 18 cells, Lanes A–G, the real current-macOS Seatbelt gate, complete
+offline suite and quality gates passed. The acceptance record is published; local integration and
+resource retirement are the only remaining actions.
 
 ## Active task
 
-Run the separately attributable Stage 1 through Stage 6 and S7P-00 through S7P-07 regression
-lanes, then run the current-macOS host Seatbelt gate.
+Commit the final acceptance/execution-state evidence, fast-forward the verified branch into local
+`main`, verify ancestry and cleanliness, and retire the topic without starting S7P-09.
 
 ## Preparation evidence
 
@@ -33,11 +33,20 @@ lanes, then run the current-macOS host Seatbelt gate.
   test proves interactive and headless dispatch share AgentLoop, frozen Provider/Model, RunPolicy,
   ToolSet, Permission, Preference, Skill and prompt/context evidence, plus terminal stop meaning.
 - No focused failure required production-code repair.
+- Lane results: A `157 passed, 1 deselected`; B `132 passed`; C `137 passed`; D `243 passed`;
+  E `260 passed, 1 deselected`; F `157 passed`; G `198 passed`.
+- On Darwin with no enclosing `CODEX_SANDBOX`, both exact macOS Seatbelt selectors ran and passed:
+  `2 passed in 0.75s`, zero skip.
+- Final collection found `1300` offline selections and two live deselections. Mini Eval self-check
+  passed all 10 tasks. The final offline rerun passed `1300 passed, 2 deselected in 91.64s`.
+- `uv sync`, Ruff format/check, compileall, both CLI help entrypoints and `git diff --check` passed.
+  The final base-to-tip audit found no production, dependency, runtime-default or public-event
+  change and strengthened two initially permissive evidence assertions.
 
 ## Next action
 
-Run Lanes A–G exactly as frozen in Subplan 89 and record each result before the host Seatbelt and
-full quality gates.
+Commit, fast-forward integrate into local `main`, verify the topic is contained, retire it and stop
+before S7P-09.
 
 ## Blockers
 

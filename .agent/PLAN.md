@@ -1,6 +1,6 @@
 # Stage 7 Preflight Reliability — S7P-08 Single-Agent Function Matrix
 
-> Status: active
+> Status: verified; pending local integration
 > Active subplan: Subplan 89 — S7P-08 Single-Agent Basic Function Matrix Regression
 > Branch: `chore/s7p-08-single-agent-matrix`
 > Activation base: verified local `main@d84ac0d`

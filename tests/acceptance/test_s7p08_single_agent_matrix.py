@@ -92,21 +92,17 @@ def test_s7p08_ledger_contract_is_complete_and_strict() -> None:
     referenced_snapshot_classes: set[str] = set()
     all_selectors: list[str] = []
     for cell in cells:
-        assert cell["classification"] in {
-            "covered",
-            "gap",
-            "stale_reference",
-            "host_required",
-        }
+        assert cell["classification"] == "covered"
         assert cell["risk"] in {"medium", "high"}
         assert cell["positive_selectors"]
         assert cell["acceptance_sources"]
-        assert cell["last_execution"]["status"] in {"pending", "passed", "failed", "skipped"}
+        assert cell["last_execution"]["status"] == "passed"
+        assert cell["last_execution"]["command"] == "focused-ledger-selectors"
         if cell["id"] in HIGH_RISK_IDS:
             assert cell["risk"] == "high"
             assert cell["failure_selectors"]
             assert cell["recovery_selectors"]
-        if cell["classification"] == "host_required":
+        if cell["id"] == "sandbox_approval":
             assert cell["platform_conditions"]
         referenced_snapshot_classes.update(cell["snapshot_classes"])
         all_selectors.extend(_selectors(cell))
@@ -192,6 +188,12 @@ async def test_interactive_and_headless_paths_share_run_preparation_and_terminal
     assert interactive_snapshot is not None
     assert headless_snapshot is not None
     assert interactive_snapshot.model == headless_snapshot.model == model
+    assert interactive_snapshot.provider_runtime is not None
+    assert interactive_snapshot.run_policy is not None
+    assert interactive_snapshot.preference_projection_digest is not None
+    assert interactive_snapshot.skill_catalog_digest is not None
+    assert interactive_snapshot.skill_binding_digest is not None
+    assert interactive_snapshot.prompt_profile_digest is not None
     assert interactive_snapshot.provider_runtime == headless_snapshot.provider_runtime
     assert interactive_snapshot.run_policy == headless_snapshot.run_policy
     assert interactive_snapshot.run_policy_digest == headless_snapshot.run_policy_digest

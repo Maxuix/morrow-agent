@@ -3395,3 +3395,19 @@
   `stop` terminal metrics.
 - Focused ledger behavior execution passed `94 passed in 12.52s`; the ledger/contract slice passed
   `3 passed`. No current-contract product defect was reproduced, so no production code changed.
+
+## 2026-08-27 — Subplan 89 full gate and acceptance verified
+
+- Stage lanes passed independently: A `157 passed, 1 deselected`; B `132 passed`; C `137 passed`;
+  D `243 passed`; E `260 passed, 1 deselected`; F `157 passed`; G `198 passed`.
+- On the Darwin host with no enclosing `CODEX_SANDBOX`, the two mandatory real macOS Seatbelt
+  selectors executed without skip and passed `2 passed in 0.75s`.
+- Current non-live collection is `1300/1302` with two live deselections. Code Agent Mini Eval
+  self-check passed all 10 tasks. The final full offline rerun passed
+  `1300 passed, 2 deselected in 91.64s`.
+- `uv sync`, Ruff format/check, compileall, both CLI help entrypoints and `git diff --check` passed.
+  Published `docs/acceptance/s7p-08-single-agent-function-matrix.md` with exact selectors, snapshot
+  classes, stale-reference mapping, host evidence, every lane and the final PASS verdict.
+- The final base-to-tip audit found no production-code, dependency, runtime-default or public-event
+  change. It strengthened the entrypoint test to require non-empty frozen evidence and the ledger
+  contract to reject any final `gap`, `skipped` or non-passed cell. No live test ran.

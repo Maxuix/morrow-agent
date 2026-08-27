@@ -40,7 +40,7 @@ Seatbelt gate and current acceptance evidence. It does not start the S7P-09 real
 | 86 | `86-s7p-00-05-audit-remediation.md` | completed and integrated locally |
 | 87 | `87-remove-runtime-outcome-gate.md` | completed and integrated locally |
 | 88 | `88-s7p-07-runtime-control-steering.md` | completed and integrated locally |
-| 89 | `89-s7p-08-single-agent-function-matrix.md` | active |
+| 89 | `89-s7p-08-single-agent-function-matrix.md` | verified; pending local integration |
 
 ## Stage 7 pre-baseline
 

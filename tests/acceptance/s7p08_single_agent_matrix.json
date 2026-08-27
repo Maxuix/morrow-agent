@@ -2,7 +2,7 @@
   "schema_version": 1,
   "collection_command": "uv run pytest --collect-only -q -m 'not live'",
   "collection_baseline": {
-    "selected": 1297,
+    "selected": 1300,
     "deselected_live": 2,
     "status": "collected"
   },
@@ -107,7 +107,7 @@
       "id": "sandbox_approval",
       "checklist_text": "Sandbox and approval modes fail closed, protect boundaries and recover from promotion conflicts.",
       "risk": "high",
-      "classification": "host_required",
+      "classification": "covered",
       "positive_selectors": [
         "tests/test_sandbox.py::test_sandbox_text_change_requires_approval_and_promotes_safely",
         "tests/test_sandbox.py::test_production_auto_sandbox_registers_only_native_tools_and_keeps_real_workspace_clean",

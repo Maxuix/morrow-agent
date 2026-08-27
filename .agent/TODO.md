@@ -17,11 +17,11 @@ S7P-08 Single-Agent Basic Function Matrix Regression.
   acceptance references against current collected selectors.
 - `[x]` Add missing positive/failure/recovery, AgentRun snapshot and entrypoint-equivalence tests.
 - `[x]` Reproduce and narrowly repair any confirmed current-contract regression.
-- `[>]` Run the focused matrix and Stage 1–6 plus S7P-00–07 regression lanes.
-- `[ ]` Run both real macOS Seatbelt selectors at the host level without skip.
-- `[ ]` Run the complete offline/static/CLI gates and eval self-check.
-- `[ ]` Publish S7P-08 acceptance evidence, audit the final diff and remediate confirmed findings.
-- `[ ]` Commit and fast-forward verified work into `main`, retire clean resources and stop before
+- `[x]` Run the focused matrix and Stage 1–6 plus S7P-00–07 regression lanes.
+- `[x]` Run both real macOS Seatbelt selectors at the host level without skip.
+- `[x]` Run the complete offline/static/CLI gates and eval self-check.
+- `[x]` Publish S7P-08 acceptance evidence, audit the final diff and remediate confirmed findings.
+- `[>]` Commit and fast-forward verified work into `main`, retire clean resources and stop before
   S7P-09.
 
 ## Boundaries
