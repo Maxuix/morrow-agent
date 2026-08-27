@@ -35,6 +35,7 @@ branch and is now complete locally; the untracked S7P-07 candidate remains prese
 | 85 | `85-s7p-06-budget-context-no-progress.md` | completed locally on `codex/feat/s7p-06-pi-parity`; root integration pending |
 | 86 | `86-s7p-00-05-audit-remediation.md` | completed and integrated locally |
 | 87 | `87-remove-runtime-outcome-gate.md` | completed and integrated locally |
+| 88 | `88-s7p-07-runtime-control-steering.md` | implementable candidate; prepared 2026-08-27 against the S7P-06 tree; not active; depends on Subplan 85 integration |
 
 ## Stage 7 pre-baseline
 
