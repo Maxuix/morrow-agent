@@ -2,11 +2,11 @@
 
 ## Current stage
 
-Removal of the runtime OutcomeContract/output-fact gate is active.
+Removal of the runtime OutcomeContract/output-fact gate is complete and integrated locally.
 
 ## Active subplan
 
-Subplan 87 is active. Subplan 86 remains integrated; the untracked S7P-06 draft is inactive.
+No subplan is active. Subplan 87 is integrated; the untracked S7P-06 draft remains inactive.
 
 ## Tasks
 
@@ -17,7 +17,7 @@ Subplan 87 is active. Subplan 86 remains integrated; the untracked S7P-06 draft 
 - `[x]` Delete obsolete semantic resolver/checker implementation and replace its tests with direct
   model-stop acceptance and recovery regressions.
 - `[x]` Update architecture and execution documents.
-- `[>]` Run final static/CLI gates, commit and fast-forward integrate.
+- `[x]` Run final static/CLI gates, commit and fast-forward integrate.
 
 ## Boundaries
 

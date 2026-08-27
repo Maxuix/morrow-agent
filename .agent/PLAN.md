@@ -1,8 +1,8 @@
 # Stage 7 Preflight Reliability Repairs — Remove Runtime Outcome Gate
 
-> Status: active
-> Active subplan: 87 — `.agent/subplans/87-remove-runtime-outcome-gate.md`
-> Branch: `refactor/remove-outcome-gate`
+> Status: completed and integrated locally
+> Active subplan: none; Subplan 87 is complete
+> Branch: `main`
 > Base: locally integrated S7P-05 at `d570c5c`
 > Source authority: current user request, post-fix audit reproductions, current code and gates
 

@@ -2,14 +2,14 @@
 
 ## Current status
 
-Subplan 86 remains integrated. The user has superseded its OutcomeContract semantic-gate decision:
-runtime output-fact validation is being removed on `refactor/remove-outcome-gate` without opening
-S7P-06. Its untracked draft and the three user-owned research documents remain untouched.
+Subplan 87 is committed at `63236ac` and fast-forward integrated into local `main`. The user-
+superseded OutcomeContract/output-fact gate is removed without opening S7P-06. Its untracked draft
+and the three user-owned research documents remain untouched.
 
 ## Active task
 
-Implementation and offline regression are complete. Finish static/CLI gates, commit and locally
-fast-forward integrate the model-owned completion path.
+No implementation task is active. Model-owned completion is integrated; await explicit user
+direction before opening S7P-06.
 
 ## Completed evidence
 
@@ -48,7 +48,7 @@ fast-forward integrate the model-owned completion path.
 
 ## Next action
 
-Run final static/CLI gates, then commit and fast-forward integrate Subplan 87 locally.
+Await explicit user direction; do not start the preserved S7P-06 draft automatically.
 
 ## Subplan 87 evidence
 

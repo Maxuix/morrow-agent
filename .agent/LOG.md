@@ -3293,3 +3293,10 @@
 - Focused matrix passed `154 passed`; full offline regression passed
   `1254 passed, 2 skipped, 2 deselected in 63.16s`; Ruff format/check, compileall, both CLI help
   entrypoints and `git diff --check` passed. No live or network test ran.
+
+## 2026-08-27 — Subplan 87 integrated locally
+
+- Committed model-owned completion as `63236ac` (`refactor(runtime): let model stop end turns`) and
+  fast-forward merged `refactor/remove-outcome-gate` into local `main`.
+- No remote push was attempted or authorized. The untracked S7P-06 draft and three user-owned
+  research documents remain preserved.

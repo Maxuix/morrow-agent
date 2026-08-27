@@ -1,6 +1,6 @@
 # Subplan 87 — Remove Runtime Outcome Gate
 
-> Status: verified; local fast-forward integration pending
+> Status: completed and integrated locally at `63236ac`
 
 ## Goal
 
