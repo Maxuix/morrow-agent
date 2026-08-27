@@ -3366,3 +3366,17 @@
 - Verified the topic tip is an ancestor of `main` and deleted the clean topic branch. Local `main`
   is 55 commits ahead of `origin/main`; no remote push was requested or attempted.
 - Subplan 88 is retired and the ordered Stage 7 sequence is paused before S7P-08.
+
+## 2026-08-27 — Subplan 89 S7P-08 matrix activated
+
+- The user explicitly opened S7P-08 and requested an executable subplan for the single-Agent basic
+  function matrix. Created `chore/s7p-08-single-agent-matrix` from verified local
+  `main@d84ac0d` and activated Subplan 89.
+- Froze 18 capability cells, exact evidence-admission rules, separate Stage 1–6/S7P regression
+  lanes, reproducible AgentRun snapshot proof, and two mandatory real macOS Seatbelt host tests.
+  Current non-live collection sees `1297` selected tests and two live deselections; no pass claim
+  was made from collection alone.
+- Recorded the current-contract amendment from Subplan 87: S7P-08 validates scoped validation
+  telemetry and model-owned stop truth and must not restore Runtime completion inference. S7P-09
+  real-model/Pi comparison, Workflow/multi-Agent work, dependencies, runtime defaults and public
+  event changes remain outside scope.

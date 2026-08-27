@@ -2,25 +2,33 @@
 
 ## Current stage
 
-Subplan 88 is complete and integrated into local `main`. No subplan is active.
+Subplan 89 is active on `chore/s7p-08-single-agent-matrix` from `main@d84ac0d`.
 
 ## Active subplan
 
-None. S7P-08 was not started automatically.
+S7P-08 Single-Agent Basic Function Matrix Regression.
 
 ## Tasks
 
-- `[x]` Activate Subplan 88 and publish the Phase A acceptance evidence.
-- `[x]` Add the durable bounded runtime-control queue and schema migration.
-- `[x]` Add `FinishReason.STEERED` and AgentLoop safe-point delivery.
-- `[x]` Add orchestrator/headless steering and follow-up delivery with crash-safe idempotency.
-- `[x]` Add terminal in-run input using the pinned Pi mapping.
-- `[x]` Run focused and offline gates, formal read-only review, remediation and closeout.
+- `[x]` Inspect current execution state, S7P-08 authority, published acceptance surfaces and test
+  inventory.
+- `[x]` Activate Subplan 89 with a dedicated branch, frozen scope and completion gate.
+- `[>]` Freeze the exact 18-cell machine-readable coverage ledger and audit Stage 1–6/S7P
+  acceptance references against current collected selectors.
+- `[ ]` Add missing positive/failure/recovery, AgentRun snapshot and entrypoint-equivalence tests.
+- `[ ]` Reproduce and narrowly repair any confirmed current-contract regression.
+- `[ ]` Run the focused matrix and Stage 1–6 plus S7P-00–07 regression lanes.
+- `[ ]` Run both real macOS Seatbelt selectors at the host level without skip.
+- `[ ]` Run the complete offline/static/CLI gates and eval self-check.
+- `[ ]` Publish S7P-08 acceptance evidence, audit the final diff and remediate confirmed findings.
+- `[ ]` Commit and fast-forward verified work into `main`, retire clean resources and stop before
+  S7P-09.
 
 ## Boundaries
 
-- Do not modify S7P-06 retry, compaction, truncation, loop-default or policy-version behavior.
-- Do not add public event types/fields or create another ConversationLog writer.
-- Do not interrupt admitted tool batches or in-flight model streams for steering.
-- Do not persist tool arguments/results, command output, secrets, reasoning or tracebacks.
-- Do not run live Provider/model/Pi/MCP/network/credential tests or add dependencies.
+- No live Provider/model/Pi/MCP/network/credential test and no real evaluation bundle.
+- No Workflow, multi-Agent, new capability, dependency, runtime-default or public-event expansion.
+- Do not restore the removed runtime Outcome Contract/CompletionChecker.
+- Do not weaken tests, hide a P0 skip or rewrite historical counts to manufacture a pass.
+- Preserve Session-owned ConversationLog, current S7P-06 long-horizon behavior and S7P-07 control
+  semantics.
