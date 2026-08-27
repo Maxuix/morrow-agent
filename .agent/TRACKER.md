@@ -2,19 +2,15 @@
 
 ## Current status
 
-S7P-01 through S7P-04 are verified, fast-forward integrated into local `main`, and retired.
-S7P-05 Subplan 84 has an implemented, verified and formally reviewed candidate on
-`codex/feat/s7p-05-validation-completion-truth` from activation baseline
-`2c035098263fee3f93d66abc42bc09a36bbb1c42`. The three user-owned research documents remain
-untouched. The topic branch is intentionally unmerged; root owns integration and retirement.
+S7P-01 through S7P-05 are verified and fast-forward integrated into local `main`. Subplan 84 is
+complete. The three user-owned research documents remain untouched, and work is paused before
+S7P-06 by explicit user direction.
 
 ## Active task
 
-Implementation is present in `c14de4e`, with the six confirmed findings from the first formal
-review independently reproduced and fixed in `537689a`. Narrow final reviewer Hume returned formal
-`APPROVE — no confirmed P0-P3 findings` for `537689a^..537689a`; acceptance and execution evidence
-are recorded for this topic branch; the overall task remains pending by instruction and is not
-merged.
+No implementation task is active. S7P-05 is present in `c14de4e`, with all six confirmed findings
+reproduced and fixed in `537689a`; Hume and Noether returned formal
+`APPROVE — no confirmed P0-P3 findings`. The reviewed topic chain is integrated into local `main`.
 
 ## Completed evidence
 
@@ -27,13 +23,16 @@ merged.
 - Focused gates passed: `18`, `34`, `63`, `28`, `24`, `30`, `37`, and `3` tests respectively.
 - Full offline fallback passed `1266 passed, 2 skipped, 2 deselected in 56.24s`; Ruff format/check,
   compileall, both CLI help commands, import proof and `git diff --check` passed.
-- No live Provider/model/Pi/MCP/network/credential test, dependency installation, push or merge
-  was performed.
+- The implementation task performed no live Provider/model/Pi/MCP/network/credential test,
+  dependency installation, push or merge; the root task later performed only the recorded local
+  fast-forward integration.
+- Root integration verification passed the S7P-05 matrix (`30 passed`) and adjacent
+  terminal/preparation/capability suite (`43 passed`), confirmed the topic import path, clean diff
+  and fast-forward ancestry, then integrated the branch locally.
 
 ## Next action
 
-Root task may inspect the clean topic branch later; do not mark S7P-05 complete or fast-forward
-integrate it in this task. Do not start S7P-06.
+Wait for explicit user direction. Do not create an S7P-06 plan or implementation task.
 
 ## Blockers
 

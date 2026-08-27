@@ -2,7 +2,8 @@
 
 ## 1. 结论
 
-S7P-05 的代码实现、正式 review 和离线验证已记录在当前 topic branch；按当前任务要求整体状态仍保持 pending，未合入 main。Direct-agent 的最终 `stop` 现在由运行时有界证据决定；
+S7P-05 的代码实现、正式 review 和离线验证已完成，并已由根任务快进合入本地 `main`。
+Direct-agent 的最终 `stop` 现在由运行时有界证据决定；
 普通命令成功不会伪装成 validation，change task 需要可归因的净工作区变化，required validation
 必须是精确 `(validator_kind, scope)` 的 recognized `ValidationFact`，路径越界、禁止路径、未闭合
 调用、known failure 和可选 verifier 都会阻止不真实的完成声明。业务语义正确性不在本项判定范围内。
@@ -75,6 +76,7 @@ S7P-05 的代码实现、正式 review 和离线验证已记录在当前 topic b
 | CLI help (`morrow`, `morrow run`) | passed |
 | import proof | `morrow.__file__` points to this worktree's `src/morrow/__init__.py` |
 | `git diff --check` | passed |
+| root independent regression | S7P-05 `30 passed`; terminal/preparation/capability `43 passed` |
 
 ## 6. 审查记录
 
@@ -98,6 +100,10 @@ Hume (`01a040c5-3564-7671-94f8-4e5d04fa1e3b`, `gpt-5.6-luna`, reasoning `max`) �
 `537689a` 的 `git show --stat`/关键 diff 和回归断言；reviewer 未访问工作树、未运行命令或
 测试，并在长等待内正式返回：`APPROVE — no confirmed P0-P3 findings`，明确标记六项
 finding `1–6: closed`。该结论与 Hume 一致。
+
+根任务随后确认 topic 相对 activation baseline 仅包含预期提交、工作树与 diff clean、导入路径指向
+该 topic 的 `src/morrow`，并独立重跑 S7P-05 专项矩阵和相邻回归，分别得到 `30 passed` 与
+`43 passed`。完整 topic 链已通过 `--ff-only` 合入本地 `main`；按用户要求停在 S7P-06 之前。
 
 ## 7. 明确缺口
 

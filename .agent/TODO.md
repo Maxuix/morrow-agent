@@ -2,11 +2,11 @@
 
 ## Current stage
 
-Stage 7 preflight reliability repairs, S7P-05: validation and completion truth.
+Stage 7 preflight reliability repairs are paused after the locally integrated S7P-05.
 
 ## Active subplan
 
-Subplan 84 — validation facts, outcome contracts and completion gate.
+None. Subplan 84 is complete and integrated; S7P-06 is not active.
 
 ## Tasks
 
@@ -24,6 +24,8 @@ Subplan 84 — validation facts, outcome contracts and completion gate.
   findings were reproduced and fixed, and narrow final reviewer Hume returned formal APPROVE with
   no confirmed P0-P3 findings.
 - `[x]` Commit the final verified implementation; leave merge/retirement to the root task.
+- `[x]` Independently verify the reviewed branch and fast-forward integrate it into local `main`.
+- `[x]` Pause before S7P-06 as directed by the user.
 
 ## Boundaries
 

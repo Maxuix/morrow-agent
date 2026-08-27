@@ -3229,3 +3229,15 @@
 - Recorded this formal verdict and the existing exact validation evidence in the acceptance and
   execution documents. No implementation change was needed; the branch remains unmerged and
   unpushed, and the three user-owned research documents remain untouched.
+
+## 2026-08-27 — Subplan 84 integrated; sequence paused before S7P-06
+
+- Root independently verified the clean reviewed topic chain and reran the dedicated S7P-05 matrix
+  (`30 passed`) plus adjacent terminal/preparation/capability regressions (`43 passed`). Import
+  proof pointed to the topic worktree; `git diff --check` and fast-forward ancestry passed. The
+  isolated worktree emitted only a non-failing `.pytest_cache` permission warning.
+- Fast-forward merged `codex/feat/s7p-05-validation-completion-truth` into local `main`. No live
+  Provider/model/Pi/MCP/network/credential test, dependency installation or push was performed,
+  and the three user-owned research documents remain untouched.
+- S7P-05 and Subplan 84 are complete. Per explicit user direction, no S7P-06 plan, branch or task
+  was created; the ordered repair sequence is paused here.

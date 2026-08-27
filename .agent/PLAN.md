@@ -1,8 +1,8 @@
 # Stage 7 Preflight Reliability Repairs — S7P-05 Validation and Completion Truth
 
-> Status: active; formal review approved; completion and integration pending
-> Active subplan: 84 — validation facts, outcome contracts and completion gate
-> Branch: `codex/feat/s7p-05-validation-completion-truth`
+> Status: completed and integrated locally; paused before S7P-06
+> Active subplan: none
+> Integrated branch: `codex/feat/s7p-05-validation-completion-truth`
 > Base: activation baseline `2c035098263fee3f93d66abc42bc09a36bbb1c42`
 > Source authority: the user-requested S7P-05 checklist, current code and deterministic probes
 
@@ -213,3 +213,7 @@ Preliminary implementation evidence for this activation:
   (`01a040d0-c688-7171-ba32-75922e74ddff`, `gpt-5.6-luna`, reasoning `max`) independently
   confirmed `APPROVE — no confirmed P0-P3 findings`; it explicitly marked all six initial
   findings closed and ran no commands.
+- The root task independently reran the dedicated S7P-05 matrix (`30 passed`) and adjacent
+  terminal/preparation/capability tests (`43 passed`), confirmed the worktree import path and clean
+  diff, then fast-forward integrated the complete topic chain into local `main`. Per user direction,
+  no S7P-06 plan or implementation task was started.
