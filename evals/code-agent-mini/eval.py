@@ -3356,7 +3356,11 @@ def normalize_morrow_trace(trace: Mapping[str, object]) -> dict[str, object]:
             "total_tokens": int(
                 _required_number(usage["total_tokens"], "Morrow total tokens", integer=True)
             ),
-            "cost": float(_required_number(usage["cost"], "Morrow cost")),
+            "cost": (
+                "unavailable"
+                if usage["cost"] == "unavailable"
+                else float(_required_number(usage["cost"], "Morrow cost"))
+            ),
         },
         duration_ms=int(_required_number(root["duration_ms"], "Morrow duration", integer=True)),
         stop_code=_text(root["stop_code"], "Morrow stop code"),
@@ -3372,7 +3376,7 @@ def _finish_normalized_trace(
     retries: int,
     compactions: int,
     overflow_recoveries: int,
-    usage: Mapping[str, int | float],
+    usage: Mapping[str, int | float | str],
     duration_ms: int,
     stop_code: str,
 ) -> dict[str, object]:
@@ -3607,8 +3611,11 @@ def project_morrow_safe_trace(
     terminal_metrics = _mapping(terminal_metrics, "Morrow terminal metrics")
     usage = _mapping(terminal_metrics.get("usage"), "Morrow terminal usage")
     cost = _mapping(terminal_metrics.get("cost"), "Morrow terminal cost")
-    if usage.get("availability") != "available" or cost.get("availability") != "available":
-        raise EvalError("Morrow Provider usage or cost is unavailable")
+    if usage.get("availability") != "available":
+        raise EvalError("Morrow Provider usage is unavailable")
+    normalized_cost: float | str = "unavailable"
+    if cost.get("availability") == "available":
+        normalized_cost = float(cost["amount_minor"]) / 100.0
     stop_code = terminal_metrics.get("stop_code")
     if terminal_metrics.get("finish_reason") == "stop":
         normalized_stop = "completed"
@@ -3631,7 +3638,7 @@ def project_morrow_safe_trace(
             "input_tokens": usage.get("input_tokens"),
             "output_tokens": usage.get("output_tokens"),
             "total_tokens": usage.get("total_tokens"),
-            "cost": float(cost["amount_minor"]) / 100.0,
+            "cost": normalized_cost,
         },
         "duration_ms": duration_ms,
         "stop_code": normalized_stop,
@@ -4067,7 +4074,10 @@ def run_pi_agent(
 
 
 def _paired_comparison_gate(
-    morrow_entries: list[dict[str, object]], pi_entries: list[dict[str, object]]
+    morrow_entries: list[dict[str, object]],
+    pi_entries: list[dict[str, object]],
+    *,
+    require_cost: bool = True,
 ) -> dict[str, object]:
     def indexed(entries: list[dict[str, object]]) -> dict[tuple[str, int], dict[str, object]]:
         result: dict[tuple[str, int], dict[str, object]] = {}
@@ -4085,6 +4095,8 @@ def _paired_comparison_gate(
     if set(morrow) != expected or set(pi) != expected:
         raise EvalError("paired comparison does not contain exactly eight runs per agent")
     required_metrics = set(USAGE_FIELDS)
+    if not require_cost:
+        required_metrics.remove("cost")
     diagnostics: list[str] = []
     pairs: list[dict[str, object]] = []
     for task_id in FIXED_PI_TASK_IDS:
@@ -4207,21 +4219,28 @@ def compare_campaign(
             raise EvalError("paired workspace baseline trees differ")
         if counterpart["manifest"]["task"] != entry["manifest"]["task"]:
             raise EvalError("paired task bytes or verifier contract differ")
-    paired_gate = _paired_comparison_gate(paired_morrow, pi_entries)
+    cost_required = plan["ceilings"]["total_cost"] is not None
+    paired_gate = _paired_comparison_gate(paired_morrow, pi_entries, require_cost=cost_required)
     all_entries = [*morrow_entries, *pi_entries]
     if any(
         entry["runtime"]["usage"][field] == "unavailable"
         for entry in all_entries
         for field in USAGE_FIELDS
+        if field != "cost" or cost_required
     ):
         raise EvalError("campaign required metrics are incomplete")
     actual_tokens = sum(int(entry["runtime"]["usage"]["total_tokens"]) for entry in all_entries)
-    actual_cost = sum(float(entry["runtime"]["usage"]["cost"]) for entry in all_entries)
+    cost_values = [entry["runtime"]["usage"]["cost"] for entry in all_entries]
+    actual_cost = (
+        sum(float(value) for value in cost_values)
+        if all(value != "unavailable" for value in cost_values)
+        else None
+    )
     budget_diagnostics: list[str] = []
     if actual_tokens > plan["ceilings"]["total_tokens"]:
         budget_diagnostics.append("actual campaign tokens exceeded the approved ceiling")
     total_cost_ceiling = plan["ceilings"]["total_cost"]
-    if total_cost_ceiling is not None and actual_cost > total_cost_ceiling:
+    if total_cost_ceiling is not None and (actual_cost is None or actual_cost > total_cost_ceiling):
         budget_diagnostics.append("actual campaign cost exceeded the approved ceiling")
     overall = (
         "PASS"

@@ -1169,6 +1169,37 @@ def test_morrow_runner_projection_uses_safe_facts_and_discards_arguments() -> No
     assert "sk-" not in serialized
 
 
+def test_morrow_runner_keeps_provider_usage_when_unbounded_cost_is_unavailable() -> None:
+    metrics = {
+        "finish_reason": "stop",
+        "stop_code": None,
+        "model_attempts": 1,
+        "retry_count": 0,
+        "compaction_count": 0,
+        "overflow_recovery_count": 0,
+        "usage": {
+            "availability": "available",
+            "input_tokens": 100,
+            "output_tokens": 20,
+            "total_tokens": 120,
+        },
+        "cost": {
+            "availability": "unavailable",
+            "amount_minor": None,
+            "currency": None,
+            "source": None,
+        },
+    }
+
+    projected = eval_module.project_morrow_safe_trace(
+        events=[], tool_cycles=[], facts=(), metrics=metrics, duration_ms=50
+    )
+    normalized = eval_module.normalize_morrow_trace(projected)
+
+    assert normalized["usage"]["total_tokens"] == 120
+    assert normalized["usage"]["cost"] == "unavailable"
+
+
 def test_permission_equivalence_and_evaluation_approval_remain_fail_closed(tmp_path: Path) -> None:
     from morrow.core.models import ToolApprovalRequest, ToolEffect
 
@@ -1375,3 +1406,24 @@ def test_paired_comparison_is_mechanical_and_rejects_quality_or_tool_deficits() 
     morrow[0]["runtime"]["tool_diagnostics"]["basic_tool_blocked"] = 1
     failed = eval_module._paired_comparison_gate(morrow, pi)
     assert any("Morrow-only basic tool blocker" in item for item in failed["diagnostics"])
+
+
+def test_paired_comparison_allows_missing_cost_only_without_currency_ceiling() -> None:
+    morrow = [
+        _paired_entry(task_id, repetition)
+        for task_id in eval_module.FIXED_PI_TASK_IDS
+        for repetition in (1, 2)
+    ]
+    pi = [
+        _paired_entry(task_id, repetition)
+        for task_id in eval_module.FIXED_PI_TASK_IDS
+        for repetition in (1, 2)
+    ]
+    for entry in morrow:
+        entry["runtime"]["usage"]["cost"] = "unavailable"
+
+    optional = eval_module._paired_comparison_gate(morrow, pi, require_cost=False)
+    required = eval_module._paired_comparison_gate(morrow, pi, require_cost=True)
+
+    assert optional["status"] == "PASS"
+    assert required["status"] == "FAIL"

@@ -8,11 +8,11 @@ and validate the offline comparison harness; no formal live campaign run has sta
 
 ## Active task
 
-Resolve the Morrow Agent streaming readiness blocker before freezing the final comparison plan.
-The checkout is clean and both runners are implemented. Pi now resolves the same Keychain-backed
-credential without copying it, passes auth readiness and completed its exact-model no-tool probe.
-Morrow's non-stream Provider test passes, but its two bounded Agent probes both failed `internal`
-before any tool call. The formal 28-run campaign remains held.
+Freeze the final comparison plan and readiness hashes. The Morrow Provider repair now narrows
+non-interoperable integer bounds only at the wire, accepts MiMo's nonsemantic repeated terminal
+chunk, and classifies request rejections correctly. The repaired bounded Agent probe completed
+`stop` with 7,139 Provider tokens and zero tools. Cost remains explicitly unavailable on Morrow
+and is optional because the approved campaign has no currency ceiling.
 
 ## Preparation evidence
 
@@ -50,26 +50,23 @@ before any tool call. The formal 28-run campaign remains held.
 - Pi now uses a command reference to the existing Morrow Keychain entry, with no secret in Pi
   configuration. `pi auth check --no-refresh` returned `ready/api_key`; the exact no-tool probe
   completed on `opencode-go/mimo-v2.5` with `stop`, 404 total tokens and Provider cost.
-- Morrow's non-stream Provider readiness test passed. Two bounded Agent no-tool probes then failed
-  identically with request/terminal code `internal`, zero tool calls and unavailable usage/cost.
-  The retry bound is exhausted; no further model request was made.
-- Local adapter inspection confirms Morrow's OpenAI-compatible stream currently emits
-  `ModelCost.unavailable()` even on success. The approved budget needs no currency ceiling, but the
-  original complete-cost evidence gate cannot pass without an explicit accounting-contract change.
+- Morrow's repaired bounded Agent probe completed normally with `stop`, 7,139 Provider tokens and
+  zero tool calls. The prior failure combined a 309-digit tool-schema bound rejected by OpenCode Go
+  with MiMo's repeated nonsemantic terminal chunk.
+- Morrow's OpenAI-compatible stream still emits `ModelCost.unavailable()`. Under the user's explicit
+  no-currency-ceiling approval, cost is recorded when available but is no longer a readiness,
+  completeness or comparison gate; token accounting remains mandatory.
 
 ## Next action
 
-Do not admit a formal run. First resolve or explicitly reclassify the repeatable Morrow streaming
-failure, then decide whether complete cost remains mandatory or a frozen derived/optional cost
-contract is authorized. Re-run only the bounded Morrow probe after that blocker changes.
+Do not admit a formal run until the repair is committed and the comparison plan, evidence root,
+source pins, sampling facts and readiness hashes are frozen. Then execute the immutable schedule.
 
 ## Blockers
 
-- Formal live campaign: Morrow Agent streaming readiness, exact served revision/sampling evidence
-  and the final comparison-plan/evidence pins are still required.
-- Complete cost evidence is incompatible with the current Morrow adapter, which reports cost as
-  unavailable; no currency ceiling is enforced, but the original reporting gate remains frozen.
-- The approved budget is a hard 5,000,000-token ceiling with no currency ceiling. Cost remains a
-  mandatory measured metric and is never inferred as zero.
+- Formal live campaign: exact served revision/sampling evidence and the final comparison-plan,
+  source and evidence pins are still required.
+- The approved budget is a hard 5,000,000-token ceiling with no currency ceiling. Missing cost is
+  explicit and never inferred as zero, but it does not block the campaign.
 - Remote publication remains unauthorized; raw evidence durability and any push must be reported
   honestly rather than assumed.

@@ -26,10 +26,10 @@ S7P-09 Repeated Direct Evaluation and Same-Condition Pi Baseline.
   campaign ceiling and no currency ceiling; verify Pi 0.84.2 contains the exact catalog entry.
 - `[x]` Configure Pi through the same Keychain credential reference without copying the secret;
   pass no-secret auth readiness and the exact `opencode-go/mimo-v2.5` no-tool probe.
-- `[!]` Resolve Morrow Agent streaming readiness: non-stream Provider test passes, but two bounded
-  no-tool Agent probes ended `internal` with zero tools and unavailable usage/cost.
-- `[!]` Freeze profiles/pins/schedule/evidence root and complete both readiness hashes; the clean
-  evaluation checkout and Pi evidence are ready, but Morrow Agent readiness is blocked.
+- `[x]` Resolve Morrow Agent streaming readiness: repair the OpenAI-compatible schema wire,
+  repeated terminal chunk handling and 4xx classification; verify offline and with a bounded probe.
+- `[>]` Freeze profiles/pins/schedule/evidence root and complete both readiness hashes; token usage
+  is mandatory while cost is optional under the approved no-currency-ceiling contract.
 - `[ ]` Execute and finalize the exact 20 Morrow primary runs.
 - `[ ]` Execute and finalize the exact 8 counterbalanced Pi comparison runs.
 - `[ ]` Mechanically aggregate, compare, classify every failure and freeze the Direct baseline.

@@ -471,7 +471,7 @@ def audit_registered_tool(
         raise _contract_failure(name, "validator schema digest drifted")
 
     try:
-        from morrow.adapters.models.openai_compatible import serialize_tool
+        from morrow.adapters.models.openai_compatible import normalize_tool_schema, serialize_tool
 
         wire = serialize_tool(registered.definition)
         if set(wire) != {"type", "function"} or wire.get("type") != "function":
@@ -479,10 +479,12 @@ def audit_registered_tool(
         function = wire.get("function")
         if not isinstance(function, dict) or set(function) != {"name", "description", "parameters"}:
             raise ValueError
-        if function.get("name") != name or function.get("parameters") != normalized_schema:
+        if function.get("name") != name or function.get("parameters") != normalize_tool_schema(
+            normalized_schema
+        ):
             raise ValueError
         wire_schema = JsonSchemaArgumentsValidator(function["parameters"])
-        if wire_schema.schema != normalized_schema:
+        if wire_schema.schema != function["parameters"]:
             raise ValueError
         wire_digest = sha256_digest(canonical_json_bytes(wire))
     except Exception:

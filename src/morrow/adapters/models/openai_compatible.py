@@ -25,6 +25,32 @@ from morrow.core.models import (
 )
 from morrow.core.providers import DiscoveredModel
 
+_PROVIDER_SAFE_INTEGER = 2**53 - 1
+_INTEGER_BOUND_KEYWORDS = frozenset({"minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum"})
+
+
+def normalize_tool_schema(value):
+    """Copy a tool schema into the interoperable JSON-number subset.
+
+    Morrow's local validator deliberately accepts integers with hundreds of
+    digits so it can reject them through its own bounded contract. OpenAI-
+    compatible servers commonly parse schemas through IEEE-754 numbers and
+    reject those otherwise-valid JSON integer bounds before inference. The
+    Provider wire can safely be narrower than the local validator: a model
+    cannot need a line or offset beyond JavaScript's exact integer range.
+    """
+
+    if isinstance(value, list):
+        return [normalize_tool_schema(item) for item in value]
+    if not isinstance(value, dict):
+        return value
+    normalized = {}
+    for key, item in value.items():
+        if key in _INTEGER_BOUND_KEYWORDS and isinstance(item, int) and not isinstance(item, bool):
+            item = max(-_PROVIDER_SAFE_INTEGER, min(_PROVIDER_SAFE_INTEGER, item))
+        normalized[key] = normalize_tool_schema(item)
+    return normalized
+
 
 def serialize_message(message: Message) -> dict:
     """Explicit field whitelist; no SDK, event, reasoning or unknown fields."""
@@ -55,7 +81,7 @@ def serialize_tool(tool: ToolDefinition) -> dict:
         "function": {
             "name": tool.function.name,
             "description": tool.function.description,
-            "parameters": tool.function.parameters,
+            "parameters": normalize_tool_schema(tool.function.parameters),
         },
     }
 
@@ -307,6 +333,8 @@ def classify_error(error: BaseException) -> ModelErrorCode:
         for item in errors
     ):
         return ModelErrorCode.RATE_LIMIT
+    if any(getattr(item, "status_code", None) in (400, 404, 422) for item in errors):
+        return ModelErrorCode.INVALID_RESPONSE
     if any(
         isinstance(item, TimeoutError) or "timeout" in type(item).__name__.casefold()
         for item in errors
@@ -321,7 +349,7 @@ def classify_error(error: BaseException) -> ModelErrorCode:
         for item in errors
     ):
         return ModelErrorCode.NETWORK
-    if isinstance(error, (TypeError, ValueError)):
+    if any(isinstance(item, (TypeError, ValueError)) for item in errors):
         return ModelErrorCode.INVALID_RESPONSE
     return ModelErrorCode.INTERNAL
 
@@ -435,6 +463,7 @@ class OpenAICompatibleProvider:
         completed_message: AssistantMessage | None = None
         completed_reason: ModelFinishReason | None = None
         finish_seen = False
+        finish_signal: str | None = None
         try:
             request: dict = {
                 "model": self.api_model_ids.get(model.model_id, model.model_id),
@@ -482,11 +511,22 @@ class OpenAICompatibleProvider:
                 choices = getattr(chunk, "choices", None) or []
                 if not choices:
                     continue
-                if finish_seen:
-                    raise ValueError("semantic stream chunk appeared after finish")
                 if len(choices) != 1:
                     raise ValueError("stream must carry exactly one logical choice")
                 choice = choices[0]
+                if finish_seen:
+                    delta = getattr(choice, "delta", None)
+                    has_semantic_delta = bool(
+                        getattr(delta, "content", None)
+                        or getattr(delta, "reasoning_content", None)
+                        or getattr(delta, "reasoning", None)
+                        or getattr(delta, "reasoning_text", None)
+                        or getattr(delta, "tool_calls", None)
+                    )
+                    repeated_finish = getattr(choice, "finish_reason", None)
+                    if has_semantic_delta or repeated_finish not in (None, finish_signal):
+                        raise ValueError("semantic stream chunk appeared after finish")
+                    continue
                 delta = getattr(choice, "delta", None)
                 if delta is not None:
                     text = getattr(delta, "content", None)
@@ -502,6 +542,7 @@ class OpenAICompatibleProvider:
                     accumulator.set_finish(finish)
                     completed_message, completed_reason = accumulator.build()
                     finish_seen = True
+                    finish_signal = finish
             if not finish_seen or completed_reason is None:
                 accumulator.build()
                 raise ValueError("model response is missing a normal end signal")

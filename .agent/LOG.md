@@ -3511,3 +3511,22 @@
   frozen complete-cost reporting gate, although the user-approved budget itself has no currency
   ceiling. Formal execution remains blocked pending an explicit accounting decision and Morrow
   streaming readiness repair or external recovery.
+
+## 2026-08-27 — Morrow OpenAI-compatible readiness repaired
+
+- Isolated the original Agent HTTP 400 to `read_file`'s 309-digit local integer bound being copied
+  into the Provider schema. The adapter now keeps the original local validator but narrows integer
+  schema bounds to the IEEE-754 safe range on the Provider wire; tool contract audits freeze both
+  representations.
+- Matched Pi's tolerant terminal handling for MiMo: a repeated identical finish chunk carrying
+  usage and no text/reasoning/tool delta is accepted, while semantic content after finish remains
+  invalid. Provider 400/404/422 responses and nested malformed-value errors now classify as
+  `invalid_response` instead of `internal`.
+- The repaired bounded Morrow Agent probe completed with `stop`, 7,139 Provider tokens and zero
+  tools. No prompt, response, reasoning, full payload, credential or traceback was retained.
+- Applied the user's no-currency-ceiling decision: Morrow cost may remain explicitly unavailable
+  and no longer blocks readiness/comparison when `total_cost` is null. Token usage remains mandatory
+  and the 5,000,000-token campaign ceiling is unchanged; missing cost is never inferred as zero.
+- Focused Provider/evaluator/tool-audit tests passed `116` with one live skip. Full offline passed
+  `1323 passed, 2 deselected in 83.29s`; Ruff format/check, compileall, CLI help and
+  `git diff --check` passed.

@@ -14,8 +14,8 @@ Create the immutable Direct single-Agent baseline required by Stage 7:
 - run the four protocol-pinned comparison tasks twice with Pi Agent 0.84.2;
 - use the same Provider, exact model, task bytes, sampling contract, workspace baseline, verifier,
   external deadline and equivalent capability policy for each paired Morrow/Pi run;
-- mechanically classify every run, compare repeated quality, and publish complete token/cost,
-  latency, tool, rework, intervention and context evidence;
+- mechanically classify every run, compare repeated quality, and publish complete token plus
+  available cost, latency, tool, rework, intervention and context evidence;
 - freeze the resulting Direct baseline as a content-hashed version for Stage 7 comparisons.
 
 The primary campaign contains exactly 28 formal runs: 20 Morrow runs and 8 Pi runs. A run is never
@@ -97,8 +97,9 @@ prove:
    admit RunPolicy v2 for that exact model; Pi must resolve the same capability from its frozen
    catalog/runtime evidence.
 5. **Budget approval.** The user approved an explicit 5,000,000-token campaign maximum and no
-   currency maximum. The harness stops scheduling before the Token ceiling; it still requires and
-   reports Provider cost for every run. Already admitted runs finalize truthfully.
+   currency maximum. The harness stops scheduling before the token ceiling. Cost is recorded when
+   supplied and otherwise remains explicitly unavailable; it is not a campaign completeness gate.
+   Already admitted runs finalize truthfully.
 6. **External watchdog.** Both agents use the same 1,800-second per-run external deadline. It is an
    evaluator `budget_exhausted` result, not a Morrow/Pi internal stop code. Both use a 120-second
    per-tool execution bound where the product supports a tool timeout.
@@ -219,7 +220,7 @@ Both runners normalize private event streams in memory into the same bounded sch
 - first effective write round;
 - first validation round and latest validation outcome;
 - compaction/overflow recovery/retry counts;
-- input/output/total tokens, provider-reported cost and external duration;
+- input/output/total tokens, available provider/runtime cost and external duration;
 - denied/blocked/invalid/unaccounted counts;
 - mechanically defined rework and intervention counts.
 
@@ -239,8 +240,8 @@ in the protected non-Git evidence root with an integrity hash.
 - `first_effective_write`: first completed tool after which the workspace tree differs from the
   frozen baseline on an allowed path.
 - `first_validation`: first recognized project validator execution, not arbitrary exit-zero shell.
-- `cost`: sum of Provider-reported per-response cost; absent cost makes the gate incomplete, never
-  zero. Do not reconstruct cost from a mutable public price table.
+- `cost`: sum of Provider/runtime-reported per-response cost when complete; otherwise explicitly
+  unavailable, never zero. Do not reconstruct cost from a mutable public price table.
 
 ### 8.4 Pi adapter
 

@@ -8,7 +8,11 @@ import pytest
 from pydantic import BaseModel, ConfigDict
 
 from morrow.adapters.credentials.keyring import MemoryCredentialStore
-from morrow.adapters.models.openai_compatible import OpenAICompatibleProvider, serialize_tool
+from morrow.adapters.models.openai_compatible import (
+    OpenAICompatibleProvider,
+    normalize_tool_schema,
+    serialize_tool,
+)
 from morrow.application.configuration import CONFIGURATION_PROVIDER_SCHEMA
 from morrow.application.local_tools import (
     APPLY_PATCH_PROVIDER_SCHEMA,
@@ -456,7 +460,9 @@ def test_provider_schema_bounds_are_conservative_for_raw_argument_budget():
 def test_preference_tool_is_included_in_the_direct_provider_contract_inventory():
     tool = make_preference_management_tool(SimpleNamespace())
     wire = serialize_tool(tool.definition)
-    assert wire["function"]["parameters"] == PREFERENCE_MANAGEMENT_PROVIDER_SCHEMA
+    assert wire["function"]["parameters"] == normalize_tool_schema(
+        PREFERENCE_MANAGEMENT_PROVIDER_SCHEMA
+    )
     validator = JsonSchemaArgumentsValidator(wire["function"]["parameters"])
     valid = {"scope": "workspace", "operations": [{"operation": "add", "statement": "keep"}]}
     assert validator.validate(json.dumps(valid)) == valid

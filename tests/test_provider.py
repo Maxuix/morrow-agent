@@ -19,6 +19,7 @@ from morrow.adapters.models.openai_compatible import (
     OpenAICompatibleProvider,
     StreamAccumulator,
     classify_error,
+    normalize_tool_schema,
     provider_error_message,
     serialize_message,
     serialize_tool,
@@ -714,6 +715,31 @@ async def test_adapter_retains_leading_and_trailing_usage_without_extra_events()
 
 
 @pytest.mark.asyncio
+async def test_adapter_accepts_nonsemantic_terminal_echo_with_usage():
+    terminal_echo = stream_chunk(finish="stop")
+    terminal_echo.usage = SimpleNamespace(
+        prompt_tokens=2,
+        completion_tokens=1,
+        total_tokens=3,
+    )
+    provider = provider_with_stream(
+        AsyncChunks(
+            [
+                stream_chunk(text="ok"),
+                stream_chunk(finish="stop"),
+                terminal_echo,
+            ]
+        )
+    )
+
+    events = await collect_stream(provider)
+
+    assert [event.kind for event in events] == ["text_delta", "completed"]
+    assert events[-1].finish_reason == ModelFinishReason.STOP
+    assert events[-1].usage.total_tokens == 3
+
+
+@pytest.mark.asyncio
 async def test_adapter_marks_missing_usage_unavailable_and_preserves_explicit_zero():
     missing = provider_with_stream(AsyncChunks([stream_chunk(text="ok", finish="stop")]))
     missing_events = await collect_stream(missing)
@@ -906,6 +932,43 @@ def test_serialize_after_assemble_round_trip_is_deterministic():
             }
         ],
     }
+
+
+def test_tool_schema_wire_clamps_non_interoperable_integer_bounds_without_mutation():
+    schema = {
+        "type": "object",
+        "properties": {
+            "offset": {
+                "type": "integer",
+                "minimum": -(10**309 - 1),
+                "maximum": 10**309 - 1,
+            }
+        },
+    }
+
+    normalized = normalize_tool_schema(schema)
+
+    assert normalized["properties"]["offset"] == {
+        "type": "integer",
+        "minimum": -(2**53 - 1),
+        "maximum": 2**53 - 1,
+    }
+    assert schema["properties"]["offset"]["maximum"] == 10**309 - 1
+
+
+@pytest.mark.parametrize("status_code", [400, 404, 422])
+def test_adapter_classifies_provider_request_rejections_as_invalid_response(status_code):
+    error = RuntimeError("provider rejected request")
+    error.status_code = status_code
+
+    assert classify_error(error) is ModelErrorCode.INVALID_RESPONSE
+
+
+def test_adapter_classifies_nested_value_errors_as_invalid_response():
+    error = RuntimeError("provider request failed")
+    error.__cause__ = ValueError("malformed provider chunk")
+
+    assert classify_error(error) is ModelErrorCode.INVALID_RESPONSE
     assert serialize_tool(demo_tool()) == {
         "type": "function",
         "function": {
