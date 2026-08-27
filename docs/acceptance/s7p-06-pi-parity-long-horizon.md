@@ -1,12 +1,12 @@
 # S7P-06 Pi-Parity Long-Horizon Acceptance
 
-Status: implementation complete; final read-only review and closeout are pending on
+Status: implementation complete locally; root integration is pending on
 `codex/feat/s7p-06-pi-parity`.
 
 The behavioral reference is Pi Agent 0.84.2 at commit
 `209bc7b9a89b01c8fd05861cf5bbdda3e300037a`. This document is the checked-in
-Phase A evidence table and will be extended with the scripted offline results
-before the subplan is closed. It does not claim a live same-model comparison.
+parity table and final offline evidence for the completed subplan. It does not
+claim a live same-model comparison.
 
 ## Pinned parity table
 
@@ -34,7 +34,7 @@ The pre-S7P-06 implementation uses the following active v1 controls:
 | `requested_context_chars`, unknown-model fallback and result/cycle ratios | policy, `ContextBuilder`, `_cycle_result_limit`, observability journal | Retained for v1 compatibility; v2 uses exact token-window capability, Pi estimator and truncation. |
 | `loop_detection_enabled`, repeat/pattern limits | `AgentLoop` | Historical/readable only; no v2 repetition or inferred no-progress stop. |
 | `RunPolicy` in prepared snapshots | `PreparedAgentRunSpec`, `AgentRunSnapshot` | Add explicit policy version and token/retry facts; never encode unlimited as a huge integer. |
-| request/terminal observations | `core.observability`, `SqliteObservabilityJournal` | Add bounded accounting, compaction and retry counters without storing prompts, arguments or results. |
+| request/terminal observations | `core.observability`, `SqliteObservabilityJournal` | v20 stores bounded accounting/compaction facts; v21 adds one mutable retry-progress projection without storing prompts, arguments or results. |
 
 ## Explicit Morrow adaptations and safety boundaries
 
@@ -62,7 +62,28 @@ Phase A reference evidence was captured before production edits. The dedicated
 S7P-06 suite passes `12`; the expanded parity/tool-contract/artifact/permission
 matrix passes `73`; the process/sandbox/capability/parity matrix passes `38`;
 the cancellation, migration and compatibility regressions pass after the final
-收尾修复; and the repository offline gate passes `1268 passed, 2 deselected`.
-`uv sync` succeeds. Final Ruff, compileall, CLI-help, diff and read-only review
-evidence will be appended before the subplan is marked complete. No live
-Provider/model/Pi/MCP/network/credential run is included.
+收尾修复; and the repository offline gate passes `1272 passed, 2 deselected`.
+`uv sync`, Ruff format/check, compileall, both CLI-help entrypoints and
+`git diff --check` pass. The formal read-only review and all reproduced repairs
+are recorded below. No live Provider/model/Pi/MCP/network/credential run is
+included.
+
+## Post-review closeout
+
+Kuhn (`01a042d6-4ef4-77e1-807c-3163f3875d63`, `gpt-5.6-luna`, reasoning `max`)
+reviewed the activation-base-to-`04333c9` implementation range and returned
+`REQUEST CHANGES` with no P0. The four confirmed findings were independently reproduced and
+closed in `d230126`:
+
+- P1: automatic compaction now re-checks the rebuilt token-window requirement and rejects a
+  non-advancing boundary instead of admitting an oversized retained context.
+- P2: oversized UTF-8 file lines and byte-window continuations always make progress.
+- P2: Artifact reads align requested offsets to UTF-8 character boundaries and never expose an
+  incomplete trailing code point.
+- P2: retry transitions use explicit bounded durable counters, so resume does not count unrelated
+  terminal failures as transient retries or lose summary-retry counts.
+
+Final verification is `uv run pytest -m 'not live' -q --tb=short` → `1272 passed, 2 deselected`
+in `121.09s`; `uv run ruff format --check .`, `uv run ruff check .`,
+`uv run python -m compileall -q src tests`, `uv run morrow --help`,
+`uv run morrow run --help`, and `git diff --check` all pass. No live test was run.

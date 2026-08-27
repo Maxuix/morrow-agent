@@ -1,14 +1,14 @@
-# Stage 7 Preflight Reliability Repairs — Pi-Parity Long-Horizon Candidate
+# Stage 7 Preflight Reliability Repairs — Pi-Parity Long-Horizon
 
-> Status: implementation active — Phase A
-> Active subplan: Subplan 85; Subplan 87 is complete
+> Status: implementation complete locally; root integration pending
+> Active subplan: Subplan 85 is complete; Subplan 87 is complete
 > Branch: `codex/feat/s7p-06-pi-parity`
 > Base: `6a43be5` (plan activation checkpoint; source tree base `1d3ba3706b1ac82cf0b82b56ea207bd2b548090f`)
 > Source authority: current user decision, pinned Pi Agent 0.84.2 behavior, current code and gates
 
 ## 1. Current objective
 
-Prepare S7P-06 to replace demo-sized cumulative task limits with Pi Agent's long-horizon behavior:
+Implement and verify S7P-06 to replace demo-sized cumulative task limits with Pi Agent's long-horizon behavior:
 continue while the model requests tools, stop normally on a tool-free model response, compact by
 the exact model token window, and use Pi-style retry and tool-output truncation. New default runs do
 not stop on cumulative model requests, tool rounds, tool calls, whole-task elapsed time, repetition
@@ -228,4 +228,21 @@ Preliminary implementation evidence for this activation:
 - The root task independently reran the dedicated S7P-05 matrix (`30 passed`) and adjacent
   terminal/preparation/capability tests (`43 passed`), confirmed the worktree import path and clean
   diff, then fast-forward integrated the complete topic chain into local `main`. Per user direction,
-  no S7P-06 plan or implementation task was started.
+  no S7P-06 plan or implementation task had yet been started at that earlier checkpoint; Subplan 85
+  was activated afterward and is closed in section 7.
+
+## 7. S7P-06 closeout evidence
+
+- Subplan 85 implemented the pinned Pi Agent 0.84.2 long-horizon contract in `04333c9`: explicit
+  v2 policy admission, uncapped continuation, exact token-window accounting, LLM compaction with
+  immutable `pi_compaction` checkpoints, one overflow recovery, Pi retry/truncation behavior and
+  safe Artifact continuation. Historical v1 snapshots retain their bounded resume semantics.
+- The formal read-only Luna Max review by Kuhn (`01a042d6-4ef4-77e1-807c-3163f3875d63`) returned
+  `REQUEST CHANGES` with no P0. All one P1 and three P2 findings were reproduced and closed in
+  `d230126`; v21 adds bounded durable retry-progress evidence and v20 read-only compatibility.
+- Final `uv run pytest -m 'not live' -q --tb=short` passed `1272 passed, 2 deselected`; Ruff
+  format/check, compileall, both CLI help entrypoints, `uv sync` and `git diff --check` passed.
+  No live Provider/model/Pi/MCP/network/credential test ran.
+- Acceptance and architecture/config documentation now describe the current v21 store, v1/v2
+  split, exact capability requirement, retry ownership and UTF-8-safe Artifact/file boundaries.
+  The same-model Pi/Morrow A/B remains deferred to S7P-09. Root owns local fast-forward integration.

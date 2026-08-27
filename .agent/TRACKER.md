@@ -3,15 +3,17 @@
 ## Current status
 
 Subplan 87 is committed at `63236ac` and fast-forward integrated into local `main`. Subplan 85 is
-now active on `codex/feat/s7p-06-pi-parity`, based at `6a43be5`, and follows pinned Pi Agent 0.84.2
-behavior: no default cumulative task caps or no-progress kill, token-window LLM compaction, Pi-style
-retry/truncation, v1 resume compatibility and an external-only evaluation watchdog. Phase A is
-freezing executable reference evidence and the Morrow compatibility map; the three research
-documents remain untouched until the documented checklist-update phase.
+complete locally on `codex/feat/s7p-06-pi-parity`, with implementation commits `04333c9` and
+`d230126`, and root integration pending. It follows pinned Pi Agent 0.84.2 behavior: no default
+cumulative task caps or no-progress kill, token-window LLM compaction, Pi-style retry/truncation,
+v1 resume compatibility and an external-only evaluation watchdog. The Stage 7 research checklist
+was updated at the documented Phase F point; the other two user-owned research documents remain
+untouched.
 
 ## Active task
 
-S7P-06 implementation is active; Phase A is the current task on the dedicated topic branch.
+S7P-06 implementation and closeout are complete on the dedicated topic branch; root owns local
+fast-forward integration and resource retirement.
 
 ## Completed evidence
 
@@ -47,11 +49,19 @@ S7P-06 implementation is active; Phase A is the current task on the dedicated to
 - Final offline regression passed `1282 passed, 2 skipped, 2 deselected in 61.15s`. Ruff
   format/check, compileall, both CLI help entrypoints and `git diff --check` passed. No live or
   network test ran.
+- S7P-06 final implementation passed the dedicated parity/observability and migration/file
+  continuation regressions; the formal Kuhn read-only review returned `REQUEST CHANGES` with no
+  P0, and all one P1/three P2 findings were reproduced and closed in `d230126`.
+- Final S7P-06 offline gate passed `1272 passed, 2 deselected`; Ruff format/check, compileall,
+  `uv sync`, both CLI help entrypoints and `git diff --check` passed. v21 retry-progress migration
+  and v20 read-only observation compatibility are covered. No live Provider/model/Pi/MCP/network/
+  credential test ran.
 
 ## Next action
 
-Complete the pinned parity table, scripted black-box fixtures and v1/v2 field inventory, then add
-the first failing policy/loop tests before production behavior changes.
+Root should verify ancestry and working-tree ownership, then fast-forward integrate the completed
+`codex/feat/s7p-06-pi-parity` branch. Do not start S7P-07 from this task; the preserved candidate
+remains user-owned and inactive.
 
 ## Subplan 87 evidence
 

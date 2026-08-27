@@ -87,6 +87,8 @@ represented in either configuration file. In particular, users cannot override:
 
 Effective AgentRun policy shape and values continue to be frozen into each AgentRun snapshot. v1
 resume uses its historical bounded values; v2 records explicit `None` for retired cumulative controls
-and the exact context/retry settings. Review rows continue to record model/policy/evidence identity,
-while timeout and lease behavior comes from the effective bootstrap policy rather than constructor
-literals.
+and the exact context/retry settings. v2 retry progress is stored separately as bounded mutable
+AgentRun evidence so resume can restore retry transitions without rewriting the immutable snapshot;
+v20 rows remain readable before the v21 migration. Review rows continue to record model/policy/evidence
+identity, while timeout and lease behavior comes from the effective bootstrap policy rather than
+constructor literals.

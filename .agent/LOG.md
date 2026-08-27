@@ -3300,3 +3300,22 @@
   fast-forward merged `refactor/remove-outcome-gate` into local `main`.
 - No remote push was attempted or authorized. The untracked S7P-06 draft and three user-owned
   research documents remain preserved.
+
+## 2026-08-27 — Subplan 85 Pi-parity implementation and review closeout
+
+- Implemented the pinned Pi Agent 0.84.2 long-horizon behavior in `04333c9`: explicit v2 policy
+  admission and uncapped continuation; exact token accounting; structured LLM compaction with
+  immutable `pi_compaction` checkpoints; one overflow recovery; Pi retry/backoff and truncation;
+  v1 resume compatibility; and safe redacted Artifact/file continuation. No new public event type
+  or ConversationLog writer was introduced.
+- Kuhn (`01a042d6-4ef4-77e1-807c-3163f3875d63`, `gpt-5.6-luna`, reasoning `max`) performed the
+  required read-only review and returned `REQUEST CHANGES` with no P0: one P1 compaction re-check
+  issue and three P2 UTF-8/retry compatibility issues. Each was reproduced and fixed in
+  `d230126`, which adds v21 bounded retry-progress persistence and the v20 read-only fallback.
+- Final validation passed: `uv run pytest -m 'not live' -q --tb=short` → `1272 passed, 2 deselected`
+  in `121.09s`; `uv sync`; Ruff format/check; compileall; both CLI help entrypoints; and
+  `git diff --check`. No live Provider/model/Pi/MCP/network/credential test ran.
+- Updated S7P-06 acceptance, architecture, runtime-policy documentation and the Stage 7 checklist
+  at the allowed Phase F point. The same-model Pi/Morrow A/B remains deferred to S7P-09. The branch
+  remains unmerged and unpushed; root task owns integration. The user-owned S7P-07 candidate file
+  remains untracked and unchanged.

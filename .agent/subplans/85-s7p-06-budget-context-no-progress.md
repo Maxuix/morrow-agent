@@ -1,6 +1,6 @@
 # Subplan 85 — S7P-06 Pi-Parity Long-Horizon Loop, Context Compaction and Retry
 
-> Status: planned, pending activation
+> Status: completed locally; root integration pending
 > Priority: P0; depends on the integrated S7P-01, S7P-02 and S7P-05 foundations
 > Planning base: local `main` at `1d3ba3706b1ac82cf0b82b56ea207bd2b548090f`
 > Behavioral reference: `@earendil-works/pi-coding-agent` 0.84.2, repository commit
@@ -358,26 +358,40 @@ without a new explicit authorization.
 
 ## 9. Acceptance
 
-- [ ] The pinned Pi parity table is complete; every adopted/adapted/hardened/deferred row has source
+- [x] The pinned Pi parity table is complete; every adopted/adapted/hardened/deferred row has source
       evidence, a Morrow owner and a focused test.
-- [ ] New default runs have no cumulative model-request/tool-round/tool-call/task-time or
+- [x] New default runs have no cumulative model-request/tool-round/tool-call/task-time or
       repetition/no-progress termination; scripted successful runs exceed all retired ceilings.
-- [ ] Normal continuation/stop, abort, optional host stop and fatal terminal behavior match Pi while
+- [x] Normal continuation/stop, abort, optional host stop and fatal terminal behavior match Pi while
       preserving Morrow permissions, durability and legal tool history.
-- [ ] Exact model windows and Pi-equivalent token accounting drive automatic compaction; missing
+- [x] Exact model windows and Pi-equivalent token accounting drive automatic compaction; missing
       capability never falls back to a guessed small char window.
-- [ ] Automatic, overflow-recovery and manual compaction match Pi's structure, tail/boundary and
+- [x] Automatic, overflow-recovery and manual compaction match Pi's structure, tail/boundary and
       chaining behavior; restart reconstructs it without erasing or repeating durable work.
-- [ ] Provider retry and tool-output truncation match the pinned Pi defaults/state transitions/
+- [x] Provider retry and tool-output truncation match the pinned Pi defaults/state transitions/
       limits, with no double retry or duplicated durable effects.
-- [ ] Historical v1 runs/data remain readable and resumable under v1; new v2 config/snapshots are
+- [x] Historical v1 runs/data remain readable and resumable under v1; new v2 config/snapshots are
       strict; legacy user overrides are never silently ignored.
-- [ ] Evaluation watchdogs live only in the harness, apply equally to Pi and Morrow and never appear
+- [x] Evaluation watchdogs live only in the harness, apply equally to Pi and Morrow and never appear
       as product Agent stop codes.
-- [ ] Full offline regression, Ruff, compileall, CLI help and `git diff --check` pass; acceptance and
+- [x] Full offline regression, Ruff, compileall, CLI help and `git diff --check` pass; acceptance and
       architecture/config documentation describe actual behavior and every justified deviation.
 
 Every completion claim attaches the reference row, problem reproduction, code/contract change,
 automated verification, scripted long-horizon evidence, safety/persistence result, metric impact and
 unresolved live A/B work. S7P-06 does not claim same-model Pi equivalence until S7P-09 (or a separately
 authorized run) executes that comparison.
+
+## 10. Closeout evidence
+
+- The implementation is split across commits `04333c9` and `d230126`; the latter closes the formal
+  read-only review findings and adds v21 retry-progress persistence plus UTF-8 continuation guards.
+- Kuhn (`01a042d6-4ef4-77e1-807c-3163f3875d63`, `gpt-5.6-luna`, reasoning `max`) returned
+  `REQUEST CHANGES` with no P0: one P1 compaction re-check issue and three P2 issues covering
+  oversized-line progress, Artifact UTF-8 boundaries and retry-state reconstruction. Each finding
+  was reproduced, fixed and covered by regression tests; no live test was run.
+- Final offline validation passed `1272 passed, 2 deselected`; Ruff format/check, compileall, both
+  CLI help entrypoints and `git diff --check` passed. `uv sync` also succeeded. No live Provider,
+  Pi, MCP, network or credential test was run.
+- The same-model Pi/Morrow A/B remains intentionally deferred to S7P-09; this acceptance records
+  behavioral parity fixtures and implementation evidence, not a quality-equivalence claim.

@@ -16,9 +16,9 @@ AgentRun 注入。v13 DDL 与 checksum 保持不变。
 Stage 6 的当前所有权如下：`application/skills/` 负责 Catalog、生命周期、Selection/Context、Draft、Usage、脚本和
 Doctor；`application/mcp/` 负责 desired-state、Catalog、run-scoped runtime、策略桥接和结果归一化；Provider/Model
 控制面仍由 Provider service 与 Adapter Registry 持有。SkillBinding、MCP desired state、Provider/Model 非敏感配置和
-Workspace 扩展配置继续由 YAML 持有，CredentialStore 是唯一凭据权威。Operational Store v14–v20 持有 Skill/MCP
-运行证据与 AgentRun 观测；v17–v20 的 request ledger、completion-truth 兼容列与 long-horizon accounting
-独立于不可变
+Workspace 扩展配置继续由 YAML 持有，CredentialStore 是唯一凭据权威。Operational Store v14–v21 持有 Skill/MCP
+运行证据与 AgentRun 观测；v17–v20 的 request ledger、completion-truth 兼容列与 long-horizon accounting，
+以及 v21 的有界 retry progress 独立于不可变
 AgentRun admission snapshot。
 `application/backup_v2.py` 组合在线 SQLite、Artifact、脱敏 YAML 和被引用 managed Skill 版本，并以新目标
 目录执行原子、隔离 restore。v1 backup verifier 保持向后兼容，Backup v2 不复制凭据。
@@ -285,7 +285,7 @@ workspace Preferences 损坏只隔离该层。旧 `handoff.yaml(.bak)` 不属于
 `config.yaml` 是聚合文档，Provider、全局 Preferences 与可选 runtime-policy 覆盖的写入必须在同一事务锁内保留对方字段。
 `workspace-index.yaml` 由独立 WorkspaceIndexStore 管理。
 
-### Operational Store 与 Artifact 布局（v20）
+### Operational Store 与 Artifact 布局（v21）
 
 数据根（`--state-root` 或 `~/.morrow`）下的保留路径：
 
@@ -299,7 +299,7 @@ workspace Preferences 损坏只隔离该层。旧 `handoff.yaml(.bak)` 不属于
 ```
 
 `DataRoot` 暴露 `store_path`、`artifacts_path`、`backups_path` 与 `operational_lock_path`。
-`build_session_application()` 会打开或创建当前 v20 Operational Store，并把对话经 ConversationLog
+`build_session_application()` 会打开或创建当前 v21 Operational Store，并把对话经 ConversationLog
 提交到 Session / TaskRun / Turn / AgentRun / conversation / receipt 表。v3 起有 tool_executions
 与 approvals；v4 增加 recovery_reports / recovery_receipts；v5 增加完整 TaskRun 状态、转移审计、
 TaskOutcome 版本和 Task 命令回执；v6 增加 Artifact 元数据、引用、pin 状态和 `artifact_refs_json`；v7 增加不可变
@@ -318,8 +318,10 @@ ordered attempt、合法状态检查和明确 usage/cost availability 保存 Pro
 v18 在 terminal metrics 中增加了历史 validation/completion 字段，v19 为每个 model request 增加用途、
 当次 PromptProfileEvidence 以及历史 no-tool 语义意图请求证据；这些字段仍可供旧数据读取，但 S7P-06
 的新运行不把已移除的 completion gate 当作运行时权威。v20 以追加列记录 long-horizon policy version、
-精确 context-window accounting、compaction-required、compaction/overflow-recovery 计数及有界 retry
-观测，不改写 immutable AgentRun snapshot，也不复制 ConversationLog 或 ToolExecution payload。
+精确 context-window accounting、compaction-required、compaction/overflow-recovery 计数；v21 以单独的
+有界可变 retry-progress 行记录连续模型重试、累计重试与摘要重试计数。两者都不改写 immutable
+AgentRun snapshot，也不复制 ConversationLog 或 ToolExecution payload。未迁移的 v20 只读观测仍可
+读取，只是不提供 v21 retry-progress 行。
 v2 新运行只有在 exact model capability 提供 context window 时才会启用；缺失 capability 不猜测小型
 字符窗口，显式请求 v2 时直接失败。v1 恢复仍按冻结的旧 RunPolicy 执行。上述路径都不保存命令参数、
 输出、项目指令正文、文件内容、模型原始回复或 verifier 私有数据。
