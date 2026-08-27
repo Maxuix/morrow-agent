@@ -43,6 +43,7 @@ from morrow.core.memory_selection_ports import (
     MemorySelectionAdmissionPort,
 )
 from morrow.core.models import (
+    AgentStopCode,
     FinishReason,
     ModelRef,
     StatePresence,
@@ -102,6 +103,8 @@ class TurnSubmitResult:
     turn_id: str | None
     receipt: TurnSubmitReceipt | None = None
     assistant_text: str | None = None
+    finish_reason: FinishReason | None = None
+    stop_code: AgentStopCode | None = None
 
 
 @dataclass(frozen=True)
@@ -220,6 +223,8 @@ class TurnSubmissionCoordinator:
             self.journal.get_receipt(self.workspace_id, session.session_id, client_message_id),
             digest,
             session,
+            journal=self.journal,
+            workspace_id=self.workspace_id,
         )
         if classified is not None:
             return classified
@@ -289,6 +294,8 @@ class TurnSubmissionCoordinator:
                 txn.get_receipt(self.workspace_id, session.session_id, client_message_id),
                 digest,
                 session,
+                journal=txn,
+                workspace_id=self.workspace_id,
             )
             if recheck is not None:
                 return recheck
@@ -777,6 +784,9 @@ def _classify_receipt(
     receipt: TurnSubmitReceipt | None,
     digest: str,
     session: Session,
+    *,
+    journal: TurnLifecycleJournalPort,
+    workspace_id: str,
 ) -> TurnSubmitResult | None:
     """Shared receipt classification used by the probe and the in-txn recheck."""
     if receipt is None:
@@ -784,11 +794,16 @@ def _classify_receipt(
     if receipt.request_digest != digest:
         return TurnSubmitResult("conflict", receipt.turn_id, receipt)
     if receipt.disposition is TurnSubmitDisposition.ACCEPTED_CLOSED:
+        finish_reason, stop_code = _closed_turn_finish(journal, workspace_id, session, receipt)
         return TurnSubmitResult(
             "closed_replay",
             receipt.turn_id,
             receipt,
-            assistant_text=_last_assistant_text(session.log),
+            assistant_text=(
+                _last_assistant_text(session.log) if finish_reason is FinishReason.STOP else None
+            ),
+            finish_reason=finish_reason,
+            stop_code=stop_code,
         )
     return TurnSubmitResult("recovery", receipt.turn_id, receipt)
 
@@ -1013,3 +1028,26 @@ def _last_assistant_text(log: ConversationLog) -> str | None:
         if message.role == "assistant" and message.content:
             return message.content
     return None
+
+
+def _closed_turn_finish(
+    journal: TurnLifecycleJournalPort,
+    workspace_id: str,
+    session: Session,
+    receipt: TurnSubmitReceipt,
+) -> tuple[FinishReason, AgentStopCode | None]:
+    for run in reversed(journal.list_session_agent_runs(workspace_id, session.session_id)):
+        if run.turn_id != receipt.turn_id:
+            continue
+        metrics = journal.get_agent_run_terminal_metrics(workspace_id, run.agent_run_id)
+        if metrics is not None:
+            return metrics.finish_reason, metrics.stop_code
+    turns = session.log.snapshot().public_turns(require_closed=True)
+    if turns:
+        terminal = turns[-1].terminal
+        if terminal is not None:
+            return terminal.finish_reason, None
+    # A concurrent loser can observe an older/synthetic closed receipt before the
+    # winner's durable Turn and terminal metrics are visible. Preserve the legacy
+    # empty-STOP replay in that evidence-free compatibility case.
+    return FinishReason.STOP, None

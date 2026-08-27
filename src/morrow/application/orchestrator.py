@@ -144,7 +144,6 @@ class SessionOrchestrator:
                 async for event in self._stream_turn(
                     next_text,
                     client_message_id=next_client_message_id,
-                    runtime_control_delivery=next_client_message_id is not None,
                 ):
                     if event.type == "turn.completed":
                         try:
@@ -173,7 +172,6 @@ class SessionOrchestrator:
         text: str,
         *,
         client_message_id: str | None = None,
-        runtime_control_delivery: bool = False,
     ):
         if client_message_id is None and self.id_source is not None:
             client_message_id = self.id_source.new_id("cmsg")
@@ -212,7 +210,6 @@ class SessionOrchestrator:
                 prepared=prepared,
                 startup_error=startup_error,
                 agent_run_id=prepared_agent_run_id,
-                runtime_control_delivery=runtime_control_delivery,
             ):
                 yield event
         finally:
@@ -301,7 +298,6 @@ class SessionOrchestrator:
                 async for event in self._stream_turn(
                     entry.text,
                     client_message_id=entry.client_message_id,
-                    runtime_control_delivery=True,
                 ):
                     if event.type == "turn.completed":
                         try:

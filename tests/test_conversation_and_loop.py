@@ -123,6 +123,24 @@ def test_log_rejects_assistant_crossing_open_cycle_and_missing_final():
     log.finish_turn(FinishReason.ERROR)
 
 
+def test_log_rejects_steered_terminal_after_final_assistant():
+    log = ConversationLog()
+    log.begin_turn(UserMessage(content="go"))
+    log.append_assistant(AssistantMessage(content="candidate"))
+    with pytest.raises(ConversationLogError, match="steered turn cannot contain"):
+        log.finish_turn(FinishReason.STEERED)
+
+    snapshot = ConversationSnapshot(
+        records=(
+            MessageRecord(sequence=1, message=UserMessage(content="go")),
+            MessageRecord(sequence=2, message=AssistantMessage(content="candidate")),
+            TurnTerminalRecord(sequence=3, finish_reason=FinishReason.STEERED),
+        )
+    )
+    with pytest.raises(ConversationLogError, match="steered turn cannot contain"):
+        snapshot.public_turns(require_closed=True)
+
+
 def test_log_allows_reused_call_ids_across_closed_cycles():
     log = ConversationLog()
     log.begin_turn(UserMessage(content="go"))

@@ -702,7 +702,6 @@ class AgentLoop:
         prepared: PreparedAgentRunRuntime | None = None,
         startup_error: str | None = None,
         agent_run_id: str | None = None,
-        runtime_control_delivery: bool = False,
     ) -> AsyncIterator[AgentEvent]:
         client_message_id = client_message_id or self._id("cmsg")
         if prepared is not None:
@@ -1080,13 +1079,23 @@ class AgentLoop:
                         state.started = True
                         state.settled = True
                         if submit_outcome.kind == "closed_replay":
+                            finish_reason = submit_outcome.finish_reason or FinishReason.ERROR
                             text = submit_outcome.assistant_text or ""
-                            if text:
+                            if finish_reason is FinishReason.STOP and text:
                                 yield event("text.delta", {"text": text})
-                            state.terminal_finish_reason = FinishReason.STOP
-                            retain_facts(FinishReason.STOP.value)
+                            stop_code = submit_outcome.stop_code
+                            if finish_reason is FinishReason.ERROR:
+                                stop_code = stop_code or AgentStopCode.INTERNAL
+                                state.stop_code = stop_code
+                                yield event(
+                                    "error",
+                                    {"message": "先前回合已失败", "stop_code": stop_code.value},
+                                )
+                            state.terminal_finish_reason = finish_reason
+                            retain_facts(finish_reason.value)
                             yield event(
-                                "turn.completed", completion_payload(FinishReason.STOP, text)
+                                "turn.completed",
+                                completion_payload(finish_reason, text, stop_code=stop_code),
                             )
                             return
                         message = (
@@ -1172,14 +1181,11 @@ class AgentLoop:
                         for prior_call in prior_message.tool_calls:
                             _remember_call_paths(state, prior_call)
 
-            first_loop_iteration = True
             while True:
                 if _pending_cancellation():
                     _consume_cancellation_request()
                     raise asyncio.CancelledError
-                if not (
-                    runtime_control_delivery and first_loop_iteration
-                ) and await self._steering_pending(session):
+                if await self._steering_pending(session):
                     session.finish_turn(FinishReason.STEERED)
                     state.settled = True
                     state.terminal_finish_reason = FinishReason.STEERED
@@ -1191,7 +1197,6 @@ class AgentLoop:
                         completion_payload(FinishReason.STEERED, state.visible),
                     )
                     return
-                first_loop_iteration = False
                 if state.deadline is not None and self.monotonic() >= state.deadline:
                     for item in terminal_error("任务超过总运行时间", AgentStopCode.RUN_TIMEOUT):
                         yield item
@@ -2017,7 +2022,6 @@ class AgentRuntime:
         prepared: PreparedAgentRunRuntime | None = None,
         startup_error: str | None = None,
         agent_run_id: str | None = None,
-        runtime_control_delivery: bool = False,
     ) -> AsyncIterator[AgentEvent]:
         return self._loop.run_task(
             session,
@@ -2026,7 +2030,6 @@ class AgentRuntime:
             prepared=prepared,
             startup_error=startup_error,
             agent_run_id=agent_run_id,
-            runtime_control_delivery=runtime_control_delivery,
         )
 
     async def compact_idle(self, session: Session, *, instructions: str = "") -> bool:

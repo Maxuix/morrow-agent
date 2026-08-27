@@ -178,6 +178,8 @@ def _derive_public_turns(
             close_cycle()
             if record.finish_reason == FinishReason.STOP and final_assistant is None:
                 raise ConversationLogError("completed turn requires a final no-tools Assistant")
+            if record.finish_reason == FinishReason.STEERED and final_assistant is not None:
+                raise ConversationLogError("steered turn cannot contain a final Assistant")
             if (
                 record.finish_reason in {FinishReason.STOP, FinishReason.STEERED}
                 and record.interrupted_call_ids
@@ -349,6 +351,8 @@ class ConversationLog:
             raise ConversationLogError("cannot finish a turn with unresolved tool calls")
         if reason == FinishReason.STOP and not self._has_final_assistant:
             raise ConversationLogError("completed turn requires a final no-tools Assistant")
+        if reason == FinishReason.STEERED and self._has_final_assistant:
+            raise ConversationLogError("steered turn cannot contain a final Assistant")
         if reason == FinishReason.STOP and interrupted_call_ids:
             raise ConversationLogError("completed turn cannot contain interrupted call IDs")
         if len(interrupted_call_ids) != len(set(interrupted_call_ids)):

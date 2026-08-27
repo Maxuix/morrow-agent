@@ -120,6 +120,16 @@ class _TransientThenStopProvider:
         )
 
 
+class _TerminalErrorProvider:
+    async def stream(self, model, messages, tools=()):
+        del model, messages, tools
+        yield ModelEvent(
+            kind="error",
+            error_code=ModelErrorCode.AUTH,
+            error_message="authentication failed",
+        )
+
+
 class _BlockingProvider:
     def __init__(self, responses: tuple[str, ...]) -> None:
         self.responses = responses
@@ -469,6 +479,101 @@ async def test_midstream_steering_resubmits_as_durable_turn_and_consumes_atomica
 
 
 @pytest.mark.asyncio
+async def test_consecutive_steering_is_polled_at_each_new_turn_loop_top(tmp_path: Path) -> None:
+    provider = _BlockingProvider(("obsolete", "latest answer"))
+    _identity, products = _session_products(tmp_path, provider)
+    try:
+        dispatch = asyncio.create_task(products.orchestrator.dispatch("initial"))
+        await provider.started.wait()
+        first = await products.orchestrator.steer("direction one")
+        await products.orchestrator.steer("direction two")
+        provider.release.set()
+        result = await dispatch
+
+        assert [
+            event.payload["finish_reason"]
+            for event in result.events
+            if event.type == "turn.completed"
+        ] == [
+            FinishReason.STEERED.value,
+            FinishReason.STEERED.value,
+            FinishReason.STOP.value,
+        ]
+        assert len(provider.stream_calls) == 2
+        assert [
+            message.content for message in provider.stream_calls[-1] if message.role == "user"
+        ] == [
+            "initial",
+            "direction one",
+            "direction two",
+        ]
+
+        replay = [
+            event
+            async for event in products.orchestrator.runtime.run_turn(
+                products.session,
+                "direction one",
+                client_message_id=first.client_message_id,
+            )
+        ]
+        assert replay[-1].payload["finish_reason"] == FinishReason.STEERED.value
+        assert not any(event.type == "text.delta" for event in replay)
+    finally:
+        products.persistence.store_session.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("terminal", (FinishReason.ERROR, FinishReason.CANCELLED))
+async def test_closed_replay_preserves_non_stop_terminal_reason(
+    tmp_path: Path,
+    terminal: FinishReason,
+) -> None:
+    provider = (
+        _TerminalErrorProvider()
+        if terminal is FinishReason.ERROR
+        else _BlockingProvider(("unused",))
+    )
+    _identity, products = _session_products(tmp_path, provider)
+    client_message_id = f"replay-{terminal.value}"
+    try:
+        if terminal is FinishReason.ERROR:
+            first = [
+                event
+                async for event in products.orchestrator.runtime.run_turn(
+                    products.session,
+                    "request",
+                    client_message_id=client_message_id,
+                )
+            ]
+        else:
+            task = asyncio.create_task(
+                _collect_events(
+                    products.orchestrator.runtime.run_turn(
+                        products.session,
+                        "request",
+                        client_message_id=client_message_id,
+                    )
+                )
+            )
+            await provider.started.wait()
+            task.cancel()
+            first = await task
+        assert first[-1].payload["finish_reason"] == terminal.value
+
+        replay = [
+            event
+            async for event in products.orchestrator.runtime.run_turn(
+                products.session,
+                "request",
+                client_message_id=client_message_id,
+            )
+        ]
+        assert replay[-1].payload["finish_reason"] == terminal.value
+    finally:
+        products.persistence.store_session.close()
+
+
+@pytest.mark.asyncio
 async def test_active_follow_up_drains_after_normal_stop_in_fifo_order(tmp_path: Path) -> None:
     provider = _BlockingProvider(("first answer", "second answer", "third answer"))
     identity, products = _session_products(tmp_path, provider)
@@ -517,7 +622,6 @@ async def test_mismatched_queue_delivery_rolls_back_turn_and_keeps_entry_pending
                 products.session,
                 "different",
                 client_message_id=entry.client_message_id,
-                runtime_control_delivery=True,
             )
         ]
         assert events[-1].payload["finish_reason"] == FinishReason.ERROR.value
