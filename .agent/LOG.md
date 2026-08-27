@@ -3380,3 +3380,18 @@
   telemetry and model-owned stop truth and must not restore Runtime completion inference. S7P-09
   real-model/Pi comparison, Workflow/multi-Agent work, dependencies, runtime defaults and public
   event changes remain outside scope.
+
+## 2026-08-27 — Subplan 89 coverage ledger and focused matrix verified
+
+- Added a machine-readable 18-cell coverage ledger and strict contract test. The contract requires
+  unique cells, current collectable selectors, high-risk failure/recovery evidence, existing
+  acceptance sources, explicit host conditions and all eight reproducible AgentRun snapshot
+  classes.
+- The first contract run rejected seven stale guessed selectors. Replaced them with exact current
+  node IDs and recorded superseded historical references rather than treating them as passes.
+- Added a production-composition entrypoint regression: interactive terminal consumption and the
+  headless JSONL path use the same AgentLoop type, freeze matching Provider/Model, RunPolicy,
+  ToolSet, Permission, Preference, Skill and prompt/context evidence, and both settle with truthful
+  `stop` terminal metrics.
+- Focused ledger behavior execution passed `94 passed in 12.52s`; the ledger/contract slice passed
+  `3 passed`. No current-contract product defect was reproduced, so no production code changed.

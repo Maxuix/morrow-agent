@@ -13,11 +13,11 @@ S7P-08 Single-Agent Basic Function Matrix Regression.
 - `[x]` Inspect current execution state, S7P-08 authority, published acceptance surfaces and test
   inventory.
 - `[x]` Activate Subplan 89 with a dedicated branch, frozen scope and completion gate.
-- `[>]` Freeze the exact 18-cell machine-readable coverage ledger and audit Stage 1–6/S7P
+- `[x]` Freeze the exact 18-cell machine-readable coverage ledger and audit Stage 1–6/S7P
   acceptance references against current collected selectors.
-- `[ ]` Add missing positive/failure/recovery, AgentRun snapshot and entrypoint-equivalence tests.
-- `[ ]` Reproduce and narrowly repair any confirmed current-contract regression.
-- `[ ]` Run the focused matrix and Stage 1–6 plus S7P-00–07 regression lanes.
+- `[x]` Add missing positive/failure/recovery, AgentRun snapshot and entrypoint-equivalence tests.
+- `[x]` Reproduce and narrowly repair any confirmed current-contract regression.
+- `[>]` Run the focused matrix and Stage 1–6 plus S7P-00–07 regression lanes.
 - `[ ]` Run both real macOS Seatbelt selectors at the host level without skip.
 - `[ ]` Run the complete offline/static/CLI gates and eval self-check.
 - `[ ]` Publish S7P-08 acceptance evidence, audit the final diff and remediate confirmed findings.

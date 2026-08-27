@@ -1,0 +1,449 @@
+{
+  "schema_version": 1,
+  "collection_command": "uv run pytest --collect-only -q -m 'not live'",
+  "collection_baseline": {
+    "selected": 1297,
+    "deselected_live": 2,
+    "status": "collected"
+  },
+  "required_snapshot_classes": [
+    "provider_model",
+    "skill",
+    "mcp",
+    "preference",
+    "knowledge",
+    "toolset",
+    "permission",
+    "context_policy"
+  ],
+  "cells": [
+    {
+      "id": "chat",
+      "checklist_text": "Ordinary conversation preserves no-tool, streaming and multi-turn behavior and recovers after cancellation.",
+      "risk": "high",
+      "classification": "covered",
+      "positive_selectors": [
+        "tests/test_conversation_and_loop.py::test_plain_chat_uses_agent_loop_with_single_history_writer",
+        "tests/test_context_runtime.py::test_ten_turns_preserve_ordered_full_history_and_stream_deltas"
+      ],
+      "failure_selectors": [
+        "tests/test_context_runtime.py::test_provider_exception_always_completes_error_without_assistant_history"
+      ],
+      "recovery_selectors": [
+        "tests/test_conversation_and_loop.py::test_cancelled_turn_records_cancelled_terminal_and_next_turn_succeeds"
+      ],
+      "acceptance_sources": ["docs/acceptance/stage-2-evidence.md"],
+      "platform_conditions": [],
+      "snapshot_classes": ["context_policy"],
+      "superseded_selectors": [],
+      "last_execution": {"status": "passed", "command": "focused-ledger-selectors"}
+    },
+    {
+      "id": "workspace_discovery",
+      "checklist_text": "Workspace discovery lists, finds, searches and reads bounded content with ranged continuation.",
+      "risk": "medium",
+      "classification": "covered",
+      "positive_selectors": [
+        "tests/test_local_tool_factories.py::test_fake_provider_can_list_search_read_continue_and_explain",
+        "tests/test_local_files.py::test_read_file_reports_revision_newline_and_actionable_continuation"
+      ],
+      "failure_selectors": [
+        "tests/test_local_search.py::test_search_blocks_protected_symlink_targets_and_explicit_git_root"
+      ],
+      "recovery_selectors": [],
+      "acceptance_sources": ["docs/acceptance/stage-3-local-code-agent-evidence.md"],
+      "platform_conditions": [],
+      "snapshot_classes": ["toolset"],
+      "superseded_selectors": [],
+      "last_execution": {"status": "passed", "command": "focused-ledger-selectors"}
+    },
+    {
+      "id": "structured_mutation",
+      "checklist_text": "Structured create, patch, replace, delete, move and rename preserve user state on conflicts and allow a legal retry.",
+      "risk": "high",
+      "classification": "covered",
+      "positive_selectors": [
+        "tests/test_local_mutation.py::test_patch_preserves_bom_newline_and_mode_and_returns_actual_diff",
+        "tests/test_s7p04_workspace_change_lifecycle.py::test_delete_move_and_rename_publish_only_regular_files_without_overwrite"
+      ],
+      "failure_selectors": [
+        "tests/test_local_mutation.py::test_stale_revision_conflicts_without_overwriting_external_change",
+        "tests/test_s7p04_workspace_change_lifecycle.py::test_move_no_replace_fails_closed_on_destination_race_and_unsupported_capability"
+      ],
+      "recovery_selectors": [
+        "tests/test_s7p04_workspace_change_lifecycle.py::test_sandbox_promotion_pair_and_delete_apply_and_preserve_changes"
+      ],
+      "acceptance_sources": [
+        "docs/acceptance/stage-3-local-code-agent-evidence.md",
+        "docs/acceptance/s7p-04-workspace-change-lifecycle.md"
+      ],
+      "platform_conditions": [],
+      "snapshot_classes": ["toolset", "permission"],
+      "superseded_selectors": [],
+      "last_execution": {"status": "passed", "command": "focused-ledger-selectors"}
+    },
+    {
+      "id": "shell",
+      "checklist_text": "Shell execution preserves argv/shell, cwd, environment, timeout, cancellation and non-zero exit semantics.",
+      "risk": "high",
+      "classification": "covered",
+      "positive_selectors": [
+        "tests/test_process.py::test_host_process_returns_structured_nonzero_and_shell_results"
+      ],
+      "failure_selectors": [
+        "tests/test_process.py::test_timeout_and_cancellation_clean_up_host_process",
+        "tests/test_process.py::test_process_preflight_classifies_forbidden_operations_before_approval"
+      ],
+      "recovery_selectors": [
+        "tests/test_process.py::test_fake_provider_can_recover_after_host_command_failure"
+      ],
+      "acceptance_sources": ["docs/acceptance/stage-3-local-code-agent-evidence.md"],
+      "platform_conditions": [],
+      "snapshot_classes": ["toolset", "permission"],
+      "superseded_selectors": [],
+      "last_execution": {"status": "passed", "command": "focused-ledger-selectors"}
+    },
+    {
+      "id": "sandbox_approval",
+      "checklist_text": "Sandbox and approval modes fail closed, protect boundaries and recover from promotion conflicts.",
+      "risk": "high",
+      "classification": "host_required",
+      "positive_selectors": [
+        "tests/test_sandbox.py::test_sandbox_text_change_requires_approval_and_promotes_safely",
+        "tests/test_sandbox.py::test_production_auto_sandbox_registers_only_native_tools_and_keeps_real_workspace_clean",
+        "tests/test_sandbox.py::test_macos_native_sandbox_blocks_real_workspace_home_and_network"
+      ],
+      "failure_selectors": [
+        "tests/test_capability_policy.py::test_auto_sandboxed_process_fails_closed_until_backend_is_proven",
+        "tests/test_local_files.py::test_protected_symlink_target_and_git_metadata_are_metadata_only"
+      ],
+      "recovery_selectors": [
+        "tests/test_sandbox.py::test_sandbox_promotion_conflict_preserves_external_change_and_run_scope"
+      ],
+      "acceptance_sources": ["docs/acceptance/stage-3-local-code-agent-evidence.md"],
+      "platform_conditions": ["macos_host_process", "not_nested_in_codex_seatbelt"],
+      "snapshot_classes": ["permission"],
+      "superseded_selectors": [],
+      "last_execution": {"status": "passed", "command": "focused-ledger-selectors"}
+    },
+    {
+      "id": "git_read_only",
+      "checklist_text": "Git status and diff are bounded and read-only for dirty and non-repository workspaces.",
+      "risk": "medium",
+      "classification": "covered",
+      "positive_selectors": [
+        "tests/test_git.py::test_git_status_and_diff_are_bounded_read_only_and_protect_content"
+      ],
+      "failure_selectors": [
+        "tests/test_git.py::test_git_adapter_timeout_is_typed"
+      ],
+      "recovery_selectors": [
+        "tests/test_git.py::test_git_non_repository_is_a_normal_bounded_result"
+      ],
+      "acceptance_sources": ["docs/acceptance/stage-3-local-code-agent-evidence.md"],
+      "platform_conditions": [],
+      "snapshot_classes": ["toolset", "permission"],
+      "superseded_selectors": [],
+      "last_execution": {"status": "passed", "command": "focused-ledger-selectors"}
+    },
+    {
+      "id": "validation_truth",
+      "checklist_text": "Validation facts report scoped pass, failure, not-run and wrong-scope truth without taking ownership of the model stop.",
+      "risk": "high",
+      "classification": "covered",
+      "positive_selectors": [
+        "tests/test_s7p05_completion_truth.py::test_recognized_process_result_projects_only_a_validation_fact"
+      ],
+      "failure_selectors": [
+        "tests/test_s7p05_completion_truth.py::test_validator_recognition_is_strict_and_shell_control_flow_fails_closed",
+        "tests/test_s7p05_completion_truth.py::test_failed_validation_telemetry_does_not_reject_model_stop"
+      ],
+      "recovery_selectors": [
+        "tests/test_s7p05_completion_truth.py::test_latest_scoped_validation_fact_replaces_only_its_own_requirement"
+      ],
+      "acceptance_sources": ["docs/acceptance/s7p-05-validation-completion-truth.md"],
+      "platform_conditions": [],
+      "snapshot_classes": ["context_policy"],
+      "superseded_selectors": [
+        {
+          "selector": "tests/test_s7p05_completion_truth.py::test_completion_checker_rejects_failed_validation",
+          "replacement": "tests/test_s7p05_completion_truth.py::test_failed_validation_telemetry_does_not_reject_model_stop",
+          "reason": "Subplan 87 removed Runtime completion inference and restored model-owned stop."
+        }
+      ],
+      "last_execution": {"status": "passed", "command": "focused-ledger-selectors"}
+    },
+    {
+      "id": "provider_model",
+      "checklist_text": "Provider and model configuration, selection, frozen evidence, usage and retry/failure semantics remain deterministic.",
+      "risk": "high",
+      "classification": "covered",
+      "positive_selectors": [
+        "tests/test_agent_run_preparation.py::test_prepared_submit_freezes_provider_evidence_in_snapshot",
+        "tests/test_provider_control.py::test_model_capability_override_is_persisted_and_narrows_the_next_run_snapshot"
+      ],
+      "failure_selectors": [
+        "tests/test_agent_run_preparation.py::test_rehydrate_unavailable_frozen_credential_has_no_fallback",
+        "tests/test_agent_guardrails.py::test_zero_progress_transient_retries_but_auth_never_retries"
+      ],
+      "recovery_selectors": [
+        "tests/test_agent_run_preparation.py::test_rehydrate_rebuilds_exact_provider_from_frozen_evidence"
+      ],
+      "acceptance_sources": [
+        "docs/acceptance/stage6-skills-and-extensions.md",
+        "docs/acceptance/s7p-06-pi-parity-long-horizon.md"
+      ],
+      "platform_conditions": [],
+      "snapshot_classes": ["provider_model", "context_policy"],
+      "superseded_selectors": [],
+      "last_execution": {"status": "passed", "command": "focused-ledger-selectors"}
+    },
+    {
+      "id": "session_task",
+      "checklist_text": "Session and Task creation, continuation, recovery, fork, acceptance, cancellation, checkpoint and idempotency remain durable.",
+      "risk": "high",
+      "classification": "covered",
+      "positive_selectors": [
+        "tests/test_stage4_context_fork.py::test_fork_restored_through_production_bootstrap_can_complete_own_turn",
+        "tests/test_stage4_task_outcome.py::test_multi_turn_correction_and_acceptance_survive_restart"
+      ],
+      "failure_selectors": [
+        "tests/test_stage4_context_fork.py::test_checkpoint_requires_a_closed_boundary_and_fork_has_no_parent_copy"
+      ],
+      "recovery_selectors": [
+        "tests/test_stage4_recovery_crash.py::test_application_recovery_updates_health_and_resume_run_atomically",
+        "tests/test_stage4_application_api.py::test_session_command_receipt_replay_conflict_and_same_transaction_event"
+      ],
+      "acceptance_sources": ["docs/acceptance/stage-4-durable-agent-evidence.md"],
+      "platform_conditions": [],
+      "snapshot_classes": ["context_policy", "permission"],
+      "superseded_selectors": [],
+      "last_execution": {"status": "passed", "command": "focused-ledger-selectors"}
+    },
+    {
+      "id": "persistence_artifact",
+      "checklist_text": "Operational persistence, artifacts, migrations and backup/restore expose missing and corrupt state truthfully after rebuild.",
+      "risk": "high",
+      "classification": "covered",
+      "positive_selectors": [
+        "tests/test_stage4_artifacts.py::test_artifact_publication_is_atomic_private_and_restart_readable",
+        "tests/test_stage4_backup.py::test_backup_contains_database_manifest_artifacts_and_detects_changed_restore_bytes",
+        "tests/test_operational_store.py::test_ordered_checksummed_migration_rolls_back_a_failed_step"
+      ],
+      "failure_selectors": [
+        "tests/test_operational_store.py::test_valid_header_corruption_is_diagnose_repair_and_left_intact",
+        "tests/test_stage4_backup.py::test_backup_creation_fails_closed_when_an_available_artifact_is_missing"
+      ],
+      "recovery_selectors": [
+        "tests/test_stage4_artifacts.py::test_each_publication_fault_point_leaves_a_recoverable_truthful_state",
+        "tests/test_stage4_recovery_crash.py::test_file_reconciliation_after_restart"
+      ],
+      "acceptance_sources": ["docs/acceptance/stage-4-durable-agent-evidence.md"],
+      "platform_conditions": [],
+      "snapshot_classes": ["context_policy"],
+      "superseded_selectors": [],
+      "last_execution": {"status": "passed", "command": "focused-ledger-selectors"}
+    },
+    {
+      "id": "context",
+      "checklist_text": "Context compaction and restart preserve legal pairing and recover safely from long output and overflow.",
+      "risk": "high",
+      "classification": "covered",
+      "positive_selectors": [
+        "tests/test_stage4_context_fork.py::test_context_compression_checkpoint_restores_and_projects_after_restart",
+        "tests/test_s7p06_pi_parity.py::test_split_turn_compaction_keeps_user_anchor_and_tool_pairs_together"
+      ],
+      "failure_selectors": [
+        "tests/test_conversation_and_loop.py::test_context_overflow_records_terminal_and_keeps_only_user"
+      ],
+      "recovery_selectors": [
+        "tests/test_s7p06_pi_parity.py::test_context_overflow_has_one_compaction_recovery_path"
+      ],
+      "acceptance_sources": [
+        "docs/acceptance/stage-4-durable-agent-evidence.md",
+        "docs/acceptance/s7p-06-pi-parity-long-horizon.md"
+      ],
+      "platform_conditions": [],
+      "snapshot_classes": ["context_policy"],
+      "superseded_selectors": [],
+      "last_execution": {"status": "passed", "command": "focused-ledger-selectors"}
+    },
+    {
+      "id": "profile_memory",
+      "checklist_text": "Profile, Preference and Knowledge use minimal relevant frozen injection with review, promotion, conflict and provenance evidence.",
+      "risk": "high",
+      "classification": "covered",
+      "positive_selectors": [
+        "tests/test_stage5_memory_agent_run.py::test_new_turn_freezes_selection_and_effective_preferences_atomically",
+        "tests/test_preference_context.py::test_new_agent_run_reloads_yaml_sources_and_keeps_same_run_frozen"
+      ],
+      "failure_selectors": [
+        "tests/test_stage5_memory_agent_run.py::test_selection_admission_rolls_back_before_user_message_is_published",
+        "tests/test_stage5_configuration_promotion.py::test_prepared_configuration_rejects_later_same_content_revision_as_drift"
+      ],
+      "recovery_selectors": [
+        "tests/test_stage5_memory_agent_run.py::test_recovery_agent_run_reuses_selection_after_memory_revision_changes",
+        "tests/test_stage5_configuration_promotion.py::test_configuration_saga_replays_after_sqlite_finalize_crash"
+      ],
+      "acceptance_sources": ["docs/acceptance/stage5-acceptance.md"],
+      "platform_conditions": [],
+      "snapshot_classes": ["preference", "knowledge", "context_policy"],
+      "superseded_selectors": [],
+      "last_execution": {"status": "passed", "command": "focused-ledger-selectors"}
+    },
+    {
+      "id": "skill",
+      "checklist_text": "Skill discovery, selection, frozen version/context, scripts, drafts, usage and lifecycle remain bounded.",
+      "risk": "high",
+      "classification": "covered",
+      "positive_selectors": [
+        "tests/test_skill_selection.py::test_admission_persists_skill_rows_and_injects_low_authority_context",
+        "tests/test_skill_scripts.py::test_skill_script_requires_sandbox_and_exact_frozen_package"
+      ],
+      "failure_selectors": [
+        "tests/test_skill_scripts.py::test_skill_script_rejects_root_escape_symlink_and_input_mutation",
+        "tests/test_skill_selection.py::test_missing_dependencies_and_unknown_explicit_skill_are_omitted"
+      ],
+      "recovery_selectors": [
+        "tests/test_skill_lifecycle.py::test_recovery_finishes_after_yaml_publish_without_revision_drift"
+      ],
+      "acceptance_sources": ["docs/acceptance/stage6-skills-and-extensions.md"],
+      "platform_conditions": [],
+      "snapshot_classes": ["skill", "context_policy"],
+      "superseded_selectors": [],
+      "last_execution": {"status": "passed", "command": "focused-ledger-selectors"}
+    },
+    {
+      "id": "mcp",
+      "checklist_text": "MCP catalog and frozen schema survive validation, crash, timeout, cancellation and isolated restart recovery.",
+      "risk": "high",
+      "classification": "covered",
+      "positive_selectors": [
+        "tests/test_mcp_control.py::test_fake_stdio_discovery_and_catalog_are_offline_and_deterministic",
+        "tests/spikes/test_mcp_stdio_spike.py::test_fake_stdio_connect_list_call_close"
+      ],
+      "failure_selectors": [
+        "tests/test_mcp_control.py::test_invalid_tool_schema_isolated_from_valid_catalog",
+        "tests/test_mcp_runtime.py::test_timeout_is_terminal_for_one_server_and_never_retried"
+      ],
+      "recovery_selectors": [
+        "tests/test_mcp_runtime.py::test_one_degraded_server_does_not_poison_another",
+        "tests/test_mcp_runtime.py::test_rehydrate_rejects_launch_fact_drift"
+      ],
+      "acceptance_sources": ["docs/acceptance/stage6-skills-and-extensions.md"],
+      "platform_conditions": [],
+      "snapshot_classes": ["mcp", "toolset", "permission"],
+      "superseded_selectors": [],
+      "last_execution": {"status": "passed", "command": "focused-ledger-selectors"}
+    },
+    {
+      "id": "permission_grant",
+      "checklist_text": "Permission and Grant snapshots approve, deny, expire and revoke without expanding authority during recovery.",
+      "risk": "high",
+      "classification": "covered",
+      "positive_selectors": [
+        "tests/test_stage4_permissions.py::test_permission_snapshot_must_match_the_frozen_agent_run_and_blocks_late_grants",
+        "tests/test_stage4_execution.py::test_approval_resolve_consume_and_expiry_are_deterministic"
+      ],
+      "failure_selectors": [
+        "tests/test_stage4_permissions.py::test_grant_evidence_rejects_cross_scope_and_revoked_reuse"
+      ],
+      "recovery_selectors": [
+        "tests/test_stage4_recovery_crash.py::test_recovery_resume_creates_an_ungranted_agent_run"
+      ],
+      "acceptance_sources": ["docs/acceptance/stage-4-durable-agent-evidence.md"],
+      "platform_conditions": [],
+      "snapshot_classes": ["permission", "toolset"],
+      "superseded_selectors": [],
+      "last_execution": {"status": "passed", "command": "focused-ledger-selectors"}
+    },
+    {
+      "id": "runtime_control",
+      "checklist_text": "Runtime cancellation, steering, follow-up, deadline and budget exhaustion preserve legal pairing and safe recovery.",
+      "risk": "high",
+      "classification": "covered",
+      "positive_selectors": [
+        "tests/test_runtime_control.py::test_midstream_steering_resubmits_as_durable_turn_and_consumes_atomically",
+        "tests/test_runtime_control.py::test_active_follow_up_drains_after_normal_stop_in_fifo_order"
+      ],
+      "failure_selectors": [
+        "tests/test_agent_limits.py::test_deadline_between_tools_preserves_result_and_budget_closes_unstarted_call",
+        "tests/test_runtime_control.py::test_pre_stop_steering_rejects_candidate_without_publishing_it"
+      ],
+      "recovery_selectors": [
+        "tests/test_runtime_control.py::test_cancel_preserves_pending_controls_for_the_next_user_run",
+        "tests/test_runtime_control.py::test_error_replay_uses_receipt_terminal_when_metrics_are_missing"
+      ],
+      "acceptance_sources": ["docs/acceptance/s7p-07-runtime-control.md"],
+      "platform_conditions": [],
+      "snapshot_classes": ["context_policy", "permission"],
+      "superseded_selectors": [],
+      "last_execution": {"status": "passed", "command": "focused-ledger-selectors"}
+    },
+    {
+      "id": "security",
+      "checklist_text": "Credentials, reasoning, full arguments/results and tracebacks stay absent from public, terminal, model and durable surfaces.",
+      "risk": "high",
+      "classification": "covered",
+      "positive_selectors": [
+        "tests/test_stage2_product_acceptance.py::test_real_terminal_product_flow_is_ordered_recoverable_and_secret_safe",
+        "tests/test_headless_run.py::test_run_emits_only_versioned_jsonl_and_terminal_safe_record"
+      ],
+      "failure_selectors": [
+        "tests/test_conversation_and_loop.py::test_public_diagnostic_contract_rejects_secret_material_and_control_lines",
+        "tests/test_stage4_application_api.py::test_application_event_payload_rejects_secret_material"
+      ],
+      "recovery_selectors": [
+        "tests/test_stage6_backup.py::test_stage6_v2_round_trip_without_secret_authorities"
+      ],
+      "acceptance_sources": [
+        "docs/acceptance/stage-2-evidence.md",
+        "docs/acceptance/stage6-skills-and-extensions.md"
+      ],
+      "platform_conditions": [],
+      "snapshot_classes": [
+        "provider_model",
+        "skill",
+        "mcp",
+        "preference",
+        "knowledge",
+        "toolset",
+        "permission",
+        "context_policy"
+      ],
+      "superseded_selectors": [],
+      "last_execution": {"status": "passed", "command": "focused-ledger-selectors"}
+    },
+    {
+      "id": "entrypoint_consistency",
+      "checklist_text": "Interactive and headless entrypoints share production preparation, AgentLoop snapshots and terminal meaning.",
+      "risk": "high",
+      "classification": "covered",
+      "positive_selectors": [
+        "tests/acceptance/test_s7p08_single_agent_matrix.py::test_interactive_and_headless_paths_share_run_preparation_and_terminal_truth",
+        "tests/test_headless_run.py::test_run_uses_the_real_session_builder_with_a_scripted_provider",
+        "tests/test_conversation_and_loop.py::test_runtime_run_turn_is_thin_delegate_of_loop_run_task"
+      ],
+      "failure_selectors": [
+        "tests/test_headless_run.py::test_run_requires_explicit_prompt_and_workspace_without_reading_stdin"
+      ],
+      "recovery_selectors": [
+        "tests/test_terminal.py::test_clean_primary_eof_exits_once"
+      ],
+      "acceptance_sources": [
+        "docs/acceptance/s7p-01-observability-headless.md",
+        "docs/acceptance/stage-2-evidence.md"
+      ],
+      "platform_conditions": [],
+      "snapshot_classes": ["provider_model", "toolset", "permission", "context_policy"],
+      "superseded_selectors": [
+        {
+          "selector": "tests/test_structured_and_handoff.py",
+          "replacement": "tests/test_structured.py and tests/test_preferences_and_orchestration.py",
+          "reason": "The historical Stage 2 acceptance file was split and the old file no longer collects."
+        }
+      ],
+      "last_execution": {"status": "passed", "command": "focused-ledger-selectors"}
+    }
+  ]
+}
