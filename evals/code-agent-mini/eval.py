@@ -3468,6 +3468,42 @@ def _finish_normalized_trace(
     return result
 
 
+def runtime_evidence_from_normalized_trace(trace: Mapping[str, object]) -> dict[str, object]:
+    """Project the shared S7P-09 trace into finalize's S7P-00 evidence contract."""
+
+    normalized = _mapping(trace, "normalized trace")
+    _required_keys(
+        normalized,
+        {
+            "schema",
+            "agent",
+            "rounds",
+            "model_attempts",
+            "tool_calls",
+            "tool_states",
+            "tool_diagnostics",
+            "context",
+            "usage",
+            "stop",
+        },
+        "normalized trace",
+    )
+    if normalized["schema"] != NORMALIZED_TRACE_SCHEMA:
+        raise EvalError("normalized trace schema is unsupported")
+    usage = _mapping(normalized["usage"], "normalized trace usage")
+    evidence = {
+        "schema_version": 1,
+        "availability": "available",
+        "tool_states": dict(_mapping(normalized["tool_states"], "normalized tool states")),
+        "tool_diagnostics": dict(
+            _mapping(normalized["tool_diagnostics"], "normalized tool diagnostics")
+        ),
+        "usage": {field: usage[field] for field in USAGE_FIELDS},
+        "stop": dict(_mapping(normalized["stop"], "normalized stop")),
+    }
+    return normalize_runtime_evidence(evidence)
+
+
 class EvaluationApprovalPort:
     """Approve only policy-confined automation requests emitted after Morrow preflight."""
 
@@ -3696,7 +3732,8 @@ def run_morrow_agent(
             workspace=workspace.resolve(),
         )
     normalized = normalize_morrow_trace(safe_trace)
-    _write_json_create(output.resolve(), normalized)
+    runtime_evidence = runtime_evidence_from_normalized_trace(normalized)
+    _write_json_create(output.resolve(), runtime_evidence)
     return {"output": str(output.resolve()), "sha256": file_hash(output.resolve())}
 
 
@@ -4023,7 +4060,7 @@ def pi_agent_command(prompt: str, extension: Path) -> list[str]:
         "--model",
         "mimo-v2.5",
         "--thinking",
-        "medium",
+        "off",
         "--no-session",
         "--no-extensions",
         "--extension",
@@ -4065,7 +4102,8 @@ def run_pi_agent(
         workspace=workspace.resolve(),
         watchdog_expired=bool(process["watchdog_expired"]),
     )
-    _write_json_create(output.resolve(), normalized)
+    runtime_evidence = runtime_evidence_from_normalized_trace(normalized)
+    _write_json_create(output.resolve(), runtime_evidence)
     return {
         "output": str(output.resolve()),
         "sha256": file_hash(output.resolve()),

@@ -3530,3 +3530,17 @@
 - Focused Provider/evaluator/tool-audit tests passed `116` with one live skip. Full offline passed
   `1323 passed, 2 deselected in 83.29s`; Ruff format/check, compileall, CLI help and
   `git diff --check` passed.
+
+## 2026-08-27 — Pre-admission runner/finalize gap closed
+
+- A clean-source comparison-plan rehearsal froze complete 15-tool Morrow and seven-tool Pi
+  profiles, passed 10/10 dataset self-check, the eight-case permission matrix, Pi auth readiness,
+  Morrow Provider readiness and campaign preflight. No admission was created.
+- End-to-end review before admission found the runners emitted the shared S7P-09 normalized trace
+  while `finalize` consumes the S7P-00 runtime-evidence schema. Added a strict safe projection so
+  both formal runner outputs are directly finalizable without payload-bearing intermediate data.
+- Changed the Pi runner from thinking `medium` to `off`. Pi and Morrow now both omit an explicit
+  reasoning-effort request field, matching the frozen provider-default sampling contract.
+- Focused evaluator tests passed `39`; full offline passed `1323 passed, 2 deselected in 88.99s`.
+  Ruff format/check, compileall, CLI help and `git diff --check` passed. The superseded
+  pre-admission plan will not be used because its source pin predates this integration repair.

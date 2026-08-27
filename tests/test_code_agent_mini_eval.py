@@ -1199,6 +1199,12 @@ def test_morrow_runner_keeps_provider_usage_when_unbounded_cost_is_unavailable()
     assert normalized["usage"]["total_tokens"] == 120
     assert normalized["usage"]["cost"] == "unavailable"
 
+    evidence = eval_module.runtime_evidence_from_normalized_trace(normalized)
+    assert evidence["schema_version"] == 1
+    assert evidence["availability"] == "available"
+    assert evidence["usage"]["total_tokens"] == 120
+    assert evidence["usage"]["cost"] == "unavailable"
+
 
 def test_permission_equivalence_and_evaluation_approval_remain_fail_closed(tmp_path: Path) -> None:
     from morrow.core.models import ToolApprovalRequest, ToolEffect
@@ -1350,6 +1356,7 @@ def test_pi_agent_command_pins_model_policy_and_resources() -> None:
     ]
     assert command[command.index("--extension") + 1] == str(extension.resolve())
     assert command[command.index("--tools") + 1] == "read,bash,edit,write,grep,find,ls"
+    assert command[command.index("--thinking") + 1] == "off"
     assert "--no-session" in command
     assert "--no-extensions" in command
     assert "--no-skills" in command

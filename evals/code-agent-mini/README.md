@@ -132,7 +132,8 @@ executable/package hash、evidence-root 身份/权限/空间、start-not-before 
 与 no-tool model probe 明确报告为未执行。用户已批准 `opencode-go/mimo-v2.5`、5,000,000 Token
 硬上限、无货币上限和 bounded probe；Pi credential 未就绪时 probe 仍 fail closed。
 
-两侧正式 runner 都创建 normalized trace。Morrow runner 通过普通 bootstrap/AgentLoop/ToolExecutor
+两侧正式 runner 都先创建共享 normalized trace，再投影为 `finalize` 可直接接受的安全
+runtime-evidence。Morrow runner 通过普通 bootstrap/AgentLoop/ToolExecutor
 组合注入 bounded EvaluationApprovalPort；Pi runner 只加载 content-hashed policy extension，禁用用户
 extension/skill/template/session，并用 macOS Seatbelt 约束 bash：
 

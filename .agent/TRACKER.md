@@ -8,11 +8,16 @@ and validate the offline comparison harness; no formal live campaign run has sta
 
 ## Active task
 
-Freeze the final comparison plan and readiness hashes. The Morrow Provider repair now narrows
+Close the runner-to-finalize integration gap, commit it, then refreeze the final comparison plan
+and readiness hashes. The Morrow Provider repair now narrows
 non-interoperable integer bounds only at the wire, accepts MiMo's nonsemantic repeated terminal
 chunk, and classifies request rejections correctly. The repaired bounded Agent probe completed
 `stop` with 7,139 Provider tokens and zero tools. Cost remains explicitly unavailable on Morrow
 and is optional because the approved campaign has no currency ceiling.
+The first pre-admission plan rehearsal passed all offline checks and exposed that runner output was
+not yet consumable by `finalize`; no run was admitted. The runner now projects the shared normalized
+trace into the existing runtime-evidence contract, and Pi thinking is pinned `off` so both adapters
+omit reasoning-effort controls.
 
 ## Preparation evidence
 
@@ -59,8 +64,9 @@ and is optional because the approved campaign has no currency ceiling.
 
 ## Next action
 
-Do not admit a formal run until the repair is committed and the comparison plan, evidence root,
-source pins, sampling facts and readiness hashes are frozen. Then execute the immutable schedule.
+Do not admit a formal run until the integration repair is committed and the comparison plan,
+evidence root, source pins, sampling facts and readiness hashes are refrozen. Then execute the
+immutable schedule.
 
 ## Blockers
 

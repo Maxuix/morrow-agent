@@ -32,6 +32,11 @@ surface, disables mutable user extensions/skills/templates/session state, and lo
 content-hashed policy extension. Its bash override uses macOS Seatbelt to deny network and `.git`
 writes while limiting workspace writes and command duration.
 
+The pre-admission end-to-end rehearsal found and closed one integration gap: the formal runners now
+project their shared normalized trace into the existing `finalize` runtime-evidence schema. Pi is
+also pinned to thinking `off`, matching Morrow's omitted reasoning-effort request field. No formal
+run key was admitted against the superseded rehearsal plan.
+
 ## Safety evidence
 
 - Unknown comparison-plan fields, unresolved pins, `unavailable` hashes, placeholders, profile or

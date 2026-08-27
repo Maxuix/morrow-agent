@@ -135,7 +135,8 @@ is not a subjective waiver or a reason to substitute a different model.
 - Repetitions: exactly `1` and `2`, each from the same evaluator baseline tree as its Morrow pair.
 - Runtime: Pi Agent `0.84.2`, non-interactive JSON mode, fresh/disabled session persistence,
   project context enabled when the same files are visible to Morrow, user packages/skills/prompt
-  templates disabled, and only the explicit evaluation policy extension enabled.
+  templates disabled, reasoning control set to `off` so both runners omit a reasoning-effort
+  request field, and only the explicit evaluation policy extension enabled.
 - The policy extension may enforce the frozen workspace/network/process limits and emit safe facts;
   it may not add planning, editing, validation or task-solving guidance.
 
