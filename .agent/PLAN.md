@@ -1,21 +1,20 @@
-# Stage 7 Preflight Reliability Repairs — S7P-00–05 Post-audit Remediation
+# Stage 7 Preflight Reliability Repairs — Remove Runtime Outcome Gate
 
-> Status: completed and integrated locally
-> Active subplan: none; Subplan 86 is complete
-> Branch: `main`
+> Status: active
+> Active subplan: 87 — `.agent/subplans/87-remove-runtime-outcome-gate.md`
+> Branch: `refactor/remove-outcome-gate`
 > Base: locally integrated S7P-05 at `d570c5c`
 > Source authority: current user request, post-fix audit reproductions, current code and gates
 
 ## 1. Current objective
 
-Repair all confirmed S7P-00–05 post-audit findings before S7P-06. Natural-language Outcome
-Contract preparation must use bounded structured semantic resolution rather than lexical keywords
-or regular expressions. Immutable AgentRun evidence, scoped project instructions, completion
-obligations, validator declarations, workspace baselines, telemetry and cached-resource lifecycles
-must remain mutually consistent through fresh, corrected and recovered runs.
+Remove the runtime-owned OutcomeContract/output-fact completion gate. A valid model `stop` decides
+when the answer is complete; the runtime must not reject otherwise useful outputs based on inferred
+task semantics, workspace diffs, required validators or verifier policy. Preserve tool protocol,
+permission, durability, cancellation, unresolved-call and validation telemetry boundaries.
 
-Detailed scope, design and acceptance are owned by active Subplan 86. The retained S7P-05 material
-below is decision history; where it conflicts with Subplan 86, the active subplan wins.
+Detailed scope and compatibility decisions are owned by active Subplan 87. The retained S7P-05 and
+Subplan 86 material below is decision history; where it conflicts, Subplan 87 wins.
 
 ## 2. Prior S7P-05 objective
 

@@ -1,4 +1,8 @@
-# S7P-05 Validation and Completion Truth 验收报告
+# S7P-05 Validation and Completion Truth 历史验收报告
+
+> **已被 Subplan 87 取代。** Runtime 不再使用 OutcomeContract、WorkspaceBaseline、
+> CompletionChecker 或 verifier 作为最终回答发送门禁。合法模型 `stop` 直接结束回合；
+> `ValidationFact` 仅作为执行遥测保留。以下内容是当时的实现与验收证据，不再描述当前运行路径。
 
 ## 1. 结论
 

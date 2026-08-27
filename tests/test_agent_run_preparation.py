@@ -392,7 +392,7 @@ async def test_prepared_submit_freezes_provider_evidence_in_snapshot(tmp_path: P
     assert len(payload) < AGENT_RUN_SNAPSHOT_MAX_BYTES
 
 
-async def test_prepared_submit_freezes_completion_contract_and_baseline_for_rehydration(
+async def test_new_submit_omits_and_rehydration_ignores_legacy_completion_evidence(
     tmp_path: Path,
 ) -> None:
     app = _app(tmp_path)
@@ -402,6 +402,20 @@ async def test_prepared_submit_freezes_completion_contract_and_baseline_for_rehy
     project.mkdir()
     session_app = _open_session_application(app, project)
     prepared = session_app.orchestrator.preparation.prepare_new()
+    accepted = session_app.persistence.submit_user(
+        session_app.session,
+        "fix answer.txt and run pytest tests",
+        "cmsg_completion_freeze",
+        turn_id="turn_1",
+        agent_run_id="arun_1",
+        prepared_spec=prepared.spec,
+    )
+    snapshot = session_app.persistence.get_open_run_snapshot()
+    assert accepted.kind == "accepted"
+    assert snapshot is not None
+    assert snapshot.outcome_contract is None
+    assert snapshot.workspace_baseline is None
+
     contract = OutcomeContract(
         mode="change",
         target_paths=("answer.txt",),
@@ -412,27 +426,14 @@ async def test_prepared_submit_freezes_completion_contract_and_baseline_for_rehy
         entries=(),
         repository_state="filesystem",
     )
-
-    accepted = session_app.persistence.submit_user(
-        session_app.session,
-        "fix answer.txt and run pytest tests",
-        "cmsg_completion_freeze",
-        turn_id="turn_1",
-        agent_run_id="arun_1",
-        prepared_spec=prepared.spec,
-        outcome_contract=contract,
-        workspace_baseline=baseline,
+    legacy_snapshot = snapshot.model_copy(
+        update={"outcome_contract": contract, "workspace_baseline": baseline}
     )
-    snapshot = session_app.persistence.get_open_run_snapshot()
-    assert accepted.kind == "accepted"
-    assert snapshot is not None
-    assert snapshot.outcome_contract == contract
-    assert snapshot.workspace_baseline == baseline
 
-    hydrated = _preparation(app).rehydrate(snapshot)
+    hydrated = _preparation(app).rehydrate(legacy_snapshot)
     try:
-        assert hydrated.spec.outcome_contract == contract
-        assert hydrated.spec.workspace_baseline == baseline
+        assert not hasattr(hydrated.spec, "outcome_contract")
+        assert not hasattr(hydrated.spec, "workspace_baseline")
     finally:
         hydrated.close()
         prepared.close()

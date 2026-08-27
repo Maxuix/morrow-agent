@@ -2,27 +2,26 @@
 
 ## Current stage
 
-The S7P-00–05 post-audit remediation is complete and integrated locally.
+Removal of the runtime OutcomeContract/output-fact gate is active.
 
 ## Active subplan
 
-No subplan is active. Subplan 86 is integrated; the untracked S7P-06 draft remains inactive.
+Subplan 87 is active. Subplan 86 remains integrated; the untracked S7P-06 draft is inactive.
 
 ## Tasks
 
-- `[x]` Replace lexical OutcomeContract inference with bounded structured semantic intent parsing.
-- `[x]` Persist intent and prompt-scope evolution as append-only evidence without mutating snapshots.
-- `[x]` Gate first scoped writes on applicable nested project instructions and fail closed.
-- `[x]` Centralize validator command specifications and close scoped failure obligations correctly.
-- `[x]` Replace Git full-tree baselines and restore the 64 KiB AgentRun snapshot budget.
-- `[x]` Record exact corrected-request size and clean per-call resources on every terminal path.
-- `[x]` Add adversarial, recovery, migration, backup and production-composition regression coverage.
-- `[x]` Run focused/full offline/static/CLI gates and update implementation documents.
-- `[x]` Commit verified progress and fast-forward integrate the completed remediation.
+- `[x]` Remove intent resolution, workspace baseline preparation and pre-answer completion checks from
+  AgentLoop and production composition.
+- `[x]` Remove active application/session APIs and output telemetry that expose runtime completion
+  verdicts, while preserving stored-snapshot/schema read compatibility.
+- `[x]` Delete obsolete semantic resolver/checker implementation and replace its tests with direct
+  model-stop acceptance and recovery regressions.
+- `[x]` Update architecture and execution documents.
+- `[>]` Run final static/CLI gates, commit and fast-forward integrate.
 
 ## Boundaries
 
-- Do not infer business correctness or accept assistant prose as completion evidence.
+- Do not infer business correctness or reject a valid model stop based on task/output semantics.
 - Do not implement S7P-06+, add dependencies, change permission/tool effects or runtime defaults.
 - Do not add public event types/fields or create another ConversationLog writer.
 - Do not persist command text, stdout/stderr, file content, secrets, reasoning or tracebacks.

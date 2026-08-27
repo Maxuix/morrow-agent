@@ -34,6 +34,7 @@ inactive.
 | 84 | `84-s7p-05-validation-completion-truth.md` | completed and integrated locally |
 | 85 | `85-s7p-06-budget-context-no-progress.md` | preserved draft; inactive |
 | 86 | `86-s7p-00-05-audit-remediation.md` | completed and integrated locally |
+| 87 | `87-remove-runtime-outcome-gate.md` | verified; local integration pending |
 
 ## Stage 7 pre-baseline
 

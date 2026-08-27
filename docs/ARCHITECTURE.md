@@ -68,10 +68,10 @@ deadline/预算、取消闭合、循环检测和全部聊天历史写入；`Agen
 AgentLoop 在每次 Provider 调用前后经该合同记录 bounded request admission/settlement，并在终态
 写入独立的 AgentRun terminal metrics；projection 只含 ID、状态、计数、stop/finish 和明确的
 usage/cost availability，不含 prompt、message、reasoning、完整工具参数/结果、SDK object 或 traceback。
-S7P-05 在进入 durable admission 前冻结有界 Outcome Contract 与 no-follow workspace baseline；
-`CompletionChecker` 只依据实际净差异、精确 scoped `ValidationFact`、路径政策、未闭合调用、已知失败和可选
-verifier 决定最终 stop。最终候选文本在检查通过前留在进程内；一次纠正只注入固定事实码与下一动作，不写入
-ConversationLog，也不改变公开事件类型或字段。
+有效且不含 tool calls 的模型 `stop` 直接决定普通回合结束；Runtime 不再推断 OutcomeContract、扫描
+workspace baseline，或依据 diff、validation、verifier 和其他输出事实拒绝最终回答。`ValidationFact`
+仍是独立、精确 scoped 的执行遥测，不是回答发送门禁。旧 AgentRunSnapshot/schema-v19 中的 contract、
+baseline 和 completion 列只为读取兼容保留，新运行不写入或解释这些遗留字段。
 工具 handler 的审批、权限复查、超时/取消和 durable execution 状态由 `ToolCycleExecutor` 执行，
 但它不拥有聊天历史或公开事件。只有实现有界、单行且拒绝密钥材料的 `PublicDiagnosticError`
 合同的领域失败可越过 Agent 的通用异常边界；未知异常仍只产生固定内部错误，不暴露 traceback。
@@ -240,7 +240,7 @@ bounded partial failure，不回滚或覆盖用户数据；
   → 检查 Provider 与凭据
   → 检查并加载 Profile / workspace Preferences
   → 构造进程内 SessionApplication
-  → AgentLoop 编译并冻结 Outcome Contract、捕获 no-follow workspace baseline，再接纳 User
+  → AgentLoop 接纳 User；不发起额外意图解析或输出契约准备
   → ContextBuilder 组装合法历史和工具
   → 每次 Provider 调用前 admission bounded request observation，完成/失败/取消后 exactly-once settlement
   → Adapter 流式返回文本或 tool calls
@@ -248,8 +248,8 @@ bounded partial failure，不回滚或覆盖用户数据；
   → 审批 consume 与 executing 同一事务；handler 只在已提交意图可见后运行
   → bounded、redacted run_command 结果先发布为 Artifact，再记录 handler_completed 与 ToolMessage/closed
   → ToolExecutor 校验、预检、审批并串行执行受限工具，闭合 ToolCycle
-  → 最终 STOP 先检查净 diff、target/allowed/forbidden path、scoped validation、known failure、unresolved call 和 verifier
-  → 检查通过后才提交/发布最终回答；一次失败只允许一次事实纠正，之后以确定性 stop_code 结束
+  → 合法模型 STOP 直接提交并发布最终回答
+  → 工具协议、审批、权限、预算、Provider 错误、取消和未闭合 ToolCycle 仍由各自确定性边界处理
   → AgentRun terminal metrics 由已 settlement request 与已关闭 ToolExecution 聚合；crash 留下 open request 供 Doctor/恢复识别
   → 先提交 Turn/User，再发出 turn.started
   → 重启后扫描未闭合 ToolExecution；Host/sandbox 缺完成一律 unknown，禁止自动重放

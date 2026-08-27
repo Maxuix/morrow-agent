@@ -15,16 +15,7 @@ from morrow.application.project_instructions import ProjectInstructionError
 from morrow.application.prompt import PromptAssemblyError
 from morrow.core.application import ApplicationError
 from morrow.core.capabilities import ChangeToolFact, ToolRunContext
-from morrow.core.completion import (
-    CompletionBasis,
-    CompletionCheckResult,
-    CompletionOutcome,
-    OutcomeContract,
-    OutcomeContractCompiler,
-    WorkspaceBaseline,
-    WorkspaceBaselineStatus,
-    normalize_workspace_path,
-)
+from morrow.core.completion import normalize_workspace_path
 from morrow.core.diagnostics import PublicDiagnosticError
 from morrow.core.events import completion_payload, make_event
 from morrow.core.execution import (
@@ -47,7 +38,6 @@ from morrow.core.models import (
     ModelRef,
     ModelUsage,
     ProtocolModel,
-    SystemMessage,
     ToolDefinition,
     ToolEffect,
     ToolMessage,
@@ -59,7 +49,6 @@ from morrow.core.ports import Clock, IdSource, ModelProvider
 from morrow.runtime.conversation import ConversationLogError
 from morrow.runtime.durable_log import durable_call_id
 from morrow.runtime.ids import RandomIdSource
-from morrow.runtime.outcome_intent import OutcomeIntentResolver
 from morrow.runtime.session import Session
 from morrow.runtime.tool_cycle import ToolCycleExecutor
 from morrow.runtime.tools import (
@@ -247,20 +236,6 @@ def _consume_cancellation_request() -> None:
             task.uncancel()
 
 
-def _completion_feedback(result: CompletionCheckResult) -> str:
-    """Render only bounded runtime fact codes for one permitted correction."""
-
-    reasons = ",".join(result.reason_codes[:8]) or "completion_inconclusive"
-    next_actions = ",".join(result.next_action_codes[:8]) or "inspect_runtime_evidence"
-    changed = ",".join(result.changed_paths[:8])
-    changed_note = f" changed_paths={changed}" if changed else ""
-    return (
-        "Runtime completion check failed; this is a factual correction request, not a claim "
-        f"about business correctness. reason_codes={reasons}; next_action_codes={next_actions}."
-        f"{changed_note} Re-check the bounded contract and continue with tools if needed."
-    )
-
-
 def _accepted_text_chunks(chunks: list[str], message: AssistantMessage) -> list[str]:
     """Return text already streamed for a model response once its outcome is known."""
 
@@ -325,52 +300,6 @@ def _remember_call_paths(state: _AgentRunState, call: FunctionToolCall) -> None:
                     _remember_touched_path(state, item)
 
 
-def _tool_obligation_keys(
-    call: FunctionToolCall, tool_executor: ToolExecutor
-) -> tuple[tuple[str, tuple[str, ...]], ...]:
-    """Return a stable repair scope without trusting model text as completion evidence."""
-    values: list[str] = []
-    args = call.arguments or {}
-    if isinstance(args, str):
-        try:
-            args = json.loads(args)
-        except (TypeError, ValueError):
-            args = {}
-    if isinstance(args, dict):
-        for key in (
-            "path",
-            "file_path",
-            "target_path",
-            "destination_path",
-            "source_path",
-            "directory_path",
-            "cwd",
-            "paths",
-        ):
-            value = args.get(key)
-            if isinstance(value, str) and value:
-                values.append(value[:512])
-            elif isinstance(value, (list, tuple)):
-                values.extend(item[:512] for item in value if isinstance(item, str) and item)
-    registered = tool_executor.tool_set.tools.get(call.name)
-    family = call.name
-    if registered is not None and registered.runtime_contract is not None:
-        if registered.runtime_contract.intent_kind.value == "workspace_write":
-            family = "workspace_write"
-    normalized: list[str] = []
-    for value in values:
-        try:
-            path = normalize_workspace_path(value)
-        except (TypeError, ValueError):
-            continue
-        if path not in normalized:
-            normalized.append(path)
-    # The family-wide key lets a corrected call close an argument failure that
-    # had no valid target. Scoped keys remain open until every failed path is
-    # retried successfully, so an unrelated same-tool success is insufficient.
-    return ((family, ()), *(tuple((family, (path,)) for path in sorted(normalized))))
-
-
 def _prompt_refresh_failure_code(error: Exception) -> str:
     code = getattr(error, "code", None)
     if isinstance(code, str) and code.isidentifier():
@@ -411,12 +340,6 @@ class _AgentRunState:
     crashed: bool = False
     terminal_finish_reason: FinishReason | None = None
     stop_code: AgentStopCode | None = None
-    outcome_contract: OutcomeContract | None = None
-    workspace_baseline: WorkspaceBaseline | None = None
-    completion_check: CompletionCheckResult | None = None
-    completion_correction_used: bool = False
-    completion_feedback: str | None = None
-    known_failure_codes: dict[tuple[str, tuple[str, ...]], str] = field(default_factory=dict)
     touched_paths: list[str] = field(default_factory=list)
 
 
@@ -538,9 +461,6 @@ class AgentLoop:
         clock: Clock | None = None,
         tool_executor: ToolExecutor | None = None,
         grant_provider=None,
-        completion_checker=None,
-        outcome_contract_compiler: OutcomeContractCompiler | None = None,
-        resolve_outcome_intent: bool = False,
         monotonic=None,
     ) -> None:
         self.runner = ModelCallRunner(provider, model)
@@ -551,15 +471,6 @@ class AgentLoop:
         self.tool_executor = tool_executor
         self.grant_provider = grant_provider
         self.monotonic = monotonic or time.monotonic
-        self.completion_checker = completion_checker
-        self.resolve_outcome_intent = resolve_outcome_intent
-        if outcome_contract_compiler is not None:
-            self.outcome_contract_compiler = outcome_contract_compiler
-        else:
-            workspace_root = getattr(getattr(completion_checker, "files", None), "resolver", None)
-            self.outcome_contract_compiler = OutcomeContractCompiler(
-                workspace_root=getattr(workspace_root, "root", None)
-            )
         self.tool_cycle = (
             ToolCycleExecutor(
                 tool_executor,
@@ -602,9 +513,6 @@ class AgentLoop:
         prepared: PreparedAgentRunRuntime | None = None,
         startup_error: str | None = None,
         agent_run_id: str | None = None,
-        outcome_contract: OutcomeContract | None = None,
-        workspace_baseline: WorkspaceBaseline | None = None,
-        verifier=None,
     ) -> AsyncIterator[AgentEvent]:
         client_message_id = client_message_id or self._id("cmsg")
         if prepared is not None:
@@ -653,64 +561,6 @@ class AgentLoop:
                     ),
                 }
             )
-        if resume_current_turn and prepared_spec is not None:
-            # Resume is authoritative to the durable snapshot. A caller cannot
-            # replace the original proof obligations or baseline with fresh input.
-            outcome_contract = prepared_spec.outcome_contract
-            workspace_baseline = prepared_spec.workspace_baseline
-        elif prepared_spec is not None and (
-            outcome_contract is not None or workspace_baseline is not None
-        ):
-            prepared_spec = prepared_spec.model_copy(
-                update={
-                    "outcome_contract": outcome_contract or prepared_spec.outcome_contract,
-                    "workspace_baseline": workspace_baseline or prepared_spec.workspace_baseline,
-                }
-            )
-        intent_resolution_error: str | None = None
-        contract_input = user_input
-        needs_intent_resolution = False
-        if outcome_contract is None:
-            if resume_current_turn and not contract_input:
-                for record in reversed(session.log.snapshot().records):
-                    message = getattr(record, "message", None)
-                    if isinstance(message, UserMessage):
-                        contract_input = message.content
-                        break
-            if prepared_spec is not None and prepared_spec.outcome_contract is not None:
-                outcome_contract = prepared_spec.outcome_contract
-            elif self.resolve_outcome_intent and not resume_current_turn and startup_error is None:
-                needs_intent_resolution = True
-            else:
-                outcome_contract = self.outcome_contract_compiler.compile(contract_input)
-        if workspace_baseline is None and prepared_spec is not None:
-            workspace_baseline = prepared_spec.workspace_baseline
-        if self.completion_checker is not None and workspace_baseline is None:
-            if resume_current_turn:
-                workspace_baseline = WorkspaceBaseline(
-                    status=WorkspaceBaselineStatus.INCONCLUSIVE,
-                    entries=(),
-                    reason_code="missing_frozen_baseline",
-                )
-            else:
-                try:
-                    workspace_baseline = self.completion_checker.baselines.prepare()
-                except Exception:
-                    workspace_baseline = WorkspaceBaseline(
-                        status=WorkspaceBaselineStatus.INCONCLUSIVE,
-                        entries=(),
-                        reason_code="baseline_prepare_failed",
-                    )
-        if prepared_spec is not None and (
-            prepared_spec.outcome_contract != outcome_contract
-            or prepared_spec.workspace_baseline != workspace_baseline
-        ):
-            prepared_spec = prepared_spec.model_copy(
-                update={
-                    "outcome_contract": outcome_contract,
-                    "workspace_baseline": workspace_baseline,
-                }
-            )
         runner = ModelCallRunner(provider, model)
         tool_cycle = (
             ToolCycleExecutor(tool_executor, policy, wall_now=self._wall_now)
@@ -732,10 +582,7 @@ class AgentLoop:
             ),
             agent_run_id=initial_agent_run_id,
             deadline=self.monotonic() + policy.max_run_seconds,
-            outcome_contract=outcome_contract,
-            workspace_baseline=workspace_baseline,
         )
-        session.latest_completion_check = None
 
         observation_runtime = (
             durable_runtime
@@ -755,8 +602,6 @@ class AgentLoop:
 
         def restore_observation_progress() -> None:
             """Continue a resumed AgentRun after already-settled request rows."""
-
-            nonlocal intent_resolution_error
 
             if not resume_current_turn or observation_runtime is None or state.agent_run_id is None:
                 return
@@ -783,18 +628,6 @@ class AgentLoop:
             state.dropped_record_count = sum(item.dropped_record_count for item in requests)
             state.tool_rounds = max(item.tool_rounds for item in requests)
             state.tool_calls = max(item.tool_calls for item in requests)
-            resolved_contract = next(
-                (
-                    item.resolved_outcome_contract
-                    for item in reversed(requests)
-                    if item.resolved_outcome_contract is not None
-                ),
-                None,
-            )
-            if resolved_contract is not None:
-                state.outcome_contract = resolved_contract
-            elif state.outcome_contract is None:
-                intent_resolution_error = "恢复记录缺少可靠的任务完成意图，请重新提交任务。"
             settled_before_latest = requests[:-1] if latest_is_open else requests
             state.total_retry_count = sum(
                 item.state.value == "failed" for item in settled_before_latest
@@ -814,7 +647,6 @@ class AgentLoop:
             error_code: ModelErrorCode | None = None,
             usage: ModelUsage | None = None,
             cost: ModelCost | None = None,
-            resolved_outcome_contract: OutcomeContract | None = None,
         ) -> None:
             if admission is None or observation_runtime is None:
                 return
@@ -826,7 +658,6 @@ class AgentLoop:
                     error_code=error_code,
                     usage=usage or ModelUsage.unavailable(),
                     cost=cost or ModelCost.unavailable(),
-                    resolved_outcome_contract=resolved_outcome_contract,
                 )
             except Exception:
                 # A failed observation write remains visible as an open request;
@@ -843,7 +674,6 @@ class AgentLoop:
                 return
             finish_reason = state.terminal_finish_reason or FinishReason.ERROR
             run_metrics = state.run_context.metrics(finish_reason.value)
-            completion = state.completion_check
             try:
                 observation_runtime.finalize_agent_run(
                     agent_run_id=state.agent_run_id,
@@ -860,13 +690,6 @@ class AgentLoop:
                     dropped_cycle_count=state.dropped_cycle_count,
                     dropped_record_count=state.dropped_record_count,
                     validation_outcome=run_metrics.validation_outcome,
-                    completion_outcome=(completion.outcome.value if completion else "not_run"),
-                    completion_basis=(completion.basis.value if completion else "not_completed"),
-                    completion_reason_code=(
-                        completion.reason_codes[0]
-                        if completion and completion.reason_codes
-                        else None
-                    ),
                 )
             except Exception:
                 # Observation persistence must never leak raw storage details into
@@ -977,8 +800,6 @@ class AgentLoop:
                         tools=tool_executor.definitions if tool_executor else (),
                         prepared_spec=prepared_spec,
                         prompt_projection=prompt_projection,
-                        outcome_contract=state.outcome_contract,
-                        workspace_baseline=state.workspace_baseline,
                         prepared_mcp_run=(
                             getattr(prepared, "mcp_run", None) if prepared is not None else None
                         ),
@@ -1032,71 +853,9 @@ class AgentLoop:
                 else:
                     session.begin_user_turn(UserMessage(content=user_input))
 
-            if needs_intent_resolution:
-                resolver = OutcomeIntentResolver(
-                    provider,
-                    model,
-                    context_builder,
-                    timeout=min(30.0, policy.max_run_seconds),
-                )
-                intent_messages = resolver.request_messages(contract_input)
-                intent_admission = None
-                try:
-                    estimated_intent_chars = context_builder.validate_request(intent_messages, ())
-                    state.model_attempts += 1
-                    state.max_estimated_request_chars = max(
-                        state.max_estimated_request_chars, estimated_intent_chars
-                    )
-                    state.request_char_budget = context_builder.request_char_limit
-                    if observation_runtime is not None and state.agent_run_id is not None:
-                        intent_admission = observation_runtime.admit_model_request(
-                            agent_run_id=state.agent_run_id,
-                            attempt_ordinal=state.model_attempts,
-                            estimated_request_chars=estimated_intent_chars,
-                            request_char_budget=context_builder.request_char_limit,
-                            tool_rounds=state.tool_rounds,
-                            tool_calls=state.tool_calls,
-                            purpose="outcome_intent",
-                            prompt_evidence=None,
-                        )
-                    state.outcome_contract = await resolver.resolve(contract_input)
-                    settle_model_request(
-                        intent_admission,
-                        state_name="completed",
-                        finish_reason=ModelFinishReason.STOP,
-                        resolved_outcome_contract=state.outcome_contract,
-                    )
-                except asyncio.CancelledError:
-                    settle_model_request(intent_admission, state_name="cancelled")
-                    raise
-                except Exception:
-                    settle_model_request(
-                        intent_admission,
-                        state_name="failed",
-                        error_code=ModelErrorCode.INVALID_RESPONSE,
-                    )
-                    state.outcome_contract = OutcomeContract(
-                        mode="unspecified",
-                        no_change_allowed=True,
-                        contract_error_codes=("intent_resolution_failed",),
-                    )
-                    intent_resolution_error = (
-                        "无法可靠解析任务完成意图，请明确期望的修改或只读结果。"
-                    )
-
             state.started = True
             tools = tool_executor.definitions if tool_executor else ()
             yield event("turn.started", {})
-            if intent_resolution_error is not None:
-                if session.log.has_active_turn:
-                    session.finish_turn(FinishReason.ERROR)
-                state.settled = True
-                state.terminal_finish_reason = FinishReason.ERROR
-                state.stop_code = AgentStopCode.INVALID_RESPONSE
-                retain_facts(FinishReason.ERROR.value)
-                for item in fatal(intent_resolution_error, AgentStopCode.INVALID_RESPONSE):
-                    yield item
-                return
             permission_snapshot = None
             await self._request_pending_grant(session)
 
@@ -1178,26 +937,14 @@ class AgentLoop:
                         refresh_prompt_projection()
                     except (ProjectInstructionError, PromptAssemblyError) as exc:
                         code = _prompt_refresh_failure_code(exc)
-                        state.known_failure_codes[("runtime_prompt", ())] = code
                         for item in terminal_error(
-                            "项目指令刷新失败，已阻止后续模型请求",
+                            f"项目指令刷新失败，已阻止后续模型请求（{code}）",
                             AgentStopCode.INTERNAL,
                         ):
                             yield item
                         return
                     context = context_builder.build(session, tools=tools)
                     call_messages = list(context.messages)
-                    if state.completion_feedback is not None:
-                        feedback_msg = SystemMessage(content=state.completion_feedback)
-                        system_indices = [
-                            idx
-                            for idx, msg in enumerate(call_messages)
-                            if isinstance(msg, SystemMessage)
-                        ]
-                        insert_pos = (
-                            max(system_indices) + 1 if system_indices else len(call_messages)
-                        )
-                        call_messages.insert(insert_pos, feedback_msg)
                     estimated_chars = context_builder.validate_request(call_messages, tools)
                 except ContextBudgetError as exc:
                     for item in terminal_error(str(exc), AgentStopCode.CONTEXT_BUDGET):
@@ -1341,71 +1088,6 @@ class AgentLoop:
                 )
                 if is_final_text:
                     candidate_text = message.content or "".join(candidate_chunks)
-                    completion_required = self.completion_checker is not None and not (
-                        state.workspace_baseline is not None
-                        and state.workspace_baseline.reason_code == "missing_frozen_baseline"
-                        and state.outcome_contract is not None
-                        and not state.outcome_contract.requires_net_change
-                        and not state.outcome_contract.required_validations
-                        and state.outcome_contract.verifier_id is None
-                    )
-                    if completion_required:
-                        try:
-                            completion = self.completion_checker.check(
-                                state.outcome_contract
-                                or self.outcome_contract_compiler.compile(user_input),
-                                state.workspace_baseline
-                                or WorkspaceBaseline(
-                                    status=WorkspaceBaselineStatus.INCONCLUSIVE,
-                                    entries=(),
-                                    reason_code="missing_frozen_baseline",
-                                ),
-                                run_context=state.run_context,
-                                unresolved_tool_ids=session.log.unresolved_call_ids,
-                                known_failure_codes=tuple(
-                                    dict.fromkeys(state.known_failure_codes.values())
-                                ),
-                                verifier=verifier,
-                            )
-                        except Exception:
-                            completion = CompletionCheckResult(
-                                outcome=CompletionOutcome.INCONCLUSIVE,
-                                basis=CompletionBasis.INCONCLUSIVE,
-                                changed_paths=(),
-                                target_paths=(
-                                    state.outcome_contract.target_paths
-                                    if state.outcome_contract
-                                    else ()
-                                ),
-                                unexpected_paths=(),
-                                forbidden_paths=(),
-                                unresolved_tool_count=len(session.log.unresolved_call_ids),
-                                required_validations=(),
-                                known_failure_codes=(),
-                                baseline_status=WorkspaceBaselineStatus.INCONCLUSIVE,
-                                reason_codes=("completion_check_failed",),
-                                next_action_codes=("inspect_runtime_evidence",),
-                            )
-                        state.completion_check = completion
-                        session.latest_completion_check = completion
-                        if not completion.passed:
-                            if (
-                                not state.completion_correction_used
-                                and state.model_attempts < policy.max_model_attempts
-                                and self.monotonic() < state.deadline
-                            ):
-                                state.completion_correction_used = True
-                                state.completion_feedback = _completion_feedback(completion)
-                                continue
-                            stop_code = (
-                                completion.stop_code or AgentStopCode.COMPLETION_INCONCLUSIVE
-                            )
-                            for item in terminal_error(
-                                "完成条件未满足，请根据运行时事实修正后重试",
-                                stop_code,
-                            ):
-                                yield item
-                            return
                     try:
                         freeze_permissions()
                         session.append_assistant(message)
@@ -1467,9 +1149,8 @@ class AgentLoop:
                     projection_changed = refresh_prompt_projection()
                 except (ProjectInstructionError, PromptAssemblyError) as exc:
                     code = _prompt_refresh_failure_code(exc)
-                    state.known_failure_codes[("runtime_prompt", ())] = code
                     for item in terminal_error(
-                        "项目指令刷新失败，已阻止后续工具执行",
+                        f"项目指令刷新失败，已阻止后续工具执行（{code}）",
                         AgentStopCode.INTERNAL,
                     ):
                         yield item
@@ -1510,9 +1191,8 @@ class AgentLoop:
                     ):
                         yield item
                     return
-                # A response that finished with tool calls is not a final claim.  Its
-                # bounded text may be rendered after the assistant/tool intent is
-                # committed; a response rejected by the completion gate is never rendered.
+                # A response that finished with tool calls is not a final answer. Its
+                # bounded text is rendered only after the assistant/tool intent is committed.
                 for chunk in _accepted_text_chunks(candidate_chunks, message):
                     yield event("text.delta", {"text": chunk})
                 state.active_calls = calls
@@ -1628,13 +1308,6 @@ class AgentLoop:
                     )
                 state.active_calls = ()
                 state.active_result_limit = None
-                for call, result in zip(calls, cycle_outcomes, strict=True):
-                    obligations = _tool_obligation_keys(call, tool_executor)
-                    for obligation in obligations:
-                        if result.ok:
-                            state.known_failure_codes.pop(obligation, None)
-                        elif result.error_code is not None:
-                            state.known_failure_codes[obligation] = result.error_code.value
                 if state.run_context is not None:
                     for fact in state.run_context.facts:
                         if isinstance(fact, ChangeToolFact):
@@ -1852,9 +1525,6 @@ class AgentRuntime:
         clock: Clock | None = None,
         tool_executor: ToolExecutor | None = None,
         grant_provider=None,
-        completion_checker=None,
-        outcome_contract_compiler: OutcomeContractCompiler | None = None,
-        resolve_outcome_intent: bool = False,
     ) -> None:
         self._loop = AgentLoop(
             provider,
@@ -1864,9 +1534,6 @@ class AgentRuntime:
             clock=clock,
             tool_executor=tool_executor,
             grant_provider=grant_provider,
-            completion_checker=completion_checker,
-            outcome_contract_compiler=outcome_contract_compiler,
-            resolve_outcome_intent=resolve_outcome_intent,
         )
 
     @property
@@ -1882,9 +1549,6 @@ class AgentRuntime:
         prepared: PreparedAgentRunRuntime | None = None,
         startup_error: str | None = None,
         agent_run_id: str | None = None,
-        outcome_contract: OutcomeContract | None = None,
-        workspace_baseline: WorkspaceBaseline | None = None,
-        verifier=None,
     ) -> AsyncIterator[AgentEvent]:
         return self._loop.run_task(
             session,
@@ -1893,7 +1557,4 @@ class AgentRuntime:
             prepared=prepared,
             startup_error=startup_error,
             agent_run_id=agent_run_id,
-            outcome_contract=outcome_contract,
-            workspace_baseline=workspace_baseline,
-            verifier=verifier,
         )

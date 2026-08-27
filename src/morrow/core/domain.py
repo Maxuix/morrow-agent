@@ -587,7 +587,7 @@ class AgentRunSnapshot(ProtocolModel):
     # Optional frozen preparation evidence keeps older snapshots decodable.
     provider_runtime: ProviderRuntimeSnapshot | None = None
     run_policy: RunPolicy | None = None
-    # Frozen completion evidence keeps resume bound to the original task state.
+    # Read-only legacy fields: new runs never populate or evaluate them.
     outcome_contract: OutcomeContract | None = None
     workspace_baseline: WorkspaceBaseline | None = None
 

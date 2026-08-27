@@ -13,7 +13,6 @@ from enum import StrEnum
 
 from pydantic import Field, field_validator, model_validator
 
-from morrow.core.completion import OutcomeContract
 from morrow.core.domain import (
     AGENT_RUN_ID_PREFIX,
     SESSION_ID_PREFIX,
@@ -108,7 +107,6 @@ class ModelRequestObservation(ProtocolModel):
     error_code: ModelErrorCode | None = None
     usage: ModelUsage = Field(default_factory=ModelUsage.unavailable)
     cost: ModelCost = Field(default_factory=ModelCost.unavailable)
-    resolved_outcome_contract: OutcomeContract | None = None
 
     @field_validator("model_request_id")
     @classmethod
@@ -141,7 +139,6 @@ class ModelRequestObservation(ProtocolModel):
                 or self.error_code
                 or self.usage.availability is not UsageAvailability.UNAVAILABLE
                 or self.cost.availability is not UsageAvailability.UNAVAILABLE
-                or self.resolved_outcome_contract is not None
             ):
                 raise ValueError("admitted model request must not contain settlement facts")
         elif self.settled_at is None:
@@ -156,11 +153,6 @@ class ModelRequestObservation(ProtocolModel):
                 raise ValueError("failed model request requires an error code")
         elif self.state is ModelRequestState.CANCELLED and self.finish_reason is not None:
             raise ValueError("cancelled model request must not contain a finish reason")
-        if self.resolved_outcome_contract is not None and (
-            self.purpose is not ModelRequestPurpose.OUTCOME_INTENT
-            or self.state is not ModelRequestState.COMPLETED
-        ):
-            raise ValueError("resolved contract requires a completed intent request")
         return self
 
 
@@ -190,14 +182,6 @@ class AgentRunTerminalMetrics(ProtocolModel):
     validation_outcome: str = Field(
         default="not_run", pattern=r"^(not_run|passed|failed|timeout|cancelled)$"
     )
-    completion_outcome: str = Field(
-        default="not_run", pattern=r"^(not_run|passed|rejected|inconclusive)$"
-    )
-    completion_basis: str = Field(
-        default="not_completed",
-        pattern=r"^(verified|runtime_evidence_without_verifier|not_completed|inconclusive)$",
-    )
-    completion_reason_code: str | None = Field(default=None, max_length=64)
     finalized_at: datetime = Field(default_factory=utc_now)
 
     @field_validator("agent_run_id")
@@ -229,13 +213,6 @@ class AgentRunTerminalMetrics(ProtocolModel):
     @classmethod
     def valid_finalized_at(cls, value: datetime) -> datetime:
         return _aware(value)
-
-    @field_validator("completion_reason_code")
-    @classmethod
-    def valid_completion_reason_code(cls, value: str | None) -> str | None:
-        if value is not None and not value or value is not None and not value.isidentifier():
-            raise ValueError("completion reason code is invalid")
-        return value
 
     @model_validator(mode="after")
     def terminal_contract(self) -> AgentRunTerminalMetrics:

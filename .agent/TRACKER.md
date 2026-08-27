@@ -2,13 +2,14 @@
 
 ## Current status
 
-Subplan 86 is committed at `e161557` and fast-forward integrated into local `main`. The post-fix
-audit defects are closed without opening S7P-06; its untracked draft and the three user-owned
-research documents remain untouched.
+Subplan 86 remains integrated. The user has superseded its OutcomeContract semantic-gate decision:
+runtime output-fact validation is being removed on `refactor/remove-outcome-gate` without opening
+S7P-06. Its untracked draft and the three user-owned research documents remain untouched.
 
 ## Active task
 
-No implementation task is active. Await explicit user direction before opening S7P-06.
+Implementation and offline regression are complete. Finish static/CLI gates, commit and locally
+fast-forward integrate the model-owned completion path.
 
 ## Completed evidence
 
@@ -47,7 +48,21 @@ No implementation task is active. Await explicit user direction before opening S
 
 ## Next action
 
-Await explicit user direction; do not start the preserved S7P-06 draft automatically.
+Run final static/CLI gates, then commit and fast-forward integrate Subplan 87 locally.
+
+## Subplan 87 evidence
+
+- Production no longer constructs `CompletionChecker`, issues OutcomeIntent requests, prepares
+  workspace baselines, injects completion feedback or rejects a valid tool-free model `stop`.
+- Removed active contract/baseline/verifier parameters from AgentLoop, AgentRuntime, Session
+  persistence and Turn submission. PreparedAgentRunSpec no longer exposes completion evidence.
+- Deleted the semantic resolver and runtime completion service. Validation facts remain independent
+  execution telemetry and dynamic project-instruction write gates remain unchanged.
+- Old AgentRunSnapshot fields and existing schema-v18/v19 columns remain read-compatible but are
+  ignored and never populated by new runs; no destructive migration or state rewrite was added.
+- Focused runtime/preparation/observability/migration matrix passed `154 passed`; final full offline
+  regression passed `1254 passed, 2 skipped, 2 deselected in 63.16s`.
+- Ruff format/check, compileall, both CLI help entrypoints and `git diff --check` passed.
 
 ## Blockers
 

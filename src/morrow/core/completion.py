@@ -1,8 +1,7 @@
-"""Bounded, value-safe completion contracts for one AgentRun.
+"""Read-compatible legacy completion evidence.
 
-The models in this module describe what the runtime can prove about a run.  They
-are deliberately not a business-correctness protocol: paths, validator names,
-hashes and fixed reason codes are the only evidence that may cross this seam.
+The runtime no longer creates or evaluates these records. They remain only so
+schema-v19 observations and older AgentRun snapshots can still be hydrated.
 """
 
 from __future__ import annotations
@@ -10,7 +9,6 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable
 from enum import StrEnum
-from pathlib import Path
 from typing import Literal
 
 from pydantic import Field, field_validator, model_validator
@@ -70,43 +68,14 @@ class OutcomeMode(StrEnum):
     UNSPECIFIED = "unspecified"
 
 
-class ValidationStatus(StrEnum):
-    NOT_RUN = "not_run"
-    PASSED = "passed"
-    FAILED = "failed"
-    TIMEOUT = "timeout"
-    CANCELLED = "cancelled"
-    INCONCLUSIVE = "inconclusive"
-
-
 class WorkspaceBaselineStatus(StrEnum):
     COMPLETE = "complete"
     TRUNCATED = "truncated"
     INCONCLUSIVE = "inconclusive"
 
 
-class CompletionOutcome(StrEnum):
-    PASSED = "passed"
-    REJECTED = "rejected"
-    INCONCLUSIVE = "inconclusive"
-
-
-class CompletionBasis(StrEnum):
-    VERIFIED = "verified"
-    RUNTIME_EVIDENCE_WITHOUT_VERIFIER = "runtime_evidence_without_verifier"
-    NOT_COMPLETED = "not_completed"
-    INCONCLUSIVE = "inconclusive"
-
-
-class VerifierStatus(StrEnum):
-    NOT_CONFIGURED = "not_configured"
-    PASSED = "passed"
-    FAILED = "failed"
-    INCONCLUSIVE = "inconclusive"
-
-
 class ValidationRequirement(ProtocolModel):
-    """One exact validator/scope pair required by the completion contract."""
+    """Legacy validator/scope pair retained for stored contract decoding."""
 
     validator_kind: str = Field(min_length=1, max_length=64)
     scope: str = "."
@@ -129,12 +98,7 @@ class ValidationRequirement(ProtocolModel):
 
 
 class OutcomeContract(ProtocolModel):
-    """Frozen, bounded proof obligations for one task.
-
-    The application admits either an explicit trusted declaration or the strict,
-    authority-limited result of the no-tool semantic intent resolver. The model
-    cannot name verifiers or bypass these validators.
-    """
+    """Legacy proof obligations retained for stored snapshot decoding only."""
 
     mode: OutcomeMode
     requires_net_change: bool = False
@@ -219,7 +183,7 @@ class WorkspaceBaselineEntry(ProtocolModel):
 
 
 class WorkspaceBaseline(ProtocolModel):
-    """Frozen safe workspace evidence used for before/after comparison."""
+    """Legacy workspace evidence retained for stored snapshot decoding only."""
 
     status: WorkspaceBaselineStatus
     entries: tuple[WorkspaceBaselineEntry, ...] = Field(max_length=_MAX_BASELINE_ENTRIES)
@@ -264,158 +228,12 @@ class WorkspaceBaseline(ProtocolModel):
         return self
 
 
-class ValidationCheckResult(ProtocolModel):
-    requirement: ValidationRequirement
-    status: ValidationStatus
-    observed: bool = False
-    reason_code: str | None = Field(default=None, max_length=64)
-
-    @field_validator("reason_code")
-    @classmethod
-    def valid_reason_code(cls, value: str | None) -> str | None:
-        return None if value is None else _code(value, field_name="validation reason code")
-
-
-class CompletionCheckResult(ProtocolModel):
-    """Runtime-owned completion evidence and bounded next-action guidance."""
-
-    outcome: CompletionOutcome
-    basis: CompletionBasis
-    changed_paths: tuple[str, ...] = Field(max_length=_MAX_PATHS)
-    target_paths: tuple[str, ...] = Field(max_length=_MAX_PATHS)
-    unexpected_paths: tuple[str, ...] = Field(max_length=_MAX_PATHS)
-    forbidden_paths: tuple[str, ...] = Field(max_length=_MAX_PATHS)
-    unresolved_tool_count: int = Field(default=0, ge=0, le=128)
-    required_validations: tuple[ValidationCheckResult, ...] = Field(max_length=_MAX_VALIDATIONS)
-    known_failure_codes: tuple[str, ...] = Field(max_length=_MAX_CODES)
-    verifier_status: VerifierStatus = VerifierStatus.NOT_CONFIGURED
-    verifier_id: str | None = Field(default=None, max_length=128)
-    baseline_status: WorkspaceBaselineStatus
-    reason_codes: tuple[str, ...] = Field(max_length=_MAX_CODES)
-    next_action_codes: tuple[str, ...] = Field(max_length=_MAX_CODES)
-
-    @field_validator("changed_paths", "target_paths", "unexpected_paths", "forbidden_paths")
-    @classmethod
-    def valid_result_paths(cls, values: tuple[str, ...], info) -> tuple[str, ...]:
-        return _paths(values, field_name=info.field_name)
-
-    @field_validator("known_failure_codes", "reason_codes", "next_action_codes")
-    @classmethod
-    def valid_result_codes(cls, values: tuple[str, ...], info) -> tuple[str, ...]:
-        return _codes(values, field_name=info.field_name)
-
-    @field_validator("verifier_id")
-    @classmethod
-    def valid_result_verifier_id(cls, value: str | None) -> str | None:
-        if value is not None and not _IDENTIFIER.fullmatch(value):
-            raise ValueError("verifier id is invalid")
-        return value
-
-    @property
-    def completion_outcome(self) -> CompletionOutcome:
-        return self.outcome
-
-    @property
-    def completion_basis(self) -> CompletionBasis:
-        return self.basis
-
-    @property
-    def passed(self) -> bool:
-        return self.outcome is CompletionOutcome.PASSED
-
-    @property
-    def changed_count(self) -> int:
-        return len(self.changed_paths)
-
-    @property
-    def stop_code(self):
-        """Map only runtime proof failures to precise public stop codes."""
-
-        from morrow.core.models import AgentStopCode
-
-        if self.passed:
-            return None
-        if "forbidden_workspace_change" in self.reason_codes:
-            return AgentStopCode.FORBIDDEN_WORKSPACE_CHANGE
-        if "unexpected_workspace_change" in self.reason_codes:
-            return AgentStopCode.UNEXPECTED_WORKSPACE_CHANGE
-        if "unresolved_tool" in self.reason_codes:
-            return AgentStopCode.UNRESOLVED_TOOL
-        if "validation_missing" in self.reason_codes:
-            return AgentStopCode.VALIDATION_MISSING
-        if any(
-            code in self.reason_codes
-            for code in ("validation_failed", "validation_timeout", "validation_cancelled")
-        ):
-            return AgentStopCode.VALIDATION_FAILED
-        if "missing_required_change" in self.reason_codes:
-            return AgentStopCode.MISSING_REQUIRED_CHANGE
-        if "verifier_failed" in self.reason_codes:
-            return AgentStopCode.VERIFIER_FAILED
-        if "known_failure" in self.reason_codes:
-            return AgentStopCode.KNOWN_FAILURE
-        return AgentStopCode.COMPLETION_INCONCLUSIVE
-
-
-class CompletionVerifierResult(ProtocolModel):
-    status: VerifierStatus
-    reason_code: str | None = Field(default=None, max_length=64)
-
-    @field_validator("reason_code")
-    @classmethod
-    def valid_reason_code(cls, value: str | None) -> str | None:
-        return None if value is None else _code(value, field_name="verifier reason code")
-
-
-class OutcomeContractCompiler:
-    """Compatibility boundary for explicit, trusted completion contracts.
-
-    Natural-language requests are intentionally not interpreted here. Production
-    composition uses the model-backed ``OutcomeIntentResolver``; callers without
-    one receive an unspecified contract rather than lexical guesses.
-    """
-
-    def __init__(self, workspace_root: str | Path | None = None) -> None:
-        del workspace_root
-
-    def compile(
-        self, user_input: str, *, explicit: OutcomeContract | None = None
-    ) -> OutcomeContract:
-        if explicit is not None:
-            return explicit
-        del user_input
-        return OutcomeContract(
-            mode=OutcomeMode.UNSPECIFIED,
-            no_change_allowed=True,
-        )
-
-
-def compile_outcome_contract(
-    user_input: str,
-    *,
-    explicit: OutcomeContract | None = None,
-    workspace_root: str | Path | None = None,
-) -> OutcomeContract:
-    return OutcomeContractCompiler(workspace_root=workspace_root).compile(
-        user_input, explicit=explicit
-    )
-
-
 __all__ = [
-    "CompletionBasis",
-    "CompletionCheckResult",
-    "CompletionOutcome",
-    "CompletionVerifierResult",
     "OutcomeContract",
-    "OutcomeContractCompiler",
     "OutcomeMode",
-    "ValidationCheckResult",
     "ValidationRequirement",
-    "ValidationStatus",
-    "VerifierStatus",
     "WorkspaceBaseline",
     "WorkspaceBaselineEntry",
     "WorkspaceBaselineStatus",
-    "compile_outcome_contract",
     "normalize_workspace_path",
 ]

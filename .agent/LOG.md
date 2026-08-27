@@ -3275,3 +3275,21 @@
   and fast-forward merged `fix/s7p05-audit-remediation` into local `main`.
 - The repository was already 39 commits ahead of `origin/main`; no remote push was attempted or
   authorized. The untracked S7P-06 draft and three user-owned research documents remain preserved.
+
+## 2026-08-27 — Subplan 87 runtime outcome gate removal verified
+
+- Superseded the S7P-05/86 completion-gate decision at explicit user direction. A valid tool-free
+  model `stop` now commits and publishes the final answer directly; Runtime does not infer task
+  intent or reject output based on workspace diff, required validation, known failures or verifier.
+- Removed production OutcomeIntent requests, baseline preparation, completion correction, checker
+  composition, terminal completion verdicts and active contract/baseline/verifier API parameters.
+  Deleted `runtime/outcome_intent.py` and `services/completion.py`.
+- Kept `ValidationFact` as scoped execution telemetry and retained all independent permission,
+  approval, tool lifecycle, project-instruction pre-effect, cancellation, Provider and budget
+  boundaries. A failed validation remains visible but cannot override the model's stop decision.
+- Existing schema-v18/v19 columns and legacy AgentRunSnapshot contract/baseline models remain only
+  for safe old-state decoding. New snapshots/requests/terminal projections do not populate or expose
+  completion verdicts, and rehydration ignores legacy gate evidence.
+- Focused matrix passed `154 passed`; full offline regression passed
+  `1254 passed, 2 skipped, 2 deselected in 63.16s`; Ruff format/check, compileall, both CLI help
+  entrypoints and `git diff --check` passed. No live or network test ran.

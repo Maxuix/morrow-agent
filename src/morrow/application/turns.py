@@ -20,7 +20,6 @@ from morrow.application.turn_lifecycle import (
     TurnSubmitResult,
 )
 from morrow.application.turn_permissions import RunPermissionCoordinator
-from morrow.core.completion import OutcomeContract, WorkspaceBaseline
 from morrow.core.domain import AgentRunSnapshot
 from morrow.core.execution import (
     DurableApproval,
@@ -247,8 +246,6 @@ class SessionPersistence:
         prepared_spec=None,
         prepared_mcp_run=None,
         prompt_projection=None,
-        outcome_contract: OutcomeContract | None = None,
-        workspace_baseline: WorkspaceBaseline | None = None,
     ) -> TurnSubmitResult:
         if self.writer is None:
             raise RuntimeError("session persistence is not attached")
@@ -262,8 +259,6 @@ class SessionPersistence:
             prepared_spec=prepared_spec,
             prepared_mcp_run=prepared_mcp_run,
             prompt_projection=prompt_projection,
-            outcome_contract=outcome_contract,
-            workspace_baseline=workspace_baseline,
             writer=self.writer,
         )
 

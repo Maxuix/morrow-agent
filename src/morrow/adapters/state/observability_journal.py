@@ -7,7 +7,6 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 
 from morrow.adapters.state.transaction import SqliteJournalBackend
-from morrow.core.completion import OutcomeContract
 from morrow.core.domain import DurableAgentRun
 from morrow.core.models import (
     AgentStopCode,
@@ -194,7 +193,6 @@ class SqliteObservabilityJournal:
         error_code: ModelErrorCode | str | None = None,
         usage: ModelUsage | None = None,
         cost: ModelCost | None = None,
-        resolved_outcome_contract: OutcomeContract | None = None,
         settled_at: datetime | None = None,
     ) -> ModelRequestObservation:
         selected_state = ModelRequestState(state)
@@ -218,7 +216,6 @@ class SqliteObservabilityJournal:
                     "error_code": ModelErrorCode(error_code) if error_code is not None else None,
                     "usage": usage or ModelUsage.unavailable(),
                     "cost": cost or ModelCost.unavailable(),
-                    "resolved_outcome_contract": resolved_outcome_contract,
                 },
                 strict=True,
             )
@@ -243,8 +240,7 @@ class SqliteObservabilityJournal:
                 "UPDATE agent_run_model_requests SET state = ?, settled_at_unix = ?, "
                 "finish_reason = ?, error_code = ?, usage_availability = ?, input_tokens = ?, "
                 "output_tokens = ?, total_tokens = ?, cost_availability = ?, "
-                "cost_amount_minor = ?, cost_currency = ?, cost_source = ?, "
-                "resolved_outcome_contract_json = ? "
+                "cost_amount_minor = ?, cost_currency = ?, cost_source = ? "
                 "WHERE model_request_id = ? AND workspace_id = ? AND state = 'admitted'",
                 (
                     candidate.state.value,
@@ -259,7 +255,6 @@ class SqliteObservabilityJournal:
                     candidate.cost.amount_minor,
                     candidate.cost.currency,
                     candidate.cost.source,
-                    _optional_json(candidate.resolved_outcome_contract),
                     model_request_id,
                     workspace_id,
                 ),
@@ -294,9 +289,6 @@ class SqliteObservabilityJournal:
         usage: ModelUsage | None = None,
         cost: ModelCost | None = None,
         validation_outcome: str = "not_run",
-        completion_outcome: str = "not_run",
-        completion_basis: str = "not_completed",
-        completion_reason_code: str | None = None,
         finalized_at: datetime | None = None,
     ) -> AgentRunTerminalMetrics:
         run = self._require_run(workspace_id, agent_run_id)
@@ -379,9 +371,6 @@ class SqliteObservabilityJournal:
             cost=aggregate_cost,
             tool_terminal_counts=counts,
             validation_outcome=validation_outcome,
-            completion_outcome=completion_outcome,
-            completion_basis=completion_basis,
-            completion_reason_code=completion_reason_code,
             finalized_at=finalized_at or self.backend.now(),
         )
 
@@ -528,7 +517,7 @@ class SqliteObservabilityJournal:
             request.cost.source,
             request.purpose.value,
             _optional_json(request.prompt_evidence),
-            _optional_json(request.resolved_outcome_contract),
+            None,
         )
 
     def _metrics_for_run(
@@ -597,9 +586,9 @@ class SqliteObservabilityJournal:
                 separators=(",", ":"),
             ),
             metrics.validation_outcome,
-            metrics.completion_outcome,
-            metrics.completion_basis,
-            metrics.completion_reason_code,
+            "not_run",
+            "not_completed",
+            None,
             _unix(metrics.finalized_at),
         )
 
@@ -658,7 +647,6 @@ def _request_from_row(row: tuple[object, ...]) -> ModelRequestObservation:
             cost=_cost_from_columns(row[21], row[22], row[23], row[24]),
             purpose=ModelRequestPurpose(str(row[25])),
             prompt_evidence=_optional_model(row[26], PromptProfileEvidence),
-            resolved_outcome_contract=_optional_model(row[27], OutcomeContract),
         )
     except StorageError:
         raise
@@ -706,9 +694,6 @@ def _metrics_from_row(
             cost=_cost_from_columns(row[18], row[19], row[20], row[21]),
             tool_terminal_counts=counts,
             validation_outcome=str(row[23]),
-            completion_outcome=str(row[24]),
-            completion_basis=str(row[25]),
-            completion_reason_code=str(row[26]) if row[26] is not None else None,
             finalized_at=_from_unix(row[27]),
         )
     except StorageError:

@@ -273,14 +273,7 @@ async def test_production_ordinary_run_sends_direct_prompt_and_freezes_metadata(
     (project / "src" / "main.py").write_text("pass\n", encoding="utf-8")
     app = build_application(state_root=tmp_path / "state", credentials=MemoryCredentialStore())
     identity = app.workspace_service.confirm(app.workspace_service.resolve(project))
-    provider = ScriptedModelProvider(
-        ["done"],
-        intent_responses=(
-            '{"mode":"change","certainty":"clear","target_paths":["src/main.py"],'
-            '"allowed_paths":["src/main.py"],"forbidden_paths":[],'
-            '"required_validations":[],"no_change_allowed":false}',
-        ),
-    )
+    provider = ScriptedModelProvider(["done"])
     session_app = build_session_application(
         app,
         identity,
@@ -290,8 +283,7 @@ async def test_production_ordinary_run_sends_direct_prompt_and_freezes_metadata(
 
     result = await session_app.orchestrator.dispatch("edit `src/main.py`")
 
-    assert result.events[-1].payload["finish_reason"] == "error"
-    assert result.events[-1].payload["stop_code"] == "missing_required_change"
+    assert result.events[-1].payload["finish_reason"] == "stop"
     messages = provider.stream_calls[0]
     system = [message.content for message in messages if message.role == "system"]
     assert system[0].startswith("你是 Morrow")

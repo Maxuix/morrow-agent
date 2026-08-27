@@ -174,7 +174,7 @@ def test_terminal_segments_mixed_text_tool_and_final_text_without_replay_or_payl
     )
 
 
-def test_terminal_summary_separates_commands_validation_and_completion_basis():
+def test_terminal_summary_separates_commands_and_validation_telemetry():
     class RecordingConsole:
         def __init__(self):
             self.lines: list[str] = []
@@ -189,11 +189,6 @@ def test_terminal_summary_separates_commands_validation_and_completion_basis():
         failed_tool_calls=1,
         changed_file_count=1,
         validation_outcome="not_run",
-    )
-    completion = SimpleNamespace(
-        outcome="passed",
-        basis="runtime_evidence_without_verifier",
-        reason_codes=(),
     )
     terminal = terminal_module.Terminal(console=RecordingConsole())
     terminal.show_run_summary(
@@ -211,7 +206,6 @@ def test_terminal_summary_separates_commands_validation_and_completion_basis():
                     duration_ms=1,
                 ),
             ),
-            latest_completion_check=completion,
         )
     )
 
@@ -220,7 +214,7 @@ def test_terminal_summary_separates_commands_validation_and_completion_basis():
     assert "成功命令 1" in rendered
     assert "失败命令 0" in rendered
     assert "验证 未运行" in rendered
-    assert "完成 通过（依据 运行时证据（无验证器））" in rendered
+    assert "完成" not in rendered
 
 
 def test_terminal_explains_timeout_and_shows_waiting_after_last_tool():
