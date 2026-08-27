@@ -3411,3 +3411,12 @@
 - The final base-to-tip audit found no production-code, dependency, runtime-default or public-event
   change. It strengthened the entrypoint test to require non-empty frozen evidence and the ledger
   contract to reject any final `gap`, `skipped` or non-passed cell. No live test ran.
+
+## 2026-08-27 — Subplan 89 integrated locally
+
+- Committed the machine-readable matrix and cross-entrypoint proof in `8d8c6dd`, then committed the
+  final acceptance/evidence closeout in `a5a5d61`.
+- Verified local `main@d84ac0d` was an ancestor of the clean topic and fast-forward merged
+  `chore/s7p-08-single-agent-matrix` into local `main`. Verified `a5a5d61` is contained by `main`.
+- Remote publication was not authorized. Local `main` remains ahead of `origin/main`; no push was
+  attempted. The sequence is paused before S7P-09.

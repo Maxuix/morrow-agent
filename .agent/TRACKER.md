@@ -2,15 +2,13 @@
 
 ## Current status
 
-Subplan 89 implementation and evidence are verified on `chore/s7p-08-single-agent-matrix`, based
-on local `main@d84ac0d`. All 18 cells, Lanes A–G, the real current-macOS Seatbelt gate, complete
-offline suite and quality gates passed. The acceptance record is published; local integration and
-resource retirement are the only remaining actions.
+Subplan 89 is complete and fast-forward integrated into local `main` through evidence tip
+`a5a5d61`. All 18 cells, Lanes A–G, the real current-macOS Seatbelt gate, complete offline suite and
+quality gates passed. S7P-09 is not active.
 
 ## Active task
 
-Commit the final acceptance/execution-state evidence, fast-forward the verified branch into local
-`main`, verify ancestry and cleanliness, and retire the topic without starting S7P-09.
+None. Await an explicit user decision before opening S7P-09.
 
 ## Preparation evidence
 
@@ -45,11 +43,9 @@ Commit the final acceptance/execution-state evidence, fast-forward the verified 
 
 ## Next action
 
-Commit, fast-forward integrate into local `main`, verify the topic is contained, retire it and stop
-before S7P-09.
+Do not start S7P-09 automatically.
 
 ## Blockers
 
-None during plan activation. If this task remains nested inside macOS Seatbelt when the host gate
-runs, the two required selectors must be executed from a genuine host-level process; an unexplained
-skip blocks S7P-08 completion.
+Remote publication is not authorized. Local `main` is ahead of `origin/main`; no push was attempted,
+and remote synchronization remains pending explicit authorization.

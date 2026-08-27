@@ -2,11 +2,11 @@
 
 ## Current stage
 
-Subplan 89 is active on `chore/s7p-08-single-agent-matrix` from `main@d84ac0d`.
+Subplan 89 is complete and integrated into local `main`.
 
 ## Active subplan
 
-S7P-08 Single-Agent Basic Function Matrix Regression.
+None. S7P-09 has not been started.
 
 ## Tasks
 
@@ -21,7 +21,7 @@ S7P-08 Single-Agent Basic Function Matrix Regression.
 - `[x]` Run both real macOS Seatbelt selectors at the host level without skip.
 - `[x]` Run the complete offline/static/CLI gates and eval self-check.
 - `[x]` Publish S7P-08 acceptance evidence, audit the final diff and remediate confirmed findings.
-- `[>]` Commit and fast-forward verified work into `main`, retire clean resources and stop before
+- `[x]` Commit and fast-forward verified work into `main`, retire clean resources and stop before
   S7P-09.
 
 ## Boundaries

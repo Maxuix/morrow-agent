@@ -1,20 +1,18 @@
 # Stage 7 Preflight Reliability — S7P-08 Single-Agent Function Matrix
 
-> Status: verified; pending local integration
-> Active subplan: Subplan 89 — S7P-08 Single-Agent Basic Function Matrix Regression
-> Branch: `chore/s7p-08-single-agent-matrix`
+> Status: completed and integrated locally; paused before S7P-09
+> Active subplan: none
+> Integrated evidence tip: `a5a5d61`
 > Activation base: verified local `main@d84ac0d`
 > Source authority: current user request, current code/tests, S7P-08 checklist, completed S7P-01–07
 
 ## 1. Current objective
 
-Prove that the current Direct Agent preserves every basic single-Agent function needed before
-Stage 7. Freeze an exact 18-cell test ledger, close missing automated evidence, repair only
-deterministically confirmed regressions in already-promised behavior, rerun all published Stage 1
-through Stage 6 acceptance surfaces and S7P-00 through S7P-07, and publish current evidence.
+S7P-08 proved that the current Direct Agent preserves the frozen 18-cell basic single-Agent
+function matrix. All current selectors, Stage 1–6/S7P lanes, real macOS Seatbelt selectors and final
+offline/static gates passed, and the evidence is integrated into local `main`.
 
-Detailed scope, matrix definitions, hold points, test lanes and completion rules are owned by
-activated Subplan 89.
+No implementation subplan is active. A separate user decision is required to begin S7P-09.
 
 ## 2. Frozen boundaries
 
