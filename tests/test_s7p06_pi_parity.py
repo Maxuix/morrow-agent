@@ -67,7 +67,7 @@ from morrow.testing import FixedIdSource, seed_user_turn
 MODEL = ModelRef(provider_id="test", model_id="test")
 
 
-def _v2_policy(*, context_window_tokens: int = 10_000_000, **settings):
+def _v2_policy(*, context_window_tokens: int | None = 10_000_000, **settings):
     selected = LongHorizonPolicySettings(**settings)
     return load_agent_policy().resolve_long_horizon(
         MODEL,
@@ -318,6 +318,17 @@ class CompactionRetryProvider(OverflowProvider):
         )
 
 
+class ProactiveCompactionProvider(OverflowProvider):
+    async def stream(self, model, messages, tools=()):
+        del model, messages, tools
+        self.stream_calls += 1
+        yield ModelEvent(
+            kind="completed",
+            finish_reason=ModelFinishReason.STOP,
+            message=AssistantMessage(content="after proactive compaction"),
+        )
+
+
 @pytest.mark.asyncio
 async def test_context_overflow_has_one_compaction_recovery_path():
     provider = OverflowProvider()
@@ -422,6 +433,90 @@ def test_compaction_summary_sections_are_structured_and_safe():
         CompactionSummary.model_validate({"goal": "sk-" + "x" * 24}, strict=True)
 
 
+@pytest.mark.parametrize("entry_id", ("cmp_-urlsafe", "cmp__urlsafe"))
+def test_compaction_entry_accepts_every_random_id_suffix_start(entry_id):
+    summary = CompactionSummary(goal="continue")
+    accounting = TokenAccounting(
+        basis=TokenAccountingBasis.PI_ESTIMATOR,
+        context_tokens=500,
+        context_window_tokens=1_000,
+        reserve_tokens=100,
+        keep_recent_tokens=200,
+    )
+
+    assert _entry(summary, accounting, entry_id=entry_id).entry_id == entry_id
+
+
+def test_compaction_summary_recovers_common_provider_json_wrappers():
+    summary = CompactionSummary.from_provider_text(
+        """Here is the summary:
+```json
+{
+  "goal": "ship ,} safely",
+  "progress_done": ["implemented"],
+  "progress_blocked": null,
+  "provider_note": "discard me",
+}
+```
+"""
+    )
+
+    assert summary.goal == "ship ,} safely"
+    assert summary.progress_done == ("implemented",)
+    assert summary.progress_blocked == ()
+    assert "provider_note" not in summary.model_dump()
+    with pytest.raises(ValidationError):
+        CompactionSummary.model_validate(
+            {"goal": "ship the change", "provider_note": "reject durable extra"}, strict=True
+        )
+    with pytest.raises(ValidationError):
+        CompactionSummary.model_validate({"goal": "ship", "progress_blocked": None}, strict=True)
+
+
+def test_long_horizon_without_exact_window_uses_conservative_character_budget():
+    policy = _v2_policy(context_window_tokens=None)
+    builder = ContextBuilder(
+        run_policy=policy,
+        estimate_request_chars=lambda messages, tools: 200_000,
+        estimate_request_tokens=lambda messages, tools: 50_000,
+    )
+    session = Session(session_id="s")
+    seed_user_turn(session, "current request", assistant="answer")
+
+    context = builder.build(session)
+
+    assert context.accounting_basis is TokenAccountingBasis.PI_ESTIMATOR
+    assert context.estimated_context_tokens == 50_000
+    assert context.token_threshold is None
+    assert context.compaction_required is True
+
+
+@pytest.mark.asyncio
+async def test_unknown_window_character_budget_can_compact_and_continue():
+    provider = ProactiveCompactionProvider()
+    policy = _v2_policy(context_window_tokens=None, keep_recent_tokens=1)
+    session = Session(session_id="s")
+    seed_user_turn(session, "old request", assistant="old answer")
+    seed_user_turn(session, "another old request", assistant="another answer")
+    loop = AgentLoop(
+        provider,
+        MODEL,
+        ContextBuilder(
+            run_policy=policy,
+            estimate_request_chars=lambda messages, tools: len(messages) * 40_000,
+            estimate_request_tokens=lambda messages, tools: len(messages),
+        ),
+    )
+
+    events = [event async for event in loop.run_task(session, "current request")]
+
+    assert provider.complete_calls == 1
+    assert provider.stream_calls == 1
+    assert len(session.compaction_entries) == 1
+    assert session.compaction_entries[0].accounting.context_window_tokens is None
+    assert events[-1].payload["finish_reason"] == FinishReason.STOP.value
+
+
 def test_split_turn_compaction_keeps_user_anchor_and_tool_pairs_together():
     policy = _v2_policy(keep_recent_tokens=1_000_000)
     builder = ContextBuilder(
@@ -501,7 +596,7 @@ def test_compaction_checkpoint_round_trip_is_bounded_and_immutable():
         entry.instructions = "changed"
 
 
-def _entry(summary, accounting):
+def _entry(summary, accounting, *, entry_id="cmp_1"):
     summary_digest = sha256_digest(
         json.dumps(
             summary.model_dump(mode="json"),
@@ -511,7 +606,7 @@ def _entry(summary, accounting):
         )
     )
     return CompactionEntry(
-        entry_id="cmp_1",
+        entry_id=entry_id,
         session_id="ses_1",
         model=MODEL,
         summary=summary,

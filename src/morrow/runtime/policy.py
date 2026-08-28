@@ -233,14 +233,8 @@ class AgentPolicy(ProtocolModel):
         settings: LongHorizonPolicySettings | None = None,
         host_stop_source: Literal["none", "provided"] = "none",
     ) -> RunPolicy:
-        """Resolve the explicit Pi-parity v2 policy for one exact model.
-
-        The exact context window is a capability fact.  The method deliberately refuses to
-        substitute the legacy unknown-model character fallback when that fact is absent.
-        """
-        if context_window_tokens is None:
-            raise ValueError("exact model context_window_tokens is required for long-horizon runs")
-        if (
+        """Resolve v2 with exact token accounting or a bounded character fallback."""
+        if context_window_tokens is not None and (
             isinstance(context_window_tokens, bool)
             or context_window_tokens <= 0
             or context_window_tokens > AGENT_MAX_CONTEXT_WINDOW_TOKENS
@@ -249,8 +243,8 @@ class AgentPolicy(ProtocolModel):
         selected = settings or LongHorizonPolicySettings()
         exact_key = f"{model.provider_id}/{model.model_id}"
         safe = self.model_safe_request_chars.get(exact_key)
-        # These character values are retained only for bounded diagnostics and v1 tool adapters.
-        # Context admission for v2 is token based and never uses this fallback as a window.
+        # When the exact token window is unavailable, this remains an explicit conservative
+        # request boundary. It is never converted into or reported as a model token window.
         request_limit = min(
             self.requested_context_chars,
             safe if safe is not None else self.unknown_model_fallback_chars,

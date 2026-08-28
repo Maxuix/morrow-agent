@@ -317,7 +317,7 @@ ordered attempt、合法状态检查和明确 usage/cost availability 保存 Pro
 v18 在 terminal metrics 中增加了历史 validation/completion 字段，v19 为每个 model request 增加用途、
 当次 PromptProfileEvidence 以及历史 no-tool 语义意图请求证据；这些字段仍可供旧数据读取，但 S7P-06
 的新运行不把已移除的 completion gate 当作运行时权威。v20 以追加列记录 long-horizon policy version、
-精确 context-window accounting、compaction-required、compaction/overflow-recovery 计数；v21 以单独的
+可选的精确 context-window accounting、compaction-required、compaction/overflow-recovery 计数；v21 以单独的
 有界可变 retry-progress 行记录连续模型重试、累计重试与摘要重试计数；v22 增加每 Session 最多
 32 条、单条最多 4096 字符的 FIFO steering/follow-up queue，并让 `steered` AgentRun 终态可观测。
 队列消费与下一 Turn admission 同事务，消息仍只通过 ConversationLog 写入；这些投影都不改写
@@ -329,8 +329,9 @@ immutable AgentRun snapshot，也不复制 ToolExecution payload。未迁移的 
 时当前 Turn 以 `FinishReason.STEERED` 合法闭合，随后队列文本用其 `client_message_id` 经普通
 probe → prepare → Turn admission 路径提交。正常 STOP 后才按 FIFO 一次 drain 一个 follow-up；
 cancel/error/host stop 不自动消费 follow-up。
-v2 新运行只有在 exact model capability 提供 context window 时才会启用；缺失 capability 不猜测小型
-字符窗口，显式请求 v2 时直接失败。v1 恢复仍按冻结的旧 RunPolicy 执行。上述路径都不保存命令参数、
+默认组合只有在 exact model capability 提供 context window 时才自动启用 v2；显式请求 v2 而缺少该
+capability 时，以已有保守字符预算触发压缩，并保持 context-window/token-threshold 观测为空，不猜测
+或伪造 token window。v1 恢复仍按冻结的旧 RunPolicy 执行。上述路径都不保存命令参数、
 输出、项目指令正文、文件内容、模型原始回复或 verifier 私有数据。
 Selection 只引用不可变 Project Knowledge revision，AgentRunSnapshot 保存
 selection/digest/memory revision，运行时由 `RunContextProjection` 重建。Promotion 只保存审计/恢复/来源

@@ -338,7 +338,7 @@ class ContextBuilder:
         messages: tuple[Message, ...],
         tools: tuple[ToolDefinition, ...],
     ) -> TokenAccounting | None:
-        if not self.run_policy.is_long_horizon or self.run_policy.context_window_tokens is None:
+        if not self.run_policy.is_long_horizon:
             return None
         usage = getattr(session, "latest_model_usage", ModelUsage.unavailable())
         usage_digest = getattr(session, "latest_model_usage_context_digest", None)
@@ -663,6 +663,12 @@ class ContextBuilder:
         if accounting is None:
             raise ContextBudgetError("long-horizon context accounting is unavailable")
         estimated = self._estimate(messages, request.tools)
+        threshold = accounting.threshold_tokens
+        compaction_required = (
+            accounting.should_compact
+            if threshold is not None
+            else estimated > request.request_char_limit
+        )
         self._validate_tool_pairing(messages)
         return ContextPack(
             messages=messages,
@@ -671,8 +677,8 @@ class ContextBuilder:
             estimated_request_chars=estimated,
             estimated_context_tokens=accounting.context_tokens,
             accounting_basis=accounting.basis,
-            token_threshold=accounting.threshold_tokens,
-            compaction_required=accounting.should_compact,
+            token_threshold=threshold,
+            compaction_required=compaction_required,
             checkpoint_id=request.checkpoint.checkpoint_id if request.checkpoint else None,
         )
 
@@ -813,6 +819,11 @@ class ContextBuilder:
         self._validate_tool_pairing(tuple(messages))
         estimated = self._estimate(messages, tools)
         if self.run_policy.is_long_horizon:
+            if (
+                self.run_policy.context_window_tokens is None
+                and estimated > self.request_char_limit
+            ):
+                raise ContextBudgetError("模型请求超过保守上下文预算")
             return estimated
         if estimated > self.request_char_limit:
             raise ContextBudgetError("模型请求超过上下文预算")

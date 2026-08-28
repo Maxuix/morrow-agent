@@ -76,6 +76,19 @@ def test_unknown_model_uses_fallback_and_derived_ratio_limits():
     assert run.provider_tool_support.safe_request_chars is None
 
 
+def test_long_horizon_unknown_window_keeps_conservative_character_fallback():
+    run = load_agent_policy().resolve_long_horizon(
+        ModelRef(provider_id="unknown", model_id="model"),
+        tool_protocol="openai_function",
+        multiple_tool_calls=True,
+        context_window_tokens=None,
+    )
+
+    assert run.is_long_horizon is True
+    assert run.context_window_tokens is None
+    assert run.effective_request_chars == 160000
+
+
 @pytest.mark.parametrize(
     ("safe", "expected_request", "expected_result", "expected_cycle"),
     [(100000, 100000, 10000, 35000), (1000000, 800000, 64000, 256000)],

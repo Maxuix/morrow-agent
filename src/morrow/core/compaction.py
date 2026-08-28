@@ -7,6 +7,7 @@ bounded summary used to rebuild that projection.
 
 from __future__ import annotations
 
+import json
 import re
 from datetime import datetime
 from enum import StrEnum
@@ -24,7 +25,7 @@ COMPACTION_FILE_MAX_CHARS = 512
 COMPACTION_MAX_ITEMS = 64
 COMPACTION_MAX_FILES = 256
 COMPACTION_ENTRY_MAX_BYTES = 32 * 1024
-_ID_PATTERN = re.compile(r"^cmp_[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$")
+_ID_PATTERN = re.compile(r"^cmp_[A-Za-z0-9_.:-]{1,128}$")
 
 
 class TokenAccountingBasis(StrEnum):
@@ -37,24 +38,30 @@ class TokenAccounting(ProtocolModel):
 
     basis: TokenAccountingBasis
     context_tokens: int = Field(ge=0)
-    context_window_tokens: int = Field(gt=0)
+    context_window_tokens: int | None = Field(default=None, gt=0)
     reserve_tokens: int = Field(gt=0)
     keep_recent_tokens: int = Field(gt=0)
 
     @model_validator(mode="after")
     def valid_window(self) -> TokenAccounting:
-        if self.reserve_tokens >= self.context_window_tokens:
+        if (
+            self.context_window_tokens is not None
+            and self.reserve_tokens >= self.context_window_tokens
+        ):
             raise ValueError("reserve_tokens must be below context_window_tokens")
         return self
 
     @property
-    def threshold_tokens(self) -> int:
+    def threshold_tokens(self) -> int | None:
+        if self.context_window_tokens is None:
+            return None
         return self.context_window_tokens - self.reserve_tokens
 
     @property
     def should_compact(self) -> bool:
         # This intentionally mirrors Pi's strict `>` boundary.
-        return self.context_tokens > self.threshold_tokens
+        threshold = self.threshold_tokens
+        return threshold is not None and self.context_tokens > threshold
 
 
 def _bounded_items(
@@ -136,21 +143,73 @@ class CompactionSummary(ProtocolModel):
 
     @classmethod
     def from_provider_text(cls, text: str) -> CompactionSummary:
-        """Parse only the JSON object requested from the summary model."""
+        """Recover one bounded summary from common model JSON presentation mistakes."""
         if not isinstance(text, str):
             raise ValueError("compaction response must be text")
         candidate = text.strip()
-        if candidate.startswith("```") and candidate.endswith("```"):
-            lines = candidate.splitlines()
-            if len(lines) < 3 or not lines[0].startswith("```") or lines[-1] != "```":
-                raise ValueError("compaction response code fence is invalid")
-            candidate = "\n".join(lines[1:-1]).strip()
-        import json
+        decoder = json.JSONDecoder()
 
-        payload = json.loads(candidate)
-        if not isinstance(payload, dict):
-            raise ValueError("compaction response must be one JSON object")
-        return cls.model_validate(payload, strict=True)
+        def without_trailing_commas(value: str) -> str:
+            # Repair only commas immediately before a container close. This is intentionally not
+            # a JSON5 parser: quotes, comments, and scalar types are never reinterpreted.
+            repaired: list[str] = []
+            in_string = False
+            escaped = False
+            for index, char in enumerate(value):
+                if in_string:
+                    repaired.append(char)
+                    if escaped:
+                        escaped = False
+                    elif char == "\\":
+                        escaped = True
+                    elif char == '"':
+                        in_string = False
+                    continue
+                if char == '"':
+                    in_string = True
+                    repaired.append(char)
+                    continue
+                if char == ",":
+                    following = index + 1
+                    while following < len(value) and value[following].isspace():
+                        following += 1
+                    if following < len(value) and value[following] in "}]":
+                        continue
+                repaired.append(char)
+            return "".join(repaired)
+
+        def validate(payload: dict[str, Any]) -> CompactionSummary:
+            # Provider-only normalization: durable CompactionSummary validation itself continues
+            # to reject extras, so a corrupt checkpoint cannot gain the model-output tolerance.
+            recognized = {key: value for key, value in payload.items() if key in cls.model_fields}
+            for field_name in cls.model_fields:
+                if field_name != "goal" and recognized.get(field_name, ...) is None:
+                    recognized[field_name] = ()
+            if recognized.get("goal", ...) is None:
+                recognized["goal"] = ""
+            return cls.model_validate(recognized, strict=True)
+
+        for variant in (candidate, without_trailing_commas(candidate)):
+            try:
+                payload = json.loads(variant)
+            except json.JSONDecodeError:
+                payload = None
+            if isinstance(payload, dict):
+                return validate(payload)
+
+        # Models commonly wrap an otherwise valid object in a code fence or one sentence. Scan a
+        # bounded number of object starts and accept the first complete object; surrounding text
+        # and unknown fields never enter the durable summary.
+        starts = [index for index, char in enumerate(candidate) if char == "{"][:64]
+        for start in starts:
+            for variant in (candidate[start:], without_trailing_commas(candidate[start:])):
+                try:
+                    payload, _ = decoder.raw_decode(variant)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(payload, dict):
+                    return validate(payload)
+        raise ValueError("compaction response must contain one valid JSON object")
 
     def render(self) -> str:
         """Render Pi's stable section headings without adding a chat record."""
