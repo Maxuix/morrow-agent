@@ -14,8 +14,8 @@ then refreeze and capacity-check a new S7P-09 campaign without reusing prior adm
 - `[x]` Run the full offline/static/CLI/diff gate and commit the verified repair.
 - `[x]` Add explicit prior-campaign roots to cumulative capacity accounting and admission checks.
 - `[x]` Add a conservative full-remaining-schedule reservation check before the first admission.
-- `[ ]` Refreeze a new current-source comparison plan, profiles and protected evidence root.
-- `[ ]` Run preflight and capacity checks with every retained campaign root; stop before admission if
+- `[x]` Refreeze a new current-source comparison plan, profiles and protected evidence root.
+- `[x]` Run preflight and capacity checks with every retained campaign root; stop before admission if
   the approved ceiling is insufficient.
 
 ## Earlier completed tasks

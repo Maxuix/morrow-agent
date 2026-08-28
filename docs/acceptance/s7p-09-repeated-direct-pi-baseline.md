@@ -117,5 +117,10 @@ exceed the remaining capacity for a fresh complete campaign, so formal admission
 Before the first admission, the capacity command also accepts a conservative per-admission
 reservation and remaining-admission count, and compares the complete planned schedule against the
 same cumulative prior-root total.
-The new source/profile/evidence pin must still be created before any future admission; no prior plan
-or run key may be reused.
+The fresh source/profile/evidence pin was created before any future admission; no prior plan or run
+key may be reused.
+
+The fresh offline preflight and permission-equivalence check passed. The explicit cumulative audit
+counts `27,577,509` retained tokens and rejects the conservative `42,000,000`-token reservation
+for the 28-run schedule under the approved `50,000,000` ceiling, before any admission or model
+request is made.

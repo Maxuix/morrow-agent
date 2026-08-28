@@ -3,16 +3,18 @@
 ## Current status
 
 Subplan 90 was explicitly resumed from the consolidated local `main`. The harness self-check,
-permission matrix and historical capacity audit passed. The explicit risk-denial repair and
-cumulative prior-campaign capacity guard are implemented; the focused evaluator suite passed
-`57`, and the complete offline gate passed `1338 passed, 2 deselected`. Ruff format/check,
-compileall, CLI help and diff checks also passed.
+permission matrix, historical capacity audit and fresh-plan preflight passed. The explicit
+risk-denial repair, cumulative prior-campaign capacity guard and full remaining-schedule
+reservation check are implemented; the focused evaluator suite passed `57`, and the complete
+offline gate passed `1338 passed, 2 deselected`. Ruff format/check, compileall, CLI help and diff
+checks also passed.
 
 ## Active task
 
 The explicit risk-denial ordering repair, cumulative prior-campaign capacity guard and full
-remaining-schedule reservation check are implemented and verified. Refreeze a new S7P-09
-comparison plan before any admission.
+remaining-schedule reservation check are implemented and verified. A fresh comparison plan was
+validated offline; its cumulative capacity check blocks before admission under the approved
+50,000,000-token ceiling.
 
 ## Implemented boundary
 
@@ -39,8 +41,8 @@ comparison plan before any admission.
 
 ## Next action
 
-Create a fresh source/profile/evidence refreeze with explicit prior roots and the complete planned
-reservation; do not reuse prior campaign admissions.
+Formal admission is blocked by the approved ceiling. Obtain explicit approval for a larger total
+token ceiling before any model request; do not reuse prior campaign admissions.
 
 ## Blockers
 

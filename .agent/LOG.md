@@ -3709,4 +3709,7 @@
   passed `1338 passed, 2 deselected`; Ruff format/check, compileall, CLI help and `git diff --check`
   also passed. Added a conservative `--reserve-tokens` plus `--remaining-admissions` check so a
   complete fresh schedule cannot appear affordable merely because the new evidence root is empty.
-  The verified checkpoint is ready to commit before refreeze.
+  A fresh plan's preflight and permission matrix passed, while the cumulative capacity check
+  accounted for `27,577,509` retained tokens and blocked the `42,000,000`-token conservative
+  reservation for 28 remaining admissions against the approved `50,000,000` ceiling. No admission
+  or model request was created.
