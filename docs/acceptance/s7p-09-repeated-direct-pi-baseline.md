@@ -169,3 +169,9 @@ ordinary bundled retry default is now aligned with Pi at three retries.
 | `git diff --check` | passed |
 
 No Live Provider request or formal admission was made by this repair validation.
+
+After the separately authorized three-retry default was committed as `c0b14b9`, fresh reduced plan
+r14 passed plan-check, preflight and permission equivalence. Its cumulative capacity audit included
+all nine retained admitted roots and accounted for `31,877,509` historical tokens. The remaining
+`18,122,491` cannot carry the existing 14 × 1,500,000 = `21,000,000` conservative reservation, so
+the evaluator stopped before admission. No r14 run key or Provider request exists.

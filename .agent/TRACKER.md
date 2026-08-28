@@ -11,9 +11,9 @@ classification and partial-usage evaluation are now also implemented; focused af
 
 ## Active task
 
-The ordinary bundled retry default is aligned with Pi at three and verified. Commit that source,
-then create and audit a fresh reduced-pilot source/profile/evidence pin before any admission; no
-prior admission or run key may be reused.
+The ordinary bundled retry default is aligned with Pi at three and committed as `c0b14b9`. Fresh
+reduced plan r14 passes plan-check, source/evidence preflight and permission equivalence, but its
+full remaining-schedule capacity check blocks before admission.
 
 ## Implemented boundary
 
@@ -40,13 +40,14 @@ prior admission or run key may be reused.
 
 ## Next action
 
-Commit the verified three-retry policy, preserve all diagnostic evidence roots, and refreeze a fresh
-reduced plan from the new source. The user has authorized its formal execution; capacity and
-preflight must still pass before the first new admission.
+Preserve r14 as a no-admission blocked plan. Continuing requires an explicit choice to raise the
+50,000,000-token ceiling, lower the 1,500,000-token per-admission conservative reservation, or add
+a smaller frozen diagnostic schedule. Do not create an admission before that choice is recorded.
 
 ## Blockers
 
 - The full 28-run primary remains over the approved 50,000,000-token ceiling after retained usage.
-  The reduced plan fit at its previous source pin, but the post-fix first run remains retained as
-  blocked historical evidence. No later entries were admitted; a new source pin and capacity audit
-  are required, and the pilot is not complete or a comparison result.
+  The fresh r14 reduced plan accounts for `31,877,509` historical tokens and has `18,122,491`
+  remaining. Its 14 × 1,500,000 = `21,000,000` planned reservation exceeds the ceiling by
+  `2,877,509`. No r14 admission or Provider request was created; the pilot is not complete or a
+  comparison result.

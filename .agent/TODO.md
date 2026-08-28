@@ -28,7 +28,8 @@ primary does not fit, use the explicit 14-run reduced single-repetition pilot.
 - `[x]` Port Pi's transient Provider retry boundary and preserve unavailable usage as partial
   evaluation evidence; keep the bundled default retry count unchanged pending separate approval.
 - `[x]` Apply and verify the separately authorized bundled default of three retries.
-- `[>]` Refreeze and execute a fresh 14-run reduced pilot without reusing prior admissions.
+- `[!]` Refreeze and execute a fresh 14-run reduced pilot without reusing prior admissions. The r14
+  plan and preflight pass, but cumulative capacity blocks its 21,000,000-token reservation.
 - `[x]` Fold frozen isolated Morrow configuration and `build_active()` keyring loading directly into
   admission; do not add a readiness command or model probe.
 

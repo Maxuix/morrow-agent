@@ -3801,3 +3801,13 @@
 - Focused policy/runtime tests passed `84`; the complete offline gate passed
   `1363 passed, 2 deselected in 87.59s`. Ruff format/check, compileall, CLI help and
   `git diff --check` passed. No Live request or formal admission occurred during validation.
+
+## 2026-08-29 — Fresh reduced r14 plan blocked before admission
+
+- Created fresh protected plan `s7p-09-mimo-v25-c0b14b9-reduced-r14` from clean source `c0b14b9`.
+  Plan-check, campaign preflight and all eight permission-equivalence cases passed.
+- Cumulative capacity included all nine retained roots with admissions. Historical accounted usage
+  is `31,877,509` tokens, leaving `18,122,491` under the approved 50,000,000 ceiling. The frozen
+  14-run schedule's conservative `21,000,000` reservation exceeds that remainder by `2,877,509`.
+- Stopped before the first admission. No r14 run key, model request or credential probe was created.
+  Lowering the per-run reservation or adding a smaller schedule requires an explicit new decision.
