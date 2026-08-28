@@ -134,5 +134,12 @@ request.
 
 The final reduced-plan check passed: all seven retained campaign roots were included, the current
 plan preflight passed, and `27,577,509 + 21,000,000 = 48,577,509` remained below the approved
-`50,000,000`-token ceiling. No admission or model request was created; the 14-run pilot awaits
-explicit start confirmation.
+`50,000,000`-token ceiling. At that hold point no admission or model request had been created; the
+user subsequently authorized the reduced pilot execution.
+
+After the reduced pilot exposed an empty isolated Morrow configuration, the admission boundary was
+repaired without adding another readiness layer. A Morrow admission now generates its minimal
+isolated config from the frozen Provider/service/model selection and matching configured Keychain
+reference, calls existing `build_active()`, and only then creates the immutable admission. This
+load performs no model request or no-tool probe. Configuration failure consumes no run key. The
+paused two-run campaign remains diagnostic evidence and is not resumed after this source change.

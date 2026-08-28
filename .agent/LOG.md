@@ -3744,3 +3744,18 @@
 - The final capacity audit remained below the approved ceiling: `30,577,509` accounted tokens and
   `19,422,491` tokens remaining, with no planned admissions. The reduced pilot is incomplete and
   paused pending provider/runner repair plus explicit resumption.
+
+## 2026-08-28 — Morrow isolated config folded into admission
+
+- At the user's direction, kept configuration readiness inside the existing admission operation
+  instead of adding a separate readiness command or no-tool model probe.
+- For each Morrow schedule entry, admission now selects the frozen Provider/service/model, projects
+  only the matching configured Adapter/model and Keychain reference into a mode-0700 isolated
+  state root, and calls existing `build_active()` with frozen keyring resolution. The immutable
+  admission is created only after that succeeds; failure cleans the staged state and consumes no
+  formal run key. Pi admissions do not enter the Morrow configuration path.
+- Regression coverage proves both successful isolated loading without secret persistence and
+  failure-before-admission when the referenced credential is unavailable. Focused evaluator tests
+  passed `61`; the complete offline gate passed `1342 passed, 2 deselected in 91.40s`. `uv sync`,
+  Ruff format/check, compileall, CLI help and `git diff --check` also passed. No model request or new
+  formal admission was made.

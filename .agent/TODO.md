@@ -25,6 +25,8 @@ primary does not fit, use the explicit 14-run reduced single-repetition pilot.
 - `[!]` Execute the reduced pilot sequentially: 2/14 admissions were finalized as
   `FAIL_RUNTIME`/`BLOCKED_ENV`; pause the remaining 12 until the provider/runner environment is
   repaired and execution is explicitly resumed.
+- `[x]` Fold frozen isolated Morrow configuration and `build_active()` keyring loading directly into
+  admission; do not add a readiness command or model probe.
 
 ## Earlier completed tasks
 

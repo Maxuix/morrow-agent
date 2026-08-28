@@ -4197,6 +4197,98 @@ def campaign_capacity_usage(
     )
 
 
+def campaign_morrow_state_root(root: Path, entry: Mapping[str, object]) -> Path:
+    """Return the deterministic isolated state root for one Morrow campaign entry."""
+
+    if entry.get("agent") != "morrow":
+        raise EvalError("only Morrow campaign entries have isolated Morrow state")
+    return root.resolve() / "morrow-states" / _campaign_run_key(entry)
+
+
+def _prepare_campaign_morrow_state(
+    plan: Mapping[str, object],
+    root: Path,
+    entry: Mapping[str, object],
+    *,
+    source_state_root: Path | None = None,
+    credentials: object | None = None,
+) -> Path | None:
+    """Generate and load the frozen Morrow config before creating an admission."""
+
+    if entry.get("agent") != "morrow":
+        return None
+
+    from morrow.bootstrap import build_application
+    from morrow.core.models import ModelRef
+
+    common = _mapping(plan["common_model"], "comparison plan common_model")
+    provider_id = _text(common["provider_family"], "comparison plan provider family")
+    model_id = _text(common["canonical_model_id"], "comparison plan canonical model")
+    service = _text(common["service"], "comparison plan model service")
+    expected_model = ModelRef(provider_id=provider_id, model_id=model_id)
+
+    try:
+        source_app = build_application(
+            state_root=source_state_root.resolve() if source_state_root is not None else None,
+            credentials=credentials,
+        )
+        source_provider = source_app.provider_service.provider(provider_id)
+    except (OSError, ValueError) as exc:
+        raise EvalError("frozen campaign provider configuration is unavailable") from exc
+    if source_provider.base_url != service:
+        raise EvalError("configured Provider service differs from the frozen comparison plan")
+    source_model = source_provider.models.get(model_id)
+    if source_model is None:
+        raise EvalError("configured Provider model differs from the frozen comparison plan")
+    if source_provider.credential_ref is None:
+        raise EvalError("frozen campaign Provider has no keyring reference")
+
+    states_root = root.resolve() / "morrow-states"
+    final_state = campaign_morrow_state_root(root, entry)
+    try:
+        states_root.mkdir(mode=0o700, parents=True, exist_ok=True)
+        states_root.chmod(0o700)
+    except OSError as exc:
+        raise EvalError("unable to prepare isolated Morrow campaign state") from exc
+    if stat.S_IMODE(states_root.stat().st_mode) & 0o077:
+        raise EvalError("isolated Morrow campaign state permissions are too broad")
+    if final_state.exists() or final_state.is_symlink():
+        raise EvalError("isolated Morrow campaign state already exists")
+
+    staging = Path(tempfile.mkdtemp(prefix=f".{final_state.name}-", dir=states_root))
+    try:
+        staging.chmod(0o700)
+        isolated_app = build_application(state_root=staging, credentials=credentials)
+        frozen_provider = source_provider.model_copy(
+            update={"models": {model_id: source_model}, "last_test": None}
+        )
+        written = isolated_app.global_store.update(
+            lambda current: current.model_copy(
+                update={
+                    "providers": {provider_id: frozen_provider},
+                    "active_model": expected_model,
+                    "runtime_policy": None,
+                }
+            )
+        )
+        if written.status.value != "ok":
+            raise EvalError("unable to write isolated Morrow campaign configuration")
+        isolated_app = build_application(state_root=staging, credentials=credentials)
+        isolated_app.provider_service.credential_resolver = (
+            isolated_app.provider_service.resolve_frozen_credential
+        )
+        _provider, loaded_model = isolated_app.provider_service.build_active()
+        if loaded_model != expected_model:
+            raise EvalError("isolated Morrow active model differs from the frozen plan")
+        os.replace(staging, final_state)
+    except (EvalError, OSError, ValueError) as exc:
+        shutil.rmtree(staging, ignore_errors=True)
+        if isinstance(exc, EvalError):
+            raise
+        raise EvalError("isolated Morrow campaign configuration could not be loaded") from exc
+    return final_state
+
+
 def admit_campaign_run(
     plan: Mapping[str, object],
     root: Path,
@@ -4206,8 +4298,10 @@ def admit_campaign_run(
     reserve_cost: float,
     now: datetime | None = None,
     prior_roots: Sequence[Path] = (),
+    source_state_root: Path | None = None,
+    credentials: object | None = None,
 ) -> Path:
-    """Create one immutable admission after enforcing order and campaign ceilings."""
+    """Load frozen Morrow config, then create one ordered immutable admission."""
 
     normalized = validate_comparison_plan(plan)
     root = root.resolve()
@@ -4254,10 +4348,19 @@ def admit_campaign_run(
     if total_cost_ceiling is not None and reserved_cost + reserve_cost > total_cost_ceiling:
         raise EvalError("campaign currency ceiling would be exceeded")
     entry = normalized["schedule"][ordinal - 1]
+    prepared_state = _prepare_campaign_morrow_state(
+        normalized,
+        root,
+        entry,
+        source_state_root=source_state_root,
+        credentials=credentials,
+    )
     run_dir = root / _campaign_run_key(entry)
     try:
         run_dir.mkdir(mode=0o700)
     except FileExistsError as exc:
+        if prepared_state is not None:
+            shutil.rmtree(prepared_state, ignore_errors=True)
         raise EvalError("campaign run key was already admitted") from exc
     timestamp = current_time.astimezone(UTC).isoformat().replace("+00:00", "Z")
     record: dict[str, object] = {
@@ -4272,6 +4375,8 @@ def admit_campaign_run(
         _write_json_create(run_dir / "admission.json", record)
     except Exception:
         run_dir.rmdir()
+        if prepared_state is not None:
+            shutil.rmtree(prepared_state, ignore_errors=True)
         raise
     return run_dir
 

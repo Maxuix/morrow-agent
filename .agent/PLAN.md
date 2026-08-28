@@ -75,6 +75,10 @@ malformed optional context warns/skips instead of blocking task preparation.
   bounded normalized evidence, hashes, summaries and the baseline record are committed.
 - S7P-09 measures the frozen Agent. It does not tune thresholds/tasks after results, restore the
   removed CompletionChecker or begin Workflow/S7P-10 work.
+- Morrow admission generates its minimal isolated configuration directly from the frozen
+  Provider/service/model selection plus the matching configured Keychain reference, then calls the
+  existing `build_active()`. Admission is created only after that load succeeds; this is not a new
+  readiness command and does not add a no-tool model probe.
 
 ## 3. Evaluation context and current hold point
 

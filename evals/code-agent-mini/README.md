@@ -155,6 +155,12 @@ executable/package hash、evidence-root 身份/权限/空间、start-not-before 
 `--remaining-admissions` 可在首个 admission 前检查完整剩余 schedule 的保守预算；命令会把
 该 planned reservation 与累计 prior usage 一并比较。
 
+Morrow entry 的 admission 自身负责准备隔离配置，不另设 readiness 命令。它按冻结计划选择
+Provider/service/model，从当前 Morrow 配置只投影匹配的 Adapter、模型配置和 Keychain 引用，写入
+`<evidence-root>/morrow-states/<run-key>/config.yaml`，再通过现有 `build_active()` 从该引用加载
+Provider。该步骤不调用模型、不执行 no-tool probe；只有配置成功加载后才创建 create-only
+`admission.json`。配置或 Keychain 引用不可加载时，临时 state 会被清理且正式 run key 不会被消费。
+
 两侧正式 runner 都先创建共享 normalized trace，再投影为 `finalize` 可直接接受的安全
 runtime-evidence。Morrow runner 通过普通 bootstrap/AgentLoop/ToolExecutor
 组合注入 bounded EvaluationApprovalPort；Pi runner 只加载 content-hashed policy extension，禁用用户

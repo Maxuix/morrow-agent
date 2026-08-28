@@ -6,16 +6,14 @@ Subplan 90 was explicitly resumed from the consolidated local `main`. The harnes
 permission matrix, historical capacity audit, reduced-plan preflight and capacity check passed.
 The explicit risk-denial repair, cumulative prior-campaign capacity guard, full reservation check
 and explicit 14-run reduced single-repetition variant are implemented; the focused evaluator suite
-passed `59`, and the complete offline gate passed `1340 passed, 2 deselected`.
+passed `61`, and the complete offline gate passed `1342 passed, 2 deselected`.
 
 ## Active task
 
-The explicit risk-denial ordering repair, cumulative prior-campaign capacity guard, full
-remaining-schedule reservation check and reduced-variant support are implemented. The fresh reduced
-plan passed preflight and had capacity for 14 conservative admissions under the approved ceiling.
-Execution then created and closed two admissions in the fresh evidence root. `MORROW-001` ended
-`FAIL_RUNTIME` after a provider-backed runner attempt, and `MORROW-003` ended `BLOCKED_ENV` after
-the provider stopped reporting usage; no successful comparable run was produced.
+The admission boundary repair is implemented and verified. Morrow entries generate a minimal
+isolated config from the frozen Provider/service/model selection, preserve only the matching
+configured Keychain reference, and call existing `build_active()` before creating the admission.
+No readiness command, no-tool probe or model request was added.
 
 ## Implemented boundary
 
@@ -42,9 +40,8 @@ the provider stopped reporting usage; no successful comparable run was produced.
 
 ## Next action
 
-The reduced pilot is paused after 2/14 sequential admissions. Preserve the evidence root and do not
-create later admissions until the provider/runner environment is repaired and a fresh explicit
-execution authorization is given.
+Preserve the paused 2/14 evidence root as diagnostic evidence. Any later formal execution requires
+a fresh current-source plan and explicit authorization; do not reuse its admissions or run keys.
 
 ## Blockers
 

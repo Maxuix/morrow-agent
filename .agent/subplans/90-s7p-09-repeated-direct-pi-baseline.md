@@ -334,6 +334,10 @@ failed v1 gate into PASS without a separately approved protocol/campaign decisio
 
 1. Pre-admission auth/config/source readiness failure pauses scheduling and does not consume a run
    key.
+   Morrow config readiness is part of admission itself: generate the minimal isolated config from
+   the frozen Provider/service/model selection and matching Keychain reference, call existing
+   `build_active()`, then create the admission. Do not add a separate readiness command or no-tool
+   probe.
 2. Post-admission Provider outage/auth expiry finalizes as `BLOCKED_ENV`; external watchdog as
    `BUDGET_EXHAUSTED`; agent/runtime protocol failure as `FAIL_RUNTIME`; evaluator corruption makes
    the bundle invalid and the campaign incomplete.

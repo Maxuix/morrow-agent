@@ -13,6 +13,10 @@ from pathlib import Path
 
 import pytest
 
+from morrow.adapters.credentials.keyring import MemoryCredentialStore
+from morrow.bootstrap import build_application
+from morrow.core.models import CredentialRef, ProviderConfig, ProviderModelConfig
+
 EVAL_PATH = Path(__file__).parents[1] / "evals" / "code-agent-mini" / "eval.py"
 SPEC = importlib.util.spec_from_file_location("morrow_code_agent_mini_eval", EVAL_PATH)
 assert SPEC and SPEC.loader
@@ -26,7 +30,7 @@ def _profile() -> dict[str, object]:
         "schema_version": 1,
         "profile_id": "direct-coding-v1",
         "agent": {"id": "morrow-direct", "version": "test", "entrypoint": "morrow"},
-        "provider": {"id": "fake", "revision": "fake-rev"},
+        "provider": {"id": "fake", "revision": "https://example.test/v1"},
         "model": {"id": "fake/model", "revision": "model-rev"},
         "sampling": {
             "temperature": "unavailable",
@@ -90,7 +94,7 @@ def _comparison_plan() -> dict[str, object]:
         },
         "common_model": {
             "provider_family": "fake",
-            "service": "fake-rev",
+            "service": "https://example.test/v1",
             "canonical_model_id": "fake/model",
             "model_revision": "model-rev",
             "context_window": 16_384,
@@ -129,6 +133,34 @@ def _comparison_plan() -> dict[str, object]:
     }
     plan["integrity"] = eval_module.content_hash(plan)
     return plan
+
+
+def _campaign_admission_dependencies(
+    tmp_path: Path, *, with_credential: bool = True
+) -> dict[str, object]:
+    source_state = tmp_path / "configured-morrow-state"
+    credentials = MemoryCredentialStore()
+    credential_ref = CredentialRef(ref="provider:fake:evaluation")
+    if with_credential:
+        credentials.set(credential_ref.ref, "fixture-provider-value")
+    app = build_application(state_root=source_state, credentials=credentials)
+    written = app.global_store.update(
+        lambda current: current.model_copy(
+            update={
+                "providers": {
+                    "fake": ProviderConfig(
+                        adapter="openai-compatible",
+                        base_url="https://example.test/v1",
+                        credential_ref=credential_ref,
+                        models={"fake/model": ProviderModelConfig(api_model_id="fake/model")},
+                    )
+                },
+                "active_model": None,
+            }
+        )
+    )
+    assert written.status.value == "ok"
+    return {"source_state_root": source_state, "credentials": credentials}
 
 
 def _source_repo(tmp_path: Path) -> Path:
@@ -1330,8 +1362,83 @@ def test_permission_equivalence_and_evaluation_approval_contract(tmp_path: Path)
     assert (port.approvals, port.rejections) == (1, 1)
 
 
+def test_campaign_admission_loads_frozen_isolated_config_before_creation(
+    tmp_path: Path,
+) -> None:
+    plan = _comparison_plan()
+    evidence_root = tmp_path / "configured-evidence"
+    plan["evidence_root"]["path_sha256"] = eval_module.bytes_hash(
+        str(evidence_root.resolve()).encode("utf-8")
+    )
+    plan["integrity"] = eval_module.content_hash(
+        {key: value for key, value in plan.items() if key != "integrity"}
+    )
+    dependencies = _campaign_admission_dependencies(tmp_path)
+
+    admission = eval_module.admit_campaign_run(
+        plan,
+        evidence_root,
+        ordinal=1,
+        reserve_tokens=10_000,
+        reserve_cost=1.0,
+        **dependencies,
+    )
+
+    entry = eval_module.validate_comparison_plan(plan)["schedule"][0]
+    state_root = eval_module.campaign_morrow_state_root(evidence_root, entry)
+    isolated = build_application(
+        state_root=state_root,
+        credentials=dependencies["credentials"],
+    )
+    isolated.provider_service.credential_resolver = (
+        isolated.provider_service.resolve_frozen_credential
+    )
+    _provider, model = isolated.provider_service.build_active()
+    config = isolated.provider_service.list()
+    assert admission.is_dir()
+    assert state_root.is_dir()
+    assert state_root.stat().st_mode & 0o077 == 0
+    assert str(model) == "fake/fake/model"
+    assert set(config.providers) == {"fake"}
+    assert config.providers["fake"].credential_ref == CredentialRef(ref="provider:fake:evaluation")
+    assert "fixture-provider-value" not in (state_root / "config.yaml").read_text(encoding="utf-8")
+
+
+def test_campaign_admission_does_not_consume_run_key_when_frozen_config_cannot_load(
+    tmp_path: Path,
+) -> None:
+    plan = _comparison_plan()
+    evidence_root = tmp_path / "unconfigured-evidence"
+    plan["evidence_root"]["path_sha256"] = eval_module.bytes_hash(
+        str(evidence_root.resolve()).encode("utf-8")
+    )
+    plan["integrity"] = eval_module.content_hash(
+        {key: value for key, value in plan.items() if key != "integrity"}
+    )
+    dependencies = _campaign_admission_dependencies(tmp_path, with_credential=False)
+    entry = eval_module.validate_comparison_plan(plan)["schedule"][0]
+
+    with pytest.raises(
+        eval_module.EvalError,
+        match="isolated Morrow campaign configuration could not be loaded",
+    ):
+        eval_module.admit_campaign_run(
+            plan,
+            evidence_root,
+            ordinal=1,
+            reserve_tokens=10_000,
+            reserve_cost=1.0,
+            **dependencies,
+        )
+
+    assert not (evidence_root / eval_module._campaign_run_key(entry)).exists()
+    assert not eval_module.campaign_morrow_state_root(evidence_root, entry).exists()
+    assert eval_module._campaign_records(evidence_root, plan) == []
+
+
 def test_campaign_admission_is_create_only_ordered_confined_and_budgeted(tmp_path: Path) -> None:
     plan = _comparison_plan()
+    admission_dependencies = _campaign_admission_dependencies(tmp_path)
     evidence_root = tmp_path / "protected-evidence"
     plan["evidence_root"]["path_sha256"] = eval_module.bytes_hash(
         str(evidence_root.resolve()).encode("utf-8")
@@ -1345,6 +1452,7 @@ def test_campaign_admission_is_create_only_ordered_confined_and_budgeted(tmp_pat
         ordinal=1,
         reserve_tokens=10_000,
         reserve_cost=1.0,
+        **admission_dependencies,
     )
     assert first.name.startswith("01-morrow-")
     assert (first / "admission.json").is_file()
@@ -1357,6 +1465,7 @@ def test_campaign_admission_is_create_only_ordered_confined_and_budgeted(tmp_pat
             ordinal=3,
             reserve_tokens=10_000,
             reserve_cost=1.0,
+            **admission_dependencies,
         )
 
     too_expensive = _comparison_plan()
@@ -1374,6 +1483,7 @@ def test_campaign_admission_is_create_only_ordered_confined_and_budgeted(tmp_pat
         ordinal=1,
         reserve_tokens=10_000,
         reserve_cost=1.0,
+        **admission_dependencies,
     )
     with pytest.raises(eval_module.EvalError, match="currency ceiling"):
         eval_module.admit_campaign_run(
@@ -1382,6 +1492,7 @@ def test_campaign_admission_is_create_only_ordered_confined_and_budgeted(tmp_pat
             ordinal=2,
             reserve_tokens=10_000,
             reserve_cost=1.0,
+            **admission_dependencies,
         )
 
     unlimited_cost = _comparison_plan()
@@ -1399,6 +1510,7 @@ def test_campaign_admission_is_create_only_ordered_confined_and_budgeted(tmp_pat
         ordinal=1,
         reserve_tokens=10_000,
         reserve_cost=1_000_000.0,
+        **admission_dependencies,
     )
 
 
@@ -1406,6 +1518,7 @@ def test_campaign_capacity_prefers_runtime_usage_and_enforces_observed_overage(
     tmp_path: Path,
 ) -> None:
     plan = _comparison_plan()
+    admission_dependencies = _campaign_admission_dependencies(tmp_path)
     plan["ceilings"]["total_tokens"] = 100
     evidence_root = tmp_path / "capacity-evidence"
     plan["evidence_root"]["path_sha256"] = eval_module.bytes_hash(
@@ -1420,6 +1533,7 @@ def test_campaign_capacity_prefers_runtime_usage_and_enforces_observed_overage(
         ordinal=1,
         reserve_tokens=10,
         reserve_cost=1.0,
+        **admission_dependencies,
     )
     usage = _runtime_evidence()
     usage["usage"]["input_tokens"] = 90
@@ -1439,11 +1553,13 @@ def test_campaign_capacity_prefers_runtime_usage_and_enforces_observed_overage(
             ordinal=2,
             reserve_tokens=10,
             reserve_cost=1.0,
+            **admission_dependencies,
         )
 
 
 def test_campaign_capacity_falls_back_to_durable_morrow_request_usage(tmp_path: Path) -> None:
     plan = _comparison_plan()
+    admission_dependencies = _campaign_admission_dependencies(tmp_path)
     evidence_root = tmp_path / "morrow-capacity-evidence"
     plan["evidence_root"]["path_sha256"] = eval_module.bytes_hash(
         str(evidence_root.resolve()).encode("utf-8")
@@ -1457,6 +1573,7 @@ def test_campaign_capacity_falls_back_to_durable_morrow_request_usage(tmp_path: 
         ordinal=1,
         reserve_tokens=10,
         reserve_cost=1.0,
+        **admission_dependencies,
     )
     store = first / "morrow-state" / "store"
     store.mkdir(parents=True)
@@ -1493,6 +1610,7 @@ def test_campaign_capacity_falls_back_to_durable_morrow_request_usage(tmp_path: 
 
 def test_campaign_capacity_includes_explicit_prior_campaigns(tmp_path: Path) -> None:
     prior_plan = _comparison_plan()
+    admission_dependencies = _campaign_admission_dependencies(tmp_path)
     prior_root = tmp_path / "prior-evidence"
     prior_plan["evidence_root"]["path_sha256"] = eval_module.bytes_hash(
         str(prior_root.resolve()).encode("utf-8")
@@ -1506,6 +1624,7 @@ def test_campaign_capacity_includes_explicit_prior_campaigns(tmp_path: Path) -> 
         ordinal=1,
         reserve_tokens=70,
         reserve_cost=1.0,
+        **admission_dependencies,
     )
     (prior_root / "comparison-plan.json").write_text(json.dumps(prior_plan), encoding="utf-8")
 
@@ -1545,6 +1664,7 @@ def test_campaign_capacity_includes_explicit_prior_campaigns(tmp_path: Path) -> 
             reserve_tokens=31,
             reserve_cost=1.0,
             prior_roots=(prior_root,),
+            **admission_dependencies,
         )
 
 
