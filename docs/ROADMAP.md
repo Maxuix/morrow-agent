@@ -1,7 +1,9 @@
 # Morrow 个人 Agent 工作台开发路线总览
 
-> 状态：阶段 1–6 已完成（Subplans 63–75 已在本地完成）；阶段 7–10 未开始
-> 基线日期：2026-08-19
+> 状态：阶段 1–6 已完成（Subplans 63–89 与 91–92 已在本地完成；Subplan 90 活跃中）；阶段 7–10 未开始。
+> Stage 7 的前置基线（S7P 直接编码可靠性序列与评估协议）已集成本地 `main`，其重复 Direct/Pi
+> 对照评估（S7P-09）的正式准入暂因冻结计划的 Token 容量上限阻塞。
+> 基线日期：2026-08-29
 > 用途：维护 Morrow 的长期产品方向、阶段顺序、稳定边界与详细阶段文档入口。
 > 执行约定：具体实现任务、活跃子计划、进度与验证结果继续维护在 `.agent/`；本文不承担实时 TODO 或开发日志职责。
 > 当前实现：[架构基线](ARCHITECTURE.md)；本文出现的未来领域对象不代表代码中已经存在，除非架构基线已明确标记为当前能力。
@@ -71,7 +73,7 @@ flowchart LR
 
 ## 二、当前架构基线与演进策略
 
-当前代码已经具备工作空间隔离、Provider/Model 抽象、进程内 Session、`ConversationLog`、`AgentLoop`、统一 ToolCycle、通用工具策略、审批端口和配置更新工具。阶段 3 的文件、搜索、编辑、审批后 Host Shell、只读 Git 与当前 macOS 原生沙箱能力及完整阶段验收已交付；Linux 原生运行仍待真实 runner。
+当前代码已经具备工作空间隔离、Provider/Model 抽象、可持久化 Session、`ConversationLog`、`AgentLoop`、统一 ToolCycle、通用工具策略、审批端口和配置更新工具。阶段 3 的文件、搜索、编辑、直接 Host 命令、只读 Git 检查与当前 macOS 原生沙箱能力及完整阶段验收已交付；Linux 原生运行仍待真实 runner。
 
 后续演进不得通过把所有职责塞入 `AgentLoop` 来实现。稳定策略是：
 

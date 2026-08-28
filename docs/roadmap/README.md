@@ -21,7 +21,7 @@
 - 每个 Stage 文档维护目标、边界、架构合同、实施切片和完成门禁。
 - 当前执行方案写入 `.agent/PLAN.md`；当前活跃任务只写入 `.agent/TODO.md`。
 - 不为每个 Stage 再建立更深的长期路线层级；大型实现只在 `.agent/subplans/` 中拆分。
-- Stage 1–4 是已完成基线；Stage 4 的最终验收证据位于 `docs/acceptance/`；Stage 5–10
+- Stage 1–6 是已完成基线；Stage 4 的最终验收证据位于 `docs/acceptance/`；Stage 7–10
   只有在用户请求激活时才根据实际代码再次评审。
 
 ## 旧文件迁移

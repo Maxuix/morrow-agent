@@ -1,9 +1,11 @@
 # Morrow 架构基线
 
-> 状态：阶段 2–6 已完成；Stage 7 preflight S7P-01–S7P-06 已集成，S7P-07 runtime control
-> 正在当前 topic branch 实施（macOS；Linux 原生运行仍 unsupported）
+> 状态：阶段 2–6 已完成；Stage 7 前置基线（S7P-00–S7P-08 可靠性序列、主流工具接口与遗留
+> 适配器清理，Subplans 78–89、91–92）已集成本地 `main`；Subplan 90（S7P-09 重复 Direct/Pi
+> 对照评估）活跃中，其正式评估准入暂因冻结计划的 Token 容量上限阻塞（macOS；Linux 原生
+> 运行仍 unsupported）
 
-本文锁定当前依赖方向、数据所有权和安全边界。阶段 3 的能力策略、配置工具、工作空间读搜、冲突安全文件变更、审批后 Host 命令、只读 Git 和当前 macOS 原生沙箱
+本文锁定当前依赖方向、数据所有权和安全边界。阶段 3 的能力策略、配置工具、工作空间读搜、冲突安全文件变更、直接 Host 命令、只读 Git 和当前 macOS 原生沙箱
 已经交付；Linux 原生运行尚未声明支持。Stage 4 已落地数据根 SQLite Operational Store 的
 身份/迁移/备份基础、v2 无工具 Session 历史、v3 工具执行/审批日志、v4 恢复分类与
 崩溃对账，以及 v5 TaskRun 生命周期、转移审计、版本化 TaskOutcome、v6 Artifact 元数据/引用与受控字节发布、v7 确定性 ContextCheckpoint 与不可变 Session lineage、v8 有界 application event/command receipt、v9 按 AgentRun 冻结的权限证据与可撤销 grant。Stage 5 Subplans 49–54 已增加 LearningPolicy、Review、Evidence、Candidate、Suppression 的有界领域与 v10–v12 SQLite 持久化；accepted TaskOutcome 的同事务 Review 请求、一次性 lease Runner、Evidence/Context 安全边界和候选去重/抑制；Inbox、Candidate 决策、Project Knowledge 生命周期；公开 prepared 配置契约、SQLite/YAML Promotion Saga、激活来源、恢复/撤销和 CLI/REPL 入口；确定性 MemorySelection、AgentRun 冻结/恢复复用、RunContextProjection；以及 no-tool production Reviewer、离线评估、只读 Learning doctor 和隔离 backup 引用校验。Reviewer v4 的真实 Provider 质量目标已通过，不由离线证据替代。Stage 6 的 Skills 包、生命周期、选择/上下文、Draft/Usage、受限脚本执行、Provider/Model 控制面以及 MCP desired state/Catalog/v16 持久化已在本地完成；MCP Runtime/Security、Backup v2 与 Stage 6 Doctor 也已完成；S7P-01 增加了不改变公开事件的 AgentRun request/terminal observability 与复用同一 SessionOrchestrator/AgentLoop 的 headless JSONL 入口；Stage 7–10 的 Workflow、GUI、后台自动化和产品化均尚未开始。
@@ -230,7 +232,7 @@ Service 或 Port：
 `edit` 与 `write` 通过适配器自动补全内部 revision/mode，再由 mutation/ChangeSet 服务执行和报告
 实际变更。旧的专用文件/Git/ChangeSet schema、参数模型和工厂已删除；旧名称只在明确标注的 durable
 recovery 兼容表中保留，用于分类缺少冻结声明的历史执行记录，不能通过当前生产注册门；
-`bash` 通过注入的 `ProcessExecutionService` 执行审批后的 Host 命令，或在 Auto Sandboxed 中执行原生快照命令；
+`bash` 通过注入的 `ProcessExecutionService` 执行 Host 命令，或在 Auto Sandboxed 中执行原生快照命令；
 `run_skill_script` 通过注入的 `SkillScriptExecutionService` 执行已冻结 Skill 包中的脚本，并只发布有界、脱敏的
 声明输出 Artifact；
 `promote_sandbox_changes` 通过注入的 `SandboxSnapshotService`、`WorkspaceMutationService` 与

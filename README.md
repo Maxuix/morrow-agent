@@ -1,8 +1,9 @@
 # Morrow
 
 Morrow（承序）是一个以工作空间为边界的终端 Code Agent。当前版本提供可恢复的持久化对话、
-有界的本地读搜与冲突安全文件修改、直接 Host 命令、当前 macOS 原生沙箱、只读 Git、
-经确认的 Profile 与 Preferences 配置，以及 Provider 管理。
+有界的本地读搜与冲突安全文件修改、直接 Host 命令、当前 macOS 原生沙箱、只读 Git 检查、
+经确认的 Profile 与 Preferences 配置、Provider/Model 管理，以及受治理的 Skill/MCP 扩展
+与可审查的任务后学习。
 
 长期产品方向与阶段边界见 [开发路线总览](docs/ROADMAP.md)。
 
@@ -88,7 +89,8 @@ runtime_policy:
 
 覆盖在进程启动时加载。未知字段、错误类型、非有限数、违反字段组合或超过代码级安全上限的值会使
 配置整体拒绝加载，不会部分生效。权限、审批、循环检测开关、密钥/路径过滤、schema/payload/storage
-预算及最大重试语义不允许通过 YAML 放宽；Agent 的配置与学习工具也不能写 `runtime_policy`。完整字段
+预算与重试的错误分类边界不允许通过 YAML 放宽；重试次数等可调字段受代码级上限约束；Agent 的配置
+与学习工具也不能写 `runtime_policy`。完整字段
 和硬编码分类见 [Runtime Policy Configuration Boundary](docs/decisions/runtime-policy-configuration.md)。
 
 REPL 常用命令包括 `/workspace`、`/workspace edit summary ...`、`/workspace reset`、`/status`、
@@ -197,7 +199,7 @@ reference 为权威。`--apply` 不销毁字节：它只会把经目录、类型
 状态写入经过校验、revision 检查、同目录临时文件、文件/目录 `fsync` 和原子替换，并保留 `.bak`。
 Profile 损坏或版本较新时，工作空间持久状态进入只读模式；workspace Preferences 损坏时只隔离该层。
 
-当前生产工具只通过冻结工作空间服务读取、搜索和修改项目文件；Git 状态/Diff 与项目校验统一通过经过策略检查和审批的 `bash` 执行；
+当前生产工具只通过冻结工作空间服务读取、搜索和修改项目文件；Git 状态/Diff 与项目校验统一通过经过策略检查的 `bash` 执行；
 网络能力始终不提供；配置工具只通过应用服务更新既有的 Profile/Preferences 状态。阶段 3 已交付
 三轴权限模型、工作空间能力冻结、能力策略、动态系统边界、通用本地审批端口、终端审批 UI，以及有界目录/文件读取、
 搜索、SHA-256 冲突安全编辑、原子文件创建、当前运行 ChangeSet/Diff、有界 Host 命令和当前 macOS 的原生
