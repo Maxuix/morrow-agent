@@ -161,6 +161,8 @@ Stage 5 的 Learning 默认是 `review-only`：每个合格的已完成普通 Tu
 Preference Review job 与当前用户 Evidence，提交后只唤醒进程内 Worker；Provider 超时/重试不阻塞
 前台 Turn。Preference proposals 通过 `preferences inbox` 审查，接受后由同 scope 原子 Writer 写 YAML；
 明确管理使用 `/preferences` 或受审批的 `manage_preferences`。`/accept` 仍只接受 Task 结果。
+普通用户 Turn 统一作为中性的 behavioral Evidence 交给 Reviewer，不按“以后”“这次”“例如”或
+否定、引用、假设等自然语言关键词预先分类复杂语义。
 既有 Profile 候选会经配置 Promotion Saga 更新 YAML，
 Project Knowledge 进入 SQLite 版本化记录；Skill、Workflow 和 Orchestration 候选只保留为候选，
 不会创建文件、工具、权限或运行时规则。`explicit-auto` 被拒绝，`off` 可关闭任务后 Review。

@@ -26,55 +26,6 @@ from morrow.core.learning_ports import (
 from morrow.core.learning_safety import normalize_learning_text
 from morrow.core.ports import IdSource
 
-_LEGACY_PERSISTENT_MARKERS = (
-    "以后",
-    "默认",
-    "总是",
-    "请记住",
-    "长期",
-    "always",
-    "default",
-    "from now",
-    "remember",
-)
-_LEGACY_NEGATIVE_MARKERS = (
-    "不要记住",
-    "不要保存",
-    "不要默认",
-    "不要总是",
-    "不要每次",
-    "不必记住",
-    "不必保存",
-    "do not remember",
-    "don't remember",
-    "do not save",
-    "don't save",
-    "do not always",
-    "don't always",
-)
-_LEGACY_NON_DURABLE_MARKERS = (
-    "这次",
-    "本次",
-    "临时",
-    "暂时",
-    "仅在这次",
-    "for this answer",
-    "just this time",
-)
-_LEGACY_UNTRUSTED_CONTEXT_MARKERS = (
-    "示例",
-    "例如",
-    "文档中",
-    "文档示例",
-    "引用",
-    "他说",
-    "假设",
-    "example",
-    "quoted",
-    "hypothetical",
-    "suppose",
-)
-
 _CONTEXT_MAX_EVIDENCE_ITEMS = 8
 _CONTEXT_MAX_SUPPRESSION_ITEMS = 8
 _CONTEXT_OUTCOME_MAX_ITEMS = 8
@@ -129,9 +80,6 @@ class LearningEvidenceExtractor:
                 content = record.payload.get("content")
                 if not isinstance(content, str) or not content.strip():
                     continue
-                authority, explicitness, polarity = self._classify_legacy_learning_user_text(
-                    content
-                )
                 evidence.append(
                     self._text_evidence(
                         review,
@@ -141,9 +89,9 @@ class LearningEvidenceExtractor:
                         source_pointer=f"{record.record_id}:{review.review_id}",
                         text=content,
                         actor=LearningEvidenceActor.USER,
-                        authority=authority,
-                        explicitness=explicitness,
-                        polarity=polarity,
+                        authority=LearningEvidenceAuthority.BEHAVIORAL_SIGNAL,
+                        explicitness=LearningEvidenceExplicitness.BEHAVIORAL,
+                        polarity=LearningEvidencePolarity.NEUTRAL,
                     )
                 )
 
@@ -256,45 +204,6 @@ class LearningEvidenceExtractor:
             safety_rejection_code=rejection,
             observed_at=_utc(self.clock),
             created_at=_utc(self.clock),
-        )
-
-    @staticmethod
-    def _classify_legacy_learning_user_text(
-        text: str,
-    ) -> tuple[
-        LearningEvidenceAuthority,
-        LearningEvidenceExplicitness,
-        LearningEvidencePolarity,
-    ]:
-        lowered = text.casefold()
-        if any(marker.casefold() in lowered for marker in _LEGACY_NEGATIVE_MARKERS):
-            return (
-                LearningEvidenceAuthority.USER_EXPLICIT_PERSISTENT,
-                LearningEvidenceExplicitness.EXPLICIT,
-                LearningEvidencePolarity.NEGATIVE,
-            )
-        if any(marker.casefold() in lowered for marker in _LEGACY_NON_DURABLE_MARKERS):
-            return (
-                LearningEvidenceAuthority.BEHAVIORAL_SIGNAL,
-                LearningEvidenceExplicitness.BEHAVIORAL,
-                LearningEvidencePolarity.NEUTRAL,
-            )
-        if any(marker.casefold() in lowered for marker in _LEGACY_UNTRUSTED_CONTEXT_MARKERS):
-            return (
-                LearningEvidenceAuthority.UNTRUSTED_EXTERNAL_CONTENT,
-                LearningEvidenceExplicitness.INFERRED,
-                LearningEvidencePolarity.NEUTRAL,
-            )
-        if any(marker.casefold() in lowered for marker in _LEGACY_PERSISTENT_MARKERS):
-            return (
-                LearningEvidenceAuthority.USER_EXPLICIT_PERSISTENT,
-                LearningEvidenceExplicitness.EXPLICIT,
-                LearningEvidencePolarity.POSITIVE,
-            )
-        return (
-            LearningEvidenceAuthority.BEHAVIORAL_SIGNAL,
-            LearningEvidenceExplicitness.BEHAVIORAL,
-            LearningEvidencePolarity.NEUTRAL,
         )
 
     @staticmethod

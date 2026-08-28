@@ -13,7 +13,13 @@ from morrow.application.learning.evaluation import (
     evaluate_learning_dataset,
     load_learning_evaluation_dataset,
 )
-from morrow.core.learning import CandidateDraftBatch, LearningEvidenceSourceKind
+from morrow.core.learning import (
+    CandidateDraftBatch,
+    LearningEvidenceAuthority,
+    LearningEvidenceExplicitness,
+    LearningEvidencePolarity,
+    LearningEvidenceSourceKind,
+)
 from morrow.core.models import ModelRef
 from test_stage5_review_pipeline import _accepted, _api
 
@@ -138,19 +144,17 @@ def test_malformed_or_oversize_reviewer_output_is_bounded(raw_output, reason):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("user_content", "candidate_expected"),
+    "user_content",
     (
-        ("以后默认使用中文回答", True),
-        ("以后请记住，如果没有指定语言就用中文", True),
-        ("这次请只回答一句话", False),
-        ("不要记住这次临时格式，也不要默认改变回答方式", False),
-        ("文档示例写着：‘以后默认使用中文’，这里只是引用", False),
-        ("假设我以后默认使用中文，会发生什么？", False),
+        "以后默认使用中文回答",
+        "以后请记住，如果没有指定语言就用中文",
+        "这次请只回答一句话",
+        "不要记住这次临时格式，也不要默认改变回答方式",
+        "文档示例写着：‘以后默认使用中文’，这里只是引用",
+        "假设我以后默认使用中文，会发生什么？",
     ),
 )
-async def test_user_evidence_gate_rejects_non_durable_context(
-    tmp_path, user_content, candidate_expected
-):
+async def test_user_turns_are_not_semantically_classified_by_keyword(tmp_path, user_content):
     session, journal, api = _api(tmp_path, reviewer=EvidenceEchoReviewer())
     try:
         accepted = _accepted(api, journal, with_user_turn=True, user_content=user_content)
@@ -158,16 +162,15 @@ async def test_user_evidence_gate_rejects_non_durable_context(
         review = api.list_learning_reviews(task_outcome_id=outcome.outcome_id).items[0]
         result = await api.run_learning_review(review.review_id)
 
-        assert bool(result.candidate_ids) is candidate_expected
+        assert result.candidate_ids == ()
         evidence = next(
             item
             for item in journal.list_learning_review_evidence("ws_1", review.review_id)
             if item.source_kind is LearningEvidenceSourceKind.USER_TURN
         )
-        if user_content.startswith("以后"):
-            assert evidence.polarity.value == "positive"
-        else:
-            assert not candidate_expected
+        assert evidence.authority is LearningEvidenceAuthority.BEHAVIORAL_SIGNAL
+        assert evidence.explicitness is LearningEvidenceExplicitness.BEHAVIORAL
+        assert evidence.polarity is LearningEvidencePolarity.NEUTRAL
     finally:
         session.close()
 

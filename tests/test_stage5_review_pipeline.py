@@ -60,21 +60,28 @@ class ContextReviewer:
     async def review(self, context, *, model: ModelRef, timeout_seconds: float):
         del model, timeout_seconds
         self.contexts.append(context)
-        evidence = next(
-            item for item in context.evidence if item.authority.value == "user_explicit_persistent"
+        evidence = tuple(
+            item
+            for item in context.evidence
+            if item.source_kind
+            in {
+                LearningEvidenceSourceKind.TASK_OUTCOME,
+                LearningEvidenceSourceKind.USER_TURN,
+            }
         )
         return CandidateDraftBatch(
             drafts=(
                 LearningCandidateDraft(
-                    candidate_type=LearningCandidateType.PREFERENCE,
+                    candidate_type=LearningCandidateType.SKILL_CANDIDATE,
                     operation="set",
-                    semantic_key="preference.language",
+                    semantic_key="skill.release.workflow",
                     proposed_scope="workspace",
-                    proposed_payload=PreferenceCandidatePayload(
-                        path="language",
-                        value="zh-CN",
+                    proposed_payload=SkillCandidatePayload(
+                        title="Release workflow",
+                        problem_pattern="A repeatable release task was completed.",
+                        observed_steps=("Run release checks",),
                     ),
-                    evidence_ids=(evidence.evidence_id,),
+                    evidence_ids=tuple(item.evidence_id for item in evidence),
                     temporary_or_durable="durable",
                 ),
             )
@@ -303,6 +310,38 @@ def test_skill_candidate_accepts_the_evidence_the_extractor_actually_produces():
     assert eligible[0] is LearningCandidateType.SKILL_CANDIDATE
 
 
+@pytest.mark.asyncio
+async def test_example_language_does_not_downgrade_a_repeatable_skill_request(tmp_path):
+    reviewer = ContextReviewer()
+    session, journal, api = _api(tmp_path, reviewer=reviewer)
+    try:
+        accepted = _accepted(
+            api,
+            journal,
+            with_user_turn=True,
+            user_content="以后每次发布都运行版本检查，例如 v1.2.3。",
+        )
+        outcome = api.list_outcomes(accepted.value.task_run_id)[0]
+        review = api.list_learning_reviews(task_outcome_id=outcome.outcome_id).items[0]
+
+        result = await api.run_learning_review(review.review_id)
+
+        assert len(result.candidate_ids) == 1
+        candidate = api.get_learning_candidate(result.candidate_ids[0])
+        assert candidate is not None
+        assert candidate.candidate_type is LearningCandidateType.SKILL_CANDIDATE
+        user = next(
+            item
+            for item in reviewer.contexts[0].evidence
+            if item.source_kind is LearningEvidenceSourceKind.USER_TURN
+        )
+        assert user.authority is LearningEvidenceAuthority.BEHAVIORAL_SIGNAL
+        assert user.explicitness is LearningEvidenceExplicitness.BEHAVIORAL
+        assert user.polarity is LearningEvidencePolarity.NEUTRAL
+    finally:
+        session.close()
+
+
 def test_accept_atomically_requests_one_review_and_replays_without_duplicates(tmp_path):
     session, journal, api = _api(tmp_path)
     try:
@@ -524,7 +563,7 @@ async def test_runner_builds_bounded_context_and_persists_one_candidate(tmp_path
         assert len(result.candidate_ids) == 1
         candidate = api.get_learning_candidate(result.candidate_ids[0])
         assert candidate is not None
-        assert candidate.candidate_type is LearningCandidateType.PREFERENCE
+        assert candidate.candidate_type is LearningCandidateType.SKILL_CANDIDATE
         assert len(reviewer.contexts) == 1
         user_evidence = [
             item for item in reviewer.contexts[0].evidence if item.source_kind.value == "user_turn"
@@ -591,7 +630,7 @@ async def test_re_review_deduplicates_and_attaches_new_evidence(tmp_path):
         assert second_result.duplicate_count == 1
         candidate = api.get_learning_candidate(candidate_id)
         assert candidate is not None
-        assert len(candidate.evidence_ids) == 2
+        assert len(candidate.evidence_ids) == 4
     finally:
         session.close()
 
@@ -608,10 +647,10 @@ async def test_active_suppression_prevents_candidate_creation(tmp_path):
             LearningSuppression(
                 suppression_id="lsp_1",
                 workspace_id="ws_1",
-                candidate_type=LearningCandidateType.PREFERENCE,
+                candidate_type=LearningCandidateType.SKILL_CANDIDATE,
                 scope=LearningScope.WORKSPACE,
-                semantic_key="preference.language",
-                reason="user declined this preference",
+                semantic_key="skill.release.workflow",
+                reason="user declined this workflow",
                 status=LearningSuppressionStatus.ACTIVE,
                 created_at=NOW,
                 updated_at=NOW,

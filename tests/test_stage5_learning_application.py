@@ -31,21 +31,21 @@ async def test_learning_application_exposes_bounded_status_views_and_pure_previe
         assert status.pending_reviews == 0
         assert status.proposed_candidates == 1
         page = api.list_learning_candidate_views(
-            candidate_type=LearningCandidateType.PREFERENCE,
+            candidate_type=LearningCandidateType.SKILL_CANDIDATE,
             limit=1,
         )
         assert len(page.items) == 1
         candidate = api.get_learning_candidate_view(page.items[0].candidate_id)
         assert candidate is not None
-        assert len(candidate.evidence) == 1
+        assert len(candidate.evidence) == 2
         assert candidate.target.available is False
 
         preview = api.preview_learning_candidate_decision(page.items[0].candidate_id)
         assert preview.expected_row_version == page.items[0].row_version
-        assert preview.available is False
-        assert preview.reason == "configuration_promotion_deferred"
+        assert preview.available is True
+        assert preview.reason == "candidate_only_acceptance"
         assert journal.get_learning_candidate("ws_1", page.items[0].candidate_id) is not None
-        assert journal.get_project_knowledge_head_by_key("ws_1", "preference.language") is None
+        assert journal.get_project_knowledge_head_by_key("ws_1", "skill.release.workflow") is None
     finally:
         session.close()
 
