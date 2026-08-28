@@ -1,6 +1,6 @@
 # Pi-first Learning Loop Simplification
 
-> Status: implementation verified; awaiting checkpoint commit
+> Status: completed at `477caa8`; S7P-09 evaluation remains paused
 > Paused subplan: Subplan 90 — S7P-09 Repeated Direct Evaluation and Same-Condition Pi Baseline
 > Branch: `feat/s7p-09-direct-pi-baseline`
 > Execution worktree branch: `feat/s7p-09-direct-pi-baseline-run` (intentional clean-pin stack)

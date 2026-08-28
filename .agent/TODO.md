@@ -13,7 +13,7 @@ Pi-first best-effort Learning Review simplification on `feat/s7p-09-direct-pi-ba
   separate Learning timeout/lease configuration.
 - `[x]` Repair Preference Review jobs JSON datetime serialization.
 - `[x]` Run focused, full offline and static validation.
-- `[>]` Commit the verified repair checkpoint.
+- `[x]` Commit the verified repair checkpoint as `477caa8`.
 
 ## Earlier completed tasks
 

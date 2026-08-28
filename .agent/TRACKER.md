@@ -10,7 +10,7 @@ the existing queue successfully.
 
 ## Active task
 
-Commit the verified learning-loop repair. Do not merge or resume S7P-09 evaluation without explicit
+Stop after checkpoint `477caa8`. Do not merge or resume S7P-09 evaluation without explicit
 authorization; unrelated untracked `docs/notes/` remains untouched.
 
 ## Implemented boundary
@@ -36,8 +36,8 @@ authorization; unrelated untracked `docs/notes/` remains untouched.
 
 ## Next action
 
-Commit the verified repair, then await user direction. A future evaluation must refreeze its
-permission/evidence contract from the new core behavior rather than reuse an older S7P-09 pin.
+Await user direction. A future evaluation must refreeze its permission/evidence contract from the
+new core behavior rather than reuse an older S7P-09 pin.
 
 ## Blockers
 

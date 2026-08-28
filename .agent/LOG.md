@@ -3655,4 +3655,5 @@
 - Confirmed the managed Skill projection fix at `3670860` with a real public install, enable,
   explicit selection and model run. The run returned `skill ok`; its Binding was removed afterward.
 - Focused affected tests passed `108`; the full offline gate passed `1344 passed, 2 deselected in
-  87.42s`. Ruff format/check, compileall, CLI help and `git diff --check` passed.
+  87.42s`. Ruff format/check, compileall, CLI help and `git diff --check` passed. The verified
+  implementation checkpoint is `477caa8`.
