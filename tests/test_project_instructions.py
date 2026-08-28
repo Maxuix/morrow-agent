@@ -108,6 +108,16 @@ def test_target_extractor_ignores_url_paths(tmp_path: Path) -> None:
     assert [item.reference.path for item in resolved.sources] == ["AGENTS.md"]
 
 
+def test_target_extractor_ignores_bare_slash_commands(tmp_path: Path) -> None:
+    (tmp_path / "AGENTS.md").write_text("root", encoding="utf-8")
+
+    resolved = ProjectInstructionResolver(tmp_path).resolve(
+        "Run `/recovery ack`, then use /recovery resume and inspect `src/recovery.py`."
+    )
+
+    assert [item.reference.path for item in resolved.sources] == ["AGENTS.md"]
+
+
 def test_target_iterable_and_path_length_are_bounded(tmp_path: Path) -> None:
     resolver = ProjectInstructionResolver(tmp_path, max_targets=2)
 

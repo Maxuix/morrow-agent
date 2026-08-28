@@ -1,6 +1,6 @@
 # Stage 7 Preflight Reliability — S7P-09 Repeated Direct/Pi Baseline
 
-> Status: active; adapter repair and 50M token ceiling approved, refreezing clean live campaign
+> Status: active; evaluation environment repaired offline, awaiting an 80M token ceiling
 > Active subplan: Subplan 90 — S7P-09 Repeated Direct Evaluation and Same-Condition Pi Baseline
 > Branch: `feat/s7p-09-direct-pi-baseline`
 > Execution worktree branch: `feat/s7p-09-direct-pi-baseline-run` (intentional clean-pin stack)
@@ -54,8 +54,13 @@ complete campaign. The user previously raised the hard total ceiling to
 50,000,000 tokens and authorized a recoverable stash of unrelated untracked notes for the clean
 campaign pin. Because an external process continued creating new notes after the stash, campaign
 execution uses one dedicated clean worktree branch instead of repeatedly moving that external work.
-The 50M total is now insufficient for another complete immutable campaign. No new admission is
-allowed without a larger total token ceiling; 80M is the current recommendation.
+The MORROW-003 zero-request blocker was an evaluator-environment defect: `/recovery` in the task
+text was misread as an absolute path outside the workspace. Bare slash commands are now excluded
+from inferred project-instruction targets, and the exact failed workspace/state reproducer admits
+and completes with a scripted Provider. Capacity admission now uses the greater of reservation and
+known usage, falling back from finalized evidence to the Morrow request journal or deduplicated Pi
+assistant usage. The 50M total remains insufficient for another complete immutable campaign. No
+new admission is allowed without a larger total token ceiling; 80M is the current recommendation.
 
 ## 4. Execution order
 

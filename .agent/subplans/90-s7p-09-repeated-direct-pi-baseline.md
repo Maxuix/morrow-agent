@@ -384,7 +384,8 @@ auditability.
 ### Phase C — Formal primary campaign
 
 12. Execute schedule entries sequentially. Before each admission, revalidate remaining campaign
-    budget, source/profile hashes, credential readiness and target workspace freshness.
+    budget from finalized usage or durable Morrow/Pi request fallback, source/profile hashes,
+    credential readiness and target workspace freshness.
 13. After each formal run, immediately normalize, finalize, hash and validate its bundle. Do not
     inspect Gold or tune later prompts based on the result.
 14. On safe pre-admission environmental failure, pause. On post-admission failure, finalize the run

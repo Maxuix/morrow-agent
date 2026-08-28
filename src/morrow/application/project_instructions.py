@@ -662,6 +662,12 @@ def _extract_target_paths(task_text: str) -> tuple[str, ...]:
 def _looks_like_target(value: str) -> bool:
     if not value or any(char.isspace() for char in value):
         return False
+    if value.startswith("/") and "/" not in value[1:] and not _looks_like_file(value[1:]):
+        # A single bare slash word is ordinarily a chat/CLI command (for
+        # example ``/recovery``), not an inferable absolute workspace target.
+        # Explicit ``target_paths`` still accepts absolute paths and applies
+        # the normal outside-workspace guard.
+        return False
     return (
         value.startswith("/")
         or value.startswith("./")

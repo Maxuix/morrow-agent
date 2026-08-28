@@ -3624,3 +3624,21 @@
   unavailable usage. Current observed means project about 45.4M tokens for a fresh 28-run campaign.
   The approved 50M total is insufficient; an 80M total ceiling is recommended. No further run was
   admitted.
+
+## 2026-08-28 — Evaluation environment blocker repaired offline
+
+- Reproduced the recurring zero-request MORROW-003 failure from a copy of the exact r6 workspace
+  and operational state with a scripted Provider. The task's `/recovery` command token was inferred
+  as an absolute path, so project-instruction preparation stopped with `outside_workspace` before
+  AgentRun admission.
+- Bare single-segment slash commands are no longer inferred as file targets; explicit absolute
+  `target_paths` retain the existing outside-workspace guard. The exact reproducer now completes
+  with `stop`, one scripted Provider call, one durable AgentRun and terminal metrics.
+- The evaluator now recovers a settled AgentRun by terminal Turn when the foreground persistence
+  projection has already cleared its current ID. Campaign capacity prefers finalized runtime
+  usage, otherwise sums durable Morrow request usage or deduplicated Pi assistant usage, and every
+  later admission uses `max(reservation, known usage)` for prior runs.
+- Safe replay of r6 recovered ordinal 7's 1,147,268 known request tokens and two unavailable-usage
+  requests. Focused regression passed 136 tests; full offline passed `1342 passed, 2 deselected in
+  90.99s`. Ruff format/check, compileall, CLI help and `git diff --check` passed. No credential or
+  model request was used for this repair.

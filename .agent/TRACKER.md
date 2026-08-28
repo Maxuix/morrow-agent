@@ -2,18 +2,17 @@
 
 ## Current status
 
-Subplan 90 remains active. The Pi 0.84.2 runtime-event adapter repair is verified and committed at
-`86e97bc`. Campaigns r2–r4 are retained outside Git as blocked/aborted evidence and will not be
-continued or reused. The user approved a 50,000,000-token total ceiling and a recoverable stash of
-the unrelated notes; the next campaign must use a new clean source pin.
+Subplan 90 remains active. The Morrow/Pi runtime adapters and evaluation-environment repair are
+verified offline. Campaigns r2–r6 are retained outside Git as blocked/aborted evidence and will not
+be continued or reused. The user approved a 50,000,000-token total ceiling and a recoverable stash
+of the unrelated notes; the next campaign must use a new clean source pin.
 
 ## Active task
 
-Await approval to raise the total ceiling to 80M. r6 verified the validated-usage repair on a real
-Morrow invalid-response path, then exposed that the operator driver omitted request-level known
-tokens whenever finalized runtime usage was unavailable. r6 was aborted after ordinal 8. The next
-driver must count bundle usage first, then durable Morrow request usage or Pi assistant usage as a
-capacity lower bound. The original checkout remains isolated for the external notes writer.
+The evaluation environment repair is complete. MORROW-003 now admits and completes in the exact
+failed workspace/state copy with a scripted Provider, and campaign admission automatically counts
+finalized usage or durable Morrow/Pi fallback usage. Await approval to raise the total ceiling to
+80M before refreezing. The original checkout remains isolated for the external notes writer.
 
 ## Preparation evidence
 
@@ -60,8 +59,8 @@ capacity lower bound. The original checkout remains isolated for the external no
 
 ## Next action
 
-Do not admit another run. Obtain an 80M total ceiling, update the driver fallback accounting,
-refreeze a clean plan, and execute a new immutable schedule from ordinal 1.
+Do not admit another run. Obtain an 80M total ceiling, refreeze a clean plan using the integrated
+capacity guard, and execute a new immutable schedule from ordinal 1.
 
 ## Blockers
 

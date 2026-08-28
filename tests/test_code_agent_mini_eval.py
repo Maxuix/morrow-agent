@@ -6,6 +6,7 @@ import asyncio
 import importlib.util
 import json
 import shutil
+import sqlite3
 import subprocess
 import sys
 from pathlib import Path
@@ -1373,6 +1374,114 @@ def test_campaign_admission_is_create_only_ordered_confined_and_budgeted(tmp_pat
         reserve_tokens=10_000,
         reserve_cost=1_000_000.0,
     )
+
+
+def test_campaign_capacity_prefers_runtime_usage_and_enforces_observed_overage(
+    tmp_path: Path,
+) -> None:
+    plan = _comparison_plan()
+    plan["ceilings"]["total_tokens"] = 100
+    evidence_root = tmp_path / "capacity-evidence"
+    plan["evidence_root"]["path_sha256"] = eval_module.bytes_hash(
+        str(evidence_root.resolve()).encode("utf-8")
+    )
+    plan["integrity"] = eval_module.content_hash(
+        {key: value for key, value in plan.items() if key != "integrity"}
+    )
+    first = eval_module.admit_campaign_run(
+        plan,
+        evidence_root,
+        ordinal=1,
+        reserve_tokens=10,
+        reserve_cost=1.0,
+    )
+    usage = _runtime_evidence()
+    usage["usage"]["input_tokens"] = 90
+    usage["usage"]["output_tokens"] = 5
+    usage["usage"]["total_tokens"] = 95
+    (first / "runtime-evidence.json").write_text(json.dumps(usage), encoding="utf-8")
+
+    capacity = eval_module.campaign_capacity_usage(plan, evidence_root)
+
+    assert capacity["known_tokens"] == 95
+    assert capacity["accounted_tokens"] == 95
+    assert capacity["runs"][0]["source"] == "runtime_evidence"
+    with pytest.raises(eval_module.EvalError, match="token ceiling"):
+        eval_module.admit_campaign_run(
+            plan,
+            evidence_root,
+            ordinal=2,
+            reserve_tokens=10,
+            reserve_cost=1.0,
+        )
+
+
+def test_campaign_capacity_falls_back_to_durable_morrow_request_usage(tmp_path: Path) -> None:
+    plan = _comparison_plan()
+    evidence_root = tmp_path / "morrow-capacity-evidence"
+    plan["evidence_root"]["path_sha256"] = eval_module.bytes_hash(
+        str(evidence_root.resolve()).encode("utf-8")
+    )
+    plan["integrity"] = eval_module.content_hash(
+        {key: value for key, value in plan.items() if key != "integrity"}
+    )
+    first = eval_module.admit_campaign_run(
+        plan,
+        evidence_root,
+        ordinal=1,
+        reserve_tokens=10,
+        reserve_cost=1.0,
+    )
+    store = first / "morrow-state" / "store"
+    store.mkdir(parents=True)
+    connection = sqlite3.connect(store / "operational.sqlite")
+    connection.execute(
+        """
+        CREATE TABLE agent_run_model_requests (
+            agent_run_id TEXT NOT NULL,
+            attempt_ordinal INTEGER NOT NULL,
+            usage_availability TEXT NOT NULL,
+            input_tokens INTEGER,
+            output_tokens INTEGER,
+            total_tokens INTEGER
+        )
+        """
+    )
+    connection.executemany(
+        "INSERT INTO agent_run_model_requests VALUES (?, ?, ?, ?, ?, ?)",
+        [
+            ("run", 1, "available", 40, 30, 70),
+            ("run", 2, "unavailable", None, None, None),
+        ],
+    )
+    connection.commit()
+    connection.close()
+
+    capacity = eval_module.campaign_capacity_usage(plan, evidence_root)
+
+    assert capacity["known_tokens"] == 70
+    assert capacity["accounted_tokens"] == 70
+    assert capacity["unknown_requests"] == 1
+    assert capacity["runs"][0]["source"] == "morrow_request_journal"
+
+
+def test_pi_capacity_fallback_deduplicates_repeated_assistant_usage(tmp_path: Path) -> None:
+    run_dir = tmp_path / "pi-run"
+    raw = run_dir / "pi-raw"
+    raw.mkdir(parents=True)
+    event = _pi_usage()
+    (raw / "agent-stdout.raw").write_text(
+        json.dumps(event) + "\n" + json.dumps(event) + "\n",
+        encoding="utf-8",
+    )
+
+    usage = eval_module._pi_raw_usage(run_dir)
+
+    assert usage == {
+        "known_tokens": 15,
+        "source": "pi_raw_assistant_usage",
+        "unknown_requests": 0,
+    }
 
 
 def test_bounded_process_retains_only_hash_metadata_and_refuses_overwrite(tmp_path: Path) -> None:
