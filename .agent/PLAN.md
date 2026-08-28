@@ -1,8 +1,8 @@
 # Stage 7 Preflight Reliability — S7P-09 Repeated Direct/Pi Baseline
 
-> Status: active; legacy tool-adapter cleanup requested before evaluation resumes
-> Active subplan: Subplan 92 — Remove Legacy Model-Facing Tool Adapters
-> Execution branch: `refactor/remove-legacy-tool-adapters`
+> Status: active but blocked; legacy tool cleanup verified, 50M capacity insufficient
+> Active subplan: Subplan 90 — S7P-09 Repeated Direct Evaluation and Same-Condition Pi Baseline
+> Execution branch: `feat/s7p-09-direct-pi-baseline-run`
 > Stack base: verified local `main@1fd7e229bef276d1a0361e775ce800ade4b318fc`
 > Source authority: current user request, S7P-00 protocol v1, completed S7P-08/S7P-91, code/tools
 
@@ -32,9 +32,9 @@ policy remain owned by Subplan 90. Subplan 91 changed the product profile, not S
 ## 3. Live hold point
 
 The user explicitly requested cleanup of the legacy model-facing tool layer after Subplan 91.
-Subplan 92 temporarily owns execution. It removes obsolete Provider schemas, argument models and
-factories while retaining underlying services and narrowly separated historical recovery metadata.
-No live campaign admission occurs during this cleanup.
+Subplan 92 removed obsolete Provider schemas, argument models and factories while retaining
+underlying services and narrowly separated historical recovery metadata. The verified cleanup is
+integrated and control has returned to Subplan 90.
 
 After Subplan 92 is verified and integrated, the following Subplan 90 capacity hold still applies:
 
@@ -52,14 +52,11 @@ campaign or silently changing the protocol.
 
 ## 4. Execution order
 
-1. Remove obsolete tool schemas/models/factories and make tests/docs use the current tool layer.
-2. Preserve old tool names only in an explicitly legacy recovery-compatibility table.
-3. Verify and integrate Subplan 92 into the S7P-09 execution branch.
-4. Obtain a total token ceiling that covers the retained usage, fresh 42M reservation and unknown
+1. Obtain a total token ceiling that covers the retained usage, fresh 42M reservation and unknown
    request allowance; 80M remains the recommended safe ceiling.
-5. Rebuild the comparison plan using a clean source pin and the new Morrow profile.
-6. Execute and immediately finalize all 28 immutable entries sequentially after capacity passes.
-7. Mechanically aggregate, classify, publish acceptance evidence and run final offline gates.
+2. Rebuild the comparison plan using a clean source pin and the cleaned Morrow profile.
+3. Execute and immediately finalize all 28 immutable entries sequentially after capacity passes.
+4. Mechanically aggregate, classify, publish acceptance evidence and run final offline gates.
 
 ## 5. Completion
 

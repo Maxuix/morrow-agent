@@ -2,13 +2,15 @@
 
 ## Current status
 
-Subplan 92 implementation and validation are complete. The current seven-tool surface is the only
-production callable coding interface; obsolete Provider contracts and factories are removed.
-Historical recovery names remain data compatibility, not production tools.
+Subplan 92 is verified, committed as `6812222` and fast-forward integrated into the S7P-09 branch.
+The seven-tool surface is the only production callable coding interface; obsolete Provider
+contracts/factories are removed and historical names remain recovery metadata only.
 
 ## Active task
 
-Commit and fast-forward the verified cleanup into the parent S7P-09 execution branch.
+S7P-09 is blocked before plan/run admission. Obtain a sufficient total token ceiling, then rebuild
+the comparison plan from the clean branch containing tool commit `6812222` and a new create-only
+evidence root.
 
 ## Evidence
 
@@ -32,7 +34,8 @@ Commit and fast-forward the verified cleanup into the parent S7P-09 execution br
 
 ## Next action
 
-Integrate the verified child commit, then return to the unchanged S7P-09 capacity hold.
+Do not create or admit a partial campaign. The known hard minimum is 58,754,419 total tokens and
+still excludes six unknown-usage requests; 80M remains the recommended safe total ceiling.
 
 ## Blockers
 

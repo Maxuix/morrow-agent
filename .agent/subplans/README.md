@@ -48,7 +48,7 @@ that bounded cleanup; Subplan 90 remains paused at its existing capacity hold.
 | 89 | `89-s7p-08-single-agent-function-matrix.md` | completed and integrated locally |
 | 90 | `90-s7p-09-repeated-direct-pi-baseline.md` | active; new profile/capacity freeze pending |
 | 91 | `91-mainstream-tool-interface.md` | completed and verified on the S7P-09 stack |
-| 92 | `92-remove-legacy-tool-adapters.md` | active; legacy model-facing tool cleanup |
+| 92 | `92-remove-legacy-tool-adapters.md` | completed, verified and integrated on S7P-09 stack |
 
 ## Stage 7 pre-baseline
 

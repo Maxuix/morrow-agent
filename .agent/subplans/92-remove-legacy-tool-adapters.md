@@ -1,6 +1,6 @@
 # Subplan 92 — Remove Legacy Model-Facing Tool Adapters
 
-> Status: completed and verified; pending fast-forward into the parent S7P-09 branch
+> Status: completed, verified and fast-forward integrated into the parent S7P-09 branch
 > Branch: `refactor/remove-legacy-tool-adapters`
 > Stack base: S7P-09 execution branch `351cf8b`
 > Return target: Subplan 90 capacity hold

@@ -3691,3 +3691,6 @@
   deselected in 87.08s`. Ruff format/check, compileall, CLI help and diff checks passed.
 - No live model, network credential or campaign action occurred. The 50M S7P-09 capacity blocker is
   unchanged after this cleanup.
+- Committed the cleanup as `6812222`, fast-forwarded it into
+  `feat/s7p-09-direct-pi-baseline-run`, deleted the clean child branch and returned control to
+  Subplan 90.
