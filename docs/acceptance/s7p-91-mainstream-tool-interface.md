@@ -12,6 +12,11 @@ compatibility, but `list_directory`, `read_file`, `find_files`, `search_text`, `
 `write_file`, `run_command`, `delete_file`, `move_file`, `rename_file`, `show_changes`, `git_status`,
 and `git_diff` are no longer part of the default model-visible inventory.
 
+Canonical compact JSON for the model-visible tool name/schema list fell from 11,951 bytes in r6 to
+5,923 bytes in the new default. The seven core entries use 2,742 bytes, compared with 3,627 bytes
+for the retained Pi profile; Morrow's extra bytes are now owned by its configuration/Skill product
+capabilities rather than core coding protocol complexity.
+
 ## Model-facing contract
 
 | Tool | Required fields | Optional fields |

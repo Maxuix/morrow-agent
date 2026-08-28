@@ -2,21 +2,23 @@
 
 ## Current status
 
-Subplan 91 is verified complete: Morrow's default composition now exposes the Pi-aligned seven core
+Subplan 91 is verified complete and committed as `9c6e2ba`: Morrow's default composition now exposes the Pi-aligned seven core
 tools plus conditionally composed configuration/Skill capabilities. Full offline validation passed
 `1344 passed, 2 deselected`; no live Provider request or credential access occurred. S7P-09 is
 reactivated, but no pre-repair campaign/profile can be reused.
 
 ## Active task
 
-Commit the tool repair, fast-forward it into `feat/s7p-09-direct-pi-baseline-run`, and rebuild the
-comparison plan from that clean commit. Then run capacity admission using the approved 50M total.
+S7P-09 is blocked before plan/run admission. Obtain a sufficient total token ceiling, then rebuild
+the comparison plan from clean commit `9c6e2ba` and a new create-only evidence root.
 
 ## Evidence
 
 - Core model-visible names/fields match Pi: `read`, `bash`, `edit`, `write`, `grep`, `find`, `ls`.
 - Default inventory fell from 15 to 9 because configuration and Skill capabilities remain composed;
   Auto Sandboxed adds one promotion tool.
+- Canonical tool-schema size fell from 11,951 to 5,923 bytes; the Pi-aligned seven-tool core is
+  2,742 bytes versus Pi's 3,627 bytes in the retained frozen profile.
 - `edit`/`write` infer revision/mode; absolute-inside paths normalize; unknown harmless fields are
   ignored. Outside paths, protected resources, stale plans and disallowed bash effects still fail
   execution-side before unsafe publication.
@@ -27,10 +29,11 @@ comparison plan from that clean commit. Then run capacity admission using the ap
 
 ## Next action
 
-Create the clean tool-repair commit, return to the parent S7P-09 execution branch, then use the
-evaluator's create-only planning/capacity path to determine whether another campaign is admissible.
+Do not create or admit a partial campaign. The known hard minimum is 58,754,419 total tokens and
+still excludes six unknown-usage requests; 80M remains the recommended safe total ceiling.
 
 ## Blockers
 
 - The unrelated `docs/notes/` remain preserved in the named stash and isolated from this worktree.
 - Remote publication remains unauthorized.
+- The approved 50M total token ceiling is insufficient for the immutable 28-run campaign.

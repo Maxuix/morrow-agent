@@ -3662,3 +3662,16 @@
   87.69s`; Ruff format/check, compileall, CLI help and `git diff --check` passed.
 - No live model or credential action occurred. Every old S7P-09 profile/campaign remains immutable;
   Subplan 90 must refreeze from the new clean commit and re-run total-token capacity admission.
+
+## 2026-08-28 — Tool repair integrated; 50M capacity remains blocked
+
+- Committed the verified tool repair as `9c6e2ba`, fast-forwarded it into the S7P-09 execution
+  branch and deleted the completed child branch. The execution worktree is clean.
+- Offline profile capture reduced the ordinary inventory from 15 tools / 11,951 canonical schema
+  bytes to 9 tools / 5,923 bytes. The Pi-aligned seven-tool core is 2,742 bytes versus the retained
+  Pi profile's 3,627 bytes. No Provider request or credential access was used.
+- Capacity still fails before a new immutable campaign can be admitted: retained known usage is
+  16,754,419 tokens and the established conservative reservation is 1.5M × 28 = 42M. Their sum is
+  58,754,419 before allowing for six unknown-usage requests, above the approved 50M hard total.
+- No partial campaign/evidence root was created. An 80M total ceiling remains the safe
+  recommendation; cost remains unlimited/optional as previously approved.

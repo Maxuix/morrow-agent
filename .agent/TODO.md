@@ -17,8 +17,10 @@ S7P-09 Repeated Direct Evaluation and Same-Condition Pi Baseline.
   inference and durable usage fallback exposed by retained campaigns r2–r6.
 - `[x]` Complete Subplan 91: replace the legacy core coding-tool schema with the verified
   Pi-aligned seven-tool compatibility surface while retaining execution-side safety/recovery.
-- `[>]` Commit/integrate Subplan 91, then refreeze clean source/profile/schedule/evidence pins and
-  recompute capacity under the approved 50M total ceiling.
+- `[x]` Commit and fast-forward Subplan 91 into the S7P-09 execution branch; audit the new 9-tool
+  default and seven-tool core profile sizes.
+- `[!]` Refreeze clean source/profile/schedule/evidence pins: blocked because the approved 50M total
+  cannot cover 16,754,419 known retained tokens + 42M fresh reservation + six unknown requests.
 - `[ ]` Execute and finalize the exact 20 Morrow primary runs if admission passes.
 - `[ ]` Execute and finalize the exact 8 counterbalanced Pi comparison runs if admission passes.
 - `[ ]` Mechanically aggregate, compare, classify every failure and freeze the Direct baseline.
