@@ -154,6 +154,8 @@ async def test_zero_progress_transient_retries_but_auth_never_retries():
         [
             [ModelEvent(kind="error", error_code=ModelErrorCode.TIMEOUT)],
             [ModelEvent(kind="error", error_code=ModelErrorCode.TIMEOUT)],
+            [ModelEvent(kind="error", error_code=ModelErrorCode.TIMEOUT)],
+            [ModelEvent(kind="error", error_code=ModelErrorCode.TIMEOUT)],
         ]
     )
     transient_events = await _collect(
@@ -161,8 +163,8 @@ async def test_zero_progress_transient_retries_but_auth_never_retries():
             Session(session_id="transient"), "go"
         )
     )
-    assert len(transient.stream_calls) == 2
-    assert [event.type for event in transient_events].count("status.changed") == 1
+    assert len(transient.stream_calls) == 4
+    assert [event.type for event in transient_events].count("status.changed") == 3
     assert transient_events[-2].payload["stop_code"] == "provider_timeout"
 
     auth = _EventProvider([[ModelEvent(kind="error", error_code=ModelErrorCode.AUTH)]])

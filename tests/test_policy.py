@@ -40,7 +40,7 @@ def test_bundled_runtime_policy_has_approved_defaults_and_empty_exact_model_tabl
         "max_tool_calls_per_cycle": 32,
         "max_run_seconds": 1800.0,
         "tool_timeout_seconds": 120.0,
-        "model_retry_limit": 1,
+        "model_retry_limit": 3,
         "requested_context_chars": 800000,
         "unknown_model_fallback_chars": 160000,
         "max_tool_result_chars": 64000,

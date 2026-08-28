@@ -359,7 +359,7 @@ Long-horizon compaction 只改变模型可见的 projection：完整 Conversatio
 summary + recent tail，不能删除或重放已经持久化的对话/工具记录。模型请求的瞬态 retry 由 AgentLoop
 单独拥有：408、409、429、5xx、timeout、连接中断和流提前结束可重试，明确的 quota、balance、billing
 失败不可重试；`internal` 只有在 Provider Adapter 显式标记为瞬态 Provider 来源时才可重试。Long-horizon
-默认使用 Pi 的 3 次、2/4/8 秒退避和 60 秒 provider-delay cap，普通 bundled policy 仍为一次重试；工具
+默认使用 Pi 的 3 次、2/4/8 秒退避和 60 秒 provider-delay cap，普通 bundled policy 同样为三次重试；工具
 timeout、输出/Artifact 保留上限仍是独立的 per-operation 安全边界。
 
 `OperationalDoctor` 使用 diagnose/read-only 连接检查 schema、SQLite integrity/FK、Conversation grammar、

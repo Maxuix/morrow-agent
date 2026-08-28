@@ -153,8 +153,8 @@ stream termination, while explicit quota, balance and billing failures remain te
 `internal` now requires an explicit Provider-origin marker, so ordinary Morrow exceptions and
 unattributed internal events do not retry. Per-run evaluation accepts known tool/runtime evidence
 with token fields left as `unavailable`; it never substitutes zero. Frozen campaign comparison still
-reports mandatory unknown token metrics as incomplete. The ordinary bundled retry default remains
-one pending separate authorization to change it to Pi's three.
+reports mandatory unknown token metrics as incomplete. With the user's separate authorization, the
+ordinary bundled retry default is now aligned with Pi at three retries.
 
 ## Offline validation on 2026-08-29
 

@@ -11,9 +11,9 @@ classification and partial-usage evaluation are now also implemented; focused af
 
 ## Active task
 
-The Provider retry repair is verified. A new reduced-pilot source/profile/evidence pin may be
-prepared offline, but no prior admission or run key may be reused. A new formal execution still
-requires the plan's explicit admission authorization.
+The ordinary bundled retry default is aligned with Pi at three and verified. Commit that source,
+then create and audit a fresh reduced-pilot source/profile/evidence pin before any admission; no
+prior admission or run key may be reused.
 
 ## Implemented boundary
 
@@ -40,9 +40,9 @@ requires the plan's explicit admission authorization.
 
 ## Next action
 
-Commit the verified Provider/evaluator repair. Then preserve both diagnostic evidence roots and
-refreeze a fresh reduced plan from the new source. Any formal execution requires explicit admission
-authorization and must not reuse either root's admissions or run keys.
+Commit the verified three-retry policy, preserve all diagnostic evidence roots, and refreeze a fresh
+reduced plan from the new source. The user has authorized its formal execution; capacity and
+preflight must still pass before the first new admission.
 
 ## Blockers
 

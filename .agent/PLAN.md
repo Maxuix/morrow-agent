@@ -76,8 +76,8 @@ malformed optional context warns/skips instead of blocking task preparation.
 - Provider retry follows Pi's transient boundary for 408, 409, 429, 5xx, timeout, connection
   interruption and premature stream termination, while quota/balance/billing and unattributed
   Morrow internals remain terminal. Partial usage stays explicitly unavailable in evaluation.
-- The ordinary bundled `model_retry_limit` remains one. Changing it to Pi's three requires separate
-  user confirmation and is not part of the current repair.
+- The user separately authorized aligning the ordinary bundled `model_retry_limit` with Pi at
+  three retries. The maximum model-attempt bound remains unchanged.
 - S7P-09 measures the frozen Agent. It does not tune thresholds/tasks after results, restore the
   removed CompletionChecker or begin Workflow/S7P-10 work.
 - Morrow admission generates its minimal isolated configuration directly from the frozen

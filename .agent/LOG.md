@@ -3790,3 +3790,14 @@
   affected tests passed `194` with one explicit Live test skipped. The complete offline gate passed
   `1363 passed, 2 deselected in 87.74s`; `uv sync`, Ruff format/check, compileall, CLI help,
   evaluator self-check and `git diff --check` passed. No Live request or formal admission occurred.
+
+## 2026-08-29 — Ordinary Provider retry default aligned with Pi
+
+- The user separately authorized changing the bundled ordinary `model_retry_limit` from one to
+  three and executing a fresh reduced pilot. The maximum model-attempt bound remains 40.
+- Updated the bundled policy and its exact-default regression. The transient exhaustion regression
+  now proves one initial request plus three retries; auth and other terminal classes remain single
+  attempt.
+- Focused policy/runtime tests passed `84`; the complete offline gate passed
+  `1363 passed, 2 deselected in 87.59s`. Ruff format/check, compileall, CLI help and
+  `git diff --check` passed. No Live request or formal admission occurred during validation.
