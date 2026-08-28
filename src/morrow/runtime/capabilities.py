@@ -89,6 +89,9 @@ class CapabilityPolicy:
             return self._deny(CapabilityReason.FULL_ACCESS_GRANT_REQUIRED)
         if full_access_host:
             return self._approval(CapabilityReason.FULL_ACCESS_HOST_APPROVAL_REQUIRED, intent)
+        for flag, reason in _DENIED_RISKS.items():
+            if flag in intent.risk_flags:
+                return self._deny(reason)
         # Pi-style core: a registered workspace mutation or command is already authorized to run.
         # Semantic command parsing and per-call approvals are deliberately outside this path. Skill
         # scripts remain an extension with their own declared-permission and sandbox policy.
@@ -96,15 +99,6 @@ class CapabilityPolicy:
             intent.kind is OperationKind.PROCESS and intent.command_class != "skill_script"
         ):
             return self._allow()
-        for flag, reason in _DENIED_RISKS.items():
-            if flag in intent.risk_flags:
-                if full_access_host and flag in {
-                    RiskFlag.OUTSIDE_WORKSPACE,
-                    RiskFlag.NETWORK,
-                    RiskFlag.LOOPBACK,
-                }:
-                    continue
-                return self._deny(reason)
         if intent.kind is OperationKind.EXTERNAL_EFFECT:
             return self._deny(CapabilityReason.EXTERNAL_EFFECT_NOT_ENABLED)
         if intent.kind is OperationKind.DESTRUCTIVE:

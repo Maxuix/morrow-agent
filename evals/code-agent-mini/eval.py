@@ -3817,10 +3817,10 @@ def permission_equivalence_matrix(workspace: Path) -> dict[str, object]:
             (RiskFlag.OUTSIDE_WORKSPACE,),
             "deny",
         ),
-        ("task_network", OperationKind.PROCESS, (RiskFlag.NETWORK,), "allow"),
+        ("task_network", OperationKind.PROCESS, (RiskFlag.NETWORK,), "deny"),
         ("credential_access", OperationKind.WORKSPACE_READ, (RiskFlag.CREDENTIAL_ACCESS,), "deny"),
-        ("git_mutation", OperationKind.PROCESS, (RiskFlag.GIT_WRITE,), "allow"),
-        ("privilege_escalation", OperationKind.PROCESS, (RiskFlag.PRIVILEGE_ESCALATION,), "allow"),
+        ("git_mutation", OperationKind.PROCESS, (RiskFlag.GIT_WRITE,), "deny"),
+        ("privilege_escalation", OperationKind.PROCESS, (RiskFlag.PRIVILEGE_ESCALATION,), "deny"),
     )
     policy = CapabilityPolicy(
         PermissionProfile.from_preset(PermissionPreset.AUTO_SAFE),

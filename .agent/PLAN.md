@@ -1,17 +1,17 @@
-# Stage 7 Consolidated Main — S7P-09 Paused
+# Stage 7 — S7P-09 Repeated Direct/Pi Baseline Resumed
 
-> Status: completed on local `main`; S7P-09 evaluation remains paused
-> Paused subplan: Subplan 90 — S7P-09 Repeated Direct Evaluation and Same-Condition Pi Baseline
-> Integration commit: `a7e22e5`
+> Status: active; continuing Subplan 90 from local `main`
+> Active subplan: Subplan 90 — S7P-09 Repeated Direct Evaluation and Same-Condition Pi Baseline
+> Consolidation base: `a7e22e5`; current source includes the later Learning checkpoints
 > Activation base: verified local `main@1fd7e229bef276d1a0361e775ce800ade4b318fc`
 > Source authority: current user request, S7P-00 protocol v1, completed S7P-08, current code/tools
 
 ## 1. Current objective
 
-Consolidate all verified local Stage 7 work on `main`, retaining the completed Pi-aligned seven-tool
-interface, core-boundary simplification and best-effort Learning Review repair. Resolve cross-branch
-integration defects, run the complete offline/static gate, then retire the merged topic branches and
-their clean execution worktree. S7P-09 live admission remains paused.
+Resume Subplan 90 from the consolidated local `main`. First restore the explicit denial boundary
+required by the frozen Morrow/Pi permission-equivalence contract, then run the complete offline/static
+gate and create a new clean source/profile/evidence pin. Formal admission remains gated by the
+preflight and the currently approved total-token ceiling.
 
 ## 1a. Completed product objective
 
@@ -21,7 +21,8 @@ uses the main Agent model, task timeout and context budget rather than separate 
 limits. Repair the Preference Review jobs JSON surface. Confirm the managed Skill projection fix
 already present at `3670860` through a real public run.
 
-The earlier Pi-first core simplification remains completed and S7P-09 remains paused.
+The earlier Pi-first core simplification remains completed. This continuation does not restore
+keyword-based command classification or per-call heuristic approval.
 
 ## 1b. Earlier objective
 
@@ -35,14 +36,17 @@ malformed optional context warns/skips instead of blocking task preparation.
 
 ## 2. Frozen decisions
 
-- The current user request pauses S7P-09 campaign admission and overrides its former permission-
-  equivalence assumptions. No live evaluation run is authorized by this repair.
+- The current user request explicitly resumes Subplan 90. The 28-run primary campaign remains
+  create-only and cannot start until the new source/profile/evidence plan passes its hold point and
+  capacity check.
 - Core command parsing and sensitive-keyword scanning are not security boundaries. `git`, shell
   redirection/pipelines, `mv`, `cp`, `tee`, `.env`, `secret`, credential examples and PEM fixtures
   remain ordinary model-visible workspace content.
 - Exact active credential values are still redacted from command output. Workspace escape,
   external symlinks, read-only sessions, stale revisions, non-atomic publication, Full Access and
-  Skill/MCP authority remain real boundaries.
+  Skill/MCP authority remain real boundaries. Explicit `network`, `git_write` and
+  `privilege_escalation` risk flags remain denied; ordinary command content is not parsed to infer
+  those flags.
 - Project instruction discovery is root-only with precedence `AGENTS.override.md`, `AGENTS.md`,
   `CLAUDE.md`; bad or oversized files warn and skip, and task paths never trigger nested discovery.
 
@@ -69,12 +73,12 @@ malformed optional context warns/skips instead of blocking task preparation.
 - S7P-09 measures the frozen Agent. It does not tune thresholds/tasks after results, restore the
   removed CompletionChecker or begin Workflow/S7P-10 work.
 
-## 3. Paused evaluation context
+## 3. Evaluation context and current hold point
 
-The user approved `opencode-go/mimo-v2.5` for both Agents, raised the hard total ceiling from
-5,000,000 to 15,000,000 tokens, and kept no currency ceiling. Pi 0.84.2's installed catalog contains the exact model at the same
-service endpoint, with a 1,000,000-token context window and 128,000-token maximum output. Before a
-formal paid run, the harness must still freeze and verify:
+The user approved `opencode-go/mimo-v2.5` for both Agents and a hard total ceiling of
+50,000,000 tokens with no currency ceiling. Pi 0.84.2's installed catalog contains the exact model
+at the same service endpoint, with a 1,000,000-token context window and 128,000-token maximum
+output. Before a formal paid run, the harness must still freeze and verify:
 
 1. Morrow Agent streaming readiness after two identical bounded `internal` failures;
 2. a cost-accounting contract compatible with Morrow's unavailable Provider cost;
@@ -83,26 +87,28 @@ formal paid run, the harness must still freeze and verify:
 
 Credential checks must report only readiness and must never request or print credential values.
 Pi credential readiness and its exact-model no-tool probe pass without exposing or copying the
-credential. Formal attempts have now accounted for 3,567,421 tokens plus one interrupted request
-with unavailable usage. Sampled Morrow/Pi usage projects about 17.9M tokens for one fresh complete
-campaign, so the approved 15M total is insufficient. No new admission is allowed without a larger
-token ceiling and a clean source pin. The user subsequently raised the hard total ceiling to
-50,000,000 tokens and authorized a recoverable stash of unrelated untracked notes for the clean
-campaign pin. Because an external process continued creating new notes after the stash, campaign
-execution uses one dedicated clean worktree branch instead of repeatedly moving that external work.
+credential. Retained formal attempts include known usage and incomplete requests, and the
+conservative reservation for a fresh complete campaign currently exceeds the remaining capacity
+under 50,000,000 tokens before all unknown-usage requests are resolved. No old campaign may be
+resumed or reused. A new plan can be refrozen and audited offline, but formal admission must stop
+until the capacity check passes or the user approves a larger ceiling. The unrelated `docs/notes/`
+work remains preserved in its named recoverable stash.
 
 ## 4. Execution order
 
-1. Merge the completed core/Learning branch into local `main` and resolve its policy integration.
-2. Merge the completed seven-tool cleanup branch without restoring legacy model adapters.
-3. Reconcile current architecture, tests and execution state around the combined behavior.
-4. Run focused and complete offline/static/CLI gates and commit verified integration repairs.
-5. Remove merged topic branches and the clean execution worktree; preserve unfinished notes in a
-   recoverable stash.
-6. Do not resume S7P-09 admissions until the user explicitly requests a new evaluation plan.
+1. Repair and regression-test the explicit Morrow risk-denial ordering while preserving direct
+   registered command execution.
+2. Run focused and complete offline/static/CLI gates and commit the verified repair.
+3. Refreeze the comparison plan from the current clean source, current profile hashes and protected
+   evidence root; do not reuse any prior admission or schedule.
+4. Run offline preflight, permission equivalence and conservative campaign-capacity checks.
+5. If capacity and all hold-point facts pass, present the exact formal admission boundary before
+   scheduling; otherwise retain the new plan as blocked evidence and stop.
 
 ## 5. Completion
 
-Completion requires both topic histories to be ancestors of `main`, the seven-tool interface and
-simplified core boundary to coexist, targeted regressions and the complete non-live suite to pass,
-Ruff/compileall/CLI/diff checks to pass, and the merged branches/worktree to be retired safely.
+Completion of this continuation requires the explicit deny boundary and seven-tool interface to
+coexist with the simplified core boundary, all targeted and complete non-live/static gates to pass,
+and a clean immutable plan to be either admitted within capacity or recorded as blocked with its
+precise reason. Full S7P-09 completion still requires the 28 valid primary runs and its comparison
+gate as defined by Subplan 90.

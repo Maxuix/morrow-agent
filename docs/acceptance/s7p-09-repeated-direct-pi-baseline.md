@@ -1,7 +1,8 @@
 # S7P-09 Repeated Direct/Pi Baseline — Offline Harness Evidence
 
-> Status: Phase A offline harness/runners and Morrow Provider repair verified; model and Token
-> budget approved; formal campaign pending final immutable pins. This is not an S7P-09 PASS claim.
+> Status: Phase A offline harness/runners, Morrow Provider repair and explicit permission-denial
+> repair verified; model and Token budget approved; formal campaign pending final immutable pins.
+> This is not an S7P-09 PASS claim.
 
 ## Scope and boundary
 
@@ -44,6 +45,12 @@ campaign is retained outside Git with a create-only `ABORTED` record and is neve
 mapping now covers the complete production Morrow inventory plus move/rename endpoint paths; a new
 campaign ID is required after verification.
 
+After the later Pi-first core simplification, the conformance matrix also exposed a policy-ordering
+regression: explicit `network`, `git_write` and `privilege_escalation` risk flags were evaluated
+after the direct registered-command fast path. The policy now denies those explicit flags before
+the fast path, while ordinary command content remains unparsed and registered commands remain
+directly executable. The evaluator matrix and regression assertion now require all three denials.
+
 ## Safety evidence
 
 - Unknown comparison-plan fields, unresolved pins, `unavailable` hashes, placeholders, profile or
@@ -63,20 +70,21 @@ campaign ID is required after verification.
   change or public event change occurred. Pi uses the same Keychain credential by reference, not by
   copied value. Its exact-model no-tool probe passed; the repaired Morrow Agent probe also passed.
 
-## Offline validation on 2026-08-27
+## Offline validation on 2026-08-28
 
 | Command | Result |
 |---|---|
 | `uv sync` | passed; 65 packages resolved, 59 checked |
-| `uv run pytest -q tests/test_code_agent_mini_eval.py tests/test_provider.py tests/test_tool_contract_audit.py` | passed; 116 tests, 1 live skipped |
+| `uv run pytest -q tests/test_code_agent_mini_eval.py tests/test_process.py tests/test_capability_executor.py` | passed; 72 tests |
 | `uv run python evals/code-agent-mini/eval.py self-check` | passed; all 10 baselines failed and all 10 Gold states passed |
 | `uv run pytest -q tests/acceptance/test_s7p08_single_agent_matrix.py` | passed; 3 tests |
-| `uv run pytest -m 'not live'` | passed; 1323 tests, 2 live deselected, 83.29 s |
-| `uv run ruff format --check .` | passed; 492 files already formatted |
+| `uv run pytest -m 'not live'` | passed; 1337 tests, 2 live deselected, 114.53 s |
+| `uv run ruff format --check .` | passed; 494 files already formatted |
 | `uv run ruff check .` | passed |
 | `uv run python -m compileall -q src tests evals/code-agent-mini` | passed |
 | `uv run morrow --help` / `uv run morrow run --help` | passed |
 | `uv run python evals/code-agent-mini/eval.py --help` | passed |
+| `uv run python evals/code-agent-mini/eval.py permission-check /tmp` | passed; all eight conformance cases matched |
 | Pi offline extension load | passed; policy parsed by Pi 0.84.2 without a model request |
 | Morrow non-stream Provider readiness | passed |
 | Repaired Morrow Agent no-tool probe | passed; `stop`, 7,139 tokens, zero tool calls |
@@ -95,9 +103,9 @@ exact entry at `https://opencode.ai/zen/go/v1`, with a 1,000,000-token context w
 copied. Pi auth readiness is `ready/api_key`, and its bounded no-tool probe returned the exact
 provider/model with a normal stop, 404 total tokens and complete Provider cost.
 
-The approved budget is a hard 5,000,000-token ceiling with no currency ceiling. Provider/runtime
+The approved budget is a hard 50,000,000-token ceiling with no currency ceiling. Provider/runtime
 cost is recorded when available and otherwise remains explicitly unavailable; it is not a campaign
-gate and is never inferred as zero. Morrow's repaired bounded Agent probe completed `stop` with
-7,139 Provider tokens and zero tool calls. Formal work remains held only for exact served
-revision/sampling evidence and final immutable pins. No formal admission may start before those
-facts are frozen.
+gate and is never inferred as zero. Retained formal attempts and conservative reservations currently
+exceed the remaining capacity for a fresh complete campaign, so formal admission remains blocked.
+The new source/profile/evidence pin must still be created before any future admission; no prior plan
+or run key may be reused.

@@ -1,6 +1,6 @@
 # Subplan 90 — S7P-09 Repeated Direct Evaluation and Same-Condition Pi Baseline
 
-> Status: active but blocked before refreeze; Subplan 91 tool repair verified, 50M total insufficient
+> Status: active; explicit risk-denial repair verified, refreeze blocked by current 50M capacity
 > Branch: `feat/s7p-09-direct-pi-baseline`
 > Activation base: verified local `main@1fd7e229bef276d1a0361e775ce800ade4b318fc`
 > Dependency: Subplan 89 / S7P-08 passed and is integrated locally

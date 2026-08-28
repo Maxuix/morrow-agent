@@ -1279,6 +1279,15 @@ def test_permission_equivalence_and_evaluation_approval_contract(tmp_path: Path)
         "git_mutation",
         "privilege_escalation",
     }
+    assert {
+        row["case_id"]: row["morrow"]
+        for row in matrix["rows"]
+        if row["case_id"] in {"task_network", "git_mutation", "privilege_escalation"}
+    } == {
+        "task_network": "deny",
+        "git_mutation": "deny",
+        "privilege_escalation": "deny",
+    }
 
     port = eval_module.EvaluationApprovalPort()
     approved = asyncio.run(

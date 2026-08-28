@@ -2,15 +2,16 @@
 
 ## Current status
 
-The user-requested workspace consolidation is complete on local `main` at integration commit
-`a7e22e5`. Focused integration tests passed `140`, the final full offline gate passed `1333 passed,
-2 deselected`, and Ruff format/check, compileall, CLI help and `git diff --check` passed. The complete
-`docs/notes/` draft is preserved in the named stash `checkpoint: preserve complete docs notes before
-branch consolidation`.
+Subplan 90 was explicitly resumed from the consolidated local `main`. The harness self-check,
+focused evaluator suite (`56 passed`), permission matrix and historical capacity audit passed. A
+policy-ordering regression was found: explicit network/Git-write/privilege-escalation risk flags
+were checked after the direct-command fast path and therefore returned `allow`.
 
 ## Active task
 
-No active implementation task. Await user direction; do not resume the S7P-09 live campaign.
+The explicit risk-denial ordering repair is implemented and its focused regression suite passed.
+Run the complete offline/static/CLI gate, record the evidence, and commit before refreezing any
+S7P-09 comparison plan.
 
 ## Implemented boundary
 
@@ -23,6 +24,8 @@ No active implementation task. Await user direction; do not resume the S7P-09 li
   removed afterward.
 
 - Core `bash` accepts shell commands without semantic Git/network/destructive classification.
+- Explicit `network`, `git_write` and `privilege_escalation` risk flags are denied before the
+  direct registered-command fast path; ordinary command content still is not parsed.
 - Registered workspace writes, including delete/move/rename and sandbox promotion, do not wait for
   heuristic approval.
 - File, search, Git diff/status and sandbox snapshots do not hide workspace content based on names
@@ -35,10 +38,12 @@ No active implementation task. Await user direction; do not resume the S7P-09 li
 
 ## Next action
 
-Await user direction. Any future S7P-09 work must refreeze its source/profile/evidence contract.
+Run the full offline/static/CLI/diff gate. If it passes, commit this repair and create a fresh
+source/profile/evidence refreeze; do not reuse prior campaign admissions.
 
 ## Blockers
 
-- None for the requested consolidation.
-- S7P-09 admissions remain paused and require a new explicit user direction after this product
-  behavior change invalidated the former permission-equivalence pin.
+- The approved 50,000,000-token ceiling is currently insufficient for the conservative fresh
+  campaign reservation after retained formal usage and incomplete requests. Preflight/refreeze can
+  continue offline, but formal admission must stop unless capacity passes or the user approves a
+  larger ceiling.

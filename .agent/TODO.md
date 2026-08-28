@@ -2,17 +2,19 @@
 
 ## Current task
 
-Consolidate all verified local Stage 7 branches into `main` and clean the workspace.
+Resume Subplan 90 from the consolidated local `main`, repair the permission-equivalence regression,
+then refreeze and capacity-check a new S7P-09 campaign without reusing prior admissions.
 
 ## Tasks
 
-- `[x]` Preserve the incomplete `docs/notes/` draft in a named recoverable stash.
-- `[x]` Merge `feat/s7p-09-direct-pi-baseline` and resolve its `main` policy integration.
-- `[x]` Merge `feat/s7p-09-direct-pi-baseline-run`, retaining the seven-tool interface and the newer
-  core/Learning behavior.
-- `[x]` Run focused tests, the full offline suite, Ruff, compileall, CLI help and diff validation.
-- `[x]` Commit integration repairs and update execution evidence.
-- `[x]` Remove the merged execution worktree and local topic branches.
+- `[x]` Verify the consolidated baseline, harness self-check, permission matrix and historical
+  campaign-capacity state.
+- `[x]` Restore explicit `network`, `git_write` and `privilege_escalation` denial precedence without
+  reintroducing command-content heuristics.
+- `[x]` Run the full offline/static/CLI/diff gate and commit the verified repair.
+- `[ ]` Refreeze a new current-source comparison plan, profiles and protected evidence root.
+- `[ ]` Run preflight and capacity checks; stop before admission if the approved ceiling is
+  insufficient.
 
 ## Earlier completed tasks
 
@@ -32,5 +34,6 @@ Consolidate all verified local Stage 7 branches into `main` and clean the worksp
 
 - Preserve unrelated user changes and untracked notes.
 - Do not add a replacement validation/policy layer for removed keyword heuristics.
+- Do not reuse any prior S7P-09 plan, admission, schedule or formal run key.
 - Do not weaken workspace path confinement, stale-revision checks, atomic publication, output bounds,
   exact known-secret redaction, Full Access grants, or Skill/MCP extension policy.

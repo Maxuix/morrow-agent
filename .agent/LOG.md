@@ -3678,3 +3678,20 @@
   parent directory. S7P-09 live admission remains paused.
 - The older partial notes stash and detached Stage 1 rescue stash were retained because they are not
   byte-identical duplicates of the complete notes stash. Remote publication remains unauthorized.
+
+## 2026-08-28 — S7P-09 resumed; explicit permission-denial regression repaired
+
+- The user explicitly resumed unfinished Subplan 90 from consolidated local `main`. Offline checks
+  found that the Pi-first direct-command fast path evaluated before explicit Morrow risk flags, so
+  `network`, `git_write` and `privilege_escalation` intents incorrectly returned `allow`.
+- Moved the existing `_DENIED_RISKS` evaluation before the direct registered-command fast path and
+  aligned the evaluator conformance matrix to deny those three explicit risks. No command-content
+  or keyword parsing was restored; ordinary registered commands remain directly executable.
+- Focused evaluator/process/capability tests passed `72`. The complete offline gate passed
+  `1337 passed, 2 deselected`; Ruff format/check, compileall, CLI help, permission-check and
+  `git diff --check` passed. The initial full-suite sandbox timeout was not reproducible in the
+  isolated test or the complete rerun.
+- The approved 50,000,000-token ceiling remains insufficient for the conservative fresh campaign
+  reservation after retained formal usage and incomplete requests. Refreeze may continue offline,
+  but no formal admission is allowed unless the capacity check passes or the user raises the
+  ceiling. No prior campaign plan or run key will be reused.
