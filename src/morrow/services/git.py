@@ -13,7 +13,6 @@ from morrow.core.local_tools import (
     GitRepositoryState,
     GitStatusEntry,
     GitStatusResult,
-    ProtectedPath,
 )
 from morrow.services.files import LocalFileError, WorkspaceFileService
 
@@ -97,14 +96,13 @@ class GitInspectionService:
         output = self._run(metadata.root, tuple(command))
         if output.returncode != 0:
             raise GitServiceError("git_command_failed", "Git Diff 检查失败")
-        diff, protected_paths, diff_truncated = self._sanitize_diff(output.stdout)
+        diff, diff_truncated = self._sanitize_diff(output.stdout)
         result = GitDiffResult(
             repository=True,
             repository_state=status.repository_state,
             staged=staged,
             paths=relative_paths,
             diff=diff,
-            protected_paths=tuple(ProtectedPath(path=path) for path in protected_paths),
             truncated=output.truncated or diff_truncated,
         )
         return self._fit_diff(result, result_limit)
@@ -185,7 +183,6 @@ class GitInspectionService:
     def _parse_status(self, metadata: _GitMetadata, output: GitCommandOutput) -> GitStatusResult:
         records = output.stdout.split(b"\0")
         entries: list[GitStatusEntry] = []
-        protected_count = 0
         staged_count = 0
         unstaged_count = 0
         untracked_count = 0
@@ -240,9 +237,6 @@ class GitInspectionService:
                     entry_kind = GitEntryKind.ORDINARY
             else:
                 continue
-            protected = self.files.sensitive_policy.is_protected_path(path)
-            if protected:
-                protected_count += 1
             if index_status not in {".", "?"}:
                 staged_count += 1
             if worktree_status not in {".", "?"} and entry_kind is not GitEntryKind.UNTRACKED:
@@ -255,7 +249,6 @@ class GitInspectionService:
                         index_status=index_status,
                         worktree_status=worktree_status,
                         original_path=original_path,
-                        protected=protected,
                     )
                 )
         state = (
@@ -277,43 +270,16 @@ class GitInspectionService:
             unstaged_count=unstaged_count,
             untracked_count=untracked_count,
             conflict_count=conflict_count,
-            protected_count=protected_count,
             truncated=output.truncated or len(records) > MAX_GIT_STATUS_ENTRIES,
         )
 
-    def _sanitize_diff(self, raw: bytes) -> tuple[str, tuple[str, ...], bool]:
+    def _sanitize_diff(self, raw: bytes) -> tuple[str, bool]:
         text = raw.decode("utf-8", errors="replace")
-        segments = _split_diff_segments(text)
-        if not segments:
-            if self.files.sensitive_policy.is_protected_content(raw):
-                return "[protected diff omitted]\n", (), False
-            return text, (), False
-        protected_paths: list[str] = []
-        sanitized: list[str] = []
-        for segment in segments:
-            paths = _diff_paths(segment)
-            protected = any(self.files.sensitive_policy.is_protected_path(path) for path in paths)
-            protected = protected or self.files.sensitive_policy.is_protected_content(
-                segment.encode("utf-8", errors="ignore")
-            )
-            if protected:
-                for path in paths:
-                    if (
-                        self.files.sensitive_policy.is_protected_path(path)
-                        and path not in protected_paths
-                    ):
-                        protected_paths.append(path)
-                sanitized.append(
-                    "diff --git a/[protected] b/[protected]\n[protected diff omitted]\n"
-                )
-            else:
-                sanitized.append(segment)
-        value = "".join(sanitized)
-        encoded = value.encode("utf-8")
+        encoded = text.encode("utf-8")
         truncated = len(encoded) > MAX_GIT_DIFF_BYTES
         if truncated:
-            value = _truncate_utf8(encoded, MAX_GIT_DIFF_BYTES)
-        return value, tuple(protected_paths), truncated
+            text = _truncate_utf8(encoded, MAX_GIT_DIFF_BYTES)
+        return text, truncated
 
     def _validate_paths(self, paths: tuple[str, ...]) -> tuple[str, ...]:
         if len(paths) > MAX_GIT_PATH_FILTERS:

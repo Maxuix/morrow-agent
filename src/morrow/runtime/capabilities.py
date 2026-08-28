@@ -82,9 +82,20 @@ class CapabilityPolicy:
                 else CapabilityReason.INVALID_PROFILE
             )
             return self._deny(reason)
+        if self.workspace.read_only and self._mutates_or_runs(intent):
+            return self._deny(CapabilityReason.READ_ONLY_SESSION)
         full_access_host = self._is_full_access_host(intent)
         if full_access_host and not allow_unconfined_host:
             return self._deny(CapabilityReason.FULL_ACCESS_GRANT_REQUIRED)
+        if full_access_host:
+            return self._approval(CapabilityReason.FULL_ACCESS_HOST_APPROVAL_REQUIRED, intent)
+        # Pi-style core: a registered workspace mutation or command is already authorized to run.
+        # Semantic command parsing and per-call approvals are deliberately outside this path. Skill
+        # scripts remain an extension with their own declared-permission and sandbox policy.
+        if intent.kind is OperationKind.WORKSPACE_WRITE or (
+            intent.kind is OperationKind.PROCESS and intent.command_class != "skill_script"
+        ):
+            return self._allow()
         for flag, reason in _DENIED_RISKS.items():
             if flag in intent.risk_flags:
                 if full_access_host and flag in {
@@ -98,8 +109,6 @@ class CapabilityPolicy:
             return self._deny(CapabilityReason.EXTERNAL_EFFECT_NOT_ENABLED)
         if intent.kind is OperationKind.DESTRUCTIVE:
             return self._deny(CapabilityReason.DESTRUCTIVE_NOT_ENABLED)
-        if self.workspace.read_only and self._mutates_or_runs(intent):
-            return self._deny(CapabilityReason.READ_ONLY_SESSION)
         if RiskFlag.MUTATION_APPROVAL_REQUIRED in intent.risk_flags:
             return self._approval(CapabilityReason.MUTATION_APPROVAL_REQUIRED, intent)
         if (
@@ -108,28 +117,8 @@ class CapabilityPolicy:
         ):
             return self._deny(CapabilityReason.SANDBOX_UNAVAILABLE)
 
-        if intent.kind is OperationKind.PROCESS:
-            if self.profile.process_isolation is ProcessIsolation.NATIVE_SANDBOX:
-                if intent.requires_host:
-                    return self._deny(CapabilityReason.HOST_PROCESS_NOT_ALLOWED)
-                if not self.sandbox_available:
-                    return self._deny(CapabilityReason.SANDBOX_UNAVAILABLE)
-                return self._allow()
-            if self.profile.access_scope is AccessScope.FULL_ACCESS:
-                return self._approval(
-                    CapabilityReason.FULL_ACCESS_HOST_APPROVAL_REQUIRED,
-                    intent,
-                )
-            return self._approval(
-                CapabilityReason.HOST_PROCESS_APPROVAL_REQUIRED,
-                intent,
-            )
         if intent.kind is OperationKind.CONFIGURATION_WRITE:
             return self._approval(CapabilityReason.CONFIGURATION_APPROVAL_REQUIRED, intent)
-        if intent.kind is OperationKind.WORKSPACE_WRITE:
-            if self.profile.approval_mode is ApprovalMode.MANUAL:
-                return self._approval(CapabilityReason.WORKSPACE_WRITE_APPROVAL_REQUIRED, intent)
-            return self._allow()
         if intent.kind in {
             OperationKind.INTERNAL_READ,
             OperationKind.WORKSPACE_READ,

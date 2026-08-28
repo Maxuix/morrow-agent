@@ -3623,3 +3623,20 @@
   `1343 passed, 2 deselected in 89.07s`. Ruff format/check, compileall, CLI help and
   `git diff --check` passed. The verified implementation is commit `ccecce7`; the next campaign
   must refreeze its source/profile/plan pins and cannot reuse an earlier admission schedule.
+
+## 2026-08-28 — Pi-first core simplification replaces heuristic blocking
+
+- The user paused the S7P-09 campaign direction and requested a usable Pi-like core Agent loop
+  before additional policy layers. No live campaign work was performed.
+- Removed core command semantic classification and keyword-based sensitive-resource filtering from
+  process, file, search, Git and sandbox snapshot services. Exact active credential values remain
+  redacted; generic source examples remain visible.
+- Registered workspace mutations and commands now run without per-call heuristic approval. Read-only
+  sessions, workspace path/revision/atomic-publication boundaries, Full Access grant+approval and
+  Skill/MCP extension policy remain enforced.
+- Project instructions now load one root context file by precedence and warn/skip malformed,
+  oversized or unreadable optional context. Task-derived nested discovery and source-drift recovery
+  quarantine were removed.
+- Focused production regressions passed through the implementation cycle. The final full offline
+  gate passed `1339 passed, 2 deselected in 81.44s`; Ruff format/check, compileall, CLI help and
+  `git diff --check` also passed. No live test or evaluation admission ran.

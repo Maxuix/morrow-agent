@@ -13,9 +13,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from morrow.core.capabilities import SensitiveResourcePolicy
 from morrow.core.local_tools import (
-    ProtectedPath,
     SearchCase,
     SearchEngine,
     SearchMatch,
@@ -47,7 +45,6 @@ class SearchAdapterError(RuntimeError):
 class SearchScan:
     engine: SearchEngine
     matches: tuple[SearchMatch, ...]
-    protected_paths: tuple[ProtectedPath, ...] = ()
     truncated: bool = False
     budget_reason: str | None = None
 
@@ -66,7 +63,6 @@ class LocalSearchAdapter:
         search_root: Path,
         relative_root: str,
         query: SearchQuery,
-        sensitive_policy: SensitiveResourcePolicy,
         max_line_chars: int | None = None,
     ) -> SearchScan:
         if max_line_chars is not None and (
@@ -90,7 +86,6 @@ class LocalSearchAdapter:
                     workspace_root=workspace_root,
                     relative_root=relative_root,
                     query=query,
-                    sensitive_policy=sensitive_policy,
                     rg_path=rg_path,
                     max_line_chars=max_line_chars,
                 )
@@ -102,7 +97,6 @@ class LocalSearchAdapter:
             search_root=search_root,
             relative_root=relative_root,
             query=query,
-            sensitive_policy=sensitive_policy,
             max_line_chars=max_line_chars,
         )
 
@@ -112,7 +106,6 @@ class LocalSearchAdapter:
         workspace_root: Path,
         relative_root: str,
         query: SearchQuery,
-        sensitive_policy: SensitiveResourcePolicy,
         rg_path: str,
         max_line_chars: int | None,
     ) -> SearchScan:
@@ -167,9 +160,7 @@ class LocalSearchAdapter:
         return self._parse_rg_output(
             completed.stdout,
             query=query,
-            workspace_root=workspace_root,
             relative_root=relative_root,
-            sensitive_policy=sensitive_policy,
             max_line_chars=max_line_chars,
         )
 
@@ -178,15 +169,11 @@ class LocalSearchAdapter:
         output: bytes,
         *,
         query: SearchQuery,
-        workspace_root: Path,
         relative_root: str,
-        sensitive_policy: SensitiveResourcePolicy,
         max_line_chars: int | None,
     ) -> SearchScan:
         contexts: dict[tuple[str, int], str] = {}
         match_records: list[tuple[str, int, int, str]] = []
-        protected: dict[str, ProtectedPath] = {}
-        protected_content: dict[str, bool] = {}
         for raw_line in output.splitlines():
             try:
                 event = json.loads(raw_line.decode("utf-8", errors="replace"))
@@ -203,18 +190,6 @@ class LocalSearchAdapter:
                 continue
             relative = _normalize_rg_path(path_text, relative_root)
             snippet = str(lines.get("text", "")).rstrip("\r\n")
-            path_protected = sensitive_policy.is_protected_path(relative)
-            if not path_protected and relative not in protected_content:
-                protected_content[relative] = _path_has_protected_content(
-                    workspace_root, relative, sensitive_policy
-                )
-            if (
-                path_protected
-                or protected_content.get(relative, False)
-                or sensitive_policy.is_protected_content(snippet.encode("utf-8", errors="ignore"))
-            ):
-                protected[relative] = ProtectedPath(path=relative)
-                continue
             contexts[(relative, line_number)] = _snippet(snippet, max_line_chars)
             if event.get("type") != "match":
                 continue
@@ -225,8 +200,6 @@ class LocalSearchAdapter:
             )
         matches: list[SearchMatch] = []
         for relative, line_number, column, snippet in match_records:
-            if relative in protected:
-                continue
             before = tuple(
                 contexts[(relative, number)]
                 for number in range(max(1, line_number - query.context_lines), line_number)
@@ -252,7 +225,6 @@ class LocalSearchAdapter:
         return SearchScan(
             engine=SearchEngine.RG,
             matches=tuple(matches),
-            protected_paths=tuple(sorted(protected.values(), key=lambda item: item.path)),
             truncated=len(matches) >= query.max_results,
             budget_reason="max_matches" if len(matches) >= query.max_results else None,
         )
@@ -264,7 +236,6 @@ class LocalSearchAdapter:
         search_root: Path,
         relative_root: str,
         query: SearchQuery,
-        sensitive_policy: SensitiveResourcePolicy,
         max_line_chars: int | None,
     ) -> SearchScan:
         effective_case = _effective_case(query.case, query.pattern)
@@ -273,7 +244,6 @@ class LocalSearchAdapter:
             query.pattern if effective_case is SearchCase.SENSITIVE else query.pattern.casefold()
         )
         matches: list[SearchMatch] = []
-        protected: dict[str, ProtectedPath] = {}
         stack = [search_root]
         scanned_files = 0
         scanned_bytes = 0
@@ -313,18 +283,11 @@ class LocalSearchAdapter:
                             continue
                         metadata = target.stat()
                         read_path = target
-                        target_relative = _relative_path(workspace_root, target)
                     except OSError:
                         continue
                 elif stat.S_ISREG(metadata.st_mode):
                     read_path = Path(entry.path)
-                    target_relative = relative
                 else:
-                    continue
-                if sensitive_policy.is_protected_path(
-                    relative
-                ) or sensitive_policy.is_protected_path(target_relative):
-                    protected[relative] = ProtectedPath(path=relative)
                     continue
                 remaining = PYTHON_MAX_BYTES - scanned_bytes
                 if metadata.st_size > remaining:
@@ -336,9 +299,7 @@ class LocalSearchAdapter:
                     continue
                 scanned_files += 1
                 scanned_bytes += len(raw)
-                if b"\x00" in raw or sensitive_policy.is_protected_content(raw):
-                    if sensitive_policy.is_protected_content(raw):
-                        protected[relative] = ProtectedPath(path=relative)
+                if b"\x00" in raw:
                     continue
                 try:
                     text = raw.decode("utf-8", errors="strict")
@@ -375,9 +336,6 @@ class LocalSearchAdapter:
         return SearchScan(
             engine=SearchEngine.PYTHON,
             matches=tuple(matches[: query.max_results]),
-            protected_paths=tuple(
-                sorted(protected.values(), key=lambda item: (item.path.casefold(), item.path))
-            ),
             truncated=truncated,
             budget_reason=reason,
         )
@@ -425,22 +383,6 @@ def _normalize_rg_path(value: str, relative_root: str) -> str:
 def _relative_path(root: Path, path: Path) -> str:
     value = path.relative_to(root).as_posix()
     return value or "."
-
-
-def _path_has_protected_content(
-    workspace_root: Path, relative: str, sensitive_policy: SensitiveResourcePolicy
-) -> bool:
-    try:
-        candidate = (workspace_root / Path(*relative.split("/"))).resolve(strict=True)
-        if not candidate.is_relative_to(workspace_root) or not candidate.is_file():
-            return True
-        target_relative = candidate.relative_to(workspace_root).as_posix()
-        if sensitive_policy.is_protected_path(target_relative):
-            return True
-        with candidate.open("rb") as stream:
-            return sensitive_policy.is_protected_content(stream.read(16_384))
-    except OSError:
-        return True
 
 
 def _validate_glob(value: str) -> None:

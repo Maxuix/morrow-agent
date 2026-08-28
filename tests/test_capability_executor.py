@@ -93,7 +93,7 @@ async def test_capability_denial_happens_before_preview_approval_and_handler():
 
 
 @pytest.mark.asyncio
-async def test_policy_approval_request_contains_only_sanitized_reason_metadata():
+async def test_registered_workspace_write_runs_without_policy_approval():
     async def handler(_: Arguments):
         return ToolHandlerOutcome(payload={"saved": True})
 
@@ -122,11 +122,7 @@ async def test_policy_approval_request_contains_only_sanitized_reason_metadata()
     ).execute(_call())
 
     assert outcome.ok is True
-    request = approval.requests[0]
-    assert request.policy_verdict == "require_approval"
-    assert request.reason_codes == ("workspace_write_approval_required",)
-    assert request.preview == ("write one bounded file",)
-    assert "secret" not in str(request.model_dump())
+    assert approval.requests == []
 
 
 @pytest.mark.asyncio

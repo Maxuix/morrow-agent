@@ -18,10 +18,6 @@ from morrow.adapters.local.filesystem import (
     FileSystemAdapter,
     FileSystemMutationError,
 )
-from morrow.core.capabilities import (
-    DefaultSensitiveResourcePolicy,
-    SensitiveResourcePolicy,
-)
 from morrow.core.local_tools import (
     WORKSPACE_RELATIVE_PATH_MAX_CHARS,
     DirectoryEntry,
@@ -34,7 +30,6 @@ from morrow.core.local_tools import (
     MutationResult,
     MutationStatus,
     NewlineStyle,
-    ProtectedPath,
     ReadFileResult,
     validate_workspace_relative_path,
 )
@@ -272,11 +267,9 @@ class WorkspaceFileService:
         resolver: WorkspacePathResolver,
         *,
         filesystem: FileSystemAdapter | None = None,
-        sensitive_policy: SensitiveResourcePolicy | None = None,
     ) -> None:
         self.resolver = resolver
         self.filesystem = filesystem or FileSystemAdapter()
-        self.sensitive_policy = sensitive_policy or DefaultSensitiveResourcePolicy()
 
     def preflight_file(self, path: str) -> ResolvedWorkspacePath:
         return self.resolver.resolve_file(path)
@@ -284,27 +277,10 @@ class WorkspaceFileService:
     def preflight_directory(self, path: str) -> ResolvedWorkspacePath:
         return self.resolver.resolve_directory(path)
 
-    def is_protected_resolved(self, relative: str, target: Path | None = None) -> bool:
-        """Apply path policy to both the visible alias and its confined resolved target."""
-
-        if self.sensitive_policy.is_protected_path(relative):
-            return True
-        if target is None:
-            return False
-        try:
-            target_relative = target.relative_to(self.resolver.root).as_posix()
-        except ValueError:
-            return True
-        return self.sensitive_policy.is_protected_path(target_relative)
-
     def read_source_text(self, path: str) -> SourceText:
         resolved = self.resolver.resolve_file(path)
         relative = resolved.relative_path
-        if self.is_protected_resolved(relative, resolved.target):
-            raise LocalFileError("protected_resource", "资源受到本地内容策略保护")
         raw = self.filesystem.read_bytes(resolved.target, max_bytes=MAX_SOURCE_FILE_BYTES)
-        if self.sensitive_policy.is_protected_content(raw):
-            raise LocalFileError("protected_resource", "资源受到本地内容策略保护")
         revision = self._revision(resolved.target, raw)
         bom = raw.startswith(b"\xef\xbb\xbf")
         content = raw[3:] if bom else raw
@@ -343,8 +319,6 @@ class WorkspaceFileService:
         if resolved.kind != "file":
             raise LocalFileError("invalid_target", "源文件不是普通文件")
         relative = resolved.relative_path
-        if self.is_protected_resolved(relative, resolved.target):
-            raise LocalFileError("protected_resource", "资源受到本地内容策略保护")
         try:
             state = self.filesystem.read_confined_file(
                 resolved.target,
@@ -360,8 +334,6 @@ class WorkspaceFileService:
             }.get(exc.code, "path_unavailable")
             raise LocalFileError(code, exc.message) from exc
         raw = state.raw
-        if self.sensitive_policy.is_protected_content(raw):
-            raise LocalFileError("protected_resource", "资源受到本地内容策略保护")
         bom = raw.startswith(b"\xef\xbb\xbf")
         content = raw[3:] if bom else raw
         try:
@@ -440,14 +412,7 @@ class WorkspaceFileService:
             raise LocalFileError("invalid_limit", "读取输出限制超出边界")
         resolved = self.resolver.resolve_file(path)
         relative = resolved.relative_path
-        if self.is_protected_resolved(relative, resolved.target):
-            return self._protected_read_result(relative, start_line, result_limit)
-        try:
-            source = self.read_source_text(path)
-        except LocalFileError as exc:
-            if exc.code == "protected_resource":
-                return self._protected_read_result(relative, start_line, result_limit)
-            raise
+        source = self.read_source_text(path)
         raw = source.raw
         text = source.text
         text_bytes = text.encode("utf-8")
@@ -523,29 +488,13 @@ class WorkspaceFileService:
         resolved = self.resolver.resolve_directory(path)
         root_relative = resolved.relative_path
         entries: list[DirectoryEntry] = []
-        protected: list[ProtectedPath] = []
         queue: list[tuple[Path, str, int]] = [(resolved.target, root_relative, 0)]
         truncated = False
         while queue:
             directory, directory_relative, level = queue.pop(0)
             for item in self.filesystem.iter_directory(directory):
                 relative = _join_relative(directory_relative, item.name)
-                resolved_target = None
-                if item.kind is LocalFileKind.SYMLINK:
-                    try:
-                        resolved_target = item.path.resolve(strict=True)
-                    except OSError:
-                        pass
-                if self.is_protected_resolved(relative, resolved_target):
-                    protected.append(ProtectedPath(path=relative))
-                    entry = DirectoryEntry(
-                        path=relative,
-                        kind=item.kind,
-                        size=item.size,
-                        protected=True,
-                    )
-                else:
-                    entry = DirectoryEntry(path=relative, kind=item.kind, size=item.size)
+                entry = DirectoryEntry(path=relative, kind=item.kind, size=item.size)
                 entries.append(entry)
                 if len(entries) >= max_entries:
                     truncated = True
@@ -559,13 +508,11 @@ class WorkspaceFileService:
             if truncated:
                 break
         entries.sort(key=lambda entry: (entry.path.casefold(), entry.path))
-        protected.sort(key=lambda item: (item.path.casefold(), item.path))
         result = DirectoryListingResult(
             path=root_relative,
             entries=tuple(entries),
             depth=depth,
             truncated=truncated,
-            protected_paths=tuple(protected),
         )
         return self._fit_listing_result(result, result_limit)
 
@@ -593,7 +540,6 @@ class WorkspaceFileService:
             raise LocalFileError("invalid_limit", "搜索结果数超出限制")
         resolved = self.resolver.resolve_directory(path)
         found: list[str] = []
-        protected: list[ProtectedPath] = []
         stack = [(resolved.target, resolved.relative_path)]
         truncated = False
         while stack:
@@ -615,10 +561,6 @@ class WorkspaceFileService:
                         continue
                 else:
                     target = item.path
-                if self.is_protected_resolved(relative, target):
-                    if fnmatchcase(item.name, pattern) or fnmatchcase(relative, pattern):
-                        protected.append(ProtectedPath(path=relative))
-                    continue
                 if fnmatchcase(item.name, pattern) or fnmatchcase(relative, pattern):
                     found.append(relative)
                     if len(found) >= max_results:
@@ -627,13 +569,11 @@ class WorkspaceFileService:
             if truncated:
                 break
         found.sort(key=lambda item: (item.casefold(), item))
-        protected.sort(key=lambda item: (item.path.casefold(), item.path))
         result = FindFilesResult(
             path=resolved.relative_path,
             pattern=pattern,
             paths=tuple(found),
             truncated=truncated,
-            protected_paths=tuple(protected),
         )
         return self._fit_find_result(result, result_limit)
 
@@ -647,23 +587,6 @@ class WorkspaceFileService:
         return FileRevision(
             sha256=hashlib.sha256(raw).hexdigest(), size=len(raw), mtime_ns=metadata.st_mtime_ns
         )
-
-    def _protected_read_result(self, relative: str, start_line: int, result_limit: int):
-        marker = ReadFileResult(
-            path=relative,
-            text="",
-            start_line=start_line,
-            end_line=start_line - 1,
-            total_lines=0,
-            original_bytes=0,
-            original_lines=0,
-            revision=None,
-            truncated=False,
-            protected=True,
-        )
-        if _json_size(marker.model_dump(mode="json")) > result_limit:
-            raise LocalFileError("output_budget", "受保护资源标记无法放入当前结果预算")
-        return marker
 
     @staticmethod
     def _fit_read_result(result: ReadFileResult, result_limit: int) -> ReadFileResult:
@@ -826,12 +749,6 @@ class WorkspaceMutationService:
         if mode == "create":
             if target.exists() or target.is_symlink():
                 raise LocalFileError("conflict", "目标文件已经存在")
-            if self.files.sensitive_policy.is_protected_path(
-                target.relative_to(self.files.resolver.root).as_posix()
-            ):
-                raise LocalFileError("protected_resource", "资源受到本地内容策略保护")
-            if self.files.sensitive_policy.is_protected_content(content.encode("utf-8")):
-                raise LocalFileError("protected_resource", "写入内容受到本地内容策略保护")
             return self._plan(
                 source=None,
                 target=target,
@@ -940,8 +857,6 @@ class WorkspaceMutationService:
             if stat.S_ISLNK(current.st_mode):
                 raise LocalFileError("symlink_not_allowed", "目标路径不能是符号链接")
             raise LocalFileError("conflict", "目标路径已经存在")
-        if self.files.is_protected_resolved(relative, target):
-            raise LocalFileError("protected_resource", "资源受到本地内容策略保护")
         return target, relative
 
     def _new_staging_target(self, source: SourceText) -> tuple[Path, str]:
@@ -1149,15 +1064,6 @@ class WorkspaceMutationService:
                                 approval_verdict=approval_verdict,
                                 run=run,
                             )
-                        if self.files.sensitive_policy.is_protected_content(after_raw):
-                            raise self._outcome_unknown(
-                                plan,
-                                call_id=call_id,
-                                tool_name=tool_name,
-                                ordinal=ordinal,
-                                approval_verdict=approval_verdict,
-                                run=run,
-                            )
                         after_revision = FileRevision(
                             sha256=hashlib.sha256(after_raw).hexdigest(),
                             size=published.size,
@@ -1174,10 +1080,6 @@ class WorkspaceMutationService:
                         after_raw = self.files.filesystem.read_bytes(
                             plan.target, max_bytes=MAX_SOURCE_FILE_BYTES
                         )
-                        if self.files.sensitive_policy.is_protected_content(after_raw):
-                            raise LocalFileError(
-                                "protected_resource", "发布后的内容受到本地内容策略保护"
-                            )
                         after_revision = self.files._revision(plan.target, after_raw)
                     result = self._result(
                         plan,
@@ -1399,8 +1301,6 @@ class WorkspaceMutationService:
         auxiliary: tuple[str, ...],
         run,
     ) -> MutationPlan:
-        if self.files.sensitive_policy.is_protected_content(desired.encode("utf-8")):
-            raise LocalFileError("protected_resource", "写入内容受到本地内容策略保护")
         before_text = source.text if source is not None else ""
         newline = source.newline if source is not None else NewlineStyle.LF
         bom = source.bom if source is not None else False

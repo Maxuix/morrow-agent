@@ -16,7 +16,6 @@ from morrow.core.artifacts import ARTIFACT_MAX_BYTES
 from morrow.core.capabilities import (
     OperationIntent,
     OperationKind,
-    RiskFlag,
     ToolRunContext,
 )
 from morrow.core.local_tools import CommandRequest, CommandResult, CommandStatus
@@ -37,18 +36,7 @@ from morrow.services.files import LocalFileError, WorkspaceFileService
 MAX_COMMAND_OUTPUT_BYTES = 8 * 1024
 MAX_COMMAND_RESULT_BYTES = 16 * 1024
 MAX_COMMAND_PREVIEW_CHARS = 180
-_WINDOWS_PATH = re.compile(r"^[A-Za-z]:[\\/]")
-_URL = re.compile(r"(?i)^(?:https?|ftp|ssh)://")
-_LOOPBACK = re.compile(r"(?i)(?:localhost|127\.0\.0\.1|::1|0\.0\.0\.0)")
-_REDACTION_TOKEN = re.compile(
-    r"(?i)\b(?:password|passwd|secret|token|api[_-]?key|authorization)\s*[:=]\s*[^\s,;]+"
-)
-_REDACTION_BEARER = re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]{8,}")
 _SHELL_INTERPRETERS = frozenset({"sh", "bash", "zsh", "ksh", "dash", "fish"})
-_SHELL_GIT_COMMAND = re.compile(
-    r"(?im)(?:^|[;&|()`\n])\s*(?:(?:command|exec|env)\s+)*"
-    r"(?:[A-Za-z_][A-Za-z0-9_]*=[^\s]+\s+)*(?:[^\s;&|()`]*/)?git(?:\s|$)"
-)
 
 
 class ProcessServiceError(RuntimeError):
@@ -68,13 +56,12 @@ class CommandPlan:
     argv: tuple[str, ...] | None
     shell: str | None
     command_class: str
-    risk_flags: tuple[RiskFlag, ...]
     validation_kind: str | None = None
     validation_scope: str | None = None
 
 
 class SecretRedactor:
-    """Redact exact active credentials and conservative token-shaped output."""
+    """Redact only exact credentials owned by Morrow."""
 
     def __init__(self, secrets: tuple[str, ...] = ()) -> None:
         unique = sorted({value for value in secrets if len(value) >= 4}, key=len, reverse=True)
@@ -94,11 +81,6 @@ class SecretRedactor:
                 count += occurrences
                 flags.append("exact_secret")
                 text = text.replace(secret, "<redacted>")
-        for pattern in (_REDACTION_TOKEN, _REDACTION_BEARER):
-            text, replacements = pattern.subn("<redacted>", text)
-            if replacements:
-                count += replacements
-                flags.append("token_pattern")
         if invalid_utf8:
             flags.append("invalid_utf8")
         return text, tuple(dict.fromkeys(flags)), count
@@ -141,15 +123,8 @@ class ProcessExecutionService:
         if not tokens or any(not token for token in tokens):
             raise ProcessServiceError("invalid_command", "命令不能为空")
         parsed_shell_script = _shell_script(tokens) if request.shell is None else None
-        shell_script = request.shell if request.shell is not None else parsed_shell_script
         shell_form = request.shell is not None or parsed_shell_script is not None
         command_class = _command_class(tokens[0], shell=shell_form)
-        risk_flags = _risk_flags(
-            tokens,
-            self.files,
-            shell=shell_form,
-            shell_script=shell_script,
-        )
         validation_kind, validation_scope = _recognized_validation(
             tokens,
             files=self.files,
@@ -165,7 +140,6 @@ class ProcessExecutionService:
             argv=request.argv,
             shell=request.shell,
             command_class=command_class,
-            risk_flags=tuple(sorted(risk_flags, key=lambda flag: flag.value)),
             validation_kind=validation_kind,
             validation_scope=validation_scope,
         )
@@ -195,7 +169,6 @@ class ProcessExecutionService:
             effect=ToolEffect.NONE,
             relative_paths=(plan.cwd_relative,),
             command_class=plan.command_class,
-            risk_flags=plan.risk_flags,
             requires_host=self.requires_host,
             requires_sandbox=self.requires_sandbox,
             preview_summary=(
@@ -205,7 +178,7 @@ class ProcessExecutionService:
                 f"超时上限：{plan.request.timeout_seconds:g} 秒",
                 "真实工作空间不会以可写方式暴露；命令修改仅保留在临时快照"
                 if self.requires_sandbox
-                else "批准后项目代码可能以当前用户权限访问工作空间外文件或网络",
+                else "命令以当前用户权限运行",
             ),
         )
 
@@ -620,166 +593,6 @@ def _shell_script(tokens: tuple[str, ...]) -> str | None:
         if token == "-c":
             return tokens[index + 1]
     return None
-
-
-def _risk_flags(
-    tokens: tuple[str, ...],
-    files: WorkspaceFileService,
-    *,
-    shell: bool,
-    shell_script: str | None = None,
-) -> set[RiskFlag]:
-    flags: set[RiskFlag] = set()
-    lowered = tuple(token.casefold() for token in tokens)
-    executable = Path(tokens[0]).name.casefold()
-    destructive_commands = {
-        "rm",
-        "rmdir",
-        "del",
-        "erase",
-        "unlink",
-        "truncate",
-        "mkfs",
-        "dd",
-        "shred",
-        "kill",
-        "pkill",
-        "killall",
-        "reboot",
-        "shutdown",
-        "chmod",
-        "chown",
-        "chgrp",
-        "ln",
-        "mv",
-        "cp",
-        "install",
-    }
-    privilege_commands = {"sudo", "su", "doas", "pkexec"}
-    network_commands = {"curl", "wget", "ssh", "scp", "ftp", "nc", "netcat", "telnet"}
-    if executable in destructive_commands or any(
-        token in {">", ">>", "tee", "truncate"} for token in lowered
-    ):
-        flags.add(RiskFlag.DESTRUCTIVE)
-    if executable in privilege_commands:
-        flags.add(RiskFlag.PRIVILEGE_ESCALATION)
-    if executable in network_commands or any(_URL.match(token) for token in lowered):
-        flags.add(RiskFlag.NETWORK)
-    if any(_LOOPBACK.search(token) for token in lowered):
-        flags.add(RiskFlag.LOOPBACK)
-    if executable in {"pip", "pip3", "uv", "npm", "pnpm", "yarn", "cargo", "brew", "apt"}:
-        if any(
-            token in {"install", "add", "update", "upgrade", "remove", "uninstall"}
-            for token in lowered[1:]
-        ):
-            flags.add(RiskFlag.DESTRUCTIVE)
-            if executable in {"pip", "pip3", "uv", "npm", "pnpm", "yarn", "cargo"}:
-                flags.add(RiskFlag.NETWORK)
-    if executable == "git" and not _git_read_only(lowered):
-        flags.add(RiskFlag.GIT_WRITE)
-    for index, token in enumerate(tokens):
-        candidate = token.strip("\"'`;,")
-        if "=" in candidate and (
-            candidate.startswith("-") or candidate.split("=", 1)[0].isidentifier()
-        ):
-            candidate = candidate.split("=", 1)[1]
-        if index > 0 and _outside_like(candidate):
-            flags.add(RiskFlag.OUTSIDE_WORKSPACE)
-        if candidate and not candidate.startswith("-") and not _outside_like(candidate):
-            normalized = candidate.removeprefix("./")
-            if "/" in normalized or normalized.startswith("."):
-                if files.sensitive_policy.is_protected_path(normalized):
-                    flags.add(RiskFlag.PROTECTED_RESOURCE)
-                    flags.add(RiskFlag.CREDENTIAL_ACCESS)
-    if shell and any(token in {">", ">>", "tee"} for token in lowered):
-        flags.add(RiskFlag.DESTRUCTIVE)
-    if executable == "git" and any(
-        token in {"--git-dir", "--work-tree", "-c"} for token in lowered
-    ):
-        flags.add(RiskFlag.GIT_WRITE)
-    if shell_script is not None:
-        flags.update(_shell_script_risks(shell_script, files))
-    return flags
-
-
-def _shell_script_risks(script: str, files: WorkspaceFileService) -> set[RiskFlag]:
-    flags: set[RiskFlag] = set()
-    lowered = script.casefold()
-    destructive_names = {
-        "rm",
-        "rmdir",
-        "del",
-        "erase",
-        "unlink",
-        "truncate",
-        "mkfs",
-        "dd",
-        "shred",
-        "kill",
-        "pkill",
-        "killall",
-        "reboot",
-        "shutdown",
-        "chmod",
-        "chown",
-        "chgrp",
-        "ln",
-        "mv",
-        "cp",
-        "install",
-    }
-    network_names = {"curl", "wget", "ssh", "scp", "ftp", "nc", "netcat", "telnet"}
-    privilege_names = {"sudo", "su", "doas", "pkexec"}
-
-    def contains_command(names: set[str]) -> bool:
-        pattern = r"(?<![A-Za-z0-9_./-])(?:" + "|".join(sorted(names)) + r")(?![A-Za-z0-9_./-])"
-        return re.search(pattern, lowered) is not None
-
-    if contains_command(destructive_names) or any(operator in script for operator in (">", ">>")):
-        flags.add(RiskFlag.DESTRUCTIVE)
-    if contains_command(network_names) or _URL.search(script):
-        flags.add(RiskFlag.NETWORK)
-    if _LOOPBACK.search(script):
-        flags.add(RiskFlag.LOOPBACK)
-    if contains_command(privilege_names):
-        flags.add(RiskFlag.PRIVILEGE_ESCALATION)
-    if _SHELL_GIT_COMMAND.search(script):
-        flags.add(RiskFlag.GIT_WRITE)
-    try:
-        shell_tokens = tuple(shlex.split(script))
-    except ValueError:
-        return flags
-    for index, token in enumerate(shell_tokens):
-        candidate = token.strip("\"'`;,\n")
-        if index > 0 and _outside_like(candidate):
-            flags.add(RiskFlag.OUTSIDE_WORKSPACE)
-        if candidate and not candidate.startswith("-"):
-            normalized = candidate.removeprefix("./")
-            if files.sensitive_policy.is_protected_path(normalized):
-                flags.add(RiskFlag.PROTECTED_RESOURCE)
-                flags.add(RiskFlag.CREDENTIAL_ACCESS)
-    return flags
-
-
-def _git_read_only(tokens: tuple[str, ...]) -> bool:
-    if len(tokens) < 2:
-        return False
-    if any(token.startswith("--git-dir") or token.startswith("--work-tree") for token in tokens):
-        return False
-    command = tokens[1]
-    if command in {"status", "diff", "log", "show", "rev-parse", "ls-files", "describe"}:
-        return True
-    return command == "branch" and any(flag in tokens[2:] for flag in {"--show-current", "-vv"})
-
-
-def _outside_like(value: str) -> bool:
-    return (
-        value.startswith(("/", "~", "\\"))
-        or _WINDOWS_PATH.match(value) is not None
-        or value == ".."
-        or value.startswith("../")
-        or "/../" in value
-    )
 
 
 def _tail_text(value: str, max_bytes: int) -> str:

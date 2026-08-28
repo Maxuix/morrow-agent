@@ -154,9 +154,9 @@ def test_skill_script_requires_sandbox_and_exact_frozen_package(tmp_path) -> Non
         )
     )
     assert result.status is SkillScriptStatus.SUCCEEDED
-    assert result.stdout == "<redacted>\n"
+    assert result.stdout == "api_key: <redacted>\n"
     assert result.output_artifact_refs[0].artifact_id == "art_script_1"
-    assert artifacts.values == [b"<redacted>\n"]
+    assert artifacts.values == [b"token: <redacted>\n"]
     assert fact.command_class == "skill_script"
 
 

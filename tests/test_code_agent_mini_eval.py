@@ -1262,7 +1262,7 @@ def test_morrow_runner_keeps_provider_usage_when_unbounded_cost_is_unavailable()
     assert evidence["usage"]["cost"] == "unavailable"
 
 
-def test_permission_equivalence_and_evaluation_approval_remain_fail_closed(tmp_path: Path) -> None:
+def test_permission_equivalence_and_evaluation_approval_contract(tmp_path: Path) -> None:
     from morrow.core.models import ToolApprovalRequest, ToolEffect
 
     matrix = eval_module.permission_equivalence_matrix(tmp_path)

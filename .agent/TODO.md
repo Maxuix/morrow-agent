@@ -1,54 +1,27 @@
 # TODO
 
-## Current stage
+## Current task
 
-Subplan 90 is active on `feat/s7p-09-direct-pi-baseline` from local
-`main@1fd7e229bef276d1a0361e775ce800ade4b318fc`.
-
-## Active subplan
-
-S7P-09 Repeated Direct Evaluation and Same-Condition Pi Baseline.
+Pi-first core Agent loop simplification on `feat/s7p-09-direct-pi-baseline`. S7P-09 campaign
+execution is paused by the current user request.
 
 ## Tasks
 
-- `[x]` Verify S7P-08 integration, S7P-00 protocol thresholds, current evaluator commands and Pi
-  0.84.2 availability.
-- `[x]` Activate Subplan 90 with its 28-run campaign, fairness contract, evidence boundary and live
-  hold point.
-- `[x]` Add strict comparison-plan/schedule contracts and offline Morrow/Pi trace normalizers.
-- `[x]` Add permission-equivalence proof, create-only admission/budget enforcement, bounded raw
-  process capture and mechanical paired comparison.
-- `[x]` Wire the evaluation ApprovalPort and safe trace collector through the ordinary Morrow
-  composition root; add and offline-test the equivalently confined Pi 0.84.2 runner/extension.
-- `[x]` Run focused/full offline tests and audit the completed harness slice for false-PASS and
-  secret-leak paths; commit the verified slice.
-- `[x]` Select and approve the exact common `opencode-go/mimo-v2.5` model, raise the hard total
-  ceiling to 15,000,000 tokens, and keep no currency ceiling; verify Pi 0.84.2 contains the exact
-  catalog entry.
-- `[x]` Configure Pi through the same Keychain credential reference without copying the secret;
-  pass no-secret auth readiness and the exact `opencode-go/mimo-v2.5` no-tool probe.
-- `[x]` Resolve Morrow Agent streaming readiness: repair the OpenAI-compatible schema wire,
-  repeated terminal chunk handling and 4xx classification; verify offline and with a bounded probe.
-- `[x]` Repair context/compaction over-conservatism before refreezing: allow explicit long-horizon
-  operation without exact window metadata via the bounded character fallback, tolerate common
-  Provider JSON wrappers without weakening durable contracts, and close random URL-safe entry-ID
-  rejection; pass focused and full offline gates.
-- `[>]` Refreeze profiles/pins/schedule/evidence root after the verified Pi 0.84.2 event adapter
-  repair, user-requested `direct-coding/v2` prompt simplification and context/compaction resilience
-  repair under the approved 50,000,000-token total ceiling; token usage is mandatory while cost is
-  optional. The unrelated notes remain outside the clean execution checkout.
-- `[ ]` Execute and finalize the exact 20 Morrow primary runs.
-- `[ ]` Execute and finalize the exact 8 counterbalanced Pi comparison runs.
-- `[ ]` Mechanically aggregate, compare, classify every failure and freeze the Direct baseline.
-- `[ ]` Publish S7P-09 acceptance evidence and raw-bundle hash index without sensitive payloads.
-- `[ ]` Run full offline/static/CLI gates, commit and fast-forward verified work into `main`, then
-  stop before S7P-10.
+- `[x]` Inspect the actual process, capability, file/search/Git/sandbox and project-instruction paths.
+- `[x]` Remove semantic Shell/Git risk classification from the core process service.
+- `[x]` Stop keyword-based sensitive-resource blocking in workspace file, search, Git and snapshot
+  services; retain exact active-credential output redaction.
+- `[x]` Run registered core workspace mutations and commands without per-call heuristic approval,
+  while retaining read-only, Full Access and Skill/MCP authority boundaries.
+- `[x]` Replace task-derived nested instruction discovery with one root availability-first load.
+- `[x]` Update focused tests, architecture, roadmap and stale acceptance selectors.
+- `[x]` Run the complete offline/static/CLI/diff validation gate and record final evidence.
+- `[>]` Commit the verified repair as one coherent checkpoint; do not merge or resume evaluation
+  without explicit authorization.
 
 ## Boundaries
 
-- Do not change protocol v1 thresholds, tasks, Gold, expected paths or verifiers.
-- Do not mix models/providers/sampling, reuse state/workspaces or replace an admitted result.
-- Do not commit credentials, reasoning, transcripts, raw Pi JSONL or full tool payloads.
-- Do not alter production behavior in response to campaign outcomes or restore Runtime completion
-  inference. The user-requested pre-admission `direct-coding/v2` change is frozen before restart.
-- No Workflow, multi-Agent or S7P-10 work starts here.
+- Preserve unrelated user changes and untracked notes.
+- Do not add a replacement validation/policy layer for removed keyword heuristics.
+- Do not weaken workspace path confinement, stale-revision checks, atomic publication, output bounds,
+  exact known-secret redaction, Full Access grants, or Skill/MCP extension policy.

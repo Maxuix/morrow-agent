@@ -128,43 +128,13 @@ class DirectCodingPromptAssembler:
         *,
         target_paths: Sequence[str | Path] | str | Path,
     ) -> PromptProjection:
-        """Add newly touched instruction scopes without replacing frozen sources."""
+        """Keep the startup projection; tool paths never trigger instruction discovery."""
         self._verify_projection(projection)
-        if self.resolver is None:
-            self._empty_resolution(target_paths)
-            return projection
-
-        discovered = self.resolver.resolve("", target_paths=target_paths).sources
-        existing = {
-            (item.reference.path, item.reference.scope): item
-            for item in projection.project_instructions
-        }
-        for item in discovered:
-            existing.setdefault((item.reference.path, item.reference.scope), item)
-        merged = tuple(
-            sorted(
-                existing.values(),
-                key=lambda item: (
-                    0 if item.reference.scope == "." else len(item.reference.scope.split("/")),
-                    item.reference.path,
-                ),
-            )
-        )
-        if len(merged) > self.resolver.max_sources:
-            raise ProjectInstructionError("too_many_sources")
-        if sum(item.reference.byte_count for item in merged) > self.resolver.max_total_bytes:
-            raise ProjectInstructionError("aggregate_too_large")
-        resolution = ProjectInstructionResolution(
-            sources=merged,
-            resolver_version=self.resolver.version,
-            selection_digest=project_source_selection_digest([item.reference for item in merged]),
-        )
-        extended = self._projection(resolution)
-        self._verify_projection(extended)
-        return extended
+        del target_paths
+        return projection
 
     def rehydrate(self, evidence: PromptProfileEvidence) -> PromptProjection:
-        """Verify profile and re-read only the exact frozen project sources."""
+        """Reload current startup context without blocking on stale instruction files."""
         self._verify_profile_evidence(evidence)
         if self.resolver is None:
             if evidence.project_instruction_sources:
@@ -176,10 +146,7 @@ class DirectCodingPromptAssembler:
             )
         else:
             resolution = self.resolver.rehydrate(evidence)
-        projection = self._projection(resolution)
-        if projection.evidence != evidence:
-            raise PromptAssemblyError("rehydrated prompt evidence drifted")
-        return projection
+        return self._projection(resolution)
 
     def evidence_for(
         self, resolution: ProjectInstructionResolution | None = None
@@ -242,8 +209,7 @@ class DirectCodingPromptAssembler:
     def _empty_resolution(
         self, target_paths: Sequence[str | Path] | str | Path | None = None
     ) -> ProjectInstructionResolution:
-        if target_paths is not None and target_paths != "" and target_paths not in ((), []):
-            raise PromptAssemblyError("project instruction workspace is unavailable")
+        del target_paths
         return ProjectInstructionResolution(
             sources=(),
             resolver_version="v1",

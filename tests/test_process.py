@@ -24,7 +24,7 @@ from morrow.core.capabilities import (
 from morrow.core.local_tools import CommandRequest, CommandStatus
 from morrow.core.models import AssistantMessage, FunctionToolCall, ModelRef, ToolApprovalDecision
 from morrow.runtime.capabilities import CapabilityPolicy
-from morrow.runtime.tools import ToolErrorCode, ToolExecutor, ToolRegistry
+from morrow.runtime.tools import ToolExecutor, ToolRegistry
 from morrow.services.files import WorkspaceFileService, WorkspacePathResolver
 from morrow.services.process import ProcessExecutionService, ProcessServiceError
 from morrow.testing import ScriptedModelProvider, make_run_policy
@@ -76,41 +76,26 @@ def test_command_request_is_exactly_one_form_and_has_no_extra_authority():
         RunCommandArguments.model_validate({"argv": []}, strict=True)
 
 
-def test_process_preflight_classifies_forbidden_operations_before_approval(tmp_path):
+def test_process_preflight_accepts_ordinary_shell_and_git_commands(tmp_path):
     service = _service(tmp_path)
-    network = service.preflight(CommandRequest(argv=("curl", "https://example.invalid")))
-    assert "network" in {flag.value for flag in network.risk_flags}
-    destructive = service.preflight(CommandRequest(argv=("rm", "file.txt")))
-    assert "destructive" in {flag.value for flag in destructive.risk_flags}
-    git_write = service.preflight(CommandRequest(argv=("git", "commit", "-m", "x")))
-    assert "git_write" in {flag.value for flag in git_write.risk_flags}
-    git_read = service.preflight(CommandRequest(argv=("git", "status")))
-    assert git_read.risk_flags == ()
-    sudo = service.preflight(CommandRequest(argv=("sudo", "echo", "no")))
-    assert "privilege_escalation" in {flag.value for flag in sudo.risk_flags}
-    shell_bypass = service.preflight(
-        CommandRequest(argv=("sh", "-c", "echo ok; curl https://example.invalid"))
-    )
-    assert "network" in {flag.value for flag in shell_bypass.risk_flags}
     for request in (
-        CommandRequest(argv=("sh", "-c", "git commit -am x")),
-        CommandRequest(shell="cd . && git commit -am x"),
-        CommandRequest(shell="$(git reset --hard)"),
+        CommandRequest(argv=("git", "status")),
+        CommandRequest(argv=("git", "commit", "-m", "x")),
+        CommandRequest(shell="cp a b && mv b c"),
+        CommandRequest(shell="printf ok > out.txt | tee copy.txt"),
+        CommandRequest(shell="cd . && git status"),
     ):
-        wrapped_git = service.preflight(request)
-        assert "git_write" in {flag.value for flag in wrapped_git.risk_flags}
+        plan = service.preflight(request)
+        assert not hasattr(plan, "risk_flags")
     with pytest.raises(ProcessServiceError) as error:
         service.preflight(CommandRequest(argv=_python("print('ok')"), cwd="../"))
     assert error.value.code in {"invalid_path", "outside_workspace"}
 
 
-def test_protected_command_paths_and_invalid_shell_are_rejected(tmp_path):
+def test_command_paths_are_not_keyword_blocked_and_invalid_shell_is_rejected(tmp_path):
     service = _service(tmp_path)
     protected = service.preflight(CommandRequest(argv=("cat", ".env")))
-    assert {flag.value for flag in protected.risk_flags} >= {
-        "protected_resource",
-        "credential_access",
-    }
+    assert protected.request.argv == ("cat", ".env")
     with pytest.raises(ProcessServiceError) as error:
         service.preflight(CommandRequest(shell="echo 'unterminated"))
     assert error.value.code == "invalid_command"
@@ -193,7 +178,7 @@ async def test_output_is_bounded_redacted_and_invalid_utf8_is_deterministic(tmp_
     )
     rendered = json.dumps(result.model_dump(mode="json"), ensure_ascii=False)
     assert "known-secret" not in rendered
-    assert "abc123" not in rendered
+    assert "abc123" in rendered
     assert "hidden" not in rendered
     assert result.stdout_original_bytes > 8 * 1024
     assert result.output_truncated is True
@@ -201,7 +186,7 @@ async def test_output_is_bounded_redacted_and_invalid_utf8_is_deterministic(tmp_
     assert len(result.model_dump_json()) <= 800
     artifact = artifact_content.decode("utf-8")
     assert "known-secret" not in artifact
-    assert "abc123" not in artifact
+    assert "abc123" in artifact
     assert "x" * 1_000 in artifact
 
 
@@ -327,7 +312,7 @@ async def test_process_adapter_spawn_failure_is_typed(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_tool_executor_requires_approval_for_host_process_and_denies_network(tmp_path):
+async def test_tool_executor_runs_registered_processes_without_semantic_approval(tmp_path):
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     service = _service(workspace, secrets=("approval-secret",))
@@ -351,12 +336,7 @@ async def test_tool_executor_requires_approval_for_host_process_and_denies_netwo
             total=1,
         )
         assert outcome.ok is True
-        assert len(approval.requests) == 1
-        preview = "\n".join(approval.requests[0].preview)
-        assert "命令：" in preview
-        assert "非沙箱宿主进程" in preview
-        assert "<redacted>" in preview
-        assert "approval-secret" not in preview
+        assert approval.requests == []
         assert "approval-secret" not in outcome.envelope
         auto_safe = ToolExecutor(
             registry.snapshot(),
@@ -374,7 +354,7 @@ async def test_tool_executor_requires_approval_for_host_process_and_denies_netwo
             total=4,
         )
         assert auto_outcome.ok is True
-        assert len(approval.requests) == 2
+        assert approval.requests == []
         sandboxed = ToolExecutor(
             registry.snapshot(),
             make_run_policy(),
@@ -394,16 +374,16 @@ async def test_tool_executor_requires_approval_for_host_process_and_denies_netwo
             ordinal=3,
             total=4,
         )
-        assert sandbox_outcome.error_code is ToolErrorCode.PERMISSION_DENIED
-        assert len(approval.requests) == 2
-        forbidden = await executor.execute_with_context(
-            _call("run_command", {"argv": ["curl", "https://example.invalid"]}, "network"),
+        assert sandbox_outcome.ok is True
+        assert approval.requests == []
+        unrestricted = await executor.execute_with_context(
+            _call("run_command", {"argv": list(_python("print('network-shaped')"))}, "network"),
             run_context=run,
             ordinal=4,
             total=4,
         )
-        assert forbidden.error_code is ToolErrorCode.PERMISSION_DENIED
-        assert len(approval.requests) == 2
+        assert unrestricted.ok is True
+        assert approval.requests == []
     finally:
         workspace.rmdir()
 
@@ -449,4 +429,4 @@ async def test_fake_provider_can_recover_after_host_command_failure(tmp_path):
     assert first["result"]["status"] == "exited"
     assert first["result"]["exit_code"] == 1
     assert second["result"]["exit_code"] == 0
-    assert len(approval.requests) == 2
+    assert approval.requests == []

@@ -48,7 +48,6 @@ class WorkspaceSearchService:
                 search_root=resolved.target,
                 relative_root=resolved.relative_path,
                 query=query,
-                sensitive_policy=self.files.sensitive_policy,
                 max_line_chars=max_line_chars,
             )
         except SearchAdapterError as exc:
@@ -60,7 +59,6 @@ class WorkspaceSearchService:
             engine=scan.engine,
             truncated=scan.truncated,
             budget_reason=scan.budget_reason,
-            protected_paths=scan.protected_paths,
         )
         return self._fit(result, result_limit)
 

@@ -1,7 +1,7 @@
-# Stage 7 Preflight Reliability — S7P-09 Repeated Direct/Pi Baseline
+# Pi-first Core Agent Loop Simplification
 
-> Status: active; prompt/context repairs and 50M token ceiling approved, refreezing clean campaign
-> Active subplan: Subplan 90 — S7P-09 Repeated Direct Evaluation and Same-Condition Pi Baseline
+> Status: active; implementation and validation complete, checkpoint in progress
+> Paused subplan: Subplan 90 — S7P-09 Repeated Direct Evaluation and Same-Condition Pi Baseline
 > Branch: `feat/s7p-09-direct-pi-baseline`
 > Execution worktree branch: `feat/s7p-09-direct-pi-baseline-run` (intentional clean-pin stack)
 > Activation base: verified local `main@1fd7e229bef276d1a0361e775ce800ade4b318fc`
@@ -9,15 +9,26 @@
 
 ## 1. Current objective
 
-Build and run the auditable S7P-09 campaign: 10 Morrow tasks × 2 fresh repetitions plus the four
-protocol-pinned Pi tasks × 2 fresh repetitions under one exact Provider/model and a frozen
-same-condition contract. Publish success, cost, latency, rework, intervention, tool, context and
-failure evidence as an immutable Direct baseline for Stage 7.
-
-Detailed data contracts, fairness rules, campaign schedule, thresholds, failure handling and
-retention policy are owned by activated Subplan 90.
+Restore a small Pi-like coding loop before continuing evaluation work. Registered workspace
+read/write/edit/bash tools run directly; command and file-content keyword heuristics do not decide
+permission or approval. Keep only structural boundaries needed for correctness and explicit
+authority: workspace path confinement, read-only sessions, revision/conflict checks, atomic
+publication, timeouts/cancellation/output bounds, exact active-credential redaction, Full Access
+grants, and extension-specific Skill/MCP policy. Project instructions load once from the root and
+malformed optional context warns/skips instead of blocking task preparation.
 
 ## 2. Frozen decisions
+
+- The current user request pauses S7P-09 campaign admission and overrides its former permission-
+  equivalence assumptions. No live evaluation run is authorized by this repair.
+- Core command parsing and sensitive-keyword scanning are not security boundaries. `git`, shell
+  redirection/pipelines, `mv`, `cp`, `tee`, `.env`, `secret`, credential examples and PEM fixtures
+  remain ordinary model-visible workspace content.
+- Exact active credential values are still redacted from command output. Workspace escape,
+  external symlinks, read-only sessions, stale revisions, non-atomic publication, Full Access and
+  Skill/MCP authority remain real boundaries.
+- Project instruction discovery is root-only with precedence `AGENTS.override.md`, `AGENTS.md`,
+  `CLAUDE.md`; bad or oversized files warn and skip, and task paths never trigger nested discovery.
 
 - S7P-00 protocol v1 thresholds and task/verifier data are immutable in this subplan.
 - The primary campaign has exactly 28 admitted runs: Morrow 20 and Pi 8. Formal results are never
@@ -42,7 +53,7 @@ retention policy are owned by activated Subplan 90.
 - S7P-09 measures the frozen Agent. It does not tune thresholds/tasks after results, restore the
   removed CompletionChecker or begin Workflow/S7P-10 work.
 
-## 3. Live hold point
+## 3. Paused evaluation context
 
 The user approved `opencode-go/mimo-v2.5` for both Agents, raised the hard total ceiling from
 5,000,000 to 15,000,000 tokens, and kept no currency ceiling. Pi 0.84.2's installed catalog contains the exact model at the same
@@ -66,19 +77,15 @@ execution uses one dedicated clean worktree branch instead of repeatedly moving 
 
 ## 4. Execution order
 
-1. Implement and offline-test strict comparison planning, Morrow/Pi runners, safe trace
-   normalization, permission equivalence and mechanical comparison.
-2. Commit the harness and create a clean evaluation worktree pinned to that commit.
-3. Resolve the common model, readiness and spend hold point; freeze the 28-entry counterbalanced
-   schedule and evidence root.
-4. Run and immediately finalize each campaign entry without state/workspace reuse.
-5. Validate Morrow's two protocol gates and the four-task stable Pi quality deficit.
-6. Publish the immutable baseline/evidence index and exact S7P-09 PASS/FAIL/BLOCKED report.
-7. Run final offline/static gates, integrate verified work and stop before S7P-10.
+1. Remove semantic command risk classification and keyword-based file/search/Git/sandbox blocking.
+2. Allow registered core workspace mutations and commands without per-call heuristic approval.
+3. Replace task-path instruction discovery with one root availability-first load.
+4. Update tests, architecture and stale evaluation selectors/contracts.
+5. Run focused and full offline/static/CLI gates, then checkpoint verified progress.
+6. Do not resume S7P-09 admissions until the user explicitly requests a new evaluation plan.
 
 ## 5. Completion
 
-Completion requires all 28 primary bundles, complete metrics, exact failure attribution, zero
-unaccounted tool calls, the frozen Morrow thresholds, Pi quality deficit ≤ 1, safe evidence
-publication and all offline quality gates. Anything less is reported as S7P-09 FAIL or BLOCKED,
-never as a conditional PASS.
+Completion requires the three reported over-defensive paths to be removed from production behavior,
+targeted regressions and the complete non-live suite to pass, Ruff/compileall/CLI/diff checks to pass,
+and documentation/execution state to describe the simplified boundary honestly.

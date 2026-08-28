@@ -3797,17 +3797,17 @@ def permission_equivalence_matrix(workspace: Path) -> dict[str, object]:
     cases = (
         ("workspace_read", OperationKind.WORKSPACE_READ, (), "allow"),
         ("workspace_write", OperationKind.WORKSPACE_WRITE, (), "allow"),
-        ("project_command", OperationKind.PROCESS, (), "require_approval"),
+        ("project_command", OperationKind.PROCESS, (), "allow"),
         (
             "external_filesystem",
             OperationKind.WORKSPACE_READ,
             (RiskFlag.OUTSIDE_WORKSPACE,),
             "deny",
         ),
-        ("task_network", OperationKind.PROCESS, (RiskFlag.NETWORK,), "deny"),
+        ("task_network", OperationKind.PROCESS, (RiskFlag.NETWORK,), "allow"),
         ("credential_access", OperationKind.WORKSPACE_READ, (RiskFlag.CREDENTIAL_ACCESS,), "deny"),
-        ("git_mutation", OperationKind.PROCESS, (RiskFlag.GIT_WRITE,), "deny"),
-        ("privilege_escalation", OperationKind.PROCESS, (RiskFlag.PRIVILEGE_ESCALATION,), "deny"),
+        ("git_mutation", OperationKind.PROCESS, (RiskFlag.GIT_WRITE,), "allow"),
+        ("privilege_escalation", OperationKind.PROCESS, (RiskFlag.PRIVILEGE_ESCALATION,), "allow"),
     )
     policy = CapabilityPolicy(
         PermissionProfile.from_preset(PermissionPreset.AUTO_SAFE),

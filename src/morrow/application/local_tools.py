@@ -896,7 +896,7 @@ def make_run_command_tool(process: ProcessExecutionService) -> RegisteredTool:
             (
                 "原生沙箱进程（临时快照）；真实工作空间不会以可写方式暴露"
                 if process.requires_sandbox
-                else "非沙箱宿主进程；批准后项目代码可能以当前用户权限访问工作空间外文件或网络"
+                else "非沙箱宿主进程；命令以当前用户权限运行"
             ),
         )
 
@@ -941,13 +941,10 @@ def make_run_command_tool(process: ProcessExecutionService) -> RegisteredTool:
     return make_tool(
         name="run_command",
         description=(
-            "在工作空间相对 cwd 执行一个非交互命令。"
+            "在工作空间相对 cwd 执行一个 shell 命令并返回有界 stdout/stderr。"
             "必须且只能提供 argv 或 shell 二选一：优先 argv 字符串数组，"
             '例如 {"argv":["python3","-m","pytest","-q"]}；不要同时传两者，也不要省略两者。'
-            "工具会分别捕获有界 stdout/stderr；不要添加 2>&1、输出重定向或管道。"
-            "沙箱只读提供当前运行时及工作区已有 .venv，不会安装或同步依赖。"
-            "禁止安装依赖、访问网络、下载或修改 Git；不要调用 pip install、uv sync、"
-            "npm install、curl 或 wget。项目校验应使用已有解释器、脚本或测试。"
+            "shell 形式支持管道、重定向以及复合命令。"
         ),
         arguments_model=RunCommandArguments,
         provider_schema=RUN_COMMAND_PROVIDER_SCHEMA,

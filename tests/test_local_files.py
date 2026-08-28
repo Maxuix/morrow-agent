@@ -4,7 +4,6 @@ import os
 
 import pytest
 
-from morrow.core.capabilities import DefaultSensitiveResourcePolicy
 from morrow.core.local_tools import LocalFileKind
 from morrow.services.files import LocalFileError, WorkspaceFileService, WorkspacePathResolver
 
@@ -44,7 +43,7 @@ def test_external_symlink_is_rejected_and_internal_file_symlink_is_readable(tmp_
     assert outside.read_text(encoding="utf-8") == "outside-secret"
 
 
-def test_protected_symlink_target_and_git_metadata_are_metadata_only(tmp_path):
+def test_keyword_named_files_and_git_metadata_are_ordinary_workspace_files(tmp_path):
     protected = tmp_path / ".env"
     protected.write_text("TOKEN=do-not-disclose", encoding="utf-8")
     (tmp_path / "visible.txt").symlink_to(protected)
@@ -58,14 +57,12 @@ def test_protected_symlink_target_and_git_metadata_are_metadata_only(tmp_path):
     listing = files.list_directory(".git")
     found = files.find_files(".", pattern="*.txt")
 
-    assert alias.protected is True and alias.text == ""
-    assert git_config.protected is True and git_config.text == ""
-    assert all(entry.protected for entry in listing.entries)
-    assert found.paths == ()
-    assert {item.path for item in found.protected_paths} == {"visible.txt"}
-    rendered = str((alias.model_dump(), git_config.model_dump(), listing.model_dump()))
-    assert "do-not-disclose" not in rendered
-    assert "user:token" not in rendered
+    assert alias.protected is False and alias.text == "TOKEN=do-not-disclose"
+    assert git_config.protected is False
+    assert "user:token" in git_config.text
+    assert all(not entry.protected for entry in listing.entries)
+    assert found.paths == ("visible.txt",)
+    assert found.protected_paths == ()
 
 
 def test_mutation_resolution_reports_missing_paths_without_following_symlinks(tmp_path):
@@ -203,7 +200,7 @@ def test_read_rejects_binary_and_invalid_utf8_without_content(tmp_path, raw):
     assert "invalid" not in error.value.message.lower() or error.value.code == "invalid_utf8"
 
 
-def test_protected_paths_and_magic_headers_return_metadata_only(tmp_path):
+def test_keyword_paths_and_private_key_examples_are_readable(tmp_path):
     (tmp_path / ".env").write_text("TOKEN=do-not-disclose", encoding="utf-8")
     (tmp_path / "ordinary.txt").write_text(
         "-----BEGIN PRIVATE KEY-----\nsecret\n", encoding="utf-8"
@@ -212,10 +209,10 @@ def test_protected_paths_and_magic_headers_return_metadata_only(tmp_path):
 
     path_result = files.read_file(".env")
     magic_result = files.read_file("ordinary.txt")
-    assert path_result.protected is True and path_result.text == ""
-    assert magic_result.protected is True and magic_result.text == ""
-    assert "do-not-disclose" not in str(path_result.model_dump())
-    assert DefaultSensitiveResourcePolicy().is_protected_path(".env.example") is False
+    assert path_result.protected is False
+    assert path_result.text == "TOKEN=do-not-disclose"
+    assert magic_result.protected is False
+    assert "BEGIN PRIVATE KEY" in magic_result.text
 
 
 def test_oversized_source_is_rejected_before_content_is_returned(tmp_path):

@@ -5,7 +5,6 @@ from pathlib import Path
 import pytest
 
 from morrow.adapters.local.search import LocalSearchAdapter
-from morrow.core.capabilities import DefaultSensitiveResourcePolicy
 from morrow.core.local_tools import SearchCase, SearchQuery
 from morrow.services.files import LocalFileError, WorkspaceFileService, WorkspacePathResolver
 from morrow.services.search import WorkspaceSearchService
@@ -57,7 +56,7 @@ def test_search_regex_smart_case_and_invalid_pattern(tmp_path):
     assert error.value.code == "invalid_pattern"
 
 
-def test_search_fallback_skips_ignored_binary_and_protected_content(tmp_path):
+def test_search_fallback_skips_ignored_and_binary_but_searches_keyword_files(tmp_path):
     (tmp_path / ".gitignore").write_text("ignored.txt\n", encoding="utf-8")
     (tmp_path / "ignored.txt").write_text("needle", encoding="utf-8")
     (tmp_path / "visible.txt").write_text("needle visible", encoding="utf-8")
@@ -66,13 +65,13 @@ def test_search_fallback_skips_ignored_binary_and_protected_content(tmp_path):
     service = _search(tmp_path, rg_path="/does/not/exist")
 
     result = service.search_text(".", query=SearchQuery(pattern="needle"))
-    assert [match.path for match in result.matches] == ["visible.txt"]
+    assert [match.path for match in result.matches] == [".env", "visible.txt"]
     assert "ignored.txt" not in [match.path for match in result.matches]
-    assert any(item.path == ".env" for item in result.protected_paths)
-    assert "needle secret" not in str(result.model_dump())
+    assert result.protected_paths == ()
+    assert "needle secret" in str(result.model_dump())
 
 
-def test_search_blocks_protected_symlink_targets_and_explicit_git_root(tmp_path):
+def test_search_includes_internal_symlink_targets_and_explicit_git_root(tmp_path):
     (tmp_path / ".env").write_text("needle alias-secret", encoding="utf-8")
     (tmp_path / "visible.txt").symlink_to(tmp_path / ".env")
     (tmp_path / ".git").mkdir()
@@ -84,13 +83,10 @@ def test_search_blocks_protected_symlink_targets_and_explicit_git_root(tmp_path)
     root = service.search_text(".", query=SearchQuery(pattern="needle"))
     git_root = service.search_text(".git", query=SearchQuery(pattern="needle"))
 
-    assert root.matches == ()
-    assert {item.path for item in root.protected_paths} >= {".env", "visible.txt"}
-    assert git_root.matches == ()
-    assert {item.path for item in git_root.protected_paths} == {".git/config"}
-    rendered = str((root.model_dump(), git_root.model_dump()))
-    assert "alias-secret" not in rendered
-    assert "user:token" not in rendered
+    assert {match.path for match in root.matches} >= {".env", "visible.txt"}
+    assert [match.path for match in git_root.matches] == [".git/config"]
+    assert root.protected_paths == ()
+    assert git_root.protected_paths == ()
 
 
 def test_search_result_budget_is_semantic_and_bounded(tmp_path):
@@ -104,17 +100,3 @@ def test_search_result_budget_is_semantic_and_bounded(tmp_path):
     assert result.truncated is True
     assert result.budget_reason == "result_budget"
     assert len(result.model_dump_json()) <= 500
-
-
-def test_sensitive_policy_is_frozen_and_local_only():
-    policy = DefaultSensitiveResourcePolicy()
-    for marker in (
-        b"-----BEGIN PRIVATE KEY-----",
-        b"-----BEGIN RSA PRIVATE KEY-----",
-        b"-----BEGIN EC PRIVATE KEY-----",
-        b"-----BEGIN DSA PRIVATE KEY-----",
-        b"-----BEGIN ENCRYPTED PRIVATE KEY-----",
-    ):
-        assert policy.is_protected_content(marker)
-    with pytest.raises((TypeError, AttributeError)):
-        policy.protected_suffixes = (".secret",)

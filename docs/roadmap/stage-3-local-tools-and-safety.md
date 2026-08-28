@@ -117,9 +117,10 @@ Stage 3 只激活前三个工作空间模式。`full_access` 可以进入领域�
 建立可持久、可撤销、可冻结的 `CapabilityGrant` 前必须明确返回 unsupported，不能静默降级或临时绕过
 工作空间解析器。
 
-参数校验后，领域预检生成包含规范化路径、命令类别和风险原因的 `OperationIntent`；统一策略返回
-`allow`、`require_approval` 或 `deny`。同一工具可以因实际参数得到不同结果，不能继续只依赖注册时的
-静态 `never|required` 审批标记。拒绝必须发生在审批之前，用户确认不能提升当前模式根本未授予的能力。
+参数校验后，领域预检生成包含规范化路径和执行类别的 `OperationIntent`。核心工作空间
+read/write/edit/bash 以注册能力和结构边界为准，命令/文件关键词启发式不得充当拒绝边界或强制审批层。
+`CapabilityPolicy` 仍处理只读 Session、Full Access grant、Skill/MCP 等真实能力边界；这些边界不能由用户
+确认或字符串分类绕过。
 
 ### 4.6 成熟实现参考基线
 
@@ -137,11 +138,11 @@ Stage 3 以 [earendil-works/pi](https://github.com/earendil-works/pi) 的 coding
 
 明确不照搬：
 
-- Pi 默认继承启动用户的文件、进程、网络和凭据权限；Morrow 必须执行本阶段的工作空间、审批与原生
-  沙箱边界。
+- Pi 默认继承启动用户的进程权限；Morrow 核心工具保持工作空间路径、revision/原子发布、输出预算和可选
+  原生沙箱边界，但不在 Agent loop 前叠加命令语义审批器。
 - 不接受绝对路径或默认工作空间外访问，不自动下载 `rg`/`fd` 等宿主工具。
 - 不直接覆盖写入，不采用无 revision/hash 的 last-write-wins，也不自动应用模糊文本匹配。
-- 不把任意 Shell、测试或项目脚本在 Host 上归类为可自动安全执行。
+- 不用 `git`、`mv`、重定向或凭据样式关键词推断实际权限；模型可调用的核心工具本身就是授权面。
 
 目标表述固定为：**Pi 级编码工具体验，加上 Morrow 级工作空间安全、可见修改和可审计策略。**
 Pi 使用 MIT License；若实质复制而非独立重写代码，必须保留对应版权和许可声明。
@@ -179,11 +180,11 @@ FileMutationResult
 | `search_text` | 在受限范围内搜索文本 | read |
 | `apply_patch` | 以 SHA-256 和唯一精确编辑修改单个文件 | workspace write |
 | `write_file` | 创建或按 SHA-256 替换单个 UTF-8 文件 | workspace write |
-| `delete_file` | 按必需 SHA-256 删除一个工作空间内普通文件 | persistent write + approval |
-| `move_file` | 按必需 SHA-256 原子移动到不存在的工作空间路径 | persistent write + approval |
-| `rename_file` | 按必需 SHA-256 在同一父目录内原子重命名 | persistent write + approval |
+| `delete_file` | 按必需 SHA-256 删除一个工作空间内普通文件 | workspace write |
+| `move_file` | 按必需 SHA-256 原子移动到不存在的工作空间路径 | workspace write |
+| `rename_file` | 按必需 SHA-256 在同一父目录内原子重命名 | workspace write |
 | `show_changes` | 查看当前运行实际 ChangeSet/Diff | read |
-| `run_command` | 在审批后的非隔离 Host 执行有界非交互命令 | process |
+| `run_command` | 在当前用户权限下执行有界非交互命令 | process |
 
 工具命名可以在子计划中调整，但能力边界必须保持一致。
 
@@ -198,7 +199,8 @@ FileMutationResult
 
 - 第一版可以调用已安装的 `rg`，也可以实现 Python fallback；选择必须通过 ADR 固定。
 - 外部二进制只是 Adapter，不得绕过路径和输出限制。
-- 把 `.git`/`.morrow` 作为受保护路径，即使用户直接把它们指定为搜索根也不能读取内容；同时尊重虚拟环境、构建产物和用户配置的 ignore。
+- 直接指定的工作空间文件可读取/搜索，包括 `.git`、`.env`、源码测试和示例配置；遍历仍可忽略缓存、
+  虚拟环境和构建产物以控制成本。
 - 返回稳定的文件、行号、匹配片段和截断标记。
 - 搜索无结果是正常结果，不是异常。
 - 对超大仓库设置文件数、总字节数、耗时和结果条目预算。
@@ -274,21 +276,14 @@ ChangeSet（当前进程内运行范围）
 | `run_command` | 执行非交互命令，返回结构化结果 |
 | `run_tests` | 可选薄封装；复用同一进程服务与策略，不复制执行逻辑 |
 
-Shell 风险预检至少识别：
-
-- 删除、覆盖、权限修改、进程控制、包安装、系统目录访问。
-- `git commit/push/reset/clean` 等有副作用 Git 命令。
-- 网络下载、上传、发布、部署和远程执行。
-- 命令替换、重定向、管道与 shell-specific 语法。
-
-第一版若无法可靠解析复杂 shell 字符串，应优先接受 `argv[]`，并把需要 shell 解释器的命令提升为高风险或默认拒绝。
+核心进程服务同时接受 `argv[]` 和 shell 字符串。它只校验请求形状、工作目录和执行预算，不从 shell 文本
+猜测真实子命令或把重定向、管道、Git、`mv`、`cp`、`tee` 提升为审批/拒绝。未来若保留风险启发式，只能
+用于界面提示或审批等级建议，不能作为能力安全边界。
 
 进程执行分成两个后端，但共享同一 `ProcessExecutionService`、`CommandResult`、预算、取消和输出合同：
 
-- `HostProcessAdapter`：服务 Manual 和受限 Auto Safe。工作目录与命令预检仍然有效，但宿主进程没有
-  操作系统级工作空间边界；任何项目代码、测试或不透明命令都必须逐次审批，并在预览中明确显示
-  有界脱敏命令与“非沙箱宿主进程”。shell 包装、命令替换或直接 shell 中的 Git 命令按 Git 写入风险
-  在审批前拒绝。
+- `HostProcessAdapter`：服务 Manual 和受限 Auto Safe。工作目录与请求预算仍然有效，但宿主进程没有
+  操作系统级工作空间边界；普通工作空间命令直接执行，输出只遮蔽当前运行已知凭据的精确值。
 - `NativeSandboxProcessAdapter`：服务 Auto Sandboxed。macOS 以 Seatbelt 类原生机制为目标，Linux
   以 bubblewrap 类原生机制为目标；具体可用性在启动时探测，不自动安装宿主组件。Linux 在真实 runner
   通过前固定报告 unsupported，即使主机已经安装 `bwrap` 也不声明支持。
@@ -512,8 +507,7 @@ Stage 3 的确定策略：
 - 绝对路径。
 - 不存在目标文件但父目录经符号链接逃逸。
 - 大小写或路径别名绕过。
-- 指向 `.env`、`.git` 或其他受保护目标的工作区内文件符号链接别名。
-- 嵌入 PKCS#8、RSA、EC、DSA 或 encrypted PEM 私钥的普通文件名内容。
+- 指向工作区外部的文件符号链接别名；工作区内部别名按普通文件处理。
 
 ### 11.4 外部并发修改
 
@@ -521,10 +515,9 @@ Morrow 读取文件后，测试在写入前模拟外部修改。Patch 返回 con
 
 ### 11.5 命令风险与取消
 
-- 危险命令被拒绝或要求确认。
-- 用户拒绝后 Agent 收到普通工具结果并安全收尾。
+- `git status`、Git 写命令、重定向、管道、`mv`、`cp` 和 `tee` 不因文本分类被误拒绝。
 - 超时或 Ctrl+C 能终止进程组。
-- shell 包装的 Git 写命令在审批前被拒绝，审批预览只显示有界脱敏命令。
+- 已知凭据的精确值在有界命令输出和 Artifact 中被遮蔽，源码里的普通关键词保持可见。
 - 超大输出被截断，Agent 仍得到退出码和截断标记。
 
 ### 11.6 状态诚实性
