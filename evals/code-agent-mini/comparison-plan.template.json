@@ -1,0 +1,62 @@
+{
+  "schema": "morrow.s7p-09.comparison-plan.v1",
+  "campaign_id": "REPLACE_WITH_NEW_CAMPAIGN_ID",
+  "protocol": {"id": "s7p-00", "version": 1, "sha256": "REPLACE_SHA256"},
+  "dataset": {"id": "morrow-code-agent-mini", "sha256": "REPLACE_SHA256"},
+  "source": {
+    "morrow_commit": "REPLACE_FULL_COMMIT",
+    "morrow_source_sha256": "REPLACE_SHA256",
+    "pi_version": "0.84.2",
+    "pi_package_sha256": "REPLACE_SHA256",
+    "pi_executable_sha256": "REPLACE_SHA256",
+    "clean": true
+  },
+  "profiles": {
+    "morrow": {"profile": "REPLACE_WITH_STRICT_PROFILE_OBJECT", "sha256": "REPLACE_SHA256"},
+    "pi": {"profile": "REPLACE_WITH_STRICT_PROFILE_OBJECT", "sha256": "REPLACE_SHA256"}
+  },
+  "common_model": {
+    "provider_family": "opencode-go",
+    "service": "https://opencode.ai/zen/go/v1",
+    "canonical_model_id": "mimo-v2.5",
+    "model_revision": "REPLACE_EXACT_REVISION",
+    "context_window": 1000000,
+    "max_output_tokens": 128000,
+    "sampling": {
+      "temperature": 0,
+      "top_p": 1,
+      "seed": 1,
+      "max_output_tokens": 1
+    }
+  },
+  "permissions": {
+    "capabilities": ["read", "search", "edit", "create", "command"],
+    "denials": [
+      "credential_access",
+      "external_filesystem",
+      "git_mutation",
+      "privilege_escalation",
+      "task_network"
+    ],
+    "morrow_policy_sha256": "REPLACE_SHA256",
+    "pi_extension_sha256": "REPLACE_SHA256"
+  },
+  "deadlines": {"run_seconds": 1800, "tool_seconds": 120},
+  "ceilings": {"total_tokens": 5000000, "currency": "USD", "total_cost": null},
+  "schedule": "GENERATE_WITH_eval.py_schedule",
+  "evidence_root": {
+    "id": "REPLACE",
+    "path_sha256": "REPLACE_SHA256",
+    "minimum_free_bytes": 1
+  },
+  "start_not_before": "REPLACE_ISO_8601_WITH_TIMEZONE",
+  "hold_point": {
+    "status": "REPLACE_WITH_APPROVED_AFTER_USER_CONFIRMATION",
+    "scope": "common_model_and_campaign_ceilings",
+    "approved_at": "REPLACE_ISO_8601_WITH_TIMEZONE",
+    "morrow_readiness_sha256": "REPLACE_SHA256",
+    "pi_readiness_sha256": "REPLACE_SHA256",
+    "model_probe_sha256": "REPLACE_SHA256"
+  },
+  "integrity": "REPLACE_WITH_HASH_OF_ALL_OTHER_FIELDS"
+}

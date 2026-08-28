@@ -263,19 +263,31 @@ class SkillSelectionService:
             catalog_digest=catalog_digest,
         )
 
-    def sync_catalog(self, txn, *, now=None) -> None:
-        """Persist current catalog facts inside the same new-run admission.
+    def sync_catalog(self, txn, selections: Iterable[SkillSelection], *, now=None) -> None:
+        """Persist selected catalog facts inside the same new-run admission.
 
         This keeps composition/recovery free of Catalog reads while still
         satisfying the v14 version foreign keys for packages installed by a
         process that did not have an operational journal open at install time.
         """
 
-        view = self.catalog.scan()
-        for entry in view.entries:
+        selected = tuple(selections)
+        if not selected:
+            return
+        views = {}
+        for selection in selected:
+            view = views.setdefault(selection.scope_id, self.catalog.scan_scope(selection.scope_id))
+            entry = view.entry(selection.skill_id, scope_id=selection.scope_id)
+            if entry is None:
+                raise SkillSelectionError("selected Skill is unavailable")
+            version = next(
+                (item for item in entry.versions if item.version_id == selection.version_id),
+                None,
+            )
+            if version is None:
+                raise SkillSelectionError("selected Skill version is unavailable")
             txn.put_skill_definition(entry.definition, updated_at=now or txn.now())
-            for version in entry.versions:
-                txn.put_skill_version(version)
+            txn.put_skill_version(version)
 
     def _resolve(
         self,

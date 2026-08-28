@@ -52,7 +52,7 @@ from morrow.core.learning import (
     LearningReview,
     LearningReviewStatus,
 )
-from morrow.core.learning_ports import LearningReviewerPort
+from morrow.core.learning_ports import LEARNING_CONTEXT_MAX_RENDERED_CHARS, LearningReviewerPort
 from morrow.core.permissions import (
     CapabilityGrant,
     CapabilityName,
@@ -92,6 +92,7 @@ class OperationalApplicationService:
         learning_model=None,
         learning_review_timeout_seconds: float = REVIEW_MAX_TIMEOUT_SECONDS / 2,
         learning_review_lease_seconds: int = int(REVIEW_MAX_TIMEOUT_SECONDS),
+        learning_review_context_chars: int = LEARNING_CONTEXT_MAX_RENDERED_CHARS,
         config_service=None,
         preference_inbox: PreferenceInbox | None = None,
         preference_queries: PreferenceQueries | None = None,
@@ -148,6 +149,7 @@ class OperationalApplicationService:
             clock=self.clock,
             timeout_seconds=learning_review_timeout_seconds,
             lease_seconds=learning_review_lease_seconds,
+            context_char_limit=learning_review_context_chars,
             reviewer=learning_reviewer,
             model=learning_model,
             preference_v2_enabled=preference_v2_enabled,

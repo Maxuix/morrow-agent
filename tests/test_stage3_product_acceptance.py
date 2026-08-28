@@ -185,7 +185,7 @@ async def test_fake_provider_python_locate_patch_fail_correct_validate_and_repor
         and "diff" in payload.get("result", {})
     )
     assert "+    return 2" in diff_payload["diff"]
-    assert len(approval.requests) == 4
+    assert approval.requests == []
     assert session_app.session.latest_metrics is not None
     assert session_app.session.latest_metrics.tool_calls == 9
     assert session_app.session.latest_metrics.validation_outcome == "not_run"
@@ -253,5 +253,5 @@ async def test_fake_provider_nested_text_fixture_preserves_user_change_and_repor
 
     assert target.read_text(encoding="utf-8") == "# Guide\n\nnew text\n"
     assert user_file.read_text(encoding="utf-8") == "pre-existing user change\n"
-    assert len(approval.requests) == 1
+    assert approval.requests == []
     assert "未运行项目校验" in session_app.session.messages[-1].content

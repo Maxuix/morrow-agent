@@ -209,8 +209,8 @@ def test_process_local_context_fallback_remains_live():
     first = builder.build(session)
     session.preferences = Preferences(language="fr")
     second = builder.build(session)
-    assert '"language": "zh"' in _system_message(first, "用户状态数据").content
-    assert '"language": "fr"' in _system_message(second, "用户状态数据").content
+    assert '"language": "zh"' in _system_message(first, "用户状态上下文").content
+    assert '"language": "fr"' in _system_message(second, "用户状态上下文").content
 
 
 def test_persisted_session_without_projection_does_not_use_live_state(tmp_path):
@@ -223,7 +223,7 @@ def test_persisted_session_without_projection_does_not_use_live_state(tmp_path):
         builder = make_context_builder()
         first = builder.build(session)
         assert not any(
-            message.content and message.content.startswith("以下是用户状态数据")
+            message.content and message.content.startswith("以下是用户状态上下文")
             for message in first.messages
         )
         session.preferences = Preferences(language="fr")

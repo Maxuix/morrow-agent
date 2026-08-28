@@ -12,7 +12,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
-from typing import Annotated, Literal, Protocol
+from typing import Annotated, Literal
 
 from pydantic import ConfigDict, Field, field_validator, model_validator
 
@@ -521,68 +521,3 @@ class ToolHandlerOutcome:
             raise TypeError("ToolHandlerOutcome artifact content must be bytes")
         object.__setattr__(self, "artifact_refs", artifact_refs)
         object.__setattr__(self, "mcp_result_artifact_refs", mcp_result_artifact_refs)
-
-
-class SensitiveResourcePolicy(Protocol):
-    """Local content-safety contract shared by future content-producing services."""
-
-    def is_protected_path(self, relative_path: str) -> bool: ...
-
-    def is_protected_content(self, content: bytes) -> bool: ...
-
-
-@dataclass(frozen=True)
-class DefaultSensitiveResourcePolicy:
-    """Conservative local policy for credential and private-key disclosure."""
-
-    protected_exact_names: tuple[str, ...] = (
-        ".git-credentials",
-        ".netrc",
-        ".npmrc",
-        ".pypirc",
-        "credentials",
-        "credential",
-        "secrets",
-        "secret",
-        "id_rsa",
-        "id_ed25519",
-        "id_ecdsa",
-    )
-    protected_suffixes: tuple[str, ...] = (".pem", ".key", ".p12", ".pfx")
-    example_names: tuple[str, ...] = (".env.example", ".env.sample", ".env.template")
-
-    def is_protected_path(self, relative_path: str) -> bool:
-        normalized = relative_path.replace("\\", "/").strip("/")
-        if not normalized:
-            return True
-        parts = normalized.split("/")
-        if any(part in {"", ".", ".."} for part in parts):
-            return True
-        for raw_part in parts:
-            part = raw_part.casefold()
-            if part in {".git", ".morrow"}:
-                return True
-            if part in self.protected_exact_names:
-                return True
-            if part == ".env" or (part.startswith(".env.") and part not in self.example_names):
-                return True
-            if part.endswith(self.protected_suffixes):
-                return True
-        return False
-
-    def is_protected_content(self, content: bytes) -> bool:
-        head = content[:16_384].lower()
-        private_key_markers = (
-            b"private key-----",
-            b"-----begin pgp private key block-----",
-            b"openssh private key",
-        )
-        if any(marker in head for marker in private_key_markers):
-            return True
-        credential_markers = (
-            b"aws_access_key_id=",
-            b"aws_secret_access_key=",
-            b"client_secret=",
-            b'private_key":',
-        )
-        return any(marker in head for marker in credential_markers)

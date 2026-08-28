@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import os
 import sys
 from dataclasses import dataclass
@@ -503,8 +504,25 @@ def build_operational_api(
     )
     if preference_writer is not None:
         resolved_config_service.preference_writer = preference_writer
+    agent_policy = app.runtime_policy.agent_run
+    model_safe_chars = (
+        agent_policy.model_safe_request_chars.get(
+            f"{learning_model.provider_id}/{learning_model.model_id}"
+        )
+        if learning_model is not None
+        else None
+    )
+    learning_context_chars = min(
+        agent_policy.requested_context_chars,
+        model_safe_chars or agent_policy.unknown_model_fallback_chars,
+    )
     learning_reviewer = (
-        ModelLearningReviewer(learning_provider) if learning_provider is not None else None
+        ModelLearningReviewer(
+            learning_provider,
+            request_char_limit=learning_context_chars,
+        )
+        if learning_provider is not None
+        else None
     )
     resolved_preference_reviewer = preference_reviewer
     if resolved_preference_reviewer is None and learning_provider is not None:
@@ -551,8 +569,9 @@ def build_operational_api(
         clock=services.journal.now,
         learning_reviewer=learning_reviewer,
         learning_model=learning_model,
-        learning_review_timeout_seconds=app.runtime_policy.reviews.learning_timeout_seconds,
-        learning_review_lease_seconds=app.runtime_policy.reviews.learning_lease_seconds,
+        learning_review_timeout_seconds=agent_policy.max_run_seconds,
+        learning_review_lease_seconds=math.ceil(agent_policy.max_run_seconds) + 60,
+        learning_review_context_chars=learning_context_chars,
         config_service=resolved_config_service,
         preference_inbox=preference_inbox,
         preference_queries=preference_queries,

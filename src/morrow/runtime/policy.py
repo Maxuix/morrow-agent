@@ -233,14 +233,8 @@ class AgentPolicy(ProtocolModel):
         settings: LongHorizonPolicySettings | None = None,
         host_stop_source: Literal["none", "provided"] = "none",
     ) -> RunPolicy:
-        """Resolve the explicit Pi-parity v2 policy for one exact model.
-
-        The exact context window is a capability fact.  The method deliberately refuses to
-        substitute the legacy unknown-model character fallback when that fact is absent.
-        """
-        if context_window_tokens is None:
-            raise ValueError("exact model context_window_tokens is required for long-horizon runs")
-        if (
+        """Resolve v2 with exact token accounting or a bounded character fallback."""
+        if context_window_tokens is not None and (
             isinstance(context_window_tokens, bool)
             or context_window_tokens <= 0
             or context_window_tokens > AGENT_MAX_CONTEXT_WINDOW_TOKENS
@@ -249,8 +243,8 @@ class AgentPolicy(ProtocolModel):
         selected = settings or LongHorizonPolicySettings()
         exact_key = f"{model.provider_id}/{model.model_id}"
         safe = self.model_safe_request_chars.get(exact_key)
-        # These character values are retained only for bounded diagnostics and v1 tool adapters.
-        # Context admission for v2 is token based and never uses this fallback as a window.
+        # When the exact token window is unavailable, this remains an explicit conservative
+        # request boundary. It is never converted into or reported as a model token window.
         request_limit = min(
             self.requested_context_chars,
             safe if safe is not None else self.unknown_model_fallback_chars,
@@ -300,13 +294,11 @@ class ReviewPolicy(ProtocolModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    learning_timeout_seconds: float = Field(gt=0, le=REVIEW_MAX_TIMEOUT_SECONDS)
-    learning_lease_seconds: int = Field(gt=0, le=REVIEW_MAX_LEASE_SECONDS)
     preference_timeout_seconds: float = Field(gt=0, le=REVIEW_MAX_TIMEOUT_SECONDS)
     preference_lease_seconds: int = Field(gt=0, le=REVIEW_MAX_LEASE_SECONDS)
     preference_retry_backoff_seconds: tuple[int, ...]
 
-    @field_validator("learning_timeout_seconds", "preference_timeout_seconds")
+    @field_validator("preference_timeout_seconds")
     @classmethod
     def finite_timeouts(cls, value: float) -> float:
         return finite_number(value, label="Review timeout")
@@ -330,8 +322,6 @@ class ReviewPolicy(ProtocolModel):
 
     @model_validator(mode="after")
     def leases_outlive_attempts(self) -> ReviewPolicy:
-        if self.learning_lease_seconds <= self.learning_timeout_seconds:
-            raise ValueError("Learning Review lease must outlive its timeout")
         if self.preference_lease_seconds <= self.preference_timeout_seconds:
             raise ValueError("Preference Review lease must outlive its timeout")
         return self

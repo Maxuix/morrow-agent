@@ -306,9 +306,10 @@ class RunPolicy(ProtocolModel):
         )
         if any(value is not None for value in retired):
             raise ValueError("v2 RunPolicy must not carry active v1 cumulative controls")
-        if self.context_window_tokens is None:
-            raise ValueError("v2 RunPolicy requires an exact context window")
-        if self.reserve_tokens >= self.context_window_tokens:
+        if (
+            self.context_window_tokens is not None
+            and self.reserve_tokens >= self.context_window_tokens
+        ):
             raise ValueError("reserve_tokens must be below the context window")
         if self.max_provider_retry_delay_seconds < self.retry_base_delay_seconds:
             raise ValueError("provider retry cap must cover the base retry delay")

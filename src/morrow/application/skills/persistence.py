@@ -19,7 +19,7 @@ from morrow.core.skills.catalog import (
     SkillVersion,
 )
 from morrow.core.skills.identity import SKV_ID_PREFIX, validate_skv_id
-from morrow.core.skills.trust import SourceKind, TrustEvidence, effective_trust
+from morrow.core.skills.trust import SourceKind
 
 from .errors import SkillLifecycleError, SkillLifecycleNeedsResolution
 
@@ -185,14 +185,10 @@ class SkillLifecyclePersistenceMixin:
         source_kind: SourceKind | None,
         tree_digest: str | None,
         name: str | None = None,
-        display_version: str | None = None,
-        file_count: int = 0,
-        total_bytes: int = 0,
+        version: SkillVersion | None = None,
         enabled: bool | None = None,
         pinned_version_id: str | None = None,
         delete_version: bool = False,
-        evidence_refs: tuple[str, ...] = (),
-        controlled_approval_ref: str | None = None,
     ):
         from morrow.core.skills.bindings import SkillLifecycleResult
 
@@ -235,37 +231,18 @@ class SkillLifecyclePersistenceMixin:
                     )
                 return self._result_from_skill_operation(existing_skill_operation)
             if operation == "import" and name is not None and version_id is not None:
+                if version is None or version.version_id != version_id:
+                    raise SkillLifecycleError(
+                        "needs_resolution", "managed Skill version projection is unavailable"
+                    )
                 definition = SkillDefinition(
                     skill_id=skill_id,
                     name=name,
-                    source_kind=source_kind or SourceKind.IMPORTED,
-                    scope_id=scope_id,
+                    source_kind=version.source_kind,
+                    scope_id=version.scope_id,
                     availability=SkillAvailability.AVAILABLE,
                     conflict_status=SkillConflictStatus.NONE,
-                    effective_trust=effective_trust(
-                        TrustEvidence(
-                            source_kind=source_kind or SourceKind.IMPORTED,
-                            controlled_approval_ref=controlled_approval_ref,
-                        )
-                    ),
-                )
-                version = SkillVersion(
-                    version_id=version_id,
-                    skill_id=skill_id,
-                    display_version=display_version,
-                    tree_digest=tree_digest or ("0" * 64),
-                    file_count=file_count,
-                    total_bytes=total_bytes,
-                    source_kind=source_kind or SourceKind.IMPORTED,
-                    scope_id=scope_id,
-                    provenance=(
-                        f"{(source_kind or SourceKind.IMPORTED).value}:draft"
-                        if controlled_approval_ref is not None
-                        else f"{(source_kind or SourceKind.IMPORTED).value}:managed"
-                    ),
-                    evidence_refs=evidence_refs,
-                    effective_trust=definition.effective_trust,
-                    created_at=self.clock(),
+                    effective_trust=version.effective_trust,
                 )
                 txn.put_skill_definition(definition, updated_at=self.clock())
                 txn.put_skill_version(version)

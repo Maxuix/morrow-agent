@@ -87,7 +87,7 @@ def test_platform_backend_builders_are_fixed_and_fail_closed(tmp_path, monkeypat
     assert "--ro-bind" in command
 
 
-def test_snapshot_excludes_sensitive_external_and_cache_paths(tmp_path):
+def test_snapshot_includes_keyword_files_but_excludes_external_and_cache_paths(tmp_path):
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     (workspace / "main.py").write_text("print('ok')\n")
@@ -101,7 +101,7 @@ def test_snapshot_excludes_sensitive_external_and_cache_paths(tmp_path):
     session = service.prepare(workspace, run_id="run", call_id="call")
     try:
         assert (session.snapshot_root / "main.py").exists()
-        assert not (session.snapshot_root / ".env").exists()
+        assert (session.snapshot_root / ".env").read_text() == "SECRET=hidden\n"
         assert not (session.snapshot_root / ".pytest_cache").exists()
         assert not (session.snapshot_root / "external-link").exists()
         assert (session.snapshot_root / "internal-link").is_symlink()
@@ -222,7 +222,7 @@ class _Approval:
 
 
 @pytest.mark.asyncio
-async def test_sandbox_text_change_requires_approval_and_promotes_safely(tmp_path):
+async def test_sandbox_text_change_promotes_without_an_approval_layer(tmp_path):
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     target = workspace / "main.py"
@@ -260,7 +260,7 @@ async def test_sandbox_text_change_requires_approval_and_promotes_safely(tmp_pat
     )
     outcome = await executor.execute_with_context(call, run_context=run, ordinal=1, total=1)
     assert outcome.ok is True
-    assert "main.py" in "\n".join(approval.request.preview)
+    assert "request" not in approval.__dict__
     assert target.read_text() == "print('after')\n"
     shown = await executor.execute_with_context(
         FunctionToolCall(id="show", name="show_changes", arguments="{}"),
@@ -485,7 +485,7 @@ print(json.dumps({{'outside': outside, 'home': home, 'home_read': home_read, 'pr
         "outside": "blocked",
         "home": "blocked",
         "home_read": "blocked",
-        "protected": "blocked",
+        "protected": "allowed",
         "network": "blocked",
     }
     assert not sentinel.exists()

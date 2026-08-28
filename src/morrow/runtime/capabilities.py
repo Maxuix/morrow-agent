@@ -40,30 +40,17 @@ class CapabilityReason(StrEnum):
     WORKSPACE_WRITE_APPROVAL_REQUIRED = "workspace_write_approval_required"
     CONFIGURATION_APPROVAL_REQUIRED = "configuration_approval_required"
     MUTATION_APPROVAL_REQUIRED = "mutation_approval_required"
-    NETWORK_APPROVAL_REQUIRED = "network_approval_required"
-    LOOPBACK_APPROVAL_REQUIRED = "loopback_approval_required"
-    DESTRUCTIVE_APPROVAL_REQUIRED = "destructive_approval_required"
-    GIT_WRITE_APPROVAL_REQUIRED = "git_write_approval_required"
-    EXTERNAL_EFFECT_APPROVAL_REQUIRED = "external_effect_approval_required"
 
 
 _DENIED_RISKS = {
     RiskFlag.OUTSIDE_WORKSPACE: CapabilityReason.OUTSIDE_WORKSPACE,
-    RiskFlag.CREDENTIAL_ACCESS: CapabilityReason.CREDENTIAL_ACCESS_DENIED,
-    RiskFlag.PROTECTED_RESOURCE: CapabilityReason.PROTECTED_RESOURCE,
-    RiskFlag.PRIVILEGE_ESCALATION: CapabilityReason.PRIVILEGE_ESCALATION_NOT_ENABLED,
-}
-
-_APPROVAL_RISKS = {
-    RiskFlag.NETWORK: CapabilityReason.NETWORK_APPROVAL_REQUIRED,
-    RiskFlag.LOOPBACK: CapabilityReason.LOOPBACK_APPROVAL_REQUIRED,
-    RiskFlag.DESTRUCTIVE: CapabilityReason.DESTRUCTIVE_APPROVAL_REQUIRED,
-    RiskFlag.GIT_WRITE: CapabilityReason.GIT_WRITE_APPROVAL_REQUIRED,
-}
-
-_SANDBOX_DENIED_RISKS = {
     RiskFlag.NETWORK: CapabilityReason.NETWORK_NOT_ENABLED,
     RiskFlag.LOOPBACK: CapabilityReason.LOOPBACK_NOT_ENABLED,
+    RiskFlag.CREDENTIAL_ACCESS: CapabilityReason.CREDENTIAL_ACCESS_DENIED,
+    RiskFlag.PROTECTED_RESOURCE: CapabilityReason.PROTECTED_RESOURCE,
+    RiskFlag.DESTRUCTIVE: CapabilityReason.DESTRUCTIVE_NOT_ENABLED,
+    RiskFlag.GIT_WRITE: CapabilityReason.GIT_WRITE_NOT_ENABLED,
+    RiskFlag.PRIVILEGE_ESCALATION: CapabilityReason.PRIVILEGE_ESCALATION_NOT_ENABLED,
 }
 
 
@@ -95,63 +82,43 @@ class CapabilityPolicy:
                 else CapabilityReason.INVALID_PROFILE
             )
             return self._deny(reason)
+        if self.workspace.read_only and self._mutates_or_runs(intent):
+            return self._deny(CapabilityReason.READ_ONLY_SESSION)
         full_access_host = self._is_full_access_host(intent)
         if full_access_host and not allow_unconfined_host:
             return self._deny(CapabilityReason.FULL_ACCESS_GRANT_REQUIRED)
+        if full_access_host:
+            return self._approval(CapabilityReason.FULL_ACCESS_HOST_APPROVAL_REQUIRED, intent)
+        # Pi-style core: a registered workspace mutation or command is already authorized to run.
+        # Semantic command parsing and per-call approvals are deliberately outside this path. Skill
+        # scripts remain an extension with their own declared-permission and sandbox policy.
+        if intent.kind is OperationKind.WORKSPACE_WRITE or (
+            intent.kind is OperationKind.PROCESS and intent.command_class != "skill_script"
+        ):
+            return self._allow()
         for flag, reason in _DENIED_RISKS.items():
             if flag in intent.risk_flags:
-                if full_access_host and flag is RiskFlag.OUTSIDE_WORKSPACE:
+                if full_access_host and flag in {
+                    RiskFlag.OUTSIDE_WORKSPACE,
+                    RiskFlag.NETWORK,
+                    RiskFlag.LOOPBACK,
+                }:
                     continue
                 return self._deny(reason)
-        if self.workspace.read_only and self._mutates_or_runs(intent):
-            return self._deny(CapabilityReason.READ_ONLY_SESSION)
+        if intent.kind is OperationKind.EXTERNAL_EFFECT:
+            return self._deny(CapabilityReason.EXTERNAL_EFFECT_NOT_ENABLED)
+        if intent.kind is OperationKind.DESTRUCTIVE:
+            return self._deny(CapabilityReason.DESTRUCTIVE_NOT_ENABLED)
+        if RiskFlag.MUTATION_APPROVAL_REQUIRED in intent.risk_flags:
+            return self._approval(CapabilityReason.MUTATION_APPROVAL_REQUIRED, intent)
         if (
             intent.requires_sandbox
             and self.profile.process_isolation is not ProcessIsolation.NATIVE_SANDBOX
         ):
             return self._deny(CapabilityReason.SANDBOX_UNAVAILABLE)
 
-        if intent.kind is OperationKind.PROCESS:
-            if self.profile.process_isolation is ProcessIsolation.NATIVE_SANDBOX:
-                if intent.requires_host:
-                    return self._deny(CapabilityReason.HOST_PROCESS_NOT_ALLOWED)
-                if not self.sandbox_available:
-                    return self._deny(CapabilityReason.SANDBOX_UNAVAILABLE)
-                for flag, reason in _SANDBOX_DENIED_RISKS.items():
-                    if flag in intent.risk_flags:
-                        return self._deny(reason)
-                return self._allow()
-            if self.profile.access_scope is AccessScope.FULL_ACCESS:
-                return self._approval(
-                    CapabilityReason.FULL_ACCESS_HOST_APPROVAL_REQUIRED,
-                    intent,
-                )
-            if RiskFlag.MUTATION_APPROVAL_REQUIRED in intent.risk_flags:
-                return self._approval(CapabilityReason.MUTATION_APPROVAL_REQUIRED, intent)
-            risk_reasons = self._approval_risk_reasons(intent)
-            if risk_reasons:
-                return self._approval_many(risk_reasons, intent)
-            if self.profile.approval_mode is ApprovalMode.MANUAL:
-                return self._approval(
-                    CapabilityReason.HOST_PROCESS_APPROVAL_REQUIRED,
-                    intent,
-                )
-            return self._allow()
-        if RiskFlag.MUTATION_APPROVAL_REQUIRED in intent.risk_flags:
-            return self._approval(CapabilityReason.MUTATION_APPROVAL_REQUIRED, intent)
-        risk_reasons = self._approval_risk_reasons(intent)
-        if risk_reasons:
-            return self._approval_many(risk_reasons, intent)
-        if intent.kind is OperationKind.EXTERNAL_EFFECT:
-            return self._approval(CapabilityReason.EXTERNAL_EFFECT_APPROVAL_REQUIRED, intent)
-        if intent.kind is OperationKind.DESTRUCTIVE:
-            return self._approval(CapabilityReason.DESTRUCTIVE_APPROVAL_REQUIRED, intent)
         if intent.kind is OperationKind.CONFIGURATION_WRITE:
             return self._approval(CapabilityReason.CONFIGURATION_APPROVAL_REQUIRED, intent)
-        if intent.kind is OperationKind.WORKSPACE_WRITE:
-            if self.profile.approval_mode is ApprovalMode.MANUAL:
-                return self._approval(CapabilityReason.WORKSPACE_WRITE_APPROVAL_REQUIRED, intent)
-            return self._allow()
         if intent.kind in {
             OperationKind.INTERNAL_READ,
             OperationKind.WORKSPACE_READ,
@@ -178,12 +145,6 @@ class CapabilityPolicy:
         )
 
     @staticmethod
-    def _approval_risk_reasons(intent: OperationIntent) -> tuple[CapabilityReason, ...]:
-        return tuple(
-            reason for flag, reason in _APPROVAL_RISKS.items() if flag in intent.risk_flags
-        )
-
-    @staticmethod
     def _mutates_or_runs(intent: OperationIntent) -> bool:
         return intent.kind in {
             OperationKind.WORKSPACE_WRITE,
@@ -203,14 +164,8 @@ class CapabilityPolicy:
 
     @staticmethod
     def _approval(reason: CapabilityReason, intent: OperationIntent) -> PolicyDecision:
-        return CapabilityPolicy._approval_many((reason,), intent)
-
-    @staticmethod
-    def _approval_many(
-        reasons: tuple[CapabilityReason, ...], intent: OperationIntent
-    ) -> PolicyDecision:
         return PolicyDecision(
             verdict=PolicyVerdict.REQUIRE_APPROVAL,
-            reason_codes=reasons,
+            reason_codes=(reason,),
             preview_summary=intent.preview_summary,
         )

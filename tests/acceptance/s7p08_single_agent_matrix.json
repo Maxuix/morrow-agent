@@ -48,7 +48,7 @@
         "tests/test_local_files.py::test_read_file_reports_revision_newline_and_actionable_continuation"
       ],
       "failure_selectors": [
-        "tests/test_local_search.py::test_search_blocks_protected_symlink_targets_and_explicit_git_root"
+        "tests/test_local_search.py::test_search_includes_internal_symlink_targets_and_explicit_git_root"
       ],
       "recovery_selectors": [],
       "acceptance_sources": ["docs/acceptance/stage-3-local-code-agent-evidence.md"],
@@ -92,7 +92,7 @@
       ],
       "failure_selectors": [
         "tests/test_process.py::test_timeout_and_cancellation_clean_up_host_process",
-        "tests/test_process.py::test_process_preflight_classifies_forbidden_operations_before_approval"
+        "tests/test_process.py::test_process_preflight_accepts_ordinary_shell_and_git_commands"
       ],
       "recovery_selectors": [
         "tests/test_process.py::test_fake_provider_can_recover_after_host_command_failure"
@@ -109,13 +109,13 @@
       "risk": "high",
       "classification": "covered",
       "positive_selectors": [
-        "tests/test_sandbox.py::test_sandbox_text_change_requires_approval_and_promotes_safely",
+        "tests/test_sandbox.py::test_sandbox_text_change_promotes_without_an_approval_layer",
         "tests/test_sandbox.py::test_production_auto_sandbox_registers_only_native_tools_and_keeps_real_workspace_clean",
         "tests/test_sandbox.py::test_macos_native_sandbox_blocks_real_workspace_home_and_network"
       ],
       "failure_selectors": [
-        "tests/test_capability_policy.py::test_auto_sandboxed_process_fails_closed_until_backend_is_proven",
-        "tests/test_local_files.py::test_protected_symlink_target_and_git_metadata_are_metadata_only"
+        "tests/test_capability_policy.py::test_registered_process_does_not_depend_on_semantic_sandbox_classification",
+        "tests/test_local_files.py::test_keyword_named_files_and_git_metadata_are_ordinary_workspace_files"
       ],
       "recovery_selectors": [
         "tests/test_sandbox.py::test_sandbox_promotion_conflict_preserves_external_change_and_run_scope"
@@ -132,7 +132,7 @@
       "risk": "medium",
       "classification": "covered",
       "positive_selectors": [
-        "tests/test_git.py::test_git_status_and_diff_are_bounded_read_only_and_protect_content"
+        "tests/test_git.py::test_git_status_and_diff_are_bounded_read_only_and_do_not_keyword_filter"
       ],
       "failure_selectors": [
         "tests/test_git.py::test_git_adapter_timeout_is_typed"

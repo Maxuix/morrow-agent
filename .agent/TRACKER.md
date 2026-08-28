@@ -2,50 +2,45 @@
 
 ## Current status
 
-Subplan 89 is complete and fast-forward integrated into local `main` through evidence tip
-`a5a5d61`. All 18 cells, Lanes A–G, the real current-macOS Seatbelt gate, complete offline suite and
-quality gates passed. S7P-09 is not active.
+The user requested a Hermes-like best-effort learning path without front-end task-resolution
+analysis. Production changes and regressions are implemented. Final validation passed:
+`1344 passed, 2 deselected`; Ruff format/check, compileall, CLI help and `git diff --check` also
+passed. A real public Skill install/enable/select/run succeeded, and Preference jobs JSON returned
+the existing queue successfully.
 
 ## Active task
 
-None. Await an explicit user decision before opening S7P-09.
+Stop after checkpoint `477caa8`. Do not merge or resume S7P-09 evaluation without explicit
+authorization; unrelated untracked `docs/notes/` remains untouched.
 
-## Preparation evidence
+## Implemented boundary
 
-- Current non-live collection discovers `1297` selected tests; two live tests are deselected. This
-  is collection evidence only, not a regression-pass claim.
-- The S7P-08 checklist contains 18 required capability surfaces and explicitly requires failure
-  and recovery evidence for high-risk paths.
-- Existing tests already expose two real macOS Seatbelt selectors guarded against nested Codex
-  Seatbelt execution. Both are mandatory host-level gates for this subplan.
-- Subplan 87 removed Runtime completion inference. The S7P-08 validation cell will test scoped
-  validation telemetry and model-owned stop truth, not revive the superseded gate.
-- No live Provider/model/Pi/MCP/network/credential run, dependency change or production mutation
-  occurred during preparation.
-- `tests/acceptance/s7p08_single_agent_matrix.json` contains exactly 18 unique capability rows,
-  executed positive selectors, and explicit failure/recovery selectors for every high-risk row.
-- Its strict contract rejected seven initially stale guessed selectors; all were replaced with
-  current collected node IDs. It also records the superseded Stage 2 structured/handoff file and
-  the Subplan 87 validation-stop replacement instead of counting them as current evidence.
-- The focused ledger behavior command passed `94 passed in 12.52s`. A new production-composition
-  test proves interactive and headless dispatch share AgentLoop, frozen Provider/Model, RunPolicy,
-  ToolSet, Permission, Preference, Skill and prompt/context evidence, plus terminal stop meaning.
-- No focused failure required production-code repair.
-- Lane results: A `157 passed, 1 deselected`; B `132 passed`; C `137 passed`; D `243 passed`;
-  E `260 passed, 1 deselected`; F `157 passed`; G `198 passed`.
-- On Darwin with no enclosing `CODEX_SANDBOX`, both exact macOS Seatbelt selectors ran and passed:
-  `2 passed in 0.75s`, zero skip.
-- Final collection found `1300` offline selections and two live deselections. Mini Eval self-check
-  passed all 10 tasks. The final offline rerun passed `1300 passed, 2 deselected in 91.64s`.
-- `uv sync`, Ruff format/check, compileall, both CLI help entrypoints and `git diff --check` passed.
-  The final base-to-tip audit found no production, dependency, runtime-default or public-event
-  change and strengthened two initially permissive evidence assertions.
+- Accepted outcomes create Learning Reviews regardless of recorded tool failures or unresolved
+  items; the background Reviewer decides whether there is anything to save.
+- Production Learning Review composition reuses the main Agent model, maximum run time and context
+  budget. Separate Learning timeout/lease settings were removed.
+- Preference Review jobs JSON serializes datetime fields through the public CLI.
+- Managed Skill projection at `3670860` passed a real explicit Skill run; its test Binding was
+  removed afterward.
+
+- Core `run_command` accepts argv/shell without semantic Git/network/destructive classification.
+- Registered workspace writes, including delete/move/rename and sandbox promotion, do not wait for
+  heuristic approval.
+- File, search, Git diff/status and sandbox snapshots do not hide workspace content based on names
+  such as `.env`, `secret`, `credentials` or PEM-like fixture text.
+- Command output redacts exact active credential values, not generic token-shaped source strings.
+- Project instructions load one root file by precedence; malformed/large/unreadable context warns
+  and skips, and nested paths do not affect discovery or recovery.
+- Workspace escape, external symlinks, read-only sessions, revision conflicts, atomic publication,
+  timeouts/cancellation/output limits, Full Access grant+approval and Skill/MCP policy remain.
 
 ## Next action
 
-Do not start S7P-09 automatically.
+Await user direction. A future evaluation must refreeze its permission/evidence contract from the
+new core behavior rather than reuse an older S7P-09 pin.
 
 ## Blockers
 
-Remote publication is not authorized. Local `main` is ahead of `origin/main`; no push was attempted,
-and remote synchronization remains pending explicit authorization.
+- None for the requested implementation.
+- S7P-09 admissions remain paused and require a new explicit user direction after this product
+  behavior change invalidated the former permission-equivalence pin.

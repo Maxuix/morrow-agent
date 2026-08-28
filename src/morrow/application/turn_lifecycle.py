@@ -335,7 +335,11 @@ class TurnSubmissionCoordinator:
                 if current_task.status is TaskRunStatus.READY_FOR_ACCEPTANCE:
                     follow_up_task = current_task
                 elif current_task.status is TaskRunStatus.FAILED:
-                    raise RuntimeError("failed TaskRun requires explicit resume")
+                    raise ApplicationError(
+                        ApplicationErrorCode.INVALID,
+                        "当前 TaskRun 已失败；请先运行 "
+                        f"`morrow task resume {current_task.task_run_id}`，再继续此 Session。",
+                    )
                 elif current_task.status.is_terminal:
                     task_id = None
             if task_id is None:
@@ -429,7 +433,7 @@ class TurnSubmissionCoordinator:
                 for tool_snapshot in prepared_mcp_run.tool_snapshots:
                     txn.put_mcp_tool_snapshot(self.workspace_id, tool_snapshot)
             if self.skill_selection is not None:
-                self.skill_selection.sync_catalog(txn, now=stamp)
+                self.skill_selection.sync_catalog(txn, skill_plan.selections, now=stamp)
             for skill_selection in skill_plan.selections:
                 txn.put_skill_selection(self.workspace_id, skill_selection)
             for skill_context in skill_plan.contexts:

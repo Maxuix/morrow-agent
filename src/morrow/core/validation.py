@@ -35,6 +35,24 @@ VALIDATOR_COMMAND_SPECS: tuple[ValidatorCommandSpec, ...] = (
         allowed_flags=frozenset({"-q"}),
     ),
     ValidatorCommandSpec(
+        executable="unittest",
+        actions=((("discover",), "unittest"), ((), "unittest")),
+        allowed_flags=frozenset(
+            {
+                "-v",
+                "--verbose",
+                "-q",
+                "--quiet",
+                "-f",
+                "--failfast",
+                "-b",
+                "--buffer",
+                "-s",
+                "--start-directory",
+            }
+        ),
+    ),
+    ValidatorCommandSpec(
         executable="mypy",
         actions=(((), "mypy"),),
         allowed_flags=frozenset({"--strict", "--show-error-codes", "-q", "--quiet"}),

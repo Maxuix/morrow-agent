@@ -1,55 +1,101 @@
-# Stage 7 Preflight Reliability — S7P-08 Single-Agent Function Matrix
+# Pi-first Learning Loop Simplification
 
-> Status: completed and integrated locally; paused before S7P-09
-> Active subplan: none
-> Integrated evidence tip: `a5a5d61`
-> Activation base: verified local `main@d84ac0d`
-> Source authority: current user request, current code/tests, S7P-08 checklist, completed S7P-01–07
+> Status: completed at `477caa8`; S7P-09 evaluation remains paused
+> Paused subplan: Subplan 90 — S7P-09 Repeated Direct Evaluation and Same-Condition Pi Baseline
+> Branch: `feat/s7p-09-direct-pi-baseline`
+> Execution worktree branch: `feat/s7p-09-direct-pi-baseline-run` (intentional clean-pin stack)
+> Activation base: verified local `main@1fd7e229bef276d1a0361e775ce800ade4b318fc`
+> Source authority: current user request, S7P-00 protocol v1, completed S7P-08, current code/tools
 
 ## 1. Current objective
 
-S7P-08 proved that the current Direct Agent preserves the frozen 18-cell basic single-Agent
-function matrix. All current selectors, Stage 1–6/S7P lanes, real macOS Seatbelt selectors and final
-offline/static gates passed, and the evidence is integrated into local `main`.
+Keep learning best-effort and mechanically triggered after an accepted completed task. Tool-call
+failures and inferred task-resolution quality do not gate Review creation. The Learning Reviewer
+uses the main Agent model, task timeout and context budget rather than separate conservative
+limits. Repair the Preference Review jobs JSON surface. Confirm the managed Skill projection fix
+already present at `3670860` through a real public run.
 
-No implementation subplan is active. A separate user decision is required to begin S7P-09.
+The earlier Pi-first core simplification remains completed and S7P-09 remains paused.
 
-## 2. Frozen boundaries
+## 1a. Earlier objective
 
-- S7P-08 is an offline product-regression gate, not a new feature package.
-- The S7P-09 real-model/Pi A/B, repeated task baseline and threshold decision remain deferred.
-- Subplan 87's model-owned final stop is current. Do not restore Runtime completion inference or a
-  CompletionChecker; validation remains truthful scoped execution telemetry.
-- Do not add Workflow/multi-Agent models, dependencies, runtime-policy default changes or public
-  event changes.
-- Do not run live Provider/model/MCP/network/credential tests.
-- The two current-platform macOS Seatbelt integration selectors are a separate real host gate and
-  cannot be waived by an unexplained skip.
-- Session-owned `ConversationLog` remains the only chat-history writer; ordinary chat continues
-  through `AgentLoop.run_task()` and retained `run_turn()` remains its thin delegate.
+Restore a small Pi-like coding loop before continuing evaluation work. Registered workspace
+read/write/edit/bash tools run directly; command and file-content keyword heuristics do not decide
+permission or approval. Keep only structural boundaries needed for correctness and explicit
+authority: workspace path confinement, read-only sessions, revision/conflict checks, atomic
+publication, timeouts/cancellation/output bounds, exact active-credential redaction, Full Access
+grants, and extension-specific Skill/MCP policy. Project instructions load once from the root and
+malformed optional context warns/skips instead of blocking task preparation.
 
-## 3. Execution order
+## 2. Frozen decisions
 
-1. Freeze the exact coverage ledger and current acceptance-reference mapping.
-2. Add tests for uncovered positive, failure, recovery, snapshot and entrypoint seams.
-3. Reproduce and narrowly repair any current-contract product regression.
-4. Run the focused matrix, Stage 1–6/S7P lanes and real host Seatbelt gate.
-5. Run the full offline/static/CLI gates and publish the S7P-08 acceptance record.
-6. Review, remediate, commit, integrate and retire the verified topic. Do not start S7P-09.
+- The current user request pauses S7P-09 campaign admission and overrides its former permission-
+  equivalence assumptions. No live evaluation run is authorized by this repair.
+- Core command parsing and sensitive-keyword scanning are not security boundaries. `git`, shell
+  redirection/pipelines, `mv`, `cp`, `tee`, `.env`, `secret`, credential examples and PEM fixtures
+  remain ordinary model-visible workspace content.
+- Exact active credential values are still redacted from command output. Workspace escape,
+  external symlinks, read-only sessions, stale revisions, non-atomic publication, Full Access and
+  Skill/MCP authority remain real boundaries.
+- Project instruction discovery is root-only with precedence `AGENTS.override.md`, `AGENTS.md`,
+  `CLAUDE.md`; bad or oversized files warn and skip, and task paths never trigger nested discovery.
 
-## 4. Required evidence
+- S7P-00 protocol v1 thresholds and task/verifier data are immutable in this subplan.
+- The primary campaign has exactly 28 admitted runs: Morrow 20 and Pi 8. Formal results are never
+  discarded or replaced after observation.
+- Morrow and Pi use the same canonical Provider/model/revision, task bytes, sampling contract,
+  baseline tree, verifier and 1,800-second external deadline.
+- Product-native prompts and tool schemas may differ, but capability/permission boundaries must be
+  equivalent, content-hashed and proved offline before live execution.
+- Morrow runs use ordinary bootstrap, TaskRun, AgentRun, AgentLoop, ToolExecutor, permission and
+  ConversationLog boundaries. Evaluation approval can confirm an already-confined policy decision
+  but cannot override denial or grant broader authority.
+- The user-requested Direct Coding prompt simplification is a pre-campaign product change:
+  `direct-coding/v2` keeps one concise execution-side permission statement and expresses the rest
+  as positive action guidance. It must be included in the next clean source/profile pin before any
+  new admission.
+- The user-requested context/compaction resilience repair is also frozen before the next admission:
+  explicit long-horizon runs without exact window metadata use the conservative character budget,
+  Provider summary presentation noise is normalized before strict durable validation, and URL-safe
+  compaction IDs cannot fail randomly. No prior source pin may be reused.
+- Raw events, reasoning, full tool payloads, credentials and tracebacks stay outside Git. Only
+  bounded normalized evidence, hashes, summaries and the baseline record are committed.
+- S7P-09 measures the frozen Agent. It does not tune thresholds/tasks after results, restore the
+  removed CompletionChecker or begin Workflow/S7P-10 work.
 
-- Every matrix cell has at least one executed deterministic offline behavior test.
-- High-risk paths include executed failure and recovery evidence.
-- Provider, Skill, MCP, Preference, Knowledge, ToolSet, permission and context policy evidence is
-  frozen or referenced reproducibly by the admitted AgentRun without unsafe payloads.
-- Historical acceptance selectors are mapped to current selectors; stale names are reported, not
-  silently counted.
-- Full offline, Ruff, compileall, CLI help, eval self-check, diff check and both real Seatbelt host
-  selectors pass with exact current results.
+## 3. Paused evaluation context
 
-## 5. Integration
+The user approved `opencode-go/mimo-v2.5` for both Agents, raised the hard total ceiling from
+5,000,000 to 15,000,000 tokens, and kept no currency ceiling. Pi 0.84.2's installed catalog contains the exact model at the same
+service endpoint, with a 1,000,000-token context window and 128,000-token maximum output. Before a
+formal paid run, the harness must still freeze and verify:
 
-Use the dedicated branch from `d84ac0d`, keep commits small and verified, then fast-forward into
-`main` only after Subplan 89's gate is fully satisfied. Push only with authorized remote access;
-otherwise record the upstream blocker. A separate user decision is required to begin S7P-09.
+1. Morrow Agent streaming readiness after two identical bounded `internal` failures;
+2. a cost-accounting contract compatible with Morrow's unavailable Provider cost;
+3. the exact served model revision and equal sampling contract;
+4. the final non-secret comparison plan and clean source/evidence pins.
+
+Credential checks must report only readiness and must never request or print credential values.
+Pi credential readiness and its exact-model no-tool probe pass without exposing or copying the
+credential. Formal attempts have now accounted for 3,567,421 tokens plus one interrupted request
+with unavailable usage. Sampled Morrow/Pi usage projects about 17.9M tokens for one fresh complete
+campaign, so the approved 15M total is insufficient. No new admission is allowed without a larger
+token ceiling and a clean source pin. The user subsequently raised the hard total ceiling to
+50,000,000 tokens and authorized a recoverable stash of unrelated untracked notes for the clean
+campaign pin. Because an external process continued creating new notes after the stash, campaign
+execution uses one dedicated clean worktree branch instead of repeatedly moving that external work.
+
+## 4. Execution order
+
+1. Remove semantic command risk classification and keyword-based file/search/Git/sandbox blocking.
+2. Allow registered core workspace mutations and commands without per-call heuristic approval.
+3. Replace task-path instruction discovery with one root availability-first load.
+4. Update tests, architecture and stale evaluation selectors/contracts.
+5. Run focused and full offline/static/CLI gates, then checkpoint verified progress.
+6. Do not resume S7P-09 admissions until the user explicitly requests a new evaluation plan.
+
+## 5. Completion
+
+Completion requires the three reported over-defensive paths to be removed from production behavior,
+targeted regressions and the complete non-live suite to pass, Ruff/compileall/CLI/diff checks to pass,
+and documentation/execution state to describe the simplified boundary honestly.

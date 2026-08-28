@@ -124,8 +124,7 @@ _NO_CONTROL_CHARS = r"^(?!.*\x00)(?!.*[\r\n])[\s\S]*$"
 _NONBLANK_NO_CONTROL = r"^(?!\s*$)(?!.*\x00)(?!.*[\r\n])[\s\S]+$"
 _SHA256_PATTERN = r"^[0-9a-f]{64}$"
 _PROVIDER_WRITE_CONTENT_MAX_CHARS = 10_000
-_PROVIDER_EXACT_EDIT_MAX_CHARS = 256
-_PROVIDER_SINGLE_EDIT_ASCII_MAX_CHARS = 16 * 1024
+_PROVIDER_EXACT_EDIT_MAX_CHARS = 300
 _PROVIDER_COMMAND_ARG_MAX_CHARS = 256
 _PROVIDER_COMMAND_SHELL_MAX_CHARS = 10_000
 _ARTIFACT_ID_PATTERN = r"^art_[A-Za-z0-9_-]{1,124}$"
@@ -221,30 +220,18 @@ def _exact_edit_provider_schema(*, max_length: int, pattern: str) -> dict[str, o
 _EXACT_EDIT_PROVIDER_SCHEMA = _exact_edit_provider_schema(
     max_length=_PROVIDER_EXACT_EDIT_MAX_CHARS, pattern=_NO_NUL
 )
-_SINGLE_EDIT_PROVIDER_SCHEMA = _exact_edit_provider_schema(
-    max_length=_PROVIDER_SINGLE_EDIT_ASCII_MAX_CHARS,
-    pattern=r"^(?!.*\x00)[\t\n\r\x20-\x7e]*$",
-)
 
 APPLY_PATCH_PROVIDER_SCHEMA = _object_schema(
     {
         "path": _path_schema(mutation=True),
-        "expected_sha256": _string_schema(pattern=_SHA256_PATTERN),
+        "expected_sha256": _string_schema(pattern=_SHA256_PATTERN)
+        | {"description": "Copy revision.sha256 from the latest read_file result."},
         "edits": {
-            "oneOf": [
-                {
-                    "type": "array",
-                    "minItems": 1,
-                    "maxItems": 1,
-                    "items": _SINGLE_EDIT_PROVIDER_SCHEMA,
-                },
-                {
-                    "type": "array",
-                    "minItems": 2,
-                    "maxItems": 16,
-                    "items": _EXACT_EDIT_PROVIDER_SCHEMA,
-                },
-            ]
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 16,
+            "items": _EXACT_EDIT_PROVIDER_SCHEMA,
+            "description": "Exact replacements shaped as {old_text, new_text} objects.",
         },
     },
     required=("path", "expected_sha256", "edits"),
@@ -896,7 +883,7 @@ def make_run_command_tool(process: ProcessExecutionService) -> RegisteredTool:
             (
                 "原生沙箱进程（临时快照）；真实工作空间不会以可写方式暴露"
                 if process.requires_sandbox
-                else "非沙箱宿主进程；批准后项目代码可能以当前用户权限访问工作空间外文件或网络"
+                else "非沙箱宿主进程；命令以当前用户权限运行"
             ),
         )
 
@@ -941,13 +928,10 @@ def make_run_command_tool(process: ProcessExecutionService) -> RegisteredTool:
     return make_tool(
         name="run_command",
         description=(
-            "在工作空间相对 cwd 执行一个非交互命令。"
+            "在工作空间相对 cwd 执行一个 shell 命令并返回有界 stdout/stderr。"
             "必须且只能提供 argv 或 shell 二选一：优先 argv 字符串数组，"
             '例如 {"argv":["python3","-m","pytest","-q"]}；不要同时传两者，也不要省略两者。'
-            "工具会分别捕获有界 stdout/stderr；不要添加 2>&1、输出重定向或管道。"
-            "沙箱只读提供当前运行时及工作区已有 .venv，不会安装或同步依赖。"
-            "禁止安装依赖、访问网络、下载或修改 Git；不要调用 pip install、uv sync、"
-            "npm install、curl 或 wget。项目校验应使用已有解释器、脚本或测试。"
+            "shell 形式支持管道、重定向以及复合命令。"
         ),
         arguments_model=RunCommandArguments,
         provider_schema=RUN_COMMAND_PROVIDER_SCHEMA,
@@ -1460,7 +1444,11 @@ def make_apply_patch_tool(
 
     return make_tool(
         name="apply_patch",
-        description="根据已读取文件的 SHA-256 和唯一精确文本编辑修改一个工作空间文件，并返回实际 Diff。",
+        description=(
+            "根据已读取文件的 SHA-256 和唯一精确文本编辑修改一个工作空间文件，并返回实际 Diff。"
+            "必须提供 path、从最近一次 read_file 结果复制的 revision.sha256，以及 edits 数组；"
+            '每项形如 {"old_text":"原文","new_text":"新文"}。'
+        ),
         arguments_model=ApplyPatchArguments,
         provider_schema=APPLY_PATCH_PROVIDER_SCHEMA,
         handler=handler,

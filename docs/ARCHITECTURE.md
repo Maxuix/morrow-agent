@@ -83,9 +83,9 @@ Snapshot 生成 Chat 或 Structured 投影，按完整 Cycle/turn 控制预算�
 生产组合只在 Adapter 声明 OpenAI function-tool 支持时启用 `list_directory`、`read_file`、
 `find_files`、`search_text`、`apply_patch`、`write_file`、`show_changes`、`run_command`、
 `run_skill_script`、`git_status`、`git_diff`、`update_configuration` 和 `manage_preferences`；
-支持原生沙箱时再加入当前运行、始终需审批的 `promote_sandbox_changes`。读搜工具通过冻结的
+支持原生沙箱时再加入当前运行的 `promote_sandbox_changes`。读搜工具通过冻结的
 `WorkspacePathResolver`、`WorkspaceFileService` 与 `WorkspaceSearchService` 访问当前工作空间，
-并对调用路径及工作区内解析后的文件符号链接目标应用同一受保护策略；变更工具通过
+只把工作空间边界、外部符号链接、文件类型和资源预算作为结构约束；变更工具通过
 `WorkspaceMutationService`、`FileSystemAdapter` 与进程内 `ChangeSetService` 执行 SHA-256 冲突检查、
 原子发布和实际 Diff。`update_configuration` 只管理 Workspace Profile；`manage_preferences` 是原子 Preference Writer 的受审批薄适配器。所有工具遵循同一标准 ToolCycle。随包
 `runtime-policy.toml` 与可选 `config.yaml.runtime_policy` 安全覆盖在 composition root 合并，并解析为任务固定的 RunPolicy 及 Review policy。模型请求白名单、流片段组装与 reasoning/SDK 元数据
@@ -108,9 +108,9 @@ durable execution 只可额外保存无正文的 `FileMutationEvidence`，不保
 普通 `CommandToolFact` 只证明一次有界命令执行；只有 Process preflight 识别出的、带规范 workspace scope 的
 `ValidationFact` 才能贡献 validation outcome。两者均不携带完整命令、输出、文件内容、秘密或 traceback。
 Profile 配置工具和 `/workspace` 委托给 `ConfigPatchService`；Preference 工具、CLI/REPL 与 Inbox
-统一委托给 `PreferenceWriter`。文件读取与搜索不跟随目录符号链接，
-并把 `.git`、`.morrow`、凭据路径及常见 PEM 私钥内容作为受保护资源；文件变更拒绝符号链接路径、
-混合换行源文件、陈旧 SHA-256、模糊/多匹配编辑和受保护凭据内容，并通过同目录临时文件、文件 `fsync`、
+统一委托给 `PreferenceWriter`。文件读取与搜索不跟随目录符号链接，但工作空间内的 `.git`、`.env`、
+示例凭据文件和 PEM 文本不因名称或内容关键词被隐藏。文件变更拒绝符号链接路径、混合换行源文件、
+陈旧 SHA-256 和模糊/多匹配编辑，并通过同目录临时文件、文件 `fsync`、
 原子替换和父目录句柄保护发布。S7P-04 的 destructive mutation 只做 regular-file confined unlink，或
 通过 `renameatx_np`/`renameat2` 等已证明的 no-clobber primitive 完成 move/rename；源 regular-file fd 在
 effect 期间保持打开，内容以有界稳定双读核验。为关闭“最后一次源目录项检查到 effect”之间的 TOCTOU，
@@ -131,10 +131,12 @@ skip-approval resolver/handler 阶段按 run/call 身份复用；执行阶段只
 ToolCall 预算语义截断。Git 工具通过
 `GitInspectionService` 与固定的 `GitInspectionAdapter` 解析只读状态/Diff，拒绝外部 Git metadata 并禁用
 pager、外部 diff、textconv、hooks-like executable extension points、prompt 和可选锁。`run_command` 通过同一个 `ProcessExecutionService` 选择
-`HostProcessAdapter` 或能力探测通过的 `NativeSandboxProcessAdapter`：Host 命令全部需要审批且不提供操作系统隔离，
-审批预览展示有界脱敏命令，shell 包装的 Git 命令在审批前按写风险拒绝；Auto Sandboxed 则在默认断网的临时
-快照中自动执行。快照准备/收集使用协作式取消和预留临时根，超时等待后台阶段停稳后再清理；沙箱变更只通过
-当前运行、始终需审批的推广工具进入既有冲突安全 mutation 服务，并记录到同一 `ChangeSetService`。
+`HostProcessAdapter` 或能力探测通过的 `NativeSandboxProcessAdapter`：普通工作空间模式下，注册的
+`run_command` 直接执行 argv 或 shell，不解析 `git`、重定向、管道、`mv`、`cp`、`tee` 等字符串来决定
+许可或审批；Host 后端仍不提供操作系统隔离。命令输出只遮蔽当前运行已知凭据的精确值，并继续执行有界输出、
+超时、取消和进程组清理。Auto Sandboxed 在默认断网的临时快照中执行。快照准备/收集使用协作式取消和预留
+临时根，超时等待后台阶段停稳后再清理；沙箱变更通过当前运行的推广工具进入既有冲突安全 mutation 服务，
+并记录到同一 `ChangeSetService`。
 Linux bubblewrap 在真实 runner 验收前固定探测为 unsupported，不因本机存在二进制而声明支持。
 `run_skill_script` 则通过 `SkillScriptExecutionService` 读取按 AgentRun 选择的冻结 managed Skill 包，
 只在可用原生沙箱中运行；脚本 argv、环境名、输入 Artifact 和输出路径均有界，输出先脱敏再发布为
@@ -142,6 +144,10 @@ Session-scoped Artifact。它不接受 shell、不继承 ambient 环境或 Crede
 并沿用同一 CapabilityPolicy、ToolExecutor、ToolFact 与恢复分类。模型可见的低权限 Skill context
 显示 Morrow 持久化的 `selection_id` 及冻结身份，以便构造严格请求；Skill 正文仍不能生成选择证据、
 授予工具、权限或审批。Script 失败只返回已审查的稳定诊断码/消息，不返回原始异常。
+
+Project Instruction 采用 availability-first 启动加载：只在工作空间根按
+`AGENTS.override.md`、`AGENTS.md`、`CLAUDE.md` 顺序选择第一个可读 UTF-8 普通文件。任务文本和 touched
+paths 不触发局部目录扫描；过大、异常格式或读取失败只产生警告并跳过，不阻断任务准备或恢复。
 
 Stage 4 的 Full Access Manual 是一条额外的、明确受限的证据链：只有 Application API 的本地界面命令能
 创建 `CapabilityGrant`；它绑定一个前台 AgentRun，随后冻结为不可替换的 `PermissionSnapshot`。Stage 4
@@ -317,7 +323,7 @@ ordered attempt、合法状态检查和明确 usage/cost availability 保存 Pro
 v18 在 terminal metrics 中增加了历史 validation/completion 字段，v19 为每个 model request 增加用途、
 当次 PromptProfileEvidence 以及历史 no-tool 语义意图请求证据；这些字段仍可供旧数据读取，但 S7P-06
 的新运行不把已移除的 completion gate 当作运行时权威。v20 以追加列记录 long-horizon policy version、
-精确 context-window accounting、compaction-required、compaction/overflow-recovery 计数；v21 以单独的
+可选的精确 context-window accounting、compaction-required、compaction/overflow-recovery 计数；v21 以单独的
 有界可变 retry-progress 行记录连续模型重试、累计重试与摘要重试计数；v22 增加每 Session 最多
 32 条、单条最多 4096 字符的 FIFO steering/follow-up queue，并让 `steered` AgentRun 终态可观测。
 队列消费与下一 Turn admission 同事务，消息仍只通过 ConversationLog 写入；这些投影都不改写
@@ -329,8 +335,9 @@ immutable AgentRun snapshot，也不复制 ToolExecution payload。未迁移的 
 时当前 Turn 以 `FinishReason.STEERED` 合法闭合，随后队列文本用其 `client_message_id` 经普通
 probe → prepare → Turn admission 路径提交。正常 STOP 后才按 FIFO 一次 drain 一个 follow-up；
 cancel/error/host stop 不自动消费 follow-up。
-v2 新运行只有在 exact model capability 提供 context window 时才会启用；缺失 capability 不猜测小型
-字符窗口，显式请求 v2 时直接失败。v1 恢复仍按冻结的旧 RunPolicy 执行。上述路径都不保存命令参数、
+默认组合只有在 exact model capability 提供 context window 时才自动启用 v2；显式请求 v2 而缺少该
+capability 时，以已有保守字符预算触发压缩，并保持 context-window/token-threshold 观测为空，不猜测
+或伪造 token window。v1 恢复仍按冻结的旧 RunPolicy 执行。上述路径都不保存命令参数、
 输出、项目指令正文、文件内容、模型原始回复或 verifier 私有数据。
 Selection 只引用不可变 Project Knowledge revision，AgentRunSnapshot 保存
 selection/digest/memory revision，运行时由 `RunContextProjection` 重建。Promotion 只保存审计/恢复/来源

@@ -37,7 +37,7 @@ from morrow.core.models import (
     ToolApprovalDecision,
 )
 from morrow.runtime.capabilities import CapabilityPolicy
-from morrow.runtime.tools import ToolExecutor, ToolRegistry
+from morrow.runtime.tools import ToolErrorCode, ToolExecutor, ToolRegistry
 from morrow.services.changes import ChangeSetService
 from morrow.services.files import (
     LocalFileError,
@@ -184,7 +184,7 @@ def test_create_is_the_only_operation_allowed_to_make_four_parent_levels(tmp_pat
     assert error.value.code == "not_found"
 
 
-def test_mutation_rejects_symlink_components_and_protected_content(tmp_path):
+def test_mutation_rejects_symlink_components_but_not_keyword_content(tmp_path):
     outside = tmp_path.parent / "mutation-outside"
     outside.mkdir()
     (outside / "sentinel.txt").write_text("untouched\n", encoding="utf-8")
@@ -195,21 +195,20 @@ def test_mutation_rejects_symlink_components_and_protected_content(tmp_path):
         mutation.preflight_write("link/new.txt", content="x", mode="create")
     assert error.value.code == "symlink_not_allowed"
 
-    with pytest.raises(LocalFileError) as error:
-        mutation.preflight_write(
-            "ordinary.txt",
-            content="-----BEGIN PRIVATE KEY-----\nsecret\n",
-            mode="create",
-        )
-    assert error.value.code == "protected_resource"
-    assert "secret" not in error.value.message
+    ordinary = mutation.preflight_write(
+        "ordinary.txt",
+        content="-----BEGIN PRIVATE KEY-----\nexample fixture\n",
+        mode="create",
+    )
+    _publish(mutation, ordinary)
+    assert "example fixture" in (tmp_path / "ordinary.txt").read_text(encoding="utf-8")
 
     (tmp_path / ".git" / "hooks").mkdir(parents=True)
-    with pytest.raises(LocalFileError) as error:
-        mutation.preflight_write(
-            ".git/hooks/pre-commit", content="#!/bin/sh\nexit 0\n", mode="create"
-        )
-    assert error.value.code == "protected_resource"
+    hook = mutation.preflight_write(
+        ".git/hooks/pre-commit", content="#!/bin/sh\nexit 0\n", mode="create"
+    )
+    _publish(mutation, hook, call_id="hook")
+    assert (tmp_path / ".git/hooks/pre-commit").is_file()
     assert (outside / "sentinel.txt").read_text(encoding="utf-8") == "untouched\n"
 
 
@@ -509,7 +508,7 @@ def _tool_args(name: str, payload: dict, call_id: str) -> FunctionToolCall:
 
 
 @pytest.mark.asyncio
-async def test_manual_provider_path_approves_actual_diff_and_show_changes_uses_facts(tmp_path):
+async def test_provider_path_applies_actual_diff_and_show_changes_uses_facts(tmp_path):
     app = build_application(state_root=tmp_path / "state", credentials=MemoryCredentialStore())
     project = tmp_path / "project"
     project.mkdir()
@@ -551,11 +550,7 @@ async def test_manual_provider_path_approves_actual_diff_and_show_changes_uses_f
     [item async for item in session_app.orchestrator.stream("定位并修复 needle")]
 
     assert source.read_text(encoding="utf-8") == "fixed old\n"
-    assert len(approval.requests) == 1
-    preview = "\n".join(approval.requests[0].preview)
-    assert "--- a/sample.txt" in preview
-    assert "-needle old" in preview
-    assert "+fixed old" in preview
+    assert approval.requests == []
     messages = [message for message in session_app.session.messages if message.role == "tool"]
     patch_result = json.loads(messages[2].content)
     changes_result = json.loads(messages[3].content)
@@ -605,7 +600,7 @@ async def test_auto_safe_small_patch_is_automatic_and_replace_still_requires_app
 
 
 @pytest.mark.asyncio
-async def test_approval_preview_has_explicit_marker_for_large_diff(tmp_path):
+async def test_provider_patch_rejects_oversized_exact_edit_without_side_effect(tmp_path):
     path = tmp_path / "large.txt"
     before = "".join(f"line-{index:03d}\n" for index in range(600))
     path.write_text(before, encoding="utf-8")
@@ -638,15 +633,14 @@ async def test_approval_preview_has_explicit_marker_for_large_diff(tmp_path):
         total=1,
     )
 
-    assert outcome.ok is True
-    request = executor.approval_port.requests[0]
-    assert "... diff truncated ..." in request.preview
-    assert len(request.preview) <= 40
-    assert sum(len(line.encode("utf-8")) for line in request.preview) <= 4 * 1024
+    assert outcome.ok is False
+    assert outcome.error_code is ToolErrorCode.INVALID_ARGUMENTS
+    assert path.read_text(encoding="utf-8") == before
+    assert executor.approval_port.requests == []
 
 
 @pytest.mark.asyncio
-async def test_auto_safe_over_threshold_edit_count_requires_approval(tmp_path):
+async def test_auto_safe_over_threshold_edit_count_still_runs_directly(tmp_path):
     path = tmp_path / "many-edits.txt"
     path.write_text("".join(f"line-{index}\n" for index in range(40)), encoding="utf-8")
     _, mutation = _services(tmp_path)
@@ -677,8 +671,7 @@ async def test_auto_safe_over_threshold_edit_count_requires_approval(tmp_path):
     )
 
     assert outcome.ok is True
-    assert len(approval.requests) == 1
-    assert approval.requests[0].reason_codes == ("mutation_approval_required",)
+    assert approval.requests == []
     assert path.read_text(encoding="utf-8").startswith("changed-0\nchanged-1\n")
 
 

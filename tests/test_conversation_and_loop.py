@@ -381,6 +381,7 @@ async def test_pre_start_application_error_keeps_stable_non_provider_message():
 
     assert [event.type for event in events] == ["turn.started", "error", "turn.completed"]
     assert events[1].payload["message"] == "durable Session state changed"
+    assert events[1].payload["stop_code"] == "known_failure"
     assert "模型服务" not in events[1].payload["message"]
     assert provider.stream_calls == []
 

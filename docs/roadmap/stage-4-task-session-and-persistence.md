@@ -362,7 +362,7 @@ CapabilityGrant 是通过本地 CLI/REPL/未来 GUI 的显式应用命令创建�
 - crash resume 创建新 AgentRun，新 Run 不继承旧 Run 的 grant；需要 elevated capability 时必须重新授权；
 - 默认只对一个前台 AgentRun 生效，不能保存为全局/工作空间默认；
 - grant 不是审批，Full Access Manual 中每个 elevated side effect 仍需 intent-bound Approval；
-- 结构化直接工具继续执行其 protected-resource 规则；
+- 结构化直接工具继续执行其工作空间路径、revision、原子发布和结果预算规则，不按普通关键词封锁资源；
 - approved opaque Host command 明确标记为 `unconfined_host`：它没有 OS 隔离，可能访问用户文件、网络、
   凭据和 Morrow 状态。命令分类只能帮助预览，不能宣称提供 confinement；
 - Full Access Manual 只激活 ADR 明确枚举的 `unconfined_host_process`；不为扩展名称而新增通用外部文件、

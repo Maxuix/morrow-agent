@@ -1,7 +1,7 @@
 # Morrow
 
 Morrow（承序）是一个以工作空间为边界的终端 Code Agent。当前版本提供可恢复的持久化对话、
-受保护的本地读搜与冲突安全文件修改、审批后 Host 命令、当前 macOS 原生沙箱、只读 Git、
+有界的本地读搜与冲突安全文件修改、直接 Host 命令、当前 macOS 原生沙箱、只读 Git、
 经确认的 Profile 与 Preferences 配置，以及 Provider 管理。
 
 长期产品方向与阶段边界见 [开发路线总览](docs/ROADMAP.md)。
@@ -16,15 +16,14 @@ uv run morrow --help
 ```
 
 Morrow 的状态默认保存在 `~/.morrow`，不会写入选中的项目目录。当前工具只在冻结的工作空间内
-读取目录、UTF-8 文本和搜索结果，或通过冲突安全的精确补丁/受控文件创建修改项目文件。Manual 会审批
-工作区写入和每个 Host 进程；Auto Safe 自动允许工作区写入及未命中风险规则的普通 Host 进程，网络、
-loopback、Git 写入和破坏性命令仍逐次审批。Host 代码没有操作系统隔离，即使预检未发现风险也可能触达
-工作空间外资源；需要强隔离时应使用 Auto Sandboxed。
+读取目录、UTF-8 文本和搜索结果，或通过冲突安全的精确补丁/受控文件创建修改项目文件；Manual 与 Auto Safe
+中的项目命令在非隔离 Host 中直接执行，Host 代码可能以当前用户权限访问工作空间外资源。
 当前 macOS 原生后端支持 Auto Sandboxed 在临时快照中自动执行项目命令，默认断网且不会直接修改真实工作区；
 Linux 在真实 runner 验证前保持 unsupported，后端不可用时 fail closed。
 
-文件与搜索保护同时检查用户可见路径和工作区内解析后的符号链接目标；`.git`、`.morrow`、凭据文件和
-常见私钥内容只返回受保护元数据，仓库检查应使用专用 `git_status`/`git_diff`。现有文件的 patch/replace
+文件与搜索仍拒绝工作空间逃逸、外部符号链接和不支持的文件类型，但不会因为 `.git`、`.env`、
+`secret`、凭据示例或 PEM 文本等普通关键词隐藏工作区内容。仓库检查也可使用专用
+`git_status`/`git_diff`。现有文件的 patch/replace
 保留统一换行格式；混合换行文件会明确返回不支持，不会静默改写为 LF。
 
 ## 使用
@@ -75,15 +74,15 @@ scripts/morrow-mimo model current
 
 ## 运行策略配置
 
-Morrow 随程序发布只读的 `morrow/resources/runtime-policy.toml` 作为 AgentRun、Learning Review
-和 Preference Review 的默认运行策略。用户不需要也不应修改安装包资源；如需调整，可在自己的
+Morrow 随程序发布只读的 `morrow/resources/runtime-policy.toml` 作为 AgentRun 和 Preference
+Review 的默认运行策略。Learning Reviewer 直接继承 main Agent 的模型、运行时限和上下文预算，
+不再维护一套更保守的独立限制。用户不需要也不应修改安装包资源；如需调整，可在自己的
 `~/.morrow/config.yaml` 中添加可选覆盖，例如：
 
 ```yaml
 runtime_policy:
-  reviews:
-    learning_timeout_seconds: 90
-    learning_lease_seconds: 180
+  agent_run:
+    max_run_seconds: 2400
 ```
 
 覆盖在进程启动时加载。未知字段、错误类型、非有限数、违反字段组合或超过代码级安全上限的值会使
@@ -111,15 +110,14 @@ REPL 常用命令包括 `/workspace`、`/workspace edit summary ...`、`/workspa
 `list_directory`、`read_file`、`find_files`、`search_text`、`apply_patch`、`write_file`、`show_changes`、`run_command`、`git_status`、`git_diff`、
 `update_configuration`（仅 Profile）和 `manage_preferences`；支持原生沙箱的 Auto Sandboxed 组合额外启用 `promote_sandbox_changes`。不支持 function calling 的 Adapter 不会启用这些工具，但 `/workspace`、`/preferences` 等确定性命令仍可用。终端以 `↳ 工具步骤 n/m：工具名`
 展示活动；有副作用的
-配置调用、Manual Host 命令以及命中风险规则的 Auto Safe Host 命令会在执行前由终端审批；审批会明确显示
-网络、Git 写入、破坏性操作等原因。审批拒绝、审批通道不可用或审批等待超时都会安全地形成普通工具结果，
+配置调用仍在工具执行前由终端审批；普通工作空间文件工具和 Host 命令直接执行。Full Access 与扩展能力
+仍使用各自的授权/审批合同。审批拒绝、审批通道不可用或审批等待超时都会安全地形成普通工具结果，
 模型可以继续恢复；默认工具超时为 120 秒，并可在安全上限内通过用户运行策略覆盖。旧 `/config edit` fixed-field 入口已退役，
 `append/remove` 由自然语言工具提供。达到模型、工具、时间、上下文、结果或循环上限时，任务以稳定的
 `stop_code` 结束。
 
-Host 命令审批会展示有界且脱敏的 argv/shell、工作目录、类别、风险原因和超时；shell 包装的 Git 命令按
-Git 写入风险进入审批。工作区外访问、凭据/受保护资源、提权、只读会话、缺失沙箱或缺失 Full Access Grant
-仍然硬拒绝。命令文本只用于本地审批，不进入 `CommandResult`、Provider、公开事件或持久状态。
+Host 命令接受 argv 或 shell，支持 Git、管道和重定向，不按命令字符串启发式拒绝或要求审批。命令输出
+保持有界，并只遮蔽当前运行已知凭据的精确值；完整命令、输出和秘密不进入公开事件或持久状态。
 
 `full-access-manual` 不会自动获得能力：只有本地 REPL 的 `/grant` 确认或 CLI `grant create` 命令能为一个前台
 AgentRun 授予 `unconfined_host_process`，且每次 opaque Host 命令仍要单独审批。审批前会明确说明该进程没有操作系统
@@ -194,8 +192,8 @@ reference 为权威。`--apply` 不销毁字节：它只会把经目录、类型
 状态写入经过校验、revision 检查、同目录临时文件、文件/目录 `fsync` 和原子替换，并保留 `.bak`。
 Profile 损坏或版本较新时，工作空间持久状态进入只读模式；workspace Preferences 损坏时只隔离该层。
 
-当前生产工具只通过冻结工作空间服务读取、搜索、修改项目文件和只读 Git 状态/Diff，并通过风险分层后的非隔离 Host 命令执行校验；
-Host 网络访问必须逐次审批，原生沙箱继续断网；配置工具只通过应用服务更新既有的 Profile/Preferences 状态。阶段 3 已交付
+当前生产工具只通过冻结工作空间服务读取、搜索、修改项目文件和只读 Git 状态/Diff，并通过审批后的非隔离 Host 命令执行校验；
+网络能力始终不提供；配置工具只通过应用服务更新既有的 Profile/Preferences 状态。阶段 3 已交付
 三轴权限模型、工作空间能力冻结、能力策略、动态系统边界、通用本地审批端口、终端审批 UI，以及有界目录/文件读取、
 搜索、SHA-256 冲突安全编辑、原子文件创建、当前运行 ChangeSet/Diff、有界 Host 命令和当前 macOS 的原生
 Auto Sandboxed 快照执行；支持后端时还提供始终需审批的当前运行沙箱变更推广。Stage 3 的当前 macOS 验收已完成，

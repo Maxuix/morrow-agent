@@ -97,6 +97,10 @@ def test_validator_recognition_is_strict_and_shell_control_flow_fails_closed(tmp
     mypy_plan = process.preflight(CommandRequest(argv=("mypy", "--strict", "src")))
     cargo_plan = process.preflight(CommandRequest(argv=("cargo", "test", "-q")))
     npm_plan = process.preflight(CommandRequest(argv=("npm", "test", "--", "--runInBand")))
+    unittest_plan = process.preflight(CommandRequest(argv=(sys.executable, "-m", "unittest", "-v")))
+    unittest_discovery_plan = process.preflight(
+        CommandRequest(shell="PYTHONPATH=src python3 -m unittest discover -s tests -v")
+    )
 
     assert (pytest_plan.validation_kind, pytest_plan.validation_scope) == ("pytest", "tests")
     assert (simple_shell_plan.validation_kind, simple_shell_plan.validation_scope) == (
@@ -108,6 +112,11 @@ def test_validator_recognition_is_strict_and_shell_control_flow_fails_closed(tmp
     assert (mypy_plan.validation_kind, mypy_plan.validation_scope) == ("mypy", "src")
     assert (cargo_plan.validation_kind, cargo_plan.validation_scope) == ("cargo_test", ".")
     assert (npm_plan.validation_kind, npm_plan.validation_scope) == ("npm_test", ".")
+    assert (unittest_plan.validation_kind, unittest_plan.validation_scope) == ("unittest", ".")
+    assert (
+        unittest_discovery_plan.validation_kind,
+        unittest_discovery_plan.validation_scope,
+    ) == ("unittest", "tests")
 
 
 @pytest.mark.parametrize(

@@ -1818,6 +1818,11 @@ class AgentLoop:
                 state.started = True
                 yield event("turn.started", {})
             state.settled = True
+            stop_code = (
+                AgentStopCode.KNOWN_FAILURE
+                if isinstance(exc, ApplicationError)
+                else AgentStopCode.INTERNAL
+            )
             unresolved = session.log.unresolved_call_ids
             interrupted = self._close_unresolved(
                 session,
@@ -1839,12 +1844,12 @@ class AgentLoop:
                     session.finish_turn(
                         FinishReason.ERROR,
                         interrupted_call_ids=interrupted,
-                        stop_code=AgentStopCode.INTERNAL,
+                        stop_code=stop_code,
                     )
                 except ConversationLogError:
                     pass
             state.terminal_finish_reason = FinishReason.ERROR
-            state.stop_code = AgentStopCode.INTERNAL
+            state.stop_code = stop_code
             retain_facts(FinishReason.ERROR.value)
             if isinstance(exc, ApplicationError):
                 message = exc.message
@@ -1852,7 +1857,7 @@ class AgentLoop:
                 message = exc.public_message
             else:
                 message = "任务执行发生未预期错误"
-            for item in fatal(message, AgentStopCode.INTERNAL):
+            for item in fatal(message, stop_code):
                 yield item
             return
         finally:

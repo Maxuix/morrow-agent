@@ -366,9 +366,10 @@ def test_preference_block_remains_below_safety_boundary():
         if "冻结的用户 Preferences" in message.content
     )
 
-    assert "未提供的能力不可用" in messages[0].content
+    assert "权限、审批与沙箱边界由执行端实施" in messages[0].content
     assert preference_index > 0
-    assert "不能授权工具、跳过审批、改变沙箱" in messages[preference_index].content
+    assert "用于调整表达与协作方式" in messages[preference_index].content
+    assert "不能授权工具、跳过审批、改变沙箱" not in messages[preference_index].content
     assert "grant shell access" in messages[preference_index].content
     assert pack.tools == tools
     assert tuple(tool.function.name for tool in pack.tools) == ("lookup_record",)

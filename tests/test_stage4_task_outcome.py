@@ -496,6 +496,41 @@ async def test_multi_turn_correction_and_acceptance_survive_restart(tmp_path):
     )
 
 
+@pytest.mark.asyncio
+async def test_failed_task_follow_up_explains_explicit_resume(tmp_path):
+    project = tmp_path / "project"
+    project.mkdir()
+    app = build_application(
+        state_root=tmp_path / "state",
+        credentials=MemoryCredentialStore(),
+        id_source=FixedIdSource(),
+    )
+    identity = app.workspace_service.confirm(app.workspace_service.resolve(project))
+    provider = ScriptedModelProvider(["初版答案", "不应调用"])
+    products = build_session_application(
+        app,
+        identity,
+        provider=provider,
+        model=ModelRef(provider_id="p", model_id="m"),
+    )
+    await products.orchestrator.dispatch("先完成这个目标")
+    task = products.tasks.get(products.persistence.current_task_run_id)
+    continued = products.tasks.continue_after_answer(task)
+    failed = products.tasks.fail(continued.task_run_id, command_id="cmd_fail")
+
+    result = await products.orchestrator.dispatch("直接继续")
+
+    errors = [event for event in result.events if event.type == "error"]
+    assert len(errors) == 1
+    assert errors[0].payload["message"] == (
+        "当前 TaskRun 已失败；请先运行 "
+        f"`morrow task resume {failed.task.task_run_id}`，再继续此 Session。"
+    )
+    assert errors[0].payload["stop_code"] == "known_failure"
+    assert "未预期错误" not in errors[0].payload["message"]
+    assert len(provider.stream_calls) == 1
+
+
 def test_snapshot_digest_covers_feedback_and_expected_version(tmp_path):
     session, journal = _journal(tmp_path)
     try:

@@ -115,7 +115,7 @@ async def test_production_model_stop_is_accepted_after_a_failed_change(tmp_path:
 
 
 @pytest.mark.asyncio
-async def test_dynamic_nested_agents_instructions_loaded_on_touch(tmp_path: Path):
+async def test_nested_agents_instructions_are_not_loaded_on_touch(tmp_path: Path):
     project = tmp_path / "project"
     project.mkdir()
     (project / "AGENTS.md").write_text("# Root Rules\n- Always be concise\n", encoding="utf-8")
@@ -150,21 +150,21 @@ async def test_dynamic_nested_agents_instructions_loaded_on_touch(tmp_path: Path
         if isinstance(message, SystemMessage) and message.content
     )
     assert "Root Rules" in second_system_text
-    assert "Use bcrypt only" in second_system_text
+    assert "Use bcrypt only" not in second_system_text
     run = session_app.persistence.journal.list_session_agent_runs(
         identity.workspace_id, session_app.session.session_id
     )[0]
     assert {source.path for source in run.snapshot.project_instruction_sources} == {"AGENTS.md"}
     observation = session_app.persistence.get_agent_run_observation(run.agent_run_id)
     assert observation is not None
-    assert "services/auth/AGENTS.md" in {
+    assert {
         source.path
         for source in observation.requests[-1].prompt_evidence.project_instruction_sources
-    }
+    } == {"AGENTS.md"}
 
 
 @pytest.mark.asyncio
-async def test_first_nested_write_is_deferred_until_scope_rules_are_loaded(tmp_path: Path):
+async def test_first_nested_write_runs_without_dynamic_scope_discovery(tmp_path: Path):
     project = tmp_path / "project"
     project.mkdir()
     nested = project / "pkg"
@@ -203,15 +203,16 @@ async def test_first_nested_write_is_deferred_until_scope_rules_are_loaded(tmp_p
     [item async for item in session_app.orchestrator.stream("修改模块")]
 
     tool_messages = [message for message in session_app.session.messages if message.role == "tool"]
-    assert json.loads(tool_messages[0].content)["error"]["code"] == "preflight_failed"
+    assert json.loads(tool_messages[0].content)["ok"] is True
+    assert json.loads(tool_messages[1].content)["error"]["code"] == "conflict"
     assert target.read_text(encoding="utf-8") == "value = 2\n"
-    assert len(approval.requests) == 1
+    assert approval.requests == []
     second_prompt = "\n".join(
         message.content or ""
         for message in provider.stream_calls[1]
         if isinstance(message, SystemMessage)
     )
-    assert "Preserve the API" in second_prompt
+    assert "Preserve the API" not in second_prompt
 
 
 @pytest.mark.asyncio
@@ -251,7 +252,7 @@ async def test_persisted_request_size_matches_the_actual_dynamic_prompt(tmp_path
 
 
 @pytest.mark.asyncio
-async def test_tool_lifecycle_cleans_preview_when_approval_is_rejected(tmp_path: Path):
+async def test_tool_lifecycle_ignores_approval_port_for_registered_write(tmp_path: Path):
     target = tmp_path / "hello.txt"
     target.write_text("hello world\n", encoding="utf-8")
     expected_sha256 = hashlib.sha256(target.read_bytes()).hexdigest()
@@ -285,5 +286,6 @@ async def test_tool_lifecycle_cleans_preview_when_approval_is_rejected(tmp_path:
         total=1,
     )
 
-    assert outcome.error_code.value == "approval_rejected"
+    assert outcome.ok is True
+    assert target.read_text(encoding="utf-8") == "hello morrow\n"
     assert mutations.cached_plan("run-100", "call-1") is None

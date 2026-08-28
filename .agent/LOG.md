@@ -3420,3 +3420,240 @@
   `chore/s7p-08-single-agent-matrix` into local `main`. Verified `a5a5d61` is contained by `main`.
 - Remote publication was not authorized. Local `main` remains ahead of `origin/main`; no push was
   attempted. The sequence is paused before S7P-09.
+
+## 2026-08-27 — Subplan 90 S7P-09 baseline activated
+
+- The user explicitly opened S7P-09. Created `feat/s7p-09-direct-pi-baseline` from verified local
+  `main@1fd7e229bef276d1a0361e775ce800ade4b318fc` and activated Subplan 90.
+- Froze the primary campaign at 20 Morrow runs (10 tasks × 2) plus 8 Pi 0.84.2 runs (four pinned
+  tasks × 2), with fresh state/workspaces, counterbalanced paired order, immutable admitted results,
+  equal task/model/sampling/verifier/deadline conditions and mechanical protocol-v1 thresholds.
+- Located the actual harness gap: S7P-00 can start/finalize/summarize Morrow-shaped bundles but has
+  no Agent runner, Pi JSONL normalizer, permission-equivalence proof, paired schedule or evaluated
+  Pi comparison. Phase A owns those offline additions without changing product scoring behavior.
+- Confirmed installed Pi reports `0.84.2`. Current Morrow active model is
+  `opencode-go/mimo-v2.5`, while Pi's catalog does not expose that exact model. No auth check, live
+  Provider call or credential access occurred. Formal execution is held until the user approves a
+  common exact Provider/model and total token/currency ceiling.
+- Raw reasoning, transcripts, full tool payloads and credentials remain outside Git. Only bounded
+  normalized facts, content hashes, summaries and the final baseline may be committed. S7P-10 is
+  not started automatically.
+
+## 2026-08-27 — Subplan 90 strict harness slice verified
+
+- Added a strict comparison-plan contract with resolved source/profile/model/policy/readiness pins,
+  explicit user-approved hold-point evidence, exact token/currency ceilings, create-only integrity
+  and the immutable counterbalanced 28-entry schedule.
+- Added Pi 0.84.2 authoritative-event and Morrow safe-fact normalizers. Raw prompt/response,
+  reasoning, complete arguments/results, stdout/stderr, credential-shaped text and tracebacks are
+  excluded; unknown events/stops, duplicated messages and missing tool terminals fail closed.
+- Added the real Morrow CapabilityPolicy/Pi-adapter equivalence matrix, a bounded evaluation
+  ApprovalPort, protected evidence/admission/budget/watchdog primitives and mechanical comparison
+  that revalidates all 20+8 bundles and creates the sanitized Direct baseline record.
+- Focused evaluator tests passed `35`; all ten dataset self-check pairs passed; S7P-08 regression
+  passed `3`; final full offline passed `1313 passed, 2 deselected in 87.19s`. Ruff format/check,
+  compileall, CLI help and `git diff --check` passed. Final focused/static reruns followed the
+  false-PASS audit.
+- The audit found that ordinary `morrow run` intentionally injects a denying headless ApprovalPort.
+  The generic bounded process runner is therefore not claimed as the complete Agent runner. The
+  next offline task is to wire the evaluation port and safe fact collector through the ordinary
+  composition and to freeze the equivalently confined Pi extension/runner.
+- Pi's offline catalog exposes local `openai-codex` and `xai` candidates, but Morrow is configured
+  only for `opencode-go/mimo-v2.5`; no exact common candidate was selected. No credential check,
+  model probe, live run, network access, dependency change, remote action or merge occurred.
+
+## 2026-08-27 — Subplan 90 model and Token budget approved
+
+- The user approved `opencode-go/mimo-v2.5` for both Agents, a hard 5,000,000-token campaign
+  ceiling, no currency ceiling, the permission mapping and bounded no-tool readiness probes.
+- Corrected the stale catalog finding: Pi 0.84.2's installed `opencode-go` data includes exact
+  `mimo-v2.5` metadata at `https://opencode.ai/zen/go/v1`, with a 1,000,000-token context window
+  and 128,000-token maximum output. Pi's global default selection now points to that built-in entry;
+  no duplicate model override was created.
+- Pi has neither a current `OPENCODE_API_KEY` nor a stored `opencode-go` credential available, so
+  its no-secret readiness check and model probe remain blocked. No credential value was read,
+  printed or copied, and no live model request was attempted.
+- The comparison-plan contract now uses `total_cost: null` for the explicitly approved absence of
+  a currency ceiling. Provider cost remains mandatory evidence; only the 5,000,000-token limit is
+  enforced as a campaign scheduling/summary ceiling.
+
+## 2026-08-27 — Subplan 90 Agent-specific runners verified offline
+
+- Added `run-morrow`, which supplies the fail-closed EvaluationApprovalPort to ordinary
+  `build_session_application` composition and projects only public tool terminal events, in-memory
+  safe ToolFacts and terminal accounting. Full tool arguments/results, prompts, responses and
+  credential values are discarded rather than serialized.
+- Added the sole Pi evaluation policy extension and `run-pi`. The invocation pins Pi 0.84.2,
+  `opencode-go/mimo-v2.5`, its tool set and ephemeral session while disabling mutable user
+  extensions, skills and templates. The extension preflights workspace paths and prohibited
+  commands, and overrides bash with dependency-free macOS Seatbelt confinement that denies network
+  and `.git` writes and enforces the 120-second command ceiling.
+- Pi 0.84.2 parsed the extension in offline mode. Focused evaluator tests passed `37`; dataset
+  self-check passed `10/10`; S7P-08 regression passed `3`; full non-live passed `1315 passed,
+  2 deselected in 87.58s`. Ruff format/check, compileall, CLI help and `git diff --check` passed.
+- The approved bounded Morrow Provider readiness probe succeeded. Pi's no-secret auth check
+  reported `credentials_not_configured`, so no Pi model probe or formal admission was attempted.
+
+## 2026-08-27 — Pi import completed; Morrow streaming readiness blocked
+
+- Pi now selects the built-in `opencode-go/mimo-v2.5` by default and resolves the existing Morrow
+  Keychain entry through a command reference in Pi's private model configuration. No credential
+  value was copied into JSON, read by the evaluator or printed. `pi auth check --no-refresh`
+  returned `ready/api_key`, and the catalog exposed the exact 1M-context/128K-output model.
+- The approved Pi no-tool probe completed normally on exact provider/model `opencode-go/mimo-v2.5`
+  with 404 total tokens and complete cost. Raw content remains only in a mode-0700 non-Git
+  temporary directory; the terminal reported safe status/hash facts only.
+- Morrow's non-stream Provider test passed, but two bounded Agent no-tool probes both admitted one
+  request and ended `internal` before any tool call, with unavailable usage/cost. The bounded retry
+  allowance is exhausted; no formal run key was admitted and no further request was attempted.
+- Local code inspection shows the OpenAI-compatible Morrow streaming adapter emits
+  `ModelCost.unavailable()` even for a successful stream. This is incompatible with S7P-09's
+  frozen complete-cost reporting gate, although the user-approved budget itself has no currency
+  ceiling. Formal execution remains blocked pending an explicit accounting decision and Morrow
+  streaming readiness repair or external recovery.
+
+## 2026-08-27 — Morrow OpenAI-compatible readiness repaired
+
+- Isolated the original Agent HTTP 400 to `read_file`'s 309-digit local integer bound being copied
+  into the Provider schema. The adapter now keeps the original local validator but narrows integer
+  schema bounds to the IEEE-754 safe range on the Provider wire; tool contract audits freeze both
+  representations.
+- Matched Pi's tolerant terminal handling for MiMo: a repeated identical finish chunk carrying
+  usage and no text/reasoning/tool delta is accepted, while semantic content after finish remains
+  invalid. Provider 400/404/422 responses and nested malformed-value errors now classify as
+  `invalid_response` instead of `internal`.
+- The repaired bounded Morrow Agent probe completed with `stop`, 7,139 Provider tokens and zero
+  tools. No prompt, response, reasoning, full payload, credential or traceback was retained.
+- Applied the user's no-currency-ceiling decision: Morrow cost may remain explicitly unavailable
+  and no longer blocks readiness/comparison when `total_cost` is null. Token usage remains mandatory
+  and the 5,000,000-token campaign ceiling is unchanged; missing cost is never inferred as zero.
+- Focused Provider/evaluator/tool-audit tests passed `116` with one live skip. Full offline passed
+  `1323 passed, 2 deselected in 83.29s`; Ruff format/check, compileall, CLI help and
+  `git diff --check` passed.
+
+## 2026-08-27 — Pre-admission runner/finalize gap closed
+
+- A clean-source comparison-plan rehearsal froze complete 15-tool Morrow and seven-tool Pi
+  profiles, passed 10/10 dataset self-check, the eight-case permission matrix, Pi auth readiness,
+  Morrow Provider readiness and campaign preflight. No admission was created.
+- End-to-end review before admission found the runners emitted the shared S7P-09 normalized trace
+  while `finalize` consumes the S7P-00 runtime-evidence schema. Added a strict safe projection so
+  both formal runner outputs are directly finalizable without payload-bearing intermediate data.
+- Changed the Pi runner from thinking `medium` to `off`. Pi and Morrow now both omit an explicit
+  reasoning-effort request field, matching the frozen provider-default sampling contract.
+- Focused evaluator tests passed `39`; full offline passed `1323 passed, 2 deselected in 88.99s`.
+  Ruff format/check, compileall, CLI help and `git diff --check` passed. The superseded
+  pre-admission plan will not be used because its source pin predates this integration repair.
+
+## 2026-08-28 — First formal campaign attempt aborted without replacement
+
+- Froze campaign `s7p-09-mimo-v25-97829ea` at source `97829ea`, passed comparison-plan validation,
+  clean-source/dataset/Pi/evidence preflight, and admitted only ordinal 1
+  (`morrow/MORROW-001#1`) with a 178,000-token reservation.
+- Fresh state initially lacked `active_model`; because no model request had been admitted, seeded
+  only the non-secret Provider/model configuration and Keychain reference into the same run state,
+  then continued the same campaign key without replacement.
+- The Agent completed 16 Provider requests and 29 tool calls, but normalization rejected the
+  production `find_files` name as an unknown capability. Runtime evidence was therefore honestly
+  unavailable and the immutable run finalized `BLOCKED_ENV/evidence_unavailable`.
+- Wrote a create-only `ABORTED` campaign record with one admitted/finalized run. The campaign will
+  not be continued or reused. Added complete mappings for all production Morrow tool names and
+  move/rename path endpoints; focused evaluator tests passed `50`, and full offline passed
+  `1334 passed, 2 deselected in 83.39s`. Ruff format/check, compileall, CLI help and
+  `git diff --check` passed.
+
+## 2026-08-28 — Pi 0.84.2 runtime events repaired; 15M ceiling insufficient
+
+- Preserved r2 after a one-time source-branch drift invalidated revalidation, r3 after its dynamic
+  reservation guard stopped before ordinal 2, and r4 after real Pi normalization exposed adapter
+  gaps. No admitted result was replaced or reused.
+- Real Pi 0.84.2 JSONL adds a nonsemantic `session` event, omits `turnIndex`, reports a validated
+  `reasoning` usage field, names file globbing `glob`, and may end after `toolUse` with
+  `agent_end(willRetry=false)` but no semantic stop reason. The adapter now accepts these known
+  shapes, keeps unknown shapes fail-closed, and classifies the last case as `runtime_failed`.
+- Safe replay of the retained Pi run normalized 18 rounds, 27 tools and 874,324 authoritative
+  tokens without retaining payload content. Focused evaluator tests passed `53`; full offline passed
+  `1337 passed, 2 deselected in 91.24s`. Ruff, compileall, CLI help and diff checks passed.
+- Formal admissions account for 3,567,421 tokens plus one interrupted request with unavailable
+  usage. Current samples project roughly 17.9M tokens for a fresh 28-run campaign; the approved 15M
+  total is insufficient. No new admission is authorized. A 27M total ceiling is recommended.
+- Untracked `docs/notes/` appeared independently in the source checkout. It is preserved unchanged
+  and prevents a clean source pin until its ownership/disposition is resolved.
+
+## 2026-08-28 — 50M total token ceiling and clean-pin stash approved
+
+- The user raised the hard total token ceiling to 50,000,000 tokens; the currency ceiling remains
+  unset. Previously accounted formal usage remains part of this total.
+- The user authorized a recoverable stash of unrelated `docs/notes/`. They are preserved in the
+  named stash `checkpoint: preserve docs notes during s7p-09 campaign` and must be restored after
+  the campaign. The source checkout is clean for refreezing after this authorization record commits.
+- An external writer created another notes file immediately after the stash. To avoid repeatedly
+  moving unrelated work, the formal campaign will run from one dedicated clean worktree branch
+  `feat/s7p-09-direct-pi-baseline-run`; this intentional stack is retired after integration.
+
+## 2026-08-28 — Direct prompt v2 replaces repeated defensive guidance
+
+- At the user's request, `direct-coding/v2` now keeps one concise statement that available tools
+  define model-visible capability while approval, sandbox and permission boundaries are enforced by
+  the execution side. Coding guidance and the Project Instruction, Preference, Memory and Skill
+  wrappers now describe positive actions and intended use instead of repeating denial language.
+- No CapabilityPolicy, ApprovalPort, sandbox, ToolExecutor, tool schema or recovery enforcement was
+  changed. Existing execution-boundary tests remain part of the full offline gate.
+- Focused prompt/context tests passed `34`. The first full offline run exposed two stale tests tied
+  to the old label and old prompt length; after making them intent-based, full offline passed
+  `1337 passed, 2 deselected in 89.12s`. Ruff format/check, compileall, CLI help and
+  `git diff --check` passed.
+- The verified implementation is commit `59c87f9`. Because its profile version/digest changes, no
+  prior source/profile pin may be reused; the next formal campaign must refreeze from this commit
+  plus the current execution-state record before ordinal 1.
+
+## 2026-08-28 — Context and compaction resilience repaired
+
+- Removed the exact-window hard prerequisite from explicit v2 long-horizon policy. Exact metadata
+  still uses the Pi token threshold; absent metadata uses the existing conservative character
+  request boundary for compaction and keeps window/threshold telemetry explicitly unavailable.
+- Provider-only summary parsing now recovers common code fences, surrounding prose, trailing
+  container commas, null list fields and unknown fields. Recognized values remain bounded,
+  secret-checked and typed; durable `CompactionSummary`/checkpoint validation still rejects extras
+  and invalid types.
+- Full-suite repetition exposed a pre-existing random compaction failure: `token_urlsafe()` may
+  start its suffix with `-` or `_`, while the compaction ID regex rejected both. The regex now
+  accepts every character shape generated by the production ID source, with deterministic tests.
+- Focused policy/context/recovery tests passed `112`; the final full offline gate passed
+  `1343 passed, 2 deselected in 89.07s`. Ruff format/check, compileall, CLI help and
+  `git diff --check` passed. The verified implementation is commit `ccecce7`; the next campaign
+  must refreeze its source/profile/plan pins and cannot reuse an earlier admission schedule.
+
+## 2026-08-28 — Pi-first core simplification replaces heuristic blocking
+
+- The user paused the S7P-09 campaign direction and requested a usable Pi-like core Agent loop
+  before additional policy layers. No live campaign work was performed.
+- Removed core command semantic classification and keyword-based sensitive-resource filtering from
+  process, file, search, Git and sandbox snapshot services. Exact active credential values remain
+  redacted; generic source examples remain visible.
+- Registered workspace mutations and commands now run without per-call heuristic approval. Read-only
+  sessions, workspace path/revision/atomic-publication boundaries, Full Access grant+approval and
+  Skill/MCP extension policy remain enforced.
+- Project instructions now load one root context file by precedence and warn/skip malformed,
+  oversized or unreadable optional context. Task-derived nested discovery and source-drift recovery
+  quarantine were removed.
+- Focused production regressions passed through the implementation cycle. The final full offline
+  gate passed `1339 passed, 2 deselected in 81.44s`; Ruff format/check, compileall, CLI help and
+  `git diff --check` also passed. No live test or evaluation admission ran. Verified implementation
+  was committed as `b26b884`; unrelated untracked `docs/notes/` was not staged.
+
+## 2026-08-28 — Learning loop changed to best-effort main-Agent settings
+
+- Removed `unresolved_items` as an automatic Learning Review gate. An accepted completed Task now
+  queues background review even when its durable outcome records failed tool calls; the Reviewer
+  may return no candidates.
+- Removed separate Learning timeout/lease configuration and the legacy 120-second/64-K reviewer
+  caps. Production composition now reuses the main Agent model, max run time and effective context
+  character budget. Preference Review keeps its independent queue settings.
+- Fixed `preferences inbox jobs --json` datetime serialization. The command returned the existing
+  live queue successfully.
+- Confirmed the managed Skill projection fix at `3670860` with a real public install, enable,
+  explicit selection and model run. The run returned `skill ok`; its Binding was removed afterward.
+- Focused affected tests passed `108`; the full offline gate passed `1344 passed, 2 deselected in
+  87.42s`. Ruff format/check, compileall, CLI help and `git diff --check` passed. The verified
+  implementation checkpoint is `477caa8`.

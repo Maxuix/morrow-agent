@@ -18,15 +18,13 @@ from morrow.application.learning.memory_run_projection import build_run_context_
 from morrow.application.prompt import (
     DirectCodingProfile,
     DirectCodingPromptAssembler,
-    PromptAssemblyError,
 )
 from morrow.application.turn_lifecycle import build_agent_run_snapshot
 from morrow.bootstrap import build_application, build_session_application
 from morrow.core.capabilities import PermissionPreset, PermissionProfile
 from morrow.core.context import RunContextProjection
-from morrow.core.domain import AgentRunSnapshot
 from morrow.core.models import ModelRef, UserMessage
-from morrow.core.prompt import PromptProjection, project_source_selection_digest
+from morrow.core.prompt import PromptProjection
 from morrow.core.store import StorageError, StorageErrorCode
 from morrow.runtime.session import Session
 from morrow.testing import ScriptedModelProvider, make_run_policy
@@ -37,7 +35,7 @@ def test_direct_profile_is_versioned_reusable_and_hash_stable() -> None:
     second = DirectCodingProfile()
 
     assert first.profile_id == "direct-coding"
-    assert first.version == "v1"
+    assert first.version == "v2"
     assert first.digest == second.digest
     assert first.coding_protocol
     for required in ("inspect", "minimal", "user", "verify", "blocker", "temporary"):
@@ -56,16 +54,21 @@ def test_direct_assembly_orders_authority_and_labels_project_scope(tmp_path: Pat
     contents = [message.content for message in messages]
 
     assert contents[0].startswith("你是 Morrow")
-    assert "只能通过当前请求实际提供的工具" in contents[0]
+    assert "可用能力以本次请求列出的工具为准" in contents[0]
     assert "role guidance" in contents[2]
     assert "root project guidance" in contents[3]
-    assert "scope=src" in contents[4]
+    assert "scope=." in contents[3]
+    assert "src-only guidance" not in "\n".join(contents)
     assert contents.index(assembler.profile.coding_protocol) == 1
-    assert "不能授权工具" in contents[2]
-    assert "不能执行" in contents[3]
+    assert "以下是可选角色工作指导" in contents[2]
+    assert "当前工作目录的项目指令" in contents[3]
+    rendered = "\n".join(contents)
+    assert rendered.count("权限") == 1
+    for defensive_phrase in ("不可信", "禁止", "不能授权", "不能执行"):
+        assert defensive_phrase not in rendered
 
 
-def test_prompt_extension_keeps_admission_sources_and_adds_touched_scopes(tmp_path: Path) -> None:
+def test_prompt_extension_keeps_the_root_projection_unchanged(tmp_path: Path) -> None:
     (tmp_path / "AGENTS.md").write_text("root guidance", encoding="utf-8")
     (tmp_path / "src").mkdir()
     (tmp_path / "src" / "AGENTS.md").write_text("src guidance", encoding="utf-8")
@@ -76,12 +79,8 @@ def test_prompt_extension_keeps_admission_sources_and_adds_touched_scopes(tmp_pa
     admitted = assembler.prepare_for_task("edit `src/main.py`")
     extended = assembler.extend_projection(admitted, target_paths=("docs/readme.md",))
 
-    assert [item.reference.path for item in extended.project_instructions] == [
-        "AGENTS.md",
-        "docs/AGENTS.md",
-        "src/AGENTS.md",
-    ]
-    assert "src guidance" in extended.project_instructions[-1].text
+    assert [item.reference.path for item in extended.project_instructions] == ["AGENTS.md"]
+    assert extended == admitted
 
 
 def test_context_builder_does_not_override_frozen_prompt_with_pending_projection(
@@ -123,11 +122,12 @@ def test_context_builder_does_not_override_frozen_prompt_with_pending_projection
     assert "unfrozen live guidance" not in system_text
 
 
-def test_assembler_without_workspace_fails_closed_for_touched_targets() -> None:
+def test_assembler_without_workspace_ignores_touched_targets() -> None:
     assembler = DirectCodingPromptAssembler()
 
-    with pytest.raises(PromptAssemblyError, match="workspace"):
-        assembler.prepare_for_task(target_paths=("src/main.py",))
+    projection = assembler.prepare_for_task(target_paths=("src/main.py",))
+
+    assert projection.project_instructions == ()
 
 
 def test_projection_binds_role_body_and_assembler_provenance(tmp_path: Path) -> None:
@@ -193,7 +193,7 @@ def test_snapshot_freezes_only_prompt_metadata_not_role_or_instruction_text(tmp_
     encoded = json.dumps(snapshot.model_dump(mode="json"), ensure_ascii=False)
 
     assert snapshot.prompt_profile_id == "direct-coding"
-    assert snapshot.prompt_profile_version == "v1"
+    assert snapshot.prompt_profile_version == "v2"
     assert snapshot.prompt_profile_digest == assembler.profile.digest
     assert snapshot.project_instruction_sources[0].path == "AGENTS.md"
     assert snapshot.project_instruction_sources[0].byte_count == len(
@@ -220,7 +220,7 @@ def test_new_prompt_snapshot_requires_a_rehydrator(tmp_path: Path) -> None:
     assert exc_info.value.code is StorageErrorCode.NEEDS_REPAIR
 
 
-def test_durable_prompt_evidence_rejects_out_of_order_sources(tmp_path: Path) -> None:
+def test_durable_prompt_evidence_contains_only_the_root_source(tmp_path: Path) -> None:
     (tmp_path / "AGENTS.md").write_text("root", encoding="utf-8")
     (tmp_path / "src").mkdir()
     (tmp_path / "src" / "AGENTS.md").write_text("nested", encoding="utf-8")
@@ -234,15 +234,7 @@ def test_durable_prompt_evidence_rejects_out_of_order_sources(tmp_path: Path) ->
         runtime_instance_id="inst-1",
         prompt_projection=projection,
     )
-    reversed_sources = tuple(reversed(snapshot.project_instruction_sources))
-    payload = snapshot.model_dump(mode="python")
-    payload["project_instruction_sources"] = reversed_sources
-    payload["project_instruction_selection_digest"] = project_source_selection_digest(
-        list(reversed_sources)
-    )
-
-    with pytest.raises(ValueError, match="scope order"):
-        AgentRunSnapshot.model_validate(payload)
+    assert [source.path for source in snapshot.project_instruction_sources] == ["AGENTS.md"]
 
 
 def test_protected_prompt_layers_fail_with_context_budget_error(tmp_path: Path) -> None:
@@ -289,7 +281,7 @@ async def test_production_ordinary_run_sends_direct_prompt_and_freezes_metadata(
     assert system[0].startswith("你是 Morrow")
     assert system[1] == session_app.context_builder.prompt_assembler.profile.coding_protocol
     assert "root-direct-guidance" in system[2]
-    assert "src-direct-guidance" in system[3]
+    assert "src-direct-guidance" not in "\n".join(system)
     assert messages[-1].role == "user"
     assert messages[-1].content == "edit `src/main.py`"
     executor = session_app.orchestrator.runtime.loop.tool_executor
@@ -300,10 +292,7 @@ async def test_production_ordinary_run_sends_direct_prompt_and_freezes_metadata(
     )[0]
     encoded = run.snapshot.model_dump_json()
     assert run.snapshot.prompt_profile_id == "direct-coding"
-    assert [source.path for source in run.snapshot.project_instruction_sources] == [
-        "AGENTS.md",
-        "src/AGENTS.md",
-    ]
+    assert [source.path for source in run.snapshot.project_instruction_sources] == ["AGENTS.md"]
     assert "root-direct-guidance" not in encoded
     assert "src-direct-guidance" not in encoded
     assert not (project / "plan.md").exists()
@@ -412,7 +401,7 @@ async def test_auto_sandboxed_run_keeps_prompt_below_frozen_capability_authority
 
 
 @pytest.mark.asyncio
-async def test_recovery_rejects_changed_project_instruction_source(tmp_path: Path) -> None:
+async def test_recovery_reloads_changed_project_instruction_source(tmp_path: Path) -> None:
     project = tmp_path / "project"
     project.mkdir()
     instruction = project / "AGENTS.md"
@@ -431,17 +420,16 @@ async def test_recovery_rejects_changed_project_instruction_source(tmp_path: Pat
     )[0].snapshot
     instruction.write_text("changed guidance\n", encoding="utf-8")
 
-    with pytest.raises(StorageError) as exc_info:
-        build_run_context_projection(
-            session_app.persistence.journal,
-            identity.workspace_id,
-            snapshot,
-            prompt_assembler=session_app.persistence.prompt_assembler,
-        )
-    assert exc_info.value.code is StorageErrorCode.NEEDS_REPAIR
+    recovered = build_run_context_projection(
+        session_app.persistence.journal,
+        identity.workspace_id,
+        snapshot,
+        prompt_assembler=session_app.persistence.prompt_assembler,
+    )
+    assert recovered.prompt_projection.project_instructions[0].text == "changed guidance\n"
 
 
-def test_restore_quarantines_changed_project_instruction_source(tmp_path: Path) -> None:
+def test_restore_accepts_changed_project_instruction_source(tmp_path: Path) -> None:
     project = tmp_path / "project"
     project.mkdir()
     instruction = project / "AGENTS.md"
@@ -476,10 +464,10 @@ def test_restore_quarantines_changed_project_instruction_source(tmp_path: Path) 
         resume_session_id=session_id,
     )
     try:
-        assert restored.session.health.value == "quarantined"
+        assert restored.session.health.value == "ok"
         assert (
             restored.persistence.journal.get_session(identity.workspace_id, session_id).health.value
-            == "quarantined"
+            == "ok"
         )
     finally:
         restored.persistence.close()

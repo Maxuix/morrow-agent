@@ -1,209 +1,113 @@
-"""Bounded, read-only project-instruction resolution contracts for S7P-03."""
+"""Availability-first project-instruction loading contracts."""
 
 from __future__ import annotations
 
-import os
 import subprocess
 from pathlib import Path
 
 import pytest
 
-from morrow.application.project_instructions import (
-    ProjectInstructionError,
-    ProjectInstructionResolver,
-)
-from morrow.core.prompt import ProjectInstructionSourceRef
+from morrow.application.project_instructions import ProjectInstructionResolver
 
 
-def test_resolver_reads_root_to_leaf_and_keeps_sibling_scope_out(tmp_path: Path) -> None:
-    (tmp_path / "AGENTS.md").write_text("root rule", encoding="utf-8")
-    (tmp_path / "src").mkdir()
-    (tmp_path / "src" / "AGENTS.md").write_text("src rule", encoding="utf-8")
-    (tmp_path / "src" / "pkg").mkdir()
-    (tmp_path / "src" / "pkg" / "AGENTS.md").write_text("pkg rule", encoding="utf-8")
-    (tmp_path / "tests").mkdir()
-    (tmp_path / "tests" / "AGENTS.md").write_text("tests rule", encoding="utf-8")
-    (tmp_path / "src" / "pkg" / "module.py").write_text("pass\n", encoding="utf-8")
-
-    resolved = ProjectInstructionResolver(tmp_path).resolve("Please inspect `src/pkg/module.py`")
-
-    assert [item.reference.path for item in resolved.sources] == [
-        "AGENTS.md",
-        "src/AGENTS.md",
-        "src/pkg/AGENTS.md",
-    ]
-    assert [item.reference.scope for item in resolved.sources] == [".", "src", "src/pkg"]
-    assert [item.text for item in resolved.sources] == ["root rule", "src rule", "pkg rule"]
-    assert "tests rule" not in resolved.rendered_block
-
-    sibling = ProjectInstructionResolver(tmp_path).resolve(
-        "Please inspect `tests/example.py`", target_paths=("tests/example.py",)
-    )
-    assert [item.reference.path for item in sibling.sources] == ["AGENTS.md", "tests/AGENTS.md"]
-    assert "src rule" not in sibling.rendered_block
-
-
-def test_only_agents_is_enabled_by_default_and_compatible_names_are_explicit(
+def test_resolver_loads_one_root_file_by_precedence_and_ignores_task_paths(
     tmp_path: Path,
 ) -> None:
+    (tmp_path / "AGENTS.override.md").write_text("override", encoding="utf-8")
     (tmp_path / "AGENTS.md").write_text("agents", encoding="utf-8")
     (tmp_path / "CLAUDE.md").write_text("claude", encoding="utf-8")
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "AGENTS.md").write_text("nested", encoding="utf-8")
 
-    default = ProjectInstructionResolver(tmp_path).resolve()
-    explicit_resolver = ProjectInstructionResolver(tmp_path, filenames=("AGENTS.md", "CLAUDE.md"))
-    explicit = explicit_resolver.resolve()
+    resolved = ProjectInstructionResolver(tmp_path).resolve(
+        "edit `src/main.py`",
+        target_paths=("src/main.py", "../outside", "x" * 1_000),
+    )
 
-    assert [item.text for item in default.sources] == ["agents"]
-    assert [item.text for item in explicit.sources] == ["agents"]
+    assert [item.reference.path for item in resolved.sources] == ["AGENTS.override.md"]
+    assert [item.reference.scope for item in resolved.sources] == ["."]
+    assert resolved.sources[0].text == "override"
+    assert "nested" not in resolved.rendered_block
 
-    (tmp_path / "AGENTS.md").unlink()
-    assert [item.text for item in ProjectInstructionResolver(tmp_path).resolve().sources] == []
-    assert [item.text for item in explicit_resolver.resolve().sources] == ["claude"]
+
+def test_resolver_falls_back_to_agents_then_claude(tmp_path: Path) -> None:
+    agents = tmp_path / "AGENTS.md"
+    claude = tmp_path / "CLAUDE.md"
+    agents.write_text("agents", encoding="utf-8")
+    claude.write_text("claude", encoding="utf-8")
+
+    resolver = ProjectInstructionResolver(tmp_path)
+    assert resolver.resolve().sources[0].text == "agents"
+    agents.unlink()
+    assert resolver.resolve().sources[0].text == "claude"
 
 
 @pytest.mark.parametrize(
-    ("name", "payload", "code"),
-    [
-        ("invalid-utf8", b"\xff", "invalid_utf8"),
-        ("nul", b"good\x00bad", "control_text"),
-        ("control", b"good\x0bbad", "control_text"),
-        ("non-nfc", "e\u0301".encode("utf-8"), "non_nfc"),
-    ],
+    "payload",
+    [b"\xff", b"good\x00bad", b"good\x0bbad", b"x" * 32],
 )
-def test_invalid_instruction_content_fails_closed_without_payload(
-    tmp_path: Path, name: str, payload: bytes, code: str
+def test_malformed_or_oversized_root_instruction_warns_and_is_skipped(
+    tmp_path: Path, payload: bytes
 ) -> None:
-    path = tmp_path / "AGENTS.md"
-    path.write_bytes(payload)
+    (tmp_path / "AGENTS.md").write_bytes(payload)
+    resolver = ProjectInstructionResolver(tmp_path, max_file_bytes=16)
 
-    with pytest.raises(ProjectInstructionError) as exc_info:
-        ProjectInstructionResolver(tmp_path).resolve()
+    with pytest.warns(RuntimeWarning, match="Skipping project instruction"):
+        resolved = resolver.resolve()
 
-    error = exc_info.value
-    assert error.code == code
-    assert "good" not in str(error)
-    assert "bad" not in str(error)
-    assert str(tmp_path) not in str(error)
+    assert resolved.sources == ()
 
 
-def test_limits_and_outside_targets_are_bounded(tmp_path: Path) -> None:
-    (tmp_path / "AGENTS.md").write_text("root", encoding="utf-8")
-    resolver = ProjectInstructionResolver(tmp_path, max_targets=1, max_depth=2)
+def test_non_regular_candidate_warns_and_falls_back(tmp_path: Path) -> None:
+    (tmp_path / "AGENTS.override.md").mkdir()
+    (tmp_path / "AGENTS.md").write_text("fallback", encoding="utf-8")
 
-    with pytest.raises(ProjectInstructionError, match="too_many_targets"):
-        resolver.resolve(target_paths=("one.py", "two.py"))
-    with pytest.raises(ProjectInstructionError, match="outside_workspace"):
-        resolver.resolve(target_paths=("../outside.py",))
-    with pytest.raises(ProjectInstructionError, match="too_deep"):
-        resolver.resolve(target_paths=("a/b/c.py",))
+    with pytest.warns(RuntimeWarning, match="not a regular file"):
+        resolved = ProjectInstructionResolver(tmp_path).resolve()
+
+    assert resolved.sources[0].text == "fallback"
 
 
-def test_target_extractor_ignores_url_paths(tmp_path: Path) -> None:
-    (tmp_path / "AGENTS.md").write_text("root", encoding="utf-8")
-
-    resolved = ProjectInstructionResolver(tmp_path).resolve(
-        "See https://example.test/docs/guide.py for unrelated context."
-    )
-
-    assert [item.reference.path for item in resolved.sources] == ["AGENTS.md"]
-
-
-def test_target_iterable_and_path_length_are_bounded(tmp_path: Path) -> None:
-    resolver = ProjectInstructionResolver(tmp_path, max_targets=2)
-
-    def many_targets():
-        for index in range(100):
-            yield f"target-{index}.py"
-
-    with pytest.raises(ProjectInstructionError, match="too_many_targets"):
-        resolver.resolve(target_paths=many_targets())
-    with pytest.raises(ProjectInstructionError, match="target_too_long"):
-        resolver.resolve(target_paths=("a" * 513,))
-
-
-def test_instruction_symlink_and_non_regular_sources_fail_closed(tmp_path: Path) -> None:
-    target = tmp_path / "target.md"
-    target.write_text("secret", encoding="utf-8")
+def test_instruction_symlink_uses_normal_file_semantics(tmp_path: Path) -> None:
+    target = tmp_path / "guidance.md"
+    target.write_text("linked guidance", encoding="utf-8")
     (tmp_path / "AGENTS.md").symlink_to(target)
-    with pytest.raises(ProjectInstructionError, match="symlink"):
-        ProjectInstructionResolver(tmp_path).resolve()
 
-    (tmp_path / "AGENTS.md").unlink()
-    (tmp_path / "AGENTS.md").mkdir()
-    with pytest.raises(ProjectInstructionError, match="non_regular"):
-        ProjectInstructionResolver(tmp_path).resolve()
+    resolved = ProjectInstructionResolver(tmp_path).resolve()
+
+    assert resolved.sources[0].text == "linked guidance"
 
 
-def test_resolver_requires_nofollow_and_rejects_file_identity_race(
+def test_non_nfc_text_is_normalized_instead_of_rejected(tmp_path: Path) -> None:
+    (tmp_path / "AGENTS.md").write_text("e\u0301", encoding="utf-8")
+
+    resolved = ProjectInstructionResolver(tmp_path).resolve()
+
+    assert resolved.sources[0].text == "é"
+
+
+def test_rehydration_reloads_current_context_and_never_executes_text(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    (tmp_path / "AGENTS.md").write_text("original", encoding="utf-8")
+    instruction = tmp_path / "AGENTS.md"
+    instruction.write_text("first", encoding="utf-8")
     resolver = ProjectInstructionResolver(tmp_path)
-
-    replacement = tmp_path / "replacement.md"
-    replacement.write_text("replacement", encoding="utf-8")
-    real_open = os.open
-    swapped = False
-
-    def swapping_open(path, flags, *args, **kwargs):
-        nonlocal swapped
-        if path == "AGENTS.md" and not swapped:
-            swapped = True
-            os.replace(replacement, tmp_path / "AGENTS.md")
-        return real_open(path, flags, *args, **kwargs)
-
-    monkeypatch.setattr(os, "open", swapping_open)
-    with pytest.raises(ProjectInstructionError, match="source_changed"):
-        resolver.resolve()
-
-    monkeypatch.undo()
-    monkeypatch.delattr(os, "O_NOFOLLOW", raising=False)
-    with pytest.raises(ProjectInstructionError, match="safe_open_unavailable"):
-        ProjectInstructionResolver(tmp_path)
-
-
-def test_instruction_file_and_aggregate_byte_limits_fail_closed(tmp_path: Path) -> None:
-    (tmp_path / "AGENTS.md").write_text("12345", encoding="utf-8")
-    with pytest.raises(ProjectInstructionError, match="file_too_large"):
-        ProjectInstructionResolver(tmp_path, max_file_bytes=4).resolve()
-
-    (tmp_path / "AGENTS.md").write_text("1234", encoding="utf-8")
-    (tmp_path / "nested").mkdir()
-    (tmp_path / "nested" / "AGENTS.md").write_text("5678", encoding="utf-8")
-    with pytest.raises(ProjectInstructionError, match="aggregate_too_large"):
-        ProjectInstructionResolver(tmp_path, max_total_bytes=6).resolve(
-            target_paths=("nested/file.py",)
-        )
-
-
-def test_rehydration_requires_the_same_hash_and_never_executes_document_text(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    (tmp_path / "AGENTS.md").write_text("do not run this", encoding="utf-8")
-    resolver = ProjectInstructionResolver(tmp_path)
-    resolved = resolver.resolve()
+    first = resolver.resolve()
 
     def fail_process(*args, **kwargs):
         raise AssertionError("project instructions must not execute processes")
 
     monkeypatch.setattr(subprocess, "run", fail_process)
-    restored = resolver.rehydrate(resolved.references)
-    assert restored.sources[0].text == "do not run this"
+    instruction.write_text("current", encoding="utf-8")
+    restored = resolver.rehydrate(first.references)
 
-    (tmp_path / "AGENTS.md").write_text("changed", encoding="utf-8")
-    with pytest.raises(ProjectInstructionError, match="source_drift"):
-        resolver.rehydrate(resolved.references)
+    assert restored.sources[0].text == "current"
 
 
-def test_frozen_source_metadata_rejects_control_path_and_invalid_shape(tmp_path: Path) -> None:
-    (tmp_path / "AGENTS.md").write_text("root", encoding="utf-8")
-    resolver = ProjectInstructionResolver(tmp_path)
-    reference = resolver.resolve().references[0]
+def test_custom_names_and_filename_validation_remain_explicit(tmp_path: Path) -> None:
+    (tmp_path / "PROJECT.md").write_text("custom", encoding="utf-8")
+    resolved = ProjectInstructionResolver(tmp_path, filenames=("PROJECT.md",)).resolve()
+    assert resolved.sources[0].text == "custom"
 
-    with pytest.raises(ProjectInstructionError, match="invalid_frozen_source"):
-        resolver.rehydrate({"path": "bad\npath"})
-
-    with pytest.raises(ValueError, match="scope"):
-        ProjectInstructionSourceRef.model_validate(
-            reference.model_dump(mode="python") | {"path": "other/AGENTS.md"}
-        )
+    with pytest.raises(ValueError, match="filename"):
+        ProjectInstructionResolver(tmp_path, filenames=("nested/AGENTS.md",))

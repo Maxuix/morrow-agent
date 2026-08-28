@@ -592,7 +592,7 @@ class _Approve:
 
 
 @pytest.mark.asyncio
-async def test_destructive_tools_use_generic_approval_path_even_in_auto_safe(tmp_path):
+async def test_delete_tool_runs_directly_in_auto_safe(tmp_path):
     source = tmp_path / "source.txt"
     source.write_text("source\n", encoding="utf-8")
     files, mutation = _services(tmp_path)
@@ -624,14 +624,13 @@ async def test_destructive_tools_use_generic_approval_path_even_in_auto_safe(tmp
         total=1,
     )
     assert outcome.ok is True
-    assert len(approval.requests) == 1
-    assert approval.requests[0].effect.value == "persistent_write"
+    assert approval.requests == []
     assert not source.exists()
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("operation", ("delete", "move", "rename"))
-async def test_destructive_approval_denial_has_no_handler_side_effect(tmp_path, operation):
+async def test_approval_port_does_not_gate_registered_file_tools(tmp_path, operation):
     source = tmp_path / f"{operation}-source.txt"
     source.write_text("source\n", encoding="utf-8")
     _, mutation = _services(tmp_path)
@@ -670,11 +669,11 @@ async def test_destructive_approval_denial_has_no_handler_side_effect(tmp_path, 
         ordinal=1,
         total=1,
     )
-    assert outcome.ok is False
-    assert outcome.error_code is ToolErrorCode.APPROVAL_REJECTED
-    assert source.read_text(encoding="utf-8") == "source\n"
-    assert not destination.exists()
-    assert len(approval.requests) == 1
+    assert outcome.ok is True
+    assert not source.exists()
+    if operation != "delete":
+        assert destination.read_text(encoding="utf-8") == "source\n"
+    assert approval.requests == []
 
 
 class _WaitForApproval:
@@ -690,7 +689,7 @@ class _WaitForApproval:
 
 
 @pytest.mark.asyncio
-async def test_destructive_cancellation_while_awaiting_approval_has_no_side_effect(tmp_path):
+async def test_delete_does_not_wait_for_an_approval_port(tmp_path):
     source = tmp_path / "cancel-source.txt"
     source.write_text("source\n", encoding="utf-8")
     _, mutation = _services(tmp_path)
@@ -706,23 +705,19 @@ async def test_destructive_cancellation_while_awaiting_approval_has_no_side_effe
             WorkspaceCapability(workspace_id="w1", root=tmp_path),
         ),
     )
-    task = asyncio.create_task(
-        executor.execute_with_context(
-            FunctionToolCall(
-                id="cancel-delete",
-                name="delete_file",
-                arguments=json.dumps({"path": source.name, "expected_sha256": _sha(source)}),
-            ),
-            run_context=ToolRunContext(run_id="run", session_id="session"),
-            ordinal=1,
-            total=1,
-        )
+    outcome = await executor.execute_with_context(
+        FunctionToolCall(
+            id="direct-delete",
+            name="delete_file",
+            arguments=json.dumps({"path": source.name, "expected_sha256": _sha(source)}),
+        ),
+        run_context=ToolRunContext(run_id="run", session_id="session"),
+        ordinal=1,
+        total=1,
     )
-    await approval.requested.wait()
-    task.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await task
-    assert source.read_text(encoding="utf-8") == "source\n"
+    assert outcome.ok is True
+    assert not source.exists()
+    assert not approval.requested.is_set()
 
 
 @pytest.mark.parametrize("operation", ("delete", "move", "rename"))
@@ -998,7 +993,7 @@ async def test_sandbox_promotion_pair_and_delete_apply_and_preserve_changes(tmp_
     assert not (workspace / "delete.txt").exists()
     assert not (workspace / "old.txt").exists()
     assert (workspace / "new.txt").read_text(encoding="utf-8") == "rename\n"
-    assert len(approval.requests) == 1
+    assert approval.requests == []
     applied = tuple(entry for entry in run.change_sets if hasattr(entry, "status"))
     assert len(applied) == 2
     assert {entry.status for entry in applied} == {

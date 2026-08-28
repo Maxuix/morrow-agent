@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import hashlib
 import io
 import json
@@ -57,6 +58,12 @@ TOOL_DIAGNOSTIC_FIELDS = (
     "basic_tool_blocked",
 )
 FIXED_PI_TASK_IDS = ("MORROW-003", "MORROW-005", "EXTERNAL-003", "EXTERNAL-004")
+CAMPAIGN_AGENTS = ("morrow", "pi")
+CAPABILITY_FAMILIES = ("read", "search", "edit", "create", "command")
+COMPARISON_PLAN_SCHEMA = "morrow.s7p-09.comparison-plan.v1"
+NORMALIZED_TRACE_SCHEMA = "morrow.s7p-09.normalized-trace.v1"
+EXTERNAL_DEADLINE_SECONDS = 1_800
+TOOL_DEADLINE_SECONDS = 120
 FROZEN_THRESHOLDS = {
     "simple_medium_required_pass": 5,
     "difficult_required_pass": 2,
@@ -2500,6 +2507,1867 @@ def summarize_runs(root: Path, *, output: Path | None = None) -> dict[str, objec
     return summary
 
 
+def frozen_campaign_schedule() -> list[dict[str, object]]:
+    """Return the exact counterbalanced 28-run S7P-09 primary schedule."""
+
+    paired = set(FIXED_PI_TASK_IDS)
+    unpaired = [task.id for task in load_tasks() if task.id not in paired]
+    blocks: list[tuple[str, str | None]] = [
+        ("MORROW-003", unpaired[0]),
+        ("MORROW-005", unpaired[1]),
+        ("EXTERNAL-003", unpaired[2]),
+        ("EXTERNAL-004", unpaired[3]),
+    ]
+    tail = unpaired[4:]
+    entries: list[dict[str, object]] = []
+    ordinal = 1
+    for repetition in (1, 2):
+        for task_id, leading_task in blocks:
+            if leading_task is not None:
+                entries.append(
+                    {
+                        "ordinal": ordinal,
+                        "agent": "morrow",
+                        "task_id": leading_task,
+                        "repetition": repetition,
+                    }
+                )
+                ordinal += 1
+            agents = ("morrow", "pi") if repetition == 1 else ("pi", "morrow")
+            for agent in agents:
+                entries.append(
+                    {
+                        "ordinal": ordinal,
+                        "agent": agent,
+                        "task_id": task_id,
+                        "repetition": repetition,
+                    }
+                )
+                ordinal += 1
+        for task_id in tail:
+            entries.append(
+                {
+                    "ordinal": ordinal,
+                    "agent": "morrow",
+                    "task_id": task_id,
+                    "repetition": repetition,
+                }
+            )
+            ordinal += 1
+    return entries
+
+
+def _required_keys(value: Mapping[str, object], expected: set[str], label: str) -> None:
+    _exact_keys(value, expected, label)
+    missing = sorted(expected - set(value))
+    if missing:
+        raise EvalError(f"missing {label} field: {missing[0]}")
+
+
+def _positive_number(value: object, label: str, *, integer: bool = False) -> int | float:
+    normalized = _number_or_unavailable(value, label, integer=integer)
+    if normalized == "unavailable" or normalized <= 0:
+        raise EvalError(f"{label} must be a positive number")
+    return normalized
+
+
+def _required_number(value: object, label: str, *, integer: bool = False) -> int | float:
+    normalized = _number_or_unavailable(value, label, integer=integer)
+    if normalized == "unavailable":
+        raise EvalError(f"{label} cannot be unavailable")
+    return normalized
+
+
+def _required_sha256(value: object, label: str) -> str:
+    digest = _is_sha256(value, label)
+    if digest == "unavailable":
+        raise EvalError(f"{label} cannot be unavailable")
+    return digest
+
+
+def _resolved_text(value: object, label: str) -> str:
+    resolved = _text(value, label)
+    if resolved == "unavailable" or "REPLACE" in resolved.upper():
+        raise EvalError(f"{label} must be resolved")
+    return resolved
+
+
+def _validate_sampling_contract(value: object) -> dict[str, object]:
+    sampling = _mapping(value, "comparison plan common_model.sampling")
+    fields = {"temperature", "top_p", "seed", "max_output_tokens"}
+    _required_keys(sampling, fields, "comparison plan common_model.sampling")
+    normalized: dict[str, object] = {}
+    for field in sorted(fields):
+        item = sampling[field]
+        if isinstance(item, Mapping):
+            _required_keys(
+                item,
+                {"status", "contract"},
+                f"comparison plan common_model.sampling.{field}",
+            )
+            if item["status"] != "provider_default_verified":
+                raise EvalError(f"comparison plan sampling {field} has unsupported status")
+            contract = _text(item["contract"], f"comparison plan sampling {field}.contract")
+            if contract == "unavailable":
+                raise EvalError(f"comparison plan sampling {field} cannot be unavailable")
+            normalized[field] = {
+                "contract": contract,
+                "status": "provider_default_verified",
+            }
+            continue
+        normalized[field] = _number_or_unavailable(
+            item,
+            f"comparison plan sampling {field}",
+            integer=field in {"seed", "max_output_tokens"},
+        )
+        if normalized[field] == "unavailable":
+            raise EvalError(f"comparison plan sampling {field} cannot be unavailable")
+    return normalized
+
+
+def _validate_permission_equivalence(value: object) -> dict[str, object]:
+    permissions = _mapping(value, "comparison plan permissions")
+    _required_keys(
+        permissions,
+        {"capabilities", "denials", "morrow_policy_sha256", "pi_extension_sha256"},
+        "comparison plan permissions",
+    )
+    capabilities = permissions["capabilities"]
+    if not isinstance(capabilities, list) or capabilities != list(CAPABILITY_FAMILIES):
+        raise EvalError("comparison plan capability families are not frozen")
+    denials = permissions["denials"]
+    frozen_denials = [
+        "credential_access",
+        "external_filesystem",
+        "git_mutation",
+        "privilege_escalation",
+        "task_network",
+    ]
+    if not isinstance(denials, list) or denials != frozen_denials:
+        raise EvalError("comparison plan denial boundary is not frozen")
+    return {
+        "capabilities": list(CAPABILITY_FAMILIES),
+        "denials": frozen_denials,
+        "morrow_policy_sha256": _required_sha256(
+            permissions["morrow_policy_sha256"], "comparison plan Morrow policy hash"
+        ),
+        "pi_extension_sha256": _required_sha256(
+            permissions["pi_extension_sha256"], "comparison plan Pi extension hash"
+        ),
+    }
+
+
+def validate_campaign_schedule(value: object) -> list[dict[str, object]]:
+    if not isinstance(value, list):
+        raise EvalError("comparison plan schedule must be a list")
+    normalized: list[dict[str, object]] = []
+    for index, raw in enumerate(value):
+        entry = _mapping(raw, f"comparison plan schedule[{index}]")
+        _required_keys(
+            entry,
+            {"ordinal", "agent", "task_id", "repetition"},
+            f"comparison plan schedule[{index}]",
+        )
+        agent = _text(entry["agent"], f"comparison plan schedule[{index}].agent")
+        task_id = _text(entry["task_id"], f"comparison plan schedule[{index}].task_id")
+        ordinal = entry["ordinal"]
+        repetition = entry["repetition"]
+        if agent not in CAMPAIGN_AGENTS:
+            raise EvalError("comparison plan schedule contains an unknown agent")
+        if isinstance(ordinal, bool) or not isinstance(ordinal, int):
+            raise EvalError("comparison plan schedule ordinal must be an integer")
+        if isinstance(repetition, bool) or not isinstance(repetition, int):
+            raise EvalError("comparison plan schedule repetition must be an integer")
+        normalized.append(
+            {
+                "ordinal": ordinal,
+                "agent": agent,
+                "task_id": task_id,
+                "repetition": repetition,
+            }
+        )
+    if normalized != frozen_campaign_schedule():
+        raise EvalError("comparison plan schedule does not match the frozen 28-run order")
+    keys = {(entry["agent"], entry["task_id"], entry["repetition"]) for entry in normalized}
+    if len(keys) != 28:
+        raise EvalError("comparison plan schedule contains duplicate run keys")
+    return normalized
+
+
+def validate_comparison_plan(plan: Mapping[str, object]) -> dict[str, object]:
+    """Strictly validate the immutable, non-secret S7P-09 comparison plan."""
+
+    _reject_sensitive_content(plan, "comparison plan")
+    root = _mapping(plan, "comparison plan")
+    fields = {
+        "schema",
+        "campaign_id",
+        "protocol",
+        "dataset",
+        "source",
+        "profiles",
+        "common_model",
+        "permissions",
+        "deadlines",
+        "ceilings",
+        "schedule",
+        "evidence_root",
+        "start_not_before",
+        "hold_point",
+        "integrity",
+    }
+    _required_keys(root, fields, "comparison plan")
+    if root["schema"] != COMPARISON_PLAN_SCHEMA:
+        raise EvalError("unsupported comparison plan schema")
+    campaign_id = _resolved_text(root["campaign_id"], "comparison plan campaign_id")
+    if not IDENTIFIER_RE.fullmatch(campaign_id):
+        raise EvalError("comparison plan campaign_id has unsupported characters")
+
+    protocol = _mapping(root["protocol"], "comparison plan protocol")
+    _required_keys(protocol, {"id", "version", "sha256"}, "comparison plan protocol")
+    if protocol["id"] != "s7p-00" or protocol["version"] != 1:
+        raise EvalError("comparison plan protocol identity is not frozen")
+    protocol_normalized = {
+        "id": "s7p-00",
+        "version": 1,
+        "sha256": _required_sha256(protocol["sha256"], "comparison plan protocol hash"),
+    }
+
+    dataset = _mapping(root["dataset"], "comparison plan dataset")
+    _required_keys(dataset, {"id", "sha256"}, "comparison plan dataset")
+    if dataset["id"] != "morrow-code-agent-mini":
+        raise EvalError("comparison plan dataset identity is not frozen")
+    dataset_normalized = {
+        "id": "morrow-code-agent-mini",
+        "sha256": _required_sha256(dataset["sha256"], "comparison plan dataset hash"),
+    }
+
+    source = _mapping(root["source"], "comparison plan source")
+    _required_keys(
+        source,
+        {
+            "morrow_commit",
+            "morrow_source_sha256",
+            "pi_version",
+            "pi_package_sha256",
+            "pi_executable_sha256",
+            "clean",
+        },
+        "comparison plan source",
+    )
+    if source["clean"] is not True:
+        raise EvalError("comparison plan source must be a clean immutable checkout")
+    if source["pi_version"] != "0.84.2":
+        raise EvalError("comparison plan Pi version must be exactly 0.84.2")
+    morrow_commit = _text(source["morrow_commit"], "comparison plan Morrow commit")
+    if not re.fullmatch(r"[0-9a-f]{40}", morrow_commit):
+        raise EvalError("comparison plan Morrow commit must be a full Git commit")
+    source_normalized = {
+        "clean": True,
+        "morrow_commit": morrow_commit,
+        "morrow_source_sha256": _required_sha256(
+            source["morrow_source_sha256"], "Morrow source hash"
+        ),
+        "pi_executable_sha256": _required_sha256(
+            source["pi_executable_sha256"], "Pi executable hash"
+        ),
+        "pi_package_sha256": _required_sha256(source["pi_package_sha256"], "Pi package hash"),
+        "pi_version": "0.84.2",
+    }
+
+    profiles = _mapping(root["profiles"], "comparison plan profiles")
+    _required_keys(profiles, {"morrow", "pi"}, "comparison plan profiles")
+    normalized_profiles: dict[str, object] = {}
+    for agent in CAMPAIGN_AGENTS:
+        profile_item = _mapping(profiles[agent], f"comparison plan profiles.{agent}")
+        _required_keys(
+            profile_item,
+            {"sha256", "profile"},
+            f"comparison plan profiles.{agent}",
+        )
+        profile = validate_profile(_mapping(profile_item["profile"], f"profile.{agent}"))
+        profile_hash = _required_sha256(
+            profile_item["sha256"], f"comparison plan {agent} profile hash"
+        )
+        if profile_hash != content_hash(profile):
+            raise EvalError(f"comparison plan {agent} profile hash mismatch")
+        normalized_profiles[agent] = {"profile": profile, "sha256": profile_hash}
+
+    common = _mapping(root["common_model"], "comparison plan common_model")
+    _required_keys(
+        common,
+        {
+            "provider_family",
+            "service",
+            "canonical_model_id",
+            "model_revision",
+            "context_window",
+            "max_output_tokens",
+            "sampling",
+        },
+        "comparison plan common_model",
+    )
+    common_normalized = {
+        "canonical_model_id": _resolved_text(common["canonical_model_id"], "canonical model ID"),
+        "context_window": _positive_number(
+            common["context_window"], "context window", integer=True
+        ),
+        "max_output_tokens": _positive_number(
+            common["max_output_tokens"], "maximum output", integer=True
+        ),
+        "model_revision": _resolved_text(common["model_revision"], "model revision"),
+        "provider_family": _resolved_text(common["provider_family"], "provider family"),
+        "sampling": _validate_sampling_contract(common["sampling"]),
+        "service": _resolved_text(common["service"], "provider service"),
+    }
+    sampling_output = common_normalized["sampling"]["max_output_tokens"]
+    if not isinstance(sampling_output, Mapping) and (
+        sampling_output != common_normalized["max_output_tokens"]
+    ):
+        raise EvalError("comparison plan sampling and capability max output differ")
+    for agent in CAMPAIGN_AGENTS:
+        profile = normalized_profiles[agent]["profile"]
+        if profile["provider"]["id"] != common_normalized["provider_family"]:
+            raise EvalError("comparison plan profiles do not share the common provider")
+        if profile["provider"]["revision"] != common_normalized["service"]:
+            raise EvalError("comparison plan profiles do not share the common service")
+        if profile["model"]["id"] != common_normalized["canonical_model_id"]:
+            raise EvalError("comparison plan profiles do not share the canonical model")
+        if profile["model"]["revision"] != common_normalized["model_revision"]:
+            raise EvalError("comparison plan profiles do not share the model revision")
+        for field, contract in common_normalized["sampling"].items():
+            profile_value = profile["sampling"][field]
+            if isinstance(contract, Mapping):
+                if profile_value != "unavailable":
+                    raise EvalError(
+                        "comparison plan provider-default sampling must be unavailable on both profiles"
+                    )
+            elif profile_value != contract:
+                raise EvalError("comparison plan profile sampling differs from the common contract")
+
+    deadlines = _mapping(root["deadlines"], "comparison plan deadlines")
+    _required_keys(deadlines, {"run_seconds", "tool_seconds"}, "comparison plan deadlines")
+    if deadlines != {
+        "run_seconds": EXTERNAL_DEADLINE_SECONDS,
+        "tool_seconds": TOOL_DEADLINE_SECONDS,
+    }:
+        raise EvalError("comparison plan deadlines do not match the frozen contract")
+    ceilings = _mapping(root["ceilings"], "comparison plan ceilings")
+    _required_keys(ceilings, {"total_tokens", "currency", "total_cost"}, "comparison plan ceilings")
+    currency = _text(ceilings["currency"], "comparison plan currency")
+    if not re.fullmatch(r"[A-Z]{3}", currency):
+        raise EvalError("comparison plan currency must be a three-letter code")
+    total_cost = ceilings["total_cost"]
+    if total_cost is not None:
+        total_cost = _positive_number(total_cost, "comparison plan total cost")
+    ceilings_normalized = {
+        "currency": currency,
+        "total_cost": total_cost,
+        "total_tokens": _positive_number(
+            ceilings["total_tokens"], "comparison plan total tokens", integer=True
+        ),
+    }
+    evidence = _mapping(root["evidence_root"], "comparison plan evidence_root")
+    _required_keys(
+        evidence,
+        {"id", "path_sha256", "minimum_free_bytes"},
+        "comparison plan evidence_root",
+    )
+    evidence_normalized = {
+        "id": _resolved_text(evidence["id"], "comparison plan evidence root ID"),
+        "minimum_free_bytes": _positive_number(
+            evidence["minimum_free_bytes"], "minimum free bytes", integer=True
+        ),
+        "path_sha256": _required_sha256(evidence["path_sha256"], "evidence root path hash"),
+    }
+    start_not_before = _text(root["start_not_before"], "comparison plan start_not_before")
+    try:
+        parsed_start = datetime.fromisoformat(start_not_before.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise EvalError("comparison plan start_not_before must be ISO-8601") from exc
+    if parsed_start.tzinfo is None:
+        raise EvalError("comparison plan start_not_before must include a timezone")
+    hold_point = _mapping(root["hold_point"], "comparison plan hold_point")
+    _required_keys(
+        hold_point,
+        {
+            "status",
+            "scope",
+            "approved_at",
+            "morrow_readiness_sha256",
+            "pi_readiness_sha256",
+            "model_probe_sha256",
+        },
+        "comparison plan hold_point",
+    )
+    if hold_point["status"] != "approved":
+        raise EvalError("comparison plan hold point has not been approved")
+    if hold_point["scope"] != "common_model_and_campaign_ceilings":
+        raise EvalError("comparison plan hold point approval scope is incomplete")
+    approved_at = _text(hold_point["approved_at"], "comparison plan hold point approved_at")
+    try:
+        parsed_approval = datetime.fromisoformat(approved_at.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise EvalError("comparison plan hold point approved_at must be ISO-8601") from exc
+    if parsed_approval.tzinfo is None:
+        raise EvalError("comparison plan hold point approved_at must include a timezone")
+    hold_normalized = {
+        "approved_at": approved_at,
+        "model_probe_sha256": _required_sha256(
+            hold_point["model_probe_sha256"], "model probe hash"
+        ),
+        "morrow_readiness_sha256": _required_sha256(
+            hold_point["morrow_readiness_sha256"], "Morrow readiness hash"
+        ),
+        "pi_readiness_sha256": _required_sha256(
+            hold_point["pi_readiness_sha256"], "Pi readiness hash"
+        ),
+        "scope": "common_model_and_campaign_ceilings",
+        "status": "approved",
+    }
+
+    normalized = {
+        "schema": COMPARISON_PLAN_SCHEMA,
+        "campaign_id": campaign_id,
+        "protocol": protocol_normalized,
+        "dataset": dataset_normalized,
+        "source": source_normalized,
+        "profiles": normalized_profiles,
+        "common_model": common_normalized,
+        "permissions": _validate_permission_equivalence(root["permissions"]),
+        "deadlines": dict(deadlines),
+        "ceilings": ceilings_normalized,
+        "schedule": validate_campaign_schedule(root["schedule"]),
+        "evidence_root": evidence_normalized,
+        "start_not_before": start_not_before,
+        "hold_point": hold_normalized,
+    }
+    integrity = _required_sha256(root["integrity"], "comparison plan integrity")
+    expected_integrity = content_hash(normalized)
+    if integrity != expected_integrity:
+        raise EvalError("comparison plan integrity mismatch")
+    normalized["integrity"] = integrity
+    return normalized
+
+
+def load_comparison_plan(path: Path) -> dict[str, object]:
+    return validate_comparison_plan(_read_json(path, "comparison plan"))
+
+
+def _tool_family(name: object) -> str:
+    normalized = _text(name, "tool name").casefold()
+    if normalized in {
+        "read",
+        "read_file",
+        "ls",
+        "list_directory",
+        "git_status",
+        "git_diff",
+        "show_changes",
+    }:
+        return "read"
+    if normalized in {
+        "grep",
+        "glob",
+        "find",
+        "find_files",
+        "search",
+        "search_files",
+        "search_text",
+    }:
+        return "search"
+    if normalized in {
+        "edit",
+        "apply_patch",
+        "replace",
+        "delete_file",
+        "move_file",
+        "rename_file",
+        "update_configuration",
+    }:
+        return "edit"
+    if normalized in {"write", "write_file", "create_file"}:
+        return "create"
+    if normalized in {"bash", "shell", "command", "run_command", "run_skill_script"}:
+        return "command"
+    raise EvalError("trace contains an unknown tool capability")
+
+
+def _trace_paths(args: object, workspace: Path | None) -> list[str]:
+    if not isinstance(args, Mapping):
+        return []
+    paths: list[str] = []
+    for key in ("path", "file_path", "source_path", "destination_path", "cwd"):
+        raw = args.get(key)
+        if not isinstance(raw, str) or not raw:
+            continue
+        candidate = Path(raw)
+        if candidate.is_absolute():
+            if workspace is None:
+                continue
+            try:
+                candidate = candidate.resolve().relative_to(workspace.resolve())
+            except (OSError, ValueError):
+                continue
+        try:
+            safe = _safe_path(candidate.as_posix(), "trace path")
+        except EvalError:
+            continue
+        if safe not in paths:
+            paths.append(safe)
+    return sorted(paths)
+
+
+def _validator_kind(args: object) -> str | None:
+    if not isinstance(args, Mapping):
+        return None
+    command = args.get("command")
+    if not isinstance(command, str):
+        return None
+    head = command.strip().split(maxsplit=3)[:3]
+    joined = " ".join(head).casefold()
+    if re.search(r"(?:^|\s)(?:pytest|py\.test)(?:\s|$)", joined):
+        return "pytest"
+    if re.search(r"(?:^|\s)ruff(?:\s|$)", joined):
+        return "ruff"
+    if "compileall" in joined:
+        return "compileall"
+    if re.search(r"(?:^|\s)(?:npm|pnpm|yarn)\s+test(?:\s|$)", joined):
+        return "project-test"
+    return None
+
+
+def _safe_evaluation_annotation(value: object) -> dict[str, object]:
+    if value is None:
+        return {}
+    annotation = _mapping(value, "trace evaluation annotation")
+    allowed = {
+        "terminal_state",
+        "effective_write",
+        "validation_status",
+        "denial_reason_code",
+        "invalid_arguments",
+        "basic_tool_blocked",
+    }
+    _exact_keys(annotation, allowed, "trace evaluation annotation")
+    normalized: dict[str, object] = {}
+    if "terminal_state" in annotation:
+        state = _text(annotation["terminal_state"], "trace terminal state")
+        if state not in TOOL_TERMINAL_STATES:
+            raise EvalError("trace has an unsupported tool terminal state")
+        normalized["terminal_state"] = state
+    if "effective_write" in annotation:
+        if not isinstance(annotation["effective_write"], bool):
+            raise EvalError("trace effective_write must be boolean")
+        normalized["effective_write"] = annotation["effective_write"]
+    if "validation_status" in annotation:
+        status = _text(annotation["validation_status"], "trace validation status")
+        if status not in {"passed", "failed"}:
+            raise EvalError("trace validation status must be passed or failed")
+        normalized["validation_status"] = status
+    if "denial_reason_code" in annotation:
+        reason = _text(annotation["denial_reason_code"], "trace denial reason code")
+        if not IDENTIFIER_RE.fullmatch(reason):
+            raise EvalError("trace denial reason code is not bounded")
+        normalized["denial_reason_code"] = reason
+    for field in ("invalid_arguments", "basic_tool_blocked"):
+        if field in annotation:
+            if not isinstance(annotation[field], bool):
+                raise EvalError(f"trace {field} must be boolean")
+            normalized[field] = annotation[field]
+    return normalized
+
+
+def _pi_annotation(result: object) -> dict[str, object]:
+    if not isinstance(result, Mapping):
+        return {}
+    details = result.get("details")
+    if not isinstance(details, Mapping):
+        return {}
+    return _safe_evaluation_annotation(details.get("evaluation"))
+
+
+def _trace_usage(message: Mapping[str, object]) -> dict[str, int | float]:
+    usage = _mapping(message.get("usage"), "Pi assistant usage")
+    required = {"input", "output", "cacheRead", "cacheWrite", "totalTokens", "cost"}
+    _exact_keys(usage, required | {"reasoning"}, "Pi assistant usage")
+    missing = sorted(required - set(usage))
+    if missing:
+        raise EvalError(f"missing Pi assistant usage field: {missing[0]}")
+    if "reasoning" in usage:
+        _required_number(usage["reasoning"], "Pi reasoning tokens", integer=True)
+    cost = _mapping(usage["cost"], "Pi assistant usage cost")
+    _required_keys(
+        cost, {"input", "output", "cacheRead", "cacheWrite", "total"}, "Pi assistant usage cost"
+    )
+    return {
+        "input_tokens": int(_required_number(usage["input"], "Pi input tokens", integer=True)),
+        "output_tokens": int(_required_number(usage["output"], "Pi output tokens", integer=True)),
+        "total_tokens": int(
+            _required_number(usage["totalTokens"], "Pi total tokens", integer=True)
+        ),
+        "cost": float(_required_number(cost["total"], "Pi cost")),
+    }
+
+
+def _pi_stop_code(reason: object, *, watchdog_expired: bool) -> str:
+    if watchdog_expired:
+        return "budget_exhausted"
+    mapping = {
+        "stop": "completed",
+        "length": "budget_exhausted",
+        "error": "runtime_failed",
+        "aborted": "cancelled",
+        "deferred": "runtime_failed",
+    }
+    if reason not in mapping:
+        raise EvalError("Pi trace has no authoritative terminal stop reason")
+    return mapping[str(reason)]
+
+
+def normalize_pi_trace(
+    events: list[object],
+    *,
+    duration_ms: int,
+    workspace: Path | None = None,
+    watchdog_expired: bool = False,
+) -> dict[str, object]:
+    """Reduce Pi 0.84.2 JSON events to bounded, non-payload evaluation facts."""
+
+    if isinstance(duration_ms, bool) or not isinstance(duration_ms, int) or duration_ms < 0:
+        raise EvalError("trace duration must be a non-negative integer")
+    ignored = {
+        "session",
+        "agent_start",
+        "agent_end",
+        "agent_settled",
+        "turn_start",
+        "message_start",
+        "message_update",
+        "tool_execution_update",
+        "queue_update",
+        "entry_appended",
+        "session_info_changed",
+        "thinking_level_changed",
+        "bash_execution_update",
+    }
+    open_tools: dict[str, dict[str, object]] = {}
+    tools: list[dict[str, object]] = []
+    rounds = 0
+    attempts = 0
+    retries = 0
+    compactions = 0
+    overflow_recoveries = 0
+    current_round = 0
+    usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "cost": 0.0}
+    final_stop: str | None = None
+    agent_ended = False
+    seen_assistant_messages: set[tuple[int, str, str, int]] = set()
+    for index, raw_event in enumerate(events):
+        event = _mapping(raw_event, f"Pi event[{index}]")
+        event_type = _text(event.get("type"), f"Pi event[{index}].type")
+        if event_type == "turn_start":
+            turn_index = event.get("turnIndex")
+            if turn_index is None:
+                current_round = rounds + 1
+                continue
+            if isinstance(turn_index, bool) or not isinstance(turn_index, int) or turn_index < 0:
+                raise EvalError("Pi turn_start has an invalid turnIndex")
+            current_round = turn_index + 1
+            continue
+        if event_type == "turn_end":
+            turn_index = event.get("turnIndex")
+            if turn_index is None:
+                rounds += 1
+                current_round = rounds
+                continue
+            if isinstance(turn_index, bool) or not isinstance(turn_index, int) or turn_index < 0:
+                raise EvalError("Pi turn_end has an invalid turnIndex")
+            rounds += 1
+            current_round = turn_index + 1
+            continue
+        if event_type == "message_end":
+            message = _mapping(event.get("message"), "Pi message_end.message")
+            if message.get("role") != "assistant":
+                continue
+            authoritative = _trace_usage(message)
+            identity = (
+                int(message.get("timestamp", index)),
+                str(message.get("provider", "")),
+                str(message.get("model", "")),
+                authoritative["total_tokens"],
+            )
+            if identity in seen_assistant_messages:
+                raise EvalError("Pi trace repeats an authoritative assistant message")
+            seen_assistant_messages.add(identity)
+            attempts += 1
+            for field in usage:
+                usage[field] += authoritative[field]
+            stop_reason = message.get("stopReason")
+            if stop_reason not in {"pending", "toolUse"}:
+                final_stop = str(stop_reason)
+            continue
+        if event_type == "agent_end":
+            will_retry = event.get("willRetry")
+            if not isinstance(will_retry, bool):
+                raise EvalError("Pi agent_end is missing willRetry")
+            agent_ended = not will_retry
+            continue
+        if event_type == "tool_execution_start":
+            call_id = _text(event.get("toolCallId"), "Pi tool call ID")
+            if call_id in open_tools or any(tool["call_id"] == call_id for tool in tools):
+                raise EvalError("Pi trace contains a duplicate tool call ID")
+            name = event.get("toolName")
+            args = event.get("args")
+            open_tools[call_id] = {
+                "call_id": call_id,
+                "ordinal": len(tools) + len(open_tools) + 1,
+                "round": max(current_round, 1),
+                "capability": _tool_family(name),
+                "paths": _trace_paths(args, workspace),
+                "validator_kind": _validator_kind(args),
+            }
+            continue
+        if event_type == "tool_execution_end":
+            call_id = _text(event.get("toolCallId"), "Pi tool call ID")
+            started = open_tools.pop(call_id, None)
+            if started is None:
+                raise EvalError("Pi trace ends a tool that was not started")
+            annotation = _pi_annotation(event.get("result"))
+            is_error = event.get("isError")
+            if not isinstance(is_error, bool):
+                raise EvalError("Pi tool end is missing isError")
+            terminal_state = annotation.get("terminal_state", "failed" if is_error else "succeeded")
+            started.update(
+                {
+                    "state": terminal_state,
+                    "effective_write": annotation.get("effective_write", False),
+                    "validation_status": annotation.get("validation_status", "not_run"),
+                    "invalid_arguments": annotation.get("invalid_arguments", False),
+                    "basic_tool_blocked": annotation.get("basic_tool_blocked", False),
+                }
+            )
+            tools.append(started)
+            continue
+        if event_type == "compaction_start":
+            compactions += 1
+            if event.get("reason") == "overflow":
+                overflow_recoveries += 1
+            continue
+        if event_type == "auto_retry_start":
+            retries += 1
+            continue
+        if event_type in {"compaction_end", "auto_retry_end"}:
+            continue
+        if event_type in ignored:
+            continue
+        raise EvalError(f"Pi trace contains unsupported event type: {event_type}")
+    if open_tools:
+        raise EvalError("Pi trace has tool calls without terminal events")
+    if final_stop is None and agent_ended:
+        final_stop = "error"
+    tools.sort(key=lambda item: int(item["ordinal"]))
+    tools = [{key: value for key, value in tool.items() if key != "call_id"} for tool in tools]
+    return _finish_normalized_trace(
+        agent="pi",
+        tools=tools,
+        rounds=rounds,
+        attempts=attempts,
+        retries=retries,
+        compactions=compactions,
+        overflow_recoveries=overflow_recoveries,
+        usage=usage,
+        duration_ms=duration_ms,
+        stop_code=_pi_stop_code(final_stop, watchdog_expired=watchdog_expired),
+    )
+
+
+def normalize_morrow_trace(trace: Mapping[str, object]) -> dict[str, object]:
+    """Validate Morrow's already-safe process-local trace projection."""
+
+    _reject_sensitive_content(trace, "Morrow safe trace")
+    root = _mapping(trace, "Morrow safe trace")
+    fields = {
+        "schema_version",
+        "rounds",
+        "model_attempts",
+        "tool_calls",
+        "compactions",
+        "overflow_recoveries",
+        "retries",
+        "usage",
+        "duration_ms",
+        "stop_code",
+    }
+    _required_keys(root, fields, "Morrow safe trace")
+    if root["schema_version"] != 1:
+        raise EvalError("unsupported Morrow safe trace schema")
+    calls = root["tool_calls"]
+    if not isinstance(calls, list):
+        raise EvalError("Morrow safe trace tool_calls must be a list")
+    tools: list[dict[str, object]] = []
+    for index, raw_call in enumerate(calls):
+        call = _mapping(raw_call, f"Morrow safe trace tool_calls[{index}]")
+        _required_keys(
+            call,
+            {
+                "ordinal",
+                "round",
+                "capability",
+                "state",
+                "paths",
+                "validator_kind",
+                "effective_write",
+                "validation_status",
+                "invalid_arguments",
+                "basic_tool_blocked",
+            },
+            f"Morrow safe trace tool_calls[{index}]",
+        )
+        capability = _text(call["capability"], "Morrow trace capability")
+        state = _text(call["state"], "Morrow trace tool state")
+        if capability not in CAPABILITY_FAMILIES or state not in TOOL_TERMINAL_STATES:
+            raise EvalError("Morrow safe trace contains an unsupported tool fact")
+        ordinal = call["ordinal"]
+        round_number = call["round"]
+        if (
+            isinstance(ordinal, bool)
+            or not isinstance(ordinal, int)
+            or ordinal < 1
+            or isinstance(round_number, bool)
+            or not isinstance(round_number, int)
+            or round_number < 1
+        ):
+            raise EvalError("Morrow safe trace tool ordinal or round is invalid")
+        if not isinstance(call["effective_write"], bool):
+            raise EvalError("Morrow safe trace effective_write must be boolean")
+        if not isinstance(call["invalid_arguments"], bool) or not isinstance(
+            call["basic_tool_blocked"], bool
+        ):
+            raise EvalError("Morrow safe trace diagnostic facts must be boolean")
+        validation_status = call["validation_status"]
+        if validation_status not in {"not_run", "passed", "failed"}:
+            raise EvalError("Morrow safe trace validation status is invalid")
+        validator_kind = call["validator_kind"]
+        if validator_kind is not None and (
+            not isinstance(validator_kind, str) or not IDENTIFIER_RE.fullmatch(validator_kind)
+        ):
+            raise EvalError("Morrow safe trace validator kind is invalid")
+        paths = call["paths"]
+        if not isinstance(paths, list):
+            raise EvalError("Morrow safe trace paths must be a list")
+        normalized_paths = sorted(_safe_path(path, "Morrow trace path") for path in paths)
+        if len(normalized_paths) != len(set(normalized_paths)):
+            raise EvalError("Morrow safe trace paths contain duplicates")
+        tools.append(
+            {
+                "ordinal": ordinal,
+                "round": round_number,
+                "capability": capability,
+                "state": state,
+                "paths": normalized_paths,
+                "validator_kind": validator_kind,
+                "effective_write": call["effective_write"],
+                "validation_status": validation_status,
+                "invalid_arguments": call["invalid_arguments"],
+                "basic_tool_blocked": call["basic_tool_blocked"],
+            }
+        )
+    usage = _mapping(root["usage"], "Morrow safe trace usage")
+    _required_keys(
+        usage, {"input_tokens", "output_tokens", "total_tokens", "cost"}, "Morrow safe trace usage"
+    )
+    return _finish_normalized_trace(
+        agent="morrow",
+        tools=tools,
+        rounds=int(_required_number(root["rounds"], "Morrow rounds", integer=True)),
+        attempts=int(_required_number(root["model_attempts"], "Morrow attempts", integer=True)),
+        retries=int(_required_number(root["retries"], "Morrow retries", integer=True)),
+        compactions=int(_required_number(root["compactions"], "Morrow compactions", integer=True)),
+        overflow_recoveries=int(
+            _required_number(
+                root["overflow_recoveries"], "Morrow overflow recoveries", integer=True
+            )
+        ),
+        usage={
+            "input_tokens": int(
+                _required_number(usage["input_tokens"], "Morrow input tokens", integer=True)
+            ),
+            "output_tokens": int(
+                _required_number(usage["output_tokens"], "Morrow output tokens", integer=True)
+            ),
+            "total_tokens": int(
+                _required_number(usage["total_tokens"], "Morrow total tokens", integer=True)
+            ),
+            "cost": (
+                "unavailable"
+                if usage["cost"] == "unavailable"
+                else float(_required_number(usage["cost"], "Morrow cost"))
+            ),
+        },
+        duration_ms=int(_required_number(root["duration_ms"], "Morrow duration", integer=True)),
+        stop_code=_text(root["stop_code"], "Morrow stop code"),
+    )
+
+
+def _finish_normalized_trace(
+    *,
+    agent: str,
+    tools: list[dict[str, object]],
+    rounds: int,
+    attempts: int,
+    retries: int,
+    compactions: int,
+    overflow_recoveries: int,
+    usage: Mapping[str, int | float | str],
+    duration_ms: int,
+    stop_code: str,
+) -> dict[str, object]:
+    if stop_code not in STOP_CODES:
+        raise EvalError("normalized trace has an unsupported stop code")
+    if any(
+        isinstance(value, bool) or not isinstance(value, int) or value < 0
+        for value in (rounds, attempts, retries, compactions, overflow_recoveries, duration_ms)
+    ):
+        raise EvalError("normalized trace counters must be non-negative integers")
+    expected_ordinals = list(range(1, len(tools) + 1))
+    if [tool["ordinal"] for tool in tools] != expected_ordinals:
+        raise EvalError("normalized trace tool ordinals are not contiguous")
+    state_counts = {state: 0 for state in TOOL_TERMINAL_STATES}
+    first_read: int | str = "unavailable"
+    first_write: int | str = "unavailable"
+    first_validation: int | str = "unavailable"
+    latest_validation = "not_run"
+    changed_paths: set[str] = set()
+    failed_validation = False
+    intervening_write = False
+    rework_count = 0
+    invalid_arguments = 0
+    basic_tool_blocked = 0
+    for tool in tools:
+        if tool["effective_write"] and not tool["paths"]:
+            raise EvalError("normalized trace effective write is missing a bounded path")
+        state_counts[str(tool["state"])] += 1
+        round_number = tool["round"]
+        if (
+            first_read == "unavailable"
+            and tool["capability"] in {"read", "search"}
+            and tool["state"] == "succeeded"
+            and tool["paths"]
+        ):
+            first_read = round_number
+        if tool["effective_write"]:
+            if first_write == "unavailable":
+                first_write = round_number
+            for path in tool["paths"]:
+                if path in changed_paths and (failed_validation or intervening_write):
+                    rework_count += 1
+                if changed_paths:
+                    intervening_write = True
+                changed_paths.add(path)
+        validation_status = tool["validation_status"]
+        if validation_status != "not_run":
+            if first_validation == "unavailable":
+                first_validation = round_number
+            latest_validation = validation_status
+            failed_validation = validation_status == "failed"
+            intervening_write = False
+        if tool["invalid_arguments"]:
+            invalid_arguments += 1
+        if tool["basic_tool_blocked"]:
+            basic_tool_blocked += 1
+    result = {
+        "schema": NORMALIZED_TRACE_SCHEMA,
+        "agent": agent,
+        "rounds": rounds,
+        "model_attempts": attempts,
+        "tool_calls": tools,
+        "tool_states": state_counts,
+        "tool_diagnostics": {
+            "invalid_arguments": invalid_arguments,
+            "unaccounted_tool_calls": 0,
+            "total_tool_calls": len(tools),
+            "basic_tool_blocked": basic_tool_blocked,
+        },
+        "context": {
+            "first_relevant_read_round": first_read,
+            "first_effective_write_round": first_write,
+            "first_validation_round": first_validation,
+            "latest_validation_outcome": latest_validation,
+            "compactions": compactions,
+            "overflow_recoveries": overflow_recoveries,
+            "retries": retries,
+        },
+        "usage": {
+            **dict(usage),
+            "duration_ms": duration_ms,
+            "rounds": rounds,
+            "user_interventions": 0,
+            "rework_count": rework_count,
+        },
+        "stop": {"code": stop_code, "reason": stop_code},
+    }
+    _reject_sensitive_content(result, "normalized trace")
+    return result
+
+
+def runtime_evidence_from_normalized_trace(trace: Mapping[str, object]) -> dict[str, object]:
+    """Project the shared S7P-09 trace into finalize's S7P-00 evidence contract."""
+
+    normalized = _mapping(trace, "normalized trace")
+    _required_keys(
+        normalized,
+        {
+            "schema",
+            "agent",
+            "rounds",
+            "model_attempts",
+            "tool_calls",
+            "tool_states",
+            "tool_diagnostics",
+            "context",
+            "usage",
+            "stop",
+        },
+        "normalized trace",
+    )
+    if normalized["schema"] != NORMALIZED_TRACE_SCHEMA:
+        raise EvalError("normalized trace schema is unsupported")
+    usage = _mapping(normalized["usage"], "normalized trace usage")
+    evidence = {
+        "schema_version": 1,
+        "availability": "available",
+        "tool_states": dict(_mapping(normalized["tool_states"], "normalized tool states")),
+        "tool_diagnostics": dict(
+            _mapping(normalized["tool_diagnostics"], "normalized tool diagnostics")
+        ),
+        "usage": {field: usage[field] for field in USAGE_FIELDS},
+        "stop": dict(_mapping(normalized["stop"], "normalized stop")),
+    }
+    return normalize_runtime_evidence(evidence)
+
+
+class EvaluationApprovalPort:
+    """Approve only policy-confined automation requests emitted after Morrow preflight."""
+
+    _allowed_reasons = {
+        "host_process_approval_required",
+        "mutation_approval_required",
+        "workspace_write_approval_required",
+    }
+
+    def __init__(self) -> None:
+        self.approvals = 0
+        self.rejections = 0
+
+    async def request(self, request):
+        from morrow.core.models import ToolApprovalDecision, ToolEffect
+
+        reasons = set(request.reason_codes)
+        safe_effect = request.effect in {
+            ToolEffect.NONE,
+            ToolEffect.SESSION_WRITE,
+            ToolEffect.PERSISTENT_WRITE,
+        }
+        approved = bool(reasons) and reasons <= self._allowed_reasons and safe_effect
+        if approved:
+            self.approvals += 1
+        else:
+            self.rejections += 1
+        return ToolApprovalDecision(approved=approved)
+
+
+def _object_value(value: object, name: str, default: object = None) -> object:
+    if isinstance(value, Mapping):
+        return value.get(name, default)
+    return getattr(value, name, default)
+
+
+def _morrow_terminal_state(status: object, error_code: object) -> str:
+    code = getattr(error_code, "value", error_code)
+    if status == "succeeded":
+        return "succeeded"
+    if status == "cancelled" or code == "cancelled":
+        return "cancelled"
+    if code in {"approval_rejected", "approval_unavailable", "permission_denied"}:
+        return "denied"
+    if status == "skipped" or code in {"budget_exhausted", "preflight_failed"}:
+        return "blocked"
+    return "failed"
+
+
+def project_morrow_safe_trace(
+    *,
+    events: list[object],
+    tool_cycles: list[list[object]],
+    facts: tuple[object, ...],
+    metrics: object,
+    duration_ms: int,
+    workspace: Path | None = None,
+) -> dict[str, object]:
+    """Project one completed ordinary Morrow run without retaining model/tool payloads."""
+
+    if metrics is None:
+        raise EvalError("Morrow AgentRun terminal metrics are unavailable")
+    calls: list[dict[str, object]] = []
+    call_by_id: dict[str, dict[str, object]] = {}
+    for round_number, cycle in enumerate(tool_cycles, start=1):
+        for raw_call in cycle:
+            call_id = _text(_object_value(raw_call, "id"), "Morrow tool call ID")
+            if call_id in call_by_id:
+                raise EvalError("Morrow trace contains a duplicate tool call ID")
+            name = _object_value(raw_call, "name")
+            raw_arguments = _object_value(raw_call, "arguments", "")
+            try:
+                arguments = json.loads(raw_arguments) if isinstance(raw_arguments, str) else {}
+            except json.JSONDecodeError:
+                arguments = {}
+            projected = {
+                "call_id": call_id,
+                "ordinal": len(calls) + 1,
+                "round": round_number,
+                "capability": _tool_family(name),
+                "paths": _trace_paths(arguments, workspace),
+                "validator_kind": _validator_kind(arguments),
+                "state": None,
+                "effective_write": False,
+                "validation_status": "not_run",
+                "invalid_arguments": False,
+                "basic_tool_blocked": False,
+            }
+            calls.append(projected)
+            call_by_id[call_id] = projected
+
+    terminal_ids: set[str] = set()
+    for raw_event in events:
+        event_type = _object_value(raw_event, "type")
+        if event_type != "tool.status":
+            continue
+        payload = _object_value(raw_event, "payload", {})
+        if not isinstance(payload, Mapping) or payload.get("status") == "running":
+            continue
+        call_id = _text(payload.get("call_id"), "Morrow tool status call ID")
+        call = call_by_id.get(call_id)
+        if call is None or call_id in terminal_ids:
+            raise EvalError("Morrow tool terminal event is unmatched or duplicated")
+        terminal_ids.add(call_id)
+        error_code = payload.get("error_code")
+        call["state"] = _morrow_terminal_state(payload.get("status"), error_code)
+        call["invalid_arguments"] = error_code == "invalid_arguments"
+
+    for fact in facts:
+        call_id = _text(_object_value(fact, "call_id"), "Morrow ToolFact call ID")
+        call = call_by_id.get(call_id)
+        if call is None:
+            raise EvalError("Morrow ToolFact does not match a tool call")
+        fact_paths = _object_value(fact, "relative_paths", ())
+        if not isinstance(fact_paths, (list, tuple)):
+            raise EvalError("Morrow ToolFact paths are invalid")
+        safe_fact_paths = {
+            _safe_path(path, "Morrow ToolFact path") for path in fact_paths if path != "."
+        }
+        call["paths"] = sorted(set(call["paths"]) | safe_fact_paths)
+        kind = _object_value(fact, "kind")
+        if kind == "change":
+            before = _object_value(fact, "before_revision")
+            after = _object_value(fact, "after_revision")
+            changed_bytes = _object_value(fact, "changed_bytes", 0)
+            call["effective_write"] = bool(changed_bytes or (after and after != before))
+        elif kind == "validation":
+            validator_kind = _text(_object_value(fact, "validator_kind"), "Morrow validator kind")
+            if not IDENTIFIER_RE.fullmatch(validator_kind):
+                raise EvalError("Morrow validator kind is not bounded")
+            call["validator_kind"] = validator_kind
+            call["validation_status"] = (
+                "passed" if _object_value(fact, "status") == "passed" else "failed"
+            )
+
+    if len(terminal_ids) != len(calls):
+        raise EvalError("Morrow trace has tool calls without terminal events")
+    terminal_metrics = (
+        metrics.model_dump(mode="json") if hasattr(metrics, "model_dump") else metrics
+    )
+    terminal_metrics = _mapping(terminal_metrics, "Morrow terminal metrics")
+    usage = _mapping(terminal_metrics.get("usage"), "Morrow terminal usage")
+    cost = _mapping(terminal_metrics.get("cost"), "Morrow terminal cost")
+    if usage.get("availability") != "available":
+        raise EvalError("Morrow Provider usage is unavailable")
+    normalized_cost: float | str = "unavailable"
+    if cost.get("availability") == "available":
+        normalized_cost = float(cost["amount_minor"]) / 100.0
+    stop_code = terminal_metrics.get("stop_code")
+    if terminal_metrics.get("finish_reason") == "stop":
+        normalized_stop = "completed"
+    elif stop_code in {"run_timeout", "tool_call_limit", "model_attempt_limit"}:
+        normalized_stop = "budget_exhausted"
+    elif stop_code == "cancelled":
+        normalized_stop = "cancelled"
+    else:
+        normalized_stop = "runtime_failed"
+    safe_calls = [{key: value for key, value in call.items() if key != "call_id"} for call in calls]
+    return {
+        "schema_version": 1,
+        "rounds": int(terminal_metrics["model_attempts"]),
+        "model_attempts": int(terminal_metrics["model_attempts"]),
+        "tool_calls": safe_calls,
+        "compactions": int(terminal_metrics.get("compaction_count", 0)),
+        "overflow_recoveries": int(terminal_metrics.get("overflow_recovery_count", 0)),
+        "retries": int(terminal_metrics.get("retry_count", 0)),
+        "usage": {
+            "input_tokens": usage.get("input_tokens"),
+            "output_tokens": usage.get("output_tokens"),
+            "total_tokens": usage.get("total_tokens"),
+            "cost": normalized_cost,
+        },
+        "duration_ms": duration_ms,
+        "stop_code": normalized_stop,
+    }
+
+
+def run_morrow_agent(
+    *, workspace: Path, state_root: Path, prompt: str, output: Path
+) -> dict[str, object]:
+    """Run Morrow through ordinary composition with the bounded evaluation ApprovalPort."""
+
+    from morrow.bootstrap import build_application, build_session_application
+    from morrow.core.capabilities import PermissionPreset, PermissionProfile
+    from morrow.core.models import AgentEvent, AssistantMessage
+    from morrow.services.workspace import WorkspaceWriterLock
+
+    if not prompt.strip():
+        raise EvalError("Morrow evaluation prompt is empty")
+    application = build_application(state_root=state_root.resolve())
+    resolution = application.workspace_service.resolve(workspace.resolve())
+    identity = application.workspace_service.confirm(resolution)
+    started = datetime.now(UTC)
+    events: list[object] = []
+    with WorkspaceWriterLock(application.data_root, identity.workspace_id):
+        session_app = build_session_application(
+            app=application,
+            identity=identity,
+            approval_port=EvaluationApprovalPort(),
+            permission_profile=PermissionProfile.from_preset(PermissionPreset.AUTO_SAFE),
+        )
+
+        async def collect() -> None:
+            async for item in session_app.orchestrator.stream(prompt):
+                if isinstance(item, AgentEvent):
+                    events.append(item)
+
+        asyncio.run(collect())
+        persistence = session_app.persistence
+        agent_run_id = getattr(persistence, "current_agent_run_id", None)
+        if not agent_run_id or session_app.api is None:
+            raise EvalError("Morrow evaluation AgentRun was not admitted")
+        observation = session_app.api.get_agent_run_observation(agent_run_id)
+        if observation is None:
+            raise EvalError("Morrow evaluation observation is unavailable")
+        tool_cycles: list[list[object]] = []
+        for message in session_app.session.log.messages_view():
+            if isinstance(message, AssistantMessage) and message.tool_calls:
+                tool_cycles.append(list(message.tool_calls))
+        safe_trace = project_morrow_safe_trace(
+            events=events,
+            tool_cycles=tool_cycles,
+            facts=session_app.session.latest_tool_facts,
+            metrics=observation.terminal_metrics,
+            duration_ms=max(0, int((datetime.now(UTC) - started).total_seconds() * 1000)),
+            workspace=workspace.resolve(),
+        )
+    normalized = normalize_morrow_trace(safe_trace)
+    runtime_evidence = runtime_evidence_from_normalized_trace(normalized)
+    _write_json_create(output.resolve(), runtime_evidence)
+    return {"output": str(output.resolve()), "sha256": file_hash(output.resolve())}
+
+
+def permission_equivalence_matrix(workspace: Path) -> dict[str, object]:
+    """Evaluate the frozen intent matrix through Morrow policy and the Pi policy adapter."""
+
+    from morrow.core.capabilities import (
+        OperationIntent,
+        OperationKind,
+        PermissionPreset,
+        PermissionProfile,
+        RiskFlag,
+        WorkspaceCapability,
+    )
+    from morrow.core.models import ToolEffect
+    from morrow.runtime.capabilities import CapabilityPolicy
+
+    cases = (
+        ("workspace_read", OperationKind.WORKSPACE_READ, (), "allow"),
+        ("workspace_write", OperationKind.WORKSPACE_WRITE, (), "allow"),
+        ("project_command", OperationKind.PROCESS, (), "allow"),
+        (
+            "external_filesystem",
+            OperationKind.WORKSPACE_READ,
+            (RiskFlag.OUTSIDE_WORKSPACE,),
+            "deny",
+        ),
+        ("task_network", OperationKind.PROCESS, (RiskFlag.NETWORK,), "allow"),
+        ("credential_access", OperationKind.WORKSPACE_READ, (RiskFlag.CREDENTIAL_ACCESS,), "deny"),
+        ("git_mutation", OperationKind.PROCESS, (RiskFlag.GIT_WRITE,), "allow"),
+        ("privilege_escalation", OperationKind.PROCESS, (RiskFlag.PRIVILEGE_ESCALATION,), "allow"),
+    )
+    policy = CapabilityPolicy(
+        PermissionProfile.from_preset(PermissionPreset.AUTO_SAFE),
+        WorkspaceCapability(workspace_id="s7p-09-evaluation", root=workspace.resolve()),
+    )
+    rows: list[dict[str, str]] = []
+    mismatches: list[str] = []
+    for case_id, kind, risks, pi_verdict in cases:
+        decision = policy.evaluate(
+            OperationIntent(
+                kind=kind,
+                effect=(
+                    ToolEffect.SESSION_WRITE
+                    if kind is OperationKind.WORKSPACE_WRITE
+                    else ToolEffect.NONE
+                ),
+                relative_paths=("fixture.txt",),
+                command_class="project_test" if kind is OperationKind.PROCESS else None,
+                risk_flags=risks,
+                requires_host=kind is OperationKind.PROCESS,
+                preview_summary=(case_id,),
+            )
+        )
+        morrow_verdict = str(decision.verdict)
+        if morrow_verdict != pi_verdict:
+            mismatches.append(case_id)
+        rows.append(
+            {
+                "case_id": case_id,
+                "morrow": morrow_verdict,
+                "pi": pi_verdict,
+            }
+        )
+    return {
+        "schema": "morrow.s7p-09.permission-equivalence.v1",
+        "status": "PASS" if not mismatches else "FAIL",
+        "rows": rows,
+        "mismatches": mismatches,
+    }
+
+
+def _campaign_run_key(entry: Mapping[str, object]) -> str:
+    return f"{entry['ordinal']:02d}-{entry['agent']}-{str(entry['task_id']).lower()}-{entry['repetition']}"
+
+
+def _campaign_records(root: Path, plan: Mapping[str, object]) -> list[dict[str, object]]:
+    records: list[dict[str, object]] = []
+    if not root.exists():
+        return records
+    for path in sorted(root.glob("*/admission.json")):
+        record = _read_json(path, "campaign admission")
+        _required_keys(
+            record,
+            {"schema", "plan_sha256", "entry", "reservation", "admitted_at", "integrity"},
+            "campaign admission",
+        )
+        if record["schema"] != "morrow.s7p-09.admission.v1":
+            raise EvalError("campaign admission has an unsupported schema")
+        if record["plan_sha256"] != plan["integrity"]:
+            raise EvalError("campaign admission belongs to a different comparison plan")
+        integrity = record.pop("integrity")
+        if integrity != content_hash(record):
+            raise EvalError("campaign admission integrity mismatch")
+        record["integrity"] = integrity
+        expected_dir = _campaign_run_key(_mapping(record["entry"], "campaign admission entry"))
+        if path.parent.name != expected_dir:
+            raise EvalError("campaign admission directory does not match its run key")
+        records.append(record)
+    return records
+
+
+def admit_campaign_run(
+    plan: Mapping[str, object],
+    root: Path,
+    *,
+    ordinal: int,
+    reserve_tokens: int,
+    reserve_cost: float,
+    now: datetime | None = None,
+) -> Path:
+    """Create one immutable admission after enforcing order and campaign ceilings."""
+
+    normalized = validate_comparison_plan(plan)
+    root = root.resolve()
+    if _path_is_inside(root, REPOSITORY_ROOT.resolve()):
+        raise EvalError("raw campaign evidence root must be outside the evaluator checkout")
+    root.mkdir(mode=0o700, parents=True, exist_ok=True)
+    try:
+        root.chmod(0o700)
+    except OSError as exc:
+        raise EvalError("unable to restrict the campaign evidence root") from exc
+    if stat.S_IMODE(root.stat().st_mode) & 0o077:
+        raise EvalError("campaign evidence root permissions are too broad")
+    if bytes_hash(str(root).encode("utf-8")) != normalized["evidence_root"]["path_sha256"]:
+        raise EvalError("campaign evidence root identity differs from the comparison plan")
+    if shutil.disk_usage(root).free < normalized["evidence_root"]["minimum_free_bytes"]:
+        raise EvalError("campaign evidence root has insufficient free space")
+    current_time = now or datetime.now(UTC)
+    start_time = datetime.fromisoformat(
+        normalized["start_not_before"].replace("Z", "+00:00")
+    ).astimezone(UTC)
+    if current_time.astimezone(UTC) < start_time:
+        raise EvalError("campaign start-not-before has not been reached")
+    records = _campaign_records(root, normalized)
+    if ordinal != len(records) + 1 or ordinal < 1 or ordinal > 28:
+        raise EvalError("campaign admission is out of frozen schedule order")
+    if (
+        isinstance(reserve_tokens, bool)
+        or not isinstance(reserve_tokens, int)
+        or reserve_tokens <= 0
+    ):
+        raise EvalError("campaign token reservation must be a positive integer")
+    if (
+        isinstance(reserve_cost, bool)
+        or not isinstance(reserve_cost, (int, float))
+        or reserve_cost <= 0
+    ):
+        raise EvalError("campaign cost reservation must be positive")
+    reserved_tokens = sum(int(record["reservation"]["tokens"]) for record in records)
+    reserved_cost = sum(float(record["reservation"]["cost"]) for record in records)
+    if reserved_tokens + reserve_tokens > normalized["ceilings"]["total_tokens"]:
+        raise EvalError("campaign token ceiling would be exceeded")
+    total_cost_ceiling = normalized["ceilings"]["total_cost"]
+    if total_cost_ceiling is not None and reserved_cost + reserve_cost > total_cost_ceiling:
+        raise EvalError("campaign currency ceiling would be exceeded")
+    entry = normalized["schedule"][ordinal - 1]
+    run_dir = root / _campaign_run_key(entry)
+    try:
+        run_dir.mkdir(mode=0o700)
+    except FileExistsError as exc:
+        raise EvalError("campaign run key was already admitted") from exc
+    timestamp = current_time.astimezone(UTC).isoformat().replace("+00:00", "Z")
+    record: dict[str, object] = {
+        "schema": "morrow.s7p-09.admission.v1",
+        "plan_sha256": normalized["integrity"],
+        "entry": entry,
+        "reservation": {"tokens": reserve_tokens, "cost": reserve_cost},
+        "admitted_at": timestamp,
+    }
+    record["integrity"] = content_hash(record)
+    try:
+        _write_json_create(run_dir / "admission.json", record)
+    except Exception:
+        run_dir.rmdir()
+        raise
+    return run_dir
+
+
+def _tracked_source_hash(root: Path) -> str:
+    result = run_command(["git", "ls-files", "-z"], cwd=root, capture=True)
+    if result.returncode:
+        raise EvalError("unable to enumerate tracked evaluator source")
+    digest = hashlib.sha256()
+    for relative in sorted(item for item in result.stdout.split("\0") if item):
+        path = root / relative
+        if not path.is_file():
+            raise EvalError("tracked evaluator source contains a missing file")
+        digest.update(relative.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(file_hash(path).encode("ascii"))
+        digest.update(b"\0")
+    return "sha256:" + digest.hexdigest()
+
+
+def campaign_preflight(plan: Mapping[str, object], evidence_root: Path) -> dict[str, object]:
+    """Prove all offline hold-point conditions that do not inspect credentials or call a model."""
+
+    normalized = validate_comparison_plan(plan)
+    diagnostics: list[str] = []
+    source = normalized["source"]
+    if _git_status_lines(REPOSITORY_ROOT):
+        diagnostics.append("evaluator source checkout is dirty")
+    if _git_commit(REPOSITORY_ROOT) != source["morrow_commit"]:
+        diagnostics.append("Morrow evaluator commit differs from the plan")
+    if _tracked_source_hash(REPOSITORY_ROOT) != source["morrow_source_sha256"]:
+        diagnostics.append("Morrow tracked source hash differs from the plan")
+    if file_hash(PROTOCOL_PATH) != normalized["protocol"]["sha256"]:
+        diagnostics.append("protocol hash differs from the plan")
+    if dataset_hash() != normalized["dataset"]["sha256"]:
+        diagnostics.append("dataset hash differs from the plan")
+
+    pi_binary = shutil.which("pi")
+    if pi_binary is None:
+        diagnostics.append("Pi executable is unavailable")
+    else:
+        pi_target = Path(pi_binary).resolve()
+        if file_hash(pi_target) != source["pi_executable_sha256"]:
+            diagnostics.append("Pi executable hash differs from the plan")
+        package_root = pi_target.parent.parent
+        try:
+            package_hash = _digest_tree(package_root, ("package.json", "dist"))
+        except EvalError:
+            diagnostics.append("Pi package identity is unreadable")
+        else:
+            if package_hash != source["pi_package_sha256"]:
+                diagnostics.append("Pi package hash differs from the plan")
+        version = run_command([pi_binary, "--version"], cwd=REPOSITORY_ROOT, capture=True)
+        if version.returncode or version.stdout.strip() != "0.84.2":
+            diagnostics.append("Pi executable version is not exactly 0.84.2")
+
+    evidence_root = evidence_root.resolve()
+    if bytes_hash(str(evidence_root).encode("utf-8")) != normalized["evidence_root"]["path_sha256"]:
+        diagnostics.append("evidence root identity differs from the plan")
+    if _path_is_inside(evidence_root, REPOSITORY_ROOT.resolve()):
+        diagnostics.append("evidence root is inside the evaluator checkout")
+    if not evidence_root.is_dir():
+        diagnostics.append("evidence root does not exist")
+    else:
+        if stat.S_IMODE(evidence_root.stat().st_mode) & 0o077:
+            diagnostics.append("evidence root permissions are too broad")
+        if (
+            shutil.disk_usage(evidence_root).free
+            < normalized["evidence_root"]["minimum_free_bytes"]
+        ):
+            diagnostics.append("evidence root has insufficient free space")
+
+    start = datetime.fromisoformat(normalized["start_not_before"].replace("Z", "+00:00"))
+    if datetime.now(UTC) < start.astimezone(UTC):
+        diagnostics.append("campaign start-not-before has not been reached")
+    permission_matrix = permission_equivalence_matrix(evidence_root)
+    if permission_matrix["status"] != "PASS":
+        diagnostics.append("permission equivalence matrix failed")
+    return {
+        "schema": "morrow.s7p-09.preflight.v1",
+        "status": "PASS" if not diagnostics else "BLOCKED",
+        "diagnostics": diagnostics,
+        "permission_equivalence": permission_matrix,
+        "credential_readiness": "NOT_CHECKED",
+        "model_probe": "NOT_RUN",
+    }
+
+
+def run_bounded_process(
+    command: list[str],
+    *,
+    cwd: Path,
+    evidence_dir: Path,
+    timeout_seconds: float,
+    environment: Mapping[str, str] | None = None,
+) -> dict[str, object]:
+    """Run one already-approved Agent command and retain its raw stream create-only."""
+
+    if not command or timeout_seconds <= 0 or timeout_seconds > EXTERNAL_DEADLINE_SECONDS:
+        raise EvalError("bounded runner command or timeout is invalid")
+    evidence_dir = evidence_dir.resolve()
+    if not evidence_dir.is_dir() or stat.S_IMODE(evidence_dir.stat().st_mode) & 0o077:
+        raise EvalError("bounded runner evidence directory is not mode-restricted")
+    stdout_path = evidence_dir / "agent-stdout.raw"
+    stderr_path = evidence_dir / "agent-stderr.raw"
+    started = datetime.now(UTC)
+    timed_out = False
+    try:
+        with stdout_path.open("xb") as stdout, stderr_path.open("xb") as stderr:
+            try:
+                completed = subprocess.run(
+                    command,
+                    cwd=cwd,
+                    env=dict(environment) if environment is not None else None,
+                    stdin=subprocess.DEVNULL,
+                    stdout=stdout,
+                    stderr=stderr,
+                    timeout=timeout_seconds,
+                    check=False,
+                )
+                returncode: int | str = completed.returncode
+            except subprocess.TimeoutExpired:
+                timed_out = True
+                returncode = "timeout"
+    except FileExistsError as exc:
+        raise EvalError("bounded runner raw output already exists") from exc
+    duration = max(0, int((datetime.now(UTC) - started).total_seconds() * 1000))
+    return {
+        "returncode": returncode,
+        "watchdog_expired": timed_out,
+        "duration_ms": duration,
+        "stdout": {"sha256": file_hash(stdout_path), "bytes": stdout_path.stat().st_size},
+        "stderr": {"sha256": file_hash(stderr_path), "bytes": stderr_path.stat().st_size},
+    }
+
+
+def pi_agent_command(prompt: str, extension: Path) -> list[str]:
+    """Build the pinned Pi 0.84.2 invocation without credentials or mutable user resources."""
+
+    if not prompt.strip() or not extension.resolve().is_file():
+        raise EvalError("Pi evaluation prompt or policy extension is unavailable")
+    return [
+        "pi",
+        "--print",
+        "--mode",
+        "json",
+        "--provider",
+        "opencode-go",
+        "--model",
+        "mimo-v2.5",
+        "--thinking",
+        "off",
+        "--no-session",
+        "--no-extensions",
+        "--extension",
+        str(extension.resolve()),
+        "--no-skills",
+        "--no-prompt-templates",
+        "--no-themes",
+        "--tools",
+        "read,bash,edit,write,grep,find,ls",
+        "--approve",
+        prompt,
+    ]
+
+
+def run_pi_agent(
+    *, workspace: Path, evidence_dir: Path, prompt: str, output: Path
+) -> dict[str, object]:
+    """Run pinned Pi under the content-hashed evaluation policy and normalize its JSONL."""
+
+    extension = DATASET_ROOT / "pi-evaluation-policy.ts"
+    process = run_bounded_process(
+        pi_agent_command(prompt, extension),
+        cwd=workspace.resolve(),
+        evidence_dir=evidence_dir.resolve(),
+        timeout_seconds=EXTERNAL_DEADLINE_SECONDS,
+        environment={**os.environ, "PI_TELEMETRY": "0"},
+    )
+    stdout_path = evidence_dir.resolve() / "agent-stdout.raw"
+    events: list[object] = []
+    try:
+        for line in stdout_path.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                events.append(json.loads(line))
+    except (OSError, UnicodeError, ValueError) as exc:
+        raise EvalError("Pi evaluation stream is not valid JSONL") from exc
+    normalized = normalize_pi_trace(
+        events,
+        duration_ms=int(process["duration_ms"]),
+        workspace=workspace.resolve(),
+        watchdog_expired=bool(process["watchdog_expired"]),
+    )
+    runtime_evidence = runtime_evidence_from_normalized_trace(normalized)
+    _write_json_create(output.resolve(), runtime_evidence)
+    return {
+        "output": str(output.resolve()),
+        "sha256": file_hash(output.resolve()),
+        "raw": {"stdout": process["stdout"], "stderr": process["stderr"]},
+    }
+
+
+def _paired_comparison_gate(
+    morrow_entries: list[dict[str, object]],
+    pi_entries: list[dict[str, object]],
+    *,
+    require_cost: bool = True,
+) -> dict[str, object]:
+    def indexed(entries: list[dict[str, object]]) -> dict[tuple[str, int], dict[str, object]]:
+        result: dict[tuple[str, int], dict[str, object]] = {}
+        for entry in entries:
+            run = entry["manifest"]["run"]
+            key = (run["task_id"], run["repetition"])
+            if key in result:
+                raise EvalError("paired comparison contains duplicate run keys")
+            result[key] = entry
+        return result
+
+    morrow = indexed(morrow_entries)
+    pi = indexed(pi_entries)
+    expected = {(task_id, repetition) for task_id in FIXED_PI_TASK_IDS for repetition in (1, 2)}
+    if set(morrow) != expected or set(pi) != expected:
+        raise EvalError("paired comparison does not contain exactly eight runs per agent")
+    required_metrics = set(USAGE_FIELDS)
+    if not require_cost:
+        required_metrics.remove("cost")
+    diagnostics: list[str] = []
+    pairs: list[dict[str, object]] = []
+    for task_id in FIXED_PI_TASK_IDS:
+        repetitions: list[dict[str, object]] = []
+        for repetition in (1, 2):
+            left = morrow[(task_id, repetition)]
+            right = pi[(task_id, repetition)]
+            for agent, entry in (("morrow", left), ("pi", right)):
+                unavailable = sorted(
+                    field
+                    for field in required_metrics
+                    if entry["runtime"]["usage"][field] == "unavailable"
+                )
+                if unavailable:
+                    diagnostics.append(f"{agent}:{task_id}#{repetition}: unavailable metrics")
+                if not entry["manifest"]["source"]["dirty"]["comparison_eligible"]:
+                    diagnostics.append(f"{agent}:{task_id}#{repetition}: comparison ineligible")
+            repetitions.append(
+                {
+                    "repetition": repetition,
+                    "morrow": left["result"]["result"]["class"],
+                    "pi": right["result"]["result"]["class"],
+                }
+            )
+        morrow_stable = all(item["morrow"] == "PASS" for item in repetitions)
+        pi_stable = all(item["pi"] == "PASS" for item in repetitions)
+        pairs.append(
+            {
+                "task_id": task_id,
+                "repetitions": repetitions,
+                "morrow_stable_pass": morrow_stable,
+                "pi_stable_pass": pi_stable,
+            }
+        )
+    morrow_stable_count = sum(pair["morrow_stable_pass"] for pair in pairs)
+    pi_stable_count = sum(pair["pi_stable_pass"] for pair in pairs)
+    quality_deficit = pi_stable_count - morrow_stable_count
+    if quality_deficit > FROZEN_THRESHOLDS["pi_max_quality_deficit"]:
+        diagnostics.append("Pi stable-task quality deficit exceeded the frozen maximum")
+    for key in expected:
+        left_blocked = morrow[key]["runtime"]["tool_diagnostics"]["basic_tool_blocked"]
+        right_blocked = pi[key]["runtime"]["tool_diagnostics"]["basic_tool_blocked"]
+        if left_blocked and not right_blocked:
+            diagnostics.append(f"{key[0]}#{key[1]}: Morrow-only basic tool blocker")
+    return {
+        "status": "PASS" if not diagnostics else "FAIL",
+        "quality_deficit": quality_deficit,
+        "morrow_stable_task_passes": morrow_stable_count,
+        "pi_stable_task_passes": pi_stable_count,
+        "pairs": pairs,
+        "diagnostics": diagnostics,
+    }
+
+
+def compare_campaign(
+    plan_path: Path,
+    morrow_root: Path,
+    pi_root: Path,
+    *,
+    admissions_root: Path,
+    output: Path | None = None,
+) -> dict[str, object]:
+    """Mechanically validate and compare the exact primary Morrow and Pi bundles."""
+
+    plan = load_comparison_plan(plan_path.resolve())
+    admissions = _campaign_records(admissions_root.resolve(), plan)
+    if len(admissions) != 28:
+        raise EvalError("campaign must contain exactly 28 immutable admissions")
+    if [record["entry"] for record in admissions] != plan["schedule"]:
+        raise EvalError("campaign admission order differs from the frozen schedule")
+    admission_times = [record["admitted_at"] for record in admissions]
+    if admission_times != sorted(admission_times):
+        raise EvalError("campaign admission timestamps are not monotonic")
+    morrow_summary = summarize_runs(morrow_root.resolve())
+    if morrow_summary["status"] != "COMPLETE":
+        raise EvalError("Morrow campaign summary is incomplete")
+    morrow_entries = [validate_run_bundle(path) for path in _bundle_paths(morrow_root.resolve())]
+    pi_entries = [validate_run_bundle(path) for path in _bundle_paths(pi_root.resolve())]
+    if len(pi_entries) != 8:
+        raise EvalError("Pi campaign must contain exactly eight valid bundles")
+    expected_profile_hashes = {
+        "morrow": plan["profiles"]["morrow"]["sha256"],
+        "pi": plan["profiles"]["pi"]["sha256"],
+    }
+    for agent, entries in (("morrow", morrow_entries), ("pi", pi_entries)):
+        hashes = {entry["manifest"]["profile_sha256"] for entry in entries}
+        if hashes != {expected_profile_hashes[agent]}:
+            raise EvalError(f"{agent} campaign profile drift was detected")
+        for entry in entries:
+            if entry["manifest"]["source"]["evaluator_commit"] != plan["source"]["morrow_commit"]:
+                raise EvalError("campaign evaluator commit differs from the comparison plan")
+            if entry["manifest"]["dataset"]["sha256"] != plan["dataset"]["sha256"]:
+                raise EvalError("campaign dataset hash differs from the comparison plan")
+            if entry["manifest"]["protocol"]["sha256"] != plan["protocol"]["sha256"]:
+                raise EvalError("campaign protocol hash differs from the comparison plan")
+    paired_morrow = [
+        entry
+        for entry in morrow_entries
+        if entry["manifest"]["run"]["task_id"] in FIXED_PI_TASK_IDS
+    ]
+    paired_morrow_by_key = {
+        (
+            entry["manifest"]["run"]["task_id"],
+            entry["manifest"]["run"]["repetition"],
+        ): entry
+        for entry in paired_morrow
+    }
+    for entry in pi_entries:
+        key = (
+            entry["manifest"]["run"]["task_id"],
+            entry["manifest"]["run"]["repetition"],
+        )
+        counterpart = paired_morrow_by_key.get(key)
+        if counterpart is None:
+            raise EvalError("Pi bundle does not have a Morrow counterpart")
+        if (
+            counterpart["manifest"]["workspace"]["baseline_tree_sha256"]
+            != entry["manifest"]["workspace"]["baseline_tree_sha256"]
+        ):
+            raise EvalError("paired workspace baseline trees differ")
+        if counterpart["manifest"]["task"] != entry["manifest"]["task"]:
+            raise EvalError("paired task bytes or verifier contract differ")
+    cost_required = plan["ceilings"]["total_cost"] is not None
+    paired_gate = _paired_comparison_gate(paired_morrow, pi_entries, require_cost=cost_required)
+    all_entries = [*morrow_entries, *pi_entries]
+    if any(
+        entry["runtime"]["usage"][field] == "unavailable"
+        for entry in all_entries
+        for field in USAGE_FIELDS
+        if field != "cost" or cost_required
+    ):
+        raise EvalError("campaign required metrics are incomplete")
+    actual_tokens = sum(int(entry["runtime"]["usage"]["total_tokens"]) for entry in all_entries)
+    cost_values = [entry["runtime"]["usage"]["cost"] for entry in all_entries]
+    actual_cost = (
+        sum(float(value) for value in cost_values)
+        if all(value != "unavailable" for value in cost_values)
+        else None
+    )
+    budget_diagnostics: list[str] = []
+    if actual_tokens > plan["ceilings"]["total_tokens"]:
+        budget_diagnostics.append("actual campaign tokens exceeded the approved ceiling")
+    total_cost_ceiling = plan["ceilings"]["total_cost"]
+    if total_cost_ceiling is not None and (actual_cost is None or actual_cost > total_cost_ceiling):
+        budget_diagnostics.append("actual campaign cost exceeded the approved ceiling")
+    overall = (
+        "PASS"
+        if morrow_summary["gate"]["status"] == "PASS"
+        and paired_gate["status"] == "PASS"
+        and not budget_diagnostics
+        else "FAIL"
+    )
+    summary = {
+        "schema": "morrow.s7p-09.comparison-summary.v1",
+        "campaign_id": plan["campaign_id"],
+        "plan_sha256": plan["integrity"],
+        "status": overall,
+        "morrow_gate": morrow_summary["gate"],
+        "pi_comparison": paired_gate,
+        "budget": {
+            "status": "PASS" if not budget_diagnostics else "FAIL",
+            "actual_tokens": actual_tokens,
+            "actual_cost": actual_cost,
+            "ceilings": plan["ceilings"],
+            "diagnostics": budget_diagnostics,
+        },
+        "bundle_hashes": {
+            "morrow": sorted(entry["result_sha256"] for entry in morrow_entries),
+            "pi": sorted(entry["result_sha256"] for entry in pi_entries),
+        },
+    }
+    if output is not None:
+        summary_path = output.resolve()
+        _write_json_create(summary_path, summary)
+        baseline_without_integrity = {
+            "schema": "morrow.s7p-09.direct-baseline.v1",
+            "campaign_id": plan["campaign_id"],
+            "plan_sha256": plan["integrity"],
+            "comparison_summary_sha256": file_hash(summary_path),
+            "status": overall,
+            "source": plan["source"],
+            "profiles": {agent: plan["profiles"][agent]["sha256"] for agent in CAMPAIGN_AGENTS},
+            "bundle_hashes": summary["bundle_hashes"],
+        }
+        baseline = dict(baseline_without_integrity)
+        baseline["baseline_id"] = content_hash(baseline_without_integrity)
+        _write_json_create(summary_path.with_name("baseline.json"), baseline)
+    return summary
+
+
 def self_check(selected: tuple[Task, ...]) -> int:
     failures: list[str] = []
     for task in selected:
@@ -2567,6 +4435,51 @@ def build_parser() -> argparse.ArgumentParser:
     summarize = subparsers.add_parser("summarize", help="aggregate finalized run bundles")
     summarize.add_argument("root", type=Path)
     summarize.add_argument("--output", type=Path)
+    subparsers.add_parser("schedule", help="print the frozen S7P-09 28-run schedule")
+    plan_check = subparsers.add_parser("plan-check", help="validate an S7P-09 comparison plan")
+    plan_check.add_argument("plan", type=Path)
+    preflight = subparsers.add_parser(
+        "campaign-preflight", help="run offline S7P-09 source, evidence and policy checks"
+    )
+    preflight.add_argument("plan", type=Path)
+    preflight.add_argument("evidence_root", type=Path)
+    permission_check = subparsers.add_parser(
+        "permission-check", help="run the offline Morrow/Pi permission equivalence matrix"
+    )
+    permission_check.add_argument("workspace", type=Path)
+    normalize_pi = subparsers.add_parser(
+        "normalize-pi", help="normalize a protected Pi JSONL stream without printing raw data"
+    )
+    normalize_pi.add_argument("events", type=Path)
+    normalize_pi.add_argument("output", type=Path)
+    normalize_pi.add_argument("--duration-ms", type=int, required=True)
+    normalize_pi.add_argument("--workspace", type=Path)
+    normalize_pi.add_argument("--watchdog-expired", action="store_true")
+    normalize_morrow = subparsers.add_parser(
+        "normalize-morrow", help="normalize a safe Morrow process-local trace"
+    )
+    normalize_morrow.add_argument("trace", type=Path)
+    normalize_morrow.add_argument("output", type=Path)
+    run_morrow = subparsers.add_parser(
+        "run-morrow", help="run one ordinary Morrow evaluation turn into a safe trace"
+    )
+    run_morrow.add_argument("workspace", type=Path)
+    run_morrow.add_argument("state_root", type=Path)
+    run_morrow.add_argument("prompt", type=Path)
+    run_morrow.add_argument("output", type=Path)
+    run_pi = subparsers.add_parser(
+        "run-pi", help="run one confined Pi evaluation turn into a safe trace"
+    )
+    run_pi.add_argument("workspace", type=Path)
+    run_pi.add_argument("evidence_dir", type=Path)
+    run_pi.add_argument("prompt", type=Path)
+    run_pi.add_argument("output", type=Path)
+    compare = subparsers.add_parser("compare", help="mechanically compare Morrow and Pi campaigns")
+    compare.add_argument("plan", type=Path)
+    compare.add_argument("morrow_root", type=Path)
+    compare.add_argument("pi_root", type=Path)
+    compare.add_argument("--admissions-root", type=Path, required=True)
+    compare.add_argument("--output", type=Path)
     check = subparsers.add_parser("self-check", help="prove baselines fail and gold states pass")
     check.add_argument("task_ids", nargs="*")
     return parser
@@ -2622,6 +4535,99 @@ def main() -> int:
             return (
                 0 if summary["status"] == "COMPLETE" and summary["gate"]["status"] == "PASS" else 1
             )
+        if arguments.command == "schedule":
+            print(canonical_json(frozen_campaign_schedule()).strip())
+            return 0
+        if arguments.command == "plan-check":
+            plan = load_comparison_plan(arguments.plan)
+            print(
+                canonical_json(
+                    {"campaign_id": plan["campaign_id"], "integrity": plan["integrity"]}
+                ).strip()
+            )
+            return 0
+        if arguments.command == "campaign-preflight":
+            result = campaign_preflight(
+                load_comparison_plan(arguments.plan), arguments.evidence_root
+            )
+            print(canonical_json(result).strip())
+            return 0 if result["status"] == "PASS" else 1
+        if arguments.command == "permission-check":
+            result = permission_equivalence_matrix(arguments.workspace)
+            print(canonical_json(result).strip())
+            return 0 if result["status"] == "PASS" else 1
+        if arguments.command == "normalize-pi":
+            events: list[object] = []
+            try:
+                for line in arguments.events.read_text(encoding="utf-8").splitlines():
+                    if line.strip():
+                        events.append(json.loads(line))
+            except (OSError, UnicodeError, ValueError) as exc:
+                raise EvalError("Pi event stream is not valid JSONL") from exc
+            trace = normalize_pi_trace(
+                events,
+                duration_ms=arguments.duration_ms,
+                workspace=arguments.workspace,
+                watchdog_expired=arguments.watchdog_expired,
+            )
+            _write_json_create(arguments.output.resolve(), trace)
+            print(
+                canonical_json(
+                    {
+                        "output": str(arguments.output.resolve()),
+                        "sha256": file_hash(arguments.output.resolve()),
+                    }
+                ).strip()
+            )
+            return 0
+        if arguments.command == "normalize-morrow":
+            trace = normalize_morrow_trace(_read_json(arguments.trace, "Morrow safe trace"))
+            _write_json_create(arguments.output.resolve(), trace)
+            print(
+                canonical_json(
+                    {
+                        "output": str(arguments.output.resolve()),
+                        "sha256": file_hash(arguments.output.resolve()),
+                    }
+                ).strip()
+            )
+            return 0
+        if arguments.command == "run-morrow":
+            try:
+                prompt = arguments.prompt.read_text(encoding="utf-8")
+            except (OSError, UnicodeError) as exc:
+                raise EvalError("Morrow evaluation prompt is unavailable") from exc
+            result = run_morrow_agent(
+                workspace=arguments.workspace,
+                state_root=arguments.state_root,
+                prompt=prompt,
+                output=arguments.output,
+            )
+            print(canonical_json(result).strip())
+            return 0
+        if arguments.command == "run-pi":
+            try:
+                prompt = arguments.prompt.read_text(encoding="utf-8")
+            except (OSError, UnicodeError) as exc:
+                raise EvalError("Pi evaluation prompt is unavailable") from exc
+            result = run_pi_agent(
+                workspace=arguments.workspace,
+                evidence_dir=arguments.evidence_dir,
+                prompt=prompt,
+                output=arguments.output,
+            )
+            print(canonical_json(result).strip())
+            return 0
+        if arguments.command == "compare":
+            summary = compare_campaign(
+                arguments.plan,
+                arguments.morrow_root,
+                arguments.pi_root,
+                admissions_root=arguments.admissions_root,
+                output=arguments.output,
+            )
+            print(canonical_json(summary).strip())
+            return 0 if summary["status"] == "PASS" else 1
         selected = (
             tuple(task_by_id(task_id) for task_id in arguments.task_ids)
             if arguments.task_ids

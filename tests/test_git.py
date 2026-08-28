@@ -43,7 +43,7 @@ def _repository(root: Path) -> None:
     _git(root, "config", "user.name", "Morrow Test")
 
 
-def test_git_status_and_diff_are_bounded_read_only_and_protect_content(tmp_path):
+def test_git_status_and_diff_are_bounded_read_only_and_do_not_keyword_filter(tmp_path):
     root = tmp_path / "repo"
     _repository(root)
     (root / "main.py").write_text("print('before')\n", encoding="utf-8")
@@ -63,15 +63,14 @@ def test_git_status_and_diff_are_bounded_read_only_and_protect_content(tmp_path)
     assert status.branch or status.detached
     paths = {entry.path for entry in status.entries}
     assert {"main.py", ".env", "new.txt"} <= paths
-    assert next(entry for entry in status.entries if entry.path == ".env").protected is True
+    assert next(entry for entry in status.entries if entry.path == ".env").protected is False
 
     diff = service.diff()
     assert "print('after')" in diff.diff
-    assert "SECRET=changed" not in diff.diff
-    assert "RSA PRIVATE KEY" not in diff.diff
-    assert "rsa-secret" not in diff.diff
-    assert "[protected diff omitted]" in diff.diff
-    assert ".env" in {item.path for item in diff.protected_paths}
+    assert "SECRET=changed" in diff.diff
+    assert "RSA PRIVATE KEY" in diff.diff
+    assert "rsa-secret" in diff.diff
+    assert diff.protected_paths == ()
     assert diff.truncated is False
     assert not (root / ".git" / "index.lock").exists()
 

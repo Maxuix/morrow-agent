@@ -15,12 +15,9 @@ from morrow.runtime.capabilities import CapabilityPolicy, CapabilityReason
 
 _REVIEWABLE_REASONS = {
     CapabilityReason.NETWORK_NOT_ENABLED: McpReviewRisk.NETWORK,
-    CapabilityReason.NETWORK_APPROVAL_REQUIRED: McpReviewRisk.NETWORK,
     CapabilityReason.LOOPBACK_NOT_ENABLED: McpReviewRisk.LOOPBACK,
-    CapabilityReason.LOOPBACK_APPROVAL_REQUIRED: McpReviewRisk.LOOPBACK,
     CapabilityReason.CREDENTIAL_ACCESS_DENIED: McpReviewRisk.CREDENTIALS,
     CapabilityReason.EXTERNAL_EFFECT_NOT_ENABLED: McpReviewRisk.EXTERNAL_EFFECT,
-    CapabilityReason.EXTERNAL_EFFECT_APPROVAL_REQUIRED: McpReviewRisk.EXTERNAL_EFFECT,
 }
 
 _REVIEW_DENIAL_REASONS = {

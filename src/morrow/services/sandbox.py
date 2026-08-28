@@ -14,7 +14,7 @@ import threading
 from dataclasses import dataclass
 from pathlib import Path
 
-from morrow.core.capabilities import SensitiveResourcePolicy, ToolRunContext
+from morrow.core.capabilities import ToolRunContext
 from morrow.core.local_tools import validate_workspace_relative_path
 from morrow.services.files import WorkspaceFileService
 
@@ -137,7 +137,6 @@ class SandboxSnapshotService:
         max_change_content_bytes: int = MAX_PROMOTION_BYTES,
     ) -> None:
         self.files = files
-        self.sensitive_policy: SensitiveResourcePolicy = files.sensitive_policy
         if temp_parent is None and sys.platform == "darwin" and Path("/private/tmp").is_dir():
             temp_parent = Path("/private/tmp")
         self.temp_parent = temp_parent
@@ -318,7 +317,7 @@ class SandboxSnapshotService:
         for entry in entries:
             self._check_cancelled(cancel_event)
             relative = f"{prefix}/{entry.name}" if prefix else entry.name
-            if entry.name in _EXCLUDED_NAMES or self.sensitive_policy.is_protected_path(relative):
+            if entry.name in _EXCLUDED_NAMES:
                 continue
             source_path = Path(entry.path)
             destination_path = destination / entry.name
@@ -350,8 +349,6 @@ class SandboxSnapshotService:
             if not stat.S_ISREG(mode.st_mode):
                 raise SandboxServiceError("sandbox_limit", "沙箱快照包含不支持的特殊文件")
             raw = self._read_file(source_path, mode.st_size, cancel_event=cancel_event)
-            if self.sensitive_policy.is_protected_content(raw):
-                continue
             counters["files"] += 1
             counters["bytes"] += len(raw)
             if counters["files"] > self.max_files or counters["bytes"] > self.max_bytes:
@@ -427,7 +424,7 @@ class SandboxSnapshotService:
         for entry in entries:
             self._check_cancelled(cancel_event)
             relative = f"{prefix}/{entry.name}" if prefix else entry.name
-            if entry.name in _EXCLUDED_NAMES or self.sensitive_policy.is_protected_path(relative):
+            if entry.name in _EXCLUDED_NAMES:
                 continue
             path = Path(entry.path)
             try:
@@ -448,8 +445,6 @@ class SandboxSnapshotService:
                 )
             elif stat.S_ISREG(mode.st_mode):
                 raw = self._read_file(path, mode.st_size, cancel_event=cancel_event)
-                if self.sensitive_policy.is_protected_content(raw):
-                    continue
                 result[relative] = SnapshotEntry(
                     relative,
                     "file",

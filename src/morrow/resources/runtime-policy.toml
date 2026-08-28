@@ -23,8 +23,6 @@ loop_max_pattern_cycles = 4
 [agent_run.model_safe_request_chars]
 
 [reviews]
-learning_timeout_seconds = 60
-learning_lease_seconds = 120
 preference_timeout_seconds = 60
 preference_lease_seconds = 120
 preference_retry_backoff_seconds = [5, 15]
