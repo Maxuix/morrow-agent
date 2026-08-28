@@ -3823,7 +3823,7 @@
   runtime-input path.
 - All 14 bundles now revalidate with zero invalid bundles. Morrow has 10/10 `FAIL_RUNTIME` results
   with one model attempt and unavailable token usage. Pi has 3/4 `FAIL_RUNTIME` results and 1/4
-  `BLOCKED_ENV` after an empty stream/watchdog interruption. The evidence shows no tool calls and no
+  `BLOCKED_ENV` after an empty stream and bounded process interruption. The evidence shows no tool calls and no
   usable Provider response; the paired comparison correctly remains incomplete rather than treating
   unavailable usage as zero.
 - Cumulative capacity is `52,877,509 / 80,000,000` tokens, leaving `27,122,491`; no ceiling was

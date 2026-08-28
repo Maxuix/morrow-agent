@@ -192,7 +192,7 @@ bundles. The provider/runtime result distribution is:
 | Agent | Valid bundles | Result | Runtime/usage note |
 |---|---:|---|---|
 | Morrow | 10/10 | `FAIL_RUNTIME` 10/10 | one attempt each; token usage unavailable; no tool calls |
-| Pi | 4/4 | `FAIL_RUNTIME` 3/4; `BLOCKED_ENV` 1/4 | three completed runtime failures; one empty stream/watchdog evidence |
+| Pi | 4/4 | `FAIL_RUNTIME` 3/4; `BLOCKED_ENV` 1/4 | three completed runtime failures; one empty stream after bounded process interruption |
 
 `compare_campaign` correctly rejects the pilot because mandatory usage metrics are incomplete. The
 observed blocker is provider/runtime response availability, not a capacity overrun or a missing
