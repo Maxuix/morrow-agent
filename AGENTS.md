@@ -88,15 +88,12 @@ Before completing a subplan:
 **Ask first**
 
 - Adding a third-party dependency.
-- Starting work in a stage the user has not opened, or adding capabilities beyond the delivered
-  boundary; `docs/ROADMAP.md` and `docs/ARCHITECTURE.md` record which stages are delivered and
-  what the current boundary is.
+- Starting Stage 3+ work: local file, Shell, Git, network, or browser tools; MCP; Skills; persistent chat history; LLM summaries; background tasks.
 - Changing bundled `runtime-policy.toml` defaults or the public event lifecycle.
 
 **Never**
 
-- Enable capabilities from an unopened stage or outside the delivered boundary without explicit
-  user authorization.
+- Enable those Stage 3+ capabilities unless the user explicitly opens that stage.
 - Write secrets into YAML, logs, events, model context, or the terminal.
 - Mark implementation work complete without running the relevant commands above.
 
