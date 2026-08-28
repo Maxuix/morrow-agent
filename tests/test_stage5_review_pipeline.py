@@ -32,6 +32,12 @@ from morrow.core.domain import (
 from morrow.core.learning import (
     CandidateDraftBatch,
     LearningCandidateType,
+    LearningEvidence,
+    LearningEvidenceActor,
+    LearningEvidenceAuthority,
+    LearningEvidenceExplicitness,
+    LearningEvidencePolarity,
+    LearningEvidenceSourceKind,
     LearningMode,
     LearningReviewStatus,
     LearningScope,
@@ -39,7 +45,7 @@ from morrow.core.learning import (
     LearningSuppressionStatus,
     PreferenceCandidatePayload,
 )
-from morrow.core.learning_payloads import LearningCandidateDraft
+from morrow.core.learning_payloads import LearningCandidateDraft, SkillCandidatePayload
 from morrow.core.learning_ports import LEARNING_CONTEXT_MAX_RENDERED_CHARS
 from morrow.core.models import ModelRef
 from morrow.testing import FixedClock, FixedIdSource, ScriptedLearningReviewer
@@ -231,6 +237,70 @@ def test_preference_v2_flag_blocks_new_legacy_preference_drafts():
     )
 
     assert pipeline._eligible_draft(draft, {}, None) is None
+
+
+def test_skill_candidate_accepts_the_evidence_the_extractor_actually_produces():
+    pipeline = LearningCandidatePipeline(
+        journal=object(),
+        workspace_id="ws_1",
+        id_source=FixedIdSource(),
+        clock=lambda: NOW,
+        events=None,
+    )
+    evidence = (
+        LearningEvidence(
+            evidence_id="lev_outcome",
+            workspace_id="ws_1",
+            origin_review_id="lrv_1",
+            task_run_id="task_1",
+            source_kind=LearningEvidenceSourceKind.TASK_OUTCOME,
+            source_id="out_1",
+            actor=LearningEvidenceActor.SYSTEM,
+            authority=LearningEvidenceAuthority.DETERMINISTIC_TASK_FACT,
+            explicitness=LearningEvidenceExplicitness.INFERRED,
+            polarity=LearningEvidencePolarity.POSITIVE,
+            content_digest="a" * 64,
+            observed_at=NOW,
+            created_at=NOW,
+        ),
+        LearningEvidence(
+            evidence_id="lev_user",
+            workspace_id="ws_1",
+            origin_review_id="lrv_1",
+            task_run_id="task_1",
+            source_kind=LearningEvidenceSourceKind.USER_TURN,
+            source_id="turn_1",
+            actor=LearningEvidenceActor.USER,
+            authority=LearningEvidenceAuthority.BEHAVIORAL_SIGNAL,
+            explicitness=LearningEvidenceExplicitness.INFERRED,
+            polarity=LearningEvidencePolarity.POSITIVE,
+            content_digest="b" * 64,
+            observed_at=NOW,
+            created_at=NOW,
+        ),
+    )
+    draft = LearningCandidateDraft(
+        candidate_type=LearningCandidateType.SKILL_CANDIDATE,
+        operation="set",
+        semantic_key="skill.release.workflow",
+        proposed_scope=LearningScope.WORKSPACE,
+        proposed_payload=SkillCandidatePayload(
+            title="Release workflow",
+            problem_pattern="A repeatable release task was completed.",
+            observed_steps=("Run release checks",),
+        ),
+        evidence_ids=tuple(item.evidence_id for item in evidence),
+        temporary_or_durable="durable",
+    )
+
+    eligible = pipeline._eligible_draft(
+        draft,
+        {item.evidence_id: item for item in evidence},
+        SimpleNamespace(task_status=TaskRunStatus.ACCEPTED),
+    )
+
+    assert eligible is not None
+    assert eligible[0] is LearningCandidateType.SKILL_CANDIDATE
 
 
 def test_accept_atomically_requests_one_review_and_replays_without_duplicates(tmp_path):

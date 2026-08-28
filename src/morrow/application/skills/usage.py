@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from morrow.core.domain import canonical_json_bytes, sha256_digest
+from morrow.core.models import FinishReason
 from morrow.core.skills.usage import (
     SkillComparisonStatus,
     SkillUsage,
@@ -58,6 +59,7 @@ class SkillUsageService:
         tool_call_count: int = 0,
         artifact_refs=(),
         usage_id: str | None = None,
+        created_at: datetime | None = None,
     ) -> SkillUsage:
         if selection_id is not None:
             selection = next(
@@ -92,7 +94,7 @@ class SkillUsageService:
             tool_call_count=tool_call_count,
             artifact_refs=tuple(artifact_refs),
             facts_digest="0" * 64,
-            created_at=_now(self.clock),
+            created_at=created_at or _now(self.clock),
         )
         usage = usage.model_copy(update={"facts_digest": usage_digest(usage)})
         existing = self.journal.get_skill_usage(self.workspace_id, usage.usage_id)
@@ -104,6 +106,43 @@ class SkillUsageService:
             return self.journal.transact(lambda txn: txn.put_skill_usage(self.workspace_id, usage))
         except Exception as exc:
             raise SkillUsageServiceError("Skill usage could not be recorded") from exc
+
+    def record_terminal(self, terminal) -> tuple[SkillUsage, ...]:
+        """Record selected Skills after their AgentRun reaches a durable terminal state."""
+
+        status = {
+            FinishReason.STOP: SkillUsageStatus.SUCCEEDED,
+            FinishReason.ERROR: SkillUsageStatus.FAILED,
+            FinishReason.CANCELLED: SkillUsageStatus.CANCELLED,
+            FinishReason.STEERED: SkillUsageStatus.INTERRUPTED,
+        }[terminal.finish_reason]
+        recorded: list[SkillUsage] = []
+        try:
+            selections = self.journal.list_skill_selections(
+                self.workspace_id, terminal.agent_run_id
+            )
+            for selection in selections:
+                recorded.append(
+                    self.record(
+                        agent_run_id=terminal.agent_run_id,
+                        task_run_id=terminal.task_run_id,
+                        skill_id=selection.skill_id,
+                        version_id=selection.version_id,
+                        selection_id=selection.selection_id,
+                        activation_reason=selection.activation_reason,
+                        status=status,
+                        input_tokens=terminal.usage.input_tokens or 0,
+                        output_tokens=terminal.usage.output_tokens or 0,
+                        tool_call_count=terminal.tool_calls,
+                        usage_id=f"sug_{sha256_digest(selection.selection_id)[:24]}",
+                        created_at=terminal.finalized_at,
+                    )
+                )
+        except SkillUsageServiceError:
+            raise
+        except Exception as exc:
+            raise SkillUsageServiceError("terminal Skill usage could not be recorded") from exc
+        return tuple(recorded)
 
     def list(
         self,

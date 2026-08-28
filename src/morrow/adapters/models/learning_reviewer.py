@@ -19,6 +19,7 @@ from morrow.core.models import (
     UserMessage,
     provider_error_message,
 )
+from morrow.core.runtime_policy import REVIEW_MAX_TIMEOUT_SECONDS
 
 LEARNING_REVIEW_PROMPT_VERSION = "stage5-v1"
 LEARNING_REVIEW_SCHEMA_VERSION = "stage5-learning-v1"
@@ -92,11 +93,15 @@ class ModelLearningReviewer:
         model: ModelRef,
         timeout_seconds: float,
     ) -> CandidateDraftBatch:
-        """Return strict drafts after at most one bounded repair attempt."""
+        """Return strict drafts from one bounded structured request."""
 
         if not isinstance(timeout_seconds, (int, float)) or isinstance(timeout_seconds, bool):
             raise ValueError("Reviewer timeout is invalid")
-        if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
+        if (
+            not math.isfinite(timeout_seconds)
+            or timeout_seconds <= 0
+            or timeout_seconds > REVIEW_MAX_TIMEOUT_SECONDS
+        ):
             raise ValueError("Reviewer timeout is invalid")
         try:
             bounded_context = LearningContext.model_validate(context, strict=True)
@@ -115,25 +120,16 @@ class ModelLearningReviewer:
         raw = await self._complete(model, messages, deadline=deadline)
         try:
             return self._parse(raw, bounded_context)
-        except _ReviewerOutputError as first_error:
-            self.last_repair_used = True
-            repair_messages = self._messages(bounded_context, repair_category=first_error.category)
-            self._validate_request(repair_messages)
-            repaired = await self._complete(model, repair_messages, deadline=deadline)
-            try:
-                return self._parse(repaired, bounded_context)
-            except _ReviewerOutputError:
-                raise LearningReviewerError(
-                    ModelErrorCode.INVALID_RESPONSE,
-                    provider_error_message(ModelErrorCode.INVALID_RESPONSE),
-                    category="repair_failed",
-                ) from None
+        except _ReviewerOutputError as exc:
+            raise LearningReviewerError(
+                ModelErrorCode.INVALID_RESPONSE,
+                provider_error_message(ModelErrorCode.INVALID_RESPONSE),
+                category=exc.category,
+            ) from None
 
     def _messages(
         self,
         context: LearningContext,
-        *,
-        repair_category: str | None = None,
     ) -> tuple[SystemMessage | UserMessage, ...]:
         payload: dict[str, object] = {
             "schema_version": self.schema_version,
@@ -142,14 +138,9 @@ class ModelLearningReviewer:
             ),
             "allowed_evidence_ids": [item.evidence_id for item in context.evidence],
             "candidate_budget": context.candidate_budget,
+            "output_schema": CandidateDraftBatch.model_json_schema(),
             "context": context.model_dump(mode="json"),
         }
-        if repair_category is not None:
-            payload["repair"] = {
-                "error_category": repair_category,
-                "instruction": "修复结构或边界错误；只返回 JSON 对象，不要复述错误内容或原始响应。",
-                "schema": CandidateDraftBatch.model_json_schema(),
-            }
         return (
             SystemMessage(content=_SYSTEM_PROMPT.format(prompt_version=self.prompt_version)),
             UserMessage(content=_compact_json(payload)),

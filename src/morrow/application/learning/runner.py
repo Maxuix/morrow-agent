@@ -27,6 +27,7 @@ from morrow.core.learning_ports import (
 )
 from morrow.core.models import ModelRef, ProtocolModel
 from morrow.core.ports import IdSource
+from morrow.core.runtime_policy import REVIEW_MAX_TIMEOUT_SECONDS
 from morrow.core.store import StorageError
 
 
@@ -73,6 +74,7 @@ class LearningReviewRunner:
             or not isinstance(timeout_seconds, (int, float))
             or not math.isfinite(timeout_seconds)
             or timeout_seconds <= 0
+            or timeout_seconds > REVIEW_MAX_TIMEOUT_SECONDS
         ):
             raise ValueError("learning Reviewer timeout is invalid")
         if (
@@ -80,7 +82,7 @@ class LearningReviewRunner:
             or not isinstance(lease_seconds, int)
             or lease_seconds <= timeout_seconds
         ):
-            raise ValueError("learning Reviewer lease must outlive the main Agent timeout")
+            raise ValueError("learning Reviewer lease must outlive the Reviewer timeout")
         self.journal = journal
         self.workspace_id = workspace_id
         self.id_source = id_source
@@ -147,13 +149,10 @@ class LearningReviewRunner:
                 )
             except (ValidationError, ValueError):
                 return self._failed_result(claimed, LearningReviewFailureCode.INTERNAL)
-            response = await asyncio.wait_for(
-                self.reviewer.review(
-                    context,
-                    model=self.model,
-                    timeout_seconds=self.timeout_seconds,
-                ),
-                timeout=self.timeout_seconds,
+            response = await self.reviewer.review(
+                context,
+                model=self.model,
+                timeout_seconds=self.timeout_seconds,
             )
             batch = CandidateDraftBatch.model_validate(response, strict=True)
         except asyncio.CancelledError:

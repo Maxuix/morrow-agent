@@ -100,31 +100,27 @@ async def test_model_learning_reviewer_uses_two_explicit_no_tool_messages():
     assert [message.role for message in messages] == ["system", "user"]
     assert "stage5-v1" in messages[0].content
     assert '"schema_version":"stage5-learning-v1"' in messages[1].content
+    assert '"output_schema"' in messages[1].content
     assert "lev_1" in messages[1].content
     assert not any(getattr(message, "tool_calls", ()) for message in messages)
 
 
 @pytest.mark.asyncio
-async def test_model_learning_reviewer_repairs_once_with_same_bounded_context():
+async def test_model_learning_reviewer_rejects_invalid_json_without_a_second_call():
     provider = RecordingProvider(["not json", _valid_response()])
     reviewer = ModelLearningReviewer(provider)
 
-    result = await reviewer.review(_context(), model=MODEL, timeout_seconds=1.0)
+    with pytest.raises(LearningReviewerError) as error:
+        await reviewer.review(_context(), model=MODEL, timeout_seconds=1.0)
 
-    assert len(result.drafts) == 1
-    assert reviewer.last_repair_used is True
-    assert len(provider.calls) == 2
-    first_prompt = provider.calls[0][1][1].content
-    repair_prompt = provider.calls[1][1][1].content
-    assert "repair" not in first_prompt
-    assert "invalid_json" in repair_prompt
-    assert "CandidateDraftBatch" in repair_prompt
-    assert "lev_1" in repair_prompt
-    assert "not json" not in repair_prompt
+    assert error.value.code is ModelErrorCode.INVALID_RESPONSE
+    assert error.value.category == "invalid_json"
+    assert reviewer.last_repair_used is False
+    assert len(provider.calls) == 1
 
 
 @pytest.mark.asyncio
-async def test_model_learning_reviewer_rejects_invented_evidence_after_one_repair():
+async def test_model_learning_reviewer_rejects_invented_evidence_without_a_second_call():
     provider = RecordingProvider([_valid_response("lev_missing"), _valid_response("lev_missing")])
     reviewer = ModelLearningReviewer(provider)
 
@@ -132,9 +128,8 @@ async def test_model_learning_reviewer_rejects_invented_evidence_after_one_repai
         await reviewer.review(_context(), model=MODEL, timeout_seconds=1.0)
 
     assert error.value.code is ModelErrorCode.INVALID_RESPONSE
-    assert error.value.category == "repair_failed"
-    assert len(provider.calls) == 2
-    assert "lev_missing" not in provider.calls[1][1][1].content
+    assert error.value.category == "invented_evidence"
+    assert len(provider.calls) == 1
 
 
 @pytest.mark.asyncio
@@ -146,16 +141,16 @@ async def test_model_learning_reviewer_maps_timeout_without_repair():
         await reviewer.review(_context(), model=MODEL, timeout_seconds=0.001)
 
     assert error.value.code is ModelErrorCode.TIMEOUT
-    assert len(provider.calls) == 1
+    assert len(provider.calls) <= 1
     assert reviewer.last_repair_used is False
 
 
 @pytest.mark.asyncio
-async def test_model_learning_reviewer_accepts_main_agent_timeout_above_legacy_cap():
+async def test_model_learning_reviewer_accepts_five_minute_timeout():
     provider = RecordingProvider([_valid_response()])
     reviewer = ModelLearningReviewer(provider)
 
-    result = await reviewer.review(_context(), model=MODEL, timeout_seconds=1_800.0)
+    result = await reviewer.review(_context(), model=MODEL, timeout_seconds=300.0)
 
     assert len(result.drafts) == 1
     assert len(provider.calls) == 1

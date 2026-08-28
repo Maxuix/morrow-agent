@@ -267,13 +267,9 @@ class LearningCandidatePipeline:
             return None
         if draft.candidate_type is LearningCandidateType.SKILL_CANDIDATE and not (
             len(evidence) >= 2
-            and bool(
-                sources
-                & {
-                    LearningEvidenceSourceKind.TOOL_EXECUTION,
-                    LearningEvidenceSourceKind.TASK_TRANSITION,
-                }
-            )
+            and outcome.task_status.value == "accepted"
+            and LearningEvidenceAuthority.DETERMINISTIC_TASK_FACT in authorities
+            and LearningEvidenceSourceKind.USER_TURN in sources
         ):
             return None
         if draft.candidate_type in {

@@ -53,7 +53,7 @@ def _retry() -> BusyRetryPolicy:
     return BusyRetryPolicy(busy_timeout_ms=0, sleep=lambda _delay: None, rng=random.Random(0))
 
 
-def _open(tmp_path: Path):
+def _open(tmp_path: Path, *, skill_usage=None):
     clock = FixedClock()
     store = OperationalStore(
         tmp_path / "state",
@@ -73,10 +73,40 @@ def _open(tmp_path: Path):
         run_policy=make_context_builder().run_policy,
         runtime_instance_id="host-1",
         clock=clock,
+        skill_usage=skill_usage,
     )
     journal.create_session(DurableSession(session_id="ses_1", workspace_id="ws_1"))
     persistence.attach(session)
     return handle, journal, session, persistence
+
+
+def test_terminal_agent_run_records_selected_skill_usage_best_effort(tmp_path):
+    class RecordingSkillUsage:
+        def __init__(self) -> None:
+            self.terminals = []
+
+        def record_terminal(self, terminal) -> None:
+            self.terminals.append(terminal)
+
+    skill_usage = RecordingSkillUsage()
+    handle, _journal, session, persistence = _open(tmp_path, skill_usage=skill_usage)
+    try:
+        persistence.submit_user(
+            session,
+            "use the selected skill",
+            "cmsg_1",
+            turn_id="turn_1",
+            agent_run_id="arun_1",
+        )
+
+        terminal = persistence.finalize_agent_run(
+            finish_reason=FinishReason.STOP,
+            model_attempts=1,
+        )
+
+        assert skill_usage.terminals == [terminal]
+    finally:
+        handle.close()
 
 
 def test_fresh_v17_schema_contains_observation_tables(tmp_path):

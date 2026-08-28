@@ -7,7 +7,6 @@ pipeline for offline/manual execution.
 
 from __future__ import annotations
 
-import asyncio
 import math
 from dataclasses import dataclass
 
@@ -62,7 +61,7 @@ class PreferenceReviewRunner:
         clock,
         reviewer=None,
         model: ModelRef | None = None,
-        timeout_seconds: float = REVIEW_MAX_TIMEOUT_SECONDS / 2,
+        timeout_seconds: float = REVIEW_MAX_TIMEOUT_SECONDS,
         context_builder: PreferenceReviewContextBuilder | None = None,
         pipeline: PreferenceProposalPipeline | None = None,
     ) -> None:
@@ -119,13 +118,10 @@ class PreferenceReviewRunner:
             current_user_record_id=current_user_record_id,
             recent_dialogue=recent_dialogue,
         )
-        response = await asyncio.wait_for(
-            self.reviewer.review(
-                context,
-                model=self.model,
-                timeout_seconds=self.timeout_seconds,
-            ),
-            timeout=self.timeout_seconds,
+        response = await self.reviewer.review(
+            context,
+            model=self.model,
+            timeout_seconds=self.timeout_seconds,
         )
         output = PreferenceReviewOutput.model_validate(response, strict=True)
         pipeline = self.proposals.persist(job, evidence, output)

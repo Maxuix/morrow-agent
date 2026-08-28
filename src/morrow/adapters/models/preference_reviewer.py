@@ -25,6 +25,7 @@ from morrow.core.preference_review import (
     PreferenceReviewerError,
     PreferenceReviewOutput,
 )
+from morrow.core.runtime_policy import REVIEW_MAX_TIMEOUT_SECONDS
 
 PREFERENCE_REVIEW_PROMPT_VERSION = "preference-v4"
 PREFERENCE_REVIEW_SCHEMA_VERSION = "preference-operations-v2"
@@ -193,7 +194,11 @@ class ModelPreferenceReviewer:
     ) -> PreferenceReviewOutput:
         if not isinstance(timeout_seconds, (int, float)) or isinstance(timeout_seconds, bool):
             raise ValueError("Preference Reviewer timeout is invalid")
-        if not math.isfinite(timeout_seconds) or timeout_seconds <= 0 or timeout_seconds > 120:
+        if (
+            not math.isfinite(timeout_seconds)
+            or timeout_seconds <= 0
+            or timeout_seconds > REVIEW_MAX_TIMEOUT_SECONDS
+        ):
             raise ValueError("Preference Reviewer timeout is outside the supported range")
         try:
             bounded_context = PreferenceReviewContext.model_validate(context, strict=True)

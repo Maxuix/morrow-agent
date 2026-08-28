@@ -9,6 +9,7 @@ from morrow.adapters.state.operational import OperationalStoreSession
 from morrow.application.compaction_persistence import checkpoint_for_compaction
 from morrow.application.preferences.jobs import PreferenceReviewJobEnqueuer
 from morrow.application.recovery import RecoveryService
+from morrow.application.skills.usage import SkillUsageServiceError
 from morrow.application.tasks import TaskService
 from morrow.application.tool_persistence import (
     DurableToolExecutionCoordinator,
@@ -60,6 +61,7 @@ class SessionPersistence:
         clock: Clock | None = None,
         preference_loader=None,
         skill_selection=None,
+        skill_usage=None,
         prompt_assembler=None,
     ) -> None:
         self.workspace_id = workspace_id
@@ -72,6 +74,7 @@ class SessionPersistence:
         self.mutation = mutation
         self.artifacts = artifacts
         self.prompt_assembler = prompt_assembler
+        self.skill_usage = skill_usage
         workspace_root = mutation.files.resolver.root if mutation is not None else None
         self.recovery = recovery or RecoveryService(
             journal,
@@ -291,7 +294,13 @@ class SessionPersistence:
         kwargs.setdefault("agent_run_id", self.current_agent_run_id)
         if kwargs["agent_run_id"] is None:
             raise RuntimeError("AgentRun finalization requires an open AgentRun")
-        return self.journal.finalize_agent_run(self.workspace_id, **kwargs)
+        terminal = self.journal.finalize_agent_run(self.workspace_id, **kwargs)
+        if self.skill_usage is not None:
+            try:
+                self.skill_usage.record_terminal(terminal)
+            except SkillUsageServiceError:
+                pass
+        return terminal
 
     def get_agent_run_observation(self, agent_run_id: str | None = None):
         selected = agent_run_id or self.current_agent_run_id

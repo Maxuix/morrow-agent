@@ -37,7 +37,7 @@ def _open(tmp_path):
     return store, handle, SqliteOperationalJournal(handle), clock
 
 
-@pytest.mark.parametrize("timeout_seconds", (0, 121, float("nan"), float("inf"), True))
+@pytest.mark.parametrize("timeout_seconds", (0, 301, float("nan"), float("inf"), True))
 def test_worker_rejects_unbounded_timeout(timeout_seconds):
     with pytest.raises(ValueError):
         ReviewWorker(

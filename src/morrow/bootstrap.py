@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import math
 import os
 import sys
 from dataclasses import dataclass
@@ -105,6 +104,7 @@ from morrow.core.models import (
 from morrow.core.permissions import UNCONFINED_HOST_WARNING_DIGEST, CapabilityName
 from morrow.core.preference_documents import PreferenceDocument
 from morrow.core.preference_models import PreferenceScope
+from morrow.core.runtime_policy import REVIEW_MAX_TIMEOUT_SECONDS
 from morrow.core.skills.scripts import SCRIPT_OUTPUT_FILE_MAX_BYTES
 from morrow.core.skills.trust import SourceKind
 from morrow.core.store import (
@@ -560,8 +560,8 @@ def build_operational_api(
         clock=services.journal.now,
         learning_reviewer=learning_reviewer,
         learning_model=learning_model,
-        learning_review_timeout_seconds=agent_policy.max_run_seconds,
-        learning_review_lease_seconds=math.ceil(agent_policy.max_run_seconds) + 60,
+        learning_review_timeout_seconds=REVIEW_MAX_TIMEOUT_SECONDS,
+        learning_review_lease_seconds=int(REVIEW_MAX_TIMEOUT_SECONDS) + 60,
         learning_review_context_chars=learning_context_chars,
         config_service=resolved_config_service,
         preference_inbox=preference_inbox,
@@ -1050,6 +1050,7 @@ def build_session_application(
             recovery=operational.recovery,
             preference_loader=load_run_preferences,
             skill_selection=skill_services.selection,
+            skill_usage=skill_services.usage,
             prompt_assembler=prompt_assembler,
         )
         spec_provider_config = provider_config

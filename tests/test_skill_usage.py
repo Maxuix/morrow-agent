@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from types import SimpleNamespace
 
 from morrow.adapters.state.journal import SqliteOperationalJournal
 from morrow.adapters.state.operational import OperationalStore
@@ -14,7 +15,7 @@ from morrow.core.domain import (
     DurableTaskRun,
     DurableTurn,
 )
-from morrow.core.models import ModelRef
+from morrow.core.models import FinishReason, ModelRef
 from morrow.core.skills.catalog import SkillDefinition, SkillVersion
 from morrow.core.skills.selection import SkillSelection
 from morrow.core.skills.trust import SourceKind, TrustLevel
@@ -101,18 +102,20 @@ def test_skill_usage_is_observational_and_comparison_is_not_a_router(tmp_path) -
             )
         )
         service = SkillUsageService(journal, workspace_id="ws_usage", clock=lambda: NOW)
-        usage = service.record(
+        terminal = SimpleNamespace(
             agent_run_id="arun_usage",
-            skill_id="usage-skill",
-            version_id=version.version_id,
-            selection_id="ssel_usage",
-            activation_reason="ignored because selection is authoritative",
-            status="succeeded",
-            duration_ms=20,
-            tool_call_count=2,
-            usage_id="sug_usage_1",
+            task_run_id="task_usage",
+            finish_reason=FinishReason.STOP,
+            usage=SimpleNamespace(input_tokens=7, output_tokens=5),
+            tool_calls=2,
+            finalized_at=NOW,
         )
+        (usage,) = service.record_terminal(terminal)
         assert usage.activation_reason == "explicit"
+        assert usage.status.value == "succeeded"
+        assert usage.input_tokens == 7
+        assert usage.output_tokens == 5
+        assert service.record_terminal(terminal) == (usage,)
         assert service.list(skill_id="usage-skill") == (usage,)
         comparison = service.compare(
             skill_id="usage-skill",

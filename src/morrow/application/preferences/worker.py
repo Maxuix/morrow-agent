@@ -36,7 +36,7 @@ from morrow.core.store import StorageError, StorageErrorCode
 
 PREFERENCE_REVIEW_MAX_ATTEMPTS = 3
 PREFERENCE_REVIEW_RETRY_BACKOFF_SECONDS = (5, 15)
-PREFERENCE_REVIEW_DEFAULT_TIMEOUT_SECONDS = REVIEW_MAX_TIMEOUT_SECONDS / 2
+PREFERENCE_REVIEW_DEFAULT_TIMEOUT_SECONDS = REVIEW_MAX_TIMEOUT_SECONDS
 PREFERENCE_REVIEW_RETRYABLE_FAILURES = frozenset(
     {
         PreferenceReviewFailureCode.TIMEOUT,
@@ -98,7 +98,7 @@ class ReviewWorker:
         model: ModelRef | None = None,
         learning_runner=None,
         timeout_seconds: float = PREFERENCE_REVIEW_DEFAULT_TIMEOUT_SECONDS,
-        lease_seconds: int = int(REVIEW_MAX_TIMEOUT_SECONDS),
+        lease_seconds: int = int(REVIEW_MAX_TIMEOUT_SECONDS) + 60,
         retry_backoff_seconds: tuple[int, ...] = PREFERENCE_REVIEW_RETRY_BACKOFF_SECONDS,
         retry_scheduler: Callable[[float, Callable[[], None]], object] | None = None,
     ) -> None:

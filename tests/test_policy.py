@@ -54,8 +54,8 @@ def test_bundled_runtime_policy_has_approved_defaults_and_empty_exact_model_tabl
     }
     assert policy.model_safe_request_chars == {}
     assert runtime.reviews.model_dump() == {
-        "preference_timeout_seconds": 60.0,
-        "preference_lease_seconds": 120,
+        "preference_timeout_seconds": 300.0,
+        "preference_lease_seconds": 360,
         "preference_retry_backoff_seconds": (5, 15),
     }
     with pytest.raises(ValidationError):
@@ -149,7 +149,7 @@ def test_user_overlay_changes_only_declared_fields_and_revalidates_combinations(
     assert effective.agent_run.loop_detection_enabled is True
     assert effective.agent_run.model_safe_request_chars == {}
     assert effective.reviews.preference_retry_backoff_seconds == (10, 30)
-    assert effective.reviews.preference_timeout_seconds == 60.0
+    assert effective.reviews.preference_timeout_seconds == 300.0
 
     invalid_combination = RuntimePolicyOverrides.model_validate(
         {"agent_run": {"max_tool_calls": 16, "max_tool_calls_per_cycle": 32}}, strict=True
@@ -210,10 +210,10 @@ def test_config_yaml_override_is_applied_and_preserved_by_unrelated_writes(tmp_p
             write=True,
         )
         api = build_operational_api(application, "ws_policy", services)
-        assert api.learning_review_runner.timeout_seconds == 2400.0
-        assert api.learning_review_runner.lease_seconds == 2460
-        assert api.review_worker.runner.timeout_seconds == 60.0
-        assert api.review_worker.lease_seconds == 120
+        assert api.learning_review_runner.timeout_seconds == 300.0
+        assert api.learning_review_runner.lease_seconds == 360
+        assert api.review_worker.runner.timeout_seconds == 300.0
+        assert api.review_worker.lease_seconds == 360
         assert api.review_worker.retry_backoff_seconds == (5, 15)
     finally:
         handle.close()
