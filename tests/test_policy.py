@@ -54,8 +54,6 @@ def test_bundled_runtime_policy_has_approved_defaults_and_empty_exact_model_tabl
     }
     assert policy.model_safe_request_chars == {}
     assert runtime.reviews.model_dump() == {
-        "learning_timeout_seconds": 60.0,
-        "learning_lease_seconds": 120,
         "preference_timeout_seconds": 60.0,
         "preference_lease_seconds": 120,
         "preference_retry_backoff_seconds": (5, 15),
@@ -140,8 +138,6 @@ def test_user_overlay_changes_only_declared_fields_and_revalidates_combinations(
         {
             "agent_run": {"max_run_seconds": 2400.0, "tool_timeout_seconds": 180.0},
             "reviews": {
-                "learning_timeout_seconds": 90.0,
-                "learning_lease_seconds": 180,
                 "preference_retry_backoff_seconds": [10, 30],
             },
         },
@@ -152,8 +148,6 @@ def test_user_overlay_changes_only_declared_fields_and_revalidates_combinations(
     assert effective.agent_run.tool_timeout_seconds == 180.0
     assert effective.agent_run.loop_detection_enabled is True
     assert effective.agent_run.model_safe_request_chars == {}
-    assert effective.reviews.learning_timeout_seconds == 90.0
-    assert effective.reviews.learning_lease_seconds == 180
     assert effective.reviews.preference_retry_backoff_seconds == (10, 30)
     assert effective.reviews.preference_timeout_seconds == 60.0
 
@@ -170,7 +164,7 @@ def test_user_overlay_changes_only_declared_fields_and_revalidates_combinations(
         {"agent_run": {"loop_detection_enabled": False}},
         {"agent_run": {"model_safe_request_chars": {"vendor/model": 100}}},
         {"agent_run": {"max_run_seconds": 3601.0}},
-        {"reviews": {"learning_timeout_seconds": 121.0}},
+        {"reviews": {"learning_timeout_seconds": 90.0}},
         {"reviews": {"preference_retry_backoff_seconds": [30, 10]}},
         {"unknown": {}},
     ],
@@ -194,10 +188,6 @@ def test_config_yaml_override_is_applied_and_preserved_by_unrelated_writes(tmp_p
                 "active_model": None,
                 "runtime_policy": {
                     "agent_run": {"max_run_seconds": 2400.0},
-                    "reviews": {
-                        "learning_timeout_seconds": 90.0,
-                        "learning_lease_seconds": 180,
-                    },
                 },
             },
             sort_keys=False,
@@ -210,8 +200,6 @@ def test_config_yaml_override_is_applied_and_preserved_by_unrelated_writes(tmp_p
         credentials=MemoryCredentialStore(),
     )
     assert application.runtime_policy.agent_run.max_run_seconds == 2400.0
-    assert application.runtime_policy.reviews.learning_timeout_seconds == 90.0
-    assert application.runtime_policy.reviews.learning_lease_seconds == 180
 
     handle = OperationalStore(state_root).initialize()
     try:
@@ -222,8 +210,8 @@ def test_config_yaml_override_is_applied_and_preserved_by_unrelated_writes(tmp_p
             write=True,
         )
         api = build_operational_api(application, "ws_policy", services)
-        assert api.learning_review_runner.timeout_seconds == 90.0
-        assert api.learning_review_runner.lease_seconds == 180
+        assert api.learning_review_runner.timeout_seconds == 2400.0
+        assert api.learning_review_runner.lease_seconds == 2460
         assert api.review_worker.runner.timeout_seconds == 60.0
         assert api.review_worker.lease_seconds == 120
         assert api.review_worker.retry_backoff_seconds == (5, 15)
@@ -236,7 +224,6 @@ def test_config_yaml_override_is_applied_and_preserved_by_unrelated_writes(tmp_p
     assert written.status.value == "ok"
     persisted = yaml.safe_load(config_path.read_text(encoding="utf-8"))
     assert persisted["runtime_policy"]["agent_run"]["max_run_seconds"] == 2400.0
-    assert persisted["runtime_policy"]["reviews"]["learning_timeout_seconds"] == 90.0
 
 
 def test_invalid_runtime_policy_makes_config_unavailable_instead_of_being_partially_applied(
@@ -246,7 +233,7 @@ def test_invalid_runtime_policy_makes_config_unavailable_instead_of_being_partia
     state_root.mkdir()
     (state_root / "config.yaml").write_text(
         "schema_version: 2\nrevision: 0\nruntime_policy:\n  reviews:\n"
-        "    learning_timeout_seconds: 121\n",
+        "    learning_timeout_seconds: 90\n",
         encoding="utf-8",
     )
     application = build_application(

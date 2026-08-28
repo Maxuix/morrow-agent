@@ -14,6 +14,7 @@ from morrow.application.api import OperationalApplicationService
 from morrow.application.learning.candidate_pipeline import LearningCandidatePipeline
 from morrow.application.learning.context import LearningContextBuilder
 from morrow.application.preferences.worker import ReviewWorker
+from morrow.application.tasks import TaskOutcomeAssembler
 from morrow.core.application import (
     ApplicationCommandResult,
     ApplicationError,
@@ -159,6 +160,27 @@ def test_task_accept_wakes_only_after_the_atomic_learning_request(tmp_path):
             task_outcome_id=api.list_outcomes(accepted.value.task_run_id)[0].outcome_id
         ).items[0]
         assert review.status is LearningReviewStatus.PENDING
+    finally:
+        session.close()
+
+
+def test_task_accept_requests_learning_even_when_tool_failures_are_recorded(tmp_path, monkeypatch):
+    session, journal, api = _api(tmp_path)
+    original_build = TaskOutcomeAssembler.build
+
+    def build_with_failed_tool(self, *args, **kwargs):
+        return original_build(self, *args, **kwargs).model_copy(
+            update={"unresolved_items": ("apply_patch:failed",)}
+        )
+
+    monkeypatch.setattr(TaskOutcomeAssembler, "build", build_with_failed_tool)
+    try:
+        accepted = _accepted(api, journal)
+        outcome = api.list_outcomes(accepted.value.task_run_id)[0]
+        assert outcome.unresolved_items == ("apply_patch:failed",)
+        reviews = api.list_learning_reviews(task_outcome_id=outcome.outcome_id).items
+        assert len(reviews) == 1
+        assert reviews[0].status is LearningReviewStatus.PENDING
     finally:
         session.close()
 

@@ -2,10 +2,20 @@
 
 ## Current task
 
-Pi-first core Agent loop simplification on `feat/s7p-09-direct-pi-baseline`. S7P-09 campaign
-execution is paused by the current user request.
+Pi-first best-effort Learning Review simplification on `feat/s7p-09-direct-pi-baseline`.
 
 ## Tasks
+
+- `[x]` Confirm the existing managed Skill projection repair with focused tests and a real public
+  install/enable/select/run journey.
+- `[x]` Remove tool-failure and unresolved-item gating from automatic Learning Review creation.
+- `[x]` Make the Learning Reviewer inherit the main Agent model, runtime and context budget; remove
+  separate Learning timeout/lease configuration.
+- `[x]` Repair Preference Review jobs JSON datetime serialization.
+- `[x]` Run focused, full offline and static validation.
+- `[>]` Commit the verified repair checkpoint.
+
+## Earlier completed tasks
 
 - `[x]` Inspect the actual process, capability, file/search/Git/sandbox and project-instruction paths.
 - `[x]` Remove semantic Shell/Git risk classification from the core process service.

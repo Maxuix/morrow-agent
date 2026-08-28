@@ -294,13 +294,11 @@ class ReviewPolicy(ProtocolModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    learning_timeout_seconds: float = Field(gt=0, le=REVIEW_MAX_TIMEOUT_SECONDS)
-    learning_lease_seconds: int = Field(gt=0, le=REVIEW_MAX_LEASE_SECONDS)
     preference_timeout_seconds: float = Field(gt=0, le=REVIEW_MAX_TIMEOUT_SECONDS)
     preference_lease_seconds: int = Field(gt=0, le=REVIEW_MAX_LEASE_SECONDS)
     preference_retry_backoff_seconds: tuple[int, ...]
 
-    @field_validator("learning_timeout_seconds", "preference_timeout_seconds")
+    @field_validator("preference_timeout_seconds")
     @classmethod
     def finite_timeouts(cls, value: float) -> float:
         return finite_number(value, label="Review timeout")
@@ -324,8 +322,6 @@ class ReviewPolicy(ProtocolModel):
 
     @model_validator(mode="after")
     def leases_outlive_attempts(self) -> ReviewPolicy:
-        if self.learning_lease_seconds <= self.learning_timeout_seconds:
-            raise ValueError("Learning Review lease must outlive its timeout")
         if self.preference_lease_seconds <= self.preference_timeout_seconds:
             raise ValueError("Preference Review lease must outlive its timeout")
         return self

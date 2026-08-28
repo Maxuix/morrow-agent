@@ -29,10 +29,11 @@ from morrow.core.learning import (
     LearningSuppression,
 )
 from morrow.core.models import ModelErrorCode, ModelRef, ProtocolModel
+from morrow.core.runtime_policy import AGENT_MAX_REQUEST_CHARS
 
 T = TypeVar("T")
 
-LEARNING_CONTEXT_MAX_RENDERED_CHARS = 16 * 1024
+LEARNING_CONTEXT_MAX_RENDERED_CHARS = AGENT_MAX_REQUEST_CHARS
 
 
 class LearningActiveSummary(ProtocolModel):

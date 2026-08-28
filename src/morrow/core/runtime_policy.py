@@ -98,10 +98,6 @@ class AgentRunPolicyOverrides(_RuntimePolicyModel):
 
 
 class ReviewPolicyOverrides(_RuntimePolicyModel):
-    learning_timeout_seconds: float | None = Field(
-        default=None, gt=0, le=REVIEW_MAX_TIMEOUT_SECONDS
-    )
-    learning_lease_seconds: int | None = Field(default=None, gt=0, le=REVIEW_MAX_LEASE_SECONDS)
     preference_timeout_seconds: float | None = Field(
         default=None, gt=0, le=REVIEW_MAX_TIMEOUT_SECONDS
     )

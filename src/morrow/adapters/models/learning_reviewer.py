@@ -78,9 +78,8 @@ class ModelLearningReviewer:
             isinstance(request_char_limit, bool)
             or not isinstance(request_char_limit, int)
             or request_char_limit < 256
-            or request_char_limit > 64 * 1024
         ):
-            raise ValueError("Reviewer request character budget is outside the supported range")
+            raise ValueError("Reviewer request character budget is invalid")
         self.provider = provider
         self.estimate_chars = estimate_chars
         self.request_char_limit = request_char_limit
@@ -97,8 +96,8 @@ class ModelLearningReviewer:
 
         if not isinstance(timeout_seconds, (int, float)) or isinstance(timeout_seconds, bool):
             raise ValueError("Reviewer timeout is invalid")
-        if not math.isfinite(timeout_seconds) or timeout_seconds <= 0 or timeout_seconds > 120:
-            raise ValueError("Reviewer timeout is outside the supported range")
+        if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
+            raise ValueError("Reviewer timeout is invalid")
         try:
             bounded_context = LearningContext.model_validate(context, strict=True)
         except ValidationError:

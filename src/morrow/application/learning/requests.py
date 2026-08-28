@@ -71,9 +71,6 @@ class LearningReviewRequestService:
         policy = txn.get_effective_learning_policy(self.workspace_id)
         if policy.mode is LearningMode.OFF:
             return LearningReviewRequestDecision(None, "learning_policy_off")
-        if outcome.unresolved_items:
-            return LearningReviewRequestDecision(None, "outcome_contains_unresolved_facts")
-
         existing = self.reviews_for_outcome(txn, outcome.outcome_id)
         if existing:
             return LearningReviewRequestDecision(existing[-1])

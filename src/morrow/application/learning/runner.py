@@ -20,10 +20,13 @@ from morrow.core.learning import (
     LearningReviewFailureCode,
     LearningReviewStatus,
 )
-from morrow.core.learning_ports import LearningReviewerError, LearningReviewerPort
+from morrow.core.learning_ports import (
+    LEARNING_CONTEXT_MAX_RENDERED_CHARS,
+    LearningReviewerError,
+    LearningReviewerPort,
+)
 from morrow.core.models import ModelRef, ProtocolModel
 from morrow.core.ports import IdSource
-from morrow.core.runtime_policy import REVIEW_MAX_LEASE_SECONDS, REVIEW_MAX_TIMEOUT_SECONDS
 from morrow.core.store import StorageError
 
 
@@ -60,6 +63,7 @@ class LearningReviewRunner:
         clock: Callable[[], datetime],
         timeout_seconds: float,
         lease_seconds: int,
+        context_char_limit: int = LEARNING_CONTEXT_MAX_RENDERED_CHARS,
         reviewer: LearningReviewerPort | None = None,
         model: ModelRef | None = None,
         preference_v2_enabled: bool = False,
@@ -69,16 +73,14 @@ class LearningReviewRunner:
             or not isinstance(timeout_seconds, (int, float))
             or not math.isfinite(timeout_seconds)
             or timeout_seconds <= 0
-            or timeout_seconds > REVIEW_MAX_TIMEOUT_SECONDS
         ):
-            raise ValueError("learning Reviewer timeout is outside the supported range")
+            raise ValueError("learning Reviewer timeout is invalid")
         if (
             isinstance(lease_seconds, bool)
             or not isinstance(lease_seconds, int)
             or lease_seconds <= timeout_seconds
-            or lease_seconds > REVIEW_MAX_LEASE_SECONDS
         ):
-            raise ValueError("learning Reviewer lease is outside the supported range")
+            raise ValueError("learning Reviewer lease must outlive the main Agent timeout")
         self.journal = journal
         self.workspace_id = workspace_id
         self.id_source = id_source
@@ -98,7 +100,11 @@ class LearningReviewRunner:
             id_source=id_source,
             clock=clock,
         )
-        self.contexts = LearningContextBuilder(journal=journal, workspace_id=workspace_id)
+        self.contexts = LearningContextBuilder(
+            journal=journal,
+            workspace_id=workspace_id,
+            rendered_char_budget=context_char_limit,
+        )
         self.candidates = LearningCandidatePipeline(
             journal=journal,
             workspace_id=workspace_id,

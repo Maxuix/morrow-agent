@@ -3641,3 +3641,18 @@
   gate passed `1339 passed, 2 deselected in 81.44s`; Ruff format/check, compileall, CLI help and
   `git diff --check` also passed. No live test or evaluation admission ran. Verified implementation
   was committed as `b26b884`; unrelated untracked `docs/notes/` was not staged.
+
+## 2026-08-28 — Learning loop changed to best-effort main-Agent settings
+
+- Removed `unresolved_items` as an automatic Learning Review gate. An accepted completed Task now
+  queues background review even when its durable outcome records failed tool calls; the Reviewer
+  may return no candidates.
+- Removed separate Learning timeout/lease configuration and the legacy 120-second/64-K reviewer
+  caps. Production composition now reuses the main Agent model, max run time and effective context
+  character budget. Preference Review keeps its independent queue settings.
+- Fixed `preferences inbox jobs --json` datetime serialization. The command returned the existing
+  live queue successfully.
+- Confirmed the managed Skill projection fix at `3670860` with a real public install, enable,
+  explicit selection and model run. The run returned `skill ok`; its Binding was removed afterward.
+- Focused affected tests passed `108`; the full offline gate passed `1344 passed, 2 deselected in
+  87.42s`. Ruff format/check, compileall, CLI help and `git diff --check` passed.

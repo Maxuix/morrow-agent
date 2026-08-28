@@ -151,6 +151,17 @@ async def test_model_learning_reviewer_maps_timeout_without_repair():
 
 
 @pytest.mark.asyncio
+async def test_model_learning_reviewer_accepts_main_agent_timeout_above_legacy_cap():
+    provider = RecordingProvider([_valid_response()])
+    reviewer = ModelLearningReviewer(provider)
+
+    result = await reviewer.review(_context(), model=MODEL, timeout_seconds=1_800.0)
+
+    assert len(result.drafts) == 1
+    assert len(provider.calls) == 1
+
+
+@pytest.mark.asyncio
 async def test_model_learning_reviewer_rejects_oversized_request_before_provider_call():
     provider = RecordingProvider([_valid_response()])
     reviewer = ModelLearningReviewer(provider, request_char_limit=256)

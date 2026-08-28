@@ -315,9 +315,16 @@ class LearningEvidenceExtractor:
 class LearningContextBuilder:
     """Construct a strict Reviewer context from already persisted projections."""
 
-    def __init__(self, *, journal, workspace_id: str) -> None:
+    def __init__(
+        self,
+        *,
+        journal,
+        workspace_id: str,
+        rendered_char_budget: int = LEARNING_CONTEXT_MAX_RENDERED_CHARS,
+    ) -> None:
         self.journal = journal
         self.workspace_id = workspace_id
+        self.rendered_char_budget = rendered_char_budget
 
     def build(
         self,
@@ -347,7 +354,7 @@ class LearningContextBuilder:
                             suppressions=suppressions[:suppression_count],
                             policy=policy,
                             candidate_budget=policy.max_candidates_per_review,
-                            rendered_char_budget=LEARNING_CONTEXT_MAX_RENDERED_CHARS,
+                            rendered_char_budget=self.rendered_char_budget,
                         )
                     except ValueError as exc:
                         if "rendered character budget" not in str(exc):

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 from dataclasses import fields, is_dataclass
+from datetime import date, datetime
 from enum import Enum
 from pathlib import Path
 
@@ -69,6 +70,8 @@ def _jsonable(value):
         return {item.name: _jsonable(getattr(value, item.name)) for item in fields(value)}
     if isinstance(value, Enum):
         return value.value
+    if isinstance(value, (date, datetime)):
+        return value.isoformat()
     if isinstance(value, dict):
         return {str(key): _jsonable(item) for key, item in value.items()}
     if isinstance(value, (tuple, list)):

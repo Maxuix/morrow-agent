@@ -74,15 +74,15 @@ scripts/morrow-mimo model current
 
 ## 运行策略配置
 
-Morrow 随程序发布只读的 `morrow/resources/runtime-policy.toml` 作为 AgentRun、Learning Review
-和 Preference Review 的默认运行策略。用户不需要也不应修改安装包资源；如需调整，可在自己的
+Morrow 随程序发布只读的 `morrow/resources/runtime-policy.toml` 作为 AgentRun 和 Preference
+Review 的默认运行策略。Learning Reviewer 直接继承 main Agent 的模型、运行时限和上下文预算，
+不再维护一套更保守的独立限制。用户不需要也不应修改安装包资源；如需调整，可在自己的
 `~/.morrow/config.yaml` 中添加可选覆盖，例如：
 
 ```yaml
 runtime_policy:
-  reviews:
-    learning_timeout_seconds: 90
-    learning_lease_seconds: 180
+  agent_run:
+    max_run_seconds: 2400
 ```
 
 覆盖在进程启动时加载。未知字段、错误类型、非有限数、违反字段组合或超过代码级安全上限的值会使

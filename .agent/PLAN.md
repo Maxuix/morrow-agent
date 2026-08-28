@@ -1,6 +1,6 @@
-# Pi-first Core Agent Loop Simplification
+# Pi-first Learning Loop Simplification
 
-> Status: completed at `b26b884`; S7P-09 evaluation remains paused
+> Status: implementation verified; awaiting checkpoint commit
 > Paused subplan: Subplan 90 — S7P-09 Repeated Direct Evaluation and Same-Condition Pi Baseline
 > Branch: `feat/s7p-09-direct-pi-baseline`
 > Execution worktree branch: `feat/s7p-09-direct-pi-baseline-run` (intentional clean-pin stack)
@@ -8,6 +8,16 @@
 > Source authority: current user request, S7P-00 protocol v1, completed S7P-08, current code/tools
 
 ## 1. Current objective
+
+Keep learning best-effort and mechanically triggered after an accepted completed task. Tool-call
+failures and inferred task-resolution quality do not gate Review creation. The Learning Reviewer
+uses the main Agent model, task timeout and context budget rather than separate conservative
+limits. Repair the Preference Review jobs JSON surface. Confirm the managed Skill projection fix
+already present at `3670860` through a real public run.
+
+The earlier Pi-first core simplification remains completed and S7P-09 remains paused.
+
+## 1a. Earlier objective
 
 Restore a small Pi-like coding loop before continuing evaluation work. Registered workspace
 read/write/edit/bash tools run directly; command and file-content keyword heuristics do not decide

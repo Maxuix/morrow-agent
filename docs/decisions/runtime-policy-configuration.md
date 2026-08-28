@@ -22,8 +22,8 @@ runtime_policy:
     max_run_seconds: 2400
     tool_timeout_seconds: 180
   reviews:
-    learning_timeout_seconds: 90
-    learning_lease_seconds: 180
+    preference_timeout_seconds: 90
+    preference_lease_seconds: 180
 ```
 
 The block may be omitted. Unknown fields, wrong types, non-finite numbers, unsafe combinations and
