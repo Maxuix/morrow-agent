@@ -1,14 +1,13 @@
 # S7P-09 Repeated Direct/Pi Baseline — Offline Harness Evidence
 
-> Status: Phase A offline harness/runners, Pi-aligned Morrow Provider retry repair and explicit
-> permission-denial repair verified; model and Token budget approved; formal campaign pending final
-> immutable pins.
-> This is not an S7P-09 PASS claim.
+> Status: Phase A harness/runners and Pi-aligned Morrow Provider retry repair verified; the
+> authorized reduced r15 pilot is executed and structurally valid, but Provider/runtime evidence
+> is incomplete. This is not an S7P-09 PASS claim.
 
 ## Scope and boundary
 
-This slice implements and verifies the harness/runners without credential-value inspection, paid
-task execution or task network access. Approved bounded readiness probes were run separately:
+This slice implements and verifies the harness/runners without credential-value inspection or task
+network access. Approved bounded readiness probes were run separately:
 
 - strict create-only comparison-plan validation, including full pins, approved hold-point evidence,
   exact common Provider/model/revision, equal sampling/capability facts, an explicit total Token
@@ -78,9 +77,10 @@ inputs, so an empty new root cannot hide previously accounted usage.
   different paired baseline trees/task contracts, incomplete required metrics and non-monotonic
   admissions. With the approved null currency ceiling, unavailable cost remains explicit but does
   not block comparison; token usage remains mandatory.
-- No credential value, formal task run, task network access, dependency addition, runtime-policy
-  change or public event change occurred. Pi uses the same Keychain credential by reference, not by
-  copied value. Its exact-model no-tool probe passed; the repaired Morrow Agent probe also passed.
+- No credential value, task network access, dependency addition or public event change occurred. Pi
+  uses the same Keychain credential by reference, not by copied value. Its exact-model no-tool probe
+  passed; the repaired Morrow Agent probe also passed. The later authorized r15 formal pilot is
+  recorded below with its runtime failure evidence.
 
 ## Offline validation on 2026-08-28
 
@@ -116,15 +116,17 @@ exact entry at `https://opencode.ai/zen/go/v1`, with a 1,000,000-token context w
 copied. Pi auth readiness is `ready/api_key`, and its bounded no-tool probe returned the exact
 provider/model with a normal stop, 404 total tokens and complete Provider cost.
 
-The approved budget is a hard 50,000,000-token ceiling with no currency ceiling. Provider/runtime
+The approved budget was a hard 50,000,000-token ceiling with no currency ceiling; the user later
+added 30,000,000 tokens, making the active r15 ceiling 80,000,000. Provider/runtime
 cost is recorded when available and otherwise remains explicitly unavailable; it is not a campaign
 gate and is never inferred as zero. Retained formal attempts and conservative reservations currently
-exceed the remaining capacity for a fresh complete campaign, so formal admission remains blocked.
+exceed the remaining capacity for a fresh complete 28-run campaign, while the reduced r15 pilot
+fits within the expanded ceiling.
 Before the first admission, the capacity command also accepts a conservative per-admission
 reservation and remaining-admission count, and compares the complete planned schedule against the
 same cumulative prior-root total.
-The fresh source/profile/evidence pin was created before any future admission; no prior plan or run
-key may be reused.
+The r15 source/profile/evidence pin was created before its admissions; no prior plan or run key was
+reused.
 
 The fresh offline preflight and permission-equivalence check passed. The explicit cumulative audit
 counts `27,577,509` retained tokens and rejects the conservative `42,000,000`-token reservation
@@ -133,10 +135,9 @@ request is made.
 The reduced plan is checked separately with its 14-run reservation before any admission or model
 request.
 
-The final reduced-plan check passed: all seven retained campaign roots were included, the current
-plan preflight passed, and `27,577,509 + 21,000,000 = 48,577,509` remained below the approved
-`50,000,000`-token ceiling. At that hold point no admission or model request had been created; the
-user subsequently authorized the reduced pilot execution.
+The final r14 reduced-plan check passed its offline conditions but was blocked by the then-active
+`31,877,509 + 21,000,000 > 50,000,000` capacity calculation. The user subsequently added
+30,000,000 tokens and authorized a fresh r15 pilot.
 
 After the reduced pilot exposed an empty isolated Morrow configuration, the admission boundary was
 repaired without adding another readiness layer. A Morrow admission now generates its minimal
@@ -171,7 +172,28 @@ ordinary bundled retry default is now aligned with Pi at three retries.
 No Live Provider request or formal admission was made by this repair validation.
 
 After the separately authorized three-retry default was committed as `c0b14b9`, fresh reduced plan
-r14 passed plan-check, preflight and permission equivalence. Its cumulative capacity audit included
-all nine retained admitted roots and accounted for `31,877,509` historical tokens. The remaining
-`18,122,491` cannot carry the existing 14 × 1,500,000 = `21,000,000` conservative reservation, so
-the evaluator stopped before admission. No r14 run key or Provider request exists.
+r14 passed plan-check, preflight and permission equivalence but stopped before admission because
+the approved 50M ceiling could not carry its conservative reservation. The user then authorized
+r15 under an 80M ceiling. All 14 r15 admissions and bundles are valid; Morrow finalized 10/10 as
+`FAIL_RUNTIME`, while Pi finalized 3/4 as `FAIL_RUNTIME` and 1/4 as `BLOCKED_ENV`. Morrow token
+usage is unavailable, Pi has no complete usage basis for the comparison, and one Pi stream has no
+usable evidence; the comparison gate therefore remains blocked on
+mandatory metrics. The cumulative conservative capacity is `52,877,509`, below `80,000,000`, with
+`27,122,491` remaining. No token field was replaced with zero for Morrow.
+
+## Authorized r15 pilot outcome
+
+The protected evidence root is
+`/Users/ruirui/Documents/Project/Agent/s7p09-evidence-96772d6-reduced-r15`. The corrected
+execution path used an external runtime-input file so finalization could atomically rebuild the
+canonical bundle artifacts. Structural validation passed for all 14/14 bundles with no invalid
+bundles. The provider/runtime result distribution is:
+
+| Agent | Valid bundles | Result | Runtime/usage note |
+|---|---:|---|---|
+| Morrow | 10/10 | `FAIL_RUNTIME` 10/10 | one attempt each; token usage unavailable; no tool calls |
+| Pi | 4/4 | `FAIL_RUNTIME` 3/4; `BLOCKED_ENV` 1/4 | three completed runtime failures; one empty stream/watchdog evidence |
+
+`compare_campaign` correctly rejects the pilot because mandatory usage metrics are incomplete. The
+observed blocker is provider/runtime response availability, not a capacity overrun or a missing
+finalization artifact. The r15 evidence is diagnostic and cannot be presented as a comparison PASS.

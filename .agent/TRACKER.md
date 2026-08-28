@@ -12,8 +12,9 @@ classification and partial-usage evaluation are now also implemented; focused af
 ## Active task
 
 The ordinary bundled retry default is aligned with Pi at three and committed as `c0b14b9`. Fresh
-reduced plan r14 passes plan-check, source/evidence preflight and permission equivalence, but its
-full remaining-schedule capacity check blocks before admission.
+reduced plan r14 passed plan-check, source/evidence preflight and permission equivalence, but its
+full remaining-schedule capacity check blocked before admission. After the user's additional
+30,000,000-token authorization, fresh r15 was admitted and all 14 entries were executed.
 
 ## Implemented boundary
 
@@ -40,14 +41,16 @@ full remaining-schedule capacity check blocks before admission.
 
 ## Next action
 
-Preserve r14 as a no-admission blocked plan. Continuing requires an explicit choice to raise the
-50,000,000-token ceiling, lower the 1,500,000-token per-admission conservative reservation, or add
-a smaller frozen diagnostic schedule. Do not create an admission before that choice is recorded.
+Preserve r14 as a no-admission blocked plan and retain r15 as the completed runtime-diagnostic
+pilot. A further comparison run requires Provider-side response/usage reliability and a new explicit
+execution decision; do not silently retry any admitted run key.
 
 ## Blockers
 
-- The full 28-run primary remains over the approved 50,000,000-token ceiling after retained usage.
-  The fresh r14 reduced plan accounts for `31,877,509` historical tokens and has `18,122,491`
-  remaining. Its 14 × 1,500,000 = `21,000,000` planned reservation exceeds the ceiling by
-  `2,877,509`. No r14 admission or Provider request was created; the pilot is not complete or a
-  comparison result.
+- The r15 reduced pilot used the added 30,000,000-token authorization, raising the active ceiling to
+  `80,000,000`. Its cumulative conservative accounting is `52,877,509` tokens, leaving
+  `27,122,491`; the 14 admissions therefore stayed within capacity.
+- All 14 r15 bundles revalidate, but the Provider/runtime boundary remains the blocker: Morrow is
+  `FAIL_RUNTIME` on 10/10 entries with unavailable token usage, Pi is `FAIL_RUNTIME` on 3/4 and
+  `BLOCKED_ENV` on 1/4, and the comparison gate rejects incomplete mandatory metrics. No PASS claim
+  is made.

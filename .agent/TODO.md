@@ -3,8 +3,9 @@
 ## Current task
 
 Resume Subplan 90 from the consolidated local `main`, repair the permission-equivalence regression,
-then refreeze and capacity-check a new S7P-09 campaign without reusing prior admissions. If the full
-primary does not fit, use the explicit 14-run reduced single-repetition pilot.
+then refreeze and capacity-check a new S7P-09 campaign without reusing prior admissions. The
+authorized r15 14-run reduced pilot is now executed and retained as incomplete provider-runtime
+diagnostic evidence because its mandatory usage metrics are unavailable.
 
 ## Tasks
 
@@ -29,7 +30,10 @@ primary does not fit, use the explicit 14-run reduced single-repetition pilot.
   evaluation evidence; keep the bundled default retry count unchanged pending separate approval.
 - `[x]` Apply and verify the separately authorized bundled default of three retries.
 - `[!]` Refreeze and execute a fresh 14-run reduced pilot without reusing prior admissions. The r14
-  plan and preflight pass, but cumulative capacity blocks its 21,000,000-token reservation.
+  plan and preflight passed, but cumulative capacity blocked its 21,000,000-token reservation.
+- `[!]` Execute authorized r15 under the added 30,000,000-token ceiling. All 14 bundles validate,
+  but Provider/runtime evidence is incomplete (Morrow 10/10 `FAIL_RUNTIME`; Pi 3/4
+  `FAIL_RUNTIME`, 1/4 `BLOCKED_ENV`), so paired comparison remains blocked.
 - `[x]` Fold frozen isolated Morrow configuration and `build_active()` keyring loading directly into
   admission; do not add a readiness command or model probe.
 

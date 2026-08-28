@@ -12,7 +12,8 @@ Resume Subplan 90 from the consolidated local `main`. First restore the explicit
 required by the frozen Morrow/Pi permission-equivalence contract, then run the complete offline/static
 gate and create a new clean source/profile/evidence pin. If the approved ceiling cannot carry the
 28-run primary, use the explicitly marked 14-run reduced single-repetition pilot; formal admission
-remains gated by preflight and cumulative capacity.
+remains gated by preflight and cumulative capacity. The authorized r15 pilot has completed admission
+and execution, with runtime evidence retained as incomplete provider-diagnostic evidence.
 
 ## 1a. Completed product objective
 
@@ -87,10 +88,11 @@ malformed optional context warns/skips instead of blocking task preparation.
 
 ## 3. Evaluation context and current hold point
 
-The user approved `opencode-go/mimo-v2.5` for both Agents and a hard total ceiling of
-50,000,000 tokens with no currency ceiling. Pi 0.84.2's installed catalog contains the exact model
+The user approved `opencode-go/mimo-v2.5` for both Agents and initially set a hard total ceiling of
+50,000,000 tokens with no currency ceiling, then explicitly added 30,000,000 tokens for the current
+reduced pilot, raising the active ceiling to 80,000,000. Pi 0.84.2's installed catalog contains the exact model
 at the same service endpoint, with a 1,000,000-token context window and 128,000-token maximum
-output. Before a formal paid run, the harness must still freeze and verify:
+output. Before any further formal paid run, the harness must still freeze and verify:
 
 1. Morrow Agent streaming readiness after two identical bounded `internal` failures;
 2. a cost-accounting contract compatible with Morrow's unavailable Provider cost;
@@ -101,10 +103,11 @@ Credential checks must report only readiness and must never request or print cre
 Pi credential readiness and its exact-model no-tool probe pass without exposing or copying the
 credential. Retained formal attempts include known usage and incomplete requests, and the
 conservative reservation for a fresh complete campaign currently exceeds the remaining capacity
-under 50,000,000 tokens before all unknown-usage requests are resolved. No old campaign may be
-resumed or reused. A new plan can be refrozen and audited offline, but formal admission must stop
-until the capacity check passes or the user approves a larger ceiling. The unrelated `docs/notes/`
-work remains preserved in its named recoverable stash.
+under the active 80,000,000-token ceiling before all unknown-usage requests are resolved. The
+reduced r15 plan was freshly pinned and all 14 frozen admissions were executed. Every bundle
+validates, but the live Provider returned no usable Morrow token usage and one Pi stream ended
+without evidence, so the paired comparison remains incomplete. The unrelated `docs/notes/` work
+remains preserved in its named recoverable stash.
 
 ## 4. Execution order
 
@@ -117,7 +120,9 @@ work remains preserved in its named recoverable stash.
    every retained campaign root explicitly into the cumulative budget audit. Use the reduced
    variant's 14-run reservation when the full 28-run primary does not fit.
 5. If capacity and all hold-point facts pass, present the exact formal admission boundary before
-   scheduling; otherwise retain the new plan as blocked evidence and stop.
+   scheduling; otherwise retain the new plan as blocked evidence and stop. The authorized r15
+   reduced pilot has now completed this step; its runtime evidence is retained for provider-side
+   diagnosis and is not promoted to a comparison PASS.
 
 ## 5. Completion
 

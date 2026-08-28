@@ -3811,3 +3811,20 @@
   14-run schedule's conservative `21,000,000` reservation exceeds that remainder by `2,877,509`.
 - Stopped before the first admission. No r14 run key, model request or credential probe was created.
   Lowering the per-run reservation or adding a smaller schedule requires an explicit new decision.
+
+## 2026-08-29 — Authorized r15 reduced pilot executed under 80M ceiling
+
+- The user added `30,000,000` tokens to the prior `50,000,000` ceiling. Created fresh protected
+  evidence root `s7p09-evidence-96772d6-reduced-r15` from source `96772d6`, passed plan-check,
+  preflight and the eight-case permission matrix, and admitted all 14 frozen entries in order.
+- A first execution-only orchestration mistake wrote runner output under the canonical finalization
+  filename, which `finalize_run()` intentionally clears before rebuilding immutable artifacts. No
+  second admission was created; the 14 admitted bundles were rerun through the corrected external
+  runtime-input path.
+- All 14 bundles now revalidate with zero invalid bundles. Morrow has 10/10 `FAIL_RUNTIME` results
+  with one model attempt and unavailable token usage. Pi has 3/4 `FAIL_RUNTIME` results and 1/4
+  `BLOCKED_ENV` after an empty stream/watchdog interruption. The evidence shows no tool calls and no
+  usable Provider response; the paired comparison correctly remains incomplete rather than treating
+  unavailable usage as zero.
+- Cumulative capacity is `52,877,509 / 80,000,000` tokens, leaving `27,122,491`; no ceiling was
+  exceeded. The pilot is retained as provider-runtime diagnostic evidence, not as an S7P-09 PASS.
