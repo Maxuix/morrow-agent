@@ -25,6 +25,8 @@ primary does not fit, use the explicit 14-run reduced single-repetition pilot.
 - `[!]` Execute the reduced pilot sequentially: the diagnostic root contains 2/14 failed/blocked
   admissions, and the post-fix root contains 1/14 `BLOCKED_ENV` admission. Pause all remaining
   entries until Provider usage/runtime reliability is repaired and the plan is refrozen.
+- `[x]` Port Pi's transient Provider retry boundary and preserve unavailable usage as partial
+  evaluation evidence; keep the bundled default retry count unchanged pending separate approval.
 - `[x]` Fold frozen isolated Morrow configuration and `build_active()` keyring loading directly into
   admission; do not add a readiness command or model probe.
 

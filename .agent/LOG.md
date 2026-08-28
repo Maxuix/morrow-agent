@@ -3773,3 +3773,20 @@
   passed `61`; the complete offline gate passed `1342 passed, 2 deselected in 91.40s`. `uv sync`,
   Ruff format/check, compileall, CLI help and `git diff --check` also passed. No model request or new
   formal admission was made.
+
+## 2026-08-29 — Pi-aligned Provider retry boundary repaired
+
+- Compared the installed Pi 0.84.2 implementation directly. Morrow now classifies 408, 409, 429,
+  5xx, timeout, connection interruption and premature stream termination as transient while
+  excluding Pi's quota, balance, budget and billing markers.
+- Added an explicit transient-Provider-internal marker. Only confirmed Provider 409/5xx/early-stream
+  internals and typed network/rate-limit/timeout failures retry; ordinary Morrow exceptions and
+  unattributed internal events remain terminal. Partial stream progress no longer suppresses the
+  safe model-turn retry. Compaction summary calls use the same typed boundary.
+- The evaluator now preserves unavailable or individually partial token fields as `unavailable`,
+  accepts the remaining per-run runtime evidence, and never fabricates zero usage. Frozen campaign
+  token comparison remains mandatory and reports unknown metrics as incomplete.
+- The ordinary bundled `model_retry_limit` remains one; no bundled policy default changed. Focused
+  affected tests passed `194` with one explicit Live test skipped. The complete offline gate passed
+  `1363 passed, 2 deselected in 87.74s`; `uv sync`, Ruff format/check, compileall, CLI help,
+  evaluator self-check and `git diff --check` passed. No Live request or formal admission occurred.

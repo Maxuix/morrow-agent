@@ -297,11 +297,25 @@ class OverflowProvider:
 
 
 class CompactionRetryProvider(OverflowProvider):
+    def __init__(
+        self,
+        code: ModelErrorCode = ModelErrorCode.RATE_LIMIT,
+        *,
+        transient_internal: bool = False,
+    ) -> None:
+        super().__init__()
+        self.code = code
+        self.transient_internal = transient_internal
+
     async def complete(self, model, messages):
         del model, messages
         self.complete_calls += 1
         if self.complete_calls <= 2:
-            raise ModelProviderError(ModelErrorCode.RATE_LIMIT, "summary retry")
+            raise ModelProviderError(
+                self.code,
+                "summary retry",
+                transient_internal=self.transient_internal,
+            )
         return json.dumps(
             {
                 "goal": "continue the task",
@@ -383,9 +397,16 @@ async def test_v2_compaction_rechecks_threshold_before_model_admission():
     assert events[-1].payload["stop_code"] == AgentStopCode.CONTEXT_BUDGET.value
 
 
+@pytest.mark.parametrize(
+    ("code", "transient_internal"),
+    [
+        (ModelErrorCode.RATE_LIMIT, False),
+        (ModelErrorCode.INTERNAL, True),
+    ],
+)
 @pytest.mark.asyncio
-async def test_compaction_summary_uses_bounded_transient_retries():
-    provider = CompactionRetryProvider()
+async def test_compaction_summary_uses_bounded_transient_retries(code, transient_internal):
+    provider = CompactionRetryProvider(code, transient_internal=transient_internal)
     delays: list[float] = []
     policy = _v2_policy(context_window_tokens=1_024, reserve_tokens=64, keep_recent_tokens=40)
     session = Session(session_id="s")

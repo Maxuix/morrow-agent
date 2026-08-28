@@ -1,7 +1,8 @@
 # S7P-09 Repeated Direct/Pi Baseline — Offline Harness Evidence
 
-> Status: Phase A offline harness/runners, Morrow Provider repair and explicit permission-denial
-> repair verified; model and Token budget approved; formal campaign pending final immutable pins.
+> Status: Phase A offline harness/runners, Pi-aligned Morrow Provider retry repair and explicit
+> permission-denial repair verified; model and Token budget approved; formal campaign pending final
+> immutable pins.
 > This is not an S7P-09 PASS claim.
 
 ## Scope and boundary
@@ -143,3 +144,28 @@ isolated config from the frozen Provider/service/model selection and matching co
 reference, calls existing `build_active()`, and only then creates the immutable admission. This
 load performs no model request or no-tool probe. Configuration failure consumes no run key. The
 paused two-run campaign remains diagnostic evidence and is not resumed after this source change.
+
+The post-fix pilot then exposed a second Provider boundary: 409/5xx and premature stream endings
+were normalized as terminal `internal`, partial stream progress disabled retry, and the evaluator
+rejected the whole safe trace when aggregate Provider usage was unavailable. The repaired adapter
+matches Pi's transient classes for 408, 409, 429, 5xx, timeout, connection interruption and early
+stream termination, while explicit quota, balance and billing failures remain terminal. A transient
+`internal` now requires an explicit Provider-origin marker, so ordinary Morrow exceptions and
+unattributed internal events do not retry. Per-run evaluation accepts known tool/runtime evidence
+with token fields left as `unavailable`; it never substitutes zero. Frozen campaign comparison still
+reports mandatory unknown token metrics as incomplete. The ordinary bundled retry default remains
+one pending separate authorization to change it to Pi's three.
+
+## Offline validation on 2026-08-29
+
+| Command | Result |
+|---|---|
+| Focused Provider/runtime/evaluator tests | passed; 194 tests, one explicit Live test skipped |
+| `uv run pytest -m 'not live'` | passed; 1363 tests, 2 Live tests deselected, 87.74 s |
+| `uv run ruff format --check .` / `uv run ruff check .` | passed; 494 files formatted |
+| `uv run python -m compileall -q src tests evals/code-agent-mini` | passed |
+| Morrow and evaluator CLI help | passed |
+| `uv run python evals/code-agent-mini/eval.py self-check` | passed; 10 baselines failed and 10 Gold states passed |
+| `git diff --check` | passed |
+
+No Live Provider request or formal admission was made by this repair validation.

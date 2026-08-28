@@ -28,6 +28,21 @@ from morrow.core.runtime_policy import REVIEW_MAX_TIMEOUT_SECONDS
 
 _PROVIDER_SAFE_INTEGER = 2**53 - 1
 _INTEGER_BOUND_KEYWORDS = frozenset({"minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum"})
+_NON_RETRYABLE_PROVIDER_LIMIT_MARKERS = (
+    "gousagelimiterror",
+    "freeusagelimiterror",
+    "monthly usage limit reached",
+    "available balance",
+    "insufficient balance",
+    "insufficient_quota",
+    "out of budget",
+    "quota exceeded",
+    "billing",
+)
+
+
+class _ProviderStreamEndedEarly(RuntimeError):
+    """A Provider stream closed without its required terminal signal."""
 
 
 def normalize_tool_schema(value):
@@ -303,13 +318,43 @@ def _retry_after_seconds(error: BaseException) -> float | None:
     return None
 
 
+def _provider_status(error: BaseException) -> int | None:
+    for name in ("status_code", "status"):
+        value = getattr(error, name, None)
+        if isinstance(value, int) and not isinstance(value, bool):
+            return value
+    return None
+
+
+def _has_terminal_provider_limit(errors: tuple[BaseException, ...]) -> bool:
+    return any(
+        marker in str(item).casefold()
+        for item in errors
+        for marker in _NON_RETRYABLE_PROVIDER_LIMIT_MARKERS
+    )
+
+
+def _is_transient_provider_internal(error: BaseException) -> bool:
+    errors = _error_chain(error)
+    if _has_terminal_provider_limit(errors):
+        return False
+    return any(
+        isinstance(item, _ProviderStreamEndedEarly)
+        or (status := _provider_status(item)) == 409
+        or (status is not None and status >= 500)
+        for item in errors
+    )
+
+
 def classify_error(error: BaseException) -> ModelErrorCode:
     errors = _error_chain(error)
     for item in errors:
         if isinstance(item, ModelProviderError):
             return item.code
+    if _has_terminal_provider_limit(errors):
+        return ModelErrorCode.INVALID_RESPONSE
     if any(
-        getattr(item, "status_code", None) in (401, 403) or "auth" in type(item).__name__.casefold()
+        _provider_status(item) in (401, 403) or "auth" in type(item).__name__.casefold()
         for item in errors
     ):
         return ModelErrorCode.AUTH
@@ -325,16 +370,22 @@ def classify_error(error: BaseException) -> ModelErrorCode:
                 "prompt is too long",
             )
         )
-        or getattr(item, "status_code", None) == 413
+        or _provider_status(item) == 413
         for item in errors
     ):
         return ModelErrorCode.CONTEXT_OVERFLOW
+    if any(_provider_status(item) == 408 for item in errors):
+        return ModelErrorCode.TIMEOUT
     if any(
-        getattr(item, "status_code", None) == 429 or "rate" in type(item).__name__.casefold()
+        (status := _provider_status(item)) == 409 or (status is not None and status >= 500)
         for item in errors
     ):
+        return ModelErrorCode.INTERNAL
+    if any(
+        _provider_status(item) == 429 or "rate" in type(item).__name__.casefold() for item in errors
+    ):
         return ModelErrorCode.RATE_LIMIT
-    if any(getattr(item, "status_code", None) in (400, 404, 422) for item in errors):
+    if any(_provider_status(item) in (400, 402, 404, 422) for item in errors):
         return ModelErrorCode.INVALID_RESPONSE
     if any(
         isinstance(item, TimeoutError) or "timeout" in type(item).__name__.casefold()
@@ -412,6 +463,9 @@ async def discover_openai_compatible_models(config, credential: str) -> tuple[Di
             code,
             provider_error_message(code),
             retry_after_seconds=_retry_after_seconds(exc),
+            transient_internal=(
+                code is ModelErrorCode.INTERNAL and _is_transient_provider_internal(exc)
+            ),
         ) from None
     finally:
         await _close_client(client)
@@ -551,8 +605,7 @@ class OpenAICompatibleProvider:
                     finish_seen = True
                     finish_signal = finish
             if not finish_seen or completed_reason is None:
-                accumulator.build()
-                raise ValueError("model response is missing a normal end signal")
+                raise _ProviderStreamEndedEarly("model response is missing a normal end signal")
             yield ModelEvent(
                 kind="completed",
                 finish_reason=completed_reason,
@@ -564,6 +617,13 @@ class OpenAICompatibleProvider:
             raise
         except Exception as exc:
             code = classify_error(exc)
+            if code is ModelErrorCode.INTERNAL and _is_transient_provider_internal(exc):
+                raise ModelProviderError(
+                    code,
+                    provider_error_message(code),
+                    retry_after_seconds=_retry_after_seconds(exc),
+                    transient_internal=True,
+                ) from None
             yield ModelEvent(
                 kind="error",
                 error_code=code,
@@ -600,6 +660,9 @@ class OpenAICompatibleProvider:
                 code,
                 provider_error_message(code),
                 retry_after_seconds=_retry_after_seconds(exc),
+                transient_internal=(
+                    code is ModelErrorCode.INTERNAL and _is_transient_provider_internal(exc)
+                ),
             ) from None
 
 

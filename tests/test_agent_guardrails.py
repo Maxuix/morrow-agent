@@ -15,6 +15,7 @@ from morrow.core.models import (
     ModelErrorCode,
     ModelEvent,
     ModelFinishReason,
+    ModelProviderError,
     ModelRef,
 )
 from morrow.runtime.agent import AgentLoop
@@ -74,16 +75,77 @@ class _EventProvider:
 
 
 @pytest.mark.asyncio
-async def test_tool_fragment_progress_prevents_transient_retry():
+async def test_provider_transient_retries_after_partial_stream_progress():
     provider = _EventProvider(
-        [[ModelEvent(kind="error", error_code=ModelErrorCode.NETWORK, made_progress=True)]]
+        [
+            [ModelEvent(kind="error", error_code=ModelErrorCode.NETWORK, made_progress=True)],
+            [
+                ModelEvent(
+                    kind="completed",
+                    finish_reason=ModelFinishReason.STOP,
+                    message=AssistantMessage(content="recovered"),
+                )
+            ],
+        ]
     )
     events = await _collect(
         AgentLoop(provider, MODEL, make_context_builder()).run_task(Session(session_id="s"), "go")
     )
-    assert len(provider.stream_calls) == 1
-    assert not any(event.type == "status.changed" for event in events)
-    assert events[-2].payload["stop_code"] == "provider_network"
+    assert len(provider.stream_calls) == 2
+    assert [event.type for event in events].count("status.changed") == 1
+    assert events[-1].payload["finish_reason"] == "stop"
+
+
+@pytest.mark.asyncio
+async def test_only_explicit_transient_provider_internal_retries():
+    class Provider:
+        def __init__(self, failure: Exception) -> None:
+            self.failure = failure
+            self.stream_calls = 0
+
+        async def stream(self, model, messages, tools=()):
+            del model, messages, tools
+            self.stream_calls += 1
+            if self.stream_calls == 1:
+                raise self.failure
+            yield ModelEvent(
+                kind="completed",
+                finish_reason=ModelFinishReason.STOP,
+                message=AssistantMessage(content="recovered"),
+            )
+
+    attributed = Provider(
+        ModelProviderError(
+            ModelErrorCode.INTERNAL,
+            "sanitized",
+            transient_internal=True,
+        )
+    )
+    attributed_events = await _collect(
+        AgentLoop(attributed, MODEL, make_context_builder()).run_task(
+            Session(session_id="attributed"), "go"
+        )
+    )
+    assert attributed.stream_calls == 2
+    assert attributed_events[-1].payload["finish_reason"] == "stop"
+
+    untyped = Provider(RuntimeError("Morrow internal failure"))
+    untyped_events = await _collect(
+        AgentLoop(untyped, MODEL, make_context_builder()).run_task(
+            Session(session_id="untyped"), "go"
+        )
+    )
+    assert untyped.stream_calls == 1
+    assert untyped_events[-2].payload["stop_code"] == "internal"
+
+    unattributed = _EventProvider([[ModelEvent(kind="error", error_code=ModelErrorCode.INTERNAL)]])
+    unattributed_events = await _collect(
+        AgentLoop(unattributed, MODEL, make_context_builder()).run_task(
+            Session(session_id="unattributed"), "go"
+        )
+    )
+    assert len(unattributed.stream_calls) == 1
+    assert unattributed_events[-2].payload["stop_code"] == "internal"
 
 
 @pytest.mark.asyncio

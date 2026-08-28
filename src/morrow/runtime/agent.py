@@ -87,6 +87,7 @@ class ModelCallOutcome(ProtocolModel):
     error_code: ModelErrorCode | None = None
     error_message: str | None = None
     retry_after_seconds: float | None = None
+    transient_provider_internal: bool = False
     usage: ModelUsage = ModelUsage.unavailable()
     cost: ModelCost = ModelCost.unavailable()
 
@@ -97,7 +98,6 @@ class ModelCallRunner:
     def __init__(self, provider: ModelProvider, model: ModelRef) -> None:
         self.provider = provider
         self.model = model
-        self._made_progress = False
         self._outcome = ModelCallOutcome()
 
     async def attempt(
@@ -105,16 +105,12 @@ class ModelCallRunner:
         messages: list[Message],
         tools: tuple[ToolDefinition, ...] = (),
     ) -> AsyncIterator[ModelEvent]:
-        self._made_progress = False
         self._outcome = ModelCallOutcome()
         try:
             async for model_event in self.provider.stream(self.model, messages, tools):
-                if model_event.kind == "text_delta" and model_event.text:
-                    self._made_progress = True
-                elif model_event.kind == "completed":
+                if model_event.kind == "completed":
                     self._outcome = self._classify_completion(model_event)
                 elif model_event.kind == "error":
-                    self._made_progress = self._made_progress or model_event.made_progress
                     error_code = model_event.error_code or ModelErrorCode.INTERNAL
                     self._outcome = ModelCallOutcome(
                         error_code=error_code,
@@ -138,6 +134,7 @@ class ModelCallRunner:
                 error_code=exc.code,
                 error_message=provider_error_message(exc.code),
                 retry_after_seconds=_bounded_retry_after(exc.retry_after_seconds),
+                transient_provider_internal=exc.transient_internal,
                 usage=self._outcome.usage,
                 cost=self._outcome.cost,
             )
@@ -152,10 +149,6 @@ class ModelCallRunner:
     @property
     def outcome(self) -> ModelCallOutcome:
         return self._outcome
-
-    @property
-    def made_progress(self) -> bool:
-        return self._made_progress
 
     @staticmethod
     def _classify_completion(model_event: ModelEvent) -> ModelCallOutcome:
@@ -205,6 +198,20 @@ def _bounded_retry_after(value: float | None) -> float | None:
         return min(value, 60.0)
     except (TypeError, ValueError):
         return None
+
+
+def _retryable_provider_outcome(outcome: ModelCallOutcome) -> bool:
+    """Retry typed transient failures, plus only explicitly attributed Provider internals."""
+
+    return outcome.error_code in TRANSIENT_MODEL_ERRORS or (
+        outcome.error_code is ModelErrorCode.INTERNAL and outcome.transient_provider_internal
+    )
+
+
+def _retryable_provider_exception(error: ModelProviderError) -> bool:
+    return error.code in TRANSIENT_MODEL_ERRORS or (
+        error.code is ModelErrorCode.INTERNAL and error.transient_internal
+    )
 
 
 def _canonical_json_or_text(value: str) -> str:
@@ -665,7 +672,7 @@ class AgentLoop:
                     raise ContextBudgetError("上下文压缩请求超过模型上下文限制") from None
                 if (
                     not policy.retry_enabled
-                    or exc.code not in TRANSIENT_MODEL_ERRORS
+                    or not _retryable_provider_exception(exc)
                     or retry_count >= policy.max_retries
                 ):
                     raise
@@ -1447,10 +1454,8 @@ class AgentLoop:
                         if policy.is_long_horizon and policy.retry_enabled
                         else (policy.model_retry_limit or 0)
                     )
-                    can_retry = (
-                        not runner.made_progress
-                        and state.retry_count < retry_limit
-                        and outcome.error_code in TRANSIENT_MODEL_ERRORS
+                    can_retry = state.retry_count < retry_limit and _retryable_provider_outcome(
+                        outcome
                     )
                     if can_retry:
                         state.retry_count += 1

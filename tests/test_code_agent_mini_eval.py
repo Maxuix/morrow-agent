@@ -1312,6 +1312,82 @@ def test_morrow_runner_keeps_provider_usage_when_unbounded_cost_is_unavailable()
     assert evidence["usage"]["cost"] == "unavailable"
 
 
+def test_morrow_runner_preserves_unavailable_usage_as_partial_evidence() -> None:
+    metrics = {
+        "finish_reason": "error",
+        "stop_code": "internal",
+        "model_attempts": 3,
+        "retry_count": 1,
+        "compaction_count": 0,
+        "overflow_recovery_count": 0,
+        "usage": {
+            "availability": "unavailable",
+            "input_tokens": None,
+            "output_tokens": None,
+            "total_tokens": None,
+        },
+        "cost": {
+            "availability": "unavailable",
+            "amount_minor": None,
+            "currency": None,
+            "source": None,
+        },
+    }
+
+    projected = eval_module.project_morrow_safe_trace(
+        events=[], tool_cycles=[], facts=(), metrics=metrics, duration_ms=50
+    )
+    assert projected["usage"] == {
+        "input_tokens": "unavailable",
+        "output_tokens": "unavailable",
+        "total_tokens": "unavailable",
+        "cost": "unavailable",
+    }
+
+    normalized = eval_module.normalize_morrow_trace(projected)
+    evidence = eval_module.runtime_evidence_from_normalized_trace(normalized)
+
+    assert evidence["availability"] == "available"
+    assert evidence["usage"]["total_tokens"] == "unavailable"
+    assert evidence["usage"]["duration_ms"] == 50
+    assert evidence["usage"]["rounds"] == 3
+    assert evidence["stop"]["code"] == "runtime_failed"
+    assert eval_module._runtime_evidence_complete(evidence) is True
+
+
+def test_morrow_runner_accepts_individually_available_usage_fields() -> None:
+    metrics = {
+        "finish_reason": "error",
+        "stop_code": "internal",
+        "model_attempts": 1,
+        "retry_count": 0,
+        "compaction_count": 0,
+        "overflow_recovery_count": 0,
+        "usage": {
+            "availability": "available",
+            "input_tokens": 100,
+            "output_tokens": None,
+            "total_tokens": None,
+        },
+        "cost": {
+            "availability": "unavailable",
+            "amount_minor": None,
+            "currency": None,
+            "source": None,
+        },
+    }
+
+    projected = eval_module.project_morrow_safe_trace(
+        events=[], tool_cycles=[], facts=(), metrics=metrics, duration_ms=50
+    )
+    normalized = eval_module.normalize_morrow_trace(projected)
+    evidence = eval_module.runtime_evidence_from_normalized_trace(normalized)
+
+    assert evidence["usage"]["input_tokens"] == 100
+    assert evidence["usage"]["output_tokens"] == "unavailable"
+    assert evidence["usage"]["total_tokens"] == "unavailable"
+
+
 def test_permission_equivalence_and_evaluation_approval_contract(tmp_path: Path) -> None:
     from morrow.core.models import ToolApprovalRequest, ToolEffect
 

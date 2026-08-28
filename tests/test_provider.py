@@ -566,10 +566,18 @@ async def test_adapter_rejects_non_normal_finish_as_invalid_response(finish):
 async def test_adapter_rejects_missing_finish_signal():
     provider = provider_with_stream(AsyncChunks([stream_chunk(text="partial")]))
 
-    events = await collect_stream(provider)
+    stream = provider.stream(
+        ModelRef(provider_id="p", model_id="m"),
+        [UserMessage(content="hello")],
+        (),
+    )
+    first = await anext(stream)
+    with pytest.raises(ModelProviderError) as exc_info:
+        await anext(stream)
 
-    assert [event.kind for event in events] == ["text_delta", "error"]
-    assert events[-1].error_code == ModelErrorCode.INVALID_RESPONSE
+    assert first.kind == "text_delta"
+    assert exc_info.value.code is ModelErrorCode.INTERNAL
+    assert exc_info.value.transient_internal is True
 
 
 @pytest.mark.asyncio
@@ -993,10 +1001,68 @@ def test_tool_schema_wire_clamps_non_interoperable_integer_bounds_without_mutati
     assert schema["properties"]["offset"]["maximum"] == 10**309 - 1
 
 
-@pytest.mark.parametrize("status_code", [400, 404, 422])
+@pytest.mark.parametrize("status_code", [400, 402, 404, 422])
 def test_adapter_classifies_provider_request_rejections_as_invalid_response(status_code):
     error = RuntimeError("provider rejected request")
     error.status_code = status_code
+
+    assert classify_error(error) is ModelErrorCode.INVALID_RESPONSE
+
+
+@pytest.mark.parametrize(
+    ("status_code", "expected"),
+    [
+        (408, ModelErrorCode.TIMEOUT),
+        (409, ModelErrorCode.INTERNAL),
+        (429, ModelErrorCode.RATE_LIMIT),
+        (500, ModelErrorCode.INTERNAL),
+        (502, ModelErrorCode.INTERNAL),
+        (503, ModelErrorCode.INTERNAL),
+        (504, ModelErrorCode.INTERNAL),
+        (524, ModelErrorCode.INTERNAL),
+    ],
+)
+def test_adapter_classifies_pi_transient_provider_statuses(status_code, expected):
+    error = RuntimeError("provider request failed")
+    error.status_code = status_code
+
+    assert classify_error(error) is expected
+
+
+@pytest.mark.asyncio
+async def test_adapter_marks_server_internal_as_confirmed_provider_transient():
+    class FailingCompletions:
+        async def create(self, **kwargs):
+            del kwargs
+            error = RuntimeError("provider request failed")
+            error.status_code = 503
+            raise error
+
+    provider = OpenAICompatibleProvider("https://example.test", "credential-sentinel")
+    provider._client = SimpleNamespace(chat=SimpleNamespace(completions=FailingCompletions()))
+
+    with pytest.raises(ModelProviderError) as exc_info:
+        await collect_stream(provider)
+
+    assert exc_info.value.code is ModelErrorCode.INTERNAL
+    assert exc_info.value.transient_internal is True
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "GoUsageLimitError",
+        "Monthly usage limit reached; enable available balance",
+        "insufficient_quota",
+        "out of budget",
+        "quota exceeded",
+        "billing is not active",
+        "insufficient balance",
+    ],
+)
+def test_adapter_does_not_classify_terminal_provider_limits_as_retryable(message):
+    error = RuntimeError(message)
+    error.status_code = 429
 
     assert classify_error(error) is ModelErrorCode.INVALID_RESPONSE
 

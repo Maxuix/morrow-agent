@@ -1948,7 +1948,6 @@ def _runtime_evidence_complete(runtime: Mapping[str, object]) -> bool:
         for section in (
             runtime["tool_states"],
             runtime["tool_diagnostics"],
-            runtime["usage"],
         )
         for value in section.values()
     )
@@ -3433,14 +3432,14 @@ def normalize_morrow_trace(trace: Mapping[str, object]) -> dict[str, object]:
             )
         ),
         usage={
-            "input_tokens": int(
-                _required_number(usage["input_tokens"], "Morrow input tokens", integer=True)
+            "input_tokens": _number_or_unavailable(
+                usage["input_tokens"], "Morrow input tokens", integer=True
             ),
-            "output_tokens": int(
-                _required_number(usage["output_tokens"], "Morrow output tokens", integer=True)
+            "output_tokens": _number_or_unavailable(
+                usage["output_tokens"], "Morrow output tokens", integer=True
             ),
-            "total_tokens": int(
-                _required_number(usage["total_tokens"], "Morrow total tokens", integer=True)
+            "total_tokens": _number_or_unavailable(
+                usage["total_tokens"], "Morrow total tokens", integer=True
             ),
             "cost": (
                 "unavailable"
@@ -3733,8 +3732,20 @@ def project_morrow_safe_trace(
     terminal_metrics = _mapping(terminal_metrics, "Morrow terminal metrics")
     usage = _mapping(terminal_metrics.get("usage"), "Morrow terminal usage")
     cost = _mapping(terminal_metrics.get("cost"), "Morrow terminal cost")
-    if usage.get("availability") != "available":
-        raise EvalError("Morrow Provider usage is unavailable")
+    normalized_usage: dict[str, int | str] = {
+        "input_tokens": "unavailable",
+        "output_tokens": "unavailable",
+        "total_tokens": "unavailable",
+    }
+    if usage.get("availability") == "available":
+        normalized_usage = {
+            field: _number_or_unavailable(
+                usage.get(field) if usage.get(field) is not None else "unavailable",
+                f"Morrow {field}",
+                integer=True,
+            )
+            for field in normalized_usage
+        }
     normalized_cost: float | str = "unavailable"
     if cost.get("availability") == "available":
         normalized_cost = float(cost["amount_minor"]) / 100.0
@@ -3757,9 +3768,7 @@ def project_morrow_safe_trace(
         "overflow_recoveries": int(terminal_metrics.get("overflow_recovery_count", 0)),
         "retries": int(terminal_metrics.get("retry_count", 0)),
         "usage": {
-            "input_tokens": usage.get("input_tokens"),
-            "output_tokens": usage.get("output_tokens"),
-            "total_tokens": usage.get("total_tokens"),
+            **normalized_usage,
             "cost": normalized_cost,
         },
         "duration_ms": duration_ms,

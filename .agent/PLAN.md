@@ -73,6 +73,11 @@ malformed optional context warns/skips instead of blocking task preparation.
   compaction IDs cannot fail randomly. No prior source pin may be reused.
 - Raw events, reasoning, full tool payloads, credentials and tracebacks stay outside Git. Only
   bounded normalized evidence, hashes, summaries and the baseline record are committed.
+- Provider retry follows Pi's transient boundary for 408, 409, 429, 5xx, timeout, connection
+  interruption and premature stream termination, while quota/balance/billing and unattributed
+  Morrow internals remain terminal. Partial usage stays explicitly unavailable in evaluation.
+- The ordinary bundled `model_retry_limit` remains one. Changing it to Pi's three requires separate
+  user confirmation and is not part of the current repair.
 - S7P-09 measures the frozen Agent. It does not tune thresholds/tasks after results, restore the
   removed CompletionChecker or begin Workflow/S7P-10 work.
 - Morrow admission generates its minimal isolated configuration directly from the frozen

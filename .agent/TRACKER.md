@@ -5,17 +5,15 @@
 Subplan 90 was explicitly resumed from the consolidated local `main`. The harness self-check,
 permission matrix, historical capacity audit, reduced-plan preflight and capacity check passed.
 The explicit risk-denial repair, cumulative prior-campaign capacity guard, full reservation check
-and explicit 14-run reduced single-repetition variant are implemented; the focused evaluator suite
-passed `61`, and the complete offline gate passed `1342 passed, 2 deselected`.
+and explicit 14-run reduced single-repetition variant are implemented. Pi-aligned transient Provider
+classification and partial-usage evaluation are now also implemented; focused affected tests passed
+`194`, and the complete offline gate passed `1363 passed, 2 deselected`.
 
 ## Active task
 
-The admission boundary repair is implemented and verified. Morrow entries generate a minimal
-isolated config from the frozen Provider/service/model selection, preserve only the matching
-configured Keychain reference, and call existing `build_active()` before creating the admission.
-The fresh post-fix plan passed plan-check, preflight and cumulative capacity. Its first Morrow
-admission was then finalized as `BLOCKED_ENV` because the Provider stopped reporting usage; no
-successful comparable observation was produced.
+The Provider retry repair is verified. A new reduced-pilot source/profile/evidence pin may be
+prepared offline, but no prior admission or run key may be reused. A new formal execution still
+requires the plan's explicit admission authorization.
 
 ## Implemented boundary
 
@@ -42,13 +40,13 @@ successful comparable observation was produced.
 
 ## Next action
 
-Preserve both diagnostic evidence roots. The post-fix reduced campaign is paused at 1/14 after a
-`BLOCKED_ENV` Morrow run; any later formal execution requires a fresh current-source plan and
-explicit authorization, and must not reuse either root's admissions or run keys.
+Commit the verified Provider/evaluator repair. Then preserve both diagnostic evidence roots and
+refreeze a fresh reduced plan from the new source. Any formal execution requires explicit admission
+authorization and must not reuse either root's admissions or run keys.
 
 ## Blockers
 
 - The full 28-run primary remains over the approved 50,000,000-token ceiling after retained usage.
-  The reduced plan still fits conservatively, but the post-fix first run remains blocked by
-  Provider usage unavailability after isolated configuration and verifier-environment fixes. No
-  later entries were admitted; the pilot is not complete and cannot claim a comparison result.
+  The reduced plan fit at its previous source pin, but the post-fix first run remains retained as
+  blocked historical evidence. No later entries were admitted; a new source pin and capacity audit
+  are required, and the pilot is not complete or a comparison result.

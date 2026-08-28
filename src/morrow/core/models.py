@@ -431,11 +431,19 @@ NormalizedCost = ModelCost
 
 class ModelProviderError(RuntimeError):
     def __init__(
-        self, code: ModelErrorCode, message: str, *, retry_after_seconds: float | None = None
+        self,
+        code: ModelErrorCode,
+        message: str,
+        *,
+        retry_after_seconds: float | None = None,
+        transient_internal: bool = False,
     ) -> None:
+        if transient_internal and code is not ModelErrorCode.INTERNAL:
+            raise ValueError("transient_internal requires the internal Provider error code")
         super().__init__(message)
         self.code = code
         self.retry_after_seconds = retry_after_seconds
+        self.transient_internal = transient_internal
 
 
 def provider_error_message(code: ModelErrorCode, *, phase: str | None = None) -> str:
