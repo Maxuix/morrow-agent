@@ -335,7 +335,11 @@ class TurnSubmissionCoordinator:
                 if current_task.status is TaskRunStatus.READY_FOR_ACCEPTANCE:
                     follow_up_task = current_task
                 elif current_task.status is TaskRunStatus.FAILED:
-                    raise RuntimeError("failed TaskRun requires explicit resume")
+                    raise ApplicationError(
+                        ApplicationErrorCode.INVALID,
+                        "当前 TaskRun 已失败；请先运行 "
+                        f"`morrow task resume {current_task.task_run_id}`，再继续此 Session。",
+                    )
                 elif current_task.status.is_terminal:
                     task_id = None
             if task_id is None:

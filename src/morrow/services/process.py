@@ -438,6 +438,7 @@ def _command_class(executable: str, *, shell: bool) -> str:
 
 
 _SHELL_CONTROL = re.compile(r"[;&|<>$`(){}\[\]\n\r]")
+_ENV_ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=.*$")
 _PYTHON_NAMES = frozenset({"python", "python3", "python3.12", "python3.13"})
 
 
@@ -463,11 +464,14 @@ def _recognized_validation(
         if shell_source is not None and _SHELL_CONTROL.search(shell_source):
             return None, None
         raw = " ".join(tokens)
-        if _SHELL_CONTROL.search(raw) or not tokens or any("=" in token for token in tokens[:1]):
+        if _SHELL_CONTROL.search(raw) or not tokens:
             return None, None
         if Path(tokens[0]).name.casefold() in _SHELL_INTERPRETERS:
             return None, None
-    normalized = _unwrap_validation_tokens(tokens)
+    command_tokens = tokens
+    while command_tokens and _ENV_ASSIGNMENT.fullmatch(command_tokens[0]):
+        command_tokens = command_tokens[1:]
+    normalized = _unwrap_validation_tokens(command_tokens)
     if normalized is None:
         return None, None
     kind, operands, option_family = normalized

@@ -36,9 +36,20 @@ VALIDATOR_COMMAND_SPECS: tuple[ValidatorCommandSpec, ...] = (
     ),
     ValidatorCommandSpec(
         executable="unittest",
-        actions=(((), "unittest"),),
+        actions=((("discover",), "unittest"), ((), "unittest")),
         allowed_flags=frozenset(
-            {"-v", "--verbose", "-q", "--quiet", "-f", "--failfast", "-b", "--buffer"}
+            {
+                "-v",
+                "--verbose",
+                "-q",
+                "--quiet",
+                "-f",
+                "--failfast",
+                "-b",
+                "--buffer",
+                "-s",
+                "--start-directory",
+            }
         ),
     ),
     ValidatorCommandSpec(
