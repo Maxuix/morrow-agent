@@ -3639,4 +3639,5 @@
   quarantine were removed.
 - Focused production regressions passed through the implementation cycle. The final full offline
   gate passed `1339 passed, 2 deselected in 81.44s`; Ruff format/check, compileall, CLI help and
-  `git diff --check` also passed. No live test or evaluation admission ran.
+  `git diff --check` also passed. No live test or evaluation admission ran. Verified implementation
+  was committed as `b26b884`; unrelated untracked `docs/notes/` was not staged.

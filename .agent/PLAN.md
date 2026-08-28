@@ -1,6 +1,6 @@
 # Pi-first Core Agent Loop Simplification
 
-> Status: active; implementation and validation complete, checkpoint in progress
+> Status: completed at `b26b884`; S7P-09 evaluation remains paused
 > Paused subplan: Subplan 90 — S7P-09 Repeated Direct Evaluation and Same-Condition Pi Baseline
 > Branch: `feat/s7p-09-direct-pi-baseline`
 > Execution worktree branch: `feat/s7p-09-direct-pi-baseline-run` (intentional clean-pin stack)

@@ -5,12 +5,12 @@
 The user paused the S7P-09 evaluation direction and requested a Pi-like usable core loop before
 additional protection layers. Production changes and regressions are implemented. Final validation
 passed: `1339 passed, 2 deselected`; Ruff format/check, compileall, CLI help and `git diff --check`
-also passed.
+also passed. The verified implementation checkpoint is `b26b884`.
 
 ## Active task
 
-Commit the verified repair without adding the unrelated untracked `docs/notes/`, then record the
-checkpoint and stop. Do not merge or resume evaluation without explicit user authorization.
+Stop after recording checkpoint `b26b884`. Do not merge or resume evaluation without explicit user
+authorization; unrelated untracked `docs/notes/` remains untouched.
 
 ## Implemented boundary
 
@@ -27,7 +27,8 @@ checkpoint and stop. Do not merge or resume evaluation without explicit user aut
 
 ## Next action
 
-Create the verified commit and record its hash in execution state.
+Await user direction. A future evaluation must refreeze its permission/evidence contract from the
+new core behavior rather than reuse an older S7P-09 pin.
 
 ## Blockers
 

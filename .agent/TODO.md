@@ -16,7 +16,7 @@ execution is paused by the current user request.
 - `[x]` Replace task-derived nested instruction discovery with one root availability-first load.
 - `[x]` Update focused tests, architecture, roadmap and stale acceptance selectors.
 - `[x]` Run the complete offline/static/CLI/diff validation gate and record final evidence.
-- `[>]` Commit the verified repair as one coherent checkpoint; do not merge or resume evaluation
+- `[x]` Commit the verified repair as one coherent checkpoint; do not merge or resume evaluation
   without explicit authorization.
 
 ## Boundaries
