@@ -1,6 +1,6 @@
 # Stage 7 Preflight Reliability — S7P-09 Repeated Direct/Pi Baseline
 
-> Status: active; adapter repair and 50M token ceiling approved, refreezing clean live campaign
+> Status: active; prompt/context repairs and 50M token ceiling approved, refreezing clean campaign
 > Active subplan: Subplan 90 — S7P-09 Repeated Direct Evaluation and Same-Condition Pi Baseline
 > Branch: `feat/s7p-09-direct-pi-baseline`
 > Execution worktree branch: `feat/s7p-09-direct-pi-baseline-run` (intentional clean-pin stack)
@@ -33,6 +33,10 @@ retention policy are owned by activated Subplan 90.
   `direct-coding/v2` keeps one concise execution-side permission statement and expresses the rest
   as positive action guidance. It must be included in the next clean source/profile pin before any
   new admission.
+- The user-requested context/compaction resilience repair is also frozen before the next admission:
+  explicit long-horizon runs without exact window metadata use the conservative character budget,
+  Provider summary presentation noise is normalized before strict durable validation, and URL-safe
+  compaction IDs cannot fail randomly. No prior source pin may be reused.
 - Raw events, reasoning, full tool payloads, credentials and tracebacks stay outside Git. Only
   bounded normalized evidence, hashes, summaries and the baseline record are committed.
 - S7P-09 measures the frozen Agent. It does not tune thresholds/tasks after results, restore the

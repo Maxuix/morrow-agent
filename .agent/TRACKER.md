@@ -7,14 +7,15 @@ Subplan 90 remains active. The Pi 0.84.2 runtime-event adapter repair is verifie
 continued or reused. The user approved a 50,000,000-token total ceiling and a recoverable stash of
 the unrelated notes. The user-requested positive-action Direct Coding prompt is verified and
 committed at `59c87f9` as profile `direct-coding/v2`; the next campaign must use a new clean source
-and profile pin containing this change.
+and profile pin containing this change. The subsequent user-requested context/compaction resilience
+repair is verified and committed at `ccecce7`; it also invalidates every earlier campaign source pin.
 
 ## Active task
 
-Create the recorded clean execution worktree branch from the new prompt-v2 commit, refreeze
-source/profile/plan pins there, and start a fresh campaign. The original checkout remains available
-to the external notes writer; the initial notes are preserved in a named stash and must be restored
-after the campaign. Pi
+Create the recorded clean execution worktree branch from `ccecce7` plus this execution-state
+record, refreeze source/profile/plan pins there, and start a fresh campaign. The original checkout
+remains available to the external notes writer; the initial notes are preserved in a named stash
+and must be restored after the campaign. Pi
 normalization now supports the observed 0.84.2 `session` event, indexless turn events,
 optional reasoning-token usage, `glob`, and `agent_end` without a semantic stop. The last case is
 truthfully classified `runtime_failed`, not completed or evidence-unavailable.
@@ -66,10 +67,17 @@ truthfully classified `runtime_failed`, not completed or evidence-unavailable.
   CapabilityPolicy, ApprovalPort, sandbox and ToolExecutor. Focused prompt/context tests passed
   `34`; full offline passed `1337` with two live deselections; Ruff format/check, compileall, CLI
   help and diff checks passed.
+- Context compaction now keeps the exact Pi token threshold when model metadata provides it, while
+  explicit long-horizon operation without that metadata uses the existing conservative character
+  request boundary and reports no invented token window. Provider-only summary ingestion accepts
+  common fences/prose/trailing commas/null lists/extras before strict bounded durable validation.
+  A mismatched compaction ID regex that randomly rejected valid `token_urlsafe()` suffixes was also
+  fixed. Focused regressions passed `112`; full offline passed `1343` with two live deselections;
+  Ruff, compileall, CLI help and diff checks passed.
 
 ## Next action
 
-Create the clean execution worktree from `59c87f9` plus this execution-state record, refreeze
+Create the clean execution worktree from `ccecce7` plus this execution-state record, refreeze
 source/profile/plan hashes, pass campaign preflight, and execute a new immutable schedule from
 ordinal 1.
 
