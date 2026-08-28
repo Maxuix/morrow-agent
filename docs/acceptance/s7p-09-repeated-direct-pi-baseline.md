@@ -131,3 +131,8 @@ for the 28-run schedule under the approved `50,000,000` ceiling, before any admi
 request is made.
 The reduced plan is checked separately with its 14-run reservation before any admission or model
 request.
+
+The final reduced-plan check passed: all seven retained campaign roots were included, the current
+plan preflight passed, and `27,577,509 + 21,000,000 = 48,577,509` remained below the approved
+`50,000,000`-token ceiling. No admission or model request was created; the 14-run pilot awaits
+explicit start confirmation.

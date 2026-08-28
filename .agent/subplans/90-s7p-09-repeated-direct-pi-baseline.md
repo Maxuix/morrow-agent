@@ -1,6 +1,7 @@
 # Subplan 90 — S7P-09 Repeated Direct Evaluation and Same-Condition Pi Baseline
 
-> Status: active; explicit risk-denial repair verified, refreeze blocked by current 50M capacity
+> Status: active; explicit risk-denial repair verified, reduced pilot is capacity-approved pending
+> explicit start confirmation
 > Branch: `feat/s7p-09-direct-pi-baseline`
 > Activation base: verified local `main@1fd7e229bef276d1a0361e775ce800ade4b318fc`
 > Dependency: Subplan 89 / S7P-08 passed and is integrated locally
@@ -20,6 +21,16 @@ Create the immutable Direct single-Agent baseline required by Stage 7:
 
 The primary campaign contains exactly 28 formal runs: 20 Morrow runs and 8 Pi runs. A run is never
 silently replaced after seeing its result.
+
+The current user-authorized budget fallback is an explicit reduced pilot variant with 14 formal
+runs: all ten Morrow tasks once and the four Pi comparison tasks once. It preserves broad task
+coverage and one paired observation, but it is not a repeated baseline and cannot satisfy the full
+Subplan 90 completion criteria.
+
+The reduced plan passed final offline preflight and cumulative capacity checks. Its 14 conservative
+admissions fit below the approved ceiling after all retained campaign roots are counted. Formal
+admission and model execution remain a separate, sequential step requiring explicit start
+confirmation.
 
 ## 2. Activation facts
 

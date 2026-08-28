@@ -3724,3 +3724,7 @@
   stable-task fields not applicable; it cannot claim repeated-baseline completion.
 - Focused evaluator tests passed `59`; the reduced plan still requires a fresh source/profile/evidence
   pin, complete offline gate and cumulative capacity check before any admission.
+- The final reduced-plan check passed: plan-check and campaign-preflight returned PASS; cumulative
+  accounting included all seven retained roots, with `27,577,509` accounted tokens plus a
+  `21,000,000`-token reservation for 14 admissions at 1.5M each. No admission or model request was
+  created pending explicit start confirmation.

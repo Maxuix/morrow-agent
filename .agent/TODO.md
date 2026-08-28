@@ -20,7 +20,7 @@ primary does not fit, use the explicit 14-run reduced single-repetition pilot.
   the approved ceiling is insufficient.
 - `[x]` Add the explicit 14-run reduced single-repetition plan variant without weakening the default
   28-run primary contract.
-- `[ ]` Refreeze and capacity-check the reduced plan; stop before admission if retained usage still
+- `[x]` Refreeze and capacity-check the reduced plan; stop before admission if retained usage still
   leaves insufficient headroom.
 
 ## Earlier completed tasks
