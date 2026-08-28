@@ -4,17 +4,15 @@
 
 Subplan 90 was explicitly resumed from the consolidated local `main`. The harness self-check,
 permission matrix, historical capacity audit and fresh-plan preflight passed. The explicit
-risk-denial repair, cumulative prior-campaign capacity guard and full remaining-schedule
-reservation check are implemented; the focused evaluator suite passed `57`, and the complete
-offline gate passed `1338 passed, 2 deselected`. Ruff format/check, compileall, CLI help and diff
-checks also passed.
+risk-denial repair, cumulative prior-campaign capacity guard, full reservation check and explicit
+14-run reduced single-repetition variant are implemented; the focused evaluator suite passed `59`,
+and the complete offline gate remains to be rerun after this variant change.
 
 ## Active task
 
-The explicit risk-denial ordering repair, cumulative prior-campaign capacity guard and full
-remaining-schedule reservation check are implemented and verified. A fresh comparison plan was
-validated offline; its cumulative capacity check blocks before admission under the approved
-50,000,000-token ceiling.
+The explicit risk-denial ordering repair, cumulative prior-campaign capacity guard, full
+remaining-schedule reservation check and reduced-variant support are implemented. The reduced
+plan still needs a fresh source/profile/evidence pin and capacity check before admission.
 
 ## Implemented boundary
 
@@ -41,8 +39,8 @@ validated offline; its cumulative capacity check blocks before admission under t
 
 ## Next action
 
-Formal admission is blocked by the approved ceiling. Obtain explicit approval for a larger total
-token ceiling before any model request; do not reuse prior campaign admissions.
+Refreeze the reduced plan and check its 14-run reservation. Formal admission remains blocked until
+that check passes; do not reuse prior campaign admissions.
 
 ## Blockers
 

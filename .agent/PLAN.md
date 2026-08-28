@@ -10,8 +10,9 @@
 
 Resume Subplan 90 from the consolidated local `main`. First restore the explicit denial boundary
 required by the frozen Morrow/Pi permission-equivalence contract, then run the complete offline/static
-gate and create a new clean source/profile/evidence pin. Formal admission remains gated by the
-preflight and the currently approved total-token ceiling.
+gate and create a new clean source/profile/evidence pin. If the approved ceiling cannot carry the
+28-run primary, use the explicitly marked 14-run reduced single-repetition pilot; formal admission
+remains gated by preflight and cumulative capacity.
 
 ## 1a. Completed product objective
 
@@ -38,7 +39,9 @@ malformed optional context warns/skips instead of blocking task preparation.
 
 - The current user request explicitly resumes Subplan 90. The 28-run primary campaign remains
   create-only and cannot start until the new source/profile/evidence plan passes its hold point and
-  capacity check.
+  capacity check. The current user-approved budget fallback is the explicit
+  `reduced-single-repetition-v1` plan variant: 14 runs, all ten Morrow tasks once and the four Pi
+  tasks once. It is a pilot observation and does not complete the repeated primary baseline.
 - Core command parsing and sensitive-keyword scanning are not security boundaries. `git`, shell
   redirection/pipelines, `mv`, `cp`, `tee`, `.env`, `secret`, credential examples and PEM fixtures
   remain ordinary model-visible workspace content.
@@ -102,7 +105,8 @@ work remains preserved in its named recoverable stash.
 3. Refreeze the comparison plan from the current clean source, current profile hashes and protected
    evidence root; do not reuse any prior admission or schedule.
 4. Run offline preflight, permission equivalence and conservative campaign-capacity checks, passing
-   every retained campaign root explicitly into the cumulative budget audit.
+   every retained campaign root explicitly into the cumulative budget audit. Use the reduced
+   variant's 14-run reservation when the full 28-run primary does not fit.
 5. If capacity and all hold-point facts pass, present the exact formal admission boundary before
    scheduling; otherwise retain the new plan as blocked evidence and stop.
 

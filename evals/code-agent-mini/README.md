@@ -19,6 +19,8 @@
 
 `protocol.toml` 是 S7P-00 v1 的权威合同：它冻结七类任务结果、五种独立工具终态、每项
 至少两次重复、必需证据、Stage 7 门槛和四个 Pi 对照任务。修改门槛必须发布新的协议版本。
+预算不足时可以在 comparison plan 中显式选择 reduced single-repetition pilot；它不修改
+S7P-00，也不产生两轮重复基线或统计结论。
 
 `profile.template.json` 是严格的非秘密运行 profile 模板。复制到评测目录之外后填写 Agent、
 Provider/model revision、采样、工具 schema hash、权限、预算、system prompt/project
@@ -111,11 +113,17 @@ PASS；`unavailable` 永远不是零。结果类和工具终态分别汇总，`F
 
 ## S7P-09 Morrow/Pi 重复基线
 
-S7P-09 在上述不可变 bundle 之上增加严格的共同条件计划、28-run counterbalanced schedule、
+S7P-09 默认在上述不可变 bundle 之上增加严格的共同条件计划、28-run counterbalanced schedule、
 Pi 0.84.2 JSONL 归一化、Morrow 安全 trace 归一化、权限等价证明、campaign admission/budget
 边界和机械 paired comparison。模板 `comparison-plan.template.json` 故意不能直接通过校验；
 所有 `REPLACE` 值、两个完整 profile、精确 28 项 schedule 和最终 integrity 都必须在 hold point
 审批后冻结，不能把占位符当作运行默认值。
+
+当预算不支持完整 primary 时，comparison plan 可显式加入
+`"campaign_variant": "reduced-single-repetition-v1"`。该变体固定为 14 次 admission：10 个
+Morrow 任务各一次、4 个 Pi 配对任务各一次；它保留任务覆盖和一次 paired observation，但
+`quality_deficit` 不是稳定重复指标，不能宣称完整 S7P-09 完成或两轮重复结论。默认未填写该
+字段时仍严格要求 28 次 primary schedule。
 
 以下命令全部是离线合同检查，不读取 credential，也不发出模型请求：
 

@@ -26,6 +26,11 @@ task execution or task network access. Approved bounded readiness probes were ru
   protocol/baseline equality, complete required metrics, Morrow protocol gates, stable-task quality deficit,
   Morrow-only basic-tool blockers, total budget and create-only `baseline.json` output.
 
+The default primary remains the deterministic 28-entry schedule. Under the current user-approved
+budget constraint, an explicit `reduced-single-repetition-v1` plan may instead schedule 14 entries:
+all ten Morrow tasks once and the four Pi comparison tasks once. This is a bounded pilot with one
+observation per paired task, not a repeated-baseline or statistical PASS claim.
+
 The next offline slice completed both Agent runners. `run-morrow` uses ordinary
 bootstrap/AgentLoop/ToolExecutor composition with the bounded EvaluationApprovalPort, then projects
 only safe in-memory calls, ToolFacts and terminal metrics. `run-pi` pins Pi 0.84.2's model/tool
@@ -124,3 +129,5 @@ The fresh offline preflight and permission-equivalence check passed. The explici
 counts `27,577,509` retained tokens and rejects the conservative `42,000,000`-token reservation
 for the 28-run schedule under the approved `50,000,000` ceiling, before any admission or model
 request is made.
+The reduced plan is checked separately with its 14-run reservation before any admission or model
+request.

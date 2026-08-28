@@ -3,7 +3,8 @@
 ## Current task
 
 Resume Subplan 90 from the consolidated local `main`, repair the permission-equivalence regression,
-then refreeze and capacity-check a new S7P-09 campaign without reusing prior admissions.
+then refreeze and capacity-check a new S7P-09 campaign without reusing prior admissions. If the full
+primary does not fit, use the explicit 14-run reduced single-repetition pilot.
 
 ## Tasks
 
@@ -17,6 +18,10 @@ then refreeze and capacity-check a new S7P-09 campaign without reusing prior adm
 - `[x]` Refreeze a new current-source comparison plan, profiles and protected evidence root.
 - `[x]` Run preflight and capacity checks with every retained campaign root; stop before admission if
   the approved ceiling is insufficient.
+- `[x]` Add the explicit 14-run reduced single-repetition plan variant without weakening the default
+  28-run primary contract.
+- `[ ]` Refreeze and capacity-check the reduced plan; stop before admission if retained usage still
+  leaves insufficient headroom.
 
 ## Earlier completed tasks
 

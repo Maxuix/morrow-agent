@@ -3713,3 +3713,14 @@
   accounted for `27,577,509` retained tokens and blocked the `42,000,000`-token conservative
   reservation for 28 remaining admissions against the approved `50,000,000` ceiling. No admission
   or model request was created.
+
+## 2026-08-28 — S7P-09 reduced single-repetition pilot selected
+
+- At the user's direction, preserved the immutable 28-run primary contract and added an explicit
+  `reduced-single-repetition-v1` comparison-plan variant. It schedules the first 14 entries only:
+  all ten Morrow tasks once and the four Pi comparison tasks once.
+- Admission order, campaign summary and paired comparison now derive their expected keys from the
+  validated plan schedule. The reduced paired result reports one observation per task and marks
+  stable-task fields not applicable; it cannot claim repeated-baseline completion.
+- Focused evaluator tests passed `59`; the reduced plan still requires a fresh source/profile/evidence
+  pin, complete offline gate and cumulative capacity check before any admission.

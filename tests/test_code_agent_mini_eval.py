@@ -844,6 +844,23 @@ def test_comparison_plan_freezes_exact_counterbalanced_schedule_and_profiles() -
         eval_module.validate_comparison_plan(drifted)
 
 
+def test_comparison_plan_accepts_explicit_reduced_single_repetition_variant() -> None:
+    plan = _comparison_plan()
+    plan["campaign_variant"] = eval_module.REDUCED_CAMPAIGN_VARIANT
+    plan["schedule"] = eval_module.frozen_campaign_schedule(repetitions=(1,))
+    plan["integrity"] = eval_module.content_hash(
+        {key: value for key, value in plan.items() if key != "integrity"}
+    )
+
+    normalized = eval_module.validate_comparison_plan(plan)
+
+    assert normalized["campaign_variant"] == eval_module.REDUCED_CAMPAIGN_VARIANT
+    assert len(normalized["schedule"]) == 14
+    assert sum(entry["agent"] == "morrow" for entry in normalized["schedule"]) == 10
+    assert sum(entry["agent"] == "pi" for entry in normalized["schedule"]) == 4
+    assert {entry["repetition"] for entry in normalized["schedule"]} == {1}
+
+
 def test_comparison_plan_rejects_unknown_sensitive_mixed_and_unapproved_values() -> None:
     unknown = _comparison_plan()
     unknown["extra"] = True
@@ -1644,6 +1661,24 @@ def test_paired_comparison_is_mechanical_and_rejects_quality_or_tool_deficits() 
     morrow[0]["runtime"]["tool_diagnostics"]["basic_tool_blocked"] = 1
     failed = eval_module._paired_comparison_gate(morrow, pi)
     assert any("Morrow-only basic tool blocker" in item for item in failed["diagnostics"])
+
+
+def test_paired_comparison_accepts_single_repetition_reduced_variant() -> None:
+    morrow = [_paired_entry(task_id, 1) for task_id in eval_module.FIXED_PI_TASK_IDS]
+    pi = [_paired_entry(task_id, 1) for task_id in eval_module.FIXED_PI_TASK_IDS]
+
+    result = eval_module._paired_comparison_gate(
+        morrow,
+        pi,
+        task_ids=eval_module.FIXED_PI_TASK_IDS,
+        repetitions=(1,),
+    )
+
+    assert result["status"] == "PASS"
+    assert result["quality_deficit"] == 0
+    assert result["morrow_stable_task_passes"] == "not_applicable"
+    assert result["pi_stable_task_passes"] == "not_applicable"
+    assert result["observation_basis"] == "single_repetition"
 
 
 def test_paired_comparison_allows_missing_cost_only_without_currency_ceiling() -> None:

@@ -59,6 +59,7 @@ TOOL_DIAGNOSTIC_FIELDS = (
     "basic_tool_blocked",
 )
 FIXED_PI_TASK_IDS = ("MORROW-003", "MORROW-005", "EXTERNAL-003", "EXTERNAL-004")
+REDUCED_CAMPAIGN_VARIANT = "reduced-single-repetition-v1"
 CAMPAIGN_AGENTS = ("morrow", "pi")
 CAPABILITY_FAMILIES = ("read", "search", "edit", "create", "command")
 COMPARISON_PLAN_SCHEMA = "morrow.s7p-09.comparison-plan.v1"
@@ -2333,7 +2334,13 @@ def _gate_for_entries(
     }
 
 
-def summarize_runs(root: Path, *, output: Path | None = None) -> dict[str, object]:
+def summarize_runs(
+    root: Path,
+    *,
+    output: Path | None = None,
+    expected_task_ids: Sequence[str] | None = None,
+    repetitions: Sequence[int] | None = None,
+) -> dict[str, object]:
     """Validate finalized bundles and mechanically aggregate their facts."""
 
     root = root.resolve()
@@ -2376,14 +2383,23 @@ def summarize_runs(root: Path, *, output: Path | None = None) -> dict[str, objec
     profile_revisions = sorted({entry["manifest"]["profile_sha256"] for entry in accepted})
     mixed_protocol = len(protocol_revisions) > 1
     mixed_profile = len(profile_revisions) > 1
-    minimum_repetitions = protocol["protocol"]["minimum_repetitions"]
+    expected_tasks = (
+        tuple(expected_task_ids)
+        if expected_task_ids is not None
+        else tuple(task.id for task in load_tasks())
+    )
+    expected_repetitions = (
+        tuple(repetitions)
+        if repetitions is not None
+        else tuple(range(1, int(protocol["protocol"]["minimum_repetitions"]) + 1))
+    )
     expected_keys = {
         (
-            task.id,
+            task_id,
             repetition,
         )
-        for task in load_tasks()
-        for repetition in range(1, minimum_repetitions + 1)
+        for task_id in expected_tasks
+        for repetition in expected_repetitions
     }
     actual_keys = set(by_key)
     missing = sorted(
@@ -2508,8 +2524,12 @@ def summarize_runs(root: Path, *, output: Path | None = None) -> dict[str, objec
     return summary
 
 
-def frozen_campaign_schedule() -> list[dict[str, object]]:
-    """Return the exact counterbalanced 28-run S7P-09 primary schedule."""
+def frozen_campaign_schedule(*, repetitions: Sequence[int] = (1, 2)) -> list[dict[str, object]]:
+    """Return the exact counterbalanced schedule for the selected campaign repetitions."""
+
+    repetition_values = tuple(repetitions)
+    if repetition_values not in ((1,), (1, 2)):
+        raise EvalError("campaign repetitions must be (1,) or (1, 2)")
 
     paired = set(FIXED_PI_TASK_IDS)
     unpaired = [task.id for task in load_tasks() if task.id not in paired]
@@ -2522,7 +2542,7 @@ def frozen_campaign_schedule() -> list[dict[str, object]]:
     tail = unpaired[4:]
     entries: list[dict[str, object]] = []
     ordinal = 1
-    for repetition in (1, 2):
+    for repetition in repetition_values:
         for task_id, leading_task in blocks:
             if leading_task is not None:
                 entries.append(
@@ -2658,7 +2678,9 @@ def _validate_permission_equivalence(value: object) -> dict[str, object]:
     }
 
 
-def validate_campaign_schedule(value: object) -> list[dict[str, object]]:
+def validate_campaign_schedule(
+    value: object, *, repetitions: Sequence[int] = (1, 2)
+) -> list[dict[str, object]]:
     if not isinstance(value, list):
         raise EvalError("comparison plan schedule must be a list")
     normalized: list[dict[str, object]] = []
@@ -2687,12 +2709,25 @@ def validate_campaign_schedule(value: object) -> list[dict[str, object]]:
                 "repetition": repetition,
             }
         )
-    if normalized != frozen_campaign_schedule():
-        raise EvalError("comparison plan schedule does not match the frozen 28-run order")
+    expected_schedule = frozen_campaign_schedule(repetitions=repetitions)
+    if normalized != expected_schedule:
+        if tuple(repetitions) == (1, 2):
+            raise EvalError("comparison plan schedule does not match the frozen 28-run order")
+        raise EvalError("comparison plan schedule does not match the frozen reduced campaign order")
     keys = {(entry["agent"], entry["task_id"], entry["repetition"]) for entry in normalized}
-    if len(keys) != 28:
+    if len(keys) != len(expected_schedule):
         raise EvalError("comparison plan schedule contains duplicate run keys")
     return normalized
+
+
+def _campaign_variant(root: Mapping[str, object]) -> tuple[str | None, tuple[int, ...]]:
+    value = root.get("campaign_variant")
+    if value is None:
+        return None, (1, 2)
+    variant = _text(value, "comparison plan campaign_variant")
+    if variant != REDUCED_CAMPAIGN_VARIANT:
+        raise EvalError("comparison plan campaign_variant is unsupported")
+    return variant, (1,)
 
 
 def validate_comparison_plan(plan: Mapping[str, object]) -> dict[str, object]:
@@ -2717,12 +2752,17 @@ def validate_comparison_plan(plan: Mapping[str, object]) -> dict[str, object]:
         "hold_point",
         "integrity",
     }
-    _required_keys(root, fields, "comparison plan")
+    optional_fields = {"campaign_variant"}
+    _exact_keys(root, fields | optional_fields, "comparison plan")
+    missing = sorted(fields - set(root))
+    if missing:
+        raise EvalError(f"missing comparison plan field: {missing[0]}")
     if root["schema"] != COMPARISON_PLAN_SCHEMA:
         raise EvalError("unsupported comparison plan schema")
     campaign_id = _resolved_text(root["campaign_id"], "comparison plan campaign_id")
     if not IDENTIFIER_RE.fullmatch(campaign_id):
         raise EvalError("comparison plan campaign_id has unsupported characters")
+    campaign_variant, campaign_repetitions = _campaign_variant(root)
 
     protocol = _mapping(root["protocol"], "comparison plan protocol")
     _required_keys(protocol, {"id", "version", "sha256"}, "comparison plan protocol")
@@ -2938,11 +2978,13 @@ def validate_comparison_plan(plan: Mapping[str, object]) -> dict[str, object]:
         "permissions": _validate_permission_equivalence(root["permissions"]),
         "deadlines": dict(deadlines),
         "ceilings": ceilings_normalized,
-        "schedule": validate_campaign_schedule(root["schedule"]),
+        "schedule": validate_campaign_schedule(root["schedule"], repetitions=campaign_repetitions),
         "evidence_root": evidence_normalized,
         "start_not_before": start_not_before,
         "hold_point": hold_normalized,
     }
+    if campaign_variant is not None:
+        normalized["campaign_variant"] = campaign_variant
     integrity = _required_sha256(root["integrity"], "comparison plan integrity")
     expected_integrity = content_hash(normalized)
     if integrity != expected_integrity:
@@ -4189,7 +4231,7 @@ def admit_campaign_run(
     if current_time.astimezone(UTC) < start_time:
         raise EvalError("campaign start-not-before has not been reached")
     records = _campaign_records(root, normalized)
-    if ordinal != len(records) + 1 or ordinal < 1 or ordinal > 28:
+    if ordinal != len(records) + 1 or ordinal < 1 or ordinal > len(normalized["schedule"]):
         raise EvalError("campaign admission is out of frozen schedule order")
     if (
         isinstance(reserve_tokens, bool)
@@ -4437,7 +4479,12 @@ def _paired_comparison_gate(
     pi_entries: list[dict[str, object]],
     *,
     require_cost: bool = True,
+    task_ids: Sequence[str] = FIXED_PI_TASK_IDS,
+    repetitions: Sequence[int] = (1, 2),
 ) -> dict[str, object]:
+    paired_task_ids = tuple(task_ids)
+    repetition_values = tuple(repetitions)
+
     def indexed(entries: list[dict[str, object]]) -> dict[tuple[str, int], dict[str, object]]:
         result: dict[tuple[str, int], dict[str, object]] = {}
         for entry in entries:
@@ -4450,17 +4497,21 @@ def _paired_comparison_gate(
 
     morrow = indexed(morrow_entries)
     pi = indexed(pi_entries)
-    expected = {(task_id, repetition) for task_id in FIXED_PI_TASK_IDS for repetition in (1, 2)}
+    expected = {
+        (task_id, repetition) for task_id in paired_task_ids for repetition in repetition_values
+    }
     if set(morrow) != expected or set(pi) != expected:
-        raise EvalError("paired comparison does not contain exactly eight runs per agent")
+        raise EvalError(
+            f"paired comparison does not contain exactly {len(expected)} runs per agent"
+        )
     required_metrics = set(USAGE_FIELDS)
     if not require_cost:
         required_metrics.remove("cost")
     diagnostics: list[str] = []
     pairs: list[dict[str, object]] = []
-    for task_id in FIXED_PI_TASK_IDS:
+    for task_id in paired_task_ids:
         repetitions: list[dict[str, object]] = []
-        for repetition in (1, 2):
+        for repetition in repetition_values:
             left = morrow[(task_id, repetition)]
             right = pi[(task_id, repetition)]
             for agent, entry in (("morrow", left), ("pi", right)):
@@ -4490,9 +4541,9 @@ def _paired_comparison_gate(
                 "pi_stable_pass": pi_stable,
             }
         )
-    morrow_stable_count = sum(pair["morrow_stable_pass"] for pair in pairs)
-    pi_stable_count = sum(pair["pi_stable_pass"] for pair in pairs)
-    quality_deficit = pi_stable_count - morrow_stable_count
+    morrow_task_passes = sum(pair["morrow_stable_pass"] for pair in pairs)
+    pi_task_passes = sum(pair["pi_stable_pass"] for pair in pairs)
+    quality_deficit = pi_task_passes - morrow_task_passes
     if quality_deficit > FROZEN_THRESHOLDS["pi_max_quality_deficit"]:
         diagnostics.append("Pi stable-task quality deficit exceeded the frozen maximum")
     for key in expected:
@@ -4503,8 +4554,17 @@ def _paired_comparison_gate(
     return {
         "status": "PASS" if not diagnostics else "FAIL",
         "quality_deficit": quality_deficit,
-        "morrow_stable_task_passes": morrow_stable_count,
-        "pi_stable_task_passes": pi_stable_count,
+        "morrow_task_passes": morrow_task_passes,
+        "pi_task_passes": pi_task_passes,
+        "morrow_stable_task_passes": (
+            morrow_task_passes if len(repetition_values) > 1 else "not_applicable"
+        ),
+        "pi_stable_task_passes": (
+            pi_task_passes if len(repetition_values) > 1 else "not_applicable"
+        ),
+        "observation_basis": (
+            "single_repetition" if len(repetition_values) == 1 else "two_repetitions"
+        ),
         "pairs": pairs,
         "diagnostics": diagnostics,
     }
@@ -4522,20 +4582,30 @@ def compare_campaign(
 
     plan = load_comparison_plan(plan_path.resolve())
     admissions = _campaign_records(admissions_root.resolve(), plan)
-    if len(admissions) != 28:
-        raise EvalError("campaign must contain exactly 28 immutable admissions")
+    schedule = plan["schedule"]
+    if len(admissions) != len(schedule):
+        raise EvalError(f"campaign must contain exactly {len(schedule)} immutable admissions")
     if [record["entry"] for record in admissions] != plan["schedule"]:
         raise EvalError("campaign admission order differs from the frozen schedule")
     admission_times = [record["admitted_at"] for record in admissions]
     if admission_times != sorted(admission_times):
         raise EvalError("campaign admission timestamps are not monotonic")
-    morrow_summary = summarize_runs(morrow_root.resolve())
+    morrow_schedule = [entry for entry in schedule if entry["agent"] == "morrow"]
+    pi_schedule = [entry for entry in schedule if entry["agent"] == "pi"]
+    morrow_task_ids = tuple(dict.fromkeys(entry["task_id"] for entry in morrow_schedule))
+    repetitions = tuple(dict.fromkeys(entry["repetition"] for entry in schedule))
+    pi_task_ids = tuple(dict.fromkeys(entry["task_id"] for entry in pi_schedule))
+    morrow_summary = summarize_runs(
+        morrow_root.resolve(),
+        expected_task_ids=morrow_task_ids,
+        repetitions=repetitions,
+    )
     if morrow_summary["status"] != "COMPLETE":
         raise EvalError("Morrow campaign summary is incomplete")
     morrow_entries = [validate_run_bundle(path) for path in _bundle_paths(morrow_root.resolve())]
     pi_entries = [validate_run_bundle(path) for path in _bundle_paths(pi_root.resolve())]
-    if len(pi_entries) != 8:
-        raise EvalError("Pi campaign must contain exactly eight valid bundles")
+    if len(pi_entries) != len(pi_schedule):
+        raise EvalError(f"Pi campaign must contain exactly {len(pi_schedule)} valid bundles")
     expected_profile_hashes = {
         "morrow": plan["profiles"]["morrow"]["sha256"],
         "pi": plan["profiles"]["pi"]["sha256"],
@@ -4552,9 +4622,7 @@ def compare_campaign(
             if entry["manifest"]["protocol"]["sha256"] != plan["protocol"]["sha256"]:
                 raise EvalError("campaign protocol hash differs from the comparison plan")
     paired_morrow = [
-        entry
-        for entry in morrow_entries
-        if entry["manifest"]["run"]["task_id"] in FIXED_PI_TASK_IDS
+        entry for entry in morrow_entries if entry["manifest"]["run"]["task_id"] in pi_task_ids
     ]
     paired_morrow_by_key = {
         (
@@ -4579,7 +4647,13 @@ def compare_campaign(
         if counterpart["manifest"]["task"] != entry["manifest"]["task"]:
             raise EvalError("paired task bytes or verifier contract differ")
     cost_required = plan["ceilings"]["total_cost"] is not None
-    paired_gate = _paired_comparison_gate(paired_morrow, pi_entries, require_cost=cost_required)
+    paired_gate = _paired_comparison_gate(
+        paired_morrow,
+        pi_entries,
+        require_cost=cost_required,
+        task_ids=pi_task_ids,
+        repetitions=repetitions,
+    )
     all_entries = [*morrow_entries, *pi_entries]
     if any(
         entry["runtime"]["usage"][field] == "unavailable"
