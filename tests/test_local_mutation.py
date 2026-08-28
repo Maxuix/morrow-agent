@@ -37,7 +37,7 @@ from morrow.core.models import (
     ToolApprovalDecision,
 )
 from morrow.runtime.capabilities import CapabilityPolicy
-from morrow.runtime.tools import ToolExecutor, ToolRegistry
+from morrow.runtime.tools import ToolErrorCode, ToolExecutor, ToolRegistry
 from morrow.services.changes import ChangeSetService
 from morrow.services.files import (
     LocalFileError,
@@ -600,7 +600,7 @@ async def test_auto_safe_small_patch_is_automatic_and_replace_still_requires_app
 
 
 @pytest.mark.asyncio
-async def test_large_diff_runs_without_an_approval_layer(tmp_path):
+async def test_provider_patch_rejects_oversized_exact_edit_without_side_effect(tmp_path):
     path = tmp_path / "large.txt"
     before = "".join(f"line-{index:03d}\n" for index in range(600))
     path.write_text(before, encoding="utf-8")
@@ -633,7 +633,9 @@ async def test_large_diff_runs_without_an_approval_layer(tmp_path):
         total=1,
     )
 
-    assert outcome.ok is True
+    assert outcome.ok is False
+    assert outcome.error_code is ToolErrorCode.INVALID_ARGUMENTS
+    assert path.read_text(encoding="utf-8") == before
     assert executor.approval_port.requests == []
 
 

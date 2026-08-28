@@ -409,9 +409,9 @@ def test_provider_schema_bounds_are_conservative_for_raw_argument_budget():
     content = {"path": "new.txt", "content": "🧪" * content_max, "mode": "create"}
     assert all(size <= MAX_ARGUMENT_BYTES for size in raw_size(content))
 
-    edit_properties = APPLY_PATCH_PROVIDER_SCHEMA["properties"]["edits"]["oneOf"][1]["items"][
-        "properties"
-    ]
+    edits_schema = APPLY_PATCH_PROVIDER_SCHEMA["properties"]["edits"]
+    assert "oneOf" not in edits_schema
+    edit_properties = edits_schema["items"]["properties"]
     edit_max = edit_properties["old_text"]["maxLength"]
     patch = {
         "path": "file.txt",

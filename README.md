@@ -1,7 +1,7 @@
 # Morrow
 
 Morrow（承序）是一个以工作空间为边界的终端 Code Agent。当前版本提供可恢复的持久化对话、
-受保护的本地读搜与冲突安全文件修改、审批后 Host 命令、当前 macOS 原生沙箱、只读 Git、
+有界的本地读搜与冲突安全文件修改、直接 Host 命令、当前 macOS 原生沙箱、只读 Git、
 经确认的 Profile 与 Preferences 配置，以及 Provider 管理。
 
 长期产品方向与阶段边界见 [开发路线总览](docs/ROADMAP.md)。
@@ -17,12 +17,13 @@ uv run morrow --help
 
 Morrow 的状态默认保存在 `~/.morrow`，不会写入选中的项目目录。当前工具只在冻结的工作空间内
 读取目录、UTF-8 文本和搜索结果，或通过冲突安全的精确补丁/受控文件创建修改项目文件；Manual 与 Auto Safe
-中的项目命令仅能在明确审批后的非隔离 Host 中执行，已批准的 Host 代码仍可能访问工作空间外资源。
+中的项目命令在非隔离 Host 中直接执行，Host 代码可能以当前用户权限访问工作空间外资源。
 当前 macOS 原生后端支持 Auto Sandboxed 在临时快照中自动执行项目命令，默认断网且不会直接修改真实工作区；
 Linux 在真实 runner 验证前保持 unsupported，后端不可用时 fail closed。
 
-文件与搜索保护同时检查用户可见路径和工作区内解析后的符号链接目标；`.git`、`.morrow`、凭据文件和
-常见私钥内容只返回受保护元数据，仓库检查应使用专用 `git_status`/`git_diff`。现有文件的 patch/replace
+文件与搜索仍拒绝工作空间逃逸、外部符号链接和不支持的文件类型，但不会因为 `.git`、`.env`、
+`secret`、凭据示例或 PEM 文本等普通关键词隐藏工作区内容。仓库检查也可使用专用
+`git_status`/`git_diff`。现有文件的 patch/replace
 保留统一换行格式；混合换行文件会明确返回不支持，不会静默改写为 LF。
 
 ## 使用
@@ -109,13 +110,14 @@ REPL 常用命令包括 `/workspace`、`/workspace edit summary ...`、`/workspa
 `list_directory`、`read_file`、`find_files`、`search_text`、`apply_patch`、`write_file`、`show_changes`、`run_command`、`git_status`、`git_diff`、
 `update_configuration`（仅 Profile）和 `manage_preferences`；支持原生沙箱的 Auto Sandboxed 组合额外启用 `promote_sandbox_changes`。不支持 function calling 的 Adapter 不会启用这些工具，但 `/workspace`、`/preferences` 等确定性命令仍可用。终端以 `↳ 工具步骤 n/m：工具名`
 展示活动；有副作用的
-配置调用和 Host 命令在工具执行前由终端审批。审批拒绝、审批通道不可用或审批等待超时都会安全地形成普通工具结果，
+配置调用仍在工具执行前由终端审批；普通工作空间文件工具和 Host 命令直接执行。Full Access 与扩展能力
+仍使用各自的授权/审批合同。审批拒绝、审批通道不可用或审批等待超时都会安全地形成普通工具结果，
 模型可以继续恢复；默认工具超时为 120 秒，并可在安全上限内通过用户运行策略覆盖。旧 `/config edit` fixed-field 入口已退役，
 `append/remove` 由自然语言工具提供。达到模型、工具、时间、上下文、结果或循环上限时，任务以稳定的
 `stop_code` 结束。
 
-Host 命令审批会展示有界且脱敏的 argv/shell、工作目录、类别和超时；shell 包装的 Git 命令仍按
-Git 写入风险在审批前拒绝。命令文本只用于本地审批，不进入 `CommandResult`、Provider、公开事件或持久状态。
+Host 命令接受 argv 或 shell，支持 Git、管道和重定向，不按命令字符串启发式拒绝或要求审批。命令输出
+保持有界，并只遮蔽当前运行已知凭据的精确值；完整命令、输出和秘密不进入公开事件或持久状态。
 
 `full-access-manual` 不会自动获得能力：只有本地 REPL 的 `/grant` 确认或 CLI `grant create` 命令能为一个前台
 AgentRun 授予 `unconfined_host_process`，且每次 opaque Host 命令仍要单独审批。审批前会明确说明该进程没有操作系统
