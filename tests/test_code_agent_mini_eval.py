@@ -1511,6 +1511,15 @@ def test_campaign_capacity_includes_explicit_prior_campaigns(tmp_path: Path) -> 
     assert capacity["accounted_tokens"] == 70
     assert capacity["remaining_tokens"] == 30
     assert capacity["prior_campaigns"][0]["run_count"] == 1
+    planned = eval_module.campaign_capacity_usage(
+        current_plan,
+        current_root,
+        prior_roots=(prior_root,),
+        planned_reserve_tokens=31,
+        planned_admissions=1,
+    )
+    assert planned["planned_reservation_tokens"] == 31
+    assert planned["planned_over_ceiling"] is True
     with pytest.raises(eval_module.EvalError, match="token ceiling"):
         eval_module.admit_campaign_run(
             current_plan,

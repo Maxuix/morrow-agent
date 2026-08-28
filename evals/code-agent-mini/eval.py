@@ -4085,8 +4085,27 @@ def _prior_campaign_capacities(
 
 
 def _campaign_capacity_with_prior(
-    plan: Mapping[str, object], root: Path, prior_roots: Sequence[Path]
+    plan: Mapping[str, object],
+    root: Path,
+    prior_roots: Sequence[Path],
+    *,
+    planned_reserve_tokens: int | None = None,
+    planned_admissions: int = 0,
 ) -> dict[str, object]:
+    if (
+        isinstance(planned_admissions, bool)
+        or not isinstance(planned_admissions, int)
+        or planned_admissions < 0
+    ):
+        raise EvalError("planned campaign admissions must be a non-negative integer")
+    if planned_reserve_tokens is not None and (
+        isinstance(planned_reserve_tokens, bool)
+        or not isinstance(planned_reserve_tokens, int)
+        or planned_reserve_tokens <= 0
+    ):
+        raise EvalError("planned campaign token reservation must be a positive integer")
+    if planned_admissions and planned_reserve_tokens is None:
+        raise EvalError("planned campaign admissions require a token reservation")
     normalized = validate_comparison_plan(plan)
     resolved = root.resolve()
     current = _campaign_capacity(
@@ -4100,24 +4119,40 @@ def _campaign_capacity_with_prior(
     prior_accounted = sum(int(item["accounted_tokens"]) for item in prior)
     prior_unknown = sum(int(item["unknown_requests"]) for item in prior)
     total_accounted = int(current["accounted_tokens"]) + prior_accounted
+    planned_tokens = (planned_reserve_tokens or 0) * planned_admissions
+    total_tokens = int(normalized["ceilings"]["total_tokens"])
     return {
         **current,
         "known_tokens": int(current["known_tokens"]) + prior_known,
         "reserved_tokens": int(current["reserved_tokens"]) + prior_reserved,
         "accounted_tokens": total_accounted,
         "unknown_requests": int(current["unknown_requests"]) + prior_unknown,
-        "remaining_tokens": max(0, int(normalized["ceilings"]["total_tokens"]) - total_accounted),
-        "over_ceiling": total_accounted > int(normalized["ceilings"]["total_tokens"]),
+        "remaining_tokens": max(0, total_tokens - total_accounted),
+        "over_ceiling": total_accounted > total_tokens,
+        "planned_admissions": planned_admissions,
+        "planned_reservation_tokens": planned_tokens,
+        "planned_over_ceiling": total_accounted + planned_tokens > total_tokens,
         "prior_campaigns": prior,
     }
 
 
 def campaign_capacity_usage(
-    plan: Mapping[str, object], root: Path, *, prior_roots: Sequence[Path] = ()
+    plan: Mapping[str, object],
+    root: Path,
+    *,
+    prior_roots: Sequence[Path] = (),
+    planned_reserve_tokens: int | None = None,
+    planned_admissions: int = 0,
 ) -> dict[str, object]:
     """Report the conservative token basis used before the next admission."""
 
-    return _campaign_capacity_with_prior(plan, root, prior_roots)
+    return _campaign_capacity_with_prior(
+        plan,
+        root,
+        prior_roots,
+        planned_reserve_tokens=planned_reserve_tokens,
+        planned_admissions=planned_admissions,
+    )
 
 
 def admit_campaign_run(
@@ -4698,6 +4733,17 @@ def build_parser() -> argparse.ArgumentParser:
         default=[],
         help="include one previously admitted campaign evidence root in the cumulative ceiling",
     )
+    capacity.add_argument(
+        "--reserve-tokens",
+        type=int,
+        help="conservative token reservation per planned remaining admission",
+    )
+    capacity.add_argument(
+        "--remaining-admissions",
+        type=int,
+        default=0,
+        help="number of future admissions to budget before the next run",
+    )
     permission_check = subparsers.add_parser(
         "permission-check", help="run the offline Morrow/Pi permission equivalence matrix"
     )
@@ -4812,9 +4858,11 @@ def main() -> int:
                 load_comparison_plan(arguments.plan),
                 arguments.evidence_root,
                 prior_roots=arguments.prior_root,
+                planned_reserve_tokens=arguments.reserve_tokens,
+                planned_admissions=arguments.remaining_admissions,
             )
             print(canonical_json(result).strip())
-            return 1 if result["over_ceiling"] else 0
+            return 1 if result["over_ceiling"] or result["planned_over_ceiling"] else 0
         if arguments.command == "permission-check":
             result = permission_equivalence_matrix(arguments.workspace)
             print(canonical_json(result).strip())

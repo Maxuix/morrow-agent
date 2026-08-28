@@ -3707,4 +3707,6 @@
   conservative `max(reservation, known usage)` rule. No implicit filesystem scan was added.
 - Added a focused prior-root regression; evaluator tests passed `57`. The complete offline gate
   passed `1338 passed, 2 deselected`; Ruff format/check, compileall, CLI help and `git diff --check`
-  also passed. The checkpoint is ready to commit before refreeze.
+  also passed. Added a conservative `--reserve-tokens` plus `--remaining-admissions` check so a
+  complete fresh schedule cannot appear affordable merely because the new evidence root is empty.
+  The verified checkpoint is ready to commit before refreeze.

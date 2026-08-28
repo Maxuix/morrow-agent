@@ -114,5 +114,8 @@ The approved budget is a hard 50,000,000-token ceiling with no currency ceiling.
 cost is recorded when available and otherwise remains explicitly unavailable; it is not a campaign
 gate and is never inferred as zero. Retained formal attempts and conservative reservations currently
 exceed the remaining capacity for a fresh complete campaign, so formal admission remains blocked.
+Before the first admission, the capacity command also accepts a conservative per-admission
+reservation and remaining-admission count, and compares the complete planned schedule against the
+same cumulative prior-root total.
 The new source/profile/evidence pin must still be created before any future admission; no prior plan
 or run key may be reused.

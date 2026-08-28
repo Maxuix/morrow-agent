@@ -10,8 +10,9 @@ compileall, CLI help and diff checks also passed.
 
 ## Active task
 
-The explicit risk-denial ordering repair and cumulative prior-campaign capacity guard are
-implemented and verified. Commit this checkpoint before refreezing any S7P-09 comparison plan.
+The explicit risk-denial ordering repair, cumulative prior-campaign capacity guard and full
+remaining-schedule reservation check are implemented and verified. Refreeze a new S7P-09
+comparison plan before any admission.
 
 ## Implemented boundary
 
@@ -38,8 +39,8 @@ implemented and verified. Commit this checkpoint before refreezing any S7P-09 co
 
 ## Next action
 
-Commit this verified repair, then create a fresh source/profile/evidence refreeze with explicit
-prior roots; do not reuse prior campaign admissions.
+Create a fresh source/profile/evidence refreeze with explicit prior roots and the complete planned
+reservation; do not reuse prior campaign admissions.
 
 ## Blockers
 
