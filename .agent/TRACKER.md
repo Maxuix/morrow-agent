@@ -2,16 +2,15 @@
 
 ## Current status
 
-The user requested workspace consolidation. Both completed Stage 7 branches are reconciled on local
-`main`; focused integration tests passed `140`, the final full offline gate passed `1333 passed, 2
-deselected`, and Ruff format/check, compileall, CLI help and `git diff --check` passed. The complete
+The user-requested workspace consolidation is complete on local `main` at integration commit
+`a7e22e5`. Focused integration tests passed `140`, the final full offline gate passed `1333 passed,
+2 deselected`, and Ruff format/check, compileall, CLI help and `git diff --check` passed. The complete
 `docs/notes/` draft is preserved in the named stash `checkpoint: preserve complete docs notes before
 branch consolidation`.
 
 ## Active task
 
-Commit the verified integration, then remove merged branches and the execution worktree. Do not
-resume the S7P-09 live campaign.
+No active implementation task. Await user direction; do not resume the S7P-09 live campaign.
 
 ## Implemented boundary
 
@@ -36,7 +35,7 @@ resume the S7P-09 live campaign.
 
 ## Next action
 
-Commit the verified merge and retire its local branches/worktree.
+Await user direction. Any future S7P-09 work must refreeze its source/profile/evidence contract.
 
 ## Blockers
 

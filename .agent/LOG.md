@@ -3671,4 +3671,10 @@
   `apply_patch` conflict expectation; after aligning it with `edit`'s inferred current revision, the
   final full offline gate passed `1333 passed, 2 deselected in 86.90s`. Ruff format/check,
   compileall, CLI help and `git diff --check` passed.
-- S7P-09 live admission remains paused. Branch/worktree retirement is still pending.
+- Merge commit `a7e22e5` contains the verified seven-tool integration. Confirmed
+  `codex/feat/s7p-06-pi-parity`, `feat/s7p-09-direct-pi-baseline` and
+  `feat/s7p-09-direct-pi-baseline-run` were all ancestors of `main`, then deleted them with
+  non-forced branch deletion. Removed the clean execution worktree and its now-empty temporary
+  parent directory. S7P-09 live admission remains paused.
+- The older partial notes stash and detached Stage 1 rescue stash were retained because they are not
+  byte-identical duplicates of the complete notes stash. Remote publication remains unauthorized.

@@ -27,8 +27,8 @@ single-Agent matrix, published Stage 1–6 regression, real current-platform Sea
 current acceptance evidence, and was integrated locally. The user then explicitly opened S7P-09.
 Subplan 90 built the repeated Morrow/Pi campaign and remains recoverable, but its live lane is
 paused after the user requested a Pi-aligned tool-interface repair. Subplans 91 and 92 completed the
-seven-tool interface and legacy-adapter cleanup. Their verified branch histories are being
-consolidated with the later core/Learning repair on local `main`; Subplan 90 remains paused and must
+seven-tool interface and legacy-adapter cleanup. Their verified branch histories were consolidated
+with the later core/Learning repair on local `main`; Subplan 90 remains paused and must
 refreeze its source/profile/evidence contract before any future admission.
 
 ## Stage 7 reliability sequence

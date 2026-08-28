@@ -1,8 +1,8 @@
 # Stage 7 Consolidated Main — S7P-09 Paused
 
-> Status: integrated code verified; merge commit and branch retirement in progress on local `main`
+> Status: completed on local `main`; S7P-09 evaluation remains paused
 > Paused subplan: Subplan 90 — S7P-09 Repeated Direct Evaluation and Same-Condition Pi Baseline
-> Integrated branches: `feat/s7p-09-direct-pi-baseline`, `feat/s7p-09-direct-pi-baseline-run`
+> Integration commit: `a7e22e5`
 > Activation base: verified local `main@1fd7e229bef276d1a0361e775ce800ade4b318fc`
 > Source authority: current user request, S7P-00 protocol v1, completed S7P-08, current code/tools
 

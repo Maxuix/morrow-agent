@@ -11,8 +11,8 @@ Consolidate all verified local Stage 7 branches into `main` and clean the worksp
 - `[x]` Merge `feat/s7p-09-direct-pi-baseline-run`, retaining the seven-tool interface and the newer
   core/Learning behavior.
 - `[x]` Run focused tests, the full offline suite, Ruff, compileall, CLI help and diff validation.
-- `[>]` Commit integration repairs and update execution evidence.
-- `[ ]` Remove the merged execution worktree and local topic branches.
+- `[x]` Commit integration repairs and update execution evidence.
+- `[x]` Remove the merged execution worktree and local topic branches.
 
 ## Earlier completed tasks
 
