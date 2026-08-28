@@ -143,7 +143,7 @@ def test_destructive_file_tools_are_in_production_inventory_and_reconcileable():
         )
 
 
-def test_production_session_exposes_explicit_destructive_file_tools(tmp_path):
+def test_production_session_keeps_destructive_factories_out_of_the_core_surface(tmp_path):
     app = build_application(state_root=tmp_path / "state", credentials=MemoryCredentialStore())
     project = tmp_path / "project"
     project.mkdir()
@@ -158,7 +158,8 @@ def test_production_session_exposes_explicit_destructive_file_tools(tmp_path):
         tool.function.name
         for tool in session_app.orchestrator.runtime.loop.tool_executor.definitions
     }
-    assert {"delete_file", "move_file", "rename_file"} <= names
+    assert {"bash", "edit", "write"} <= names
+    assert {"delete_file", "move_file", "rename_file"}.isdisjoint(names)
 
 
 def _sha(path: Path) -> str:
@@ -1094,15 +1095,13 @@ async def test_promotion_preflights_all_then_returns_bounded_partial_failure(tmp
 
 
 @pytest.mark.asyncio
-async def test_scripted_direct_production_acceptance_verifies_tree_and_changeset(tmp_path):
+async def test_scripted_direct_production_bash_keeps_destructive_policy_boundary(tmp_path):
     project = tmp_path / "project"
     project.mkdir()
     deleted = project / "delete.txt"
     renamed = project / "old.txt"
     deleted.write_text("delete\n", encoding="utf-8")
     renamed.write_text("rename\n", encoding="utf-8")
-    delete_hash = _sha(deleted)
-    rename_hash = _sha(renamed)
     app = build_application(state_root=tmp_path / "state", credentials=MemoryCredentialStore())
     identity = app.workspace_service.confirm(app.workspace_service.resolve(project))
     provider = ScriptedModelProvider(
@@ -1110,31 +1109,9 @@ async def test_scripted_direct_production_acceptance_verifies_tree_and_changeset
             AssistantMessage(
                 tool_calls=(
                     FunctionToolCall(
-                        id="delete",
-                        name="delete_file",
-                        arguments=json.dumps(
-                            {"path": "delete.txt", "expected_sha256": delete_hash}
-                        ),
-                    ),
-                    FunctionToolCall(
-                        id="rename",
-                        name="rename_file",
-                        arguments=json.dumps(
-                            {
-                                "source_path": "old.txt",
-                                "destination_path": "new.txt",
-                                "expected_sha256": rename_hash,
-                            }
-                        ),
-                    ),
-                )
-            ),
-            AssistantMessage(
-                tool_calls=(
-                    FunctionToolCall(
-                        id="show",
-                        name="show_changes",
-                        arguments="{}",
+                        id="move",
+                        name="bash",
+                        arguments=json.dumps({"command": "rm delete.txt && mv old.txt new.txt"}),
                     ),
                 )
             ),
@@ -1152,23 +1129,17 @@ async def test_scripted_direct_production_acceptance_verifies_tree_and_changeset
         tool.function.name
         for tool in session_app.orchestrator.runtime.loop.tool_executor.definitions
     }
-    assert {"delete_file", "rename_file", "show_changes"} <= tool_names
+    assert "bash" in tool_names
+    assert {"delete_file", "rename_file", "show_changes"}.isdisjoint(tool_names)
     [item async for item in session_app.orchestrator.stream("perform the scripted changes")]
 
-    assert not deleted.exists()
-    assert not renamed.exists()
-    assert (project / "new.txt").read_text(encoding="utf-8") == "rename\n"
+    assert deleted.read_text(encoding="utf-8") == "delete\n"
+    assert renamed.read_text(encoding="utf-8") == "rename\n"
+    assert not (project / "new.txt").exists()
     tool_payloads = [
         json.loads(message.content)
         for message in session_app.session.messages
         if message.role == "tool"
     ]
-    show_payload = next(
-        payload for payload in tool_payloads if payload.get("result", {}).get("entries")
-    )
-    entries = show_payload["result"]["entries"]
-    assert {entry["status"] for entry in entries} == {"deleted", "renamed"}
-    assert any(
-        entry.get("source_path") == "old.txt" and entry.get("destination_path") == "new.txt"
-        for entry in entries
-    )
+    assert tool_payloads[0]["ok"] is False
+    assert tool_payloads[0]["error"]["code"] == "permission_denied"

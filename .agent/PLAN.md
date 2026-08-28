@@ -1,82 +1,55 @@
 # Stage 7 Preflight Reliability — S7P-09 Repeated Direct/Pi Baseline
 
-> Status: active; evaluation environment repaired offline, awaiting an 80M token ceiling
+> Status: active; mainstream tool-interface repair verified, new comparison profile pending
 > Active subplan: Subplan 90 — S7P-09 Repeated Direct Evaluation and Same-Condition Pi Baseline
-> Branch: `feat/s7p-09-direct-pi-baseline`
-> Execution worktree branch: `feat/s7p-09-direct-pi-baseline-run` (intentional clean-pin stack)
-> Activation base: verified local `main@1fd7e229bef276d1a0361e775ce800ade4b318fc`
-> Source authority: current user request, S7P-00 protocol v1, completed S7P-08, current code/tools
+> Execution branch: `feat/s7p-09-direct-pi-baseline-run`
+> Stack base: verified local `main@1fd7e229bef276d1a0361e775ce800ade4b318fc`
+> Source authority: current user request, S7P-00 protocol v1, completed S7P-08/S7P-91, code/tools
 
 ## 1. Current objective
 
-Build and run the auditable S7P-09 campaign: 10 Morrow tasks × 2 fresh repetitions plus the four
-protocol-pinned Pi tasks × 2 fresh repetitions under one exact Provider/model and a frozen
-same-condition contract. Publish success, cost, latency, rework, intervention, tool, context and
-failure evidence as an immutable Direct baseline for Stage 7.
+Refreeze and run the auditable S7P-09 campaign: 10 Morrow tasks × 2 repetitions and the four
+protocol-pinned Pi tasks × 2 repetitions under the same Provider/model and a new content-hashed
+comparison contract. The next Morrow profile uses the verified Pi-aligned `read`, `bash`, `edit`,
+`write`, `grep`, `find`, and `ls` core surface.
 
-Detailed data contracts, fairness rules, campaign schedule, thresholds, failure handling and
-retention policy are owned by activated Subplan 90.
+Detailed result contracts, immutable schedule rules, thresholds, failure handling and retention
+policy remain owned by Subplan 90. Subplan 91 changed the product profile, not S7P-00 tasks or gates.
 
 ## 2. Frozen decisions
 
-- S7P-00 protocol v1 thresholds and task/verifier data are immutable in this subplan.
-- The primary campaign has exactly 28 admitted runs: Morrow 20 and Pi 8. Formal results are never
-  discarded or replaced after observation.
-- Morrow and Pi use the same canonical Provider/model/revision, task bytes, sampling contract,
-  baseline tree, verifier and 1,800-second external deadline.
-- Product-native prompts and tool schemas may differ, but capability/permission boundaries must be
-  equivalent, content-hashed and proved offline before live execution.
-- Morrow runs use ordinary bootstrap, TaskRun, AgentRun, AgentLoop, ToolExecutor, permission and
-  ConversationLog boundaries. Evaluation approval can confirm an already-confined policy decision
-  but cannot override denial or grant broader authority.
-- Raw events, reasoning, full tool payloads, credentials and tracebacks stay outside Git. Only
-  bounded normalized evidence, hashes, summaries and the baseline record are committed.
-- S7P-09 measures the frozen Agent. It does not tune thresholds/tasks after results, restore the
-  removed CompletionChecker or begin Workflow/S7P-10 work.
+- S7P-00 protocol v1 thresholds, task bytes, Gold states and verifiers remain immutable.
+- A formal campaign contains exactly 28 admitted runs: Morrow 20 and Pi 8; observed runs are never
+  discarded or replaced.
+- Both Agents use `opencode-go/mimo-v2.5`, the same sampling contract, baseline tree, verifier and
+  1,800-second external deadline.
+- Product-native prompts may differ. The seven core tool names/fields now align with Pi; permission
+  and execution-side confinement remain equivalent and content-hashed.
+- Morrow still uses ordinary bootstrap, TaskRun, AgentRun, AgentLoop, ToolExecutor, permission,
+  recovery and ConversationLog boundaries.
+- Raw events, reasoning, full tool payloads, credentials and tracebacks stay outside Git.
 
 ## 3. Live hold point
 
-The user approved `opencode-go/mimo-v2.5` for both Agents, raised the hard total ceiling from
-5,000,000 to 15,000,000 tokens, and kept no currency ceiling. Pi 0.84.2's installed catalog contains the exact model at the same
-service endpoint, with a 1,000,000-token context window and 128,000-token maximum output. Before a
-formal paid run, the harness must still freeze and verify:
+No retained campaign or pre-repair profile may be continued. Formal attempts have accounted for
+16,754,419 known tokens plus six requests with unavailable usage. The user-approved hard total is
+50,000,000 tokens with no currency ceiling, leaving at most 33,245,581 known-token capacity before
+allowance for the six unknown requests.
 
-1. Morrow Agent streaming readiness after two identical bounded `internal` failures;
-2. a cost-accounting contract compatible with Morrow's unavailable Provider cost;
-3. the exact served model revision and equal sampling contract;
-4. the final non-secret comparison plan and clean source/evidence pins.
-
-Credential checks must report only readiness and must never request or print credential values.
-Pi credential readiness and its exact-model no-tool probe pass without exposing or copying the
-credential. Formal attempts have now accounted for 16,754,419 tokens plus six failed/interrupted
-requests with unavailable usage. Current Morrow/Pi samples project about 45.4M tokens for one fresh
-complete campaign. The user previously raised the hard total ceiling to
-50,000,000 tokens and authorized a recoverable stash of unrelated untracked notes for the clean
-campaign pin. Because an external process continued creating new notes after the stash, campaign
-execution uses one dedicated clean worktree branch instead of repeatedly moving that external work.
-The MORROW-003 zero-request blocker was an evaluator-environment defect: `/recovery` in the task
-text was misread as an absolute path outside the workspace. Bare slash commands are now excluded
-from inferred project-instruction targets, and the exact failed workspace/state reproducer admits
-and completes with a scripted Provider. Capacity admission now uses the greater of reservation and
-known usage, falling back from finalized evidence to the Morrow request journal or deduplicated Pi
-assistant usage. The 50M total remains insufficient for another complete immutable campaign. No
-new admission is allowed without a larger total token ceiling; 80M is the current recommendation.
+Before another live request, freeze the new clean source/profile/schedule/evidence root and run the
+integrated capacity guard. If the 28-run reservation cannot fit, record the exact blocker rather
+than admitting a partial campaign or silently changing the protocol.
 
 ## 4. Execution order
 
-1. Implement and offline-test strict comparison planning, Morrow/Pi runners, safe trace
-   normalization, permission equivalence and mechanical comparison.
-2. Commit the harness and create a clean evaluation worktree pinned to that commit.
-3. Resolve the common model, readiness and spend hold point; freeze the 28-entry counterbalanced
-   schedule and evidence root.
-4. Run and immediately finalize each campaign entry without state/workspace reuse.
-5. Validate Morrow's two protocol gates and the four-task stable Pi quality deficit.
-6. Publish the immutable baseline/evidence index and exact S7P-09 PASS/FAIL/BLOCKED report.
-7. Run final offline/static gates, integrate verified work and stop before S7P-10.
+1. Commit and integrate the verified Subplan 91 repair into the S7P-09 execution branch.
+2. Rebuild the comparison plan using a clean source pin and the new Morrow profile.
+3. Recompute mandatory total-token admission against all retained known/unknown usage.
+4. If capacity passes, execute and immediately finalize all 28 immutable entries sequentially.
+5. Mechanically aggregate, classify, publish acceptance evidence and run final offline gates.
 
 ## 5. Completion
 
-Completion requires all 28 primary bundles, complete metrics, exact failure attribution, zero
-unaccounted tool calls, the frozen Morrow thresholds, Pi quality deficit ≤ 1, safe evidence
-publication and all offline quality gates. Anything less is reported as S7P-09 FAIL or BLOCKED,
-never as a conditional PASS.
+S7P-09 completes only with all 28 primary bundles, mandatory token evidence, exact failure/tool
+accounting, frozen Morrow thresholds, Pi quality deficit ≤ 1, safe evidence publication and all
+offline quality gates. Insufficient approved capacity is BLOCKED, never a conditional PASS.

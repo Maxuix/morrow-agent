@@ -156,6 +156,13 @@ async def _captured_tools(definitions):
 
 def _valid_inventory_arguments(name):
     return {
+        "bash": {"command": "echo"},
+        "edit": {"path": "file.txt", "edits": [{"oldText": "a", "newText": "b"}]},
+        "find": {"pattern": "*.py"},
+        "grep": {"pattern": "needle"},
+        "ls": {},
+        "read": {"path": "README.md"},
+        "write": {"path": "new.txt", "content": "x"},
         "apply_patch": {
             "path": "file.txt",
             "expected_sha256": "0" * 64,
@@ -596,10 +603,17 @@ async def test_static_direct_inventory_audit_matches_captured_openai_wire(
         assert schema.validate(raw) == valid
         registered.arguments_validator.validate(raw)
         invalid = {**valid, "unexpected_contract_field": True}
-        with pytest.raises(ToolArgumentsValidationError):
-            schema.validate(json.dumps(invalid))
-        with pytest.raises(ToolArgumentsValidationError):
-            registered.arguments_validator.validate(json.dumps(invalid))
+        if definition.function.parameters.get("additionalProperties") is False:
+            with pytest.raises(ToolArgumentsValidationError):
+                schema.validate(json.dumps(invalid))
+            with pytest.raises(ToolArgumentsValidationError):
+                registered.arguments_validator.validate(json.dumps(invalid))
+        else:
+            assert schema.validate(json.dumps(invalid)) == invalid
+            assert (
+                "unexpected_contract_field"
+                not in registered.arguments_validator.validate(json.dumps(invalid)).model_dump()
+            )
 
 
 def test_tool_contract_audit_fails_closed_on_definition_drift_and_open_schema():

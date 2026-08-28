@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import os
+from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -355,6 +357,103 @@ GIT_DIFF_PROVIDER_SCHEMA = _object_schema(
 )
 
 
+def _simple_object_schema(
+    properties: dict[str, object], *, required: tuple[str, ...] = ()
+) -> dict[str, object]:
+    """Return the intentionally small Pi-compatible model-facing schema shape."""
+
+    schema: dict[str, object] = {"type": "object", "properties": properties}
+    if required:
+        schema["required"] = list(required)
+    return schema
+
+
+READ_PROVIDER_SCHEMA = _simple_object_schema(
+    {
+        "path": {"type": "string", "description": "Path to the file to read"},
+        "offset": {
+            "type": "number",
+            "description": "Line number to start reading from (1-indexed)",
+        },
+        "limit": {"type": "number", "description": "Maximum number of lines to read"},
+    },
+    required=("path",),
+)
+
+LS_PROVIDER_SCHEMA = _simple_object_schema(
+    {
+        "path": {"type": "string", "description": "Directory to list (default: current)"},
+        "limit": {
+            "type": "number",
+            "description": "Maximum number of entries to return (default: 500)",
+        },
+    }
+)
+
+FIND_PROVIDER_SCHEMA = _simple_object_schema(
+    {
+        "pattern": {"type": "string", "description": "Glob pattern to match files"},
+        "path": {"type": "string", "description": "Directory to search (default: current)"},
+        "limit": {
+            "type": "number",
+            "description": "Maximum number of results (default: 1000)",
+        },
+    },
+    required=("pattern",),
+)
+
+GREP_PROVIDER_SCHEMA = _simple_object_schema(
+    {
+        "pattern": {"type": "string", "description": "Search pattern (regex by default)"},
+        "path": {
+            "type": "string",
+            "description": "Directory to search (default: current)",
+        },
+        "glob": {"type": "string", "description": "Optional file glob filter"},
+        "literal": {"type": "boolean", "description": "Treat pattern as literal text"},
+        "ignoreCase": {"type": "boolean", "description": "Use case-insensitive matching"},
+        "context": {"type": "number", "description": "Context lines before and after matches"},
+        "limit": {"type": "number", "description": "Maximum matches (default: 100)"},
+    },
+    required=("pattern",),
+)
+
+EDIT_PROVIDER_SCHEMA = _simple_object_schema(
+    {
+        "path": {"type": "string", "description": "Path to the file to edit"},
+        "edits": {
+            "type": "array",
+            "description": "One or more exact, non-overlapping replacements",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "oldText": {"type": "string", "description": "Exact text to replace"},
+                    "newText": {"type": "string", "description": "Replacement text"},
+                },
+                "required": ["oldText", "newText"],
+            },
+        },
+    },
+    required=("path", "edits"),
+)
+
+WRITE_PROVIDER_SCHEMA = _simple_object_schema(
+    {
+        "path": {"type": "string", "description": "Path to the file to write"},
+        "content": {"type": "string", "description": "Complete file content"},
+    },
+    required=("path", "content"),
+)
+
+BASH_PROVIDER_SCHEMA = _simple_object_schema(
+    {
+        "command": {"type": "string", "description": "Bash command to execute"},
+        "timeout": {"type": "number", "description": "Timeout in seconds"},
+    },
+    required=("command",),
+)
+
+
 class ListDirectoryArguments(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
@@ -517,6 +616,59 @@ class GitDiffArguments(BaseModel):
     _valid_paths = field_validator("paths")(lambda values: tuple(_path(value) for value in values))
 
 
+class _CompatibilityArguments(BaseModel):
+    """Pi-compatible input: ignore harmless extras and leave policy to the execution adapter."""
+
+    model_config = ConfigDict(extra="ignore", strict=True, populate_by_name=True)
+
+
+class ReadArguments(_CompatibilityArguments):
+    path: str
+    offset: int = 1
+    limit: int = 400
+
+
+class LsArguments(_CompatibilityArguments):
+    path: str = "."
+    limit: int = 500
+
+
+class FindArguments(_CompatibilityArguments):
+    pattern: str
+    path: str = "."
+    limit: int = 1000
+
+
+class GrepArguments(_CompatibilityArguments):
+    pattern: str
+    path: str = "."
+    glob: str | None = None
+    literal: bool = False
+    ignore_case: bool = Field(default=False, alias="ignoreCase")
+    context: int = 0
+    limit: int = 100
+
+
+class EditItem(_CompatibilityArguments):
+    old_text: str = Field(alias="oldText")
+    new_text: str = Field(alias="newText")
+
+
+class EditArguments(_CompatibilityArguments):
+    path: str
+    edits: tuple[EditItem, ...]
+
+
+class WriteArguments(_CompatibilityArguments):
+    path: str
+    content: str
+
+
+class BashArguments(_CompatibilityArguments):
+    command: str
+    timeout: float = 90.0
+
+
 def _tool_error(
     error: LocalFileError | ProcessServiceError | GitServiceError,
 ) -> ToolExecutionError:
@@ -583,6 +735,30 @@ def _tool_error(
         disposition=(ToolExecutionDisposition.UNKNOWN if error.code == "outcome_unknown" else None),
         facts=tuple(getattr(error, "facts", ())),
     )
+
+
+def _model_path(value: str, files: WorkspaceFileService) -> str:
+    """Normalize familiar path spellings while keeping the frozen workspace boundary."""
+
+    if not isinstance(value, str) or not value or "\x00" in value:
+        raise LocalFileError("invalid_path", "路径必须是非空文本")
+    try:
+        supplied = Path(value).expanduser()
+        candidate = supplied if supplied.is_absolute() else files.resolver.root / supplied
+        # Normalize spelling without resolving symlinks. The service must still inspect the
+        # visible alias and every existing component so protected-path and symlink policy applies.
+        normalized = Path(os.path.abspath(candidate))
+        relative = normalized.relative_to(files.resolver.root)
+    except (OSError, RuntimeError):
+        raise LocalFileError("invalid_path", "路径无法解析") from None
+    except ValueError:
+        raise LocalFileError("outside_workspace", "目标不在当前工作空间内") from None
+    rendered = relative.as_posix()
+    return rendered if rendered else "."
+
+
+def _bounded(value: int | float, *, minimum: int, maximum: int) -> int:
+    return max(minimum, min(maximum, int(value)))
 
 
 def _artifact_tool_error(error: ArtifactError) -> ToolExecutionError:
@@ -867,6 +1043,151 @@ def make_read_search_tools(
     return tuple(tools)
 
 
+def make_mainstream_read_search_tools(
+    files: WorkspaceFileService,
+    search: WorkspaceSearchService,
+    *,
+    long_horizon: bool = False,
+) -> tuple[RegisteredTool, ...]:
+    """Build the Pi-compatible read/ls/find/grep surface over Morrow services."""
+
+    read_max = PI_DEFAULT_MAX_LINES if long_horizon else LEGACY_MAX_READ_LINES
+
+    async def read_handler(arguments: ReadArguments, context: ToolCallContext):
+        try:
+            path = _model_path(arguments.path, files)
+            result = await asyncio.to_thread(
+                files.read_file,
+                path,
+                start_line=max(1, arguments.offset),
+                line_count=_bounded(arguments.limit, minimum=1, maximum=read_max),
+                result_limit=context.result_limit,
+                max_bytes=context.truncation_max_bytes if context.long_horizon else None,
+                max_lines=context.truncation_max_lines if context.long_horizon else None,
+            )
+        except LocalFileError as exc:
+            raise _tool_error(exc) from exc
+        return ToolHandlerOutcome(payload=result.model_dump(mode="json"))
+
+    def read_resolve(arguments: ReadArguments, _: ToolCallContext) -> OperationIntent:
+        try:
+            return _intent(_model_path(arguments.path, files), files, directory=False)
+        except LocalFileError as exc:
+            raise _tool_error(exc) from exc
+
+    read = make_tool(
+        name="read",
+        description="Read a text file. Use offset and limit to continue through large files.",
+        arguments_model=ReadArguments,
+        provider_schema=READ_PROVIDER_SCHEMA,
+        handler=read_handler,
+        context_handler=read_handler,
+        intent_resolver=read_resolve,
+        recovery_declaration=tool_declaration("read"),
+    )
+
+    async def ls_handler(arguments: LsArguments, context: ToolCallContext):
+        try:
+            path = _model_path(arguments.path, files)
+            result = await asyncio.to_thread(
+                files.list_directory,
+                path,
+                max_entries=_bounded(arguments.limit, minimum=1, maximum=500),
+                result_limit=context.result_limit,
+            )
+        except LocalFileError as exc:
+            raise _tool_error(exc) from exc
+        return ToolHandlerOutcome(payload=result.model_dump(mode="json"))
+
+    def ls_resolve(arguments: LsArguments, _: ToolCallContext) -> OperationIntent:
+        try:
+            return _intent(_model_path(arguments.path, files), files, directory=True)
+        except LocalFileError as exc:
+            raise _tool_error(exc) from exc
+
+    ls = make_tool(
+        name="ls",
+        description="List entries in a directory.",
+        arguments_model=LsArguments,
+        provider_schema=LS_PROVIDER_SCHEMA,
+        handler=ls_handler,
+        context_handler=ls_handler,
+        intent_resolver=ls_resolve,
+        recovery_declaration=tool_declaration("ls"),
+    )
+
+    async def find_handler(arguments: FindArguments, context: ToolCallContext):
+        try:
+            path = _model_path(arguments.path, files)
+            result = await asyncio.to_thread(
+                files.find_files,
+                path,
+                pattern=arguments.pattern,
+                max_results=_bounded(arguments.limit, minimum=1, maximum=1000),
+                result_limit=context.result_limit,
+            )
+        except LocalFileError as exc:
+            raise _tool_error(exc) from exc
+        return ToolHandlerOutcome(payload=result.model_dump(mode="json"))
+
+    def find_resolve(arguments: FindArguments, _: ToolCallContext) -> OperationIntent:
+        try:
+            return _intent(_model_path(arguments.path, files), files, directory=True)
+        except LocalFileError as exc:
+            raise _tool_error(exc) from exc
+
+    find = make_tool(
+        name="find",
+        description="Find files by glob pattern.",
+        arguments_model=FindArguments,
+        provider_schema=FIND_PROVIDER_SCHEMA,
+        handler=find_handler,
+        context_handler=find_handler,
+        intent_resolver=find_resolve,
+        recovery_declaration=tool_declaration("find"),
+    )
+
+    async def grep_handler(arguments: GrepArguments, context: ToolCallContext):
+        query = SearchQuery(
+            pattern=arguments.pattern,
+            literal=arguments.literal,
+            case=SearchCase.INSENSITIVE if arguments.ignore_case else SearchCase.SENSITIVE,
+            glob=arguments.glob,
+            context_lines=_bounded(arguments.context, minimum=0, maximum=3),
+            max_results=_bounded(arguments.limit, minimum=1, maximum=100),
+        )
+        try:
+            path = _model_path(arguments.path, files)
+            result = await asyncio.to_thread(
+                search.search_text,
+                path,
+                query=query,
+                result_limit=context.result_limit,
+                max_line_chars=context.grep_max_line_chars if context.long_horizon else None,
+            )
+        except LocalFileError as exc:
+            raise _tool_error(exc) from exc
+        return ToolHandlerOutcome(payload=result.model_dump(mode="json"))
+
+    def grep_resolve(arguments: GrepArguments, _: ToolCallContext) -> OperationIntent:
+        try:
+            return _intent(_model_path(arguments.path, files), files, directory=True)
+        except LocalFileError as exc:
+            raise _tool_error(exc) from exc
+
+    grep = make_tool(
+        name="grep",
+        description="Search file contents with a regular expression or literal text.",
+        arguments_model=GrepArguments,
+        provider_schema=GREP_PROVIDER_SCHEMA,
+        handler=grep_handler,
+        context_handler=grep_handler,
+        intent_resolver=grep_resolve,
+        recovery_declaration=tool_declaration("grep"),
+    )
+    return read, ls, find, grep
+
+
 COMMAND_PREVIEW_BUDGET = ApprovalPreviewBudget(
     max_lines=8,
     max_line_chars=200,
@@ -960,6 +1281,105 @@ def make_run_command_tool(process: ProcessExecutionService) -> RegisteredTool:
         approval_preview_budget=COMMAND_PREVIEW_BUDGET,
         recovery_declaration=tool_declaration(
             "run_command",
+            process_isolation=(
+                ProcessIsolation.NATIVE_SANDBOX
+                if process.requires_sandbox
+                else ProcessIsolation.HOST
+            ),
+        ),
+    )
+
+
+def make_bash_tool(process: ProcessExecutionService) -> RegisteredTool:
+    """Expose one conventional command string while retaining process preflight and policy."""
+
+    def request(arguments: BashArguments) -> RunCommandArguments:
+        return RunCommandArguments(
+            shell=arguments.command,
+            cwd=".",
+            timeout_seconds=float(_bounded(arguments.timeout, minimum=1, maximum=90)),
+        )
+
+    def resolve(arguments: BashArguments, context: ToolCallContext) -> OperationIntent:
+        try:
+            plan = process.preflight(request(arguments))
+        except (LocalFileError, ProcessServiceError) as exc:
+            raise _tool_error(exc) from exc
+        except ValueError:
+            raise ToolExecutionError(
+                ToolErrorCode.INVALID_ARGUMENTS, "命令参数超出执行端边界"
+            ) from None
+        process.cache_plan(context.run.run_id, context.call_id, plan)
+        return process.intent(plan)
+
+    def preview(arguments: BashArguments, context: ToolCallContext) -> tuple[str, ...]:
+        del arguments
+        plan = process.cached_plan(context.run.run_id, context.call_id)
+        if plan is None:
+            return ("无法生成宿主命令预览",)
+        return (
+            f"命令：{process.approval_command(plan)}",
+            f"命令类别：{plan.command_class}",
+            f"工作目录：{plan.cwd_relative}",
+            f"超时上限：{plan.request.timeout_seconds:g} 秒",
+            (
+                "原生沙箱进程（临时快照）；真实工作空间不会以可写方式暴露"
+                if process.requires_sandbox
+                else "非沙箱宿主进程；批准后可能访问工作空间外文件或网络"
+            ),
+        )
+
+    async def handler(arguments: BashArguments, context: ToolCallContext):
+        del arguments
+        plan = process.cached_plan(context.run.run_id, context.call_id)
+        if plan is None:
+            raise ToolExecutionError(ToolErrorCode.PREFLIGHT_FAILED, "命令预检不存在")
+        try:
+            result, fact, artifact_content = await process.execute_with_artifact(
+                plan,
+                result_limit=context.result_limit,
+                run=context.run,
+                call_id=context.call_id,
+                tool_name=context.tool_name,
+                ordinal=context.ordinal,
+                approval_verdict=context.approval_verdict,
+                truncation_max_bytes=(
+                    context.truncation_max_bytes if context.long_horizon else None
+                ),
+                truncation_max_lines=(
+                    context.truncation_max_lines if context.long_horizon else None
+                ),
+            )
+        except ProcessServiceError as exc:
+            raise _tool_error(exc) from exc
+        validation_fact = process.validation_fact(
+            plan,
+            result,
+            call_id=context.call_id,
+            tool_name=context.tool_name,
+            ordinal=context.ordinal,
+            approval_verdict=context.approval_verdict,
+        )
+        facts = (fact,) if validation_fact is None else (fact, validation_fact)
+        return ToolHandlerOutcome(
+            payload=result.model_dump(mode="json"),
+            facts=facts,
+            artifact_content=artifact_content,
+        )
+
+    return make_tool(
+        name="bash",
+        description="Run a shell command in the workspace and return stdout, stderr, and status.",
+        arguments_model=BashArguments,
+        provider_schema=BASH_PROVIDER_SCHEMA,
+        handler=handler,
+        context_handler=handler,
+        intent_resolver=resolve,
+        context_approval_preview=preview,
+        context_cleanup=lambda context: process.discard_plan(context.run.run_id, context.call_id),
+        approval_preview_budget=COMMAND_PREVIEW_BUDGET,
+        recovery_declaration=tool_declaration(
+            "bash",
             process_isolation=(
                 ProcessIsolation.NATIVE_SANDBOX
                 if process.requires_sandbox
@@ -1286,6 +1706,129 @@ async def _blocking_mutation(callback):
         except Exception:
             pass
         raise
+
+
+def _compatibility_mutation_tool(
+    *,
+    name: str,
+    description: str,
+    arguments_model: type[BaseModel],
+    provider_schema: dict[str, object],
+    preflight,
+    mutation: WorkspaceMutationService,
+    changes: ChangeSetService,
+) -> RegisteredTool:
+    def resolve(arguments, context: ToolCallContext) -> OperationIntent:
+        try:
+            plan = preflight(arguments, context)
+        except LocalFileError as exc:
+            raise _tool_error(exc) from exc
+        return _mutation_intent(plan, mutation, context)
+
+    def preview(arguments, context: ToolCallContext) -> tuple[str, ...]:
+        del arguments
+        plan = mutation.cached_plan(context.run.run_id, context.call_id)
+        return _mutation_preview(plan) if plan is not None else ("无法生成变更预览",)
+
+    async def handler(arguments, context: ToolCallContext):
+        del arguments
+        plan = mutation.cached_plan(context.run.run_id, context.call_id)
+        if plan is None:
+            raise ToolExecutionError(ToolErrorCode.PREFLIGHT_FAILED, "变更预检不存在")
+        try:
+            result, fact = await _blocking_mutation(
+                lambda: mutation.apply(
+                    plan,
+                    call_id=context.call_id,
+                    tool_name=context.tool_name,
+                    ordinal=context.ordinal,
+                    approval_verdict=context.approval_verdict,
+                    run=context.run,
+                )
+            )
+        except LocalFileError as exc:
+            raise _tool_error(exc) from exc
+        changes.record(context.run, result)
+        return ToolHandlerOutcome(payload=result.model_dump(mode="json"), facts=(fact,))
+
+    return make_tool(
+        name=name,
+        description=description,
+        arguments_model=arguments_model,
+        provider_schema=provider_schema,
+        handler=handler,
+        context_handler=handler,
+        intent_resolver=resolve,
+        context_approval_preview=preview,
+        context_cleanup=lambda context: mutation.discard_previews(
+            context.run.run_id, context.call_id
+        ),
+        approval_preview_budget=MUTATION_PREVIEW_BUDGET,
+        recovery_declaration=tool_declaration(name),
+    )
+
+
+def make_edit_tool(mutation: WorkspaceMutationService, changes: ChangeSetService) -> RegisteredTool:
+    def preflight(arguments: EditArguments, context: ToolCallContext):
+        path = _model_path(arguments.path, mutation.files)
+        source = mutation.files.read_source_text(path)
+        try:
+            edits = tuple(
+                ExactEdit(old_text=item.old_text, new_text=item.new_text)
+                for item in arguments.edits
+            )
+        except ValueError:
+            raise LocalFileError("invalid_range", "编辑内容超出执行端边界") from None
+        if not edits:
+            raise LocalFileError("invalid_range", "至少需要一个编辑")
+        return mutation.preflight_patch(
+            path,
+            expected_sha256=source.revision.sha256,
+            edits=edits,
+            run=context.run,
+        )
+
+    return _compatibility_mutation_tool(
+        name="edit",
+        description="Replace exact text in a file. Read the file first and use unique oldText.",
+        arguments_model=EditArguments,
+        provider_schema=EDIT_PROVIDER_SCHEMA,
+        preflight=preflight,
+        mutation=mutation,
+        changes=changes,
+    )
+
+
+def make_write_tool(
+    mutation: WorkspaceMutationService, changes: ChangeSetService
+) -> RegisteredTool:
+    def preflight(arguments: WriteArguments, context: ToolCallContext):
+        path = _model_path(arguments.path, mutation.files)
+        target = mutation.files.resolver.resolve_mutation(path)
+        if target.kind == "missing":
+            mode = MutationMode.CREATE
+            expected_sha256 = None
+        else:
+            source = mutation.files.read_source_text(path)
+            mode = MutationMode.REPLACE
+            expected_sha256 = source.revision.sha256
+        return mutation.preflight_write(
+            path,
+            content=arguments.content,
+            mode=mode.value,
+            expected_sha256=expected_sha256,
+            run=context.run,
+        )
+
+    return _compatibility_mutation_tool(
+        name="write",
+        description="Create or overwrite a text file with complete content.",
+        arguments_model=WriteArguments,
+        provider_schema=WRITE_PROVIDER_SCHEMA,
+        preflight=preflight,
+        mutation=mutation,
+        changes=changes,
+    )
 
 
 def _make_destructive_file_tool(

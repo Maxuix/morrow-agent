@@ -171,6 +171,13 @@ def test_production_declarations_cover_the_frozen_inventory():
         "move_file",
         "rename_file",
         "read_artifact",
+        "ls",
+        "read",
+        "find",
+        "grep",
+        "edit",
+        "write",
+        "bash",
     }
     assert "calculate" not in PRODUCTION_TOOL_NAMES
     assert "lookup_record" not in PRODUCTION_TOOL_NAMES

@@ -15,7 +15,7 @@ from morrow.application.local_tools import (
 )
 from morrow.bootstrap import build_application, build_session_application
 from morrow.core.capabilities import PermissionPreset, PermissionProfile
-from morrow.core.models import AssistantMessage, FunctionToolCall, ModelRef
+from morrow.core.models import AssistantMessage, FunctionToolCall, ModelRef, ToolApprovalDecision
 from morrow.runtime.tool_arguments import JsonSchemaArgumentsValidator, ToolArgumentsValidationError
 from morrow.runtime.tools import ToolErrorCode
 from morrow.services.files import LocalFileError
@@ -57,8 +57,8 @@ async def test_production_read_tools_use_semantic_result_and_continuation(tmp_pa
                 tool_calls=(
                     FunctionToolCall(
                         id="read-1",
-                        name="read_file",
-                        arguments='{"path":"sample.txt","line_count":2}',
+                        name="read",
+                        arguments='{"path":"sample.txt","limit":2}',
                     ),
                 )
             ),
@@ -101,16 +101,14 @@ async def test_fake_provider_can_list_search_read_continue_and_explain(tmp_path)
     provider = ScriptedModelProvider(
         [
             AssistantMessage(
-                tool_calls=(
-                    FunctionToolCall(id="list", name="list_directory", arguments='{"path":"src"}'),
-                )
+                tool_calls=(FunctionToolCall(id="list", name="ls", arguments='{"path":"src"}'),)
             ),
             AssistantMessage(
                 tool_calls=(
                     FunctionToolCall(
                         id="search",
-                        name="search_text",
-                        arguments='{"path":"src","query":"needle"}',
+                        name="grep",
+                        arguments='{"path":"src","pattern":"needle","literal":true}',
                     ),
                 )
             ),
@@ -118,8 +116,8 @@ async def test_fake_provider_can_list_search_read_continue_and_explain(tmp_path)
                 tool_calls=(
                     FunctionToolCall(
                         id="read-1",
-                        name="read_file",
-                        arguments='{"path":"src/bug.py","line_count":2}',
+                        name="read",
+                        arguments='{"path":"src/bug.py","limit":2}',
                     ),
                 )
             ),
@@ -127,8 +125,8 @@ async def test_fake_provider_can_list_search_read_continue_and_explain(tmp_path)
                 tool_calls=(
                     FunctionToolCall(
                         id="read-2",
-                        name="read_file",
-                        arguments='{"path":"src/bug.py","start_line":3,"line_count":2}',
+                        name="read",
+                        arguments='{"path":"src/bug.py","offset":3,"limit":2}',
                     ),
                 )
             ),
@@ -166,6 +164,101 @@ class _NoApproval:
         raise AssertionError("read-only tools must not request approval")
 
 
+class _Approve:
+    def __init__(self):
+        self.requests = []
+
+    async def request(self, request):
+        self.requests.append(request)
+        return ToolApprovalDecision(approved=True)
+
+
+@pytest.mark.asyncio
+async def test_pi_style_edit_and_write_infer_revision_mode_and_accept_absolute_inside_path(
+    tmp_path,
+):
+    app = build_application(state_root=tmp_path / "state", credentials=MemoryCredentialStore())
+    project = tmp_path / "project"
+    project.mkdir()
+    source = project / "sample.txt"
+    source.write_text("old\n", encoding="utf-8")
+    identity = app.workspace_service.confirm(app.workspace_service.resolve(project))
+    provider = ScriptedModelProvider(
+        [
+            AssistantMessage(
+                tool_calls=(
+                    FunctionToolCall(
+                        id="read",
+                        name="read",
+                        arguments=json.dumps({"path": str(source), "unused": "ignored"}),
+                    ),
+                )
+            ),
+            AssistantMessage(
+                tool_calls=(
+                    FunctionToolCall(
+                        id="edit",
+                        name="edit",
+                        arguments=json.dumps(
+                            {
+                                "path": str(source),
+                                "edits": [{"oldText": "old", "newText": "new"}],
+                                "unused": True,
+                            }
+                        ),
+                    ),
+                )
+            ),
+            AssistantMessage(
+                tool_calls=(
+                    FunctionToolCall(
+                        id="create",
+                        name="write",
+                        arguments=json.dumps(
+                            {"path": str(project / "created.txt"), "content": "first\n"}
+                        ),
+                    ),
+                )
+            ),
+            AssistantMessage(
+                tool_calls=(
+                    FunctionToolCall(
+                        id="replace",
+                        name="write",
+                        arguments=json.dumps({"path": "created.txt", "content": "second\n"}),
+                    ),
+                )
+            ),
+            AssistantMessage(content="done"),
+        ]
+    )
+    approval = _Approve()
+    session_app = build_session_application(
+        app,
+        identity,
+        provider=provider,
+        model=ModelRef(provider_id="p", model_id="m"),
+        approval_port=approval,
+    )
+
+    [item async for item in session_app.orchestrator.stream("edit and write")]
+
+    assert source.read_text(encoding="utf-8") == "new\n"
+    assert (project / "created.txt").read_text(encoding="utf-8") == "second\n"
+    payloads = [
+        json.loads(message.content)
+        for message in session_app.session.messages
+        if message.role == "tool"
+    ]
+    assert [payload["ok"] for payload in payloads] == [True, True, True, True]
+    assert [payloads[index]["result"]["operation"] for index in (1, 2, 3)] == [
+        "patch",
+        "create",
+        "replace",
+    ]
+    assert len(approval.requests) == 3
+
+
 def test_production_inventory_is_exact_and_demo_tools_are_not_exposed(tmp_path):
     app = build_application(state_root=tmp_path / "state", credentials=MemoryCredentialStore())
     project = tmp_path / "project"
@@ -184,26 +277,19 @@ def test_production_inventory_is_exact_and_demo_tools_are_not_exposed(tmp_path):
 
     assert names == {
         "update_configuration",
-        "list_directory",
-        "read_file",
-        "find_files",
-        "search_text",
-        "apply_patch",
-        "write_file",
-        "delete_file",
-        "move_file",
-        "rename_file",
-        "show_changes",
-        "run_command",
+        "ls",
+        "read",
+        "find",
+        "grep",
+        "edit",
+        "write",
+        "bash",
         "run_skill_script",
-        "git_status",
-        "git_diff",
     }
     assert "lookup_record" not in names
     assert "calculate" not in names
     for definition in session_app.orchestrator.runtime.loop.tool_executor.definitions:
         parameters = definition.function.parameters
-        assert parameters.get("additionalProperties") is False
         assert "PermissionProfile" not in str(parameters)
         assert "approval" not in str(parameters).casefold()
         assert "sandbox" not in str(parameters).casefold()
@@ -213,7 +299,7 @@ def test_production_inventory_is_exact_and_demo_tools_are_not_exposed(tmp_path):
     )
 
 
-def test_run_command_schema_enforces_wire_shape_and_bounds(tmp_path):
+def test_bash_schema_uses_the_common_command_shape(tmp_path):
     app = build_application(state_root=tmp_path / "state", credentials=MemoryCredentialStore())
     project = tmp_path / "project"
     project.mkdir()
@@ -227,38 +313,84 @@ def test_run_command_schema_enforces_wire_shape_and_bounds(tmp_path):
     definition = next(
         tool
         for tool in session_app.orchestrator.runtime.loop.tool_executor.definitions
-        if tool.function.name == "run_command"
+        if tool.function.name == "bash"
     )
     schema = definition.function.parameters
     validator = JsonSchemaArgumentsValidator(schema)
-    for payload in (
-        {},
-        {"argv": []},
-        {"argv": None},
-        {"argv": ["pwd\n"]},
-        {"shell": "   "},
-        {"shell": "\x00"},
-        {"shell": "echo\ntrue"},
-        {"argv": ["pwd"], "shell": "pwd"},
-        {"argv": ["pwd"], "extra": True},
-        {"argv": ["x"] * 17},
-        {"argv": ["x" * 1025]},
-    ):
+    for payload in ({}, {"command": None}, {"command": ["pwd"]}):
         with pytest.raises(ToolArgumentsValidationError):
             validator.validate(json.dumps(payload))
-    assert validator.validate('{"argv":["pwd"]}') == {"argv": ["pwd"]}
-    assert validator.validate('{"shell":"pwd"}') == {"shell": "pwd"}
-    assert schema["additionalProperties"] is False
-    assert len(schema["oneOf"]) == 2
-    assert schema["properties"]["argv"]["maxItems"] == 16
-    assert schema["properties"]["argv"]["items"]["maxLength"] <= 4096
-    assert (
-        schema["properties"]["argv"]["maxItems"]
-        * schema["properties"]["argv"]["items"]["maxLength"]
-        <= 16 * 1024
+    assert validator.validate('{"command":"pwd"}') == {"command": "pwd"}
+    assert validator.validate('{"command":"pwd","extra":true}') == {
+        "command": "pwd",
+        "extra": True,
+    }
+    assert set(schema["properties"]) == {"command", "timeout"}
+    assert schema["required"] == ["command"]
+    assert "oneOf" not in schema
+    assert "additionalProperties" not in schema
+
+
+def test_core_provider_schemas_match_the_pi_style_field_surface(tmp_path):
+    def schema_keywords(value):
+        if isinstance(value, dict):
+            for key, item in value.items():
+                if key == "properties":
+                    for property_schema in item.values():
+                        yield from schema_keywords(property_schema)
+                    continue
+                yield key
+                yield from schema_keywords(item)
+        elif isinstance(value, list):
+            for item in value:
+                yield from schema_keywords(item)
+
+    app = build_application(state_root=tmp_path / "state", credentials=MemoryCredentialStore())
+    project = tmp_path / "project"
+    project.mkdir()
+    identity = app.workspace_service.confirm(app.workspace_service.resolve(project))
+    session_app = build_session_application(
+        app,
+        identity,
+        provider=ScriptedModelProvider(["done"]),
+        model=ModelRef(provider_id="p", model_id="m"),
     )
-    assert schema["properties"]["shell"]["maxLength"] <= 16 * 1024
-    assert schema["properties"]["timeout_seconds"]["maximum"] == 90
+    definitions = {
+        tool.function.name: tool.function
+        for tool in session_app.orchestrator.runtime.loop.tool_executor.definitions
+        if tool.function.name in {"read", "bash", "edit", "write", "grep", "find", "ls"}
+    }
+    expected = {
+        "read": ({"path", "offset", "limit"}, {"path"}),
+        "bash": ({"command", "timeout"}, {"command"}),
+        "edit": ({"path", "edits"}, {"path", "edits"}),
+        "write": ({"path", "content"}, {"path", "content"}),
+        "grep": (
+            {"pattern", "path", "glob", "literal", "ignoreCase", "context", "limit"},
+            {"pattern"},
+        ),
+        "find": ({"pattern", "path", "limit"}, {"pattern"}),
+        "ls": ({"path", "limit"}, set()),
+    }
+
+    assert set(definitions) == set(expected)
+    for name, (properties, required) in expected.items():
+        function = definitions[name]
+        schema = function.parameters
+        assert set(schema["properties"]) == properties
+        assert set(schema.get("required", [])) == required
+        assert function.description
+        keywords = set(schema_keywords(schema))
+        for protocol_keyword in (
+            "additionalProperties",
+            "oneOf",
+            "pattern",
+            "maxLength",
+            "maxItems",
+            "expected_sha256",
+            "timeout_seconds",
+        ):
+            assert protocol_keyword not in keywords
 
 
 def test_supported_auto_sandbox_inventory_adds_only_current_run_promotion(tmp_path):
@@ -279,20 +411,14 @@ def test_supported_auto_sandbox_inventory_adds_only_current_run_promotion(tmp_pa
     }
     assert names == {
         "update_configuration",
-        "list_directory",
-        "read_file",
-        "find_files",
-        "search_text",
-        "apply_patch",
-        "write_file",
-        "delete_file",
-        "move_file",
-        "rename_file",
-        "show_changes",
-        "run_command",
+        "ls",
+        "read",
+        "find",
+        "grep",
+        "edit",
+        "write",
+        "bash",
         "run_skill_script",
-        "git_status",
-        "git_diff",
         "promote_sandbox_changes",
     }
 
@@ -309,7 +435,7 @@ async def test_invalid_read_path_is_bounded_and_handler_does_not_disclose_outsid
                 tool_calls=(
                     FunctionToolCall(
                         id="bad",
-                        name="read_file",
+                        name="read",
                         arguments='{"path":"../outside.txt"}',
                     ),
                 )
@@ -331,5 +457,5 @@ async def test_invalid_read_path_is_bounded_and_handler_does_not_disclose_outsid
     ]
     payload = json.loads(tool_message.content)
     assert payload["ok"] is False
-    assert payload["error"]["code"] == ToolErrorCode.INVALID_ARGUMENTS.value
+    assert payload["error"]["code"] == ToolErrorCode.OUTSIDE_WORKSPACE.value
     assert "outside.txt" not in tool_message.content

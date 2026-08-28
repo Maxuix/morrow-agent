@@ -80,14 +80,15 @@ Session 持有的进程内 `ConversationLog` 是唯一聊天历史权威，`Sess
 带 calls 的 Assistant 与其有序 ToolMessage 构成不可拆分的 ToolCycle。ContextBuilder 从不可变
 Snapshot 生成 Chat 或 Structured 投影，按完整 Cycle/turn 控制预算；它不写事实源、不调用摘要模型。
 
-生产组合只在 Adapter 声明 OpenAI function-tool 支持时启用 `list_directory`、`read_file`、
-`find_files`、`search_text`、`apply_patch`、`write_file`、`show_changes`、`run_command`、
-`run_skill_script`、`git_status`、`git_diff`、`update_configuration` 和 `manage_preferences`；
-支持原生沙箱时再加入当前运行、始终需审批的 `promote_sandbox_changes`。读搜工具通过冻结的
+生产组合只在 Adapter 声明 OpenAI function-tool 支持时启用 `read`、`ls`、`find`、`grep`、
+`edit`、`write` 与 `bash` 七个核心编码工具；`run_skill_script`、`update_configuration`、
+`manage_preferences` 与 `read_artifact` 随对应能力条件组合，支持原生沙箱时再加入当前运行、始终需
+审批的 `promote_sandbox_changes`。读搜工具通过冻结的
 `WorkspacePathResolver`、`WorkspaceFileService` 与 `WorkspaceSearchService` 访问当前工作空间，
 并对调用路径及工作区内解析后的文件符号链接目标应用同一受保护策略；变更工具通过
-`WorkspaceMutationService`、`FileSystemAdapter` 与进程内 `ChangeSetService` 执行 SHA-256 冲突检查、
-原子发布和实际 Diff。`update_configuration` 只管理 Workspace Profile；`manage_preferences` 是原子 Preference Writer 的受审批薄适配器。所有工具遵循同一标准 ToolCycle。随包
+`WorkspaceMutationService`、`FileSystemAdapter` 与进程内 `ChangeSetService` 自动取得模式/当前
+revision，并执行 SHA-256 冲突检查、原子发布和实际 Diff。模型可见 schema 不携带这些内部协议字段。
+`update_configuration` 只管理 Workspace Profile；`manage_preferences` 是原子 Preference Writer 的受审批薄适配器。所有工具遵循同一标准 ToolCycle。随包
 `runtime-policy.toml` 与可选 `config.yaml.runtime_policy` 安全覆盖在 composition root 合并，并解析为任务固定的 RunPolicy 及 Review policy。模型请求白名单、流片段组装与 reasoning/SDK 元数据
 隔离归 Provider Adapter。
 
@@ -216,10 +217,10 @@ Service 或 Port：
 - 工具的副作用等级、审批、超时、取消和审计属于通用 Tool Policy/Executor；单个 handler 不得自行读取
   用户输入、发起终端确认或发布公开事件。
 
-`list_directory`、`read_file`、`find_files` 与 `search_text` 通过注入的文件/搜索服务访问冻结工作空间；
-`apply_patch`、`write_file`、`delete_file`、`move_file`、`rename_file` 与 `show_changes` 通过注入的
-mutation/ChangeSet 服务执行和报告当前运行的实际变更；
-`run_command` 通过注入的 `ProcessExecutionService` 执行审批后的 Host 命令，或在 Auto Sandboxed 中执行原生快照命令；
+`read`、`ls`、`find` 与 `grep` 通过兼容适配器和注入的文件/搜索服务访问冻结工作空间；
+`edit` 与 `write` 通过适配器自动补全内部 revision/mode，再由 mutation/ChangeSet 服务执行和报告
+实际变更。旧的专用文件/Git/ChangeSet 工厂继续保留供显式组合与恢复兼容，但不进入默认核心库存；
+`bash` 通过注入的 `ProcessExecutionService` 执行审批后的 Host 命令，或在 Auto Sandboxed 中执行原生快照命令；
 `run_skill_script` 通过注入的 `SkillScriptExecutionService` 执行已冻结 Skill 包中的脚本，并只发布有界、脱敏的
 声明输出 Artifact；
 `promote_sandbox_changes` 通过注入的 `SandboxSnapshotService`、`WorkspaceMutationService` 与
@@ -246,7 +247,7 @@ bounded partial failure，不回滚或覆盖用户数据；
   → Adapter 流式返回文本或 tool calls
   → ConversationLog 校验 Assistant ToolCall 后，同一事务提交有序 ToolExecution 意图
   → 审批 consume 与 executing 同一事务；handler 只在已提交意图可见后运行
-  → bounded、redacted run_command 结果先发布为 Artifact，再记录 handler_completed 与 ToolMessage/closed
+  → bounded、redacted bash 结果先发布为 Artifact，再记录 handler_completed 与 ToolMessage/closed
   → ToolExecutor 校验、预检、审批并串行执行受限工具，闭合 ToolCycle
   → 合法模型 STOP 直接提交并发布最终回答
   → 工具协议、审批、权限、预算、Provider 错误、取消和未闭合 ToolCycle 仍由各自确定性边界处理

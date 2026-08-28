@@ -777,6 +777,10 @@ def _declaration(
 
 
 PRODUCTION_TOOL_DECLARATIONS: tuple[ToolRecoveryDeclaration, ...] = (
+    _declaration("ls", EffectClass.BOUNDED_READ, MissingCompletionPolicy.SAFE_TO_RETRY),
+    _declaration("read", EffectClass.BOUNDED_READ, MissingCompletionPolicy.SAFE_TO_RETRY),
+    _declaration("find", EffectClass.BOUNDED_READ, MissingCompletionPolicy.SAFE_TO_RETRY),
+    _declaration("grep", EffectClass.BOUNDED_READ, MissingCompletionPolicy.SAFE_TO_RETRY),
     _declaration("list_directory", EffectClass.BOUNDED_READ, MissingCompletionPolicy.SAFE_TO_RETRY),
     _declaration("read_file", EffectClass.BOUNDED_READ, MissingCompletionPolicy.SAFE_TO_RETRY),
     _declaration("find_files", EffectClass.BOUNDED_READ, MissingCompletionPolicy.SAFE_TO_RETRY),
@@ -815,6 +819,16 @@ PRODUCTION_TOOL_DECLARATIONS: tuple[ToolRecoveryDeclaration, ...] = (
         MissingCompletionPolicy.REQUIRES_RECONCILIATION,
     ),
     _declaration(
+        "edit",
+        EffectClass.RECONCILEABLE_FILE_WRITE,
+        MissingCompletionPolicy.REQUIRES_RECONCILIATION,
+    ),
+    _declaration(
+        "write",
+        EffectClass.RECONCILEABLE_FILE_WRITE,
+        MissingCompletionPolicy.REQUIRES_RECONCILIATION,
+    ),
+    _declaration(
         "write_file",
         EffectClass.RECONCILEABLE_FILE_WRITE,
         MissingCompletionPolicy.REQUIRES_RECONCILIATION,
@@ -844,6 +858,18 @@ PRODUCTION_TOOL_DECLARATIONS: tuple[ToolRecoveryDeclaration, ...] = (
         EffectClass.UNCONFINED_EXTERNAL_EFFECT,
         MissingCompletionPolicy.OUTCOME_UNKNOWN,
         isolation=ProcessIsolation.HOST,
+    ),
+    _declaration(
+        "bash",
+        EffectClass.UNCONFINED_EXTERNAL_EFFECT,
+        MissingCompletionPolicy.OUTCOME_UNKNOWN,
+        isolation=ProcessIsolation.HOST,
+    ),
+    _declaration(
+        "bash",
+        EffectClass.PROCESS_EFFECT_NON_DURABLE,
+        MissingCompletionPolicy.OUTCOME_UNKNOWN,
+        isolation=ProcessIsolation.NATIVE_SANDBOX,
     ),
     _declaration(
         "run_command",
@@ -892,7 +918,7 @@ def tool_declaration(
     production_only: bool = False,
 ) -> ToolRecoveryDeclaration:
     index = _PRODUCTION_INDEX if production_only else _ALL_INDEX
-    if name == "run_command":
+    if name in {"run_command", "bash"}:
         if process_isolation is None:
             raise UnknownToolDeclarationError("run_command declaration requires process isolation")
         key = (name, process_isolation)
@@ -914,7 +940,7 @@ def missing_declarations(
     missing: list[str] = []
     for name in tool_names:
         try:
-            isolation = process_isolation if name == "run_command" else None
+            isolation = process_isolation if name in {"run_command", "bash"} else None
             tool_declaration(name, process_isolation=isolation)
         except UnknownToolDeclarationError:
             missing.append(name)
@@ -1096,7 +1122,7 @@ def assert_handler_may_enter(
     if (
         permission_snapshot is not None
         and permission_snapshot.access_scope is AccessScope.FULL_ACCESS
-        and execution.tool_name == "run_command"
+        and execution.tool_name in {"run_command", "bash"}
         and execution.intent.effect_class is EffectClass.UNCONFINED_EXTERNAL_EFFECT
         and execution.grant_id is None
     ):
@@ -1104,7 +1130,7 @@ def assert_handler_may_enter(
     if (
         permission_snapshot is not None
         and permission_snapshot.grant_id is not None
-        and execution.tool_name == "run_command"
+        and execution.tool_name in {"run_command", "bash"}
         and execution.intent.effect_class is EffectClass.UNCONFINED_EXTERNAL_EFFECT
         and execution.intent.requires_approval
         and execution.grant_id is None

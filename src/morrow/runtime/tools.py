@@ -65,6 +65,12 @@ def policy_denial_message(tool_name: str, reason_codes=()) -> str:
 
     codes = tuple(dict.fromkeys(str(reason) for reason in reason_codes if str(reason)))
     suffix = f"（{', '.join(codes)}）" if codes else ""
+    if tool_name == "bash":
+        return (
+            f"当前能力策略拒绝此操作{suffix}。bash 会自动捕获 stdout/stderr；"
+            "请移除工作区外路径或不允许的命令效果。网络、依赖安装、Git 写入和破坏性操作"
+            "仍受执行端策略约束。"
+        )
     if tool_name == "run_command":
         return (
             f"当前能力策略拒绝此操作{suffix}。run_command 会自动捕获 stdout/stderr；"
@@ -239,6 +245,10 @@ def _static_contract(
 
 _STATIC_TOOL_CONTRACTS: Mapping[str, ToolContractExpectation] = MappingProxyType(
     {
+        "ls": _static_contract(OperationKind.WORKSPACE_READ),
+        "read": _static_contract(OperationKind.WORKSPACE_READ),
+        "find": _static_contract(OperationKind.WORKSPACE_READ),
+        "grep": _static_contract(OperationKind.WORKSPACE_READ),
         "list_directory": _static_contract(OperationKind.WORKSPACE_READ),
         "read_file": _static_contract(OperationKind.WORKSPACE_READ),
         "find_files": _static_contract(OperationKind.WORKSPACE_READ),
@@ -260,6 +270,8 @@ _STATIC_TOOL_CONTRACTS: Mapping[str, ToolContractExpectation] = MappingProxyType
             policy_approval=ToolApproval.REQUIRED,
         ),
         "apply_patch": _static_contract(OperationKind.WORKSPACE_WRITE, ToolEffect.PERSISTENT_WRITE),
+        "edit": _static_contract(OperationKind.WORKSPACE_WRITE, ToolEffect.PERSISTENT_WRITE),
+        "write": _static_contract(OperationKind.WORKSPACE_WRITE, ToolEffect.PERSISTENT_WRITE),
         "write_file": _static_contract(OperationKind.WORKSPACE_WRITE, ToolEffect.PERSISTENT_WRITE),
         "delete_file": _static_contract(
             OperationKind.WORKSPACE_WRITE,
@@ -290,6 +302,11 @@ _STATIC_TOOL_CONTRACTS: Mapping[str, ToolContractExpectation] = MappingProxyType
             requires_host=None,
             requires_sandbox=None,
         ),
+        "bash": _static_contract(
+            OperationKind.PROCESS,
+            requires_host=None,
+            requires_sandbox=None,
+        ),
         "run_skill_script": _static_contract(
             OperationKind.PROCESS,
             ToolEffect.SESSION_WRITE,
@@ -308,7 +325,7 @@ def _static_contract_for(
     expected = _STATIC_TOOL_CONTRACTS.get(name)
     if expected is None:
         return None
-    if name != "run_command" or process_isolation is None:
+    if name not in {"run_command", "bash"} or process_isolation is None:
         return expected
     return replace(
         expected,
@@ -410,7 +427,7 @@ def audit_registered_tool(
         require_runtime_contract
         and name in _STATIC_TOOL_CONTRACTS
         and (
-            name != "run_command"
+            name not in {"run_command", "bash"}
             or expected_process_isolation is not None
             or declaration.process_isolation is not None
         )
@@ -421,12 +438,14 @@ def audit_registered_tool(
             if expected_process_isolation is not None
             else declaration.process_isolation
         )
-        if name == "run_command" and declaration_isolation is None:
+        if name in {"run_command", "bash"} and declaration_isolation is None:
             raise _contract_failure(name, "expected process isolation is missing")
         try:
             expected = tool_declaration(
                 name,
-                process_isolation=declaration_isolation if name == "run_command" else None,
+                process_isolation=(
+                    declaration_isolation if name in {"run_command", "bash"} else None
+                ),
                 production_only=require_production_declaration,
             )
         except UnknownToolDeclarationError:

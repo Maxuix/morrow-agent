@@ -142,22 +142,18 @@ def test_no_forbidden_tool_capability_is_registered_or_exposed(tmp_path):
     names = _collect_tool_names(_iter_graph(graph))
     assert names == {
         "update_configuration",
-        "list_directory",
-        "read_file",
-        "find_files",
-        "search_text",
-        "apply_patch",
-        "write_file",
-        "show_changes",
-        "run_command",
+        "ls",
+        "read",
+        "find",
+        "grep",
+        "edit",
+        "write",
+        "bash",
         "run_skill_script",
-        "git_status",
-        "git_diff",
-        "delete_file",
-        "move_file",
-        "rename_file",
     }
     for name in names:
+        if name == "bash":
+            continue  # The user explicitly opened the confined Stage 7 command surface.
         casefolded = name.casefold()
         assert not any(keyword in casefolded for keyword in FORBIDDEN_TOOL_KEYWORDS), name
     assert missing_declarations(tuple(sorted(names))) == ()

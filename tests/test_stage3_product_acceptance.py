@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -69,9 +70,7 @@ async def test_fake_provider_python_locate_patch_fail_correct_validate_and_repor
     )
     _git(project, "add", "main.py", "test_answer.py")
     _git(project, "commit", "-qm", "initial")
-    original_sha = _sha256(source)
     source.write_text("def answer():\n    return 3\n", encoding="utf-8")
-    bad_sha = _sha256(source)
     source.write_text("def answer():\n    return 1\n", encoding="utf-8")
 
     provider = ScriptedModelProvider(
@@ -80,21 +79,20 @@ async def test_fake_provider_python_locate_patch_fail_correct_validate_and_repor
                 tool_calls=(
                     _call(
                         "search",
-                        "search_text",
-                        {"path": ".", "query": "answer", "literal": True},
+                        "grep",
+                        {"path": ".", "pattern": "answer", "literal": True},
                     ),
                 )
             ),
-            AssistantMessage(tool_calls=(_call("read", "read_file", {"path": "main.py"}),)),
+            AssistantMessage(tool_calls=(_call("read", "read", {"path": "main.py"}),)),
             AssistantMessage(
                 tool_calls=(
                     _call(
                         "bad-patch",
-                        "apply_patch",
+                        "edit",
                         {
                             "path": "main.py",
-                            "expected_sha256": original_sha,
-                            "edits": [{"old_text": "return 1", "new_text": "return 3"}],
+                            "edits": [{"oldText": "return 1", "newText": "return 3"}],
                         },
                     ),
                 )
@@ -103,13 +101,15 @@ async def test_fake_provider_python_locate_patch_fail_correct_validate_and_repor
                 tool_calls=(
                     _call(
                         "bad-test",
-                        "run_command",
+                        "bash",
                         {
-                            "argv": [
-                                sys.executable,
-                                "-c",
-                                "from pathlib import Path; raise SystemExit(0 if 'return 2' in Path('main.py').read_text() else 1)",
-                            ]
+                            "command": shlex.join(
+                                [
+                                    sys.executable,
+                                    "-c",
+                                    "from pathlib import Path; raise SystemExit(0 if 'return 2' in Path('main.py').read_text() else 1)",
+                                ]
+                            )
                         },
                     ),
                 )
@@ -118,11 +118,10 @@ async def test_fake_provider_python_locate_patch_fail_correct_validate_and_repor
                 tool_calls=(
                     _call(
                         "good-patch",
-                        "apply_patch",
+                        "edit",
                         {
                             "path": "main.py",
-                            "expected_sha256": bad_sha,
-                            "edits": [{"old_text": "return 3", "new_text": "return 2"}],
+                            "edits": [{"oldText": "return 3", "newText": "return 2"}],
                         },
                     ),
                 )
@@ -131,22 +130,17 @@ async def test_fake_provider_python_locate_patch_fail_correct_validate_and_repor
                 tool_calls=(
                     _call(
                         "good-test",
-                        "run_command",
+                        "bash",
                         {
-                            "argv": [
-                                sys.executable,
-                                "-c",
-                                "from pathlib import Path; raise SystemExit(0 if 'return 2' in Path('main.py').read_text() else 1)",
-                            ]
+                            "command": shlex.join(
+                                [
+                                    sys.executable,
+                                    "-c",
+                                    "from pathlib import Path; raise SystemExit(0 if 'return 2' in Path('main.py').read_text() else 1)",
+                                ]
+                            )
                         },
                     ),
-                )
-            ),
-            AssistantMessage(
-                tool_calls=(
-                    _call("status", "git_status", {}),
-                    _call("diff", "git_diff", {"paths": ["main.py"]}),
-                    _call("changes", "show_changes", {}),
                 )
             ),
             AssistantMessage(content="已定位、修复并验证 main.py；第一次校验失败，修正后通过。"),
@@ -177,17 +171,15 @@ async def test_fake_provider_python_locate_patch_fail_correct_validate_and_repor
         if payload.get("ok") and "command_class" in payload.get("result", {})
     ]
     assert [result["exit_code"] for result in command_results] == [1, 0]
-    diff_payload = next(
+    edit_payloads = [
         payload["result"]
         for payload in tool_payloads
-        if payload.get("ok")
-        and payload.get("result", {}).get("repository") is True
-        and "diff" in payload.get("result", {})
-    )
-    assert "+    return 2" in diff_payload["diff"]
+        if payload.get("ok") and payload.get("result", {}).get("operation") == "patch"
+    ]
+    assert "+    return 2" in edit_payloads[-1]["diff"]
     assert len(approval.requests) == 4
     assert session_app.session.latest_metrics is not None
-    assert session_app.session.latest_metrics.tool_calls == 9
+    assert session_app.session.latest_metrics.tool_calls == 6
     assert session_app.session.latest_metrics.validation_outcome == "not_run"
     assert session_app.session.latest_metrics.changed_file_count == 1
     assert "已定位、修复并验证" in session_app.session.messages[-1].content
@@ -207,32 +199,21 @@ async def test_fake_provider_nested_text_fixture_preserves_user_change_and_repor
     _git(project, "add", "docs/guide/readme.md", "notes.txt")
     _git(project, "commit", "-qm", "initial")
     user_file.write_text("pre-existing user change\n", encoding="utf-8")
-    target_sha = _sha256(target)
 
     provider = ScriptedModelProvider(
         [
-            AssistantMessage(tool_calls=(_call("list", "list_directory", {"path": "docs/guide"}),)),
-            AssistantMessage(
-                tool_calls=(_call("read", "read_file", {"path": "docs/guide/readme.md"}),)
-            ),
+            AssistantMessage(tool_calls=(_call("list", "ls", {"path": "docs/guide"}),)),
+            AssistantMessage(tool_calls=(_call("read", "read", {"path": "docs/guide/readme.md"}),)),
             AssistantMessage(
                 tool_calls=(
                     _call(
                         "patch",
-                        "apply_patch",
+                        "edit",
                         {
                             "path": "docs/guide/readme.md",
-                            "expected_sha256": target_sha,
-                            "edits": [{"old_text": "old text", "new_text": "new text"}],
+                            "edits": [{"oldText": "old text", "newText": "new text"}],
                         },
                     ),
-                )
-            ),
-            AssistantMessage(
-                tool_calls=(
-                    _call("changes", "show_changes", {}),
-                    _call("status", "git_status", {}),
-                    _call("diff", "git_diff", {"paths": ["docs/guide/readme.md"]}),
                 )
             ),
             AssistantMessage(content="文档已修改并展示 Diff；本次未运行项目校验。"),

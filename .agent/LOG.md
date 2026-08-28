@@ -3642,3 +3642,23 @@
   requests. Focused regression passed 136 tests; full offline passed `1342 passed, 2 deselected in
   90.99s`. Ruff format/check, compileall, CLI help and `git diff --check` passed. No credential or
   model request was used for this repair.
+
+## 2026-08-28 — Pi-aligned core tool interface verified
+
+- The user paused S7P-09 and directed Morrow to use Pi as the model-facing tool baseline. Subplan 91
+  replaced the default core surface with `read`, `bash`, `edit`, `write`, `grep`, `find`, and `ls`.
+  Configuration and Skill capabilities remain conditionally composed, so the ordinary captured
+  inventory fell from 15 tools to 9 rather than deleting those product capabilities.
+- Core schemas no longer require model-provided SHA-256, create/replace mode, argv/shell XOR,
+  relative-path regexes, nested `oneOf` budgets or rejection of harmless extra fields. The adapter
+  normalizes familiar paths and automatically freezes current revision/mode before using the
+  existing file, mutation and process services.
+- Execution-side confinement, protected-resource policy, command permissions, approvals,
+  redaction, atomic publication, stale-plan conflict detection and durable recovery remain intact.
+  A scripted destructive `bash` command is still denied before effect when destructive capability
+  is not enabled.
+- Exact schema-field, OpenAI-wire, read/search, absolute-path, edit/create/replace, command recovery,
+  sandbox, permission and recovery tests pass. Full offline passed `1344 passed, 2 deselected in
+  87.69s`; Ruff format/check, compileall, CLI help and `git diff --check` passed.
+- No live model or credential action occurred. Every old S7P-09 profile/campaign remains immutable;
+  Subplan 90 must refreeze from the new clean commit and re-run total-token capacity admission.

@@ -264,7 +264,7 @@ class DurableToolExecutionCoordinator:
         for reference in (*result.artifact_refs, *result.mcp_result_artifact_refs):
             if reference not in artifact_refs:
                 artifact_refs.append(reference)
-        if self.artifacts is not None and execution.tool_name == "run_command":
+        if self.artifacts is not None and execution.tool_name in {"run_command", "bash"}:
             try:
                 artifact = self.artifacts.publish_command_output(
                     result.artifact_content

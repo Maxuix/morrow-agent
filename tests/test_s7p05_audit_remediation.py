@@ -172,14 +172,12 @@ async def test_first_nested_write_is_deferred_until_scope_rules_are_loaded(tmp_p
     (nested / "AGENTS.md").write_text("# Nested Rule\n- Preserve the API\n", encoding="utf-8")
     target = nested / "module.py"
     target.write_text("value = 1\n", encoding="utf-8")
-    digest = hashlib.sha256(target.read_bytes()).hexdigest()
     write_call = _call(
         "first-write",
-        "apply_patch",
+        "edit",
         {
             "path": "pkg/module.py",
-            "expected_sha256": digest,
-            "edits": [{"old_text": "1", "new_text": "2"}],
+            "edits": [{"oldText": "1", "newText": "2"}],
         },
     )
     provider = ScriptedModelProvider(

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import shlex
 import signal
 import sys
 from pathlib import Path
@@ -419,15 +420,23 @@ async def test_fake_provider_can_recover_after_host_command_failure(tmp_path):
             AssistantMessage(
                 tool_calls=(
                     _call(
-                        "run_command",
-                        {"argv": list(_python("print('first-failure'); raise SystemExit(1)"))},
+                        "bash",
+                        {
+                            "command": shlex.join(
+                                _python("print('first-failure'); raise SystemExit(1)")
+                            )
+                        },
                         "first",
                     ),
                 )
             ),
             AssistantMessage(
                 tool_calls=(
-                    _call("run_command", {"argv": list(_python("print('fixed')"))}, "second"),
+                    _call(
+                        "bash",
+                        {"command": shlex.join(_python("print('fixed')"))},
+                        "second",
+                    ),
                 )
             ),
             AssistantMessage(content="第一次命令失败，修正后第二次命令成功。"),

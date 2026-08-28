@@ -22,8 +22,9 @@ Morrow 的状态默认保存在 `~/.morrow`，不会写入选中的项目目录�
 Linux 在真实 runner 验证前保持 unsupported，后端不可用时 fail closed。
 
 文件与搜索保护同时检查用户可见路径和工作区内解析后的符号链接目标；`.git`、`.morrow`、凭据文件和
-常见私钥内容只返回受保护元数据，仓库检查应使用专用 `git_status`/`git_diff`。现有文件的 patch/replace
-保留统一换行格式；混合换行文件会明确返回不支持，不会静默改写为 LF。
+常见私钥内容只返回受保护元数据，仓库检查可通过 `bash` 运行只读 `git status`/`git diff`。`edit` 和
+`write` 会在执行端自动冻结当前文件版本、判断 create/replace，并在发布时再次检查冲突；模型不需要传
+SHA-256 或写入模式。现有文件保留统一换行格式；混合换行文件会明确返回不支持，不会静默改写为 LF。
 
 ## 使用
 
@@ -105,16 +106,18 @@ REPL 常用命令包括 `/workspace`、`/workspace edit summary ...`、`/workspa
 在当前工作空间修改。每个工具调用独立确认和提交，多个调用不会组成跨调用事务；前一个调用成功、后一个
 调用被拒绝或失败时，前一个结果保留并分别报告 `applied`、`unchanged` 或失败状态。
 
-普通对话统一经过 Agent Loop。支持 OpenAI-compatible function calling 的 Adapter 会向模型提供
-`list_directory`、`read_file`、`find_files`、`search_text`、`apply_patch`、`write_file`、`show_changes`、`run_command`、`git_status`、`git_diff`、
-`update_configuration`（仅 Profile）和 `manage_preferences`；支持原生沙箱的 Auto Sandboxed 组合额外启用 `promote_sandbox_changes`。不支持 function calling 的 Adapter 不会启用这些工具，但 `/workspace`、`/preferences` 等确定性命令仍可用。终端以 `↳ 工具步骤 n/m：工具名`
+普通对话统一经过 Agent Loop。支持 OpenAI-compatible function calling 的 Adapter 会向模型提供七个
+核心编码工具：`read`、`ls`、`find`、`grep`、`edit`、`write` 和 `bash`。配置、Preference、Artifact
+与 Skill 工具只在对应能力被组合时额外提供；支持原生沙箱的 Auto Sandboxed 组合还会启用
+`promote_sandbox_changes`。不支持 function calling 的 Adapter 不会启用这些工具，但 `/workspace`、
+`/preferences` 等确定性命令仍可用。终端以 `↳ 工具步骤 n/m：工具名`
 展示活动；有副作用的
 配置调用和 Host 命令在工具执行前由终端审批。审批拒绝、审批通道不可用或审批等待超时都会安全地形成普通工具结果，
 模型可以继续恢复；默认工具超时为 120 秒，并可在安全上限内通过用户运行策略覆盖。旧 `/config edit` fixed-field 入口已退役，
 `append/remove` 由自然语言工具提供。达到模型、工具、时间、上下文、结果或循环上限时，任务以稳定的
 `stop_code` 结束。
 
-Host 命令审批会展示有界且脱敏的 argv/shell、工作目录、类别和超时；shell 包装的 Git 命令仍按
+Host 命令审批会展示有界且脱敏的 command、工作目录、类别和超时；shell 包装的 Git 命令仍按
 Git 写入风险在审批前拒绝。命令文本只用于本地审批，不进入 `CommandResult`、Provider、公开事件或持久状态。
 
 `full-access-manual` 不会自动获得能力：只有本地 REPL 的 `/grant` 确认或 CLI `grant create` 命令能为一个前台

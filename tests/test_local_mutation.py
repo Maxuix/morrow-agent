@@ -509,7 +509,7 @@ def _tool_args(name: str, payload: dict, call_id: str) -> FunctionToolCall:
 
 
 @pytest.mark.asyncio
-async def test_manual_provider_path_approves_actual_diff_and_show_changes_uses_facts(tmp_path):
+async def test_manual_provider_path_approves_pi_style_edit_and_records_facts(tmp_path):
     app = build_application(state_root=tmp_path / "state", credentials=MemoryCredentialStore())
     project = tmp_path / "project"
     project.mkdir()
@@ -519,23 +519,27 @@ async def test_manual_provider_path_approves_actual_diff_and_show_changes_uses_f
     provider = ScriptedModelProvider(
         [
             AssistantMessage(
-                tool_calls=(_tool_args("search_text", {"path": ".", "query": "needle"}, "search"),)
+                tool_calls=(
+                    _tool_args(
+                        "grep",
+                        {"path": ".", "pattern": "needle", "literal": True},
+                        "search",
+                    ),
+                )
             ),
-            AssistantMessage(tool_calls=(_tool_args("read_file", {"path": "sample.txt"}, "read"),)),
+            AssistantMessage(tool_calls=(_tool_args("read", {"path": "sample.txt"}, "read"),)),
             AssistantMessage(
                 tool_calls=(
                     _tool_args(
-                        "apply_patch",
+                        "edit",
                         {
                             "path": "sample.txt",
-                            "expected_sha256": _sha(source),
-                            "edits": [{"old_text": "needle", "new_text": "fixed"}],
+                            "edits": [{"oldText": "needle", "newText": "fixed"}],
                         },
                         "patch",
                     ),
                 )
             ),
-            AssistantMessage(tool_calls=(_tool_args("show_changes", {}, "changes"),)),
             AssistantMessage(content="已完成实际修改，并根据 ChangeSet 汇报。"),
         ]
     )
@@ -558,8 +562,8 @@ async def test_manual_provider_path_approves_actual_diff_and_show_changes_uses_f
     assert "+fixed old" in preview
     messages = [message for message in session_app.session.messages if message.role == "tool"]
     patch_result = json.loads(messages[2].content)
-    changes_result = json.loads(messages[3].content)
-    assert patch_result["result"]["diff"] == changes_result["result"]["entries"][0]["diff"]
+    assert "-needle old" in patch_result["result"]["diff"]
+    assert "+fixed old" in patch_result["result"]["diff"]
     assert session_app.session.latest_tool_facts[0].operation == "patch"
 
 
@@ -573,15 +577,14 @@ async def test_auto_safe_small_patch_is_automatic_and_replace_still_requires_app
     identity = app.workspace_service.confirm(app.workspace_service.resolve(project))
     provider = ScriptedModelProvider(
         [
-            AssistantMessage(tool_calls=(_tool_args("read_file", {"path": "sample.txt"}, "read"),)),
+            AssistantMessage(tool_calls=(_tool_args("read", {"path": "sample.txt"}, "read"),)),
             AssistantMessage(
                 tool_calls=(
                     _tool_args(
-                        "apply_patch",
+                        "edit",
                         {
                             "path": "sample.txt",
-                            "expected_sha256": _sha(source),
-                            "edits": [{"old_text": "two", "new_text": "TWO"}],
+                            "edits": [{"oldText": "two", "newText": "TWO"}],
                         },
                         "patch",
                     ),

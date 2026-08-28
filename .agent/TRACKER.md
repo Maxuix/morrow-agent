@@ -2,73 +2,35 @@
 
 ## Current status
 
-Subplan 90 remains active. The Morrow/Pi runtime adapters and evaluation-environment repair are
-verified offline. Campaigns r2–r6 are retained outside Git as blocked/aborted evidence and will not
-be continued or reused. The user approved a 50,000,000-token total ceiling and a recoverable stash
-of the unrelated notes; the next campaign must use a new clean source pin.
+Subplan 91 is verified complete: Morrow's default composition now exposes the Pi-aligned seven core
+tools plus conditionally composed configuration/Skill capabilities. Full offline validation passed
+`1344 passed, 2 deselected`; no live Provider request or credential access occurred. S7P-09 is
+reactivated, but no pre-repair campaign/profile can be reused.
 
 ## Active task
 
-The evaluation environment repair is complete. MORROW-003 now admits and completes in the exact
-failed workspace/state copy with a scripted Provider, and campaign admission automatically counts
-finalized usage or durable Morrow/Pi fallback usage. Await approval to raise the total ceiling to
-80M before refreezing. The original checkout remains isolated for the external notes writer.
+Commit the tool repair, fast-forward it into `feat/s7p-09-direct-pi-baseline-run`, and rebuild the
+comparison plan from that clean commit. Then run capacity admission using the approved 50M total.
 
-## Preparation evidence
+## Evidence
 
-- S7P-00 protocol v1 freezes two repetitions, all seven result classes, tool accounting, Morrow
-  thresholds, Pi task IDs `MORROW-003`, `MORROW-005`, `EXTERNAL-003`, `EXTERNAL-004`, and maximum
-  Pi quality deficit `1`.
-- `eval.py` currently supports `start`, `rebuild`, `finalize`, `summarize` and `self-check`; its
-  summary deliberately reports Pi comparison as `NOT_EVALUATED`.
-- Installed Pi reports version `0.84.2` and supports non-interactive JSON event output with final
-  message usage, tool start/end, turn, compaction and retry events.
-- Morrow's headless record exposes safe AgentRun terminal metrics, but the default headless
-  ApprovalPort denies commands that need approval. The planned evaluation ApprovalPort must remain
-  behind the ordinary CapabilityPolicy and cannot override denial.
-- The current Morrow active model is `opencode-go/mimo-v2.5`; Pi 0.84.2's installed catalog contains
-  that exact provider/model and endpoint with a 1,000,000-token context window and 128,000-token
-  maximum output. Pi's default selection now points to it, but Pi credential readiness is absent.
-- The campaign requires 20 Morrow and 8 Pi primary runs. Each uses a fresh workspace and state;
-  paired order is counterbalanced before outcomes are observed.
-- The verified harness slice now freezes the strict plan/hold approval, 28-entry schedule, safe
-  Morrow/Pi normalizers, real CapabilityPolicy equivalence matrix, create-only admission and
-  budget boundaries, watchdog/raw hash capture and mechanical paired comparison/baseline output.
-- Focused evaluator tests passed `37`; dataset self-check passed `10/10`; S7P-08 regression passed
-  `3`; full non-live passed `1315`, with two live deselections. Ruff, compileall, CLI and diff gates
-  passed. The only live action was the approved bounded Morrow readiness probe; no Pi request or
-  credential-value access occurred.
-- Audit confirmed ordinary `morrow run` intentionally uses `HeadlessApprovalPort` and therefore
-  cannot execute approval-requiring project commands for the formal AUTO_SAFE lane. The dedicated
-  evaluator runner now supplies its bounded port to the same production composition function;
-  generic process capture is not mislabeled as the Agent runner.
-- The evaluator now provides create-only `run-morrow` and `run-pi` commands. Morrow uses ordinary
-  production composition with `EvaluationApprovalPort`; its projection discards full arguments and
-  content. Pi disables mutable user resources, pins the approved model and tool set, and loads only
-  the content-hashed policy extension. The extension confines bash with macOS Seatbelt, denies task
-  network and `.git` writes, bounds commands to 120 seconds and preflights workspace paths.
-- Pi now uses a command reference to the existing Morrow Keychain entry, with no secret in Pi
-  configuration. `pi auth check --no-refresh` returned `ready/api_key`; the exact no-tool probe
-  completed on `opencode-go/mimo-v2.5` with `stop`, 404 total tokens and Provider cost.
-- Morrow's repaired bounded Agent probe completed normally with `stop`, 7,139 Provider tokens and
-  zero tool calls. The prior failure combined a 309-digit tool-schema bound rejected by OpenCode Go
-  with MiMo's repeated nonsemantic terminal chunk.
-- Morrow's OpenAI-compatible stream still emits `ModelCost.unavailable()`. Under the user's explicit
-  no-currency-ceiling approval, cost is recorded when available but is no longer a readiness,
-  completeness or comparison gate; token accounting remains mandatory.
+- Core model-visible names/fields match Pi: `read`, `bash`, `edit`, `write`, `grep`, `find`, `ls`.
+- Default inventory fell from 15 to 9 because configuration and Skill capabilities remain composed;
+  Auto Sandboxed adds one promotion tool.
+- `edit`/`write` infer revision/mode; absolute-inside paths normalize; unknown harmless fields are
+  ignored. Outside paths, protected resources, stale plans and disallowed bash effects still fail
+  execution-side before unsafe publication.
+- Full gate: `1344 passed, 2 deselected in 87.69s`; Ruff format/check, compileall, CLI help and
+  `git diff --check` passed.
+- Retained formal attempts account for 16,754,419 known tokens plus six unavailable-usage requests.
+  The approved 50M total leaves 33,245,581 known-token headroom before unknown-usage allowance.
 
 ## Next action
 
-Do not admit another run. Obtain an 80M total ceiling, refreeze a clean plan using the integrated
-capacity guard, and execute a new immutable schedule from ordinal 1.
+Create the clean tool-repair commit, return to the parent S7P-09 execution branch, then use the
+evaluator's create-only planning/capacity path to determine whether another campaign is admissible.
 
 ## Blockers
 
-- Formal admissions account for 16,754,419 tokens plus six failed/interrupted requests with
-  unavailable usage. Current samples project about 45.4M tokens for a fresh campaign, so the
-  approved hard total ceiling of 50M is insufficient. The recommended total ceiling is 80M; the
-  currency ceiling remains unset.
-- The unrelated `docs/notes/` are preserved in the named stash
-  `checkpoint: preserve docs notes during s7p-09 campaign`; restore it after campaign execution.
-- Remote publication remains unauthorized; raw evidence durability and any push must be reported
-  honestly rather than assumed.
+- The unrelated `docs/notes/` remain preserved in the named stash and isolated from this worktree.
+- Remote publication remains unauthorized.

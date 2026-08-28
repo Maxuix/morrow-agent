@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import sys
 from pathlib import Path
 
@@ -356,19 +357,21 @@ async def test_production_auto_sandbox_registers_only_native_tools_and_keeps_rea
     )
     executor = session_application.orchestrator.runtime.loop.tool_executor
     names = {definition.function.name for definition in executor.definitions}
-    assert "run_command" in names
+    assert "bash" in names
     assert "promote_sandbox_changes" in names
     call = FunctionToolCall(
         id="sandbox-command",
-        name="run_command",
+        name="bash",
         arguments=json.dumps(
             {
-                "argv": [
-                    "python",
-                    "-c",
-                    "from pathlib import Path; import pydantic; "
-                    "Path('sandbox-only.txt').write_text(pydantic.__name__)",
-                ]
+                "command": shlex.join(
+                    [
+                        "python",
+                        "-c",
+                        "from pathlib import Path; import pydantic; "
+                        "Path('sandbox-only.txt').write_text(pydantic.__name__)",
+                    ]
+                )
             }
         ),
     )
