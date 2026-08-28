@@ -9,16 +9,12 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
-from pydantic import ValidationError
 
 from morrow.adapters.credentials.keyring import MemoryCredentialStore
 from morrow.adapters.local.filesystem import FileSystemAdapter
 from morrow.application.local_tools import (
-    ApplyPatchArguments,
-    ShowChangesArguments,
-    WriteFileArguments,
     _blocking_mutation,
-    make_apply_patch_tool,
+    make_edit_tool,
 )
 from morrow.bootstrap import build_application, build_session_application
 from morrow.core.capabilities import (
@@ -29,7 +25,7 @@ from morrow.core.capabilities import (
     ToolRunContext,
     WorkspaceCapability,
 )
-from morrow.core.local_tools import ExactEdit, MutationMode
+from morrow.core.local_tools import ExactEdit
 from morrow.core.models import (
     AssistantMessage,
     FunctionToolCall,
@@ -615,7 +611,7 @@ async def test_approval_preview_has_explicit_marker_for_large_diff(tmp_path):
     _, mutation = _services(tmp_path)
     changes = ChangeSetService()
     registry = ToolRegistry()
-    registry.register(make_apply_patch_tool(mutation, changes))
+    registry.register(make_edit_tool(mutation, changes))
     executor = ToolExecutor(
         registry.snapshot(),
         make_run_policy(),
@@ -626,11 +622,10 @@ async def test_approval_preview_has_explicit_marker_for_large_diff(tmp_path):
         ),
     )
     call = _tool_args(
-        "apply_patch",
+        "edit",
         {
             "path": "large.txt",
-            "expected_sha256": _sha(path),
-            "edits": [{"old_text": before, "new_text": before.replace("line-", "changed-")}],
+            "edits": [{"oldText": before, "newText": before.replace("line-", "changed-")}],
         },
         "large-patch",
     )
@@ -654,7 +649,7 @@ async def test_auto_safe_over_threshold_edit_count_requires_approval(tmp_path):
     path.write_text("".join(f"line-{index}\n" for index in range(40)), encoding="utf-8")
     _, mutation = _services(tmp_path)
     registry = ToolRegistry()
-    registry.register(make_apply_patch_tool(mutation, ChangeSetService()))
+    registry.register(make_edit_tool(mutation, ChangeSetService()))
     approval = _Approval()
     executor = ToolExecutor(
         registry.snapshot(),
@@ -665,13 +660,11 @@ async def test_auto_safe_over_threshold_edit_count_requires_approval(tmp_path):
             WorkspaceCapability(workspace_id="w1", root=tmp_path),
         ),
     )
-    edits = [
-        {"old_text": f"line-{index}\n", "new_text": f"changed-{index}\n"} for index in range(9)
-    ]
+    edits = [{"oldText": f"line-{index}\n", "newText": f"changed-{index}\n"} for index in range(9)]
     outcome = await executor.execute_with_context(
         _tool_args(
-            "apply_patch",
-            {"path": "many-edits.txt", "expected_sha256": _sha(path), "edits": edits},
+            "edit",
+            {"path": "many-edits.txt", "edits": edits},
             "many-edits",
         ),
         run_context=_run("many-edits-run"),
@@ -683,21 +676,3 @@ async def test_auto_safe_over_threshold_edit_count_requires_approval(tmp_path):
     assert len(approval.requests) == 1
     assert approval.requests[0].reason_codes == ("mutation_approval_required",)
     assert path.read_text(encoding="utf-8").startswith("changed-0\nchanged-1\n")
-
-
-def test_mutation_arguments_are_strict_and_mode_bound():
-    with pytest.raises(ValidationError):
-        ApplyPatchArguments.model_validate(
-            {
-                "path": "x.txt",
-                "expected_sha256": "0" * 64,
-                "edits": [{"old_text": "x", "new_text": "y"}],
-                "extra": True,
-            },
-            strict=True,
-        )
-    with pytest.raises(ValidationError):
-        WriteFileArguments.model_validate(
-            {"path": "x.txt", "content": "x", "mode": MutationMode.REPLACE}, strict=True
-        )
-    assert ShowChangesArguments.model_validate({}, strict=True).model_dump() == {}

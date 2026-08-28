@@ -7,10 +7,11 @@ Pi 0.84.2 profile: `read`, `bash`, `edit`, `write`, `grep`, `find`, and `ls`. Th
 composition exposes nine tools because Morrow also composes `update_configuration` and
 `run_skill_script`; Auto Sandboxed additionally exposes `promote_sandbox_changes`.
 
-The old dedicated factories remain in the codebase for explicit composition and recovery
-compatibility, but `list_directory`, `read_file`, `find_files`, `search_text`, `apply_patch`,
+Subplan 92 subsequently removed the old dedicated schemas, argument models and factories. The
+names `list_directory`, `read_file`, `find_files`, `search_text`, `apply_patch`,
 `write_file`, `run_command`, `delete_file`, `move_file`, `rename_file`, `show_changes`, `git_status`,
-and `git_diff` are no longer part of the default model-visible inventory.
+and `git_diff` remain only as historical durable-recovery classifications and are not current
+registered production tools.
 
 Canonical compact JSON for the model-visible tool name/schema list fell from 11,951 bytes in r6 to
 5,923 bytes in the new default. The seven core entries use 2,742 bytes, compared with 3,627 bytes

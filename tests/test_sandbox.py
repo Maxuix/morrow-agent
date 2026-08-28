@@ -18,7 +18,7 @@ from morrow.adapters.local.sandbox import (
     SandboxBackendError,
     SandboxCapability,
 )
-from morrow.application.local_tools import make_promote_sandbox_tool, make_show_changes_tool
+from morrow.application.local_tools import make_promote_sandbox_tool
 from morrow.bootstrap import build_application, build_session_application
 from morrow.core.capabilities import (
     PermissionPreset,
@@ -243,7 +243,6 @@ async def test_sandbox_text_change_requires_approval_and_promotes_safely(tmp_pat
     registry.register(
         make_promote_sandbox_tool(snapshots, WorkspaceMutationService(files), changes)
     )
-    registry.register(make_show_changes_tool(changes))
     approval = _Approval()
     executor = ToolExecutor(
         registry.snapshot(),
@@ -263,14 +262,7 @@ async def test_sandbox_text_change_requires_approval_and_promotes_safely(tmp_pat
     assert outcome.ok is True
     assert "main.py" in "\n".join(approval.request.preview)
     assert target.read_text() == "print('after')\n"
-    shown = await executor.execute_with_context(
-        FunctionToolCall(id="show", name="show_changes", arguments="{}"),
-        run_context=run,
-        ordinal=2,
-        total=2,
-    )
-    assert shown.ok is True
-    assert json.loads(shown.envelope)["result"]["entries"][0]["path"] == "main.py"
+    assert changes.show(run, result_limit=16 * 1024).entries[0].path == "main.py"
 
 
 @pytest.mark.asyncio

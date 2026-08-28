@@ -12,7 +12,7 @@ import pytest
 from pydantic import ValidationError
 
 from morrow.adapters.credentials.keyring import MemoryCredentialStore
-from morrow.application.local_tools import RunCommandArguments, make_run_command_tool
+from morrow.application.local_tools import make_bash_tool
 from morrow.bootstrap import build_application, build_session_application
 from morrow.core.capabilities import (
     ApprovalMode,
@@ -63,18 +63,16 @@ def _call(name: str, payload: dict, call_id: str = "call-1") -> FunctionToolCall
 
 
 def test_command_request_is_exactly_one_form_and_has_no_extra_authority():
-    request = RunCommandArguments.model_validate(
+    request = CommandRequest.model_validate(
         {"argv": (sys.executable, "-c", "print('ok')"), "cwd": "."}, strict=True
     )
     assert request.argv[0] == sys.executable
     assert "env" not in request.model_json_schema()["properties"]
     assert "stdin" not in request.model_json_schema()["properties"]
     with pytest.raises(ValidationError):
-        RunCommandArguments.model_validate(
-            {"argv": ["echo", "ok"], "shell": "echo ok"}, strict=True
-        )
+        CommandRequest.model_validate({"argv": ["echo", "ok"], "shell": "echo ok"}, strict=True)
     with pytest.raises(ValidationError):
-        RunCommandArguments.model_validate({"argv": []}, strict=True)
+        CommandRequest.model_validate({"argv": []}, strict=True)
 
 
 def test_process_preflight_classifies_forbidden_operations_before_approval(tmp_path):
@@ -334,7 +332,7 @@ async def test_tool_executor_requires_approval_for_host_process_and_denies_netwo
     service = _service(workspace, secrets=("approval-secret",))
     try:
         registry = ToolRegistry()
-        registry.register(make_run_command_tool(service))
+        registry.register(make_bash_tool(service))
         approval = _Approval()
         executor = ToolExecutor(
             registry.snapshot(),
@@ -346,7 +344,7 @@ async def test_tool_executor_requires_approval_for_host_process_and_denies_netwo
         )
         run = _run()
         outcome = await executor.execute_with_context(
-            _call("run_command", {"argv": list(_python("print('approval-secret')"))}),
+            _call("bash", {"command": shlex.join(_python("print('approval-secret')"))}),
             run_context=run,
             ordinal=1,
             total=1,
@@ -369,7 +367,11 @@ async def test_tool_executor_requires_approval_for_host_process_and_denies_netwo
             ),
         )
         auto_outcome = await auto_safe.execute_with_context(
-            _call("run_command", {"argv": list(_python("print('auto-safe-approved')"))}, "auto"),
+            _call(
+                "bash",
+                {"command": shlex.join(_python("print('auto-safe-approved')"))},
+                "auto",
+            ),
             run_context=run,
             ordinal=2,
             total=4,
@@ -390,7 +392,7 @@ async def test_tool_executor_requires_approval_for_host_process_and_denies_netwo
             ),
         )
         sandbox_outcome = await sandboxed.execute_with_context(
-            _call("run_command", {"argv": list(_python("print('must-not-run')"))}, "sandbox"),
+            _call("bash", {"command": shlex.join(_python("print('must-not-run')"))}, "sandbox"),
             run_context=run,
             ordinal=3,
             total=4,
@@ -398,7 +400,7 @@ async def test_tool_executor_requires_approval_for_host_process_and_denies_netwo
         assert sandbox_outcome.error_code is ToolErrorCode.PERMISSION_DENIED
         assert len(approval.requests) == 2
         forbidden = await executor.execute_with_context(
-            _call("run_command", {"argv": ["curl", "https://example.invalid"]}, "network"),
+            _call("bash", {"command": "curl https://example.invalid"}, "network"),
             run_context=run,
             ordinal=4,
             total=4,

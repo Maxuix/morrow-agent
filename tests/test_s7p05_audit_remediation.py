@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 from pathlib import Path
 
 import pytest
 
 from morrow.adapters.credentials.keyring import MemoryCredentialStore
-from morrow.application.local_tools import make_apply_patch_tool
+from morrow.application.local_tools import make_edit_tool
 from morrow.bootstrap import build_application, build_session_application
 from morrow.core.capabilities import (
     PermissionProfile,
@@ -252,11 +251,10 @@ async def test_persisted_request_size_matches_the_actual_dynamic_prompt(tmp_path
 async def test_tool_lifecycle_cleans_preview_when_approval_is_rejected(tmp_path: Path):
     target = tmp_path / "hello.txt"
     target.write_text("hello world\n", encoding="utf-8")
-    expected_sha256 = hashlib.sha256(target.read_bytes()).hexdigest()
     files = WorkspaceFileService(WorkspacePathResolver(tmp_path))
     mutations = WorkspaceMutationService(files)
     registry = ToolRegistry()
-    registry.register(make_apply_patch_tool(mutations, ChangeSetService()))
+    registry.register(make_edit_tool(mutations, ChangeSetService()))
     executor = ToolExecutor(
         registry.snapshot(),
         make_run_policy(),
@@ -271,11 +269,10 @@ async def test_tool_lifecycle_cleans_preview_when_approval_is_rejected(tmp_path:
     outcome = await executor.execute_with_context(
         _call(
             "call-1",
-            "apply_patch",
+            "edit",
             {
                 "path": "hello.txt",
-                "expected_sha256": expected_sha256,
-                "edits": [{"old_text": "world", "new_text": "morrow"}],
+                "edits": [{"oldText": "world", "newText": "morrow"}],
             },
         ),
         run_context=run,

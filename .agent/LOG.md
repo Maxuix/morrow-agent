@@ -3675,3 +3675,19 @@
   58,754,419 before allowing for six unknown-usage requests, above the approved 50M hard total.
 - No partial campaign/evidence root was created. An 80M total ceiling remains the safe
   recommendation; cost remains unlimited/optional as previously approved.
+
+## 2026-08-28 — Legacy model-facing tool adapters removed
+
+- At the user's explicit request, Subplan 92 made the Pi-aligned seven-tool coding surface the only
+  production callable interface. Removed old Provider schemas, Pydantic argument models and
+  factories for the dedicated read/search/mutation/process/Git/ChangeSet names.
+- Kept underlying services and moved old names out of `PRODUCTION_TOOL_DECLARATIONS` into a labelled
+  legacy recovery table so old durable rows remain classifiable without admitting old tools to new
+  production composition or contract audit.
+- Migrated tool-facing tests to `read`, `ls`, `find`, `grep`, `edit`, `write` and `bash`; service and
+  sandbox-promotion tests retain destructive mutation, Git and ChangeSet safety coverage.
+- Focused coverage passed `176`. One full run exposed an unrelated transient context-compaction
+  assertion; it passed immediately alone, and the clean final full run passed `1327 passed, 2
+  deselected in 87.08s`. Ruff format/check, compileall, CLI help and diff checks passed.
+- No live model, network credential or campaign action occurred. The 50M S7P-09 capacity blocker is
+  unchanged after this cleanup.

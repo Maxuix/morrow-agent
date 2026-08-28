@@ -3,41 +3,20 @@ from __future__ import annotations
 import json
 
 import pytest
-from pydantic import ValidationError
 
 from morrow.adapters.credentials.keyring import MemoryCredentialStore
-from morrow.application.local_tools import (
-    FindFilesArguments,
-    ListDirectoryArguments,
-    ReadFileArguments,
-    SearchTextArguments,
-    _tool_error,
-)
+from morrow.application.local_tools import _tool_error
 from morrow.bootstrap import build_application, build_session_application
 from morrow.core.capabilities import PermissionPreset, PermissionProfile
 from morrow.core.models import AssistantMessage, FunctionToolCall, ModelRef, ToolApprovalDecision
 from morrow.runtime.tool_arguments import JsonSchemaArgumentsValidator, ToolArgumentsValidationError
 from morrow.runtime.tools import ToolErrorCode
 from morrow.services.files import LocalFileError
-from morrow.services.git import GitServiceError
 from morrow.testing import ScriptedModelProvider
 
 
-def test_read_search_arguments_are_strict_and_workspace_relative():
-    assert ListDirectoryArguments.model_validate({"path": "."}, strict=True).path == "."
-    with pytest.raises(ValidationError):
-        ReadFileArguments.model_validate({"path": "/tmp/secret"}, strict=True)
-    with pytest.raises(ValidationError):
-        FindFilesArguments.model_validate(
-            {"path": "src", "pattern": "*.py", "extra": 1}, strict=True
-        )
-    with pytest.raises(ValidationError):
-        SearchTextArguments.model_validate({"path": "src\\main.py", "query": "x"}, strict=True)
-
-
-def test_local_error_mapping_preserves_recoverable_not_found_and_git_failures():
+def test_local_error_mapping_preserves_recoverable_file_failures():
     assert _tool_error(LocalFileError("not_found", "missing")).code is ToolErrorCode.NOT_FOUND
-    assert _tool_error(GitServiceError("git_failed", "failed")).code is ToolErrorCode.GIT_FAILED
     assert (
         _tool_error(LocalFileError("unsupported_newline", "mixed")).code
         is ToolErrorCode.INVALID_ARGUMENTS

@@ -5,7 +5,7 @@ from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from morrow.adapters.credentials.keyring import MemoryCredentialStore
 from morrow.adapters.models.openai_compatible import (
@@ -15,14 +15,11 @@ from morrow.adapters.models.openai_compatible import (
 )
 from morrow.application.configuration import CONFIGURATION_PROVIDER_SCHEMA
 from morrow.application.local_tools import (
-    APPLY_PATCH_PROVIDER_SCHEMA,
+    BASH_PROVIDER_SCHEMA,
     PROMOTE_SANDBOX_PROVIDER_SCHEMA,
-    READ_FILE_PROVIDER_SCHEMA,
-    RUN_COMMAND_PROVIDER_SCHEMA,
-    SEARCH_TEXT_PROVIDER_SCHEMA,
-    WRITE_FILE_PROVIDER_SCHEMA,
-    RunCommandArguments,
-    WriteFileArguments,
+    WRITE_PROVIDER_SCHEMA,
+    BashArguments,
+    WriteArguments,
     _tool_error,
 )
 from morrow.application.preferences.tool import (
@@ -47,7 +44,6 @@ from morrow.runtime.capabilities import CapabilityPolicy
 from morrow.runtime.policy import ToolApproval, ToolExecutionPolicy
 from morrow.runtime.tool_arguments import (
     MAX_ARGUMENT_BYTES,
-    MAX_NUMBER_DIGITS,
     MAX_STRING_CHARS,
     JsonSchemaArgumentsValidator,
     PydanticArgumentsValidator,
@@ -95,15 +91,12 @@ def _tool(name, model):
         return {"ok": True}
 
     schema = {
-        "run_command": RUN_COMMAND_PROVIDER_SCHEMA,
-        "write_file": WRITE_FILE_PROVIDER_SCHEMA,
+        "bash": BASH_PROVIDER_SCHEMA,
+        "write": WRITE_PROVIDER_SCHEMA,
     }[name]
-    expected_shape = (
-        "exactly_one_of:argv,shell" if name == "run_command" else "write_file_mode_revision"
-    )
     declaration = (
         tool_declaration(name, process_isolation=ProcessIsolation.HOST)
-        if name == "run_command"
+        if name == "bash"
         else tool_declaration(name)
     )
     return make_tool(
@@ -111,7 +104,6 @@ def _tool(name, model):
         description=name,
         arguments_model=model,
         provider_schema=schema,
-        expected_shape=expected_shape,
         handler=handler,
         recovery_declaration=declaration,
     )
@@ -163,17 +155,6 @@ def _valid_inventory_arguments(name):
         "ls": {},
         "read": {"path": "README.md"},
         "write": {"path": "new.txt", "content": "x"},
-        "apply_patch": {
-            "path": "file.txt",
-            "expected_sha256": "0" * 64,
-            "edits": [{"old_text": "a", "new_text": "b"}],
-        },
-        "find_files": {"pattern": "*.py"},
-        "git_diff": {},
-        "git_status": {},
-        "list_directory": {},
-        "read_file": {"path": "README.md"},
-        "run_command": {"argv": ["echo"]},
         "run_skill_script": {
             "selection_id": "ssel_selection",
             "skill_id": "demo",
@@ -181,26 +162,12 @@ def _valid_inventory_arguments(name):
             "tree_digest": "0" * 64,
             "script_path": "scripts/check.py",
         },
-        "search_text": {"query": "needle"},
-        "show_changes": {},
         "update_configuration": {
             "scope": "workspace",
             "target": "profile",
             "operation": "set",
             "path": "summary",
             "value": "x",
-        },
-        "write_file": {"path": "new.txt", "content": "x", "mode": "create"},
-        "delete_file": {"path": "old.txt", "expected_sha256": "0" * 64},
-        "move_file": {
-            "source_path": "old.txt",
-            "destination_path": "new.txt",
-            "expected_sha256": "0" * 64,
-        },
-        "rename_file": {
-            "source_path": "old.txt",
-            "destination_path": "renamed.txt",
-            "expected_sha256": "0" * 64,
         },
         "promote_sandbox_changes": {
             "change_set_id": "sbx_" + "0" * 24,
@@ -210,117 +177,55 @@ def _valid_inventory_arguments(name):
 
 
 @pytest.mark.asyncio
-async def test_actual_provider_wire_exposes_run_command_shapes_runtime_rejects():
-    tool = _tool("run_command", RunCommandArguments)
+async def test_actual_provider_wire_exposes_simple_bash_shape_runtime_accepts_extras():
+    tool = _tool("bash", BashArguments)
     schema = await _captured_schema(tool)
     wire_validator = JsonSchemaArgumentsValidator(schema)
     runtime_validator = PydanticArgumentsValidator(
-        RunCommandArguments,
-        provider_schema=RUN_COMMAND_PROVIDER_SCHEMA,
-        expected_shape="exactly_one_of:argv,shell",
+        BashArguments,
+        provider_schema=BASH_PROVIDER_SCHEMA,
     )
 
     with pytest.raises(ToolArgumentsValidationError):
         wire_validator.validate("{}")
     with pytest.raises(ToolArgumentsValidationError):
-        wire_validator.validate('{"argv":["pwd"],"shell":"pwd"}')
-    with pytest.raises(ToolArgumentsValidationError):
         runtime_validator.validate("{}")
     with pytest.raises(ToolArgumentsValidationError):
-        runtime_validator.validate('{"argv":["pwd"],"shell":"pwd"}')
-    assert runtime_validator.validate('{"argv":["pwd"]}').argv == ("pwd",)
-    assert runtime_validator.validate('{"shell":"pwd"}').shell == "pwd"
-    with pytest.raises(ToolArgumentsValidationError) as invalid:
-        runtime_validator.validate("{}")
-    assert invalid.value.expected == "exactly_one_of:argv,shell"
+        runtime_validator.validate('{"command":["pwd"]}')
+    assert wire_validator.validate('{"command":"pwd","unused":true}') == {
+        "command": "pwd",
+        "unused": True,
+    }
+    parsed = runtime_validator.validate('{"command":"pwd","unused":true}')
+    assert parsed.command == "pwd"
+    assert "unused" not in parsed.model_dump()
 
 
-def test_provider_wire_exposes_write_file_revision_branch_runtime_rejects():
-    tool = _tool("write_file", WriteFileArguments)
+def test_provider_wire_exposes_simple_write_shape_without_revision_protocol():
+    tool = _tool("write", WriteArguments)
     schema = serialize_tool(tool.definition)["function"]["parameters"]
     runtime_validator = PydanticArgumentsValidator(
-        WriteFileArguments,
-        provider_schema=WRITE_FILE_PROVIDER_SCHEMA,
-        expected_shape="write_file_mode_revision",
+        WriteArguments,
+        provider_schema=WRITE_PROVIDER_SCHEMA,
     )
-
-    create_with_revision = {
-        "path": "new.txt",
-        "content": "new",
-        "mode": "create",
-        "expected_sha256": "0" * 64,
-    }
-    replace_without_revision = {"path": "new.txt", "content": "new", "mode": "replace"}
     wire_validator = JsonSchemaArgumentsValidator(schema)
     with pytest.raises(ToolArgumentsValidationError):
-        wire_validator.validate(json.dumps(create_with_revision))
-    with pytest.raises(ToolArgumentsValidationError):
-        wire_validator.validate(json.dumps(replace_without_revision))
-    with pytest.raises(ToolArgumentsValidationError):
-        runtime_validator.validate(json.dumps(create_with_revision))
-    with pytest.raises(ToolArgumentsValidationError):
-        runtime_validator.validate(json.dumps(replace_without_revision))
-    assert (
-        runtime_validator.validate(
-            json.dumps({"path": "new.txt", "content": "new", "mode": "create"})
-        ).mode.value
-        == "create"
+        wire_validator.validate('{"path":"new.txt"}')
+    parsed = runtime_validator.validate(
+        '{"path":"new.txt","content":"new","mode":"replace","expected_sha256":"ignored"}'
     )
-    assert (
-        runtime_validator.validate(
-            json.dumps(
-                {
-                    "path": "new.txt",
-                    "content": "new",
-                    "mode": "replace",
-                    "expected_sha256": "0" * 64,
-                }
-            )
-        ).mode.value
-        == "replace"
-    )
-
-
-def test_provider_wire_rejects_content_above_conservative_budget_bound():
-    tool = _tool("write_file", WriteFileArguments)
-    schema = serialize_tool(tool.definition)["function"]["parameters"]
-    content_schema = schema["properties"]["content"]
-    max_length = content_schema["maxLength"]
-    value = {"path": "new.txt", "content": "🧪" * (max_length + 1), "mode": "create"}
-    raw = json.dumps(value, ensure_ascii=False)
-    escaped_raw = json.dumps(value, ensure_ascii=True)
-
-    assert max_length < MAX_STRING_CHARS
-    assert len(raw.encode("utf-8")) <= MAX_ARGUMENT_BYTES
-    assert len(escaped_raw.encode("utf-8")) <= MAX_ARGUMENT_BYTES
-    wire_validator = JsonSchemaArgumentsValidator(schema)
-    with pytest.raises(ToolArgumentsValidationError) as wire_invalid:
-        wire_validator.validate(raw)
-    assert wire_invalid.value.code == "validation_failed"
-    with pytest.raises(ToolArgumentsValidationError) as invalid:
-        PydanticArgumentsValidator(
-            WriteFileArguments, provider_schema=WRITE_FILE_PROVIDER_SCHEMA
-        ).validate(raw)
-    assert invalid.value.code == "validation_failed"
+    assert parsed.path == "new.txt"
+    assert parsed.content == "new"
+    assert parsed.model_dump() == {"path": "new.txt", "content": "new"}
 
 
 @pytest.mark.parametrize(
     ("schema", "value"),
     [
         (
-            WRITE_FILE_PROVIDER_SCHEMA,
-            {"path": "new.txt", "content": "x", "mode": "replace", "expected_sha256": None},
-        ),
-        (
-            WRITE_FILE_PROVIDER_SCHEMA,
-            {"path": "new.txt", "content": "x\x00y", "mode": "create"},
-        ),
-        (
             PROMOTE_SANDBOX_PROVIDER_SCHEMA,
             {"change_set_id": "sbx_" + "0" * 24, "paths": ["out.txt", "out.txt"]},
         ),
-        (SEARCH_TEXT_PROVIDER_SCHEMA, {"query": "needle", "glob": ""}),
-        (READ_FILE_PROVIDER_SCHEMA, {"path": "1:foo"}),
         (
             SKILL_SCRIPT_PROVIDER_SCHEMA,
             {
@@ -412,21 +317,6 @@ def test_provider_schema_bounds_are_conservative_for_raw_argument_budget():
             for ensure_ascii in (False, True)
         )
 
-    content_max = WRITE_FILE_PROVIDER_SCHEMA["properties"]["content"]["maxLength"]
-    content = {"path": "new.txt", "content": "🧪" * content_max, "mode": "create"}
-    assert all(size <= MAX_ARGUMENT_BYTES for size in raw_size(content))
-
-    edit_properties = APPLY_PATCH_PROVIDER_SCHEMA["properties"]["edits"]["oneOf"][1]["items"][
-        "properties"
-    ]
-    edit_max = edit_properties["old_text"]["maxLength"]
-    patch = {
-        "path": "file.txt",
-        "expected_sha256": "0" * 64,
-        "edits": [{"old_text": "🧪" * edit_max, "new_text": "🧪" * edit_max} for _ in range(16)],
-    }
-    assert all(size <= MAX_ARGUMENT_BYTES for size in raw_size(patch))
-
     skill_argv_max = SKILL_SCRIPT_PROVIDER_SCHEMA["properties"]["argv"]["items"]["maxLength"]
     assert 16 * skill_argv_max * 4 <= 16 * 1024
     skill = {
@@ -440,28 +330,11 @@ def test_provider_schema_bounds_are_conservative_for_raw_argument_budget():
     }
     assert all(size <= MAX_ARGUMENT_BYTES for size in raw_size(skill))
 
-    command = {
-        "argv": ["🧪" * 256 for _ in range(16)],
-    }
-    shell = {"shell": "🧪" * 10_000}
     promote = {
         "change_set_id": "sbx_" + "0" * 24,
         "paths": ["🧪" * 512 for _ in range(16)],
     }
-    git_diff = {"paths": ["🧪" * 256 for _ in range(32)]}
-    assert all(size <= MAX_ARGUMENT_BYTES for size in raw_size(command))
-    assert all(size <= MAX_ARGUMENT_BYTES for size in raw_size(shell))
     assert all(size <= MAX_ARGUMENT_BYTES for size in raw_size(promote))
-    assert all(size <= MAX_ARGUMENT_BYTES for size in raw_size(git_diff))
-    assert (
-        READ_FILE_PROVIDER_SCHEMA["properties"]["start_line"]["maximum"]
-        == 10**MAX_NUMBER_DIGITS - 1
-    )
-    with pytest.raises(ToolArgumentsValidationError) as invalid:
-        JsonSchemaArgumentsValidator(READ_FILE_PROVIDER_SCHEMA).validate(
-            json.dumps({"path": "README.md", "start_line": 10**MAX_NUMBER_DIGITS})
-        )
-    assert invalid.value.code == "budget"
 
 
 def test_preference_tool_is_included_in_the_direct_provider_contract_inventory():
@@ -490,15 +363,14 @@ def test_contract_audit_uses_independent_run_isolation_and_policy_expectations()
         return OperationIntent(kind=OperationKind.PROCESS, effect=ToolEffect.NONE)
 
     wrong_isolation = make_tool(
-        name="run_command",
+        name="bash",
         description="audit",
-        arguments_model=RunCommandArguments,
-        provider_schema=RUN_COMMAND_PROVIDER_SCHEMA,
-        expected_shape="exactly_one_of:argv,shell",
+        arguments_model=BashArguments,
+        provider_schema=BASH_PROVIDER_SCHEMA,
         handler=handler,
         intent_resolver=intent,
         recovery_declaration=tool_declaration(
-            "run_command", process_isolation=ProcessIsolation.NATIVE_SANDBOX
+            "bash", process_isolation=ProcessIsolation.NATIVE_SANDBOX
         ),
     )
     with pytest.raises(ToolContractAuditError):
@@ -510,7 +382,7 @@ def test_contract_audit_uses_independent_run_isolation_and_policy_expectations()
         )
 
     wrong_policy = replace(
-        _tool("write_file", WriteFileArguments),
+        _tool("write", WriteArguments),
         execution_policy=ToolExecutionPolicy(
             effect=ToolEffect.SESSION_WRITE, approval=ToolApproval.REQUIRED
         ),
@@ -542,7 +414,7 @@ async def test_static_contract_rejects_capability_intent_drift_before_handler(tm
     registry = ToolRegistry()
     registry.register(
         make_tool(
-            name="read_file",
+            name="read",
             description="read",
             arguments_model=EmptyArguments,
             handler=handler,
@@ -557,7 +429,7 @@ async def test_static_contract_rejects_capability_intent_drift_before_handler(tm
         ),
     )
     outcome = await executor.execute(
-        FunctionToolCall(id="call-contract", name="read_file", arguments="{}")
+        FunctionToolCall(id="call-contract", name="read", arguments="{}")
     )
     assert outcome.error_code is ToolErrorCode.PREFLIGHT_FAILED
     assert called is False
@@ -621,15 +493,12 @@ def test_tool_contract_audit_fails_closed_on_definition_drift_and_open_schema():
         return {"ok": True}
 
     tool = make_tool(
-        name="run_command",
+        name="bash",
         description="audit",
-        arguments_model=RunCommandArguments,
-        provider_schema=RUN_COMMAND_PROVIDER_SCHEMA,
-        expected_shape="exactly_one_of:argv,shell",
+        arguments_model=BashArguments,
+        provider_schema=BASH_PROVIDER_SCHEMA,
         handler=handler,
-        recovery_declaration=tool_declaration(
-            "run_command", process_isolation=ProcessIsolation.HOST
-        ),
+        recovery_declaration=tool_declaration("bash", process_isolation=ProcessIsolation.HOST),
     )
     tool.definition.function.parameters["drift"] = {"type": "string"}
     with pytest.raises(ToolContractAuditError):
@@ -646,7 +515,12 @@ def test_tool_contract_audit_fails_closed_on_definition_drift_and_open_schema():
 
 
 def test_model_schema_helper_returns_normalized_budgeted_schema():
-    schema = tool_parameters_from_model(WriteFileArguments)
+    class BoundedArguments(BaseModel):
+        model_config = ConfigDict(extra="forbid", strict=True)
+
+        content: str = Field(max_length=MAX_STRING_CHARS)
+
+    schema = tool_parameters_from_model(BoundedArguments)
     assert schema["$schema"]
     assert schema["properties"]["content"]["maxLength"] == MAX_STRING_CHARS
 

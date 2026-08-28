@@ -2,15 +2,13 @@
 
 ## Current status
 
-Subplan 91 is verified complete and committed as `9c6e2ba`: Morrow's default composition now exposes the Pi-aligned seven core
-tools plus conditionally composed configuration/Skill capabilities. Full offline validation passed
-`1344 passed, 2 deselected`; no live Provider request or credential access occurred. S7P-09 is
-reactivated, but no pre-repair campaign/profile can be reused.
+Subplan 92 implementation and validation are complete. The current seven-tool surface is the only
+production callable coding interface; obsolete Provider contracts and factories are removed.
+Historical recovery names remain data compatibility, not production tools.
 
 ## Active task
 
-S7P-09 is blocked before plan/run admission. Obtain a sufficient total token ceiling, then rebuild
-the comparison plan from clean commit `9c6e2ba` and a new create-only evidence root.
+Commit and fast-forward the verified cleanup into the parent S7P-09 execution branch.
 
 ## Evidence
 
@@ -26,11 +24,15 @@ the comparison plan from clean commit `9c6e2ba` and a new create-only evidence r
   `git diff --check` passed.
 - Retained formal attempts account for 16,754,419 known tokens plus six unavailable-usage requests.
   The approved 50M total leaves 33,245,581 known-token headroom before unknown-usage allowance.
+- Removed 13 retired Provider schema/model/factory families from production local tools. Current
+  production declarations no longer accept their names; a separate legacy table preserves old-row
+  recovery classification.
+- Focused migrated coverage passed `176`; final offline gate passed `1327 passed, 2 deselected in
+  87.08s`. Ruff format/check, compileall, CLI help and `git diff --check` passed.
 
 ## Next action
 
-Do not create or admit a partial campaign. The known hard minimum is 58,754,419 total tokens and
-still excludes six unknown-usage requests; 80M remains the recommended safe total ceiling.
+Integrate the verified child commit, then return to the unchanged S7P-09 capacity hold.
 
 ## Blockers
 

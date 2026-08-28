@@ -92,11 +92,12 @@ revision，并执行 SHA-256 冲突检查、原子发布和实际 Diff。模型�
 `runtime-policy.toml` 与可选 `config.yaml.runtime_policy` 安全覆盖在 composition root 合并，并解析为任务固定的 RunPolicy 及 Review policy。模型请求白名单、流片段组装与 reasoning/SDK 元数据
 隔离归 Provider Adapter。
 
-S7P-04 在上述现有 ToolCycle 中增加显式的 `delete_file`、`move_file` 和 `rename_file`。
-它们只接受工作空间内的普通文件，源文件必须携带 SHA-256，目标必须在预检和原子发布时均不存在；
+S7P-04 曾在上述 ToolCycle 中提供显式删除、移动和重命名适配器；当前模型层不再注册这些专用工具。
+对应 mutation 服务仍只接受工作空间内的普通文件，源文件必须携带内部取得的 SHA-256，目标必须在预检和原子发布时均不存在；
 不支持目录、递归、符号链接、special、force/overwrite、copy-delete fallback 或跨设备降级。
 删除通过 no-follow directory-fd unlink，移动/重命名通过平台可证明的 atomic no-replace primitive；
-无法证明能力时 fail closed。公开事件生命周期与 runtime-policy 默认值不因这些工具改变。
+无法证明能力时 fail closed。这些服务供沙箱变更推广和恢复对账使用；普通模型操作统一通过受策略约束的
+`bash`。公开事件生命周期与 runtime-policy 默认值不因这次接口收缩改变。
 
 Runtime 已提供与具体领域无关的 `PermissionProfile`、`WorkspaceCapability`、`CapabilityPolicy`、
 `ToolExecutionPolicy`、本地 `ToolEffect` 和注入式 `ApprovalPort`；生产组合在 Session 构造时冻结工作区
@@ -129,9 +130,10 @@ source absence、destination hash/size/mode 与受影响父目录 fsync。prepar
 绝不宣称成功。durable prepare 已缓存的完整内存 MutationPlan（含 staging 名）在后续
 skip-approval resolver/handler 阶段按 run/call 身份复用；执行阶段只对这个冻结 plan 做锁内重验，
 不重新分配 staging，也不以第二次 preflight 覆盖 PreparedIntent evidence。结果在领域服务内按当前
-ToolCall 预算语义截断。Git 工具通过
+ToolCall 预算语义截断。只读 Git 服务仍通过
 `GitInspectionService` 与固定的 `GitInspectionAdapter` 解析只读状态/Diff，拒绝外部 Git metadata 并禁用
-pager、外部 diff、textconv、hooks-like executable extension points、prompt 和可选锁。`run_command` 通过同一个 `ProcessExecutionService` 选择
+pager、外部 diff、textconv、hooks-like executable extension points、prompt 和可选锁，但不再拥有独立的
+模型工具包装；模型使用 `bash` 读取 Git 状态。`bash` 通过 `ProcessExecutionService` 选择
 `HostProcessAdapter` 或能力探测通过的 `NativeSandboxProcessAdapter`：Host 命令全部需要审批且不提供操作系统隔离，
 审批预览展示有界脱敏命令，shell 包装的 Git 命令在审批前按写风险拒绝；Auto Sandboxed 则在默认断网的临时
 快照中自动执行。快照准备/收集使用协作式取消和预留临时根，超时等待后台阶段停稳后再清理；沙箱变更只通过
@@ -146,7 +148,7 @@ Session-scoped Artifact。它不接受 shell、不继承 ambient 环境或 Crede
 
 Stage 4 的 Full Access Manual 是一条额外的、明确受限的证据链：只有 Application API 的本地界面命令能
 创建 `CapabilityGrant`；它绑定一个前台 AgentRun，随后冻结为不可替换的 `PermissionSnapshot`。Stage 4
-只开放 `unconfined_host_process`，且只允许带 `unconfined_host` 证据的 opaque `run_command` 携带 grant；
+只开放 `unconfined_host_process`，且只允许带 `unconfined_host` 证据的 opaque `bash` 携带 grant；
 每次执行仍消费绑定 intent、schema、snapshot 和 grant 的一次性 Approval。这个标签明确表示没有操作系统
 隔离，不能被描述为受保护的文件、网络或凭据 confinement。撤销会阻止新的审批/handler 入口、使 pending
 approval 失效并请求活动执行取消；已完成或 outcome unknown 的事实不会被伪造回滚。结构化工具不会因为同一
@@ -217,9 +219,10 @@ Service 或 Port：
 - 工具的副作用等级、审批、超时、取消和审计属于通用 Tool Policy/Executor；单个 handler 不得自行读取
   用户输入、发起终端确认或发布公开事件。
 
-`read`、`ls`、`find` 与 `grep` 通过兼容适配器和注入的文件/搜索服务访问冻结工作空间；
+`read`、`ls`、`find` 与 `grep` 通过简洁适配器和注入的文件/搜索服务访问冻结工作空间；
 `edit` 与 `write` 通过适配器自动补全内部 revision/mode，再由 mutation/ChangeSet 服务执行和报告
-实际变更。旧的专用文件/Git/ChangeSet 工厂继续保留供显式组合与恢复兼容，但不进入默认核心库存；
+实际变更。旧的专用文件/Git/ChangeSet schema、参数模型和工厂已删除；旧名称只在明确标注的 durable
+recovery 兼容表中保留，用于分类缺少冻结声明的历史执行记录，不能通过当前生产注册门；
 `bash` 通过注入的 `ProcessExecutionService` 执行审批后的 Host 命令，或在 Auto Sandboxed 中执行原生快照命令；
 `run_skill_script` 通过注入的 `SkillScriptExecutionService` 执行已冻结 Skill 包中的脚本，并只发布有界、脱敏的
 声明输出 Artifact；

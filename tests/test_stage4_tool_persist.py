@@ -17,11 +17,7 @@ from morrow.adapters.local.filesystem import FileSystemAdapter, FileSystemMutati
 from morrow.adapters.state.journal import SqliteOperationalJournal
 from morrow.adapters.state.operational import BusyRetryPolicy, OperationalStore
 from morrow.application.grants import CapabilityGrantService
-from morrow.application.local_tools import (
-    make_delete_file_tool,
-    make_move_file_tool,
-    make_rename_file_tool,
-)
+from morrow.application.local_tools import make_write_tool
 from morrow.application.turns import SessionPersistence
 from morrow.core.capabilities import (
     OperationIntent,
@@ -32,7 +28,7 @@ from morrow.core.capabilities import (
     WorkspaceCapability,
 )
 from morrow.core.domain import DurableSession
-from morrow.core.execution import EffectClass, ToolExecutionDisposition, ToolExecutionState
+from morrow.core.execution import EffectClass, ToolExecutionState
 from morrow.core.faults import FaultPoint, InjectedFault, OnceFaultInjector
 from morrow.core.models import (
     AssistantMessage,
@@ -47,7 +43,6 @@ from morrow.core.permissions import (
     CapabilityName,
     GrantSource,
 )
-from morrow.core.recovery import RecoveryClassification
 from morrow.core.store import StoreOpenMode
 from morrow.runtime.agent import AgentLoop
 from morrow.runtime.capabilities import CapabilityPolicy
@@ -172,7 +167,7 @@ def _host_executor(seen: list[str], session: Session, *, approval_port=None) -> 
     registry = ToolRegistry()
     registry.register(
         make_tool(
-            name="run_command",
+            name="bash",
             description="run one opaque host command",
             arguments_model=_HostArguments,
             handler=handler,
@@ -278,7 +273,7 @@ async def test_handler_does_not_run_when_intent_commit_fails(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_write_file_intent_stores_pre_effect_hashes(tmp_path):
+async def test_write_intent_stores_pre_effect_hashes(tmp_path):
     project = tmp_path / "project"
     project.mkdir()
     target = project / "notes.txt"
@@ -287,11 +282,8 @@ async def test_write_file_intent_stores_pre_effect_hashes(tmp_path):
     mutation = WorkspaceMutationService(WorkspaceFileService(WorkspacePathResolver(project)))
     store, handle, journal, session, persistence = _open(tmp_path, mutation=mutation)
     try:
-        from morrow.application.local_tools import make_write_file_tool
-        from morrow.services.changes import ChangeSetService
-
         registry = ToolRegistry()
-        registry.register(make_write_file_tool(mutation, ChangeSetService()))
+        registry.register(make_write_tool(mutation, ChangeSetService()))
         executor = ToolExecutor(registry.snapshot(), make_context_builder().run_policy)
         provider = ScriptedModelProvider(
             [
@@ -299,15 +291,8 @@ async def test_write_file_intent_stores_pre_effect_hashes(tmp_path):
                     tool_calls=(
                         FunctionToolCall(
                             id="c1",
-                            name="write_file",
-                            arguments=json.dumps(
-                                {
-                                    "path": "notes.txt",
-                                    "content": "new\n",
-                                    "mode": "replace",
-                                    "expected_sha256": before,
-                                }
-                            ),
+                            name="write",
+                            arguments=json.dumps({"path": "notes.txt", "content": "new\n"}),
                         ),
                     )
                 ),
@@ -334,251 +319,6 @@ async def test_write_file_intent_stores_pre_effect_hashes(tmp_path):
         assert listed[0].state is ToolExecutionState.CLOSED
         assert listed[0].result_envelope is not None
         assert listed[0].result_envelope.ok is True
-    finally:
-        handle.close()
-
-
-@pytest.mark.asyncio
-async def test_delete_and_rename_intents_persist_ordered_two_path_evidence(tmp_path):
-    project = tmp_path / "project"
-    project.mkdir()
-    deleted = project / "delete.txt"
-    renamed = project / "old.txt"
-    deleted.write_text("delete\n", encoding="utf-8")
-    renamed.write_text("rename\n", encoding="utf-8")
-    delete_hash = hashlib.sha256(deleted.read_bytes()).hexdigest()
-    rename_hash = hashlib.sha256(renamed.read_bytes()).hexdigest()
-    mutation = WorkspaceMutationService(WorkspaceFileService(WorkspacePathResolver(project)))
-    store, handle, journal, session, persistence = _open(tmp_path, mutation=mutation)
-    session.workspace_capability = WorkspaceCapability(workspace_id="ws_1", root=project)
-    try:
-        registry = ToolRegistry()
-        changes = ChangeSetService()
-        registry.register(make_delete_file_tool(mutation, changes))
-        registry.register(make_rename_file_tool(mutation, changes))
-        executor = ToolExecutor(
-            registry.snapshot(), make_context_builder().run_policy, approval_port=_ApproveAll()
-        )
-        provider = ScriptedModelProvider(
-            [
-                AssistantMessage(
-                    tool_calls=(
-                        FunctionToolCall(
-                            id="delete",
-                            name="delete_file",
-                            arguments=json.dumps(
-                                {"path": "delete.txt", "expected_sha256": delete_hash}
-                            ),
-                        ),
-                        FunctionToolCall(
-                            id="rename",
-                            name="rename_file",
-                            arguments=json.dumps(
-                                {
-                                    "source_path": "old.txt",
-                                    "destination_path": "new.txt",
-                                    "expected_sha256": rename_hash,
-                                }
-                            ),
-                        ),
-                    )
-                ),
-                AssistantMessage(content="done"),
-            ]
-        )
-        loop = AgentLoop(
-            provider,
-            ModelRef(provider_id="p", model_id="m"),
-            make_context_builder(),
-            id_source=FixedIdSource(),
-            tool_executor=executor,
-        )
-        [item async for item in loop.run_task(session, "delete and rename")]
-        run = journal._read_one("SELECT agent_run_id FROM agent_runs LIMIT 1", ())
-        executions = journal.list_executions("ws_1", agent_run_id=str(run[0]))
-        assert [item.tool_name for item in executions] == ["delete_file", "rename_file"]
-        delete_evidence = executions[0].intent.file_evidence
-        assert len(delete_evidence) == 1
-        assert delete_evidence[0].expected_kind == "absent"
-        assert delete_evidence[0].before_sha256 == delete_hash
-        assert delete_evidence[0].staging_relative_path is not None
-        assert delete_evidence[0].staging_relative_path.startswith(".morrow-capture-")
-        rename_evidence = executions[1].intent.file_evidence
-        assert [item.relative_path for item in rename_evidence] == ["old.txt", "new.txt"]
-        assert rename_evidence[0].expected_kind == "absent"
-        assert rename_evidence[0].staging_relative_path is not None
-        assert rename_evidence[0].staging_relative_path.startswith(".morrow-capture-")
-        assert rename_evidence[1].expected_kind == "file"
-        assert rename_evidence[1].before_sha256 is None
-        assert rename_evidence[1].expected_after_sha256 == rename_hash
-        assert all(
-            item.result_envelope is not None and item.result_envelope.ok for item in executions
-        )
-        intent_json = json.dumps(
-            [item.intent.model_dump(mode="json") for item in executions], ensure_ascii=False
-        )
-        assert "delete\n" not in intent_json
-        assert "rename\n" not in intent_json
-        assert not deleted.exists()
-        assert not renamed.exists()
-        assert (project / "new.txt").read_text(encoding="utf-8") == "rename\n"
-    finally:
-        handle.close()
-
-
-@pytest.mark.asyncio
-async def test_post_effect_failure_persists_unknown_result_fact_and_recovery_observation(tmp_path):
-    project = tmp_path / "project"
-    project.mkdir()
-    target = project / "delete.txt"
-    target.write_text("delete\n", encoding="utf-8")
-    mutation = WorkspaceMutationService(
-        WorkspaceFileService(WorkspacePathResolver(project), filesystem=_FailFsyncAfterEffect())
-    )
-    store, handle, journal, session, persistence = _open(tmp_path, mutation=mutation)
-    session.workspace_capability = WorkspaceCapability(workspace_id="ws_1", root=project)
-    try:
-        registry = ToolRegistry()
-        registry.register(make_delete_file_tool(mutation, ChangeSetService()))
-        executor = ToolExecutor(
-            registry.snapshot(), make_context_builder().run_policy, approval_port=_ApproveAll()
-        )
-        provider = ScriptedModelProvider(
-            [
-                AssistantMessage(
-                    tool_calls=(
-                        FunctionToolCall(
-                            id="delete",
-                            name="delete_file",
-                            arguments=json.dumps(
-                                {
-                                    "path": "delete.txt",
-                                    "expected_sha256": hashlib.sha256(
-                                        target.read_bytes()
-                                    ).hexdigest(),
-                                }
-                            ),
-                        ),
-                    )
-                ),
-                AssistantMessage(content="done"),
-            ]
-        )
-        loop = AgentLoop(
-            provider,
-            ModelRef(provider_id="p", model_id="m"),
-            make_context_builder(),
-            id_source=FixedIdSource(),
-            tool_executor=executor,
-        )
-        [item async for item in loop.run_task(session, "delete")]
-        run = journal._read_one("SELECT agent_run_id FROM agent_runs LIMIT 1", ())
-        execution = journal.list_executions("ws_1", agent_run_id=str(run[0]))[0]
-        assert execution.state is ToolExecutionState.CLOSED
-        assert execution.disposition is ToolExecutionDisposition.UNKNOWN
-        assert execution.result_envelope is not None and not execution.result_envelope.ok
-        assert execution.facts is not None
-        assert execution.facts.files[0].expected_kind == "absent"
-        report = persistence.recovery.discover("ses_1", session.log)
-        assert report is not None
-        assert report.items[0].classification is RecoveryClassification.COMPLETED
-        assert report.items[0].blocking is True
-        assert not target.exists()
-    finally:
-        handle.close()
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("operation", ["delete", "move", "rename"])
-async def test_durable_destructive_execution_reuses_prepared_capture(tmp_path, operation):
-    project = tmp_path / "project"
-    project.mkdir()
-    source = project / "source.txt"
-    source.write_text("durable capture\n", encoding="utf-8")
-    expected_sha256 = hashlib.sha256(source.read_bytes()).hexdigest()
-    destination = project / "destination.txt"
-    filesystem = _FailFsyncAfterCapture()
-    mutation = WorkspaceMutationService(
-        WorkspaceFileService(WorkspacePathResolver(project), filesystem=filesystem)
-    )
-    store, handle, journal, session, persistence = _open(tmp_path, mutation=mutation)
-    session.workspace_capability = WorkspaceCapability(workspace_id="ws_1", root=project)
-    try:
-        changes = ChangeSetService()
-        registry = ToolRegistry()
-        preflight_calls: list[tuple[object, ...]] = []
-        preflight_name = f"preflight_{operation}"
-        original_preflight = getattr(mutation, preflight_name)
-
-        def counted_preflight(*args, __original=original_preflight, **kwargs):
-            preflight_calls.append(args)
-            return __original(*args, **kwargs)
-
-        setattr(mutation, preflight_name, counted_preflight)
-        factory = {
-            "delete": make_delete_file_tool,
-            "move": make_move_file_tool,
-            "rename": make_rename_file_tool,
-        }[operation]
-        registry.register(factory(mutation, changes))
-        executor = ToolExecutor(
-            registry.snapshot(),
-            make_context_builder().run_policy,
-            approval_port=_ApproveAll(),
-            capability_policy=CapabilityPolicy(
-                session.permission_profile,
-                session.workspace_capability,
-            ),
-        )
-        arguments = (
-            {"path": "source.txt", "expected_sha256": expected_sha256}
-            if operation == "delete"
-            else {
-                "source_path": "source.txt",
-                "destination_path": "destination.txt",
-                "expected_sha256": expected_sha256,
-            }
-        )
-        provider = ScriptedModelProvider(
-            [
-                AssistantMessage(
-                    tool_calls=(
-                        FunctionToolCall(
-                            id=operation,
-                            name=f"{operation}_file",
-                            arguments=json.dumps(arguments),
-                        ),
-                    )
-                ),
-                AssistantMessage(content="done"),
-            ]
-        )
-        loop = AgentLoop(
-            provider,
-            ModelRef(provider_id="p", model_id="m"),
-            make_context_builder(),
-            id_source=FixedIdSource(),
-            tool_executor=executor,
-        )
-        [item async for item in loop.run_task(session, operation)]
-
-        run = journal._read_one("SELECT agent_run_id FROM agent_runs LIMIT 1", ())
-        execution = journal.list_executions("ws_1", agent_run_id=str(run[0]))[0]
-        assert len(preflight_calls) == 1
-        evidence = execution.intent.file_evidence[0]
-        assert evidence.staging_relative_path is not None
-        staging = project / evidence.staging_relative_path
-        assert staging.exists()
-        assert sorted(project.glob(".morrow-capture-*")) == [staging]
-        assert execution.state is ToolExecutionState.CLOSED
-        assert execution.disposition is ToolExecutionDisposition.UNKNOWN
-        assert execution.facts is not None
-        assert execution.facts.files[0].staging_relative_path == evidence.staging_relative_path
-        report = persistence.recovery.discover("ses_1", session.log)
-        assert report is not None
-        assert report.items[0].classification is RecoveryClassification.OUTCOME_UNKNOWN
-        assert source.exists() is False
-        assert destination.exists() is False
     finally:
         handle.close()
 
@@ -661,7 +401,7 @@ async def test_full_access_host_policy_deny_closes_before_handler(tmp_path):
                 AssistantMessage(
                     tool_calls=(
                         FunctionToolCall(
-                            id="c1", name="run_command", arguments=json.dumps({"value": "denied"})
+                            id="c1", name="bash", arguments=json.dumps({"value": "denied"})
                         ),
                     )
                 ),
@@ -687,8 +427,8 @@ async def test_full_access_host_policy_deny_closes_before_handler(tmp_path):
         tool_messages = [message for message in session.messages if message.role == "tool"]
         denied = json.loads(tool_messages[0].content)
         assert "full_access_grant_required" in denied["error"]["message"]
-        assert "argv" in denied["error"]["message"]
-        assert "网络、依赖安装、Git 写入和破坏性操作不可绕过" in denied["error"]["message"]
+        assert "bash 会自动捕获 stdout/stderr" in denied["error"]["message"]
+        assert "网络、依赖安装、Git 写入和破坏性操作" in denied["error"]["message"]
     finally:
         handle.close()
 
@@ -731,7 +471,7 @@ async def test_local_grant_provider_freezes_evidence_before_full_access_host_han
                 AssistantMessage(
                     tool_calls=(
                         FunctionToolCall(
-                            id="c1", name="run_command", arguments=json.dumps({"value": "granted"})
+                            id="c1", name="bash", arguments=json.dumps({"value": "granted"})
                         ),
                     )
                 ),
@@ -819,7 +559,7 @@ async def test_full_access_host_rechecks_expiry_after_approval_wait(tmp_path):
                 AssistantMessage(
                     tool_calls=(
                         FunctionToolCall(
-                            id="c1", name="run_command", arguments=json.dumps({"value": "expired"})
+                            id="c1", name="bash", arguments=json.dumps({"value": "expired"})
                         ),
                     )
                 ),

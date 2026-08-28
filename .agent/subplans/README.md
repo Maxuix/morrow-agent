@@ -28,6 +28,8 @@ current acceptance evidence, and was integrated locally. The user then explicitl
 Subplan 90 built the repeated Morrow/Pi campaign and remains recoverable, but its live lane is
 paused after the user requested a Pi-aligned tool-interface repair. Subplan 91 completed that
 repair and returned control to Subplan 90 for a new profile/source pin and capacity estimate.
+The user then requested removal of the now-unexposed legacy tool adapters. Subplan 92 is active for
+that bounded cleanup; Subplan 90 remains paused at its existing capacity hold.
 
 ## Stage 7 reliability sequence
 
@@ -46,6 +48,7 @@ repair and returned control to Subplan 90 for a new profile/source pin and capac
 | 89 | `89-s7p-08-single-agent-function-matrix.md` | completed and integrated locally |
 | 90 | `90-s7p-09-repeated-direct-pi-baseline.md` | active; new profile/capacity freeze pending |
 | 91 | `91-mainstream-tool-interface.md` | completed and verified on the S7P-09 stack |
+| 92 | `92-remove-legacy-tool-adapters.md` | active; legacy model-facing tool cleanup |
 
 ## Stage 7 pre-baseline
 

@@ -71,12 +71,6 @@ def policy_denial_message(tool_name: str, reason_codes=()) -> str:
             "请移除工作区外路径或不允许的命令效果。网络、依赖安装、Git 写入和破坏性操作"
             "仍受执行端策略约束。"
         )
-    if tool_name == "run_command":
-        return (
-            f"当前能力策略拒绝此操作{suffix}。run_command 会自动捕获 stdout/stderr；"
-            "项目检查请改用 argv，移除 shell 重定向、管道和工作区外路径。"
-            "网络、依赖安装、Git 写入和破坏性操作不可绕过。"
-        )
     return f"当前能力策略拒绝此操作{suffix}"
 
 
@@ -249,14 +243,7 @@ _STATIC_TOOL_CONTRACTS: Mapping[str, ToolContractExpectation] = MappingProxyType
         "read": _static_contract(OperationKind.WORKSPACE_READ),
         "find": _static_contract(OperationKind.WORKSPACE_READ),
         "grep": _static_contract(OperationKind.WORKSPACE_READ),
-        "list_directory": _static_contract(OperationKind.WORKSPACE_READ),
-        "read_file": _static_contract(OperationKind.WORKSPACE_READ),
-        "find_files": _static_contract(OperationKind.WORKSPACE_READ),
-        "search_text": _static_contract(OperationKind.WORKSPACE_READ),
         "read_artifact": _static_contract(OperationKind.INTERNAL_READ),
-        "show_changes": _static_contract(OperationKind.INTERNAL_READ),
-        "git_status": _static_contract(OperationKind.GIT_READ),
-        "git_diff": _static_contract(OperationKind.GIT_READ),
         "update_configuration": _static_contract(
             OperationKind.CONFIGURATION_WRITE,
             ToolEffect.PERSISTENT_WRITE,
@@ -269,38 +256,13 @@ _STATIC_TOOL_CONTRACTS: Mapping[str, ToolContractExpectation] = MappingProxyType
             policy_effect=ToolEffect.PERSISTENT_WRITE,
             policy_approval=ToolApproval.REQUIRED,
         ),
-        "apply_patch": _static_contract(OperationKind.WORKSPACE_WRITE, ToolEffect.PERSISTENT_WRITE),
         "edit": _static_contract(OperationKind.WORKSPACE_WRITE, ToolEffect.PERSISTENT_WRITE),
         "write": _static_contract(OperationKind.WORKSPACE_WRITE, ToolEffect.PERSISTENT_WRITE),
-        "write_file": _static_contract(OperationKind.WORKSPACE_WRITE, ToolEffect.PERSISTENT_WRITE),
-        "delete_file": _static_contract(
-            OperationKind.WORKSPACE_WRITE,
-            ToolEffect.PERSISTENT_WRITE,
-            policy_effect=ToolEffect.PERSISTENT_WRITE,
-            policy_approval=ToolApproval.REQUIRED,
-        ),
-        "move_file": _static_contract(
-            OperationKind.WORKSPACE_WRITE,
-            ToolEffect.PERSISTENT_WRITE,
-            policy_effect=ToolEffect.PERSISTENT_WRITE,
-            policy_approval=ToolApproval.REQUIRED,
-        ),
-        "rename_file": _static_contract(
-            OperationKind.WORKSPACE_WRITE,
-            ToolEffect.PERSISTENT_WRITE,
-            policy_effect=ToolEffect.PERSISTENT_WRITE,
-            policy_approval=ToolApproval.REQUIRED,
-        ),
         "promote_sandbox_changes": _static_contract(
             OperationKind.WORKSPACE_WRITE,
             ToolEffect.PERSISTENT_WRITE,
             policy_effect=ToolEffect.PERSISTENT_WRITE,
             policy_approval=ToolApproval.REQUIRED,
-        ),
-        "run_command": _static_contract(
-            OperationKind.PROCESS,
-            requires_host=None,
-            requires_sandbox=None,
         ),
         "bash": _static_contract(
             OperationKind.PROCESS,
@@ -325,7 +287,7 @@ def _static_contract_for(
     expected = _STATIC_TOOL_CONTRACTS.get(name)
     if expected is None:
         return None
-    if name not in {"run_command", "bash"} or process_isolation is None:
+    if name != "bash" or process_isolation is None:
         return expected
     return replace(
         expected,
@@ -427,7 +389,7 @@ def audit_registered_tool(
         require_runtime_contract
         and name in _STATIC_TOOL_CONTRACTS
         and (
-            name not in {"run_command", "bash"}
+            name != "bash"
             or expected_process_isolation is not None
             or declaration.process_isolation is not None
         )
@@ -438,14 +400,12 @@ def audit_registered_tool(
             if expected_process_isolation is not None
             else declaration.process_isolation
         )
-        if name in {"run_command", "bash"} and declaration_isolation is None:
+        if name == "bash" and declaration_isolation is None:
             raise _contract_failure(name, "expected process isolation is missing")
         try:
             expected = tool_declaration(
                 name,
-                process_isolation=(
-                    declaration_isolation if name in {"run_command", "bash"} else None
-                ),
+                process_isolation=(declaration_isolation if name == "bash" else None),
                 production_only=require_production_declaration,
             )
         except UnknownToolDeclarationError:
