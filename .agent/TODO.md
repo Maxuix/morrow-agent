@@ -22,6 +22,9 @@ primary does not fit, use the explicit 14-run reduced single-repetition pilot.
   28-run primary contract.
 - `[x]` Refreeze and capacity-check the reduced plan; stop before admission if retained usage still
   leaves insufficient headroom.
+- `[!]` Execute the reduced pilot sequentially: 2/14 admissions were finalized as
+  `FAIL_RUNTIME`/`BLOCKED_ENV`; pause the remaining 12 until the provider/runner environment is
+  repaired and execution is explicitly resumed.
 
 ## Earlier completed tasks
 

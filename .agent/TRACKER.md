@@ -12,7 +12,10 @@ passed `59`, and the complete offline gate passed `1340 passed, 2 deselected`.
 
 The explicit risk-denial ordering repair, cumulative prior-campaign capacity guard, full
 remaining-schedule reservation check and reduced-variant support are implemented. The fresh reduced
-plan passed preflight and has capacity for 14 conservative admissions under the approved ceiling.
+plan passed preflight and had capacity for 14 conservative admissions under the approved ceiling.
+Execution then created and closed two admissions in the fresh evidence root. `MORROW-001` ended
+`FAIL_RUNTIME` after a provider-backed runner attempt, and `MORROW-003` ended `BLOCKED_ENV` after
+the provider stopped reporting usage; no successful comparable run was produced.
 
 ## Implemented boundary
 
@@ -39,11 +42,13 @@ plan passed preflight and has capacity for 14 conservative admissions under the 
 
 ## Next action
 
-The exact reduced 14-run admission boundary is ready for confirmation. After confirmation, admit and
-execute entries sequentially; do not reuse prior campaign admissions.
+The reduced pilot is paused after 2/14 sequential admissions. Preserve the evidence root and do not
+create later admissions until the provider/runner environment is repaired and a fresh explicit
+execution authorization is given.
 
 ## Blockers
 
-- The full 28-run primary remains over the approved 50,000,000-token ceiling after retained usage;
-  the user-selected reduced 14-run pilot fits. No formal admission or model request has been made;
-  the reduced pilot still requires explicit start confirmation.
+- The full 28-run primary remains over the approved 50,000,000-token ceiling after retained usage.
+  The user-selected reduced 14-run pilot fits, but its first two formal Morrow admissions were
+  blocked by provider/runner runtime conditions. The remaining 12 entries were intentionally not
+  admitted; the pilot is not complete and cannot claim a comparison result.

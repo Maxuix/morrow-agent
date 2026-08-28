@@ -3728,3 +3728,19 @@
   accounting included all seven retained roots, with `27,577,509` accounted tokens plus a
   `21,000,000`-token reservation for 14 admissions at 1.5M each. No admission or model request was
   created pending explicit start confirmation.
+
+## 2026-08-28 — S7P-09 reduced pilot paused after two admissions
+
+- After the user's explicit execution confirmation, created the fresh reduced campaign root
+  `s7p09-evidence-c2606b6-reduced-r12` and admitted the first two frozen entries sequentially.
+- `MORROW-001` used the configured provider and finalized as `FAIL_RUNTIME`; the runner recorded
+  `184,786` total tokens, but the task workspace did not contain the required change. `MORROW-003`
+  was stopped after the provider ceased reporting usage and finalized as `BLOCKED_ENV` with
+  unavailable runtime evidence. No result was represented as a successful comparison observation.
+- The first attempt exposed two execution-only issues: isolated Morrow state needs the non-secret
+  provider configuration copied by reference, and workspace-local `uv` environments create unsafe
+  interpreter links for the fixed verifier. Retrying with an external venv fixed the latter, but
+  did not resolve the provider/runtime failure. The remaining 12 entries were not admitted.
+- The final capacity audit remained below the approved ceiling: `30,577,509` accounted tokens and
+  `19,422,491` tokens remaining, with no planned admissions. The reduced pilot is incomplete and
+  paused pending provider/runner repair plus explicit resumption.
