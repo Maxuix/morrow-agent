@@ -5,13 +5,16 @@
 Subplan 90 remains active. The Pi 0.84.2 runtime-event adapter repair is verified and committed at
 `86e97bc`. Campaigns r2–r4 are retained outside Git as blocked/aborted evidence and will not be
 continued or reused. The user approved a 50,000,000-token total ceiling and a recoverable stash of
-the unrelated notes; the next campaign must use a new clean source pin.
+the unrelated notes. The user-requested positive-action Direct Coding prompt is verified and
+committed at `59c87f9` as profile `direct-coding/v2`; the next campaign must use a new clean source
+and profile pin containing this change.
 
 ## Active task
 
-Create the recorded clean execution worktree branch, refreeze source/profile/plan pins there, and
-start a fresh campaign. The original checkout remains available to the external notes writer; the
-initial notes are preserved in a named stash and must be restored after the campaign. Pi
+Create the recorded clean execution worktree branch from the new prompt-v2 commit, refreeze
+source/profile/plan pins there, and start a fresh campaign. The original checkout remains available
+to the external notes writer; the initial notes are preserved in a named stash and must be restored
+after the campaign. Pi
 normalization now supports the observed 0.84.2 `session` event, indexless turn events,
 optional reasoning-token usage, `glob`, and `agent_end` without a semantic stop. The last case is
 truthfully classified `runtime_failed`, not completed or evidence-unavailable.
@@ -58,11 +61,17 @@ truthfully classified `runtime_failed`, not completed or evidence-unavailable.
 - Morrow's OpenAI-compatible stream still emits `ModelCost.unavailable()`. Under the user's explicit
   no-currency-ceiling approval, cost is recorded when available but is no longer a readiness,
   completeness or comparison gate; token accounting remains mandatory.
+- `direct-coding/v2` leaves one concise permission statement in the first system boundary, rewrites
+  coding/lower-context wrappers as positive action guidance and leaves enforcement in the existing
+  CapabilityPolicy, ApprovalPort, sandbox and ToolExecutor. Focused prompt/context tests passed
+  `34`; full offline passed `1337` with two live deselections; Ruff format/check, compileall, CLI
+  help and diff checks passed.
 
 ## Next action
 
-Create the clean execution worktree at the recorded branch, refreeze source/profile/plan hashes,
-pass campaign preflight, and execute a new immutable schedule from ordinal 1.
+Create the clean execution worktree from `59c87f9` plus this execution-state record, refreeze
+source/profile/plan hashes, pass campaign preflight, and execute a new immutable schedule from
+ordinal 1.
 
 ## Blockers
 

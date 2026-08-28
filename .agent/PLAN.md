@@ -29,6 +29,10 @@ retention policy are owned by activated Subplan 90.
 - Morrow runs use ordinary bootstrap, TaskRun, AgentRun, AgentLoop, ToolExecutor, permission and
   ConversationLog boundaries. Evaluation approval can confirm an already-confined policy decision
   but cannot override denial or grant broader authority.
+- The user-requested Direct Coding prompt simplification is a pre-campaign product change:
+  `direct-coding/v2` keeps one concise execution-side permission statement and expresses the rest
+  as positive action guidance. It must be included in the next clean source/profile pin before any
+  new admission.
 - Raw events, reasoning, full tool payloads, credentials and tracebacks stay outside Git. Only
   bounded normalized evidence, hashes, summaries and the baseline record are committed.
 - S7P-09 measures the frozen Agent. It does not tune thresholds/tasks after results, restore the

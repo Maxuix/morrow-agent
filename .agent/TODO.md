@@ -30,8 +30,9 @@ S7P-09 Repeated Direct Evaluation and Same-Condition Pi Baseline.
 - `[x]` Resolve Morrow Agent streaming readiness: repair the OpenAI-compatible schema wire,
   repeated terminal chunk handling and 4xx classification; verify offline and with a bounded probe.
 - `[>]` Refreeze profiles/pins/schedule/evidence root after the verified Pi 0.84.2 event adapter
-  repair under the approved 50,000,000-token total ceiling; token usage is mandatory while cost is
-  optional. The unrelated notes are recoverably stashed for a clean source checkout.
+  repair and user-requested `direct-coding/v2` prompt simplification under the approved
+  50,000,000-token total ceiling; token usage is mandatory while cost is optional. The unrelated
+  notes remain outside the clean execution checkout.
 - `[ ]` Execute and finalize the exact 20 Morrow primary runs.
 - `[ ]` Execute and finalize the exact 8 counterbalanced Pi comparison runs.
 - `[ ]` Mechanically aggregate, compare, classify every failure and freeze the Direct baseline.
@@ -44,5 +45,6 @@ S7P-09 Repeated Direct Evaluation and Same-Condition Pi Baseline.
 - Do not change protocol v1 thresholds, tasks, Gold, expected paths or verifiers.
 - Do not mix models/providers/sampling, reuse state/workspaces or replace an admitted result.
 - Do not commit credentials, reasoning, transcripts, raw Pi JSONL or full tool payloads.
-- Do not alter production behavior to improve a score or restore Runtime completion inference.
+- Do not alter production behavior in response to campaign outcomes or restore Runtime completion
+  inference. The user-requested pre-admission `direct-coding/v2` change is frozen before restart.
 - No Workflow, multi-Agent or S7P-10 work starts here.

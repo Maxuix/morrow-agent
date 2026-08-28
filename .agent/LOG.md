@@ -3590,3 +3590,19 @@
 - An external writer created another notes file immediately after the stash. To avoid repeatedly
   moving unrelated work, the formal campaign will run from one dedicated clean worktree branch
   `feat/s7p-09-direct-pi-baseline-run`; this intentional stack is retired after integration.
+
+## 2026-08-28 — Direct prompt v2 replaces repeated defensive guidance
+
+- At the user's request, `direct-coding/v2` now keeps one concise statement that available tools
+  define model-visible capability while approval, sandbox and permission boundaries are enforced by
+  the execution side. Coding guidance and the Project Instruction, Preference, Memory and Skill
+  wrappers now describe positive actions and intended use instead of repeating denial language.
+- No CapabilityPolicy, ApprovalPort, sandbox, ToolExecutor, tool schema or recovery enforcement was
+  changed. Existing execution-boundary tests remain part of the full offline gate.
+- Focused prompt/context tests passed `34`. The first full offline run exposed two stale tests tied
+  to the old label and old prompt length; after making them intent-based, full offline passed
+  `1337 passed, 2 deselected in 89.12s`. Ruff format/check, compileall, CLI help and
+  `git diff --check` passed.
+- The verified implementation is commit `59c87f9`. Because its profile version/digest changes, no
+  prior source/profile pin may be reused; the next formal campaign must refreeze from this commit
+  plus the current execution-state record before ordinal 1.
