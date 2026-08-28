@@ -101,7 +101,8 @@ work remains preserved in its named recoverable stash.
 2. Run focused and complete offline/static/CLI gates and commit the verified repair.
 3. Refreeze the comparison plan from the current clean source, current profile hashes and protected
    evidence root; do not reuse any prior admission or schedule.
-4. Run offline preflight, permission equivalence and conservative campaign-capacity checks.
+4. Run offline preflight, permission equivalence and conservative campaign-capacity checks, passing
+   every retained campaign root explicitly into the cumulative budget audit.
 5. If capacity and all hold-point facts pass, present the exact formal admission boundary before
    scheduling; otherwise retain the new plan as blocked evidence and stop.
 

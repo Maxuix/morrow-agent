@@ -3695,3 +3695,16 @@
   reservation after retained formal usage and incomplete requests. Refreeze may continue offline,
   but no formal admission is allowed unless the capacity check passes or the user raises the
   ceiling. No prior campaign plan or run key will be reused.
+
+## 2026-08-28 — S7P-09 cumulative capacity guard added
+
+- Audited all retained external evidence roots and confirmed that the existing capacity command only
+  counted the root passed for the new campaign. An empty fresh root could therefore report the full
+  50,000,000-token ceiling while retained attempts had already consumed or reserved capacity.
+- Added explicit repeatable `--prior-root` inputs to `campaign-capacity` and matching `prior_roots`
+  enforcement in `admit_campaign_run`. Each prior root must be outside the evaluator checkout,
+  contain its own validated comparison plan and immutable admissions, and is counted with the same
+  conservative `max(reservation, known usage)` rule. No implicit filesystem scan was added.
+- Added a focused prior-root regression; evaluator tests passed `57`. The complete offline gate
+  passed `1338 passed, 2 deselected`; Ruff format/check, compileall, CLI help and `git diff --check`
+  also passed. The checkpoint is ready to commit before refreeze.

@@ -20,7 +20,7 @@ import tarfile
 import tempfile
 import tomllib
 import uuid
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -4045,17 +4045,79 @@ def _campaign_capacity(
     }
 
 
-def campaign_capacity_usage(plan: Mapping[str, object], root: Path) -> dict[str, object]:
-    """Report the conservative token basis used before the next admission."""
+def _prior_campaign_capacities(
+    current_root: Path, prior_roots: Sequence[Path]
+) -> list[dict[str, object]]:
+    current_root = current_root.resolve()
+    seen = {current_root}
+    capacities: list[dict[str, object]] = []
+    for raw_root in prior_roots:
+        prior_root = raw_root.resolve()
+        if prior_root in seen:
+            raise EvalError("campaign capacity prior roots contain a duplicate")
+        seen.add(prior_root)
+        if _path_is_inside(prior_root, REPOSITORY_ROOT.resolve()):
+            raise EvalError("prior campaign evidence root must be outside the evaluator checkout")
+        if not prior_root.is_dir():
+            raise EvalError("prior campaign evidence root does not exist")
+        prior_plan_path = prior_root / "comparison-plan.json"
+        if not prior_plan_path.is_file():
+            raise EvalError("prior campaign evidence root has no comparison plan")
+        prior_plan = load_comparison_plan(prior_plan_path)
+        records = _campaign_records(prior_root, prior_plan)
+        capacity = _campaign_capacity(
+            prior_root,
+            records,
+            total_tokens=int(prior_plan["ceilings"]["total_tokens"]),
+        )
+        capacities.append(
+            {
+                "campaign_id": prior_plan["campaign_id"],
+                "evidence_root_id": prior_plan["evidence_root"]["id"],
+                "known_tokens": capacity["known_tokens"],
+                "reserved_tokens": capacity["reserved_tokens"],
+                "accounted_tokens": capacity["accounted_tokens"],
+                "unknown_requests": capacity["unknown_requests"],
+                "run_count": len(records),
+            }
+        )
+    return capacities
 
+
+def _campaign_capacity_with_prior(
+    plan: Mapping[str, object], root: Path, prior_roots: Sequence[Path]
+) -> dict[str, object]:
     normalized = validate_comparison_plan(plan)
     resolved = root.resolve()
-    records = _campaign_records(resolved, normalized)
-    return _campaign_capacity(
+    current = _campaign_capacity(
         resolved,
-        records,
+        _campaign_records(resolved, normalized),
         total_tokens=int(normalized["ceilings"]["total_tokens"]),
     )
+    prior = _prior_campaign_capacities(resolved, prior_roots)
+    prior_known = sum(int(item["known_tokens"]) for item in prior)
+    prior_reserved = sum(int(item["reserved_tokens"]) for item in prior)
+    prior_accounted = sum(int(item["accounted_tokens"]) for item in prior)
+    prior_unknown = sum(int(item["unknown_requests"]) for item in prior)
+    total_accounted = int(current["accounted_tokens"]) + prior_accounted
+    return {
+        **current,
+        "known_tokens": int(current["known_tokens"]) + prior_known,
+        "reserved_tokens": int(current["reserved_tokens"]) + prior_reserved,
+        "accounted_tokens": total_accounted,
+        "unknown_requests": int(current["unknown_requests"]) + prior_unknown,
+        "remaining_tokens": max(0, int(normalized["ceilings"]["total_tokens"]) - total_accounted),
+        "over_ceiling": total_accounted > int(normalized["ceilings"]["total_tokens"]),
+        "prior_campaigns": prior,
+    }
+
+
+def campaign_capacity_usage(
+    plan: Mapping[str, object], root: Path, *, prior_roots: Sequence[Path] = ()
+) -> dict[str, object]:
+    """Report the conservative token basis used before the next admission."""
+
+    return _campaign_capacity_with_prior(plan, root, prior_roots)
 
 
 def admit_campaign_run(
@@ -4066,6 +4128,7 @@ def admit_campaign_run(
     reserve_tokens: int,
     reserve_cost: float,
     now: datetime | None = None,
+    prior_roots: Sequence[Path] = (),
 ) -> Path:
     """Create one immutable admission after enforcing order and campaign ceilings."""
 
@@ -4105,11 +4168,7 @@ def admit_campaign_run(
         or reserve_cost <= 0
     ):
         raise EvalError("campaign cost reservation must be positive")
-    capacity = _campaign_capacity(
-        root,
-        records,
-        total_tokens=int(normalized["ceilings"]["total_tokens"]),
-    )
+    capacity = _campaign_capacity_with_prior(normalized, root, prior_roots)
     reserved_tokens = int(capacity["accounted_tokens"])
     reserved_cost = sum(float(record["reservation"]["cost"]) for record in records)
     if reserved_tokens + reserve_tokens > normalized["ceilings"]["total_tokens"]:
@@ -4632,6 +4691,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     capacity.add_argument("plan", type=Path)
     capacity.add_argument("evidence_root", type=Path)
+    capacity.add_argument(
+        "--prior-root",
+        type=Path,
+        action="append",
+        default=[],
+        help="include one previously admitted campaign evidence root in the cumulative ceiling",
+    )
     permission_check = subparsers.add_parser(
         "permission-check", help="run the offline Morrow/Pi permission equivalence matrix"
     )
@@ -4743,7 +4809,9 @@ def main() -> int:
             return 0 if result["status"] == "PASS" else 1
         if arguments.command == "campaign-capacity":
             result = campaign_capacity_usage(
-                load_comparison_plan(arguments.plan), arguments.evidence_root
+                load_comparison_plan(arguments.plan),
+                arguments.evidence_root,
+                prior_roots=arguments.prior_root,
             )
             print(canonical_json(result).strip())
             return 1 if result["over_ceiling"] else 0

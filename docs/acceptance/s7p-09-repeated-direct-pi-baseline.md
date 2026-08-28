@@ -51,6 +51,12 @@ after the direct registered-command fast path. The policy now denies those expli
 the fast path, while ordinary command content remains unparsed and registered commands remain
 directly executable. The evaluator matrix and regression assertion now require all three denials.
 
+The first cumulative-capacity audit also found that `campaign-capacity` only inspected the current
+evidence root. It now accepts repeatable explicit prior roots, validates each prior root's own
+comparison plan and immutable admissions, and includes each root's conservative
+`max(reservation, known usage)` in the current ceiling. Admission checks use the same prior-root
+inputs, so an empty new root cannot hide previously accounted usage.
+
 ## Safety evidence
 
 - Unknown comparison-plan fields, unresolved pins, `unavailable` hashes, placeholders, profile or
@@ -76,9 +82,10 @@ directly executable. The evaluator matrix and regression assertion now require a
 |---|---|
 | `uv sync` | passed; 65 packages resolved, 59 checked |
 | `uv run pytest -q tests/test_code_agent_mini_eval.py tests/test_process.py tests/test_capability_executor.py` | passed; 72 tests |
+| `uv run pytest -q tests/test_code_agent_mini_eval.py` | passed; 57 tests |
 | `uv run python evals/code-agent-mini/eval.py self-check` | passed; all 10 baselines failed and all 10 Gold states passed |
 | `uv run pytest -q tests/acceptance/test_s7p08_single_agent_matrix.py` | passed; 3 tests |
-| `uv run pytest -m 'not live'` | passed; 1337 tests, 2 live deselected, 114.53 s |
+| `uv run pytest -m 'not live'` | passed; 1338 tests, 2 live deselected, 84.69 s |
 | `uv run ruff format --check .` | passed; 494 files already formatted |
 | `uv run ruff check .` | passed |
 | `uv run python -m compileall -q src tests evals/code-agent-mini` | passed |

@@ -1474,6 +1474,54 @@ def test_campaign_capacity_falls_back_to_durable_morrow_request_usage(tmp_path: 
     assert capacity["runs"][0]["source"] == "morrow_request_journal"
 
 
+def test_campaign_capacity_includes_explicit_prior_campaigns(tmp_path: Path) -> None:
+    prior_plan = _comparison_plan()
+    prior_root = tmp_path / "prior-evidence"
+    prior_plan["evidence_root"]["path_sha256"] = eval_module.bytes_hash(
+        str(prior_root.resolve()).encode("utf-8")
+    )
+    prior_plan["integrity"] = eval_module.content_hash(
+        {key: value for key, value in prior_plan.items() if key != "integrity"}
+    )
+    eval_module.admit_campaign_run(
+        prior_plan,
+        prior_root,
+        ordinal=1,
+        reserve_tokens=70,
+        reserve_cost=1.0,
+    )
+    (prior_root / "comparison-plan.json").write_text(json.dumps(prior_plan), encoding="utf-8")
+
+    current_plan = _comparison_plan()
+    current_plan["ceilings"]["total_tokens"] = 100
+    current_root = tmp_path / "current-evidence"
+    current_plan["evidence_root"]["path_sha256"] = eval_module.bytes_hash(
+        str(current_root.resolve()).encode("utf-8")
+    )
+    current_plan["integrity"] = eval_module.content_hash(
+        {key: value for key, value in current_plan.items() if key != "integrity"}
+    )
+
+    capacity = eval_module.campaign_capacity_usage(
+        current_plan,
+        current_root,
+        prior_roots=(prior_root,),
+    )
+
+    assert capacity["accounted_tokens"] == 70
+    assert capacity["remaining_tokens"] == 30
+    assert capacity["prior_campaigns"][0]["run_count"] == 1
+    with pytest.raises(eval_module.EvalError, match="token ceiling"):
+        eval_module.admit_campaign_run(
+            current_plan,
+            current_root,
+            ordinal=1,
+            reserve_tokens=31,
+            reserve_cost=1.0,
+            prior_roots=(prior_root,),
+        )
+
+
 def test_pi_capacity_fallback_deduplicates_repeated_assistant_usage(tmp_path: Path) -> None:
     run_dir = tmp_path / "pi-run"
     raw = run_dir / "pi-raw"

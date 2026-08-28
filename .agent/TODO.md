@@ -12,9 +12,10 @@ then refreeze and capacity-check a new S7P-09 campaign without reusing prior adm
 - `[x]` Restore explicit `network`, `git_write` and `privilege_escalation` denial precedence without
   reintroducing command-content heuristics.
 - `[x]` Run the full offline/static/CLI/diff gate and commit the verified repair.
+- `[x]` Add explicit prior-campaign roots to cumulative capacity accounting and admission checks.
 - `[ ]` Refreeze a new current-source comparison plan, profiles and protected evidence root.
-- `[ ]` Run preflight and capacity checks; stop before admission if the approved ceiling is
-  insufficient.
+- `[ ]` Run preflight and capacity checks with every retained campaign root; stop before admission if
+  the approved ceiling is insufficient.
 
 ## Earlier completed tasks
 

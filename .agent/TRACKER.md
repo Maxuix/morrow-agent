@@ -3,15 +3,15 @@
 ## Current status
 
 Subplan 90 was explicitly resumed from the consolidated local `main`. The harness self-check,
-focused evaluator suite (`56 passed`), permission matrix and historical capacity audit passed. A
-policy-ordering regression was found: explicit network/Git-write/privilege-escalation risk flags
-were checked after the direct-command fast path and therefore returned `allow`.
+permission matrix and historical capacity audit passed. The explicit risk-denial repair and
+cumulative prior-campaign capacity guard are implemented; the focused evaluator suite passed
+`57`, and the complete offline gate passed `1338 passed, 2 deselected`. Ruff format/check,
+compileall, CLI help and diff checks also passed.
 
 ## Active task
 
-The explicit risk-denial ordering repair is implemented and its focused regression suite passed.
-Run the complete offline/static/CLI gate, record the evidence, and commit before refreezing any
-S7P-09 comparison plan.
+The explicit risk-denial ordering repair and cumulative prior-campaign capacity guard are
+implemented and verified. Commit this checkpoint before refreezing any S7P-09 comparison plan.
 
 ## Implemented boundary
 
@@ -38,8 +38,8 @@ S7P-09 comparison plan.
 
 ## Next action
 
-Run the full offline/static/CLI/diff gate. If it passes, commit this repair and create a fresh
-source/profile/evidence refreeze; do not reuse prior campaign admissions.
+Commit this verified repair, then create a fresh source/profile/evidence refreeze with explicit
+prior roots; do not reuse prior campaign admissions.
 
 ## Blockers
 
