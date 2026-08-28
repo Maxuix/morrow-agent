@@ -3745,6 +3745,20 @@
   `19,422,491` tokens remaining, with no planned admissions. The reduced pilot is incomplete and
   paused pending provider/runner repair plus explicit resumption.
 
+## 2026-08-28 — S7P-09 post-fix pilot still blocked by Provider runtime
+
+- The frozen isolated-configuration repair was committed as `083a9f7`; the focused evaluator suite
+  passed `61`. A new source/profile/evidence plan was created at
+  `s7p09-evidence-083a9f7-reduced-r13`, and plan-check, preflight and cumulative capacity passed.
+- The first post-fix admission successfully loaded the frozen Provider/model through `build_active`.
+  A wrapper also kept model-invoked `uv` environments outside the workspace, so verifier safety no
+  longer reported unsafe interpreter links. The Morrow runner nevertheless ended with
+  `Morrow Provider usage is unavailable` and produced no runtime evidence; the admission was
+  finalized as `BLOCKED_ENV`.
+- No further r13 admissions were created. The reduced pilot remains incomplete; a later attempt
+  needs Provider usage/runtime reliability, a fresh source pin after state documentation changes,
+  and explicit execution resumption.
+
 ## 2026-08-28 — Morrow isolated config folded into admission
 
 - At the user's direction, kept configuration readiness inside the existing admission operation

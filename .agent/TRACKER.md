@@ -13,7 +13,9 @@ passed `61`, and the complete offline gate passed `1342 passed, 2 deselected`.
 The admission boundary repair is implemented and verified. Morrow entries generate a minimal
 isolated config from the frozen Provider/service/model selection, preserve only the matching
 configured Keychain reference, and call existing `build_active()` before creating the admission.
-No readiness command, no-tool probe or model request was added.
+The fresh post-fix plan passed plan-check, preflight and cumulative capacity. Its first Morrow
+admission was then finalized as `BLOCKED_ENV` because the Provider stopped reporting usage; no
+successful comparable observation was produced.
 
 ## Implemented boundary
 
@@ -40,12 +42,13 @@ No readiness command, no-tool probe or model request was added.
 
 ## Next action
 
-Preserve the paused 2/14 evidence root as diagnostic evidence. Any later formal execution requires
-a fresh current-source plan and explicit authorization; do not reuse its admissions or run keys.
+Preserve both diagnostic evidence roots. The post-fix reduced campaign is paused at 1/14 after a
+`BLOCKED_ENV` Morrow run; any later formal execution requires a fresh current-source plan and
+explicit authorization, and must not reuse either root's admissions or run keys.
 
 ## Blockers
 
 - The full 28-run primary remains over the approved 50,000,000-token ceiling after retained usage.
-  The user-selected reduced 14-run pilot fits, but its first two formal Morrow admissions were
-  blocked by provider/runner runtime conditions. The remaining 12 entries were intentionally not
-  admitted; the pilot is not complete and cannot claim a comparison result.
+  The reduced plan still fits conservatively, but the post-fix first run remains blocked by
+  Provider usage unavailability after isolated configuration and verifier-environment fixes. No
+  later entries were admitted; the pilot is not complete and cannot claim a comparison result.

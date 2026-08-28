@@ -22,9 +22,9 @@ primary does not fit, use the explicit 14-run reduced single-repetition pilot.
   28-run primary contract.
 - `[x]` Refreeze and capacity-check the reduced plan; stop before admission if retained usage still
   leaves insufficient headroom.
-- `[!]` Execute the reduced pilot sequentially: 2/14 admissions were finalized as
-  `FAIL_RUNTIME`/`BLOCKED_ENV`; pause the remaining 12 until the provider/runner environment is
-  repaired and execution is explicitly resumed.
+- `[!]` Execute the reduced pilot sequentially: the diagnostic root contains 2/14 failed/blocked
+  admissions, and the post-fix root contains 1/14 `BLOCKED_ENV` admission. Pause all remaining
+  entries until Provider usage/runtime reliability is repaired and the plan is refrozen.
 - `[x]` Fold frozen isolated Morrow configuration and `build_active()` keyring loading directly into
   admission; do not add a readiness command or model probe.
 
