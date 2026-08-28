@@ -433,7 +433,7 @@ class TurnSubmissionCoordinator:
                 for tool_snapshot in prepared_mcp_run.tool_snapshots:
                     txn.put_mcp_tool_snapshot(self.workspace_id, tool_snapshot)
             if self.skill_selection is not None:
-                self.skill_selection.sync_catalog(txn, now=stamp)
+                self.skill_selection.sync_catalog(txn, skill_plan.selections, now=stamp)
             for skill_selection in skill_plan.selections:
                 txn.put_skill_selection(self.workspace_id, skill_selection)
             for skill_context in skill_plan.contexts:

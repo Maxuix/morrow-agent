@@ -13,7 +13,6 @@ from __future__ import annotations
 import os
 import stat
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from pathlib import Path
 
 from morrow.core.skills.catalog import (
@@ -33,7 +32,12 @@ from morrow.core.skills.trust import (
     effective_trust,
 )
 
-from .envelope import EnvelopeError, read_envelope, verify_envelope_against_tree
+from .envelope import (
+    EnvelopeError,
+    read_envelope,
+    skill_version_from_envelope,
+    verify_envelope_against_tree,
+)
 from .manifest_parser import ManifestError, load_manifest
 from .tree import CanonicalPackageTree, PackageTreeError, build_canonical_tree
 
@@ -284,21 +288,7 @@ def scan_source_root(
 
 
 def to_catalog_version(package: DiscoveredPackage) -> SkillVersion:
-    trust = _package_trust(package)
-    return SkillVersion(
-        version_id=package.version_id,
-        skill_id=package.skill_id,
-        display_version=package.display_version,
-        tree_digest=package.tree.tree_digest,
-        file_count=package.tree.file_count,
-        total_bytes=package.tree.total_bytes,
-        source_kind=package.source_kind,
-        scope_id=package.scope_id,
-        provenance=f"{package.source_kind.value}:{package.version_dir.parent.name}/{package.version_dir.name}",
-        evidence_refs=tuple(package.envelope.get("evidence_refs", ())),
-        effective_trust=trust,
-        created_at=datetime.fromtimestamp(int(package.envelope["installed_at_unix"]), tz=UTC),
-    )
+    return skill_version_from_envelope(package.envelope)
 
 
 def to_catalog_definition(package: DiscoveredPackage) -> SkillDefinition:

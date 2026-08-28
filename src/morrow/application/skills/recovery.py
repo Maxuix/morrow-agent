@@ -177,9 +177,7 @@ class SkillLifecycleRecoveryMixin:
         except ValueError as exc:
             raise SkillLifecycleNeedsResolution("Skill source provenance is invalid") from exc
         name = None
-        display_version = None
-        file_count = 0
-        total_bytes = 0
+        version = None
         if record.operation == "import":
             view = self.catalog.scan_scope(scope_id)
             entry = view.entry(record.skill_id, scope_id=scope_id)
@@ -191,9 +189,6 @@ class SkillLifecycleRecoveryMixin:
             if version is None:
                 raise SkillLifecycleNeedsResolution("managed Skill package is unavailable")
             name = entry.definition.name
-            display_version = version.display_version
-            file_count = version.file_count
-            total_bytes = version.total_bytes
         result = self._finalize(
             command_id=record.command_id,
             request_digest=record.request_digest,
@@ -204,9 +199,7 @@ class SkillLifecycleRecoveryMixin:
             source_kind=source_kind,
             tree_digest=record.tree_digest,
             name=name,
-            display_version=display_version,
-            file_count=file_count,
-            total_bytes=total_bytes,
+            version=version,
             delete_version=record.operation == "remove" and record.version_id is not None,
         )
         self.operations.clear(command_id)

@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import replace
 from pathlib import Path
 
+from morrow.adapters.skills.envelope import skill_version_from_envelope
 from morrow.adapters.skills.managed_store import (
     PreparedLocalSkill,
     SkillPackageError,
@@ -133,7 +134,7 @@ class SkillPackageLifecycleMixin:
         )
         self.operations.save(record)
         try:
-            self.package_store.publish(
+            published = self.package_store.publish(
                 prepared,
                 version_id=version_id,
                 evidence_refs=evidence_refs,
@@ -152,11 +153,7 @@ class SkillPackageLifecycleMixin:
                 source_kind=prepared.source_kind,
                 tree_digest=prepared.tree.tree_digest,
                 name=prepared.name,
-                display_version=prepared.display_version,
-                file_count=prepared.tree.file_count,
-                total_bytes=prepared.tree.total_bytes,
-                evidence_refs=evidence_refs,
-                controlled_approval_ref=controlled_approval_ref,
+                version=skill_version_from_envelope(published.envelope),
             )
             self.operations.clear(command_id)
             return result

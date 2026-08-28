@@ -6,10 +6,11 @@ import json
 import os
 import re
 import stat
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 from morrow.core.domain import sha256_digest
+from morrow.core.skills.catalog import SkillVersion
 from morrow.core.skills.identity import (
     SkillIdentityError,
     validate_display_version,
@@ -28,6 +29,29 @@ _SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 
 class EnvelopeError(ValueError):
     """An envelope is missing, malformed or drifted from the package tree."""
+
+
+def skill_version_from_envelope(payload: dict) -> SkillVersion:
+    """Project the immutable catalog version recorded by a managed envelope."""
+
+    _validate_envelope_structure(payload, verify_digest=True)
+    source_kind = SourceKind(payload["source_kind"])
+    skill_id = payload["skill_id"]
+    version_id = payload["version_id"]
+    return SkillVersion(
+        version_id=version_id,
+        skill_id=skill_id,
+        display_version=payload.get("display_version"),
+        tree_digest=payload["tree_digest"],
+        file_count=payload["file_count"],
+        total_bytes=payload["total_bytes"],
+        source_kind=source_kind,
+        scope_id=payload.get("scope_id"),
+        provenance=f"{source_kind.value}:{skill_id}/{version_id}",
+        evidence_refs=tuple(payload.get("evidence_refs", ())),
+        effective_trust=TrustLevel(payload["effective_trust"]),
+        created_at=datetime.fromtimestamp(payload["installed_at_unix"], tz=UTC),
+    )
 
 
 def _canonical_envelope_bytes(payload: dict) -> bytes:
