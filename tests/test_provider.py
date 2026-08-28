@@ -78,6 +78,23 @@ def provider_with_stream(response):
     return provider
 
 
+@pytest.mark.asyncio
+async def test_non_streaming_completion_uses_the_full_review_transport_budget():
+    response = SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content='{"drafts":[]}'))]
+    )
+    provider = provider_with_stream(response)
+
+    result = await provider.complete(
+        ModelRef(provider_id="test", model_id="reviewer"),
+        [UserMessage(content="review")],
+    )
+
+    assert result == '{"drafts":[]}'
+    assert provider._client.chat.completions.kwargs["stream"] is False
+    assert provider._client.chat.completions.kwargs["timeout"] == 300.0
+
+
 def stream_chunk(*, text=None, reasoning=None, finish=None):
     return SimpleNamespace(
         choices=[

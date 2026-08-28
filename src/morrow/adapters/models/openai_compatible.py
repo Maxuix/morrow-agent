@@ -24,6 +24,7 @@ from morrow.core.models import (
     provider_error_message,
 )
 from morrow.core.providers import DiscoveredModel
+from morrow.core.runtime_policy import REVIEW_MAX_TIMEOUT_SECONDS
 
 _PROVIDER_SAFE_INTEGER = 2**53 - 1
 _INTEGER_BOUND_KEYWORDS = frozenset({"minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum"})
@@ -426,6 +427,7 @@ class OpenAICompatibleProvider:
         timeout: float = 60.0,
         connect_timeout: float = 20.0,
         first_token_timeout: float = 45.0,
+        completion_timeout: float = REVIEW_MAX_TIMEOUT_SECONDS,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.credential = credential
@@ -433,6 +435,7 @@ class OpenAICompatibleProvider:
         self.timeout = timeout
         self.connect_timeout = connect_timeout
         self.first_token_timeout = first_token_timeout
+        self.completion_timeout = completion_timeout
         self._client = None
 
     def _get_client(self):
@@ -575,12 +578,12 @@ class OpenAICompatibleProvider:
 
     async def complete(self, model: ModelRef, messages: list[Message]) -> str:
         try:
-            async with asyncio.timeout(self.connect_timeout + self.first_token_timeout):
-                response = await self._get_client().chat.completions.create(
-                    model=self.api_model_ids.get(model.model_id, model.model_id),
-                    messages=self._messages(messages),
-                    stream=False,
-                )
+            response = await self._get_client().chat.completions.create(
+                model=self.api_model_ids.get(model.model_id, model.model_id),
+                messages=self._messages(messages),
+                stream=False,
+                timeout=self.completion_timeout,
+            )
             choices = getattr(response, "choices", None) or []
             if not choices:
                 raise ValueError("empty model response")
