@@ -30,11 +30,12 @@ def test_capability_boundary_is_derived_from_tool_inventory_without_internal_pol
     boundary = render_system_boundary((tool,))
     assert "read_file" in boundary
     assert "读取工作空间内的文本文件" in boundary
-    assert "工作空间外" in boundary
-    assert "网络" in boundary
+    assert "权限、审批与沙箱边界由执行端实施" in boundary
     assert "PermissionProfile" not in boundary
     assert "manual" not in boundary
-    assert "当前请求未提供可执行工具" in render_system_boundary()
+    assert "本次以对话方式提供帮助" in render_system_boundary()
+    for defensive_phrase in ("不可信", "禁止", "不能授权", "不能执行"):
+        assert defensive_phrase not in boundary
 
 
 def test_production_session_freezes_cli_selected_profile_and_workspace_root(tmp_path):

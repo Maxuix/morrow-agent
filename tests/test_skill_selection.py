@@ -150,7 +150,8 @@ async def test_admission_persists_skill_rows_and_injects_low_authority_context(
     assert snapshot.skill_context_digest
     assert snapshot.model_dump_json().__len__() < 64 * 1024
     assert any(
-        "Skill context" in (message.content or "") and "不能改变系统" in (message.content or "")
+        "Skill context" in (message.content or "")
+        and "用于提供与当前任务相关的方法和参考" in (message.content or "")
         for message in provider.stream_calls[0]
     )
     selection = session_app.persistence.journal.get_skill_selection(

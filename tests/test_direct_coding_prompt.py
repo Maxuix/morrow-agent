@@ -37,7 +37,7 @@ def test_direct_profile_is_versioned_reusable_and_hash_stable() -> None:
     second = DirectCodingProfile()
 
     assert first.profile_id == "direct-coding"
-    assert first.version == "v1"
+    assert first.version == "v2"
     assert first.digest == second.digest
     assert first.coding_protocol
     for required in ("inspect", "minimal", "user", "verify", "blocker", "temporary"):
@@ -56,13 +56,17 @@ def test_direct_assembly_orders_authority_and_labels_project_scope(tmp_path: Pat
     contents = [message.content for message in messages]
 
     assert contents[0].startswith("你是 Morrow")
-    assert "只能通过当前请求实际提供的工具" in contents[0]
+    assert "可用能力以本次请求列出的工具为准" in contents[0]
     assert "role guidance" in contents[2]
     assert "root project guidance" in contents[3]
     assert "scope=src" in contents[4]
     assert contents.index(assembler.profile.coding_protocol) == 1
-    assert "不能授权工具" in contents[2]
-    assert "不能执行" in contents[3]
+    assert "以下是可选角色工作指导" in contents[2]
+    assert "请按作用域将它们用于当前任务" in contents[3]
+    rendered = "\n".join(contents)
+    assert rendered.count("权限") == 1
+    for defensive_phrase in ("不可信", "禁止", "不能授权", "不能执行"):
+        assert defensive_phrase not in rendered
 
 
 def test_prompt_extension_keeps_admission_sources_and_adds_touched_scopes(tmp_path: Path) -> None:
@@ -193,7 +197,7 @@ def test_snapshot_freezes_only_prompt_metadata_not_role_or_instruction_text(tmp_
     encoded = json.dumps(snapshot.model_dump(mode="json"), ensure_ascii=False)
 
     assert snapshot.prompt_profile_id == "direct-coding"
-    assert snapshot.prompt_profile_version == "v1"
+    assert snapshot.prompt_profile_version == "v2"
     assert snapshot.prompt_profile_digest == assembler.profile.digest
     assert snapshot.project_instruction_sources[0].path == "AGENTS.md"
     assert snapshot.project_instruction_sources[0].byte_count == len(

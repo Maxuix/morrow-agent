@@ -593,7 +593,7 @@ async def test_agent_loop_context_budget_error_still_finalizes_the_agent_run(tmp
         loop = AgentLoop(
             ScriptedModelProvider(["unreachable"]),
             ModelRef(provider_id="p", model_id="m"),
-            make_context_builder(request_char_limit=500),
+            make_context_builder(request_char_limit=64),
             id_source=FixedIdSource(),
             clock=FixedClock(),
         )
