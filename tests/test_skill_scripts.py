@@ -436,7 +436,7 @@ async def test_skill_script_permission_request_is_denied_before_handler(tmp_path
         ordinal=1,
         total=1,
     )
-    assert outcome.error_code is ToolErrorCode.PERMISSION_DENIED
+    assert outcome.error_code is ToolErrorCode.UNSUPPORTED_CAPABILITY
 
 
 def test_skill_script_timeout_is_bounded_and_cleans_temporary_state(tmp_path) -> None:

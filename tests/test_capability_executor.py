@@ -61,7 +61,7 @@ async def test_capability_denial_happens_before_preview_approval_and_handler():
     def resolve(_: Arguments, __):
         return OperationIntent(
             kind=OperationKind.WORKSPACE_READ,
-            risk_flags=(RiskFlag.NETWORK,),
+            risk_flags=(RiskFlag.PROTECTED_RESOURCE,),
             preview_summary=("must not be shown",),
         )
 

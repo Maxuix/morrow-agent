@@ -69,7 +69,7 @@ def policy_denial_message(tool_name: str, reason_codes=()) -> str:
         return (
             f"当前能力策略拒绝此操作{suffix}。run_command 会自动捕获 stdout/stderr；"
             "项目检查请改用 argv，移除 shell 重定向、管道和工作区外路径。"
-            "网络、依赖安装、Git 写入和破坏性操作不可绕过。"
+            "工作区外访问、凭据/受保护资源和提权操作不可通过普通审批绕过。"
         )
     return f"当前能力策略拒绝此操作{suffix}"
 

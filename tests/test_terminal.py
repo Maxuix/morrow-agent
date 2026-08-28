@@ -69,12 +69,14 @@ async def test_terminal_approval_renders_only_sanitized_preview_and_accepts_yes(
             call_id="c1",
             effect=ToolEffect.PERSISTENT_WRITE,
             preview=("配置预览：", "作用域：workspace"),
+            reason_codes=("git_write_approval_required", "network_approval_required"),
         )
     )
 
     assert decision.approved is True
     assert terminal.prompt_count == 1
     assert any("作用域：workspace" in line for line in terminal.console.lines)
+    assert any("Git 写入、访问网络" in line for line in terminal.console.lines)
     assert all("c1" not in line for line in terminal.console.lines)
 
 

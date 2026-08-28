@@ -15,9 +15,19 @@ from morrow.runtime.capabilities import CapabilityPolicy, CapabilityReason
 
 _REVIEWABLE_REASONS = {
     CapabilityReason.NETWORK_NOT_ENABLED: McpReviewRisk.NETWORK,
+    CapabilityReason.NETWORK_APPROVAL_REQUIRED: McpReviewRisk.NETWORK,
     CapabilityReason.LOOPBACK_NOT_ENABLED: McpReviewRisk.LOOPBACK,
+    CapabilityReason.LOOPBACK_APPROVAL_REQUIRED: McpReviewRisk.LOOPBACK,
     CapabilityReason.CREDENTIAL_ACCESS_DENIED: McpReviewRisk.CREDENTIALS,
     CapabilityReason.EXTERNAL_EFFECT_NOT_ENABLED: McpReviewRisk.EXTERNAL_EFFECT,
+    CapabilityReason.EXTERNAL_EFFECT_APPROVAL_REQUIRED: McpReviewRisk.EXTERNAL_EFFECT,
+}
+
+_REVIEW_DENIAL_REASONS = {
+    McpReviewRisk.NETWORK: CapabilityReason.NETWORK_NOT_ENABLED,
+    McpReviewRisk.LOOPBACK: CapabilityReason.LOOPBACK_NOT_ENABLED,
+    McpReviewRisk.CREDENTIALS: CapabilityReason.CREDENTIAL_ACCESS_DENIED,
+    McpReviewRisk.EXTERNAL_EFFECT: CapabilityReason.EXTERNAL_EFFECT_NOT_ENABLED,
 }
 
 
@@ -94,9 +104,6 @@ def evaluate_mcp_policy(
         capability_policy.evaluate(intent, allow_unconfined_host=allow_unconfined_host)
         for intent in intents
     ]
-    if not any(decision.verdict is PolicyVerdict.DENY for decision in decisions):
-        return combine_policy_decisions(decisions)
-
     required = _required_review_risks(intents)
     exact_review = review is not None and review.matches(
         workspace_id=workspace_id,
@@ -106,7 +113,37 @@ def evaluate_mcp_policy(
         catalog_digest=catalog_digest,
         toolset_digest=toolset_digest,
     )
-    if exact_review and review.covers(set(required)):
+    review_covers = exact_review and review.covers(set(required))
+    if not any(decision.verdict is PolicyVerdict.DENY for decision in decisions):
+        if not required:
+            return combine_policy_decisions(decisions)
+        if not review_covers:
+            combined = combine_policy_decisions(decisions)
+            return PolicyDecision(
+                verdict=PolicyVerdict.DENY,
+                reason_codes=_unique(
+                    (_REVIEW_DENIAL_REASONS[risk] for risk in sorted(required, key=str)),
+                    limit=8,
+                ),
+                preview_summary=combined.preview_summary,
+            )
+        reviewed: list[PolicyDecision] = []
+        for decision in decisions:
+            if decision.verdict is not PolicyVerdict.REQUIRE_APPROVAL:
+                reviewed.append(decision)
+                continue
+            reviewed.append(
+                decision.model_copy(
+                    update={
+                        "reason_codes": _unique(
+                            (*decision.reason_codes, "mcp_review_required"), limit=8
+                        )
+                    }
+                )
+            )
+        return combine_policy_decisions(reviewed)
+
+    if review_covers:
         relaxed: list[PolicyDecision] = []
         for decision in decisions:
             if decision.verdict is not PolicyVerdict.DENY:

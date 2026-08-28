@@ -685,7 +685,12 @@ def _risk_flags(
             candidate = candidate.split("=", 1)[1]
         if index > 0 and _outside_like(candidate):
             flags.add(RiskFlag.OUTSIDE_WORKSPACE)
-        if candidate and not candidate.startswith("-") and not _outside_like(candidate):
+        if (
+            candidate
+            and not candidate.startswith("-")
+            and not _outside_like(candidate)
+            and _URL.match(candidate) is None
+        ):
             normalized = candidate.removeprefix("./")
             if "/" in normalized or normalized.startswith("."):
                 if files.sensitive_policy.is_protected_path(normalized):
@@ -753,7 +758,7 @@ def _shell_script_risks(script: str, files: WorkspaceFileService) -> set[RiskFla
         candidate = token.strip("\"'`;,\n")
         if index > 0 and _outside_like(candidate):
             flags.add(RiskFlag.OUTSIDE_WORKSPACE)
-        if candidate and not candidate.startswith("-"):
+        if candidate and not candidate.startswith("-") and _URL.match(candidate) is None:
             normalized = candidate.removeprefix("./")
             if files.sensitive_policy.is_protected_path(normalized):
                 flags.add(RiskFlag.PROTECTED_RESOURCE)

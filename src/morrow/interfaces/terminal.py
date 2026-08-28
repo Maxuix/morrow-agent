@@ -32,6 +32,20 @@ _STOP_HINTS = {
     "run_timeout": "任务超过总运行时间。",
 }
 
+_APPROVAL_REASON_LABELS = {
+    "full_access_host_approval_required": "未隔离的 Full Access Host 进程",
+    "host_process_approval_required": "非沙箱 Host 进程",
+    "workspace_write_approval_required": "工作区写入",
+    "configuration_approval_required": "配置写入",
+    "mutation_approval_required": "大范围或高影响修改",
+    "network_approval_required": "访问网络",
+    "loopback_approval_required": "访问本机网络服务",
+    "destructive_approval_required": "破坏性操作",
+    "git_write_approval_required": "Git 写入",
+    "external_effect_approval_required": "外部副作用",
+    "mcp_review_required": "已审查 MCP 风险",
+}
+
 
 class Terminal:
     def __init__(self, console: Console | None = None) -> None:
@@ -186,6 +200,12 @@ class TerminalApprovalPort:
         elevated = any(line.startswith("unconfined_host:") for line in lines)
         if elevated:
             self.terminal.console.print(UNCONFINED_HOST_APPROVAL_LANGUAGE)
+        if request.reason_codes:
+            reasons = "、".join(
+                _APPROVAL_REASON_LABELS.get(str(reason), str(reason))
+                for reason in request.reason_codes
+            )
+            self.terminal.console.print(f"审批原因：{reasons}")
         self.terminal.console.print(f"副作用级别：{request.effect.value}")
         if request.approval_id:
             self.terminal.console.print(f"审批编号：{request.approval_id}")

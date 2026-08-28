@@ -688,7 +688,10 @@ async def test_full_access_host_policy_deny_closes_before_handler(tmp_path):
         denied = json.loads(tool_messages[0].content)
         assert "full_access_grant_required" in denied["error"]["message"]
         assert "argv" in denied["error"]["message"]
-        assert "网络、依赖安装、Git 写入和破坏性操作不可绕过" in denied["error"]["message"]
+        assert (
+            "工作区外访问、凭据/受保护资源和提权操作不可通过普通审批绕过"
+            in denied["error"]["message"]
+        )
     finally:
         handle.close()
 

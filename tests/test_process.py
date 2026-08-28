@@ -23,7 +23,7 @@ from morrow.core.capabilities import (
 )
 from morrow.core.local_tools import CommandRequest, CommandStatus
 from morrow.core.models import AssistantMessage, FunctionToolCall, ModelRef, ToolApprovalDecision
-from morrow.runtime.capabilities import CapabilityPolicy
+from morrow.runtime.capabilities import CapabilityPolicy, CapabilityReason
 from morrow.runtime.tools import ToolErrorCode, ToolExecutor, ToolRegistry
 from morrow.services.files import WorkspaceFileService, WorkspacePathResolver
 from morrow.services.process import ProcessExecutionService, ProcessServiceError
@@ -79,7 +79,7 @@ def test_command_request_is_exactly_one_form_and_has_no_extra_authority():
 def test_process_preflight_classifies_forbidden_operations_before_approval(tmp_path):
     service = _service(tmp_path)
     network = service.preflight(CommandRequest(argv=("curl", "https://example.invalid")))
-    assert "network" in {flag.value for flag in network.risk_flags}
+    assert {flag.value for flag in network.risk_flags} == {"network"}
     destructive = service.preflight(CommandRequest(argv=("rm", "file.txt")))
     assert "destructive" in {flag.value for flag in destructive.risk_flags}
     git_write = service.preflight(CommandRequest(argv=("git", "commit", "-m", "x")))
@@ -327,7 +327,7 @@ async def test_process_adapter_spawn_failure_is_typed(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_tool_executor_requires_approval_for_host_process_and_denies_network(tmp_path):
+async def test_tool_executor_uses_risk_based_host_process_approval(tmp_path):
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     service = _service(workspace, secrets=("approval-secret",))
@@ -374,7 +374,7 @@ async def test_tool_executor_requires_approval_for_host_process_and_denies_netwo
             total=4,
         )
         assert auto_outcome.ok is True
-        assert len(approval.requests) == 2
+        assert len(approval.requests) == 1
         sandboxed = ToolExecutor(
             registry.snapshot(),
             make_run_policy(),
@@ -395,15 +395,17 @@ async def test_tool_executor_requires_approval_for_host_process_and_denies_netwo
             total=4,
         )
         assert sandbox_outcome.error_code is ToolErrorCode.PERMISSION_DENIED
-        assert len(approval.requests) == 2
-        forbidden = await executor.execute_with_context(
+        assert len(approval.requests) == 1
+        approval.approved = False
+        network = await executor.execute_with_context(
             _call("run_command", {"argv": ["curl", "https://example.invalid"]}, "network"),
             run_context=run,
             ordinal=4,
             total=4,
         )
-        assert forbidden.error_code is ToolErrorCode.PERMISSION_DENIED
+        assert network.error_code is ToolErrorCode.APPROVAL_REJECTED
         assert len(approval.requests) == 2
+        assert approval.requests[-1].reason_codes == (CapabilityReason.NETWORK_APPROVAL_REQUIRED,)
     finally:
         workspace.rmdir()
 

@@ -16,8 +16,10 @@ uv run morrow --help
 ```
 
 Morrow 的状态默认保存在 `~/.morrow`，不会写入选中的项目目录。当前工具只在冻结的工作空间内
-读取目录、UTF-8 文本和搜索结果，或通过冲突安全的精确补丁/受控文件创建修改项目文件；Manual 与 Auto Safe
-中的项目命令仅能在明确审批后的非隔离 Host 中执行，已批准的 Host 代码仍可能访问工作空间外资源。
+读取目录、UTF-8 文本和搜索结果，或通过冲突安全的精确补丁/受控文件创建修改项目文件。Manual 会审批
+工作区写入和每个 Host 进程；Auto Safe 自动允许工作区写入及未命中风险规则的普通 Host 进程，网络、
+loopback、Git 写入和破坏性命令仍逐次审批。Host 代码没有操作系统隔离，即使预检未发现风险也可能触达
+工作空间外资源；需要强隔离时应使用 Auto Sandboxed。
 当前 macOS 原生后端支持 Auto Sandboxed 在临时快照中自动执行项目命令，默认断网且不会直接修改真实工作区；
 Linux 在真实 runner 验证前保持 unsupported，后端不可用时 fail closed。
 
@@ -109,13 +111,15 @@ REPL 常用命令包括 `/workspace`、`/workspace edit summary ...`、`/workspa
 `list_directory`、`read_file`、`find_files`、`search_text`、`apply_patch`、`write_file`、`show_changes`、`run_command`、`git_status`、`git_diff`、
 `update_configuration`（仅 Profile）和 `manage_preferences`；支持原生沙箱的 Auto Sandboxed 组合额外启用 `promote_sandbox_changes`。不支持 function calling 的 Adapter 不会启用这些工具，但 `/workspace`、`/preferences` 等确定性命令仍可用。终端以 `↳ 工具步骤 n/m：工具名`
 展示活动；有副作用的
-配置调用和 Host 命令在工具执行前由终端审批。审批拒绝、审批通道不可用或审批等待超时都会安全地形成普通工具结果，
+配置调用、Manual Host 命令以及命中风险规则的 Auto Safe Host 命令会在执行前由终端审批；审批会明确显示
+网络、Git 写入、破坏性操作等原因。审批拒绝、审批通道不可用或审批等待超时都会安全地形成普通工具结果，
 模型可以继续恢复；默认工具超时为 120 秒，并可在安全上限内通过用户运行策略覆盖。旧 `/config edit` fixed-field 入口已退役，
 `append/remove` 由自然语言工具提供。达到模型、工具、时间、上下文、结果或循环上限时，任务以稳定的
 `stop_code` 结束。
 
-Host 命令审批会展示有界且脱敏的 argv/shell、工作目录、类别和超时；shell 包装的 Git 命令仍按
-Git 写入风险在审批前拒绝。命令文本只用于本地审批，不进入 `CommandResult`、Provider、公开事件或持久状态。
+Host 命令审批会展示有界且脱敏的 argv/shell、工作目录、类别、风险原因和超时；shell 包装的 Git 命令按
+Git 写入风险进入审批。工作区外访问、凭据/受保护资源、提权、只读会话、缺失沙箱或缺失 Full Access Grant
+仍然硬拒绝。命令文本只用于本地审批，不进入 `CommandResult`、Provider、公开事件或持久状态。
 
 `full-access-manual` 不会自动获得能力：只有本地 REPL 的 `/grant` 确认或 CLI `grant create` 命令能为一个前台
 AgentRun 授予 `unconfined_host_process`，且每次 opaque Host 命令仍要单独审批。审批前会明确说明该进程没有操作系统
@@ -190,8 +194,8 @@ reference 为权威。`--apply` 不销毁字节：它只会把经目录、类型
 状态写入经过校验、revision 检查、同目录临时文件、文件/目录 `fsync` 和原子替换，并保留 `.bak`。
 Profile 损坏或版本较新时，工作空间持久状态进入只读模式；workspace Preferences 损坏时只隔离该层。
 
-当前生产工具只通过冻结工作空间服务读取、搜索、修改项目文件和只读 Git 状态/Diff，并通过审批后的非隔离 Host 命令执行校验；
-网络能力始终不提供；配置工具只通过应用服务更新既有的 Profile/Preferences 状态。阶段 3 已交付
+当前生产工具只通过冻结工作空间服务读取、搜索、修改项目文件和只读 Git 状态/Diff，并通过风险分层后的非隔离 Host 命令执行校验；
+Host 网络访问必须逐次审批，原生沙箱继续断网；配置工具只通过应用服务更新既有的 Profile/Preferences 状态。阶段 3 已交付
 三轴权限模型、工作空间能力冻结、能力策略、动态系统边界、通用本地审批端口、终端审批 UI，以及有界目录/文件读取、
 搜索、SHA-256 冲突安全编辑、原子文件创建、当前运行 ChangeSet/Diff、有界 Host 命令和当前 macOS 的原生
 Auto Sandboxed 快照执行；支持后端时还提供始终需审批的当前运行沙箱变更推广。Stage 3 的当前 macOS 验收已完成，
