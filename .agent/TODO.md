@@ -2,18 +2,17 @@
 
 ## Current task
 
-Pi-first best-effort Learning Review simplification on `feat/s7p-09-direct-pi-baseline`.
+Consolidate all verified local Stage 7 branches into `main` and clean the workspace.
 
 ## Tasks
 
-- `[x]` Confirm the existing managed Skill projection repair with focused tests and a real public
-  install/enable/select/run journey.
-- `[x]` Remove tool-failure and unresolved-item gating from automatic Learning Review creation.
-- `[x]` Make the Learning Reviewer inherit the main Agent model, runtime and context budget; remove
-  separate Learning timeout/lease configuration.
-- `[x]` Repair Preference Review jobs JSON datetime serialization.
-- `[x]` Run focused, full offline and static validation.
-- `[x]` Commit the verified repair checkpoint as `477caa8`.
+- `[x]` Preserve the incomplete `docs/notes/` draft in a named recoverable stash.
+- `[x]` Merge `feat/s7p-09-direct-pi-baseline` and resolve its `main` policy integration.
+- `[x]` Merge `feat/s7p-09-direct-pi-baseline-run`, retaining the seven-tool interface and the newer
+  core/Learning behavior.
+- `[x]` Run focused tests, the full offline suite, Ruff, compileall, CLI help and diff validation.
+- `[>]` Commit integration repairs and update execution evidence.
+- `[ ]` Remove the merged execution worktree and local topic branches.
 
 ## Earlier completed tasks
 

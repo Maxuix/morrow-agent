@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 from pathlib import Path
 
 import pytest
 
 from morrow.adapters.credentials.keyring import MemoryCredentialStore
-from morrow.application.local_tools import make_apply_patch_tool
+from morrow.application.local_tools import make_edit_tool
 from morrow.bootstrap import build_application, build_session_application
 from morrow.core.capabilities import (
     PermissionProfile,
@@ -172,14 +171,12 @@ async def test_first_nested_write_runs_without_dynamic_scope_discovery(tmp_path:
     (nested / "AGENTS.md").write_text("# Nested Rule\n- Preserve the API\n", encoding="utf-8")
     target = nested / "module.py"
     target.write_text("value = 1\n", encoding="utf-8")
-    digest = hashlib.sha256(target.read_bytes()).hexdigest()
     write_call = _call(
         "first-write",
-        "apply_patch",
+        "edit",
         {
             "path": "pkg/module.py",
-            "expected_sha256": digest,
-            "edits": [{"old_text": "1", "new_text": "2"}],
+            "edits": [{"oldText": "1", "newText": "2"}],
         },
     )
     provider = ScriptedModelProvider(
@@ -204,7 +201,7 @@ async def test_first_nested_write_runs_without_dynamic_scope_discovery(tmp_path:
 
     tool_messages = [message for message in session_app.session.messages if message.role == "tool"]
     assert json.loads(tool_messages[0].content)["ok"] is True
-    assert json.loads(tool_messages[1].content)["error"]["code"] == "conflict"
+    assert json.loads(tool_messages[1].content)["error"]["code"] == "edit_not_found"
     assert target.read_text(encoding="utf-8") == "value = 2\n"
     assert approval.requests == []
     second_prompt = "\n".join(
@@ -255,11 +252,10 @@ async def test_persisted_request_size_matches_the_actual_dynamic_prompt(tmp_path
 async def test_tool_lifecycle_ignores_approval_port_for_registered_write(tmp_path: Path):
     target = tmp_path / "hello.txt"
     target.write_text("hello world\n", encoding="utf-8")
-    expected_sha256 = hashlib.sha256(target.read_bytes()).hexdigest()
     files = WorkspaceFileService(WorkspacePathResolver(tmp_path))
     mutations = WorkspaceMutationService(files)
     registry = ToolRegistry()
-    registry.register(make_apply_patch_tool(mutations, ChangeSetService()))
+    registry.register(make_edit_tool(mutations, ChangeSetService()))
     executor = ToolExecutor(
         registry.snapshot(),
         make_run_policy(),
@@ -274,11 +270,10 @@ async def test_tool_lifecycle_ignores_approval_port_for_registered_write(tmp_pat
     outcome = await executor.execute_with_context(
         _call(
             "call-1",
-            "apply_patch",
+            "edit",
             {
                 "path": "hello.txt",
-                "expected_sha256": expected_sha256,
-                "edits": [{"old_text": "world", "new_text": "morrow"}],
+                "edits": [{"oldText": "world", "newText": "morrow"}],
             },
         ),
         run_context=run,

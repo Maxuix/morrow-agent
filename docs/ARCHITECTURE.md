@@ -80,22 +80,25 @@ Session 持有的进程内 `ConversationLog` 是唯一聊天历史权威，`Sess
 带 calls 的 Assistant 与其有序 ToolMessage 构成不可拆分的 ToolCycle。ContextBuilder 从不可变
 Snapshot 生成 Chat 或 Structured 投影，按完整 Cycle/turn 控制预算；它不写事实源、不调用摘要模型。
 
-生产组合只在 Adapter 声明 OpenAI function-tool 支持时启用 `list_directory`、`read_file`、
-`find_files`、`search_text`、`apply_patch`、`write_file`、`show_changes`、`run_command`、
-`run_skill_script`、`git_status`、`git_diff`、`update_configuration` 和 `manage_preferences`；
-支持原生沙箱时再加入当前运行的 `promote_sandbox_changes`。读搜工具通过冻结的
+生产组合只在 Adapter 声明 OpenAI function-tool 支持时启用 `read`、`ls`、`find`、`grep`、
+`edit`、`write` 与 `bash` 七个核心编码工具；`run_skill_script`、`update_configuration`、
+`manage_preferences` 与 `read_artifact` 随对应能力条件组合，支持原生沙箱时再加入当前运行、始终需
+审批的 `promote_sandbox_changes`。读搜工具通过冻结的
 `WorkspacePathResolver`、`WorkspaceFileService` 与 `WorkspaceSearchService` 访问当前工作空间，
-只把工作空间边界、外部符号链接、文件类型和资源预算作为结构约束；变更工具通过
-`WorkspaceMutationService`、`FileSystemAdapter` 与进程内 `ChangeSetService` 执行 SHA-256 冲突检查、
-原子发布和实际 Diff。`update_configuration` 只管理 Workspace Profile；`manage_preferences` 是原子 Preference Writer 的受审批薄适配器。所有工具遵循同一标准 ToolCycle。随包
+只把工作空间边界、外部符号链接、文件类型和资源预算作为结构约束，不按文件名或内容关键词隐藏工作区
+资源；变更工具通过
+`WorkspaceMutationService`、`FileSystemAdapter` 与进程内 `ChangeSetService` 自动取得模式/当前
+revision，并执行 SHA-256 冲突检查、原子发布和实际 Diff。模型可见 schema 不携带这些内部协议字段。
+`update_configuration` 只管理 Workspace Profile；`manage_preferences` 是原子 Preference Writer 的受审批薄适配器。所有工具遵循同一标准 ToolCycle。随包
 `runtime-policy.toml` 与可选 `config.yaml.runtime_policy` 安全覆盖在 composition root 合并，并解析为任务固定的 RunPolicy 及 Review policy。模型请求白名单、流片段组装与 reasoning/SDK 元数据
 隔离归 Provider Adapter。
 
-S7P-04 在上述现有 ToolCycle 中增加显式的 `delete_file`、`move_file` 和 `rename_file`。
-它们只接受工作空间内的普通文件，源文件必须携带 SHA-256，目标必须在预检和原子发布时均不存在；
+S7P-04 曾在上述 ToolCycle 中提供显式删除、移动和重命名适配器；当前模型层不再注册这些专用工具。
+对应 mutation 服务仍只接受工作空间内的普通文件，源文件必须携带内部取得的 SHA-256，目标必须在预检和原子发布时均不存在；
 不支持目录、递归、符号链接、special、force/overwrite、copy-delete fallback 或跨设备降级。
 删除通过 no-follow directory-fd unlink，移动/重命名通过平台可证明的 atomic no-replace primitive；
-无法证明能力时 fail closed。公开事件生命周期与 runtime-policy 默认值不因这些工具改变。
+无法证明能力时 fail closed。这些服务供沙箱变更推广和恢复对账使用；普通模型操作统一通过受策略约束的
+`bash`。公开事件生命周期与 runtime-policy 默认值不因这次接口收缩改变。
 
 Runtime 已提供与具体领域无关的 `PermissionProfile`、`WorkspaceCapability`、`CapabilityPolicy`、
 `ToolExecutionPolicy`、本地 `ToolEffect` 和注入式 `ApprovalPort`；生产组合在 Session 构造时冻结工作区
@@ -128,11 +131,12 @@ source absence、destination hash/size/mode 与受影响父目录 fsync。prepar
 绝不宣称成功。durable prepare 已缓存的完整内存 MutationPlan（含 staging 名）在后续
 skip-approval resolver/handler 阶段按 run/call 身份复用；执行阶段只对这个冻结 plan 做锁内重验，
 不重新分配 staging，也不以第二次 preflight 覆盖 PreparedIntent evidence。结果在领域服务内按当前
-ToolCall 预算语义截断。Git 工具通过
+ToolCall 预算语义截断。只读 Git 服务仍通过
 `GitInspectionService` 与固定的 `GitInspectionAdapter` 解析只读状态/Diff，拒绝外部 Git metadata 并禁用
-pager、外部 diff、textconv、hooks-like executable extension points、prompt 和可选锁。`run_command` 通过同一个 `ProcessExecutionService` 选择
+pager、外部 diff、textconv、hooks-like executable extension points、prompt 和可选锁，但不再拥有独立的
+模型工具包装；模型使用 `bash` 读取 Git 状态。`bash` 通过同一个 `ProcessExecutionService` 选择
 `HostProcessAdapter` 或能力探测通过的 `NativeSandboxProcessAdapter`：普通工作空间模式下，注册的
-`run_command` 直接执行 argv 或 shell，不解析 `git`、重定向、管道、`mv`、`cp`、`tee` 等字符串来决定
+`bash` 直接执行命令，不解析 `git`、重定向、管道、`mv`、`cp`、`tee` 等字符串来决定
 许可或审批；Host 后端仍不提供操作系统隔离。命令输出只遮蔽当前运行已知凭据的精确值，并继续执行有界输出、
 超时、取消和进程组清理。Auto Sandboxed 在默认断网的临时快照中执行。快照准备/收集使用协作式取消和预留
 临时根，超时等待后台阶段停稳后再清理；沙箱变更通过当前运行的推广工具进入既有冲突安全 mutation 服务，
@@ -151,7 +155,7 @@ paths 不触发局部目录扫描；过大、异常格式或读取失败只产�
 
 Stage 4 的 Full Access Manual 是一条额外的、明确受限的证据链：只有 Application API 的本地界面命令能
 创建 `CapabilityGrant`；它绑定一个前台 AgentRun，随后冻结为不可替换的 `PermissionSnapshot`。Stage 4
-只开放 `unconfined_host_process`，且只允许带 `unconfined_host` 证据的 opaque `run_command` 携带 grant；
+只开放 `unconfined_host_process`，且只允许带 `unconfined_host` 证据的 opaque `bash` 携带 grant；
 每次执行仍消费绑定 intent、schema、snapshot 和 grant 的一次性 Approval。这个标签明确表示没有操作系统
 隔离，不能被描述为受保护的文件、网络或凭据 confinement。撤销会阻止新的审批/handler 入口、使 pending
 approval 失效并请求活动执行取消；已完成或 outcome unknown 的事实不会被伪造回滚。结构化工具不会因为同一
@@ -222,10 +226,11 @@ Service 或 Port：
 - 工具的副作用等级、审批、超时、取消和审计属于通用 Tool Policy/Executor；单个 handler 不得自行读取
   用户输入、发起终端确认或发布公开事件。
 
-`list_directory`、`read_file`、`find_files` 与 `search_text` 通过注入的文件/搜索服务访问冻结工作空间；
-`apply_patch`、`write_file`、`delete_file`、`move_file`、`rename_file` 与 `show_changes` 通过注入的
-mutation/ChangeSet 服务执行和报告当前运行的实际变更；
-`run_command` 通过注入的 `ProcessExecutionService` 执行审批后的 Host 命令，或在 Auto Sandboxed 中执行原生快照命令；
+`read`、`ls`、`find` 与 `grep` 通过简洁适配器和注入的文件/搜索服务访问冻结工作空间；
+`edit` 与 `write` 通过适配器自动补全内部 revision/mode，再由 mutation/ChangeSet 服务执行和报告
+实际变更。旧的专用文件/Git/ChangeSet schema、参数模型和工厂已删除；旧名称只在明确标注的 durable
+recovery 兼容表中保留，用于分类缺少冻结声明的历史执行记录，不能通过当前生产注册门；
+`bash` 通过注入的 `ProcessExecutionService` 执行审批后的 Host 命令，或在 Auto Sandboxed 中执行原生快照命令；
 `run_skill_script` 通过注入的 `SkillScriptExecutionService` 执行已冻结 Skill 包中的脚本，并只发布有界、脱敏的
 声明输出 Artifact；
 `promote_sandbox_changes` 通过注入的 `SandboxSnapshotService`、`WorkspaceMutationService` 与
@@ -252,7 +257,7 @@ bounded partial failure，不回滚或覆盖用户数据；
   → Adapter 流式返回文本或 tool calls
   → ConversationLog 校验 Assistant ToolCall 后，同一事务提交有序 ToolExecution 意图
   → 审批 consume 与 executing 同一事务；handler 只在已提交意图可见后运行
-  → bounded、redacted run_command 结果先发布为 Artifact，再记录 handler_completed 与 ToolMessage/closed
+  → bounded、redacted bash 结果先发布为 Artifact，再记录 handler_completed 与 ToolMessage/closed
   → ToolExecutor 校验、预检、审批并串行执行受限工具，闭合 ToolCycle
   → 合法模型 STOP 直接提交并发布最终回答
   → 工具协议、审批、权限、预算、Provider 错误、取消和未闭合 ToolCycle 仍由各自确定性边界处理

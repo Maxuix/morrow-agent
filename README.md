@@ -22,9 +22,10 @@ Morrow 的状态默认保存在 `~/.morrow`，不会写入选中的项目目录�
 Linux 在真实 runner 验证前保持 unsupported，后端不可用时 fail closed。
 
 文件与搜索仍拒绝工作空间逃逸、外部符号链接和不支持的文件类型，但不会因为 `.git`、`.env`、
-`secret`、凭据示例或 PEM 文本等普通关键词隐藏工作区内容。仓库检查也可使用专用
-`git_status`/`git_diff`。现有文件的 patch/replace
-保留统一换行格式；混合换行文件会明确返回不支持，不会静默改写为 LF。
+`secret`、凭据示例或 PEM 文本等普通关键词隐藏工作区内容。仓库检查可通过 `bash` 运行只读
+`git status`/`git diff`。`edit` 和
+`write` 会在执行端自动冻结当前文件版本、判断 create/replace，并在发布时再次检查冲突；模型不需要传
+SHA-256 或写入模式。现有文件保留统一换行格式；混合换行文件会明确返回不支持，不会静默改写为 LF。
 
 ## 使用
 
@@ -106,9 +107,11 @@ REPL 常用命令包括 `/workspace`、`/workspace edit summary ...`、`/workspa
 在当前工作空间修改。每个工具调用独立确认和提交，多个调用不会组成跨调用事务；前一个调用成功、后一个
 调用被拒绝或失败时，前一个结果保留并分别报告 `applied`、`unchanged` 或失败状态。
 
-普通对话统一经过 Agent Loop。支持 OpenAI-compatible function calling 的 Adapter 会向模型提供
-`list_directory`、`read_file`、`find_files`、`search_text`、`apply_patch`、`write_file`、`show_changes`、`run_command`、`git_status`、`git_diff`、
-`update_configuration`（仅 Profile）和 `manage_preferences`；支持原生沙箱的 Auto Sandboxed 组合额外启用 `promote_sandbox_changes`。不支持 function calling 的 Adapter 不会启用这些工具，但 `/workspace`、`/preferences` 等确定性命令仍可用。终端以 `↳ 工具步骤 n/m：工具名`
+普通对话统一经过 Agent Loop。支持 OpenAI-compatible function calling 的 Adapter 会向模型提供七个
+核心编码工具：`read`、`ls`、`find`、`grep`、`edit`、`write` 和 `bash`。配置、Preference、Artifact
+与 Skill 工具只在对应能力被组合时额外提供；支持原生沙箱的 Auto Sandboxed 组合还会启用
+`promote_sandbox_changes`。不支持 function calling 的 Adapter 不会启用这些工具，但 `/workspace`、
+`/preferences` 等确定性命令仍可用。终端以 `↳ 工具步骤 n/m：工具名`
 展示活动；有副作用的
 配置调用仍在工具执行前由终端审批；普通工作空间文件工具和 Host 命令直接执行。Full Access 与扩展能力
 仍使用各自的授权/审批合同。审批拒绝、审批通道不可用或审批等待超时都会安全地形成普通工具结果，
@@ -192,7 +195,7 @@ reference 为权威。`--apply` 不销毁字节：它只会把经目录、类型
 状态写入经过校验、revision 检查、同目录临时文件、文件/目录 `fsync` 和原子替换，并保留 `.bak`。
 Profile 损坏或版本较新时，工作空间持久状态进入只读模式；workspace Preferences 损坏时只隔离该层。
 
-当前生产工具只通过冻结工作空间服务读取、搜索、修改项目文件和只读 Git 状态/Diff，并通过审批后的非隔离 Host 命令执行校验；
+当前生产工具只通过冻结工作空间服务读取、搜索和修改项目文件；Git 状态/Diff 与项目校验统一通过经过策略检查和审批的 `bash` 执行；
 网络能力始终不提供；配置工具只通过应用服务更新既有的 Profile/Preferences 状态。阶段 3 已交付
 三轴权限模型、工作空间能力冻结、能力策略、动态系统边界、通用本地审批端口、终端审批 UI，以及有界目录/文件读取、
 搜索、SHA-256 冲突安全编辑、原子文件创建、当前运行 ChangeSet/Diff、有界 Host 命令和当前 macOS 的原生

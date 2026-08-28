@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import sys
 from pathlib import Path
 
@@ -17,7 +18,7 @@ from morrow.adapters.local.sandbox import (
     SandboxBackendError,
     SandboxCapability,
 )
-from morrow.application.local_tools import make_promote_sandbox_tool, make_show_changes_tool
+from morrow.application.local_tools import make_promote_sandbox_tool
 from morrow.bootstrap import build_application, build_session_application
 from morrow.core.capabilities import (
     PermissionPreset,
@@ -242,7 +243,6 @@ async def test_sandbox_text_change_promotes_without_an_approval_layer(tmp_path):
     registry.register(
         make_promote_sandbox_tool(snapshots, WorkspaceMutationService(files), changes)
     )
-    registry.register(make_show_changes_tool(changes))
     approval = _Approval()
     executor = ToolExecutor(
         registry.snapshot(),
@@ -262,14 +262,7 @@ async def test_sandbox_text_change_promotes_without_an_approval_layer(tmp_path):
     assert outcome.ok is True
     assert "request" not in approval.__dict__
     assert target.read_text() == "print('after')\n"
-    shown = await executor.execute_with_context(
-        FunctionToolCall(id="show", name="show_changes", arguments="{}"),
-        run_context=run,
-        ordinal=2,
-        total=2,
-    )
-    assert shown.ok is True
-    assert json.loads(shown.envelope)["result"]["entries"][0]["path"] == "main.py"
+    assert changes.show(run, result_limit=16 * 1024).entries[0].path == "main.py"
 
 
 @pytest.mark.asyncio
@@ -356,19 +349,21 @@ async def test_production_auto_sandbox_registers_only_native_tools_and_keeps_rea
     )
     executor = session_application.orchestrator.runtime.loop.tool_executor
     names = {definition.function.name for definition in executor.definitions}
-    assert "run_command" in names
+    assert "bash" in names
     assert "promote_sandbox_changes" in names
     call = FunctionToolCall(
         id="sandbox-command",
-        name="run_command",
+        name="bash",
         arguments=json.dumps(
             {
-                "argv": [
-                    "python",
-                    "-c",
-                    "from pathlib import Path; import pydantic; "
-                    "Path('sandbox-only.txt').write_text(pydantic.__name__)",
-                ]
+                "command": shlex.join(
+                    [
+                        "python",
+                        "-c",
+                        "from pathlib import Path; import pydantic; "
+                        "Path('sandbox-only.txt').write_text(pydantic.__name__)",
+                    ]
+                )
             }
         ),
     )

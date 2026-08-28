@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import os
+from pathlib import Path
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from morrow.application.artifacts import ArtifactService
 from morrow.core.artifacts import ARTIFACT_MAX_BYTES, ArtifactError, ArtifactErrorCode
@@ -26,16 +28,14 @@ from morrow.core.local_tools import (
     CommandRequest,
     ExactEdit,
     MutationMode,
-    MutationOperation,
     SearchCase,
     SearchQuery,
     WorkspaceMutationPath,
-    WorkspaceRelativePath,
 )
 from morrow.core.models import ToolEffect
 from morrow.core.store import StorageError
 from morrow.runtime.policy import ToolApproval, ToolExecutionPolicy
-from morrow.runtime.tool_arguments import MAX_SAFE_INTEGER, MAX_STRING_CHARS, SCHEMA_DIALECT
+from morrow.runtime.tool_arguments import SCHEMA_DIALECT
 from morrow.runtime.tools import (
     ApprovalPreviewBudget,
     RegisteredTool,
@@ -51,7 +51,6 @@ from morrow.services.files import (
     WorkspaceFileService,
     WorkspaceMutationService,
 )
-from morrow.services.git import GitInspectionService, GitServiceError
 from morrow.services.process import ProcessExecutionService, ProcessServiceError
 from morrow.services.sandbox import SandboxServiceError, SandboxSnapshotService
 from morrow.services.search import WorkspaceSearchService
@@ -95,10 +94,6 @@ def _string_schema(
     return schema
 
 
-def _nullable(schema: dict[str, object]) -> dict[str, object]:
-    return {"anyOf": [schema, {"type": "null"}]}
-
-
 def _object_schema(
     properties: dict[str, object],
     *,
@@ -118,76 +113,7 @@ def _object_schema(
     return schema
 
 
-_DISCOVERY_PATTERN = r"^(?![~/])(?!.*\\)(?!.*\x00)(?!.*(?:^|/)\.\.(?:/|$))[\s\S]+$"
-_NO_NUL = r"^(?!.*\x00)[\s\S]*$"
-_NO_CONTROL_CHARS = r"^(?!.*\x00)(?!.*[\r\n])[\s\S]*$"
-_NONBLANK_NO_CONTROL = r"^(?!\s*$)(?!.*\x00)(?!.*[\r\n])[\s\S]+$"
-_SHA256_PATTERN = r"^[0-9a-f]{64}$"
-_PROVIDER_WRITE_CONTENT_MAX_CHARS = 10_000
-_PROVIDER_EXACT_EDIT_MAX_CHARS = 300
-_PROVIDER_COMMAND_ARG_MAX_CHARS = 256
-_PROVIDER_COMMAND_SHELL_MAX_CHARS = 10_000
 _ARTIFACT_ID_PATTERN = r"^art_[A-Za-z0-9_-]{1,124}$"
-
-
-LIST_DIRECTORY_PROVIDER_SCHEMA = _object_schema(
-    {
-        "path": _path_schema(),
-        "depth": {"type": "integer", "minimum": 1, "maximum": 4},
-        "max_entries": {"type": "integer", "minimum": 1, "maximum": 500},
-    }
-)
-
-READ_FILE_PROVIDER_SCHEMA = _object_schema(
-    {
-        "path": _path_schema(),
-        "start_line": {"type": "integer", "minimum": 1, "maximum": MAX_SAFE_INTEGER},
-        "line_count": {"type": "integer", "minimum": 1, "maximum": 400},
-    },
-    required=("path",),
-)
-
-READ_FILE_LONG_HORIZON_PROVIDER_SCHEMA = _object_schema(
-    {
-        "path": _path_schema(),
-        "start_line": {"type": "integer", "minimum": 1, "maximum": MAX_SAFE_INTEGER},
-        "line_count": {"type": "integer", "minimum": 1, "maximum": PI_DEFAULT_MAX_LINES},
-        "start_byte": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 8 * 1024 * 1024,
-        },
-    },
-    required=("path",),
-)
-
-FIND_FILES_PROVIDER_SCHEMA = _object_schema(
-    {
-        "path": _path_schema(),
-        "pattern": _string_schema(min_length=1, max_length=128, pattern=_DISCOVERY_PATTERN),
-        "max_results": {"type": "integer", "minimum": 1, "maximum": 1000},
-    },
-    required=("pattern",),
-)
-
-SEARCH_TEXT_PROVIDER_SCHEMA = _object_schema(
-    {
-        "path": _path_schema(),
-        "query": _string_schema(min_length=1, max_length=256, pattern=r"^(?!.*\x00)[\s\S]+$"),
-        "literal": {"type": "boolean"},
-        "case": _string_schema(enum=("sensitive", "insensitive", "smart")),
-        "glob": _nullable(
-            _string_schema(
-                min_length=1,
-                max_length=128,
-                pattern=r"^(?!/)(?!.*\\)(?!.*\x00)(?!.*(?:^|/)\.\.(?:/|$))[\s\S]*$",
-            )
-        ),
-        "context_lines": {"type": "integer", "minimum": 0, "maximum": 3},
-        "max_results": {"type": "integer", "minimum": 1, "maximum": 100},
-    },
-    required=("query",),
-)
 
 READ_ARTIFACT_PROVIDER_SCHEMA = _object_schema(
     {
@@ -206,114 +132,6 @@ READ_ARTIFACT_PROVIDER_SCHEMA = _object_schema(
     required=("artifact_id",),
 )
 
-
-def _exact_edit_provider_schema(*, max_length: int, pattern: str) -> dict[str, object]:
-    return _object_schema(
-        {
-            "old_text": _string_schema(min_length=1, max_length=max_length, pattern=pattern),
-            "new_text": _string_schema(max_length=max_length, pattern=pattern),
-        },
-        required=("old_text", "new_text"),
-    )
-
-
-_EXACT_EDIT_PROVIDER_SCHEMA = _exact_edit_provider_schema(
-    max_length=_PROVIDER_EXACT_EDIT_MAX_CHARS, pattern=_NO_NUL
-)
-
-APPLY_PATCH_PROVIDER_SCHEMA = _object_schema(
-    {
-        "path": _path_schema(mutation=True),
-        "expected_sha256": _string_schema(pattern=_SHA256_PATTERN)
-        | {"description": "Copy revision.sha256 from the latest read_file result."},
-        "edits": {
-            "type": "array",
-            "minItems": 1,
-            "maxItems": 16,
-            "items": _EXACT_EDIT_PROVIDER_SCHEMA,
-            "description": "Exact replacements shaped as {old_text, new_text} objects.",
-        },
-    },
-    required=("path", "expected_sha256", "edits"),
-)
-
-RUN_COMMAND_PROVIDER_SCHEMA = _object_schema(
-    {
-        "argv": {
-            "type": "array",
-            "items": _string_schema(
-                min_length=1,
-                max_length=_PROVIDER_COMMAND_ARG_MAX_CHARS,
-                pattern=_NO_CONTROL_CHARS,
-            ),
-            "minItems": 1,
-            "maxItems": 16,
-        },
-        "shell": _string_schema(
-            min_length=1,
-            max_length=_PROVIDER_COMMAND_SHELL_MAX_CHARS,
-            pattern=_NONBLANK_NO_CONTROL,
-        ),
-        "cwd": _path_schema(),
-        "timeout_seconds": {"type": "number", "exclusiveMinimum": 0, "maximum": 90},
-    },
-    one_of=(
-        {"required": ["argv"], "not": {"required": ["shell"]}},
-        {"required": ["shell"], "not": {"required": ["argv"]}},
-    ),
-)
-
-WRITE_FILE_PROVIDER_SCHEMA = _object_schema(
-    {
-        "path": _path_schema(mutation=True),
-        "content": _string_schema(max_length=_PROVIDER_WRITE_CONTENT_MAX_CHARS, pattern=_NO_NUL),
-        "mode": _string_schema(enum=("create", "replace")),
-        "expected_sha256": _nullable(_string_schema(pattern=_SHA256_PATTERN)),
-    },
-    required=("path", "content", "mode"),
-    one_of=(
-        {
-            "properties": {"mode": {"const": "create"}},
-            "not": {"required": ["expected_sha256"]},
-        },
-        {
-            "properties": {
-                "mode": {"const": "replace"},
-                "expected_sha256": _string_schema(pattern=_SHA256_PATTERN),
-            },
-            "required": ["expected_sha256"],
-        },
-    ),
-)
-
-DELETE_FILE_PROVIDER_SCHEMA = _object_schema(
-    {
-        "path": _path_schema(mutation=True),
-        "expected_sha256": _string_schema(pattern=_SHA256_PATTERN),
-    },
-    required=("path", "expected_sha256"),
-)
-
-MOVE_FILE_PROVIDER_SCHEMA = _object_schema(
-    {
-        "source_path": _path_schema(mutation=True),
-        "destination_path": _path_schema(mutation=True),
-        "expected_sha256": _string_schema(pattern=_SHA256_PATTERN),
-    },
-    required=("source_path", "destination_path", "expected_sha256"),
-)
-
-RENAME_FILE_PROVIDER_SCHEMA = _object_schema(
-    {
-        "source_path": _path_schema(mutation=True),
-        "destination_path": _path_schema(mutation=True),
-        "expected_sha256": _string_schema(pattern=_SHA256_PATTERN),
-    },
-    required=("source_path", "destination_path", "expected_sha256"),
-)
-
-SHOW_CHANGES_PROVIDER_SCHEMA = _object_schema({})
-
 PROMOTE_SANDBOX_PROVIDER_SCHEMA = _object_schema(
     {
         "change_set_id": _string_schema(pattern=r"^sbx_[0-9a-f]{24}$"),
@@ -328,73 +146,102 @@ PROMOTE_SANDBOX_PROVIDER_SCHEMA = _object_schema(
     required=("change_set_id", "paths"),
 )
 
-GIT_STATUS_PROVIDER_SCHEMA = _object_schema({})
 
-GIT_DIFF_PROVIDER_SCHEMA = _object_schema(
+def _simple_object_schema(
+    properties: dict[str, object], *, required: tuple[str, ...] = ()
+) -> dict[str, object]:
+    """Return the intentionally small Pi-compatible model-facing schema shape."""
+
+    schema: dict[str, object] = {"type": "object", "properties": properties}
+    if required:
+        schema["required"] = list(required)
+    return schema
+
+
+READ_PROVIDER_SCHEMA = _simple_object_schema(
     {
-        "staged": {"type": "boolean"},
-        "paths": {
-            "type": "array",
-            "maxItems": 32,
-            "items": _path_schema(max_length=256),
+        "path": {"type": "string", "description": "Path to the file to read"},
+        "offset": {
+            "type": "number",
+            "description": "Line number to start reading from (1-indexed)",
+        },
+        "limit": {"type": "number", "description": "Maximum number of lines to read"},
+    },
+    required=("path",),
+)
+
+LS_PROVIDER_SCHEMA = _simple_object_schema(
+    {
+        "path": {"type": "string", "description": "Directory to list (default: current)"},
+        "limit": {
+            "type": "number",
+            "description": "Maximum number of entries to return (default: 500)",
         },
     }
 )
 
+FIND_PROVIDER_SCHEMA = _simple_object_schema(
+    {
+        "pattern": {"type": "string", "description": "Glob pattern to match files"},
+        "path": {"type": "string", "description": "Directory to search (default: current)"},
+        "limit": {
+            "type": "number",
+            "description": "Maximum number of results (default: 1000)",
+        },
+    },
+    required=("pattern",),
+)
 
-class ListDirectoryArguments(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True)
+GREP_PROVIDER_SCHEMA = _simple_object_schema(
+    {
+        "pattern": {"type": "string", "description": "Search pattern (regex by default)"},
+        "path": {
+            "type": "string",
+            "description": "Directory to search (default: current)",
+        },
+        "glob": {"type": "string", "description": "Optional file glob filter"},
+        "literal": {"type": "boolean", "description": "Treat pattern as literal text"},
+        "ignoreCase": {"type": "boolean", "description": "Use case-insensitive matching"},
+        "context": {"type": "number", "description": "Context lines before and after matches"},
+        "limit": {"type": "number", "description": "Maximum matches (default: 100)"},
+    },
+    required=("pattern",),
+)
 
-    path: WorkspaceRelativePath = "."
-    depth: int = Field(default=1, ge=1, le=4)
-    max_entries: int = Field(default=500, ge=1, le=500)
+EDIT_PROVIDER_SCHEMA = _simple_object_schema(
+    {
+        "path": {"type": "string", "description": "Path to the file to edit"},
+        "edits": {
+            "type": "array",
+            "description": "One or more exact, non-overlapping replacements",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "oldText": {"type": "string", "description": "Exact text to replace"},
+                    "newText": {"type": "string", "description": "Replacement text"},
+                },
+                "required": ["oldText", "newText"],
+            },
+        },
+    },
+    required=("path", "edits"),
+)
 
-    _valid_path = field_validator("path")(_path)
+WRITE_PROVIDER_SCHEMA = _simple_object_schema(
+    {
+        "path": {"type": "string", "description": "Path to the file to write"},
+        "content": {"type": "string", "description": "Complete file content"},
+    },
+    required=("path", "content"),
+)
 
-
-class ReadFileArguments(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True)
-
-    path: WorkspaceRelativePath
-    start_line: int = Field(default=1, ge=1)
-    line_count: int = Field(default=400, ge=1, le=400)
-
-    _valid_path = field_validator("path")(_path)
-
-
-class ReadFileLongHorizonArguments(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True)
-
-    path: WorkspaceRelativePath
-    start_line: int = Field(default=1, ge=1)
-    line_count: int = Field(default=PI_DEFAULT_MAX_LINES, ge=1, le=PI_DEFAULT_MAX_LINES)
-    start_byte: int | None = Field(default=None, ge=0, le=8 * 1024 * 1024)
-
-    _valid_path = field_validator("path")(_path)
-
-
-class FindFilesArguments(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True)
-
-    path: WorkspaceRelativePath = "."
-    pattern: str = Field(min_length=1, max_length=128)
-    max_results: int = Field(default=1000, ge=1, le=1000)
-
-    _valid_path = field_validator("path")(_path)
-
-
-class SearchTextArguments(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True)
-
-    path: WorkspaceRelativePath = "."
-    query: str = Field(min_length=1, max_length=256)
-    literal: bool = True
-    case: SearchCase = SearchCase.SMART
-    glob: str | None = Field(default=None, max_length=128)
-    context_lines: int = Field(default=0, ge=0, le=3)
-    max_results: int = Field(default=100, ge=1, le=100)
-
-    _valid_path = field_validator("path")(_path)
+BASH_PROVIDER_SCHEMA = _simple_object_schema(
+    {
+        "command": {"type": "string", "description": "Bash command to execute"},
+        "timeout": {"type": "number", "description": "Timeout in seconds"},
+    },
+    required=("command",),
+)
 
 
 class ReadArtifactArguments(BaseModel):
@@ -410,78 +257,6 @@ class ReadArtifactArguments(BaseModel):
         return ArtifactReference(artifact_id=value).artifact_id
 
 
-class ApplyPatchArguments(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True)
-
-    path: WorkspaceMutationPath
-    expected_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
-    # Keep 9-16 edits schema-valid so policy can require approval instead of rejecting them.
-    edits: tuple[ExactEdit, ...] = Field(min_length=1, max_length=16)
-
-    _valid_path = field_validator("path")(_path)
-
-
-class WriteFileArguments(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True)
-
-    path: WorkspaceMutationPath
-    content: str = Field(max_length=MAX_STRING_CHARS)
-    mode: MutationMode
-    expected_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
-
-    _valid_path = field_validator("path")(_path)
-
-    @model_validator(mode="after")
-    def expected_revision_matches_mode(self) -> WriteFileArguments:
-        if self.mode is MutationMode.REPLACE and self.expected_sha256 is None:
-            raise ValueError("replace requires expected_sha256")
-        if self.mode is MutationMode.CREATE and self.expected_sha256 is not None:
-            raise ValueError("create does not accept expected_sha256")
-        return self
-
-
-class DeleteFileArguments(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True)
-
-    path: WorkspaceMutationPath
-    expected_sha256: str = Field(pattern=_SHA256_PATTERN)
-
-    _valid_path = field_validator("path")(_path)
-
-
-class MoveFileArguments(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True)
-
-    source_path: WorkspaceMutationPath
-    destination_path: WorkspaceMutationPath
-    expected_sha256: str = Field(pattern=_SHA256_PATTERN)
-
-    _valid_source = field_validator("source_path")(_path)
-    _valid_destination = field_validator("destination_path")(_path)
-
-    @model_validator(mode="after")
-    def distinct_paths(self) -> MoveFileArguments:
-        if self.source_path == self.destination_path:
-            raise ValueError("source_path and destination_path must differ")
-        return self
-
-
-class RenameFileArguments(MoveFileArguments):
-    """Same strict wire shape as move; service preflight enforces same-parent rename."""
-
-
-class ShowChangesArguments(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True)
-
-
-class RunCommandArguments(CommandRequest):
-    """Strict Provider-facing command schema; environment/stdin/TTY are absent by design."""
-
-    cwd: WorkspaceRelativePath = "."
-
-    _valid_cwd = field_validator("cwd")(_path)
-
-
 class PromoteSandboxChangesArguments(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
@@ -491,21 +266,61 @@ class PromoteSandboxChangesArguments(BaseModel):
     _valid_paths = field_validator("paths")(lambda values: tuple(_path(value) for value in values))
 
 
-class GitStatusArguments(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True)
+class _CompatibilityArguments(BaseModel):
+    """Pi-compatible input: ignore harmless extras and leave policy to the execution adapter."""
+
+    model_config = ConfigDict(extra="ignore", strict=True, populate_by_name=True)
 
 
-class GitDiffArguments(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True)
+class ReadArguments(_CompatibilityArguments):
+    path: str
+    offset: int = 1
+    limit: int = 400
 
-    staged: bool = False
-    paths: tuple[WorkspaceRelativePath, ...] = Field(default=(), max_length=32)
 
-    _valid_paths = field_validator("paths")(lambda values: tuple(_path(value) for value in values))
+class LsArguments(_CompatibilityArguments):
+    path: str = "."
+    limit: int = 500
+
+
+class FindArguments(_CompatibilityArguments):
+    pattern: str
+    path: str = "."
+    limit: int = 1000
+
+
+class GrepArguments(_CompatibilityArguments):
+    pattern: str
+    path: str = "."
+    glob: str | None = None
+    literal: bool = False
+    ignore_case: bool = Field(default=False, alias="ignoreCase")
+    context: int = 0
+    limit: int = 100
+
+
+class EditItem(_CompatibilityArguments):
+    old_text: str = Field(alias="oldText")
+    new_text: str = Field(alias="newText")
+
+
+class EditArguments(_CompatibilityArguments):
+    path: str
+    edits: tuple[EditItem, ...]
+
+
+class WriteArguments(_CompatibilityArguments):
+    path: str
+    content: str
+
+
+class BashArguments(_CompatibilityArguments):
+    command: str
+    timeout: float = 90.0
 
 
 def _tool_error(
-    error: LocalFileError | ProcessServiceError | GitServiceError,
+    error: LocalFileError | ProcessServiceError | SandboxServiceError,
 ) -> ToolExecutionError:
     mapping = {
         "invalid_path": ToolErrorCode.INVALID_PATH,
@@ -557,12 +372,6 @@ def _tool_error(
         "max_files": ToolErrorCode.SEARCH_BUDGET,
         "max_bytes": ToolErrorCode.SEARCH_BUDGET,
         "output_budget": ToolErrorCode.OUTPUT_BUDGET,
-        "external_git_metadata": ToolErrorCode.EXTERNAL_GIT_METADATA,
-        "git_unavailable": ToolErrorCode.GIT_UNAVAILABLE,
-        "git_timeout": ToolErrorCode.GIT_TIMEOUT,
-        "git_command_failed": ToolErrorCode.GIT_FAILED,
-        "git_parse_failed": ToolErrorCode.GIT_FAILED,
-        "git_failed": ToolErrorCode.GIT_FAILED,
     }
     return ToolExecutionError(
         mapping.get(error.code, ToolErrorCode.EXECUTION_FAILED),
@@ -570,6 +379,30 @@ def _tool_error(
         disposition=(ToolExecutionDisposition.UNKNOWN if error.code == "outcome_unknown" else None),
         facts=tuple(getattr(error, "facts", ())),
     )
+
+
+def _model_path(value: str, files: WorkspaceFileService) -> str:
+    """Normalize familiar path spellings while keeping the frozen workspace boundary."""
+
+    if not isinstance(value, str) or not value or "\x00" in value:
+        raise LocalFileError("invalid_path", "路径必须是非空文本")
+    try:
+        supplied = Path(value).expanduser()
+        candidate = supplied if supplied.is_absolute() else files.resolver.root / supplied
+        # Normalize spelling without resolving symlinks. The service must still inspect the
+        # visible alias and every existing component so protected-path and symlink policy applies.
+        normalized = Path(os.path.abspath(candidate))
+        relative = normalized.relative_to(files.resolver.root)
+    except (OSError, RuntimeError):
+        raise LocalFileError("invalid_path", "路径无法解析") from None
+    except ValueError:
+        raise LocalFileError("outside_workspace", "目标不在当前工作空间内") from None
+    rendered = relative.as_posix()
+    return rendered if rendered else "."
+
+
+def _bounded(value: int | float, *, minimum: int, maximum: int) -> int:
+    return max(minimum, min(maximum, int(value)))
 
 
 def _artifact_tool_error(error: ArtifactError) -> ToolExecutionError:
@@ -612,144 +445,6 @@ def _intent(path: str, service: WorkspaceFileService, *, directory: bool) -> Ope
         raise _tool_error(exc) from exc
     return OperationIntent(
         kind=OperationKind.WORKSPACE_READ, relative_paths=(resolved.relative_path,)
-    )
-
-
-def make_list_directory_tool(files: WorkspaceFileService) -> RegisteredTool:
-    async def handler(arguments: ListDirectoryArguments, context: ToolCallContext):
-        try:
-            result = await asyncio.to_thread(
-                files.list_directory,
-                arguments.path,
-                depth=arguments.depth,
-                max_entries=arguments.max_entries,
-                result_limit=context.result_limit,
-            )
-        except LocalFileError as exc:
-            raise _tool_error(exc) from exc
-        return ToolHandlerOutcome(payload=result.model_dump(mode="json"))
-
-    def resolve(arguments: ListDirectoryArguments, _: ToolCallContext) -> OperationIntent:
-        return _intent(arguments.path, files, directory=True)
-
-    return make_tool(
-        name="list_directory",
-        description="列出工作空间内目录的有界条目；不会穿越目录符号链接或读取文件内容。",
-        arguments_model=ListDirectoryArguments,
-        provider_schema=LIST_DIRECTORY_PROVIDER_SCHEMA,
-        handler=handler,
-        context_handler=handler,
-        intent_resolver=resolve,
-        recovery_declaration=tool_declaration("list_directory"),
-    )
-
-
-def make_read_file_tool(
-    files: WorkspaceFileService, *, long_horizon: bool = False
-) -> RegisteredTool:
-    arguments_model = ReadFileLongHorizonArguments if long_horizon else ReadFileArguments
-    provider_schema = (
-        READ_FILE_LONG_HORIZON_PROVIDER_SCHEMA if long_horizon else READ_FILE_PROVIDER_SCHEMA
-    )
-
-    async def handler(arguments: ReadFileArguments, context: ToolCallContext):
-        try:
-            result = await asyncio.to_thread(
-                files.read_file,
-                arguments.path,
-                start_line=arguments.start_line,
-                line_count=arguments.line_count,
-                result_limit=context.result_limit,
-                max_bytes=context.truncation_max_bytes if context.long_horizon else None,
-                max_lines=(
-                    context.truncation_max_lines if context.long_horizon else LEGACY_MAX_READ_LINES
-                ),
-                start_byte=(
-                    getattr(arguments, "start_byte", None) if context.long_horizon else None
-                ),
-            )
-        except LocalFileError as exc:
-            raise _tool_error(exc) from exc
-        return ToolHandlerOutcome(payload=result.model_dump(mode="json"))
-
-    def resolve(arguments: ReadFileArguments, _: ToolCallContext) -> OperationIntent:
-        return _intent(arguments.path, files, directory=False)
-
-    return make_tool(
-        name="read_file",
-        description="读取工作空间内 UTF-8 文本文件的有界行窗口；结果包含 revision 与继续读取位置。",
-        arguments_model=arguments_model,
-        provider_schema=provider_schema,
-        handler=handler,
-        context_handler=handler,
-        intent_resolver=resolve,
-        recovery_declaration=tool_declaration("read_file"),
-    )
-
-
-def make_find_files_tool(files: WorkspaceFileService) -> RegisteredTool:
-    async def handler(arguments: FindFilesArguments, context: ToolCallContext):
-        try:
-            result = await asyncio.to_thread(
-                files.find_files,
-                arguments.path,
-                pattern=arguments.pattern,
-                max_results=arguments.max_results,
-                result_limit=context.result_limit,
-            )
-        except LocalFileError as exc:
-            raise _tool_error(exc) from exc
-        return ToolHandlerOutcome(payload=result.model_dump(mode="json"))
-
-    def resolve(arguments: FindFilesArguments, _: ToolCallContext) -> OperationIntent:
-        return _intent(arguments.path, files, directory=True)
-
-    return make_tool(
-        name="find_files",
-        description="按文件名或 glob 在工作空间内发现文件；结果稳定排序且有界。",
-        arguments_model=FindFilesArguments,
-        provider_schema=FIND_FILES_PROVIDER_SCHEMA,
-        handler=handler,
-        context_handler=handler,
-        intent_resolver=resolve,
-        recovery_declaration=tool_declaration("find_files"),
-    )
-
-
-def make_search_text_tool(search: WorkspaceSearchService) -> RegisteredTool:
-    async def handler(arguments: SearchTextArguments, context: ToolCallContext):
-        query = SearchQuery(
-            pattern=arguments.query,
-            literal=arguments.literal,
-            case=arguments.case,
-            glob=arguments.glob,
-            context_lines=arguments.context_lines,
-            max_results=arguments.max_results,
-        )
-        try:
-            result = await asyncio.to_thread(
-                search.search_text,
-                arguments.path,
-                query=query,
-                result_limit=context.result_limit,
-                max_line_chars=context.grep_max_line_chars if context.long_horizon else None,
-            )
-        except LocalFileError as exc:
-            raise _tool_error(exc) from exc
-        return ToolHandlerOutcome(payload=result.model_dump(mode="json"))
-
-    def resolve(arguments: SearchTextArguments, _: ToolCallContext) -> OperationIntent:
-        return _intent(arguments.path, search.files, directory=True)
-
-    return make_tool(
-        name="search_text",
-        description="在工作空间内按字面量或正则搜索 UTF-8 文本；结果含匹配行、引擎和有界上下文。",
-        arguments_model=SearchTextArguments,
-        provider_schema=SEARCH_TEXT_PROVIDER_SCHEMA,
-        handler=handler,
-        context_handler=handler,
-        intent_resolver=resolve,
-        recovery_declaration=tool_declaration("search_text"),
     )
 
 
@@ -836,22 +531,149 @@ def make_read_artifact_tool(artifacts: ArtifactService) -> RegisteredTool:
     )
 
 
-def make_read_search_tools(
+def make_mainstream_read_search_tools(
     files: WorkspaceFileService,
     search: WorkspaceSearchService,
-    artifacts: ArtifactService | None = None,
     *,
     long_horizon: bool = False,
 ) -> tuple[RegisteredTool, ...]:
-    tools = [
-        make_list_directory_tool(files),
-        make_read_file_tool(files, long_horizon=long_horizon),
-        make_find_files_tool(files),
-        make_search_text_tool(search),
-    ]
-    if artifacts is not None:
-        tools.append(make_read_artifact_tool(artifacts))
-    return tuple(tools)
+    """Build the Pi-compatible read/ls/find/grep surface over Morrow services."""
+
+    read_max = PI_DEFAULT_MAX_LINES if long_horizon else LEGACY_MAX_READ_LINES
+
+    async def read_handler(arguments: ReadArguments, context: ToolCallContext):
+        try:
+            path = _model_path(arguments.path, files)
+            result = await asyncio.to_thread(
+                files.read_file,
+                path,
+                start_line=max(1, arguments.offset),
+                line_count=_bounded(arguments.limit, minimum=1, maximum=read_max),
+                result_limit=context.result_limit,
+                max_bytes=context.truncation_max_bytes if context.long_horizon else None,
+                max_lines=context.truncation_max_lines if context.long_horizon else None,
+            )
+        except LocalFileError as exc:
+            raise _tool_error(exc) from exc
+        return ToolHandlerOutcome(payload=result.model_dump(mode="json"))
+
+    def read_resolve(arguments: ReadArguments, _: ToolCallContext) -> OperationIntent:
+        try:
+            return _intent(_model_path(arguments.path, files), files, directory=False)
+        except LocalFileError as exc:
+            raise _tool_error(exc) from exc
+
+    read = make_tool(
+        name="read",
+        description="Read a text file. Use offset and limit to continue through large files.",
+        arguments_model=ReadArguments,
+        provider_schema=READ_PROVIDER_SCHEMA,
+        handler=read_handler,
+        context_handler=read_handler,
+        intent_resolver=read_resolve,
+        recovery_declaration=tool_declaration("read"),
+    )
+
+    async def ls_handler(arguments: LsArguments, context: ToolCallContext):
+        try:
+            path = _model_path(arguments.path, files)
+            result = await asyncio.to_thread(
+                files.list_directory,
+                path,
+                max_entries=_bounded(arguments.limit, minimum=1, maximum=500),
+                result_limit=context.result_limit,
+            )
+        except LocalFileError as exc:
+            raise _tool_error(exc) from exc
+        return ToolHandlerOutcome(payload=result.model_dump(mode="json"))
+
+    def ls_resolve(arguments: LsArguments, _: ToolCallContext) -> OperationIntent:
+        try:
+            return _intent(_model_path(arguments.path, files), files, directory=True)
+        except LocalFileError as exc:
+            raise _tool_error(exc) from exc
+
+    ls = make_tool(
+        name="ls",
+        description="List entries in a directory.",
+        arguments_model=LsArguments,
+        provider_schema=LS_PROVIDER_SCHEMA,
+        handler=ls_handler,
+        context_handler=ls_handler,
+        intent_resolver=ls_resolve,
+        recovery_declaration=tool_declaration("ls"),
+    )
+
+    async def find_handler(arguments: FindArguments, context: ToolCallContext):
+        try:
+            path = _model_path(arguments.path, files)
+            result = await asyncio.to_thread(
+                files.find_files,
+                path,
+                pattern=arguments.pattern,
+                max_results=_bounded(arguments.limit, minimum=1, maximum=1000),
+                result_limit=context.result_limit,
+            )
+        except LocalFileError as exc:
+            raise _tool_error(exc) from exc
+        return ToolHandlerOutcome(payload=result.model_dump(mode="json"))
+
+    def find_resolve(arguments: FindArguments, _: ToolCallContext) -> OperationIntent:
+        try:
+            return _intent(_model_path(arguments.path, files), files, directory=True)
+        except LocalFileError as exc:
+            raise _tool_error(exc) from exc
+
+    find = make_tool(
+        name="find",
+        description="Find files by glob pattern.",
+        arguments_model=FindArguments,
+        provider_schema=FIND_PROVIDER_SCHEMA,
+        handler=find_handler,
+        context_handler=find_handler,
+        intent_resolver=find_resolve,
+        recovery_declaration=tool_declaration("find"),
+    )
+
+    async def grep_handler(arguments: GrepArguments, context: ToolCallContext):
+        query = SearchQuery(
+            pattern=arguments.pattern,
+            literal=arguments.literal,
+            case=SearchCase.INSENSITIVE if arguments.ignore_case else SearchCase.SENSITIVE,
+            glob=arguments.glob,
+            context_lines=_bounded(arguments.context, minimum=0, maximum=3),
+            max_results=_bounded(arguments.limit, minimum=1, maximum=100),
+        )
+        try:
+            path = _model_path(arguments.path, files)
+            result = await asyncio.to_thread(
+                search.search_text,
+                path,
+                query=query,
+                result_limit=context.result_limit,
+                max_line_chars=context.grep_max_line_chars if context.long_horizon else None,
+            )
+        except LocalFileError as exc:
+            raise _tool_error(exc) from exc
+        return ToolHandlerOutcome(payload=result.model_dump(mode="json"))
+
+    def grep_resolve(arguments: GrepArguments, _: ToolCallContext) -> OperationIntent:
+        try:
+            return _intent(_model_path(arguments.path, files), files, directory=True)
+        except LocalFileError as exc:
+            raise _tool_error(exc) from exc
+
+    grep = make_tool(
+        name="grep",
+        description="Search file contents with a regular expression or literal text.",
+        arguments_model=GrepArguments,
+        provider_schema=GREP_PROVIDER_SCHEMA,
+        handler=grep_handler,
+        context_handler=grep_handler,
+        intent_resolver=grep_resolve,
+        recovery_declaration=tool_declaration("grep"),
+    )
+    return read, ls, find, grep
 
 
 COMMAND_PREVIEW_BUDGET = ApprovalPreviewBudget(
@@ -861,16 +683,29 @@ COMMAND_PREVIEW_BUDGET = ApprovalPreviewBudget(
 )
 
 
-def make_run_command_tool(process: ProcessExecutionService) -> RegisteredTool:
-    def resolve(arguments: RunCommandArguments, context: ToolCallContext) -> OperationIntent:
+def make_bash_tool(process: ProcessExecutionService) -> RegisteredTool:
+    """Expose one conventional command string while retaining process preflight and policy."""
+
+    def request(arguments: BashArguments) -> CommandRequest:
+        return CommandRequest(
+            shell=arguments.command,
+            cwd=".",
+            timeout_seconds=float(_bounded(arguments.timeout, minimum=1, maximum=90)),
+        )
+
+    def resolve(arguments: BashArguments, context: ToolCallContext) -> OperationIntent:
         try:
-            plan = process.preflight(arguments)
+            plan = process.preflight(request(arguments))
         except (LocalFileError, ProcessServiceError) as exc:
             raise _tool_error(exc) from exc
+        except ValueError:
+            raise ToolExecutionError(
+                ToolErrorCode.INVALID_ARGUMENTS, "命令参数超出执行端边界"
+            ) from None
         process.cache_plan(context.run.run_id, context.call_id, plan)
         return process.intent(plan)
 
-    def preview(arguments: RunCommandArguments, context: ToolCallContext) -> tuple[str, ...]:
+    def preview(arguments: BashArguments, context: ToolCallContext) -> tuple[str, ...]:
         del arguments
         plan = process.cached_plan(context.run.run_id, context.call_id)
         if plan is None:
@@ -883,11 +718,11 @@ def make_run_command_tool(process: ProcessExecutionService) -> RegisteredTool:
             (
                 "原生沙箱进程（临时快照）；真实工作空间不会以可写方式暴露"
                 if process.requires_sandbox
-                else "非沙箱宿主进程；命令以当前用户权限运行"
+                else "非沙箱宿主进程；批准后可能访问工作空间外文件或网络"
             ),
         )
 
-    async def handler(arguments: RunCommandArguments, context: ToolCallContext):
+    async def handler(arguments: BashArguments, context: ToolCallContext):
         del arguments
         plan = process.cached_plan(context.run.run_id, context.call_id)
         if plan is None:
@@ -926,16 +761,10 @@ def make_run_command_tool(process: ProcessExecutionService) -> RegisteredTool:
         )
 
     return make_tool(
-        name="run_command",
-        description=(
-            "在工作空间相对 cwd 执行一个 shell 命令并返回有界 stdout/stderr。"
-            "必须且只能提供 argv 或 shell 二选一：优先 argv 字符串数组，"
-            '例如 {"argv":["python3","-m","pytest","-q"]}；不要同时传两者，也不要省略两者。'
-            "shell 形式支持管道、重定向以及复合命令。"
-        ),
-        arguments_model=RunCommandArguments,
-        provider_schema=RUN_COMMAND_PROVIDER_SCHEMA,
-        expected_shape="exactly_one_of:argv,shell",
+        name="bash",
+        description="Run a shell command in the workspace and return stdout, stderr, and status.",
+        arguments_model=BashArguments,
+        provider_schema=BASH_PROVIDER_SCHEMA,
         handler=handler,
         context_handler=handler,
         intent_resolver=resolve,
@@ -943,7 +772,7 @@ def make_run_command_tool(process: ProcessExecutionService) -> RegisteredTool:
         context_cleanup=lambda context: process.discard_plan(context.run.run_id, context.call_id),
         approval_preview_budget=COMMAND_PREVIEW_BUDGET,
         recovery_declaration=tool_declaration(
-            "run_command",
+            "bash",
             process_isolation=(
                 ProcessIsolation.NATIVE_SANDBOX
                 if process.requires_sandbox
@@ -1119,96 +948,6 @@ def _promotion_plan(change, mutation: WorkspaceMutationService, run):
     raise LocalFileError("invalid_target", "沙箱变更类型不受支持")
 
 
-def make_git_status_tool(git: GitInspectionService) -> RegisteredTool:
-    def resolve(arguments: GitStatusArguments, context: ToolCallContext) -> OperationIntent:
-        del arguments, context
-        return OperationIntent(kind=OperationKind.GIT_READ, relative_paths=(".",))
-
-    async def handler(
-        arguments: GitStatusArguments, context: ToolCallContext
-    ) -> ToolHandlerOutcome:
-        del arguments
-        try:
-            result = await asyncio.to_thread(git.status, result_limit=context.result_limit)
-        except GitServiceError as exc:
-            raise _tool_error(exc) from exc
-        fact = _git_fact(
-            context,
-            result.repository_state.value,
-            result.truncated,
-            (".",),
-        )
-        return ToolHandlerOutcome(payload=result.model_dump(mode="json"), facts=(fact,))
-
-    return make_tool(
-        name="git_status",
-        description="读取当前工作空间仓库的分支、HEAD、暂存/未暂存/未跟踪与冲突状态；只读且有界。",
-        arguments_model=GitStatusArguments,
-        provider_schema=GIT_STATUS_PROVIDER_SCHEMA,
-        handler=handler,
-        context_handler=handler,
-        intent_resolver=resolve,
-        recovery_declaration=tool_declaration("git_status"),
-    )
-
-
-def make_git_diff_tool(git: GitInspectionService) -> RegisteredTool:
-    def resolve(arguments: GitDiffArguments, context: ToolCallContext) -> OperationIntent:
-        del context
-        return OperationIntent(
-            kind=OperationKind.GIT_READ,
-            relative_paths=arguments.paths or (".",),
-        )
-
-    async def handler(arguments: GitDiffArguments, context: ToolCallContext) -> ToolHandlerOutcome:
-        try:
-            result = await asyncio.to_thread(
-                git.diff,
-                staged=arguments.staged,
-                paths=arguments.paths,
-                result_limit=context.result_limit,
-            )
-        except GitServiceError as exc:
-            raise _tool_error(exc) from exc
-        fact = _git_fact(
-            context,
-            result.repository_state.value,
-            result.truncated,
-            arguments.paths or (".",),
-        )
-        return ToolHandlerOutcome(payload=result.model_dump(mode="json"), facts=(fact,))
-
-    return make_tool(
-        name="git_diff",
-        description="读取当前工作空间仓库的有界暂存或未暂存 unified Diff；禁用外部 diff/textconv 且只读。",
-        arguments_model=GitDiffArguments,
-        provider_schema=GIT_DIFF_PROVIDER_SCHEMA,
-        handler=handler,
-        context_handler=handler,
-        intent_resolver=resolve,
-        recovery_declaration=tool_declaration("git_diff"),
-    )
-
-
-def _git_fact(
-    context: ToolCallContext,
-    repository_state: str,
-    diff_truncated: bool,
-    relative_paths: tuple[str, ...],
-):
-    from morrow.core.capabilities import GitToolFact
-
-    return GitToolFact(
-        call_id=context.call_id,
-        tool_name=context.tool_name,
-        ordinal=context.ordinal,
-        relative_paths=relative_paths,
-        approval_verdict=context.approval_verdict,
-        repository_state=repository_state,
-        diff_truncated=diff_truncated,
-    )
-
-
 MUTATION_PREVIEW_BUDGET = ApprovalPreviewBudget(
     max_lines=40,
     max_line_chars=240,
@@ -1272,28 +1011,21 @@ async def _blocking_mutation(callback):
         raise
 
 
-def _make_destructive_file_tool(
+def _compatibility_mutation_tool(
     *,
     name: str,
     description: str,
     arguments_model: type[BaseModel],
     provider_schema: dict[str, object],
     preflight,
-    operation: MutationOperation,
     mutation: WorkspaceMutationService,
     changes: ChangeSetService,
 ) -> RegisteredTool:
     def resolve(arguments, context: ToolCallContext) -> OperationIntent:
-        plan = mutation.cached_plan(context.run.run_id, context.call_id)
-        if plan is None or plan.operation is not operation:
-            try:
-                plan = preflight(arguments, context)
-            except LocalFileError as exc:
-                raise _tool_error(exc) from exc
-        # A durable preparation already reserved the complete plan, including
-        # its private capture name.  Reusing it here keeps the handler and the
-        # persisted PreparedIntent on the same evidence; apply() still
-        # revalidates the frozen plan while holding its path locks.
+        try:
+            plan = preflight(arguments, context)
+        except LocalFileError as exc:
+            raise _tool_error(exc) from exc
         return _mutation_intent(plan, mutation, context)
 
     def preview(arguments, context: ToolCallContext) -> tuple[str, ...]:
@@ -1301,7 +1033,7 @@ def _make_destructive_file_tool(
         plan = mutation.cached_plan(context.run.run_id, context.call_id)
         return _mutation_preview(plan) if plan is not None else ("无法生成变更预览",)
 
-    async def handler(arguments, context: ToolCallContext) -> ToolHandlerOutcome:
+    async def handler(arguments, context: ToolCallContext):
         del arguments
         plan = mutation.cached_plan(context.run.run_id, context.call_id)
         if plan is None:
@@ -1318,8 +1050,6 @@ def _make_destructive_file_tool(
                 )
             )
         except LocalFileError as exc:
-            if exc.change_result is not None:
-                changes.record(context.run, exc.change_result)
             raise _tool_error(exc) from exc
         changes.record(context.run, result)
         return ToolHandlerOutcome(payload=result.model_dump(mode="json"), facts=(fact,))
@@ -1336,211 +1066,69 @@ def _make_destructive_file_tool(
         context_cleanup=lambda context: mutation.discard_previews(
             context.run.run_id, context.call_id
         ),
-        execution_policy=ToolExecutionPolicy(
-            effect=ToolEffect.PERSISTENT_WRITE,
-            approval=ToolApproval.REQUIRED,
-        ),
         approval_preview_budget=MUTATION_PREVIEW_BUDGET,
         recovery_declaration=tool_declaration(name),
     )
 
 
-def make_delete_file_tool(
-    mutation: WorkspaceMutationService, changes: ChangeSetService
-) -> RegisteredTool:
-    return _make_destructive_file_tool(
-        name="delete_file",
-        description="按必需的 SHA-256 删除工作空间内一个普通文件；不删除目录或符号链接。",
-        arguments_model=DeleteFileArguments,
-        provider_schema=DELETE_FILE_PROVIDER_SCHEMA,
-        preflight=lambda arguments, context: mutation.preflight_delete(
-            arguments.path, expected_sha256=arguments.expected_sha256, run=context.run
-        ),
-        operation=MutationOperation.DELETE,
-        mutation=mutation,
-        changes=changes,
-    )
-
-
-def make_move_file_tool(
-    mutation: WorkspaceMutationService, changes: ChangeSetService
-) -> RegisteredTool:
-    return _make_destructive_file_tool(
-        name="move_file",
-        description="按必需的 SHA-256 将一个普通文件原子移动到不存在的工作空间路径。",
-        arguments_model=MoveFileArguments,
-        provider_schema=MOVE_FILE_PROVIDER_SCHEMA,
-        preflight=lambda arguments, context: mutation.preflight_move(
-            arguments.source_path,
-            arguments.destination_path,
-            expected_sha256=arguments.expected_sha256,
+def make_edit_tool(mutation: WorkspaceMutationService, changes: ChangeSetService) -> RegisteredTool:
+    def preflight(arguments: EditArguments, context: ToolCallContext):
+        path = _model_path(arguments.path, mutation.files)
+        source = mutation.files.read_source_text(path)
+        try:
+            edits = tuple(
+                ExactEdit(old_text=item.old_text, new_text=item.new_text)
+                for item in arguments.edits
+            )
+        except ValueError:
+            raise LocalFileError("invalid_range", "编辑内容超出执行端边界") from None
+        if not edits:
+            raise LocalFileError("invalid_range", "至少需要一个编辑")
+        return mutation.preflight_patch(
+            path,
+            expected_sha256=source.revision.sha256,
+            edits=edits,
             run=context.run,
-        ),
-        operation=MutationOperation.MOVE,
+        )
+
+    return _compatibility_mutation_tool(
+        name="edit",
+        description="Replace exact text in a file. Read the file first and use unique oldText.",
+        arguments_model=EditArguments,
+        provider_schema=EDIT_PROVIDER_SCHEMA,
+        preflight=preflight,
         mutation=mutation,
         changes=changes,
     )
 
 
-def make_rename_file_tool(
+def make_write_tool(
     mutation: WorkspaceMutationService, changes: ChangeSetService
 ) -> RegisteredTool:
-    return _make_destructive_file_tool(
-        name="rename_file",
-        description="按必需的 SHA-256 在同一父目录内原子重命名一个普通文件。",
-        arguments_model=RenameFileArguments,
-        provider_schema=RENAME_FILE_PROVIDER_SCHEMA,
-        preflight=lambda arguments, context: mutation.preflight_rename(
-            arguments.source_path,
-            arguments.destination_path,
-            expected_sha256=arguments.expected_sha256,
+    def preflight(arguments: WriteArguments, context: ToolCallContext):
+        path = _model_path(arguments.path, mutation.files)
+        target = mutation.files.resolver.resolve_mutation(path)
+        if target.kind == "missing":
+            mode = MutationMode.CREATE
+            expected_sha256 = None
+        else:
+            source = mutation.files.read_source_text(path)
+            mode = MutationMode.REPLACE
+            expected_sha256 = source.revision.sha256
+        return mutation.preflight_write(
+            path,
+            content=arguments.content,
+            mode=mode.value,
+            expected_sha256=expected_sha256,
             run=context.run,
-        ),
-        operation=MutationOperation.RENAME,
+        )
+
+    return _compatibility_mutation_tool(
+        name="write",
+        description="Create or overwrite a text file with complete content.",
+        arguments_model=WriteArguments,
+        provider_schema=WRITE_PROVIDER_SCHEMA,
+        preflight=preflight,
         mutation=mutation,
         changes=changes,
-    )
-
-
-def make_apply_patch_tool(
-    mutation: WorkspaceMutationService, changes: ChangeSetService
-) -> RegisteredTool:
-    def resolve(arguments: ApplyPatchArguments, context: ToolCallContext) -> OperationIntent:
-        try:
-            plan = mutation.preflight_patch(
-                arguments.path,
-                expected_sha256=arguments.expected_sha256,
-                edits=arguments.edits,
-                run=context.run,
-            )
-        except LocalFileError as exc:
-            raise _tool_error(exc) from exc
-        return _mutation_intent(plan, mutation, context)
-
-    def preview(arguments: ApplyPatchArguments, context: ToolCallContext) -> tuple[str, ...]:
-        del arguments
-        plan = mutation.cached_plan(context.run.run_id, context.call_id)
-        return _mutation_preview(plan) if plan is not None else ("无法生成变更预览",)
-
-    async def handler(arguments: ApplyPatchArguments, context: ToolCallContext):
-        plan = mutation.cached_plan(context.run.run_id, context.call_id)
-        if plan is None:
-            raise ToolExecutionError(ToolErrorCode.PREFLIGHT_FAILED, "变更预检不存在")
-        try:
-            result, fact = await _blocking_mutation(
-                lambda: mutation.apply(
-                    plan,
-                    call_id=context.call_id,
-                    tool_name=context.tool_name,
-                    ordinal=context.ordinal,
-                    approval_verdict=context.approval_verdict,
-                    run=context.run,
-                )
-            )
-        except LocalFileError as exc:
-            raise _tool_error(exc) from exc
-        changes.record(context.run, result)
-        return ToolHandlerOutcome(payload=result.model_dump(mode="json"), facts=(fact,))
-
-    return make_tool(
-        name="apply_patch",
-        description=(
-            "根据已读取文件的 SHA-256 和唯一精确文本编辑修改一个工作空间文件，并返回实际 Diff。"
-            "必须提供 path、从最近一次 read_file 结果复制的 revision.sha256，以及 edits 数组；"
-            '每项形如 {"old_text":"原文","new_text":"新文"}。'
-        ),
-        arguments_model=ApplyPatchArguments,
-        provider_schema=APPLY_PATCH_PROVIDER_SCHEMA,
-        handler=handler,
-        context_handler=handler,
-        intent_resolver=resolve,
-        context_approval_preview=preview,
-        context_cleanup=lambda context: mutation.discard_previews(
-            context.run.run_id, context.call_id
-        ),
-        approval_preview_budget=MUTATION_PREVIEW_BUDGET,
-        recovery_declaration=tool_declaration("apply_patch"),
-    )
-
-
-def make_write_file_tool(
-    mutation: WorkspaceMutationService, changes: ChangeSetService
-) -> RegisteredTool:
-    def resolve(arguments: WriteFileArguments, context: ToolCallContext) -> OperationIntent:
-        try:
-            plan = mutation.preflight_write(
-                arguments.path,
-                content=arguments.content,
-                mode=arguments.mode.value,
-                expected_sha256=arguments.expected_sha256,
-                run=context.run,
-            )
-        except LocalFileError as exc:
-            raise _tool_error(exc) from exc
-        return _mutation_intent(plan, mutation, context)
-
-    def preview(arguments: WriteFileArguments, context: ToolCallContext) -> tuple[str, ...]:
-        del arguments
-        plan = mutation.cached_plan(context.run.run_id, context.call_id)
-        return _mutation_preview(plan) if plan is not None else ("无法生成变更预览",)
-
-    async def handler(arguments: WriteFileArguments, context: ToolCallContext):
-        plan = mutation.cached_plan(context.run.run_id, context.call_id)
-        if plan is None:
-            raise ToolExecutionError(ToolErrorCode.PREFLIGHT_FAILED, "变更预检不存在")
-        try:
-            result, fact = await _blocking_mutation(
-                lambda: mutation.apply(
-                    plan,
-                    call_id=context.call_id,
-                    tool_name=context.tool_name,
-                    ordinal=context.ordinal,
-                    approval_verdict=context.approval_verdict,
-                    run=context.run,
-                )
-            )
-        except LocalFileError as exc:
-            raise _tool_error(exc) from exc
-        changes.record(context.run, result)
-        return ToolHandlerOutcome(payload=result.model_dump(mode="json"), facts=(fact,))
-
-    return make_tool(
-        name="write_file",
-        description="创建或按 SHA-256 版本检查替换一个工作空间 UTF-8 文件，并返回实际 Diff。",
-        arguments_model=WriteFileArguments,
-        provider_schema=WRITE_FILE_PROVIDER_SCHEMA,
-        expected_shape="write_file_mode_revision",
-        handler=handler,
-        context_handler=handler,
-        intent_resolver=resolve,
-        context_approval_preview=preview,
-        context_cleanup=lambda context: mutation.discard_previews(
-            context.run.run_id, context.call_id
-        ),
-        approval_preview_budget=MUTATION_PREVIEW_BUDGET,
-        recovery_declaration=tool_declaration("write_file"),
-    )
-
-
-def make_show_changes_tool(changes: ChangeSetService) -> RegisteredTool:
-    async def handler(arguments: ShowChangesArguments, context: ToolCallContext):
-        del arguments
-        try:
-            result = changes.show(context.run, result_limit=context.result_limit)
-        except ValueError as exc:
-            raise ToolExecutionError(ToolErrorCode.OUTPUT_BUDGET, "变更结果预算不足") from exc
-        return ToolHandlerOutcome(payload=result.model_dump(mode="json"))
-
-    def resolve(_: ShowChangesArguments, __: ToolCallContext) -> OperationIntent:
-        return OperationIntent(kind=OperationKind.INTERNAL_READ)
-
-    return make_tool(
-        name="show_changes",
-        description="显示当前运行中已实际发布的有界 ChangeSet 和 Diff；不读取助手文字。",
-        arguments_model=ShowChangesArguments,
-        provider_schema=SHOW_CHANGES_PROVIDER_SCHEMA,
-        handler=handler,
-        context_handler=handler,
-        intent_resolver=resolve,
-        recovery_declaration=tool_declaration("show_changes"),
     )

@@ -3657,3 +3657,18 @@
 - Focused affected tests passed `108`; the full offline gate passed `1344 passed, 2 deselected in
   87.42s`. Ruff format/check, compileall, CLI help and `git diff --check` passed. The verified
   implementation checkpoint is `477caa8`.
+
+## 2026-08-28 — Local Stage 7 branches enter main consolidation
+
+- At the user's request, began consolidating both unmerged local Stage 7 branches into `main`.
+- Preserved the complete unfinished `docs/notes/` tree in the named recoverable stash
+  `checkpoint: preserve complete docs notes before branch consolidation`; it remains intentionally
+  absent from the source tree because its 15/16-tool descriptions predate the seven-tool cleanup.
+- Merged the later core/Learning repair first, then the verified seven-tool/legacy-adapter cleanup.
+  Integration resolution keeps the seven model-facing coding tools while retaining root-only
+  project instructions, direct registered core execution and best-effort Learning Review behavior.
+- Integration-focused tests passed `140`. The first full offline run exposed one stale legacy
+  `apply_patch` conflict expectation; after aligning it with `edit`'s inferred current revision, the
+  final full offline gate passed `1333 passed, 2 deselected in 86.90s`. Ruff format/check,
+  compileall, CLI help and `git diff --check` passed.
+- S7P-09 live admission remains paused. Branch/worktree retirement is still pending.

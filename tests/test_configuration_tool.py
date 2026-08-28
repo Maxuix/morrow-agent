@@ -796,21 +796,15 @@ async def test_production_composition_uses_one_agent_loop_and_refreshes_state_pr
         "assistant",
     ]
     assert {tool.function.name for tool in provider.stream_tools[0]} == {
-        "list_directory",
-        "read_file",
-        "find_files",
-        "search_text",
+        "ls",
+        "read",
+        "find",
+        "grep",
         "update_configuration",
-        "apply_patch",
-        "write_file",
-        "show_changes",
-        "run_command",
+        "edit",
+        "write",
+        "bash",
         "run_skill_script",
-        "git_status",
-        "git_diff",
-        "delete_file",
-        "move_file",
-        "rename_file",
     }
     assert "中文项目" in str(provider.stream_calls[1])
     assert len(approval.requests) == 1

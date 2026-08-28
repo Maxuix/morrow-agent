@@ -47,18 +47,12 @@ from morrow.application.configuration import make_configuration_tool
 from morrow.application.context import ContextBuilder
 from morrow.application.doctor import OperationalDoctor
 from morrow.application.local_tools import (
-    make_apply_patch_tool,
-    make_delete_file_tool,
-    make_git_diff_tool,
-    make_git_status_tool,
-    make_move_file_tool,
+    make_bash_tool,
+    make_edit_tool,
+    make_mainstream_read_search_tools,
     make_promote_sandbox_tool,
     make_read_artifact_tool,
-    make_read_search_tools,
-    make_rename_file_tool,
-    make_run_command_tool,
-    make_show_changes_tool,
-    make_write_file_tool,
+    make_write_tool,
 )
 from morrow.application.mcp.definitions import McpDefinitionError, McpDefinitionService
 from morrow.application.mcp.results import McpResultNormalizer
@@ -335,21 +329,18 @@ def _default_tool_executor(
         registry.register(make_configuration_tool(config_service))
     if preference_service is not None:
         registry.register(make_preference_management_tool(preference_service))
-    for tool in make_read_search_tools(files, search, long_horizon=run_policy.is_long_horizon):
+    for tool in make_mainstream_read_search_tools(
+        files, search, long_horizon=run_policy.is_long_horizon
+    ):
         registry.register(tool)
     if run_policy.is_long_horizon and artifacts is not None:
         registry.register(make_read_artifact_tool(artifacts))
-    registry.register(make_apply_patch_tool(mutation, changes))
-    registry.register(make_write_file_tool(mutation, changes))
-    registry.register(make_delete_file_tool(mutation, changes))
-    registry.register(make_move_file_tool(mutation, changes))
-    registry.register(make_rename_file_tool(mutation, changes))
-    registry.register(make_show_changes_tool(changes))
-    registry.register(make_run_command_tool(process))
+    registry.register(make_edit_tool(mutation, changes))
+    registry.register(make_write_tool(mutation, changes))
+    registry.register(make_bash_tool(process))
     if skill_scripts is not None:
         registry.register(make_skill_script_tool(skill_scripts))
-    for tool in (make_git_status_tool(git), make_git_diff_tool(git)):
-        registry.register(tool)
+    del git  # Git inspection remains available through the confined bash surface.
     if sandbox is not None and process.requires_sandbox and sandbox_enabled:
         registry.register(make_promote_sandbox_tool(sandbox, mutation, changes))
     names = tuple(tool.function.name for tool in registry.definitions())
@@ -363,7 +354,7 @@ def _default_tool_executor(
     return ToolExecutor(
         registry.snapshot(
             require_runtime_contract=True,
-            require_closed_schema=True,
+            require_closed_schema=False,
             require_production_declaration=True,
             expected_process_isolation=process_isolation,
         ),

@@ -141,7 +141,7 @@ class ToolCycleExecutor:
                         durable, now=self.wall_now(session)
                     )
                 allow_unconfined_host = (
-                    call.name == "run_command"
+                    call.name in {"run_command", "bash"}
                     and durable is not None
                     and self._has_active_unconfined_grant(session, durable)
                 )

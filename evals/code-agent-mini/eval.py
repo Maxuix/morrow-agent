@@ -12,6 +12,7 @@ import math
 import os
 import re
 import shutil
+import sqlite3
 import stat
 import subprocess
 import sys
@@ -3757,6 +3758,18 @@ def run_morrow_agent(
         asyncio.run(collect())
         persistence = session_app.persistence
         agent_run_id = getattr(persistence, "current_agent_run_id", None)
+        if not agent_run_id:
+            terminal_turn_ids = {
+                event.turn_id
+                for event in events
+                if event.type == "turn.completed" and event.turn_id is not None
+            }
+            runs = persistence.journal.list_session_agent_runs(
+                identity.workspace_id, session_app.session.session_id
+            )
+            matches = [run.agent_run_id for run in runs if run.turn_id in terminal_turn_ids]
+            if len(matches) == 1:
+                agent_run_id = matches[0]
         if not agent_run_id or session_app.api is None:
             raise EvalError("Morrow evaluation AgentRun was not admitted")
         observation = session_app.api.get_agent_run_observation(agent_run_id)
@@ -3879,6 +3892,172 @@ def _campaign_records(root: Path, plan: Mapping[str, object]) -> list[dict[str, 
     return records
 
 
+def _morrow_request_usage(run_dir: Path) -> dict[str, object]:
+    database = run_dir / "morrow-state" / "store" / "operational.sqlite"
+    if not database.is_file():
+        return {"known_tokens": 0, "source": "none", "unknown_requests": 0}
+    try:
+        connection = sqlite3.connect(f"{database.resolve().as_uri()}?mode=ro", uri=True)
+        try:
+            connection.execute("PRAGMA query_only = ON")
+            rows = connection.execute(
+                """
+                SELECT usage_availability, input_tokens, output_tokens, total_tokens
+                FROM agent_run_model_requests
+                ORDER BY agent_run_id, attempt_ordinal
+                """
+            ).fetchall()
+        finally:
+            connection.close()
+    except sqlite3.Error as exc:
+        raise EvalError("Morrow request usage journal is unreadable") from exc
+    known_tokens = 0
+    unknown_requests = 0
+    for availability, input_tokens, output_tokens, total_tokens in rows:
+        if availability == "unavailable":
+            unknown_requests += 1
+            continue
+        if availability != "available":
+            raise EvalError("Morrow request usage availability is invalid")
+        values = (input_tokens, output_tokens, total_tokens)
+        if any(value is not None and (not isinstance(value, int) or value < 0) for value in values):
+            raise EvalError("Morrow request token usage is invalid")
+        if total_tokens is not None:
+            known_tokens += total_tokens
+        elif input_tokens is not None or output_tokens is not None:
+            known_tokens += int(input_tokens or 0) + int(output_tokens or 0)
+        else:
+            raise EvalError("Morrow available request usage has no token count")
+    return {
+        "known_tokens": known_tokens,
+        "source": "morrow_request_journal" if rows else "none",
+        "unknown_requests": unknown_requests,
+    }
+
+
+def _pi_raw_usage(run_dir: Path) -> dict[str, object]:
+    raw_path = run_dir / "pi-raw" / "agent-stdout.raw"
+    if not raw_path.is_file():
+        return {"known_tokens": 0, "source": "none", "unknown_requests": 0}
+    known_tokens = 0
+    seen: dict[tuple[str, str, str, int], str] = {}
+    try:
+        with raw_path.open("r", encoding="utf-8", errors="strict") as handle:
+            for line_number, line in enumerate(handle, start=1):
+                if not line.strip():
+                    continue
+                try:
+                    event = json.loads(line)
+                except ValueError as exc:
+                    raise EvalError("Pi raw usage stream is not valid JSONL") from exc
+                if not isinstance(event, Mapping):
+                    raise EvalError("Pi raw usage event must be an object")
+                if event.get("type") != "message_end":
+                    continue
+                message = event.get("message")
+                if not isinstance(message, Mapping) or message.get("role") != "assistant":
+                    continue
+                usage = _trace_usage(message)
+                identity = (
+                    str(message.get("timestamp", line_number)),
+                    str(message.get("provider", "")),
+                    str(message.get("model", "")),
+                    int(usage["total_tokens"]),
+                )
+                fingerprint = content_hash(usage)
+                previous = seen.get(identity)
+                if previous is not None:
+                    if previous != fingerprint:
+                        raise EvalError("Pi raw usage contains a conflicting assistant message")
+                    continue
+                seen[identity] = fingerprint
+                known_tokens += int(usage["total_tokens"])
+    except (OSError, UnicodeError) as exc:
+        raise EvalError("Pi raw usage stream is unreadable") from exc
+    return {
+        "known_tokens": known_tokens,
+        "source": "pi_raw_assistant_usage" if seen else "none",
+        "unknown_requests": 0,
+    }
+
+
+def _known_run_usage(run_dir: Path, agent: object) -> dict[str, object]:
+    runtime_path = run_dir / "runtime-evidence.json"
+    if runtime_path.is_file():
+        runtime = normalize_runtime_evidence(runtime_path)
+        total_tokens = runtime["usage"]["total_tokens"]
+        if runtime["availability"] == "available" and isinstance(total_tokens, int):
+            return {
+                "known_tokens": total_tokens,
+                "source": "runtime_evidence",
+                "unknown_requests": 0,
+            }
+    if agent == "morrow":
+        return _morrow_request_usage(run_dir)
+    if agent == "pi":
+        return _pi_raw_usage(run_dir)
+    raise EvalError("campaign admission has an unsupported agent")
+
+
+def _campaign_capacity(
+    root: Path, records: list[dict[str, object]], *, total_tokens: int
+) -> dict[str, object]:
+    runs: list[dict[str, object]] = []
+    known_tokens = 0
+    reserved_tokens = 0
+    accounted_tokens = 0
+    unknown_requests = 0
+    for record in records:
+        entry = _mapping(record["entry"], "campaign admission entry")
+        reservation = _mapping(record["reservation"], "campaign admission reservation")
+        reserved = int(
+            _positive_number(
+                reservation.get("tokens"), "campaign admission token reservation", integer=True
+            )
+        )
+        run_dir = root / _campaign_run_key(entry)
+        observed = _known_run_usage(run_dir, entry.get("agent"))
+        known = int(observed["known_tokens"])
+        accounted = max(reserved, known)
+        reserved_tokens += reserved
+        known_tokens += known
+        accounted_tokens += accounted
+        unknown_requests += int(observed["unknown_requests"])
+        runs.append(
+            {
+                "run_key": run_dir.name,
+                "known_tokens": known,
+                "reserved_tokens": reserved,
+                "accounted_tokens": accounted,
+                "source": observed["source"],
+                "unknown_requests": observed["unknown_requests"],
+            }
+        )
+    return {
+        "schema": "morrow.s7p-09.capacity.v1",
+        "known_tokens": known_tokens,
+        "reserved_tokens": reserved_tokens,
+        "accounted_tokens": accounted_tokens,
+        "unknown_requests": unknown_requests,
+        "remaining_tokens": max(0, total_tokens - accounted_tokens),
+        "over_ceiling": accounted_tokens > total_tokens,
+        "runs": runs,
+    }
+
+
+def campaign_capacity_usage(plan: Mapping[str, object], root: Path) -> dict[str, object]:
+    """Report the conservative token basis used before the next admission."""
+
+    normalized = validate_comparison_plan(plan)
+    resolved = root.resolve()
+    records = _campaign_records(resolved, normalized)
+    return _campaign_capacity(
+        resolved,
+        records,
+        total_tokens=int(normalized["ceilings"]["total_tokens"]),
+    )
+
+
 def admit_campaign_run(
     plan: Mapping[str, object],
     root: Path,
@@ -3926,7 +4105,12 @@ def admit_campaign_run(
         or reserve_cost <= 0
     ):
         raise EvalError("campaign cost reservation must be positive")
-    reserved_tokens = sum(int(record["reservation"]["tokens"]) for record in records)
+    capacity = _campaign_capacity(
+        root,
+        records,
+        total_tokens=int(normalized["ceilings"]["total_tokens"]),
+    )
+    reserved_tokens = int(capacity["accounted_tokens"])
     reserved_cost = sum(float(record["reservation"]["cost"]) for record in records)
     if reserved_tokens + reserve_tokens > normalized["ceilings"]["total_tokens"]:
         raise EvalError("campaign token ceiling would be exceeded")
@@ -4443,6 +4627,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     preflight.add_argument("plan", type=Path)
     preflight.add_argument("evidence_root", type=Path)
+    capacity = subparsers.add_parser(
+        "campaign-capacity", help="report conservative token usage before the next admission"
+    )
+    capacity.add_argument("plan", type=Path)
+    capacity.add_argument("evidence_root", type=Path)
     permission_check = subparsers.add_parser(
         "permission-check", help="run the offline Morrow/Pi permission equivalence matrix"
     )
@@ -4552,6 +4741,12 @@ def main() -> int:
             )
             print(canonical_json(result).strip())
             return 0 if result["status"] == "PASS" else 1
+        if arguments.command == "campaign-capacity":
+            result = campaign_capacity_usage(
+                load_comparison_plan(arguments.plan), arguments.evidence_root
+            )
+            print(canonical_json(result).strip())
+            return 1 if result["over_ceiling"] else 0
         if arguments.command == "permission-check":
             result = permission_equivalence_matrix(arguments.workspace)
             print(canonical_json(result).strip())

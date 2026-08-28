@@ -1,13 +1,19 @@
-# Pi-first Learning Loop Simplification
+# Stage 7 Consolidated Main — S7P-09 Paused
 
-> Status: completed at `477caa8`; S7P-09 evaluation remains paused
+> Status: integrated code verified; merge commit and branch retirement in progress on local `main`
 > Paused subplan: Subplan 90 — S7P-09 Repeated Direct Evaluation and Same-Condition Pi Baseline
-> Branch: `feat/s7p-09-direct-pi-baseline`
-> Execution worktree branch: `feat/s7p-09-direct-pi-baseline-run` (intentional clean-pin stack)
+> Integrated branches: `feat/s7p-09-direct-pi-baseline`, `feat/s7p-09-direct-pi-baseline-run`
 > Activation base: verified local `main@1fd7e229bef276d1a0361e775ce800ade4b318fc`
 > Source authority: current user request, S7P-00 protocol v1, completed S7P-08, current code/tools
 
 ## 1. Current objective
+
+Consolidate all verified local Stage 7 work on `main`, retaining the completed Pi-aligned seven-tool
+interface, core-boundary simplification and best-effort Learning Review repair. Resolve cross-branch
+integration defects, run the complete offline/static gate, then retire the merged topic branches and
+their clean execution worktree. S7P-09 live admission remains paused.
+
+## 1a. Completed product objective
 
 Keep learning best-effort and mechanically triggered after an accepted completed task. Tool-call
 failures and inferred task-resolution quality do not gate Review creation. The Learning Reviewer
@@ -17,7 +23,7 @@ already present at `3670860` through a real public run.
 
 The earlier Pi-first core simplification remains completed and S7P-09 remains paused.
 
-## 1a. Earlier objective
+## 1b. Earlier objective
 
 Restore a small Pi-like coding loop before continuing evaluation work. Registered workspace
 read/write/edit/bash tools run directly; command and file-content keyword heuristics do not decide
@@ -87,15 +93,16 @@ execution uses one dedicated clean worktree branch instead of repeatedly moving 
 
 ## 4. Execution order
 
-1. Remove semantic command risk classification and keyword-based file/search/Git/sandbox blocking.
-2. Allow registered core workspace mutations and commands without per-call heuristic approval.
-3. Replace task-path instruction discovery with one root availability-first load.
-4. Update tests, architecture and stale evaluation selectors/contracts.
-5. Run focused and full offline/static/CLI gates, then checkpoint verified progress.
+1. Merge the completed core/Learning branch into local `main` and resolve its policy integration.
+2. Merge the completed seven-tool cleanup branch without restoring legacy model adapters.
+3. Reconcile current architecture, tests and execution state around the combined behavior.
+4. Run focused and complete offline/static/CLI gates and commit verified integration repairs.
+5. Remove merged topic branches and the clean execution worktree; preserve unfinished notes in a
+   recoverable stash.
 6. Do not resume S7P-09 admissions until the user explicitly requests a new evaluation plan.
 
 ## 5. Completion
 
-Completion requires the three reported over-defensive paths to be removed from production behavior,
-targeted regressions and the complete non-live suite to pass, Ruff/compileall/CLI/diff checks to pass,
-and documentation/execution state to describe the simplified boundary honestly.
+Completion requires both topic histories to be ancestors of `main`, the seven-tool interface and
+simplified core boundary to coexist, targeted regressions and the complete non-live suite to pass,
+Ruff/compileall/CLI/diff checks to pass, and the merged branches/worktree to be retired safely.

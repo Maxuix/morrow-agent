@@ -188,7 +188,7 @@ class RunPermissionCoordinator:
             if execution.isolation is not None:
                 raise PermissionEvidenceError("execution added an incomplete elevated label")
             if (
-                execution.tool_name == "run_command"
+                execution.tool_name in {"run_command", "bash"}
                 and execution.intent.effect_class is EffectClass.UNCONFINED_EXTERNAL_EFFECT
                 and execution.intent.requires_approval
             ):

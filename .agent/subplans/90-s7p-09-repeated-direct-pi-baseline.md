@@ -1,6 +1,6 @@
 # Subplan 90 — S7P-09 Repeated Direct Evaluation and Same-Condition Pi Baseline
 
-> Status: active; Phase A harness work may proceed
+> Status: active but blocked before refreeze; Subplan 91 tool repair verified, 50M total insufficient
 > Branch: `feat/s7p-09-direct-pi-baseline`
 > Activation base: verified local `main@1fd7e229bef276d1a0361e775ce800ade4b318fc`
 > Dependency: Subplan 89 / S7P-08 passed and is integrated locally
@@ -81,7 +81,9 @@ No production behavior is changed merely to improve a score.
 ## 5. Live campaign hold point
 
 Before the first formal campaign run, freeze one strict `comparison-plan.json`. The user approved
-the exact Provider/model, a 5,000,000-token hard ceiling and no currency ceiling. The plan must
+the exact Provider/model, a 50,000,000-token cumulative hard ceiling and no currency ceiling. The
+retained known usage plus a fresh 42M reservation already requires 58,754,419 tokens before six
+unknown-usage requests, so refreeze/admission is currently blocked. Once capacity is raised, the plan must
 prove:
 
 1. **Common model.** Both Morrow and Pi resolve the same Provider family, endpoint/service,
@@ -96,7 +98,7 @@ prove:
 4. **Exact model capability.** Both sides agree on context window and maximum output. Morrow must
    admit RunPolicy v2 for that exact model; Pi must resolve the same capability from its frozen
    catalog/runtime evidence.
-5. **Budget approval.** The user approved an explicit 5,000,000-token campaign maximum and no
+5. **Budget approval.** The user approved an explicit 50,000,000-token cumulative maximum and no
    currency maximum. The harness stops scheduling before the token ceiling. Cost is recorded when
    supplied and otherwise remains explicitly unavailable; it is not a campaign completeness gate.
    Already admitted runs finalize truthfully.
@@ -384,7 +386,8 @@ auditability.
 ### Phase C — Formal primary campaign
 
 12. Execute schedule entries sequentially. Before each admission, revalidate remaining campaign
-    budget, source/profile hashes, credential readiness and target workspace freshness.
+    budget from finalized usage or durable Morrow/Pi request fallback, source/profile hashes,
+    credential readiness and target workspace freshness.
 13. After each formal run, immediately normalize, finalize, hash and validate its bundle. Do not
     inspect Gold or tune later prompts based on the result.
 14. On safe pre-admission environmental failure, pause. On post-admission failure, finalize the run
@@ -435,7 +438,7 @@ fallback. No command is reported as passed unless it actually completed.
 Subplan 90 is complete only when:
 
 - the strict harness and permission-equivalence tests pass offline;
-- the exact common Provider/model and 5,000,000-token ceiling with no currency ceiling were
+- the exact common Provider/model and sufficient user-approved total-token ceiling with no currency ceiling were
   explicitly approved;
 - all 28 primary run bundles are complete, valid, immutable and comparison-eligible;
 - Morrow's two repetition gates pass;

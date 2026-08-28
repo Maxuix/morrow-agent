@@ -777,15 +777,65 @@ def _declaration(
 
 
 PRODUCTION_TOOL_DECLARATIONS: tuple[ToolRecoveryDeclaration, ...] = (
+    _declaration("ls", EffectClass.BOUNDED_READ, MissingCompletionPolicy.SAFE_TO_RETRY),
+    _declaration("read", EffectClass.BOUNDED_READ, MissingCompletionPolicy.SAFE_TO_RETRY),
+    _declaration("find", EffectClass.BOUNDED_READ, MissingCompletionPolicy.SAFE_TO_RETRY),
+    _declaration("grep", EffectClass.BOUNDED_READ, MissingCompletionPolicy.SAFE_TO_RETRY),
+    _declaration("read_artifact", EffectClass.BOUNDED_READ, MissingCompletionPolicy.SAFE_TO_RETRY),
+    _declaration(
+        "update_configuration",
+        EffectClass.RECONCILEABLE_STRUCTURED_STATE_WRITE,
+        MissingCompletionPolicy.REQUIRES_RECONCILIATION,
+    ),
+    _declaration(
+        "manage_preferences",
+        EffectClass.RECONCILEABLE_STRUCTURED_STATE_WRITE,
+        MissingCompletionPolicy.REQUIRES_RECONCILIATION,
+    ),
+    _declaration(
+        "edit",
+        EffectClass.RECONCILEABLE_FILE_WRITE,
+        MissingCompletionPolicy.REQUIRES_RECONCILIATION,
+    ),
+    _declaration(
+        "write",
+        EffectClass.RECONCILEABLE_FILE_WRITE,
+        MissingCompletionPolicy.REQUIRES_RECONCILIATION,
+    ),
+    _declaration(
+        "promote_sandbox_changes",
+        EffectClass.RECONCILEABLE_FILE_WRITE,
+        MissingCompletionPolicy.REQUIRES_RECONCILIATION,
+    ),
+    _declaration(
+        "bash",
+        EffectClass.UNCONFINED_EXTERNAL_EFFECT,
+        MissingCompletionPolicy.OUTCOME_UNKNOWN,
+        isolation=ProcessIsolation.HOST,
+    ),
+    _declaration(
+        "bash",
+        EffectClass.PROCESS_EFFECT_NON_DURABLE,
+        MissingCompletionPolicy.OUTCOME_UNKNOWN,
+        isolation=ProcessIsolation.NATIVE_SANDBOX,
+    ),
+    _declaration(
+        "run_skill_script",
+        EffectClass.PROCESS_EFFECT_NON_DURABLE,
+        MissingCompletionPolicy.OUTCOME_UNKNOWN,
+        frozen=True,
+    ),
+)
+
+# Old durable rows may predate frozen per-intent declarations. Keep only their effect/recovery
+# classification here; these names are not valid for current production registration.
+LEGACY_TOOL_DECLARATIONS: tuple[ToolRecoveryDeclaration, ...] = (
     _declaration("list_directory", EffectClass.BOUNDED_READ, MissingCompletionPolicy.SAFE_TO_RETRY),
     _declaration("read_file", EffectClass.BOUNDED_READ, MissingCompletionPolicy.SAFE_TO_RETRY),
     _declaration("find_files", EffectClass.BOUNDED_READ, MissingCompletionPolicy.SAFE_TO_RETRY),
     _declaration("search_text", EffectClass.BOUNDED_READ, MissingCompletionPolicy.SAFE_TO_RETRY),
-    _declaration("read_artifact", EffectClass.BOUNDED_READ, MissingCompletionPolicy.SAFE_TO_RETRY),
     _declaration(
-        "show_changes",
-        EffectClass.DURABLE_STATE_READ,
-        MissingCompletionPolicy.SAFE_TO_RETRY,
+        "show_changes", EffectClass.DURABLE_STATE_READ, MissingCompletionPolicy.SAFE_TO_RETRY
     ),
     _declaration(
         "git_status",
@@ -798,16 +848,6 @@ PRODUCTION_TOOL_DECLARATIONS: tuple[ToolRecoveryDeclaration, ...] = (
         EffectClass.BOUNDED_EXTERNAL_READ,
         MissingCompletionPolicy.SAFE_TO_RETRY,
         frozen=True,
-    ),
-    _declaration(
-        "update_configuration",
-        EffectClass.RECONCILEABLE_STRUCTURED_STATE_WRITE,
-        MissingCompletionPolicy.REQUIRES_RECONCILIATION,
-    ),
-    _declaration(
-        "manage_preferences",
-        EffectClass.RECONCILEABLE_STRUCTURED_STATE_WRITE,
-        MissingCompletionPolicy.REQUIRES_RECONCILIATION,
     ),
     _declaration(
         "apply_patch",
@@ -835,11 +875,6 @@ PRODUCTION_TOOL_DECLARATIONS: tuple[ToolRecoveryDeclaration, ...] = (
         MissingCompletionPolicy.REQUIRES_RECONCILIATION,
     ),
     _declaration(
-        "promote_sandbox_changes",
-        EffectClass.RECONCILEABLE_FILE_WRITE,
-        MissingCompletionPolicy.REQUIRES_RECONCILIATION,
-    ),
-    _declaration(
         "run_command",
         EffectClass.UNCONFINED_EXTERNAL_EFFECT,
         MissingCompletionPolicy.OUTCOME_UNKNOWN,
@@ -850,12 +885,6 @@ PRODUCTION_TOOL_DECLARATIONS: tuple[ToolRecoveryDeclaration, ...] = (
         EffectClass.PROCESS_EFFECT_NON_DURABLE,
         MissingCompletionPolicy.OUTCOME_UNKNOWN,
         isolation=ProcessIsolation.NATIVE_SANDBOX,
-    ),
-    _declaration(
-        "run_skill_script",
-        EffectClass.PROCESS_EFFECT_NON_DURABLE,
-        MissingCompletionPolicy.OUTCOME_UNKNOWN,
-        frozen=True,
     ),
 )
 
@@ -882,7 +911,9 @@ def _declaration_index(
 
 
 _PRODUCTION_INDEX = _declaration_index(PRODUCTION_TOOL_DECLARATIONS)
-_ALL_INDEX = _declaration_index(PRODUCTION_TOOL_DECLARATIONS + FIXTURE_TOOL_DECLARATIONS)
+_ALL_INDEX = _declaration_index(
+    PRODUCTION_TOOL_DECLARATIONS + LEGACY_TOOL_DECLARATIONS + FIXTURE_TOOL_DECLARATIONS
+)
 
 
 def tool_declaration(
@@ -892,9 +923,9 @@ def tool_declaration(
     production_only: bool = False,
 ) -> ToolRecoveryDeclaration:
     index = _PRODUCTION_INDEX if production_only else _ALL_INDEX
-    if name == "run_command":
+    if name in {"run_command", "bash"}:
         if process_isolation is None:
-            raise UnknownToolDeclarationError("run_command declaration requires process isolation")
+            raise UnknownToolDeclarationError("process tool declaration requires process isolation")
         key = (name, process_isolation)
         declaration = index.get(key)
         if declaration is None:
@@ -914,8 +945,8 @@ def missing_declarations(
     missing: list[str] = []
     for name in tool_names:
         try:
-            isolation = process_isolation if name == "run_command" else None
-            tool_declaration(name, process_isolation=isolation)
+            isolation = process_isolation if name in {"run_command", "bash"} else None
+            tool_declaration(name, process_isolation=isolation, production_only=True)
         except UnknownToolDeclarationError:
             missing.append(name)
     return tuple(missing)
@@ -1096,7 +1127,7 @@ def assert_handler_may_enter(
     if (
         permission_snapshot is not None
         and permission_snapshot.access_scope is AccessScope.FULL_ACCESS
-        and execution.tool_name == "run_command"
+        and execution.tool_name in {"run_command", "bash"}
         and execution.intent.effect_class is EffectClass.UNCONFINED_EXTERNAL_EFFECT
         and execution.grant_id is None
     ):
@@ -1104,7 +1135,7 @@ def assert_handler_may_enter(
     if (
         permission_snapshot is not None
         and permission_snapshot.grant_id is not None
-        and execution.tool_name == "run_command"
+        and execution.tool_name in {"run_command", "bash"}
         and execution.intent.effect_class is EffectClass.UNCONFINED_EXTERNAL_EFFECT
         and execution.intent.requires_approval
         and execution.grant_id is None

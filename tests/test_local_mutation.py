@@ -9,16 +9,12 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
-from pydantic import ValidationError
 
 from morrow.adapters.credentials.keyring import MemoryCredentialStore
 from morrow.adapters.local.filesystem import FileSystemAdapter
 from morrow.application.local_tools import (
-    ApplyPatchArguments,
-    ShowChangesArguments,
-    WriteFileArguments,
     _blocking_mutation,
-    make_apply_patch_tool,
+    make_edit_tool,
 )
 from morrow.bootstrap import build_application, build_session_application
 from morrow.core.capabilities import (
@@ -29,7 +25,7 @@ from morrow.core.capabilities import (
     ToolRunContext,
     WorkspaceCapability,
 )
-from morrow.core.local_tools import ExactEdit, MutationMode
+from morrow.core.local_tools import ExactEdit
 from morrow.core.models import (
     AssistantMessage,
     FunctionToolCall,
@@ -37,7 +33,7 @@ from morrow.core.models import (
     ToolApprovalDecision,
 )
 from morrow.runtime.capabilities import CapabilityPolicy
-from morrow.runtime.tools import ToolErrorCode, ToolExecutor, ToolRegistry
+from morrow.runtime.tools import ToolExecutor, ToolRegistry
 from morrow.services.changes import ChangeSetService
 from morrow.services.files import (
     LocalFileError,
@@ -508,7 +504,7 @@ def _tool_args(name: str, payload: dict, call_id: str) -> FunctionToolCall:
 
 
 @pytest.mark.asyncio
-async def test_provider_path_applies_actual_diff_and_show_changes_uses_facts(tmp_path):
+async def test_manual_provider_path_approves_pi_style_edit_and_records_facts(tmp_path):
     app = build_application(state_root=tmp_path / "state", credentials=MemoryCredentialStore())
     project = tmp_path / "project"
     project.mkdir()
@@ -518,23 +514,27 @@ async def test_provider_path_applies_actual_diff_and_show_changes_uses_facts(tmp
     provider = ScriptedModelProvider(
         [
             AssistantMessage(
-                tool_calls=(_tool_args("search_text", {"path": ".", "query": "needle"}, "search"),)
+                tool_calls=(
+                    _tool_args(
+                        "grep",
+                        {"path": ".", "pattern": "needle", "literal": True},
+                        "search",
+                    ),
+                )
             ),
-            AssistantMessage(tool_calls=(_tool_args("read_file", {"path": "sample.txt"}, "read"),)),
+            AssistantMessage(tool_calls=(_tool_args("read", {"path": "sample.txt"}, "read"),)),
             AssistantMessage(
                 tool_calls=(
                     _tool_args(
-                        "apply_patch",
+                        "edit",
                         {
                             "path": "sample.txt",
-                            "expected_sha256": _sha(source),
-                            "edits": [{"old_text": "needle", "new_text": "fixed"}],
+                            "edits": [{"oldText": "needle", "newText": "fixed"}],
                         },
                         "patch",
                     ),
                 )
             ),
-            AssistantMessage(tool_calls=(_tool_args("show_changes", {}, "changes"),)),
             AssistantMessage(content="已完成实际修改，并根据 ChangeSet 汇报。"),
         ]
     )
@@ -553,8 +553,8 @@ async def test_provider_path_applies_actual_diff_and_show_changes_uses_facts(tmp
     assert approval.requests == []
     messages = [message for message in session_app.session.messages if message.role == "tool"]
     patch_result = json.loads(messages[2].content)
-    changes_result = json.loads(messages[3].content)
-    assert patch_result["result"]["diff"] == changes_result["result"]["entries"][0]["diff"]
+    assert "-needle old" in patch_result["result"]["diff"]
+    assert "+fixed old" in patch_result["result"]["diff"]
     assert session_app.session.latest_tool_facts[0].operation == "patch"
 
 
@@ -568,15 +568,14 @@ async def test_auto_safe_small_patch_is_automatic_and_replace_still_requires_app
     identity = app.workspace_service.confirm(app.workspace_service.resolve(project))
     provider = ScriptedModelProvider(
         [
-            AssistantMessage(tool_calls=(_tool_args("read_file", {"path": "sample.txt"}, "read"),)),
+            AssistantMessage(tool_calls=(_tool_args("read", {"path": "sample.txt"}, "read"),)),
             AssistantMessage(
                 tool_calls=(
                     _tool_args(
-                        "apply_patch",
+                        "edit",
                         {
                             "path": "sample.txt",
-                            "expected_sha256": _sha(source),
-                            "edits": [{"old_text": "two", "new_text": "TWO"}],
+                            "edits": [{"oldText": "two", "newText": "TWO"}],
                         },
                         "patch",
                     ),
@@ -600,14 +599,14 @@ async def test_auto_safe_small_patch_is_automatic_and_replace_still_requires_app
 
 
 @pytest.mark.asyncio
-async def test_provider_patch_rejects_oversized_exact_edit_without_side_effect(tmp_path):
+async def test_provider_edit_accepts_large_exact_replacement_without_approval(tmp_path):
     path = tmp_path / "large.txt"
     before = "".join(f"line-{index:03d}\n" for index in range(600))
     path.write_text(before, encoding="utf-8")
     _, mutation = _services(tmp_path)
     changes = ChangeSetService()
     registry = ToolRegistry()
-    registry.register(make_apply_patch_tool(mutation, changes))
+    registry.register(make_edit_tool(mutation, changes))
     executor = ToolExecutor(
         registry.snapshot(),
         make_run_policy(),
@@ -618,11 +617,10 @@ async def test_provider_patch_rejects_oversized_exact_edit_without_side_effect(t
         ),
     )
     call = _tool_args(
-        "apply_patch",
+        "edit",
         {
             "path": "large.txt",
-            "expected_sha256": _sha(path),
-            "edits": [{"old_text": before, "new_text": before.replace("line-", "changed-")}],
+            "edits": [{"oldText": before, "newText": before.replace("line-", "changed-")}],
         },
         "large-patch",
     )
@@ -633,9 +631,8 @@ async def test_provider_patch_rejects_oversized_exact_edit_without_side_effect(t
         total=1,
     )
 
-    assert outcome.ok is False
-    assert outcome.error_code is ToolErrorCode.INVALID_ARGUMENTS
-    assert path.read_text(encoding="utf-8") == before
+    assert outcome.ok is True
+    assert path.read_text(encoding="utf-8") == before.replace("line-", "changed-")
     assert executor.approval_port.requests == []
 
 
@@ -645,7 +642,7 @@ async def test_auto_safe_over_threshold_edit_count_still_runs_directly(tmp_path)
     path.write_text("".join(f"line-{index}\n" for index in range(40)), encoding="utf-8")
     _, mutation = _services(tmp_path)
     registry = ToolRegistry()
-    registry.register(make_apply_patch_tool(mutation, ChangeSetService()))
+    registry.register(make_edit_tool(mutation, ChangeSetService()))
     approval = _Approval()
     executor = ToolExecutor(
         registry.snapshot(),
@@ -656,13 +653,11 @@ async def test_auto_safe_over_threshold_edit_count_still_runs_directly(tmp_path)
             WorkspaceCapability(workspace_id="w1", root=tmp_path),
         ),
     )
-    edits = [
-        {"old_text": f"line-{index}\n", "new_text": f"changed-{index}\n"} for index in range(9)
-    ]
+    edits = [{"oldText": f"line-{index}\n", "newText": f"changed-{index}\n"} for index in range(9)]
     outcome = await executor.execute_with_context(
         _tool_args(
-            "apply_patch",
-            {"path": "many-edits.txt", "expected_sha256": _sha(path), "edits": edits},
+            "edit",
+            {"path": "many-edits.txt", "edits": edits},
             "many-edits",
         ),
         run_context=_run("many-edits-run"),
@@ -673,21 +668,3 @@ async def test_auto_safe_over_threshold_edit_count_still_runs_directly(tmp_path)
     assert outcome.ok is True
     assert approval.requests == []
     assert path.read_text(encoding="utf-8").startswith("changed-0\nchanged-1\n")
-
-
-def test_mutation_arguments_are_strict_and_mode_bound():
-    with pytest.raises(ValidationError):
-        ApplyPatchArguments.model_validate(
-            {
-                "path": "x.txt",
-                "expected_sha256": "0" * 64,
-                "edits": [{"old_text": "x", "new_text": "y"}],
-                "extra": True,
-            },
-            strict=True,
-        )
-    with pytest.raises(ValidationError):
-        WriteFileArguments.model_validate(
-            {"path": "x.txt", "content": "x", "mode": MutationMode.REPLACE}, strict=True
-        )
-    assert ShowChangesArguments.model_validate({}, strict=True).model_dump() == {}

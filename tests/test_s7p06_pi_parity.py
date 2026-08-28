@@ -17,8 +17,8 @@ from morrow.application.compaction_persistence import (
 )
 from morrow.application.context import ContextBuilder
 from morrow.application.local_tools import (
-    READ_FILE_LONG_HORIZON_PROVIDER_SCHEMA,
-    ReadFileLongHorizonArguments,
+    READ_PROVIDER_SCHEMA,
+    ReadArguments,
     make_read_artifact_tool,
 )
 from morrow.core.capabilities import ToolRunContext
@@ -638,16 +638,14 @@ def test_pi_truncation_matches_head_tail_utf8_and_grep_boundaries():
     assert was_truncated is True
 
 
-def test_v2_read_file_uses_pi_line_window_without_changing_v1_model():
-    assert READ_FILE_LONG_HORIZON_PROVIDER_SCHEMA["properties"]["line_count"]["maximum"] == 2_000
-    parsed = ReadFileLongHorizonArguments.model_validate(
-        {"path": "src/main.py", "line_count": 2_000}, strict=True
+def test_current_read_contract_keeps_pi_shape_and_defers_bounds_to_execution():
+    assert READ_PROVIDER_SCHEMA["required"] == ["path"]
+    assert "maximum" not in READ_PROVIDER_SCHEMA["properties"]["limit"]
+    parsed = ReadArguments.model_validate(
+        {"path": "src/main.py", "limit": 2_001, "unused": True}, strict=True
     )
-    assert parsed.line_count == 2_000
-    with pytest.raises(ValidationError):
-        ReadFileLongHorizonArguments.model_validate(
-            {"path": "src/main.py", "line_count": 2_001}, strict=True
-        )
+    assert parsed.limit == 2_001
+    assert "unused" not in parsed.model_dump()
 
 
 def test_artifact_projection_preserves_failed_tool_outcomes():

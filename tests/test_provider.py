@@ -779,6 +779,26 @@ async def test_adapter_rejects_malformed_usage_conflicts_and_post_finish_semanti
     events = await collect_stream(provider_with_stream(AsyncChunks(chunks)))
     assert events[-1].kind == "error"
     assert events[-1].error_code == ModelErrorCode.INVALID_RESPONSE
+    assert events[-1].usage.availability.value == "unavailable"
+
+
+@pytest.mark.asyncio
+async def test_adapter_preserves_valid_usage_when_later_semantic_chunk_is_invalid():
+    events = await collect_stream(
+        provider_with_stream(
+            AsyncChunks(
+                [
+                    stream_chunk(text="ok", finish="stop"),
+                    usage_only_chunk(prompt_tokens=2, completion_tokens=1, total_tokens=3),
+                    stream_chunk(text="late"),
+                ]
+            )
+        )
+    )
+
+    assert events[-1].kind == "error"
+    assert events[-1].error_code == ModelErrorCode.INVALID_RESPONSE
+    assert events[-1].usage.total_tokens == 3
 
 
 @pytest.mark.asyncio

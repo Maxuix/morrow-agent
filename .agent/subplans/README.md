@@ -24,10 +24,12 @@ opened Subplan 86 to repair them before S7P-06. Subplan 85 was integrated into l
 formally approved and fast-forward integrated into local `main`; the sequence is paused before
 S7P-08. The user then explicitly opened S7P-08. Subplan 89 completed the 18-cell offline
 single-Agent matrix, published Stage 1–6 regression, real current-platform Seatbelt gate and
-current acceptance evidence, and was integrated locally. The user then explicitly opened S7P-09;
-Subplan 90 is active and owns the repeated Morrow campaign,
-same-condition Pi comparison and immutable Direct baseline. Its live lane is held until an exact
-common Provider/model and campaign spend ceiling are approved.
+current acceptance evidence, and was integrated locally. The user then explicitly opened S7P-09.
+Subplan 90 built the repeated Morrow/Pi campaign and remains recoverable, but its live lane is
+paused after the user requested a Pi-aligned tool-interface repair. Subplans 91 and 92 completed the
+seven-tool interface and legacy-adapter cleanup. Their verified branch histories are being
+consolidated with the later core/Learning repair on local `main`; Subplan 90 remains paused and must
+refreeze its source/profile/evidence contract before any future admission.
 
 ## Stage 7 reliability sequence
 
@@ -44,7 +46,9 @@ common Provider/model and campaign spend ceiling are approved.
 | 87 | `87-remove-runtime-outcome-gate.md` | completed and integrated locally |
 | 88 | `88-s7p-07-runtime-control-steering.md` | completed and integrated locally |
 | 89 | `89-s7p-08-single-agent-function-matrix.md` | completed and integrated locally |
-| 90 | `90-s7p-09-repeated-direct-pi-baseline.md` | active; live campaign at hold point |
+| 90 | `90-s7p-09-repeated-direct-pi-baseline.md` | active; new profile/capacity freeze pending |
+| 91 | `91-mainstream-tool-interface.md` | completed and verified on the S7P-09 stack |
+| 92 | `92-remove-legacy-tool-adapters.md` | completed, verified and integrated on S7P-09 stack |
 
 ## Stage 7 pre-baseline
 

@@ -146,31 +146,25 @@ def test_payload_budgets_match_the_execution_adr():
 def test_effect_class_is_independent_of_tool_effect():
     assert {item.value for item in ToolEffect}.isdisjoint({item.value for item in EffectClass})
     assert ToolEffect.NONE.value == "none"
-    host = tool_declaration("run_command", process_isolation=ProcessIsolation.HOST)
+    host = tool_declaration("bash", process_isolation=ProcessIsolation.HOST)
     assert host.effect_class is EffectClass.UNCONFINED_EXTERNAL_EFFECT
     assert host.missing_handler_completed is MissingCompletionPolicy.OUTCOME_UNKNOWN
 
 
-def test_production_declarations_cover_the_frozen_inventory():
+def test_production_declarations_cover_only_the_current_inventory():
     assert PRODUCTION_TOOL_NAMES == {
         "update_configuration",
         "manage_preferences",
-        "list_directory",
-        "read_file",
-        "find_files",
-        "search_text",
-        "apply_patch",
-        "write_file",
-        "show_changes",
-        "run_command",
         "run_skill_script",
-        "git_status",
-        "git_diff",
         "promote_sandbox_changes",
-        "delete_file",
-        "move_file",
-        "rename_file",
         "read_artifact",
+        "ls",
+        "read",
+        "find",
+        "grep",
+        "edit",
+        "write",
+        "bash",
     }
     assert "calculate" not in PRODUCTION_TOOL_NAMES
     assert "lookup_record" not in PRODUCTION_TOOL_NAMES
@@ -192,7 +186,10 @@ def test_production_declarations_cover_the_frozen_inventory():
         tool_declaration("run_command")
     with pytest.raises(UnknownToolDeclarationError, match="no durable declaration"):
         tool_declaration("invented_tool")
-    assert missing_declarations(("read_file", "invented_tool")) == ("invented_tool",)
+    assert missing_declarations(("read", "read_file", "invented_tool")) == (
+        "read_file",
+        "invented_tool",
+    )
 
 
 def test_prepared_intent_enforces_budget_and_redaction():

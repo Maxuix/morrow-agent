@@ -125,12 +125,16 @@ Pi 0.84.2 JSONL 归一化、Morrow 安全 trace 归一化、权限等价证明�
 .venv/bin/python evals/code-agent-mini/eval.py plan-check /protected/comparison-plan.json
 .venv/bin/python evals/code-agent-mini/eval.py campaign-preflight \
   /protected/comparison-plan.json /protected/raw-evidence
+.venv/bin/python evals/code-agent-mini/eval.py campaign-capacity \
+  /protected/comparison-plan.json /protected/raw-evidence
 ```
 
 `campaign-preflight` 验证干净的 Morrow commit/tracked-source hash、dataset/protocol、Pi 0.84.2
 executable/package hash、evidence-root 身份/权限/空间、start-not-before 和权限矩阵。credential readiness
-与 no-tool model probe 明确报告为未执行。用户已批准 `opencode-go/mimo-v2.5`、5,000,000 Token
-硬上限、无货币上限和 bounded probe；Pi credential 未就绪时 probe 仍 fail closed。
+与 no-tool model probe 明确报告为未执行。`campaign-capacity` 优先采用 finalized runtime usage；
+该值不可用时回退到 Morrow durable request journal 或去重后的 Pi assistant usage，并以
+`max(reservation, known usage)` 作为下一次 admission 的保守计量。具体 Token 硬上限由冻结计划
+决定；没有货币上限时 cost 仍保留可用性事实，但不参与准入。
 
 两侧正式 runner 都先创建共享 normalized trace，再投影为 `finalize` 可直接接受的安全
 runtime-evidence。Morrow runner 通过普通 bootstrap/AgentLoop/ToolExecutor

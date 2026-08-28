@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import shlex
 import signal
 import sys
 from pathlib import Path
@@ -11,7 +12,7 @@ import pytest
 from pydantic import ValidationError
 
 from morrow.adapters.credentials.keyring import MemoryCredentialStore
-from morrow.application.local_tools import RunCommandArguments, make_run_command_tool
+from morrow.application.local_tools import make_bash_tool
 from morrow.bootstrap import build_application, build_session_application
 from morrow.core.capabilities import (
     ApprovalMode,
@@ -62,18 +63,16 @@ def _call(name: str, payload: dict, call_id: str = "call-1") -> FunctionToolCall
 
 
 def test_command_request_is_exactly_one_form_and_has_no_extra_authority():
-    request = RunCommandArguments.model_validate(
+    request = CommandRequest.model_validate(
         {"argv": (sys.executable, "-c", "print('ok')"), "cwd": "."}, strict=True
     )
     assert request.argv[0] == sys.executable
     assert "env" not in request.model_json_schema()["properties"]
     assert "stdin" not in request.model_json_schema()["properties"]
     with pytest.raises(ValidationError):
-        RunCommandArguments.model_validate(
-            {"argv": ["echo", "ok"], "shell": "echo ok"}, strict=True
-        )
+        CommandRequest.model_validate({"argv": ["echo", "ok"], "shell": "echo ok"}, strict=True)
     with pytest.raises(ValidationError):
-        RunCommandArguments.model_validate({"argv": []}, strict=True)
+        CommandRequest.model_validate({"argv": []}, strict=True)
 
 
 def test_process_preflight_accepts_ordinary_shell_and_git_commands(tmp_path):
@@ -318,7 +317,7 @@ async def test_tool_executor_runs_registered_processes_without_semantic_approval
     service = _service(workspace, secrets=("approval-secret",))
     try:
         registry = ToolRegistry()
-        registry.register(make_run_command_tool(service))
+        registry.register(make_bash_tool(service))
         approval = _Approval()
         executor = ToolExecutor(
             registry.snapshot(),
@@ -330,7 +329,7 @@ async def test_tool_executor_runs_registered_processes_without_semantic_approval
         )
         run = _run()
         outcome = await executor.execute_with_context(
-            _call("run_command", {"argv": list(_python("print('approval-secret')"))}),
+            _call("bash", {"command": shlex.join(_python("print('approval-secret')"))}),
             run_context=run,
             ordinal=1,
             total=1,
@@ -348,7 +347,11 @@ async def test_tool_executor_runs_registered_processes_without_semantic_approval
             ),
         )
         auto_outcome = await auto_safe.execute_with_context(
-            _call("run_command", {"argv": list(_python("print('auto-safe-approved')"))}, "auto"),
+            _call(
+                "bash",
+                {"command": shlex.join(_python("print('auto-safe-approved')"))},
+                "auto",
+            ),
             run_context=run,
             ordinal=2,
             total=4,
@@ -369,7 +372,7 @@ async def test_tool_executor_runs_registered_processes_without_semantic_approval
             ),
         )
         sandbox_outcome = await sandboxed.execute_with_context(
-            _call("run_command", {"argv": list(_python("print('must-not-run')"))}, "sandbox"),
+            _call("bash", {"command": shlex.join(_python("print('must-not-run')"))}, "sandbox"),
             run_context=run,
             ordinal=3,
             total=4,
@@ -377,7 +380,7 @@ async def test_tool_executor_runs_registered_processes_without_semantic_approval
         assert sandbox_outcome.ok is True
         assert approval.requests == []
         unrestricted = await executor.execute_with_context(
-            _call("run_command", {"argv": list(_python("print('network-shaped')"))}, "network"),
+            _call("bash", {"command": "curl https://example.invalid"}, "network"),
             run_context=run,
             ordinal=4,
             total=4,
@@ -399,15 +402,23 @@ async def test_fake_provider_can_recover_after_host_command_failure(tmp_path):
             AssistantMessage(
                 tool_calls=(
                     _call(
-                        "run_command",
-                        {"argv": list(_python("print('first-failure'); raise SystemExit(1)"))},
+                        "bash",
+                        {
+                            "command": shlex.join(
+                                _python("print('first-failure'); raise SystemExit(1)")
+                            )
+                        },
                         "first",
                     ),
                 )
             ),
             AssistantMessage(
                 tool_calls=(
-                    _call("run_command", {"argv": list(_python("print('fixed')"))}, "second"),
+                    _call(
+                        "bash",
+                        {"command": shlex.join(_python("print('fixed')"))},
+                        "second",
+                    ),
                 )
             ),
             AssistantMessage(content="第一次命令失败，修正后第二次命令成功。"),

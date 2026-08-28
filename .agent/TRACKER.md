@@ -2,16 +2,16 @@
 
 ## Current status
 
-The user requested a Hermes-like best-effort learning path without front-end task-resolution
-analysis. Production changes and regressions are implemented. Final validation passed:
-`1344 passed, 2 deselected`; Ruff format/check, compileall, CLI help and `git diff --check` also
-passed. A real public Skill install/enable/select/run succeeded, and Preference jobs JSON returned
-the existing queue successfully.
+The user requested workspace consolidation. Both completed Stage 7 branches are reconciled on local
+`main`; focused integration tests passed `140`, the final full offline gate passed `1333 passed, 2
+deselected`, and Ruff format/check, compileall, CLI help and `git diff --check` passed. The complete
+`docs/notes/` draft is preserved in the named stash `checkpoint: preserve complete docs notes before
+branch consolidation`.
 
 ## Active task
 
-Stop after checkpoint `477caa8`. Do not merge or resume S7P-09 evaluation without explicit
-authorization; unrelated untracked `docs/notes/` remains untouched.
+Commit the verified integration, then remove merged branches and the execution worktree. Do not
+resume the S7P-09 live campaign.
 
 ## Implemented boundary
 
@@ -23,7 +23,7 @@ authorization; unrelated untracked `docs/notes/` remains untouched.
 - Managed Skill projection at `3670860` passed a real explicit Skill run; its test Binding was
   removed afterward.
 
-- Core `run_command` accepts argv/shell without semantic Git/network/destructive classification.
+- Core `bash` accepts shell commands without semantic Git/network/destructive classification.
 - Registered workspace writes, including delete/move/rename and sandbox promotion, do not wait for
   heuristic approval.
 - File, search, Git diff/status and sandbox snapshots do not hide workspace content based on names
@@ -36,11 +36,10 @@ authorization; unrelated untracked `docs/notes/` remains untouched.
 
 ## Next action
 
-Await user direction. A future evaluation must refreeze its permission/evidence contract from the
-new core behavior rather than reuse an older S7P-09 pin.
+Commit the verified merge and retire its local branches/worktree.
 
 ## Blockers
 
-- None for the requested implementation.
+- None for the requested consolidation.
 - S7P-09 admissions remain paused and require a new explicit user direction after this product
   behavior change invalidated the former permission-equivalence pin.

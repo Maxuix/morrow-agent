@@ -16,7 +16,7 @@ from morrow.adapters.state.journal import SqliteOperationalJournal
 from morrow.adapters.state.operational import BusyRetryPolicy, OperationalStore
 from morrow.application.backup import OperationalBackupService
 from morrow.application.doctor import OperationalDoctor
-from morrow.application.local_tools import RUN_COMMAND_PROVIDER_SCHEMA, RunCommandArguments
+from morrow.application.local_tools import BASH_PROVIDER_SCHEMA, BashArguments
 from morrow.application.tool_persistence import _envelope_from_outcome
 from morrow.application.turns import SessionPersistence
 from morrow.core.capabilities import ProcessIsolation
@@ -677,21 +677,18 @@ def test_invalid_argument_diagnostics_retain_only_bounded_path_and_type():
 
 @pytest.mark.asyncio
 async def test_scripted_agent_repairs_command_shape_without_durable_raw_sentinel(tmp_path):
-    async def handler(arguments: RunCommandArguments):
-        return {"status": "executed", "argv": list(arguments.argv or ())}
+    async def handler(arguments: BashArguments):
+        return {"status": "executed", "command": arguments.command}
 
     registry = ToolRegistry()
     registry.register(
         make_tool(
-            name="run_command",
+            name="bash",
             description="run command",
-            arguments_model=RunCommandArguments,
-            provider_schema=RUN_COMMAND_PROVIDER_SCHEMA,
-            expected_shape="exactly_one_of:argv,shell",
+            arguments_model=BashArguments,
+            provider_schema=BASH_PROVIDER_SCHEMA,
             handler=handler,
-            recovery_declaration=tool_declaration(
-                "run_command", process_isolation=ProcessIsolation.HOST
-            ),
+            recovery_declaration=tool_declaration("bash", process_isolation=ProcessIsolation.HOST),
         )
     )
     executor = ToolExecutor(registry.snapshot(), make_context_builder().run_policy)
@@ -703,8 +700,8 @@ async def test_scripted_agent_repairs_command_shape_without_durable_raw_sentinel
                 tool_calls=(
                     FunctionToolCall(
                         id="bad",
-                        name="run_command",
-                        arguments=json.dumps({"argv": ["echo"], "shell": sentinel}),
+                        name="bash",
+                        arguments=json.dumps({"command": {"value": sentinel}}),
                     ),
                 )
             ),
@@ -712,8 +709,8 @@ async def test_scripted_agent_repairs_command_shape_without_durable_raw_sentinel
                 tool_calls=(
                     FunctionToolCall(
                         id="good",
-                        name="run_command",
-                        arguments='{"argv":["echo"]}',
+                        name="bash",
+                        arguments='{"command":"echo"}',
                     ),
                 )
             ),
@@ -735,7 +732,6 @@ async def test_scripted_agent_repairs_command_shape_without_durable_raw_sentinel
         first_tool_message = provider.stream_calls[1][-1]
         first_error = json.loads(first_tool_message.content)
         assert first_error["error"]["code"] == ToolErrorCode.INVALID_ARGUMENTS.value
-        assert first_error["error"]["expected"] == "exactly_one_of:argv,shell"
         assert sentinel not in first_tool_message.content
         assert sentinel not in json.dumps([event.payload for event in events], ensure_ascii=False)
 
@@ -748,7 +744,7 @@ async def test_scripted_agent_repairs_command_shape_without_durable_raw_sentinel
         assert invalid_envelope.validation_diagnostics
         assert sentinel not in json.dumps(invalid_envelope.model_dump(mode="json"))
         assert json.loads(provider.stream_calls[2][-1].content)["result"] == {
-            "argv": ["echo"],
+            "command": "echo",
             "status": "executed",
         }
     finally:

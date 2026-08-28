@@ -198,7 +198,7 @@ def prepare_cycle_executions(
         )
         elevated = (
             grant_id is not None
-            and call.name == "run_command"
+            and call.name in {"run_command", "bash"}
             and intent.effect_class is EffectClass.UNCONFINED_EXTERNAL_EFFECT
             and intent.requires_approval
         )
@@ -288,7 +288,9 @@ def _prepare_one(
                         registered,
                         resolved,
                         context,
-                        allow_unconfined_host=grant_id is not None and call.name == "run_command",
+                        allow_unconfined_host=(
+                            grant_id is not None and call.name in {"run_command", "bash"}
+                        ),
                     )
                     policy_verdict = decision.verdict
                     policy_reason_codes = tuple(str(reason) for reason in decision.reason_codes)
@@ -297,7 +299,7 @@ def _prepare_one(
                     if (
                         decision.verdict is PolicyVerdict.REQUIRE_APPROVAL
                         and grant_id is not None
-                        and call.name == "run_command"
+                        and call.name in {"run_command", "bash"}
                         and resolved.kind.value == "process"
                         and resolved.requires_host
                     ):

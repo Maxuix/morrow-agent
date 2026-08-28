@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import json
 import os
@@ -17,21 +16,11 @@ from morrow.adapters.local.filesystem import (
     FileSystemMutationError,
 )
 from morrow.application.local_tools import (
-    DELETE_FILE_PROVIDER_SCHEMA,
-    MOVE_FILE_PROVIDER_SCHEMA,
-    RENAME_FILE_PROVIDER_SCHEMA,
-    DeleteFileArguments,
-    MoveFileArguments,
-    RenameFileArguments,
-    make_delete_file_tool,
-    make_move_file_tool,
     make_promote_sandbox_tool,
-    make_rename_file_tool,
 )
 from morrow.application.prepared import file_evidence_from_plan
 from morrow.bootstrap import build_application, build_session_application
 from morrow.core.capabilities import (
-    PermissionPreset,
     PermissionProfile,
     PolicyVerdict,
     ToolRunContext,
@@ -45,6 +34,7 @@ from morrow.core.execution import (
     RecoveryClassification,
     ToolExecutionDisposition,
     ToolExecutionState,
+    UnknownToolDeclarationError,
     tool_declaration,
 )
 from morrow.core.local_tools import MutationOperation, MutationStatus
@@ -56,7 +46,6 @@ from morrow.core.recovery import (
     observe_file,
 )
 from morrow.runtime.capabilities import CapabilityPolicy
-from morrow.runtime.tool_arguments import JsonSchemaArgumentsValidator, ToolArgumentsValidationError
 from morrow.runtime.tools import ToolErrorCode, ToolExecutor, ToolRegistry
 from morrow.services.changes import ChangeSetService
 from morrow.services.files import (
@@ -69,7 +58,7 @@ from morrow.services.sandbox import SandboxSnapshotService
 from morrow.testing import ScriptedModelProvider, make_run_policy
 
 
-def test_explicit_workspace_change_operations_have_strict_provider_contracts():
+def test_workspace_change_service_operations_and_statuses_remain_complete():
     assert {
         MutationOperation.CREATE,
         MutationOperation.PATCH,
@@ -88,62 +77,20 @@ def test_explicit_workspace_change_operations_have_strict_provider_contracts():
         MutationStatus.OUTCOME_UNKNOWN,
     } == set(MutationStatus)
 
-    with pytest.raises(ValidationError):
-        DeleteFileArguments.model_validate({"path": "gone.txt"}, strict=True)
-    with pytest.raises(ValidationError):
-        MoveFileArguments.model_validate(
-            {"source_path": "old.txt", "destination_path": "new.txt"}, strict=True
-        )
-    with pytest.raises(ValidationError):
-        RenameFileArguments.model_validate(
-            {
-                "source_path": "old.txt",
-                "destination_path": "new.txt",
-                "expected_sha256": "0" * 63,
-            },
-            strict=True,
-        )
 
-    valid = {
-        "delete_file": (
-            DELETE_FILE_PROVIDER_SCHEMA,
-            {"path": "gone.txt", "expected_sha256": "0" * 64},
-        ),
-        "move_file": (
-            MOVE_FILE_PROVIDER_SCHEMA,
-            {
-                "source_path": "old.txt",
-                "destination_path": "new.txt",
-                "expected_sha256": "0" * 64,
-            },
-        ),
-        "rename_file": (
-            RENAME_FILE_PROVIDER_SCHEMA,
-            {
-                "source_path": "old.txt",
-                "destination_path": "new.txt",
-                "expected_sha256": "0" * 64,
-            },
-        ),
-    }
-    for _name, (schema, value) in valid.items():
-        validator = JsonSchemaArgumentsValidator(schema)
-        assert validator.validate(json.dumps(value)) == value
-        with pytest.raises(ToolArgumentsValidationError):
-            validator.validate(json.dumps({**value, "force": True}))
-
-
-def test_destructive_file_tools_are_in_production_inventory_and_reconcileable():
-    assert {"delete_file", "move_file", "rename_file"} <= PRODUCTION_TOOL_NAMES
+def test_retired_destructive_tool_names_are_legacy_recovery_metadata_only():
+    assert {"delete_file", "move_file", "rename_file"}.isdisjoint(PRODUCTION_TOOL_NAMES)
     for name in ("delete_file", "move_file", "rename_file"):
-        declaration = tool_declaration(name, production_only=True)
+        declaration = tool_declaration(name)
         assert declaration.effect_class is EffectClass.RECONCILEABLE_FILE_WRITE
         assert (
             declaration.missing_handler_completed is MissingCompletionPolicy.REQUIRES_RECONCILIATION
         )
+        with pytest.raises(UnknownToolDeclarationError):
+            tool_declaration(name, production_only=True)
 
 
-def test_production_session_exposes_explicit_destructive_file_tools(tmp_path):
+def test_production_session_keeps_destructive_factories_out_of_the_core_surface(tmp_path):
     app = build_application(state_root=tmp_path / "state", credentials=MemoryCredentialStore())
     project = tmp_path / "project"
     project.mkdir()
@@ -158,7 +105,8 @@ def test_production_session_exposes_explicit_destructive_file_tools(tmp_path):
         tool.function.name
         for tool in session_app.orchestrator.runtime.loop.tool_executor.definitions
     }
-    assert {"delete_file", "move_file", "rename_file"} <= names
+    assert {"bash", "edit", "write"} <= names
+    assert {"delete_file", "move_file", "rename_file"}.isdisjoint(names)
 
 
 def _sha(path: Path) -> str:
@@ -591,135 +539,6 @@ class _Approve:
         return ToolApprovalDecision(approved=self.approved)
 
 
-@pytest.mark.asyncio
-async def test_delete_tool_runs_directly_in_auto_safe(tmp_path):
-    source = tmp_path / "source.txt"
-    source.write_text("source\n", encoding="utf-8")
-    files, mutation = _services(tmp_path)
-    del files
-    registry = ToolRegistry()
-    changes = ChangeSetService()
-    registry.register(make_delete_file_tool(mutation, changes))
-    registry.register(make_move_file_tool(mutation, changes))
-    registry.register(make_rename_file_tool(mutation, changes))
-    approval = _Approve()
-    executor = ToolExecutor(
-        registry.snapshot(),
-        make_run_policy(),
-        approval_port=approval,
-        capability_policy=CapabilityPolicy(
-            PermissionProfile.from_preset(PermissionPreset.AUTO_SAFE),
-            WorkspaceCapability(workspace_id="w1", root=tmp_path),
-        ),
-    )
-    run = ToolRunContext(run_id="run", session_id="session")
-    outcome = await executor.execute_with_context(
-        FunctionToolCall(
-            id="delete",
-            name="delete_file",
-            arguments=json.dumps({"path": "source.txt", "expected_sha256": _sha(source)}),
-        ),
-        run_context=run,
-        ordinal=1,
-        total=1,
-    )
-    assert outcome.ok is True
-    assert approval.requests == []
-    assert not source.exists()
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("operation", ("delete", "move", "rename"))
-async def test_approval_port_does_not_gate_registered_file_tools(tmp_path, operation):
-    source = tmp_path / f"{operation}-source.txt"
-    source.write_text("source\n", encoding="utf-8")
-    _, mutation = _services(tmp_path)
-    changes = ChangeSetService()
-    registry = ToolRegistry()
-    tool_name = f"{operation}_file"
-    tool_factory = {
-        "delete": make_delete_file_tool,
-        "move": make_move_file_tool,
-        "rename": make_rename_file_tool,
-    }[operation]
-    registry.register(tool_factory(mutation, changes))
-    approval = _Approve(approved=False)
-    executor = ToolExecutor(
-        registry.snapshot(),
-        make_run_policy(),
-        approval_port=approval,
-        capability_policy=CapabilityPolicy(
-            PermissionProfile(),
-            WorkspaceCapability(workspace_id="w1", root=tmp_path),
-        ),
-    )
-    destination = tmp_path / f"{operation}-destination.txt"
-    payload = (
-        {"path": source.name, "expected_sha256": _sha(source)}
-        if operation == "delete"
-        else {
-            "source_path": source.name,
-            "destination_path": destination.name,
-            "expected_sha256": _sha(source),
-        }
-    )
-    outcome = await executor.execute_with_context(
-        FunctionToolCall(id=f"deny-{operation}", name=tool_name, arguments=json.dumps(payload)),
-        run_context=ToolRunContext(run_id="run", session_id="session"),
-        ordinal=1,
-        total=1,
-    )
-    assert outcome.ok is True
-    assert not source.exists()
-    if operation != "delete":
-        assert destination.read_text(encoding="utf-8") == "source\n"
-    assert approval.requests == []
-
-
-class _WaitForApproval:
-    def __init__(self):
-        self.requested = asyncio.Event()
-        self.released = asyncio.Event()
-
-    async def request(self, request):
-        del request
-        self.requested.set()
-        await self.released.wait()
-        return ToolApprovalDecision(approved=True)
-
-
-@pytest.mark.asyncio
-async def test_delete_does_not_wait_for_an_approval_port(tmp_path):
-    source = tmp_path / "cancel-source.txt"
-    source.write_text("source\n", encoding="utf-8")
-    _, mutation = _services(tmp_path)
-    registry = ToolRegistry()
-    registry.register(make_delete_file_tool(mutation, ChangeSetService()))
-    approval = _WaitForApproval()
-    executor = ToolExecutor(
-        registry.snapshot(),
-        make_run_policy(),
-        approval_port=approval,
-        capability_policy=CapabilityPolicy(
-            PermissionProfile(),
-            WorkspaceCapability(workspace_id="w1", root=tmp_path),
-        ),
-    )
-    outcome = await executor.execute_with_context(
-        FunctionToolCall(
-            id="direct-delete",
-            name="delete_file",
-            arguments=json.dumps({"path": source.name, "expected_sha256": _sha(source)}),
-        ),
-        run_context=ToolRunContext(run_id="run", session_id="session"),
-        ordinal=1,
-        total=1,
-    )
-    assert outcome.ok is True
-    assert not source.exists()
-    assert not approval.requested.is_set()
-
-
 @pytest.mark.parametrize("operation", ("delete", "move", "rename"))
 def test_destructive_apply_rechecks_dirty_source_and_destination(tmp_path, operation):
     source = tmp_path / f"{operation}-source.txt"
@@ -913,7 +732,7 @@ def test_recovery_expected_absence_requires_existing_confined_parent(tmp_path):
 
 
 def test_closed_unknown_file_execution_is_reconciled_from_ordered_observations():
-    declaration = tool_declaration("rename_file", production_only=True)
+    declaration = tool_declaration("rename_file")
     expected = (FileObservation.MATCHES_EXPECTED, FileObservation.MATCHES_EXPECTED)
     before = (FileObservation.MATCHES_BEFORE, FileObservation.MATCHES_BEFORE)
     mixed = (FileObservation.MATCHES_EXPECTED, FileObservation.THIRD_PARTY)
@@ -1089,15 +908,13 @@ async def test_promotion_preflights_all_then_returns_bounded_partial_failure(tmp
 
 
 @pytest.mark.asyncio
-async def test_scripted_direct_production_acceptance_verifies_tree_and_changeset(tmp_path):
+async def test_scripted_direct_production_bash_executes_registered_workspace_command(tmp_path):
     project = tmp_path / "project"
     project.mkdir()
     deleted = project / "delete.txt"
     renamed = project / "old.txt"
     deleted.write_text("delete\n", encoding="utf-8")
     renamed.write_text("rename\n", encoding="utf-8")
-    delete_hash = _sha(deleted)
-    rename_hash = _sha(renamed)
     app = build_application(state_root=tmp_path / "state", credentials=MemoryCredentialStore())
     identity = app.workspace_service.confirm(app.workspace_service.resolve(project))
     provider = ScriptedModelProvider(
@@ -1105,31 +922,9 @@ async def test_scripted_direct_production_acceptance_verifies_tree_and_changeset
             AssistantMessage(
                 tool_calls=(
                     FunctionToolCall(
-                        id="delete",
-                        name="delete_file",
-                        arguments=json.dumps(
-                            {"path": "delete.txt", "expected_sha256": delete_hash}
-                        ),
-                    ),
-                    FunctionToolCall(
-                        id="rename",
-                        name="rename_file",
-                        arguments=json.dumps(
-                            {
-                                "source_path": "old.txt",
-                                "destination_path": "new.txt",
-                                "expected_sha256": rename_hash,
-                            }
-                        ),
-                    ),
-                )
-            ),
-            AssistantMessage(
-                tool_calls=(
-                    FunctionToolCall(
-                        id="show",
-                        name="show_changes",
-                        arguments="{}",
+                        id="move",
+                        name="bash",
+                        arguments=json.dumps({"command": "rm delete.txt && mv old.txt new.txt"}),
                     ),
                 )
             ),
@@ -1147,7 +942,8 @@ async def test_scripted_direct_production_acceptance_verifies_tree_and_changeset
         tool.function.name
         for tool in session_app.orchestrator.runtime.loop.tool_executor.definitions
     }
-    assert {"delete_file", "rename_file", "show_changes"} <= tool_names
+    assert "bash" in tool_names
+    assert {"delete_file", "rename_file", "show_changes"}.isdisjoint(tool_names)
     [item async for item in session_app.orchestrator.stream("perform the scripted changes")]
 
     assert not deleted.exists()
@@ -1158,12 +954,4 @@ async def test_scripted_direct_production_acceptance_verifies_tree_and_changeset
         for message in session_app.session.messages
         if message.role == "tool"
     ]
-    show_payload = next(
-        payload for payload in tool_payloads if payload.get("result", {}).get("entries")
-    )
-    entries = show_payload["result"]["entries"]
-    assert {entry["status"] for entry in entries} == {"deleted", "renamed"}
-    assert any(
-        entry.get("source_path") == "old.txt" and entry.get("destination_path") == "new.txt"
-        for entry in entries
-    )
+    assert tool_payloads[0]["ok"] is True

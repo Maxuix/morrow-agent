@@ -298,7 +298,7 @@ class SqliteToolJournal:
                     "operational approval does not match the execution",
                 )
             elevated_intent = (
-                execution.tool_name == "run_command"
+                execution.tool_name in {"run_command", "bash"}
                 and execution.intent.effect_class is EffectClass.UNCONFINED_EXTERNAL_EFFECT
                 and execution.intent.requires_approval
                 and execution.grant_id is not None
@@ -521,7 +521,7 @@ class SqliteToolJournal:
                     "operational execution permission snapshot is mismatched",
                 )
             elevated_intent = (
-                execution.tool_name == "run_command"
+                execution.tool_name in {"run_command", "bash"}
                 and execution.intent.effect_class is EffectClass.UNCONFINED_EXTERNAL_EFFECT
                 and execution.intent.requires_approval
             )
