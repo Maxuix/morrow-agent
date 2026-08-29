@@ -46,6 +46,9 @@ Provider retry repair and successful short probes, fresh r16 was pinned at `main
 Retain r16 as the latest reduced evaluation. Do not silently retry any admitted run key. Full
 Subplan 90 completion still requires a separately authorized primary two-repetition campaign with
 complete mandatory usage and enough capacity; the current ceiling leaves only `6,122,491` tokens.
+The requested DeepSeek replacement is paused before campaign creation: its first Morrow no-tool
+probe returned `invalid_response` after one model attempt with no usage. Resume only after deciding
+whether to diagnose the upstream response through the Pi side or repair adapter compatibility.
 
 ## Blockers
 
@@ -62,3 +65,7 @@ complete mandatory usage and enough capacity; the current ceiling leaves only `6
   because the approved reduced variant has one repetition and some Morrow usage is unavailable.
 - Cumulative conservative accounting after r16 is `73,877,509 / 80,000,000`, leaving `6,122,491`.
   No further full or reduced campaign fits without a new budget/scope decision.
+- `opencode-go/deepseek-v4-flash` is configured and active in Morrow, and Pi's catalog exposes the
+  same exact model. The first Morrow readiness request failed in 1.7 seconds as
+  `invalid_response`, with zero tool calls and unavailable usage. No DeepSeek formal admission was
+  consumed.

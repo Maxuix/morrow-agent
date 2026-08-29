@@ -17,6 +17,12 @@ fresh admissions and executions after successful short Mimo probes. It produced 
 but the reduced one-repetition sample and incomplete Provider usage cannot satisfy the primary
 comparison gate.
 
+The user next requested a fresh model-scoped 14-run budget using
+`opencode-go/deepseek-v4-flash`, with immediate notification on Provider failure. Morrow was updated
+to retain and select that exact model, but the first bounded no-tool readiness request stopped as
+`invalid_response` with unavailable usage. No DeepSeek campaign plan, admission or Pi request was
+created; formal execution is paused at readiness.
+
 ## 1a. Completed product objective
 
 Keep learning best-effort and mechanically triggered after an accepted completed task. Tool-call

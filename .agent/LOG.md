@@ -3847,3 +3847,16 @@
 - Cumulative conservative accounting is `73,877,509 / 80,000,000`, leaving `6,122,491`. Two Morrow
   runs emitted non-fatal HTTP client cleanup warnings after their evidence-bearing turns; both
   finalized normally and their bundle integrity checks passed.
+
+## 2026-08-29 — DeepSeek replacement paused at readiness
+
+- The user requested a fresh 14-run campaign using `opencode-go/deepseek-v4-flash`, with a reset
+  model-scoped budget and immediate notification on Provider failure. Selected the minimum 21M
+  ceiling implied by 14 reservations at 1.5M; historical Mimo accounting was not erased.
+- Pi 0.84.2 lists exact `opencode-go/deepseek-v4-flash` with a 1M context window and 384K maximum
+  output. Added the same exact model to Morrow's existing Keychain-backed `opencode-go` Provider
+  and selected it without reading or replacing the credential.
+- The first bounded Morrow no-tool readiness request failed after one attempt as
+  `invalid_response`, with zero tool calls and unavailable usage. This is not an auth, network,
+  rate-limit or timeout classification. Stopped immediately as requested: no Pi request, comparison
+  plan, campaign admission or formal run was created.
