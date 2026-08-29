@@ -4056,3 +4056,5 @@
 - Focused gate: `123 passed in 11.00s`. Full offline gate: `1280 passed, 2 deselected in 103.15s`.
   Ruff format/check, compileall, CLI help, current-doc link check and `git diff --check` passed.
   Live Provider/network evaluation was not authorized and was not run.
+- Fast-forward integrated the verified topic branch into local `main` at `3215909`; unrelated dirty
+  secret-preview work remained untouched and outside both audit commits.

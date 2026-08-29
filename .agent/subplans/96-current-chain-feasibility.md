@@ -1,6 +1,6 @@
 # Subplan 96 — Current Chain Documentation and Feasibility Audit
 
-Status: completed and verified on `docs/current-chain-audit` from `main@a740a3e`.
+Status: completed, verified and integrated into local `main` at `3215909`.
 
 ## Objective
 

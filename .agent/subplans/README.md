@@ -57,7 +57,7 @@ current-format migration instead of permanent legacy readers.
 | 93 | `93-remove-v1-bounded.md` | completed, verified and integrated locally |
 | 94 | `94-remove-repository-compat.md` | completed, verified and integrated locally |
 | 95 | `95-current-preferences.md` | completed, verified and integrated locally |
-| 96 | `96-current-chain-feasibility.md` | completed and verified; integration pending |
+| 96 | `96-current-chain-feasibility.md` | completed, verified and integrated locally |
 
 ## Stage 7 pre-baseline
 
