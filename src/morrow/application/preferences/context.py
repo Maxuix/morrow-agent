@@ -357,11 +357,7 @@ class PreferenceReviewContextBuilder:
         return len(context.model_dump_json().encode("utf-8")) + 4_096
 
 
-PreferenceContextBuilder = PreferenceReviewContextBuilder
-
-
 __all__ = [
-    "PreferenceContextBuilder",
     "PreferenceReviewContextBuilder",
     "snapshot_from_documents",
 ]

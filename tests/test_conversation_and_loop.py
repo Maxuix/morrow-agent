@@ -215,7 +215,7 @@ async def _collect(aiter):
 def test_log_snapshot_and_messages_view_are_deeply_read_only():
     session = Session(session_id="s")
     seed_user_turn(session, "question", assistant="answer")
-    view = session.messages
+    view = session.log.messages_view()
     assert isinstance(view, tuple)
     snapshot = session.log.snapshot()
     assert isinstance(snapshot.records, tuple)
@@ -226,17 +226,16 @@ def test_log_snapshot_and_messages_view_are_deeply_read_only():
         frozen.sequence = 99
 
 
-def test_session_messages_is_read_only_projection_with_no_public_writer():
+def test_session_exposes_history_only_through_conversation_log():
     session = Session(session_id="s")
     seed_user_turn(session, "question", assistant="answer")
-    assert isinstance(session.messages, tuple)
-    assert [message.role for message in session.messages] == ["user", "assistant"]
+    assert isinstance(session.log.messages_view(), tuple)
+    assert [message.role for message in session.log.messages_view()] == ["user", "assistant"]
+    assert not hasattr(session, "messages")
     assert not hasattr(session, "accept_user")
     assert not hasattr(session, "accept_assistant")
-    with pytest.raises(AttributeError):
-        session.messages = ()
     with pytest.raises(ValidationError):
-        session.messages[0].content = "tampered"
+        session.log.messages_view()[0].content = "tampered"
 
 
 def test_session_reset_clears_log_and_process_local_session_state():
@@ -244,7 +243,7 @@ def test_session_reset_clears_log_and_process_local_session_state():
     seed_user_turn(session, "old", assistant="old answer")
     session.reset("s2")
     assert session.session_id == "s2"
-    assert session.messages == ()
+    assert session.log.messages_view() == ()
     assert session.dirty is False
     assert session.log.has_active_turn is False
     assert session.log.snapshot().records == ()
@@ -267,7 +266,10 @@ async def test_plain_chat_uses_agent_loop_with_single_history_writer():
         "TurnTerminalRecord",
     ]
     assert records[-1].finish_reason == FinishReason.STOP
-    assert [message.content for message in session.messages] == ["question", "final answer"]
+    assert [message.content for message in session.log.messages_view()] == [
+        "question",
+        "final answer",
+    ]
     assert session.dirty is True
 
 
@@ -282,7 +284,7 @@ async def test_runtime_run_turn_is_thin_delegate_of_loop_run_task():
     via_loop = [event async for event in runtime.loop.run_task(session, "two")]
     assert via_runtime[-1].payload["finish_reason"] == FinishReason.STOP.value
     assert via_loop[-1].payload["finish_reason"] == FinishReason.STOP.value
-    assert [message.content for message in session.messages] == [
+    assert [message.content for message in session.log.messages_view()] == [
         "one",
         "same path",
         "two",
@@ -308,12 +310,12 @@ async def test_cancelled_turn_records_cancelled_terminal_and_next_turn_succeeds(
         "TurnTerminalRecord",
     ]
     assert records[-1].finish_reason == FinishReason.CANCELLED
-    assert [message.role for message in session.messages] == ["user"]
+    assert [message.role for message in session.log.messages_view()] == ["user"]
 
     provider.responses = ["recovered"]
     events = [event async for event in runtime.run_turn(session, "try again")]
     assert events[-1].payload["finish_reason"] == FinishReason.STOP.value
-    assert [message.content for message in session.messages] == [
+    assert [message.content for message in session.log.messages_view()] == [
         "stop me",
         "try again",
         "recovered",
@@ -434,4 +436,4 @@ async def test_context_overflow_records_terminal_and_keeps_only_user():
         "MessageRecord",
         "TurnTerminalRecord",
     ]
-    assert [message.role for message in session.messages] == ["user"]
+    assert [message.role for message in session.log.messages_view()] == ["user"]

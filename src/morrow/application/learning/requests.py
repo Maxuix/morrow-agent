@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 
 from morrow.core.application import ApplicationError, ApplicationErrorCode
 from morrow.core.domain import (
-    DurableTaskOutcome,
+    TaskOutcome,
     TaskRunStatus,
     canonical_json_bytes,
     sha256_digest,
@@ -57,7 +57,7 @@ class LearningReviewRequestService:
     def ensure_for_accepted_outcome(
         self,
         txn,
-        outcome: DurableTaskOutcome,
+        outcome: TaskOutcome,
     ) -> LearningReviewRequestDecision:
         """Return the existing automatic Review or create exactly version one."""
 
@@ -151,7 +151,7 @@ class LearningReviewRequestService:
     def _create_review(
         self,
         txn,
-        outcome: DurableTaskOutcome,
+        outcome: TaskOutcome,
         *,
         policy: LearningPolicy,
         trigger: LearningReviewTrigger,

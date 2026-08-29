@@ -223,7 +223,7 @@ class SessionOrchestrator:
                         await result
 
     async def dispatch(self, text: str) -> DispatchResult:
-        """Compatibility wrapper that collects the streaming dispatch."""
+        """Collect one streaming dispatch for non-streaming callers."""
         events: list[AgentEvent] = []
         result = DispatchResult()
         async for item in self.stream(text):

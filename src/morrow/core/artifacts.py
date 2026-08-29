@@ -34,7 +34,6 @@ ARTIFACT_METADATA_MAX_BYTES = 32 * 1024
 ARTIFACT_EXCERPT_MAX_BYTES = 8 * 1024
 ARTIFACT_MAX_BYTES = 64 * 1024 * 1024
 TASK_ARTIFACT_MAX_BYTES = 256 * 1024 * 1024
-ARTIFACT_CONTENT_MAX_BYTES = ARTIFACT_MAX_BYTES
 ARTIFACT_FILE_SUFFIX = ".artifact"
 ARTIFACT_TEMP_SUFFIX = ".artifact.tmp"
 
@@ -73,10 +72,6 @@ class ArtifactState(StrEnum):
     AVAILABLE = "available"
     MISSING = "missing"
     CORRUPT = "corrupt"
-
-
-ArtifactRetentionState = ArtifactRetention
-ArtifactSensitivityState = ArtifactSensitivity
 
 
 class ArtifactProvenanceKind(StrEnum):

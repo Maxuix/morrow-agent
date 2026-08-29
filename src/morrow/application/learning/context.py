@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import UTC, datetime
 
-from morrow.core.domain import DurableTaskOutcome, TaskRunStatus, sha256_digest
+from morrow.core.domain import TaskOutcome, TaskRunStatus, sha256_digest
 from morrow.core.learning import (
     LEARNING_EVIDENCE_EXCERPT_MAX_CHARS,
     LearningEvidence,
@@ -58,9 +58,7 @@ class LearningEvidenceExtractor:
         self.id_source = id_source
         self.clock = clock
 
-    def extract(
-        self, review: LearningReview, outcome: DurableTaskOutcome
-    ) -> tuple[LearningEvidence, ...]:
+    def extract(self, review: LearningReview, outcome: TaskOutcome) -> tuple[LearningEvidence, ...]:
         evidence: list[LearningEvidence] = [self._outcome_evidence(review, outcome)]
         task_turn_ids = {
             turn.turn_id
@@ -140,9 +138,7 @@ class LearningEvidenceExtractor:
             )
         return txn.list_learning_review_evidence(self.workspace_id, review.review_id)
 
-    def _outcome_evidence(
-        self, review: LearningReview, outcome: DurableTaskOutcome
-    ) -> LearningEvidence:
+    def _outcome_evidence(self, review: LearningReview, outcome: TaskOutcome) -> LearningEvidence:
         summary = (
             f"accepted TaskOutcome; validation_facts={len(outcome.validation_facts)}; "
             f"changed_paths={len(outcome.changed_paths)}"
@@ -239,7 +235,7 @@ class LearningContextBuilder:
         self,
         *,
         review: LearningReview,
-        outcome: DurableTaskOutcome,
+        outcome: TaskOutcome,
         policy: LearningPolicy,
         evidence: tuple[LearningEvidence, ...],
     ) -> LearningContext:
@@ -295,7 +291,7 @@ class LearningContextBuilder:
         return tuple(item for _index, item in sorted(ranked[:limit], key=lambda pair: pair[0]))
 
     @staticmethod
-    def _project_outcome(outcome: DurableTaskOutcome, *, line_limit: int) -> DurableTaskOutcome:
+    def _project_outcome(outcome: TaskOutcome, *, line_limit: int) -> TaskOutcome:
         def bound_lines(values: tuple[str, ...]) -> tuple[str, ...]:
             return tuple(value[:line_limit] for value in values[:_CONTEXT_OUTCOME_MAX_ITEMS])
 

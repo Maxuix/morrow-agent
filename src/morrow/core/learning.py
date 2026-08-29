@@ -269,7 +269,6 @@ def _bounded_codes(values: tuple[str, ...], *, label: str, maximum: int = 16) ->
 
 
 from morrow.core.learning_payloads import (  # noqa: E402
-    CandidateDraft,
     CandidateDraftBatch,
     CandidatePayload,
     LearningCandidateDraft,
@@ -688,7 +687,6 @@ class LearningSuppression(ProtocolModel):
 
 
 __all__ = [
-    "CandidateDraft",
     "CandidateDraftBatch",
     "CandidatePayload",
     "LearningCandidate",

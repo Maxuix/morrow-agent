@@ -361,15 +361,3 @@ Spike 的代码若不能满足当前阶段边界，应保持实验性、可删�
 - `已取代`
 
 路线文档不维护逐项 `[ ]` TODO；进入某阶段后，再根据该阶段的“建议子计划”建立 `.agent/PLAN.md` 和具体 subplans。
-
-## 十四、路线迁移说明
-
-本路线保留现有 Stage 1、Stage 2 完成文档，不覆盖历史验收记录。原有后续路线重新映射为：
-
-- 原 Stage 3 → 新 Stage 3，补充真实 Code Agent 的精确闭环。
-- 原 Stage 4 → 拆分为新 Stage 4（持久运行基础）与 Stage 5（可审查学习）。
-- 原 Stage 5 → 新 Stage 6，并增加 Skill Draft、版本、权限与自动生成治理。
-- 原 Stage 6 → 拆分为新 Stage 7（静态 Workflow）、Stage 8（自适应编排与 GUI）和 Stage 9（后台自动化）。
-- 原 Stage 7 → 分散到新 Stage 8（可视化工作台）与 Stage 10（完整产品化）。
-
-具体文件替换与旧链接处理见 [路线迁移说明](roadmap/MIGRATION.md)。

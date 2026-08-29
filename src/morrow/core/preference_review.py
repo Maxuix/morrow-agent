@@ -168,13 +168,6 @@ class PreferenceReviewOutput(ProtocolModel):
         return self
 
 
-# Friendly names used by application and test adapters.  They intentionally point at the same
-# strict wire model so no second, broader Candidate protocol can appear by accident.
-PreferenceReviewOperations = PreferenceReviewOutput
-PreferenceReviewerOutput = PreferenceReviewOutput
-PreferenceReviewOperation = PreferenceOperation
-
-
 __all__ = [
     "PREFERENCE_REVIEW_CONTEXT_MAX_BYTES",
     "PREFERENCE_REVIEW_MAX_RECENT_MESSAGES",
@@ -184,9 +177,6 @@ __all__ = [
     "PreferenceDialogueMessage",
     "PreferenceReviewContext",
     "PreferenceReviewContextError",
-    "PreferenceReviewOperation",
-    "PreferenceReviewOperations",
     "PreferenceReviewOutput",
     "PreferenceReviewerError",
-    "PreferenceReviewerOutput",
 ]

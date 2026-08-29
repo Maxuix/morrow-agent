@@ -10,7 +10,7 @@ import pytest
 from morrow.application.project_instructions import ProjectInstructionResolver
 
 
-def test_resolver_loads_one_root_file_by_precedence_and_ignores_task_paths(
+def test_resolver_loads_one_root_file_by_precedence(
     tmp_path: Path,
 ) -> None:
     (tmp_path / "AGENTS.override.md").write_text("override", encoding="utf-8")
@@ -19,10 +19,7 @@ def test_resolver_loads_one_root_file_by_precedence_and_ignores_task_paths(
     (tmp_path / "src").mkdir()
     (tmp_path / "src" / "AGENTS.md").write_text("nested", encoding="utf-8")
 
-    resolved = ProjectInstructionResolver(tmp_path).resolve(
-        "edit `src/main.py`",
-        target_paths=("src/main.py", "../outside", "x" * 1_000),
-    )
+    resolved = ProjectInstructionResolver(tmp_path).resolve()
 
     assert [item.reference.path for item in resolved.sources] == ["AGENTS.override.md"]
     assert [item.reference.scope for item in resolved.sources] == ["."]

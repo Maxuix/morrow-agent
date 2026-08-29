@@ -50,9 +50,7 @@ __all__ = [
     "RuntimePolicy",
     "ToolApproval",
     "ToolExecutionPolicy",
-    "load_agent_policy",
     "load_runtime_policy",
-    "parse_agent_policy",
     "parse_runtime_policy",
     "resolve_runtime_policy",
 ]
@@ -294,12 +292,6 @@ def parse_runtime_policy(
     return resolve_runtime_policy(defaults, overrides)
 
 
-def parse_agent_policy(data: bytes) -> AgentPolicy:
-    """Compatibility entrypoint returning the AgentRun section of runtime policy."""
-
-    return parse_runtime_policy(data).agent_run
-
-
 def load_runtime_policy(
     *,
     overrides: RuntimePolicyOverrides | None = None,
@@ -311,11 +303,3 @@ def load_runtime_policy(
     except Exception as exc:
         raise PolicyLoadError("packaged runtime policy resource is missing") from exc
     return parse_runtime_policy(data, overrides=overrides)
-
-
-def load_agent_policy(
-    *, package: str = "morrow.resources", resource_name: str = "runtime-policy.toml"
-) -> AgentPolicy:
-    """Compatibility entrypoint returning packaged AgentRun defaults."""
-
-    return load_runtime_policy(package=package, resource_name=resource_name).agent_run

@@ -12,7 +12,7 @@ from typing import Protocol, TypeVar
 
 from pydantic import Field, field_validator, model_validator
 
-from morrow.core.domain import DurableTaskOutcome, validate_prefixed_id
+from morrow.core.domain import TaskOutcome, validate_prefixed_id
 from morrow.core.journal import TransactionalJournalPort
 from morrow.core.learning import (
     LEARNING_MAX_CANDIDATES_PER_REVIEW,
@@ -49,7 +49,7 @@ class LearningContext(ProtocolModel):
     """Bounded Reviewer input; never a full Session or ConversationLog projection."""
 
     workspace_id: str
-    task_outcome: DurableTaskOutcome
+    task_outcome: TaskOutcome
     evidence: tuple[LearningEvidence, ...] = ()
     active_summaries: tuple[LearningActiveSummary, ...] = ()
     suppressions: tuple[LearningSuppression, ...] = ()

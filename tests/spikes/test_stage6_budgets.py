@@ -24,7 +24,7 @@ from morrow.core.domain import (
     SourceRevisionRef,
 )
 from morrow.core.models import CredentialRef
-from morrow.runtime.policy import load_agent_policy
+from morrow.runtime.policy import load_runtime_policy
 
 # Locked budgets (bytes of canonical JSON, no trailing whitespace).
 SKILL_REF_MAX_BYTES = 512
@@ -64,7 +64,7 @@ def _realistic_snapshot() -> AgentRunSnapshot:
         for i in range(8)
     )
     model = ModelRef(provider_id="openai-compatible", model_id="gpt-5-mini")
-    run_policy = load_agent_policy().resolve(
+    run_policy = load_runtime_policy().agent_run.resolve(
         model,
         tool_protocol="openai_function",
         multiple_tool_calls=True,

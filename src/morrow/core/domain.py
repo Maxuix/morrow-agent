@@ -326,10 +326,6 @@ class TaskOutcome(ProtocolModel):
         return self
 
 
-# The durable name is useful at adapter boundaries while keeping the public domain name concise.
-DurableTaskOutcome = TaskOutcome
-
-
 class TaskCommandDisposition(StrEnum):
     ACCEPTED = "accepted"
     REPLAY = "replay"

@@ -116,7 +116,6 @@ from morrow.runtime.agent import AgentRuntime
 from morrow.runtime.capabilities import CapabilityPolicy
 from morrow.runtime.ids import RandomIdSource
 from morrow.runtime.policy import (
-    AgentPolicy,
     RuntimePolicy,
     load_runtime_policy,
 )
@@ -150,12 +149,6 @@ class Application:
     credentials: object
     id_source: object
     runtime_policy: RuntimePolicy
-
-    @property
-    def agent_policy(self) -> AgentPolicy:
-        """Compatibility view used by existing AgentRun composition."""
-
-        return self.runtime_policy.agent_run
 
 
 @dataclass
@@ -789,7 +782,7 @@ def build_session_application(
         model,
         configured_model.capabilities if configured_model is not None else None,
     )
-    run_policy = app.agent_policy.resolve(
+    run_policy = app.runtime_policy.agent_run.resolve(
         model,
         tool_protocol=exact_capabilities.tool_protocol,
         multiple_tool_calls=exact_capabilities.multiple_tool_calls,
@@ -1034,14 +1027,14 @@ def build_session_application(
         )
         spec_provider_config = provider_config
         if spec_provider_config is None:
-            # Explicit provider/model integrations (tests) resolve no global
-            # ProviderConfig; the legacy spec still freezes their exact model.
+            # Explicit injected Provider integrations have no global ProviderConfig, so freeze
+            # their exact model in a current prepared spec.
             spec_provider_config = ProviderConfig(
                 adapter=adapter_id,
                 base_url="",
                 models={model.model_id: ProviderModelConfig(api_model_id=model.model_id)},
             )
-        legacy_spec = build_prepared_spec(
+        injected_spec = build_prepared_spec(
             provider_config=spec_provider_config,
             model=model,
             exact_capabilities=exact_capabilities,
@@ -1051,7 +1044,7 @@ def build_session_application(
             prompt_assembler=prompt_assembler,
         )
         injected_prepared = PreparedAgentRunRuntime(
-            spec=legacy_spec,
+            spec=injected_spec,
             provider=provider,
             model=model,
             context_builder=context_builder,
@@ -1061,7 +1054,7 @@ def build_session_application(
         preparation = AgentRunPreparationService(
             global_store=app.global_store,
             registry=app.registry,
-            agent_policy=app.agent_policy,
+            agent_policy=app.runtime_policy.agent_run,
             credential_resolver=app.provider_service.credential_resolver,
             frozen_credential_resolver=app.provider_service.resolve_frozen_credential,
             estimate_request_chars=estimate_request_chars,

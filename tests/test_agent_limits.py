@@ -91,7 +91,9 @@ async def test_quote_heavy_result_is_bounded_by_the_per_call_limit():
         AgentLoop(provider, MODEL, builder, tool_executor=executor).run_task(session, "go")
     )
 
-    result = next(message for message in session.messages if isinstance(message, ToolMessage))
+    result = next(
+        message for message in session.log.messages_view() if isinstance(message, ToolMessage)
+    )
     assert len(result.content) <= builder.run_policy.effective_result_limit
     assert events[-1].payload["finish_reason"] == "stop"
 
@@ -123,7 +125,9 @@ async def test_tool_timeout_becomes_one_bounded_result_and_loop_continues():
         AgentLoop(provider, MODEL, builder, tool_executor=executor).run_task(session, "go")
     )
 
-    result = next(message for message in session.messages if isinstance(message, ToolMessage))
+    result = next(
+        message for message in session.log.messages_view() if isinstance(message, ToolMessage)
+    )
     assert json.loads(result.content)["error"]["code"] == "timeout"
     assert events[-1].payload["finish_reason"] == "stop"
 

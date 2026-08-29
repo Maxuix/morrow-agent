@@ -50,10 +50,10 @@ from morrow.core.models import (
     ToolFunction,
 )
 from morrow.core.runtime_policy import RuntimePolicyOverrides
-from morrow.runtime.policy import load_agent_policy
+from morrow.runtime.policy import load_runtime_policy
 from morrow.testing import ScriptedModelProvider
 
-AGENT_POLICY = load_agent_policy()
+AGENT_POLICY = load_runtime_policy().agent_run
 
 
 class FakeProvider:

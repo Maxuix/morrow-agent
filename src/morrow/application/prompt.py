@@ -79,7 +79,6 @@ class DirectCodingPromptAssembler:
         profile: DirectCodingProfile | None = None,
         role_prompt: str | None = None,
         filenames: Sequence[str] = DEFAULT_PROJECT_INSTRUCTION_FILENAMES,
-        compatible_names: Sequence[str] = (),
         resolver: ProjectInstructionResolver | None = None,
     ) -> None:
         self.profile = profile or DirectCodingProfile()
@@ -91,7 +90,6 @@ class DirectCodingPromptAssembler:
             ProjectInstructionResolver(
                 workspace_root,
                 filenames=filenames,
-                compatible_names=compatible_names,
             )
             if workspace_root is not None
             else None
@@ -109,29 +107,11 @@ class DirectCodingPromptAssembler:
     def digest(self) -> str:
         return self.profile.digest
 
-    def prepare_for_task(
-        self,
-        task_text: str = "",
-        *,
-        target_paths: Sequence[str | Path] | str | Path | None = None,
-    ) -> PromptProjection:
+    def prepare_for_task(self) -> PromptProjection:
         resolution = (
-            self.resolver.resolve(task_text, target_paths=target_paths)
-            if self.resolver is not None
-            else self._empty_resolution(target_paths)
+            self.resolver.resolve() if self.resolver is not None else self._empty_resolution()
         )
         return self._projection(resolution)
-
-    def extend_projection(
-        self,
-        projection: PromptProjection,
-        *,
-        target_paths: Sequence[str | Path] | str | Path,
-    ) -> PromptProjection:
-        """Keep the startup projection; tool paths never trigger instruction discovery."""
-        self._verify_projection(projection)
-        del target_paths
-        return projection
 
     def rehydrate(self, evidence: PromptProfileEvidence) -> PromptProjection:
         """Reload current startup context without blocking on stale instruction files."""
@@ -151,7 +131,7 @@ class DirectCodingPromptAssembler:
     def evidence_for(
         self, resolution: ProjectInstructionResolution | None = None
     ) -> PromptProfileEvidence:
-        resolution = resolution or self._empty_resolution(())
+        resolution = resolution or self._empty_resolution()
         return PromptProfileEvidence(
             profile_id=self.profile.profile_id,
             profile_version=self.profile.version,
@@ -194,10 +174,6 @@ class DirectCodingPromptAssembler:
         """Public verification seam used by fresh admission and recovery."""
         self._verify_projection(projection)
 
-    # Explicit aliases make the seam usable by future AgentDefinition composition.
-    assemble = system_messages
-    build_system_messages = system_messages
-
     def _projection(self, resolution: ProjectInstructionResolution) -> PromptProjection:
         return PromptProjection(
             evidence=self.evidence_for(resolution),
@@ -206,10 +182,7 @@ class DirectCodingPromptAssembler:
             provenance=self._provenance,
         )
 
-    def _empty_resolution(
-        self, target_paths: Sequence[str | Path] | str | Path | None = None
-    ) -> ProjectInstructionResolution:
-        del target_paths
+    def _empty_resolution(self) -> ProjectInstructionResolution:
         return ProjectInstructionResolution(
             sources=(),
             resolver_version="v1",

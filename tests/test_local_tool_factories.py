@@ -54,9 +54,9 @@ async def test_production_read_tools_use_semantic_result_and_continuation(tmp_pa
     items = [item async for item in session_app.orchestrator.stream("读取 sample.txt")]
 
     assert items[-1].action is None
-    tool_message = [message for message in session_app.session.messages if message.role == "tool"][
-        0
-    ]
+    tool_message = [
+        message for message in session_app.session.log.messages_view() if message.role == "tool"
+    ][0]
     payload = json.loads(tool_message.content)
     assert payload["ok"] is True
     assert payload["result"]["text"] == "one\ntwo\n"
@@ -125,7 +125,9 @@ async def test_fake_provider_can_list_search_read_continue_and_explain(tmp_path)
 
     assert items[-1].action is None
     assert approval.requests == []
-    tool_messages = [message for message in session_app.session.messages if message.role == "tool"]
+    tool_messages = [
+        message for message in session_app.session.log.messages_view() if message.role == "tool"
+    ]
     payloads = [json.loads(message.content) for message in tool_messages]
     assert [payload["ok"] for payload in payloads] == [True, True, True, True]
     assert payloads[0]["result"]["entries"][0]["path"] == "src/bug.py"
@@ -226,7 +228,7 @@ async def test_pi_style_edit_and_write_infer_revision_mode_and_accept_absolute_i
     assert (project / "created.txt").read_text(encoding="utf-8") == "second\n"
     payloads = [
         json.loads(message.content)
-        for message in session_app.session.messages
+        for message in session_app.session.log.messages_view()
         if message.role == "tool"
     ]
     assert [payload["ok"] for payload in payloads] == [True, True, True, True]
@@ -433,9 +435,9 @@ async def test_invalid_read_path_is_bounded_and_handler_does_not_disclose_outsid
 
     [item async for item in session_app.orchestrator.stream("读取上级目录文件")]
 
-    tool_message = [message for message in session_app.session.messages if message.role == "tool"][
-        0
-    ]
+    tool_message = [
+        message for message in session_app.session.log.messages_view() if message.role == "tool"
+    ][0]
     payload = json.loads(tool_message.content)
     assert payload["ok"] is False
     assert payload["error"]["code"] == ToolErrorCode.OUTSIDE_WORKSPACE.value

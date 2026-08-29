@@ -249,9 +249,6 @@ class LearningCandidateDraft(ProtocolModel):
         return self.proposed_payload
 
 
-CandidateDraft = LearningCandidateDraft
-
-
 class CandidateDraftBatch(ProtocolModel):
     drafts: tuple[LearningCandidateDraft, ...] = ()
 
@@ -266,7 +263,6 @@ class CandidateDraftBatch(ProtocolModel):
 
 
 __all__ = [
-    "CandidateDraft",
     "CandidateDraftBatch",
     "CandidatePayload",
     "LearningCandidateDraft",

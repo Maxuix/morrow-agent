@@ -268,7 +268,7 @@ class TurnSubmissionCoordinator:
             return result
         if prompt_projection is None and self.prompt_assembler is not None:
             try:
-                prompt_projection = self.prompt_assembler.prepare_for_task(user_input)
+                prompt_projection = self.prompt_assembler.prepare_for_task()
             except Exception as exc:
                 raise StorageError(
                     StorageErrorCode.NEEDS_REPAIR,

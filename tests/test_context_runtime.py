@@ -161,7 +161,7 @@ async def test_runtime_emits_one_ordered_lifecycle_and_admits_complete_history()
     assert lifecycle_is_valid(events)
     assert [event.sequence for event in events] == list(range(1, len(events) + 1))
     assert events[-1].payload["finish_reason"] == FinishReason.STOP.value
-    assert [message.content for message in session.messages] == ["hi", "hello world"]
+    assert [message.content for message in session.log.messages_view()] == ["hi", "hello world"]
 
 
 @pytest.mark.asyncio
@@ -221,7 +221,7 @@ async def test_cancel_preserves_user_but_not_partial_assistant():
     task.cancel()
     events = await task
     assert events[-1].payload["finish_reason"] == FinishReason.CANCELLED.value
-    assert [message.role for message in session.messages] == ["user"]
+    assert [message.role for message in session.log.messages_view()] == ["user"]
 
 
 @pytest.mark.asyncio
@@ -240,7 +240,11 @@ async def test_conversation_succeeds_after_cancelled_turn():
 
     assert cancelled[-1].payload["finish_reason"] == FinishReason.CANCELLED.value
     assert recovered[-1].payload["finish_reason"] == FinishReason.STOP.value
-    assert [message.role for message in session.messages] == ["user", "user", "assistant"]
+    assert [message.role for message in session.log.messages_view()] == [
+        "user",
+        "user",
+        "assistant",
+    ]
 
 
 @pytest.mark.asyncio
@@ -262,7 +266,7 @@ async def test_ten_turns_preserve_ordered_full_history_and_stream_deltas():
     expected = [
         item for index in range(10) for item in (f"request-{index}", f"answer-{index}-done")
     ]
-    assert [message.content for message in session.messages] == expected
+    assert [message.content for message in session.log.messages_view()] == expected
     last_call = [
         message.content for message in provider.stream_calls[-1] if message.role != "system"
     ]
@@ -300,7 +304,7 @@ async def test_provider_exception_always_completes_error_without_assistant_histo
     assert [event.type for event in events].count("turn.started") == 1
     assert [event.type for event in events].count("turn.completed") == 1
     assert events[-1].payload["finish_reason"] == FinishReason.ERROR.value
-    assert [message.role for message in session.messages] == ["user"]
+    assert [message.role for message in session.log.messages_view()] == ["user"]
     assert "credential-sentinel" not in str([event.payload for event in events])
 
 
@@ -329,7 +333,7 @@ async def test_only_explicit_stop_finish_admits_assistant_history(terminal_event
 
     assert lifecycle_is_valid(events)
     assert events[-1].payload["finish_reason"] == FinishReason.ERROR.value
-    assert [message.role for message in session.messages] == ["user"]
+    assert [message.role for message in session.log.messages_view()] == ["user"]
 
 
 @pytest.mark.asyncio
@@ -343,7 +347,7 @@ async def test_empty_completion_is_error_without_empty_assistant_message():
     events = [event async for event in runtime.run_turn(session, "empty")]
 
     assert events[-1].payload["finish_reason"] == FinishReason.ERROR.value
-    assert [message.role for message in session.messages] == ["user"]
+    assert [message.role for message in session.log.messages_view()] == ["user"]
 
 
 def test_oversized_current_input_is_rejected_before_model_call():

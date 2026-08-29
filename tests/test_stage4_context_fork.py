@@ -274,7 +274,7 @@ async def test_fork_restored_through_production_bootstrap_can_complete_own_turn(
         resume_session_id=child.session_id,
     )
     try:
-        assert [message.content for message in resumed.session.messages] == [
+        assert [message.content for message in resumed.session.log.messages_view()] == [
             "parent request",
             "parent answer",
         ]
@@ -290,7 +290,7 @@ async def test_fork_restored_through_production_bootstrap_can_complete_own_turn(
         assert child_task is not None
         assert child_task.session_id == child.session_id
         assert child_task.status is TaskRunStatus.READY_FOR_ACCEPTANCE
-        assert [message.content for message in resumed.session.messages] == [
+        assert [message.content for message in resumed.session.log.messages_view()] == [
             "parent request",
             "parent answer",
             "child request",

@@ -2,118 +2,18 @@
 
 ## Current task
 
-Subplan 93 is complete and integrated. v2 long-horizon is the only AgentRun execution policy;
-existing evaluation evidence was preserved and no Live request was run.
+Subplan 94: remove repository-level compatibility surfaces before changing persisted-state schemas.
 
 ## Tasks
 
-- `[x]` Remove the v1 policy model, bundled defaults, legacy override selector and strict repeated
-  tool-cycle detector.
-- `[x]` Route configured and injected Providers through one v2 resolver; reject v1 snapshots and
-  retired overrides explicitly.
-- `[x]` Collapse v1/v2 runtime, context and tool-execution branches to the v2 behavior.
-- `[x]` Update focused tests, architecture and runtime-policy decision documentation.
-- `[x]` Run focused tests and the complete offline/static/CLI/diff gates, then commit and integrate
-  the verified change.
-
-## Paused Subplan 90 history
-
-- `[x]` Add a minimal fail-open source detail for unexpected AgentLoop `internal` stops using the
-  existing terminal observation slot; do not change public events, task decisions, or schema.
-- `[x]` Verify focused persistence/runtime regressions and the complete offline/static gate, then
-  commit the isolated repair.
-
-- `[x]` Replace the unknown-model 160,000-character fallback with 256 KiB and route new
-  configured-Provider runs through the existing long-horizon compaction path.
-- `[x]` Propagate the frozen comparison plan's context-window and maximum-output capabilities into
-  isolated Morrow model configuration without Provider/model-name branches.
-- `[x]` Make the long-horizon reserve include known maximum output capacity and preserve old v1/v2
-  AgentRun snapshot compatibility.
-- `[x]` Add policy, bootstrap, evaluator and compaction regressions; run focused and complete
-  offline/static/CLI/diff gates.
-- `[x]` Commit the verified repair, update Subplan 90 evidence/state, and leave future live reruns
-  behind a fresh explicit admission.
-
-- `[x]` Verify the consolidated baseline, harness self-check, permission matrix and historical
-  campaign-capacity state.
-- `[x]` Restore explicit `network`, `git_write` and `privilege_escalation` denial precedence without
-  reintroducing command-content heuristics.
-- `[x]` Run the full offline/static/CLI/diff gate and commit the verified repair.
-- `[x]` Add explicit prior-campaign roots to cumulative capacity accounting and admission checks.
-- `[x]` Add a conservative full-remaining-schedule reservation check before the first admission.
-- `[x]` Refreeze a new current-source comparison plan, profiles and protected evidence root.
-- `[x]` Run preflight and capacity checks with every retained campaign root; stop before admission if
-  the approved ceiling is insufficient.
-- `[x]` Add the explicit 14-run reduced single-repetition plan variant without weakening the default
-  28-run primary contract.
-- `[x]` Refreeze and capacity-check the reduced plan; stop before admission if retained usage still
-  leaves insufficient headroom.
-- `[!]` Execute the reduced pilot sequentially: the diagnostic root contains 2/14 failed/blocked
-  admissions, and the post-fix root contains 1/14 `BLOCKED_ENV` admission. Pause all remaining
-  entries until Provider usage/runtime reliability is repaired and the plan is refrozen.
-- `[x]` Port Pi's transient Provider retry boundary and preserve unavailable usage as partial
-  evaluation evidence; keep the bundled default retry count unchanged pending separate approval.
-- `[x]` Apply and verify the separately authorized bundled default of three retries.
-- `[!]` Refreeze and execute a fresh 14-run reduced pilot without reusing prior admissions. The r14
-  plan and preflight passed, but cumulative capacity blocked its 21,000,000-token reservation.
-- `[!]` Execute authorized r15 under the added 30,000,000-token ceiling. All 14 bundles validate,
-  but Provider/runtime evidence is incomplete (Morrow 10/10 `FAIL_RUNTIME`; Pi 3/4
-  `FAIL_RUNTIME`, 1/4 `BLOCKED_ENV`), so paired comparison remains blocked.
-- `[x]` Verify Mimo with one non-stream and four streaming short probes, then refreeze and execute
-  fresh reduced r16 in frozen order without reusing r15 admissions. All 14 bundles validate:
-  Morrow 1 `PASS`, 2 `FAIL_MODEL`, 1 `BUDGET_EXHAUSTED`, 6 `FAIL_RUNTIME`; Pi 2 `FAIL_MODEL`,
-  2 `FAIL_RUNTIME`.
-- `[!]` Complete the primary repeated comparison. The reduced r16 sample has only one repetition,
-  mandatory Morrow usage is partially unavailable, and the standard comparison gate therefore
-  remains `NOT_EVALUATED`.
-- `[!]` Refreeze a 14-run `opencode-go/deepseek-v4-flash` campaign under a fresh model-scoped 21M
-  ceiling. Morrow failed its first readiness request as `invalid_response`, while the authorized Pi
-  probe completed with 536 tokens. Stop before plan creation or formal admission and repair the
-  Morrow Adapter response-compatibility blocker.
-- `[x]` Diagnose the DeepSeek Adapter failure without retaining response content. OpenCode emits
-  monotonic cumulative usage on multiple stream chunks; Morrow rejects changed repeated usage as a
-  conflict and maps the resulting `ValueError` to terminal `invalid_response`.
-- `[x]` Port Pi's provider-neutral stream-usage behavior: each valid usage payload replaces the
-  prior snapshot, malformed usage degrades telemetry without discarding valid semantic completion,
-  and no model/provider ID branch is introduced. Focused and complete offline gates pass; the real
-  repaired Morrow probe completes with 3,171 tokens.
-- `[x]` Diagnose the retained DeepSeek r18 `invalid_response`: an otherwise valid tool-call stream
-  intermittently contains whitespace-only optional text, causing `AssistantMessage.content`
-  validation to fail after assembly.
-- `[x]` Match Pi's provider-neutral tolerance by normalizing whitespace-only text to `None` only
-  when valid tool calls exist. Deterministic regression, the complete offline gate and an exact-size
-  Live structural sample all pass without weakening ordinary final-text validation.
-- `[x]` Fold frozen isolated Morrow configuration and `build_active()` keyring loading directly into
-  admission; do not add a readiness command or model probe.
-- `[x]` Retain r19's first six finalized entries. Treat its recovered request-24 `network` failure
-  as retry telemetry rather than a terminal Provider incident; stop after Pi MORROW-005 raises
-  cumulative accounting to `35,987,509 / 30,000,000`.
-- `[x]` Add a provider-neutral reduced continuation variant that freezes the remaining schedule,
-  binds the exact parent campaign/plan/evidence root and completed prefix, and rejects capacity or
-  admission checks when that parent evidence is omitted or incomplete.
-- `[x]` Commit the verified continuation contract, freeze r20's eight remaining entries under the
-  user-approved cumulative 50M ceiling, and execute sequentially. All eight continuation entries
-  finalized; the combined r19+r20 schedule has 14/14 structurally valid bundles and remained within
-  capacity at `47,987,509 / 50,000,000`.
-
-## Earlier completed tasks
-
-- `[x]` Inspect the actual process, capability, file/search/Git/sandbox and project-instruction paths.
-- `[x]` Remove semantic Shell/Git risk classification from the core process service.
-- `[x]` Stop keyword-based sensitive-resource blocking in workspace file, search, Git and snapshot
-  services; retain exact active-credential output redaction.
-- `[x]` Run registered core workspace mutations and commands without per-call heuristic approval,
-  while retaining read-only, Full Access and Skill/MCP authority boundaries.
-- `[x]` Replace task-derived nested instruction discovery with one root availability-first load.
-- `[x]` Update focused tests, architecture, roadmap and stale acceptance selectors.
-- `[x]` Run the complete offline/static/CLI/diff validation gate and record final evidence.
-- `[x]` Commit the verified repair as one coherent checkpoint; do not merge or resume evaluation
-  without explicit authorization.
+- `[x]` Delete dead re-export modules, unused aliases/methods and unreachable compatibility paths.
+- `[x]` Move internal imports/tests from compatibility entrypoints to current owning contracts.
+- `[x]` Delete historical evaluation-only resources and their dedicated tests.
+- `[x]` Run focused tests and the complete offline/static/CLI/diff gate.
+- `[>]` Commit, integrate and retire Subplan 94 before beginning persisted-state cleanup.
 
 ## Boundaries
 
-- Preserve unrelated user changes and untracked notes.
-- Do not add a replacement validation/policy layer for removed keyword heuristics.
-- Do not reuse any prior S7P-09 plan, admission, schedule or formal run key.
-- Do not weaken workspace path confinement, stale-revision checks, atomic publication, output bounds,
-  exact known-secret redaction, Full Access grants, or Skill/MCP extension policy.
+- Preserve current external interoperability behavior.
+- Do not modify or execute retained Live evaluation evidence.
+- Do not add dependencies or run Live/network tests.

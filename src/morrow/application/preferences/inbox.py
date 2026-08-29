@@ -485,14 +485,10 @@ class PreferenceInbox:
         return cleaned[:256]
 
 
-PreferenceProposalInbox = PreferenceInbox
-
-
 __all__ = [
     "PreferenceDecisionPreview",
     "PreferenceInbox",
     "PreferenceInboxDecisionResult",
     "PreferenceInboxError",
-    "PreferenceProposalInbox",
     "PreferenceProposalView",
 ]

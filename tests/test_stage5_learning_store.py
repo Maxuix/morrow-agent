@@ -25,17 +25,17 @@ from morrow.adapters.state.migrations import (
 from morrow.adapters.state.operational import OperationalStore
 from morrow.core.domain import (
     DurableSession,
-    DurableTaskOutcome,
     DurableTaskRun,
     DurableTaskRunTransition,
+    TaskOutcome,
     TaskOutcomeTrigger,
     TaskRunStatus,
     canonical_json_bytes,
     sha256_digest,
 )
 from morrow.core.learning import (
-    CandidateDraft,
     LearningCandidate,
+    LearningCandidateDraft,
     LearningCandidateOperation,
     LearningCandidateType,
     LearningConfidenceBand,
@@ -143,7 +143,7 @@ def _seed_subjects(journal: SqliteOperationalJournal) -> None:
     )
     journal.put_task_outcome(
         "ws_1",
-        DurableTaskOutcome(
+        TaskOutcome(
             outcome_id="out_1",
             workspace_id="ws_1",
             session_id="ses_1",
@@ -197,7 +197,7 @@ def _evidence(**overrides) -> LearningEvidence:
 
 
 def _candidate() -> LearningCandidate:
-    draft = CandidateDraft(
+    draft = LearningCandidateDraft(
         candidate_type=LearningCandidateType.PREFERENCE,
         operation=LearningCandidateOperation.SET,
         semantic_key="communication.language",

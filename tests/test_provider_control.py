@@ -21,7 +21,7 @@ from morrow.core.models import (
 from morrow.core.providers import DiscoveredModel, validate_base_url
 from morrow.interfaces import cli as cli_module
 from morrow.interfaces.cli import app as cli_app
-from morrow.runtime.policy import load_agent_policy
+from morrow.runtime.policy import load_runtime_policy
 
 
 class FakeProvider:
@@ -122,7 +122,7 @@ def test_model_capability_override_is_persisted_and_narrows_the_next_run_snapsho
     preparation = AgentRunPreparationService(
         global_store=app.global_store,
         registry=app.registry,
-        agent_policy=load_agent_policy(),
+        agent_policy=load_runtime_policy().agent_run,
         credential_resolver=app.provider_service.credential_resolver,
         estimate_request_chars=estimate_request_chars,
         tool_factory=lambda policy: None,

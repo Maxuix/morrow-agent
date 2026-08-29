@@ -14,13 +14,13 @@ from morrow.core.preference_models import (
     PreferenceOperationKind,
     PreferenceScope,
     PreferenceStatus,
-    preference_operation_fingerprint,
 )
 from morrow.core.preference_persistence_models import (
     PreferenceEvidence,
     PreferenceProposal,
     PreferenceProposalStatus,
     PreferenceReviewJob,
+    preference_operation_fingerprint,
 )
 from morrow.core.preference_review import PreferenceReviewOutput
 
@@ -314,13 +314,9 @@ class PreferenceProposalPipeline:
         return value.astimezone(UTC)
 
 
-PreferenceProposalService = PreferenceProposalPipeline
-
-
 __all__ = [
     "PreferenceProposalPipeline",
     "PreferenceProposalPipelineError",
     "PreferenceProposalPipelineResult",
     "PreferenceProposalRejection",
-    "PreferenceProposalService",
 ]

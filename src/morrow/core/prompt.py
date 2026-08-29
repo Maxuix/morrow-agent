@@ -239,11 +239,6 @@ class ProjectInstructionContent:
     reference: ProjectInstructionSourceRef
     text: str
 
-    @property
-    def source(self) -> ProjectInstructionSourceRef:
-        """Compatibility name for callers that call sources ``source``."""
-        return self.reference
-
 
 @dataclass(frozen=True, slots=True)
 class PromptProjection:
@@ -256,25 +251,11 @@ class PromptProjection:
     provenance: object | None = None
 
     @property
-    def project_sources(self) -> tuple[ProjectInstructionContent, ...]:
-        return self.project_instructions
-
-    @property
     def project_instruction_sources(self) -> tuple[ProjectInstructionSourceRef, ...]:
         return tuple(item.reference for item in self.project_instructions)
 
-    @property
-    def project_instruction_block(self) -> str:
-        return "\n".join(item.text for item in self.project_instructions)
-
-
-# Names used by the application layer and future AgentDefinition composition.
-DirectCodingPromptProjection = PromptProjection
-PromptEvidence = PromptProfileEvidence
-
 
 __all__ = [
-    "DirectCodingPromptProjection",
     "PROMPT_DIGEST_PATTERN",
     "PROMPT_MAX_PROJECT_SOURCE_BYTES",
     "PROMPT_MAX_PROJECT_SOURCES",
@@ -284,7 +265,6 @@ __all__ = [
     "project_source_metadata_digest",
     "project_source_reference_digest",
     "project_source_selection_digest",
-    "PromptEvidence",
     "PromptProfileEvidence",
     "PromptProjection",
 ]

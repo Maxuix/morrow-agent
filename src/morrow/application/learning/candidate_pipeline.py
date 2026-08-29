@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from morrow.core.configuration_promotion import ConfigurationActivationStatus
-from morrow.core.domain import DurableTaskOutcome, canonical_json_bytes
+from morrow.core.domain import TaskOutcome, canonical_json_bytes
 from morrow.core.learning import (
     LEARNING_MAX_REFERENCE_IDS,
     CandidateDraftBatch,
@@ -60,7 +60,7 @@ class LearningCandidatePipeline:
         txn,
         review: LearningReview,
         *,
-        outcome: DurableTaskOutcome,
+        outcome: TaskOutcome,
         policy,
         evidence: tuple[LearningEvidence, ...],
         batch: CandidateDraftBatch,

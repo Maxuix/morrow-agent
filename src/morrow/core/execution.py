@@ -457,9 +457,6 @@ class ValidationDiagnostic(ProtocolModel):
         return self
 
 
-ValidationDiagnosticEntry = ValidationDiagnostic
-
-
 class HandlerResultEnvelope(ProtocolModel):
     ok: bool
     truncated: bool = False

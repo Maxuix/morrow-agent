@@ -101,7 +101,7 @@ class SkillContextService:
                     scope_id=selection.scope_id,
                     tree_digest=selection.tree_digest,
                     content=current,
-                    content_digest=sha256_digest(current.encode("utf-8")),
+                    context_digest=sha256_digest(current.encode("utf-8")),
                     omitted_count=omitted + int(truncated),
                     truncated=truncated,
                 )
@@ -128,7 +128,7 @@ class SkillContextService:
                 scope_id=selection.scope_id,
                 tree_digest=selection.tree_digest,
                 content="",
-                content_digest=sha256_digest(b""),
+                context_digest=sha256_digest(b""),
                 omitted_count=omitted + int(bool(text)),
                 truncated=bool(text),
             )

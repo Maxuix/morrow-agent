@@ -51,9 +51,6 @@ class ModelRequestPurpose(StrEnum):
     OUTCOME_INTENT = "outcome_intent"
 
 
-ObservationRequestState = ModelRequestState
-
-
 def _aware(value: datetime) -> datetime:
     if value.tzinfo is None or value.utcoffset() is None:
         raise ValueError("observation timestamps must be timezone-aware")
@@ -368,20 +365,12 @@ class AgentRunObservation(ProtocolModel):
         return self
 
 
-# Names used by callers that prefer the shorter aggregate terminology.
-AgentRunMetrics = AgentRunTerminalMetrics
-ModelRequestRecord = ModelRequestObservation
-
-
 __all__ = [
-    "AgentRunMetrics",
     "AgentRunObservation",
     "AgentRunRetryProgress",
     "AgentRunTerminalMetrics",
     "MODEL_REQUEST_ID_PREFIX",
     "ModelRequestObservation",
-    "ModelRequestRecord",
     "ModelRequestState",
-    "ObservationRequestState",
     "ToolTerminalCounts",
 ]

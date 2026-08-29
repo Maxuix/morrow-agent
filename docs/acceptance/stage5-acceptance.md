@@ -14,7 +14,6 @@ Subplan 55 已关闭 F1/F2/F3。Live Provider 评估仍需用户显式授权和�
 |---|---|---|
 | accepted Task → pending Review → bounded Candidate | `tests/test_stage5_learning_application.py`、`tests/test_stage5_learning_evaluation.py` | 通过；零候选是合法结果，单次 Review 最多 3 个候选 |
 | no-tool production Reviewer | `tests/test_stage5_learning_reviewer.py`、`tests/test_stage5_learning_evaluation.py` | 通过；请求/响应有界，最多一次修复，禁止工具和原始 provider 内容落盘 |
-| legacy v12 durable/temporary/negative/quoted/hypothetical/Assistant-only 分类 | `tests/test_stage5_learning_evaluation.py`、`src/morrow/resources/stage5-legacy-learning-evaluation.json` | 27/27 纯 evaluator 案例通过；安全负例 5 个，集成 Active 写入 0；Preference v2 使用下方独立语料与门槛 |
 | Preference/Profile 显式确认后 Promotion | `tests/test_stage5_configuration_promotion.py`、`tests/test_stage5_learning_cli.py`、Subplan 55 隔离回放 | 通过；新进程 accept/edit/reject 与 OCC 预览确认均可用 |
 | Project Knowledge 与 MemorySelection | `tests/test_stage5_project_knowledge.py`、`tests/test_stage5_memory_agent_run.py`、`tests/test_stage5_memory_context.py`、Subplan 55 隔离回放 | 通过；非整秒首次 Promotion、重启读取和 Memory revision=1 均通过 |
 | Skill/Workflow/Orchestration future candidate | `tests/test_stage5_project_knowledge.py::test_future_candidate_acceptance_remains_candidate_only` | 通过；只记录 Candidate，不创建文件、工具、权限、Workflow 或运行时规则 |
@@ -30,13 +29,6 @@ edit、reject、reject-and-suppress；随后重新读取 Learning/Memory、运�
 SQLite backup。结果为：`fresh_process=passed`、`knowledge_revisions=1`、`memory_revision=1`、
 `doctor=ok`、`backup=verified`。回放没有访问网络或凭据，详细历史和边界见
 [`stage5-simulated-user-evaluation.md`](stage5-simulated-user-evaluation.md)。
-
-## Offline quality result
-
-版本化数据集和确定性 evaluator 见
-[`stage5-offline-evaluation.md`](stage5-offline-evaluation.md)，纯 evaluator 结果为 27/27；真实
-Review runner 的 5 个安全负例集成门禁观察到 0 个 Candidate、Knowledge 或 Memory Active 写入。
-报告只保存 case ID、状态、reason/safety code 和计数，不保存源文本、raw Reviewer 输出或合成凭据值。
 
 ## Operational boundary
 

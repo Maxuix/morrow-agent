@@ -30,10 +30,6 @@ directly with a synthetic context and writes only a bounded report under pytest'
   artifacts.
 - The detailed real-provider evidence is recorded in
   [`stage5-real-provider-evaluation.md`](stage5-real-provider-evaluation.md).
-- The offline deterministic result remains recorded separately in
-  [`stage5-offline-evaluation.md`](stage5-offline-evaluation.md) and is not presented as real-model
-  quality evidence.
-
 The live result is not a pass for the original quality targets: natural-language durable preference
 proposals were `0/3`, remove proposals were `0/2`, and Mimo Review timed out twice under the default
 deadline. Coding, tool safety, persistence, and structured set/overwrite promotion were successful.

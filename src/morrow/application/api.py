@@ -38,9 +38,9 @@ from morrow.core.artifacts import ArtifactMetadata
 from morrow.core.domain import (
     WORKSPACE_ID_PREFIX,
     DurableSession,
-    DurableTaskOutcome,
     DurableTaskRun,
     SessionLifecycle,
+    TaskOutcome,
     sha256_digest,
     validate_prefixed_id,
 )
@@ -191,7 +191,7 @@ class OperationalApplicationService:
         page = items[offset : offset + limit]
         return QueryPage(page, str(offset + len(page)) if offset + len(page) < len(items) else None)
 
-    def list_outcomes(self, task_run_id: str) -> tuple[DurableTaskOutcome, ...]:
+    def list_outcomes(self, task_run_id: str) -> tuple[TaskOutcome, ...]:
         task = self._require_task(task_run_id)
         return self._query(
             lambda: self.journal.list_task_outcomes(self.workspace_id, task.task_run_id)

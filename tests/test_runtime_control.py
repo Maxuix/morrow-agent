@@ -39,7 +39,7 @@ from morrow.core.runtime_control import (
 )
 from morrow.runtime.agent import AgentLoop
 from morrow.runtime.durable_log import restore_conversation_log
-from morrow.runtime.policy import LongHorizonPolicySettings, load_agent_policy
+from morrow.runtime.policy import LongHorizonPolicySettings, load_runtime_policy
 from morrow.runtime.session import Session
 from morrow.runtime.tools import ToolExecutor, ToolRegistry, make_tool
 from morrow.testing import (
@@ -94,7 +94,7 @@ class _MutableSteering:
 
 
 def _long_horizon_context() -> ContextBuilder:
-    policy = load_agent_policy().resolve(
+    policy = load_runtime_policy().agent_run.resolve(
         MODEL,
         tool_protocol="openai_function",
         multiple_tool_calls=True,
@@ -354,7 +354,7 @@ async def test_pre_stop_steering_rejects_candidate_without_publishing_it() -> No
         event.type == "text.delta" and event.payload.get("text") == "obsolete answer"
         for event in events
     )
-    assert [message.role for message in session.messages] == ["user"]
+    assert [message.role for message in session.log.messages_view()] == ["user"]
 
 
 @pytest.mark.asyncio
@@ -379,7 +379,9 @@ async def test_post_batch_steering_waits_until_all_admitted_calls_are_closed() -
     assert len(provider.stream_calls) == 1
     assert events[-1].payload["finish_reason"] == FinishReason.STEERED.value
     assert [
-        message.tool_call_id for message in session.messages if isinstance(message, ToolMessage)
+        message.tool_call_id
+        for message in session.log.messages_view()
+        if isinstance(message, ToolMessage)
     ] == ["call_1", "call_2"]
     turn = session.log.snapshot().public_turns(require_closed=True)[0]
     assert turn.unresolved_call_ids == ()

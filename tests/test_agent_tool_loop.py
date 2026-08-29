@@ -85,11 +85,11 @@ async def _collect(aiter):
 
 
 def _roles(session: Session) -> list[str]:
-    return [message.role for message in session.messages]
+    return [message.role for message in session.log.messages_view()]
 
 
 def _tool_messages(session: Session) -> list[ToolMessage]:
-    return [message for message in session.messages if isinstance(message, ToolMessage)]
+    return [message for message in session.log.messages_view() if isinstance(message, ToolMessage)]
 
 
 def _envelope_code(message: ToolMessage) -> str:

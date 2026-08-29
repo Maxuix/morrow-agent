@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from morrow.core.models import Preferences
+from morrow.core.preference_documents import PreferenceDocument
 from morrow.core.preference_models import (
-    PreferenceDocument,
     PreferenceEntry,
     PreferenceLifecycleOperation,
     PreferenceOperation,

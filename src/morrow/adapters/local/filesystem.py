@@ -370,25 +370,6 @@ class FileSystemAdapter:
                 except OSError:
                     pass
 
-    def confined_unlink(
-        self,
-        path: Path,
-        *,
-        workspace_root: Path,
-        expected_sha256: str | None = None,
-        max_bytes: int = 8 * 1024 * 1024,
-        staging_name: str | None = None,
-    ) -> None:
-        """Compatibility spelling for callers that name the operation unlinkat-style."""
-
-        self.unlink_confined(
-            path,
-            workspace_root=workspace_root,
-            expected_sha256=expected_sha256,
-            max_bytes=max_bytes,
-            staging_name=staging_name,
-        )
-
     def read_confined_file(
         self,
         path: Path,
@@ -692,27 +673,6 @@ class FileSystemAdapter:
                     os.close(source_parent_fd)
                 except OSError:
                     pass
-
-    def atomic_move_no_replace(
-        self,
-        source: Path,
-        destination: Path,
-        *,
-        workspace_root: Path,
-        expected_sha256: str | None = None,
-        max_bytes: int = 8 * 1024 * 1024,
-        staging_name: str | None = None,
-    ) -> ConfinedFileState:
-        """Compatibility spelling for the atomic no-clobber move primitive."""
-
-        return self.move_no_replace(
-            source,
-            destination,
-            workspace_root=workspace_root,
-            expected_sha256=expected_sha256,
-            max_bytes=max_bytes,
-            staging_name=staging_name,
-        )
 
     @staticmethod
     def atomic_no_replace_supported() -> bool:

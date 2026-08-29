@@ -6,9 +6,9 @@ import pytest
 from pydantic import ValidationError
 
 from morrow.core.learning import (
-    CandidateDraft,
     CandidateDraftBatch,
     LearningCandidate,
+    LearningCandidateDraft,
     LearningCandidateOperation,
     LearningCandidateStatus,
     LearningCandidateType,
@@ -40,8 +40,8 @@ NOW = datetime(2026, 1, 1, tzinfo=UTC)
 DIGEST = "a" * 64
 
 
-def _draft(*, evidence_ids: tuple[str, ...] = ("lev_1",)) -> CandidateDraft:
-    return CandidateDraft(
+def _draft(*, evidence_ids: tuple[str, ...] = ("lev_1",)) -> LearningCandidateDraft:
+    return LearningCandidateDraft(
         candidate_type=LearningCandidateType.PREFERENCE,
         operation=LearningCandidateOperation.SET,
         semantic_key="communication.language",
@@ -150,7 +150,7 @@ def test_discriminated_payloads_scope_and_fingerprint_are_deterministic():
         proposed_payload=second.proposed_payload,
     )
     with pytest.raises(ValidationError):
-        CandidateDraft(
+        LearningCandidateDraft(
             candidate_type=LearningCandidateType.PROFILE,
             operation=LearningCandidateOperation.SET,
             semantic_key="identity.name",

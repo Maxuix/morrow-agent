@@ -31,6 +31,8 @@ seven-tool interface and legacy-adapter cleanup. Their verified branch histories
 with the later core/Learning repair on local `main`; Subplan 90 remains paused and must
 refreeze its source/profile/evidence contract before any future admission. On 2026-08-30 the user
 explicitly opened Subplan 93 to remove the v1 bounded runtime compatibility path.
+On 2026-08-30 the user selected a current-version-only support policy and opened Subplan 94 to
+remove remaining repository compatibility surfaces before persisted-state consolidation.
 
 ## Stage 7 reliability sequence
 
@@ -51,6 +53,7 @@ explicitly opened Subplan 93 to remove the v1 bounded runtime compatibility path
 | 91 | `91-mainstream-tool-interface.md` | completed and verified on the S7P-09 stack |
 | 92 | `92-remove-legacy-tool-adapters.md` | completed, verified and integrated on S7P-09 stack |
 | 93 | `93-remove-v1-bounded.md` | completed, verified and integrated locally |
+| 94 | `94-remove-repository-compat.md` | completed and verified; integration pending |
 
 ## Stage 7 pre-baseline
 

@@ -18,8 +18,6 @@ from morrow.bootstrap import build_application, build_session_application
 from morrow.core.models import (
     AgentEvent,
     AssistantMessage,
-    ConfigPatch,
-    ConfigPatchOperation,
     FinishReason,
     FunctionToolCall,
     ModelRef,
@@ -389,38 +387,6 @@ def test_assignment_validation_errors_are_mapped_to_configuration_validation(tmp
         service.apply_command(command)
 
 
-def test_legacy_patch_uses_one_publication_and_returns_per_operation_results(tmp_path, monkeypatch):
-    app, identity, _, service = _products(tmp_path, profile=Profile(name="demo"))
-    calls = []
-    original = app.project_store.write_preferences
-
-    def counted(*args, **kwargs):
-        calls.append((args, kwargs))
-        return original(*args, **kwargs)
-
-    monkeypatch.setattr(app.project_store, "write_preferences", counted)
-    results = service.apply(
-        ConfigPatch(
-            scope="workspace",
-            target="preferences",
-            operations=[
-                ConfigPatchOperation(op="set", path="language", value="中文"),
-                ConfigPatchOperation(op="append", path="instructions", value="先给结论"),
-            ],
-        )
-    )
-
-    assert len(calls) == 1
-    assert [result.status for result in results] == [
-        ConfigurationChangeStatus.APPLIED,
-        ConfigurationChangeStatus.APPLIED,
-    ]
-    assert all(result.revision == 1 for result in results)
-    assert app.project_store.load_preferences(
-        identity.workspace_id
-    ).value.preferences == Preferences(language="中文", instructions=["先给结论"])
-
-
 def test_service_maps_revision_conflict_and_write_failure_without_projection_changes(
     tmp_path, monkeypatch
 ):
@@ -664,10 +630,10 @@ async def test_mixed_work_and_configuration_calls_share_one_public_turn(tmp_path
     ]
 
     assert items[-1].action is None
-    assert session_app.session.profile is not None, session_app.session.messages
+    assert session_app.session.profile is not None, session_app.session.log.messages_view()
     assert session_app.session.profile.name == "Pro workspace"
     assert len(approval.requests) == 1
-    assert [message.role for message in session_app.session.messages] == [
+    assert [message.role for message in session_app.session.log.messages_view()] == [
         "user",
         "assistant",
         "tool",
@@ -741,7 +707,7 @@ async def test_terminal_approval_timeout_cancels_prompt_and_returns_ordinary_tim
         ).run_task(session, "请更新工作空间简介")
     ]
 
-    tool_messages = [message for message in session.messages if message.role == "tool"]
+    tool_messages = [message for message in session.log.messages_view() if message.role == "tool"]
     assert terminal.cancelled is True
     assert json.loads(tool_messages[0].content)["error"]["code"] == "timeout"
     assert events[-1].payload["finish_reason"] == FinishReason.STOP.value
@@ -789,7 +755,7 @@ async def test_production_composition_uses_one_agent_loop_and_refreshes_state_pr
     assert session_app.session.profile.name == "中文项目"
     assert session_app.session.dirty is False
     assert session_app.session.persisted is True
-    assert [message.role for message in session_app.session.messages] == [
+    assert [message.role for message in session_app.session.log.messages_view()] == [
         "user",
         "assistant",
         "tool",
@@ -861,7 +827,9 @@ async def test_multiple_configuration_calls_are_serial_and_partially_persistent(
     )
 
     items = [item async for item in session_app.orchestrator.stream("完成两项配置")]
-    tool_messages = [message for message in session_app.session.messages if message.role == "tool"]
+    tool_messages = [
+        message for message in session_app.session.log.messages_view() if message.role == "tool"
+    ]
 
     assert len(approval.requests) == 2
     assert len(tool_messages) == 2
@@ -929,13 +897,14 @@ async def test_configuration_cancellation_after_first_call_closes_only_pending_c
     assert session_app.session.profile is not None
     assert session_app.session.profile.name == "已写入"
     assert session_app.session.profile.goals == []
-    tool_messages = [message for message in session_app.session.messages if message.role == "tool"]
+    tool_messages = [
+        message for message in session_app.session.log.messages_view() if message.role == "tool"
+    ]
     assert json.loads(tool_messages[0].content)["result"]["status"] == "applied"
     assert json.loads(tool_messages[1].content)["error"]["code"] == "cancelled"
     assert session_app.session.log.unresolved_call_ids == ()
 
 
-def test_service_error_types_are_stable_and_legacy_model_has_no_reset():
-    assert "reset" not in ConfigPatchOperation.model_json_schema()["properties"]["op"]["enum"]
+def test_service_error_types_are_stable():
     assert ConfigurationConflictError.__name__
     assert ConfigurationValidationError.__name__

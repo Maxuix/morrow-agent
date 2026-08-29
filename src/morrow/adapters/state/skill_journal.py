@@ -103,7 +103,7 @@ def _context_json(context: SkillContextEntry) -> str:
             "selection_id": context.selection_id,
             "tree_digest": context.tree_digest,
             "content": context.content,
-            "content_digest": context.content_digest,
+            "context_digest": context.context_digest,
             "truncated": context.truncated,
         },
         sort_keys=True,
@@ -333,9 +333,6 @@ class SqliteSkillJournal:
             ("agent_run_skill_contexts", "version_id"),
             ("skill_drafts", "accepted_version_id"),
             ("skill_usage", "version_id"),
-            ("skill_usages", "version_id"),
-            ("skill_rollback_points", "version_id"),
-            ("backup_skill_versions", "version_id"),
         )
         references: list[str] = []
         for table, column in tables:
@@ -460,7 +457,7 @@ class SqliteSkillJournal:
                 _stored_scope_id(context.scope_id),
                 context.skill_id,
                 context.version_id,
-                context.content_digest,
+                context.context_digest,
                 raw,
                 context.omitted_count,
                 _unix(self.backend.now()),
@@ -771,7 +768,7 @@ class SqliteSkillJournal:
                 selection_id=str(payload.get("selection_id", "")),
                 tree_digest=str(payload.get("tree_digest", "0" * 64)),
                 content=content,
-                content_digest=str(row[6]),
+                context_digest=str(row[6]),
                 omitted_count=int(row[8]),
                 truncated=bool(payload.get("truncated", False)),
             )

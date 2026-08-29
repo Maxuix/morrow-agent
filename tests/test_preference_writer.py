@@ -12,10 +12,6 @@ from morrow.adapters.state.preference_yaml_types import (
     PreferenceYamlLoad,
     PreferenceYamlLoadStatus,
 )
-from morrow.application.preferences.bridge import (
-    candidate_operations,
-    preferences_from_entries,
-)
 from morrow.application.preferences.queries import PreferenceQueries
 from morrow.application.preferences.recovery import PreferenceWriteRecovery
 from morrow.application.preferences.tool import (
@@ -30,10 +26,7 @@ from morrow.application.preferences.writer import (
     PreferenceWriterError,
 )
 from morrow.bootstrap import build_application, build_session_application
-from morrow.core.learning import LearningCandidateOperation
-from morrow.core.learning_payloads import PreferenceCandidatePayload
 from morrow.core.models import ModelRef, ProviderConfig, ProviderModelConfig
-from morrow.core.preference_documents import PreferenceDocument
 from morrow.core.preference_models import PreferenceLifecycleOperation, PreferenceOperation
 from morrow.core.preference_persistence_models import PreferenceWriteBatchStatus
 from morrow.testing import FixedClock, FixedIdSource, ScriptedModelProvider
@@ -332,46 +325,3 @@ def test_generic_authority_registers_manage_preferences_for_a_new_session(tmp_pa
         for tool in session_app.orchestrator.runtime.loop.tool_executor.definitions
     }
     assert "manage_preferences" in names
-
-
-def test_legacy_preference_candidate_bridge_preserves_generic_tombstones():
-    document = PreferenceDocument(scope="workspace")
-    payload = PreferenceCandidatePayload(path="instructions", value=("先给结论。",))
-    candidate = type("Candidate", (), {"operation": LearningCandidateOperation.APPEND})()
-    operations = candidate_operations(candidate, payload, document)
-    assert operations[0].operation.value == "add"
-    assert operations[0].statement == "先给结论。"
-
-    from morrow.core.preference_operations import reduce_preference_document
-
-    after = reduce_preference_document(document, operations)
-    projected = preferences_from_entries(after.entries)
-    assert projected.instructions == ["先给结论。"]
-
-
-def test_legacy_candidate_bridge_maps_instruction_tuple_and_scalar_replace():
-    document = PreferenceDocument(scope="workspace")
-    instruction_payload = PreferenceCandidatePayload(
-        path="instructions", value=("先给结论。", "再解释关键设计。")
-    )
-    append = type("Candidate", (), {"operation": LearningCandidateOperation.APPEND})()
-    operations = candidate_operations(append, instruction_payload, document)
-    assert [item.statement for item in operations] == ["先给结论。", "再解释关键设计。"]
-
-    from morrow.core.preference_operations import reduce_preference_document
-
-    document = reduce_preference_document(document, operations)
-    replace = type("Candidate", (), {"operation": LearningCandidateOperation.SET})()
-    language = PreferenceCandidatePayload(path="language", value="中文")
-    added = candidate_operations(replace, language, document)
-    assert added[0].operation.value == "add"
-    document = reduce_preference_document(document, added)
-    language_id = next(
-        entry.preference_id
-        for entry in document.entries
-        if entry.statement.startswith("回答时默认使用")
-    )
-    changed_language = PreferenceCandidatePayload(path="language", value="English")
-    replaced = candidate_operations(replace, changed_language, document)
-    assert replaced[0].operation.value == "replace"
-    assert replaced[0].preference_id == language_id

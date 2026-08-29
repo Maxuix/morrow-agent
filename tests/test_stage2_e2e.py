@@ -83,7 +83,7 @@ def records_finish(session: Session) -> list[FinishReason]:
 
 
 def _assert_calls_pair_with_results(session: Session) -> None:
-    messages = session.messages
+    messages = session.log.messages_view()
     for index, message in enumerate(messages):
         if isinstance(message, AssistantMessage) and message.tool_calls:
             expected_ids = [call.id for call in message.tool_calls]
@@ -116,15 +116,15 @@ async def test_two_tool_step_story_completes_with_legal_history():
 
     tool_rounds = [
         message
-        for message in session.messages
+        for message in session.log.messages_view()
         if isinstance(message, AssistantMessage) and message.tool_calls
     ]
     assert len(tool_rounds) >= 2
     _assert_calls_pair_with_results(session)
-    assert session.messages[-1].content == "含税三个月总价是 282.03 元。"
+    assert session.log.messages_view()[-1].content == "含税三个月总价是 282.03 元。"
     calculate_result = [
         message
-        for message in session.messages
+        for message in session.log.messages_view()
         if isinstance(message, ToolMessage) and message.tool_call_id == "c3"
     ][0]
     assert json.loads(calculate_result.content)["result"]["value"] == pytest.approx(282.03)
@@ -154,8 +154,7 @@ async def test_two_tool_step_story_completes_with_legal_history():
             "calculate",
         }
 
-    # One history source: the derived view equals the log projection.
-    assert session.messages == session.log.messages_view()
+    assert isinstance(session.log.messages_view(), tuple)
 
 
 @pytest.mark.asyncio
@@ -174,7 +173,7 @@ async def test_ordinary_chat_can_finish_without_calling_advertised_guarded_tools
     events = [item for item in items if hasattr(item, "sequence")]
     assert lifecycle_is_valid(events)
     assert events[-1].payload["finish_reason"] == FinishReason.STOP.value
-    assert [type(m).__name__ for m in session_app.session.messages] == [
+    assert [type(m).__name__ for m in session_app.session.log.messages_view()] == [
         "UserMessage",
         "AssistantMessage",
     ]
@@ -216,7 +215,9 @@ async def test_mixed_content_intermediate_text_persists_but_only_final_completes
 
     assert lifecycle_is_valid(events)
     contents = [
-        message.content for message in session.messages if isinstance(message, AssistantMessage)
+        message.content
+        for message in session.log.messages_view()
+        if isinstance(message, AssistantMessage)
     ]
     assert contents == ["我先查一下价格。", "价格查到了，pro 每月 79 元。"]
     assert records_finish(session) == [FinishReason.STOP]
@@ -261,7 +262,7 @@ async def test_integrated_cancellation_mid_tool_batch_closes_and_recovers():
     records = session.log.snapshot().records
     assert records[-1].finish_reason == FinishReason.CANCELLED
     assert session.log.unresolved_call_ids == ()
-    tool_messages = [m for m in session.messages if isinstance(m, ToolMessage)]
+    tool_messages = [m for m in session.log.messages_view() if isinstance(m, ToolMessage)]
     assert [m.tool_call_id for m in tool_messages] == ["c1", "c2", "c3"]
     assert json.loads(tool_messages[2].content)["error"]["code"] == ToolErrorCode.CANCELLED.value
     assert json.loads(tool_messages[0].content)["result"] == {"monthly_price": 79.0}
@@ -269,7 +270,7 @@ async def test_integrated_cancellation_mid_tool_batch_closes_and_recovers():
     provider.responses = [AssistantMessage(content="重新计算完成。")]
     recovered = await _collect(loop.run_task(session, "再试一次"))
     assert recovered[-1].payload["finish_reason"] == FinishReason.STOP.value
-    assert session.messages[-1].content == "重新计算完成。"
+    assert session.log.messages_view()[-1].content == "重新计算完成。"
 
 
 @pytest.mark.asyncio
@@ -286,7 +287,7 @@ async def test_integrated_internal_failure_mid_tool_batch_closes_and_recovers():
     assert len(errors) == 1
     assert errors[0].payload["stop_code"] == "internal"
     assert events[-1].payload["finish_reason"] == FinishReason.ERROR.value
-    tool_messages = [m for m in session.messages if isinstance(m, ToolMessage)]
+    tool_messages = [m for m in session.log.messages_view() if isinstance(m, ToolMessage)]
     assert [m.tool_call_id for m in tool_messages] == ["c1", "c2"]
     assert json.loads(tool_messages[1].content)["error"]["code"] == ToolErrorCode.INTERNAL.value
     assert records_finish(session) == [FinishReason.ERROR]

@@ -1,4 +1,4 @@
-"""Generic Preference domain contracts and stable compatibility exports."""
+"""Generic Preference domain contracts."""
 
 from __future__ import annotations
 
@@ -186,60 +186,6 @@ class PreferenceLifecycleOperation(ProtocolModel):
     )
 
 
-_DOCUMENT_EXPORTS = frozenset(
-    {
-        "PreferenceDocument",
-        "PreferenceEntriesPayload",
-        "GlobalConfigV2",
-        "WorkspacePreferenceDocumentV3",
-        "FrozenPreferenceSummary",
-        "PreferenceReviewSnapshot",
-    }
-)
-_PERSISTENCE_EXPORTS = frozenset(
-    {
-        "PreferenceReviewJobStatus",
-        "PreferenceReviewFailureCode",
-        "PreferenceProposalStatus",
-        "PreferenceWriteBatchStatus",
-        "PreferenceSafetyRejectionCode",
-        "PreferenceReviewJob",
-        "PreferenceEvidence",
-        "PreferenceProposal",
-        "PreferenceWriteBatch",
-        "preference_operation_fingerprint",
-    }
-)
-_REVIEW_EXPORTS = frozenset(
-    {
-        "PreferenceDialogueMessage",
-        "PreferenceReviewContext",
-        "PreferenceReviewContextError",
-        "PreferenceReviewOperation",
-        "PreferenceReviewOperations",
-        "PreferenceReviewOutput",
-        "PreferenceReviewerError",
-        "PreferenceReviewerOutput",
-    }
-)
-
-
-def __getattr__(name: str):
-    if name in _DOCUMENT_EXPORTS:
-        from morrow.core import preference_documents
-
-        return getattr(preference_documents, name)
-    if name in _PERSISTENCE_EXPORTS:
-        from morrow.core import preference_persistence_models
-
-        return getattr(preference_persistence_models, name)
-    if name in _REVIEW_EXPORTS:
-        from morrow.core import preference_review
-
-        return getattr(preference_review, name)
-    raise AttributeError(name)
-
-
 __all__ = [
     "PREFERENCE_ENTRY_MAX_CHARS",
     "PREFERENCE_EVIDENCE_ID_PREFIX",
@@ -260,4 +206,4 @@ __all__ = [
     "PreferenceScope",
     "PreferenceStatus",
     "normalize_preference_statement",
-] + sorted(_DOCUMENT_EXPORTS | _PERSISTENCE_EXPORTS | _REVIEW_EXPORTS)
+]

@@ -223,7 +223,7 @@ async def test_session_restart_restores_persisted_conversation(tmp_path):
     session_id = products.session.session_id
     consumed = [item async for item in products.orchestrator.stream("ephemeral")]
     assert consumed
-    assert products.session.messages
+    assert products.session.log.messages_view()
     resumed = build_session_application(
         app,
         app.workspace_service.resolve(tmp_path / "project").identity,
@@ -231,7 +231,7 @@ async def test_session_restart_restores_persisted_conversation(tmp_path):
         model=ModelRef(provider_id="p", model_id="m"),
         resume_session_id=session_id,
     )
-    assert [message.content for message in resumed.session.messages] == [
+    assert [message.content for message in resumed.session.log.messages_view()] == [
         "ephemeral",
         "stage guard reply",
     ]

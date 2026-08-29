@@ -4,19 +4,15 @@ from __future__ import annotations
 
 import asyncio
 import inspect
-import json
 import math
 from collections.abc import AsyncIterator, Callable
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from morrow.application.context import ContextBudgetError
-from morrow.application.project_instructions import ProjectInstructionError
-from morrow.application.prompt import PromptAssemblyError
 from morrow.core.application import ApplicationError
-from morrow.core.capabilities import ChangeToolFact, ToolRunContext
+from morrow.core.capabilities import ToolRunContext
 from morrow.core.compaction import CompactionSummary, TokenAccountingBasis
-from morrow.core.completion import normalize_workspace_path
 from morrow.core.diagnostics import PublicDiagnosticError
 from morrow.core.events import completion_payload, make_event
 from morrow.core.execution import (
@@ -41,7 +37,6 @@ from morrow.core.models import (
     ModelUsage,
     ProtocolModel,
     ToolDefinition,
-    ToolEffect,
     UserMessage,
     provider_error_message,
     sanitize_text,
@@ -232,68 +227,6 @@ def _accepted_text_chunks(chunks: list[str], message: AssistantMessage) -> list[
     return [content] if content else []
 
 
-def _remember_touched_path(state: _AgentRunState, value: str) -> None:
-    """Keep recent unique paths ordered so prompt refresh eviction is deterministic."""
-    if value in state.touched_paths:
-        state.touched_paths.remove(value)
-    state.touched_paths.append(value)
-    if len(state.touched_paths) > 256:
-        del state.touched_paths[:-256]
-
-
-def _prompt_refresh_target(value: str) -> str | None:
-    if not isinstance(value, str) or not value:
-        return None
-    try:
-        normalized = normalize_workspace_path(value)
-    except (TypeError, ValueError):
-        return None
-    return normalized
-
-
-def _prompt_refresh_targets(state: _AgentRunState) -> tuple[str, ...]:
-    targets: list[str] = []
-    for path in state.touched_paths:
-        target = _prompt_refresh_target(path)
-        if target is not None and target not in targets:
-            targets.append(target)
-    return tuple(targets)
-
-
-def _remember_call_paths(state: _AgentRunState, call: FunctionToolCall) -> None:
-    args = call.arguments or {}
-    if isinstance(args, str):
-        try:
-            args = json.loads(args)
-        except (TypeError, ValueError):
-            args = {}
-    if not isinstance(args, dict):
-        return
-    for key in (
-        "path",
-        "file_path",
-        "target_path",
-        "destination_path",
-        "source_path",
-        "directory_path",
-        "paths",
-    ):
-        value = args.get(key)
-        if isinstance(value, str) and value:
-            _remember_touched_path(state, value)
-        elif isinstance(value, (list, tuple)):
-            for item in value:
-                if isinstance(item, str) and item:
-                    _remember_touched_path(state, item)
-
-
-def _prompt_refresh_failure_code(error: Exception) -> str:
-    code = getattr(error, "code", None)
-    if isinstance(code, str) and code.isidentifier():
-        return f"prompt_refresh_{code}"[:64]
-    return "prompt_refresh_failed"
-
-
 @dataclass
 class _AgentRunState:
     """Mutable state for one AgentLoop run."""
@@ -334,7 +267,6 @@ class _AgentRunState:
     stop_code: AgentStopCode | None = None
     internal_phase: str = "run_setup"
     stop_detail: str | None = None
-    touched_paths: list[str] = field(default_factory=list)
 
 
 class _RunEventEmitter:
@@ -1092,47 +1024,6 @@ class AgentLoop:
                     ),
                 )
 
-            def refresh_prompt_projection() -> bool:
-                assembler = getattr(context_builder, "prompt_assembler", None)
-                resolver = getattr(assembler, "resolver", None)
-                if assembler is None or resolver is None or not state.touched_paths:
-                    return False
-                max_targets = getattr(resolver, "max_targets", 0)
-                targets = _prompt_refresh_targets(state)
-                if not targets or max_targets < 1:
-                    return False
-                current_projection = (
-                    session.run_context_projection.prompt_projection
-                    if session.run_context_projection is not None
-                    else getattr(session, "pending_prompt_projection", None)
-                )
-                if current_projection is None:
-                    return False
-                extended = current_projection
-                for start in range(0, len(targets), max_targets):
-                    extended = assembler.extend_projection(
-                        extended,
-                        target_paths=targets[start : start + max_targets],
-                    )
-                if extended.evidence == current_projection.evidence:
-                    return False
-                if session.run_context_projection is not None:
-                    session.run_context_projection = replace(
-                        session.run_context_projection,
-                        prompt_projection=extended,
-                    )
-                    session.pending_prompt_projection = None
-                else:
-                    session.pending_prompt_projection = extended
-                return True
-
-            if resume_current_turn:
-                for record in session.log.snapshot().records:
-                    prior_message = getattr(record, "message", None)
-                    if isinstance(prior_message, AssistantMessage):
-                        for prior_call in prior_message.tool_calls:
-                            _remember_call_paths(state, prior_call)
-
             while True:
                 state.internal_phase = "run_control"
                 if _pending_cancellation():
@@ -1152,16 +1043,6 @@ class AgentLoop:
                     return
                 try:
                     state.internal_phase = "context_build"
-                    try:
-                        refresh_prompt_projection()
-                    except (ProjectInstructionError, PromptAssemblyError) as exc:
-                        code = _prompt_refresh_failure_code(exc)
-                        for item in terminal_error(
-                            f"项目指令刷新失败，已阻止后续模型请求（{code}）",
-                            AgentStopCode.INTERNAL,
-                        ):
-                            yield item
-                        return
                     context = context_builder.build(session, tools=tools)
                     while context.compaction_required:
                         if not policy.compaction_enabled:
@@ -1412,29 +1293,6 @@ class AgentLoop:
                         yield item
                     return
 
-                for call in calls:
-                    _remember_call_paths(state, call)
-                try:
-                    projection_changed = refresh_prompt_projection()
-                except (ProjectInstructionError, PromptAssemblyError) as exc:
-                    code = _prompt_refresh_failure_code(exc)
-                    for item in terminal_error(
-                        f"项目指令刷新失败，已阻止后续工具执行（{code}）",
-                        AgentStopCode.INTERNAL,
-                    ):
-                        yield item
-                    return
-                deferred_for_scope = {
-                    call.id
-                    for call in calls
-                    if projection_changed
-                    and (
-                        (registered := tool_executor.tool_set.tools.get(call.name)) is not None
-                        and registered.runtime_contract is not None
-                        and registered.runtime_contract.intent_effect is ToolEffect.PERSISTENT_WRITE
-                    )
-                }
-
                 try:
                     state.internal_phase = "conversation_commit"
                     freeze_permissions()
@@ -1490,14 +1348,6 @@ class AgentLoop:
                         ordinal=index,
                         total=len(calls),
                         result_limit=per_call_result_limit,
-                        preflight_error=(
-                            (
-                                ToolErrorCode.PREFLIGHT_FAILED,
-                                "已加载目标路径的项目指令；请基于新指令重新提交写操作",
-                            )
-                            if call.id in deferred_for_scope
-                            else None
-                        ),
                     )
                     result = call_execution.outcome
                     durable = call_execution.durable_execution
@@ -1524,11 +1374,6 @@ class AgentLoop:
                     )
                 state.active_calls = ()
                 state.active_result_limit = None
-                if state.run_context is not None:
-                    for fact in state.run_context.facts:
-                        if isinstance(fact, ChangeToolFact):
-                            for p in fact.relative_paths:
-                                _remember_touched_path(state, p)
                 if await self._host_stop_requested(session, message):
                     yield event("status.changed", {"status": "stopped", "source": "host"})
                     session.finish_turn(FinishReason.CANCELLED)
@@ -1750,7 +1595,7 @@ class AgentLoop:
 
 
 class AgentRuntime:
-    """Compatibility wrapper: plain chat is the same AgentLoop with no tools."""
+    """Plain-chat runtime composed around the single AgentLoop."""
 
     def __init__(
         self,

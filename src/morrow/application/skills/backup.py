@@ -34,9 +34,7 @@ class SkillBackupCapture:
 def referenced_version_ids(executor, *, pinned_version_ids: tuple[str, ...] = ()) -> frozenset[str]:
     """Return only versions named by durable Skill evidence.
 
-    The query is intentionally table-discovery based so v2 can inspect stores
-    created by a compatible earlier Stage 6 build without requiring a new table
-    solely for backup bookkeeping.
+    The query covers the current durable Skill evidence tables.
     """
 
     version_ids = set(pinned_version_ids)
@@ -45,9 +43,6 @@ def referenced_version_ids(executor, *, pinned_version_ids: tuple[str, ...] = ()
         ("agent_run_skill_contexts", "version_id"),
         ("skill_drafts", "accepted_version_id"),
         ("skill_usage", "version_id"),
-        ("skill_usages", "version_id"),
-        ("skill_rollback_points", "version_id"),
-        ("backup_skill_versions", "version_id"),
     )
     for table, column in references:
         if executor.execute(

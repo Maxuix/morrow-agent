@@ -25,12 +25,12 @@ from morrow.adapters.state.migrations import (
 from morrow.adapters.state.operational import OperationalStore
 from morrow.adapters.state.preference_journal import SqlitePreferenceJournal
 from morrow.core.domain import DurableTurn
-from morrow.core.preference_models import (
+from morrow.core.preference_documents import PreferenceReviewSnapshot
+from morrow.core.preference_models import PreferenceOperation
+from morrow.core.preference_persistence_models import (
     PreferenceEvidence,
-    PreferenceOperation,
     PreferenceProposal,
     PreferenceReviewJob,
-    PreferenceReviewSnapshot,
     PreferenceWriteBatch,
     preference_operation_fingerprint,
 )

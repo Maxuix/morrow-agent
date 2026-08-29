@@ -48,7 +48,7 @@ def test_direct_assembly_orders_authority_and_labels_project_scope(tmp_path: Pat
     (tmp_path / "src" / "AGENTS.md").write_text("src-only guidance", encoding="utf-8")
     (tmp_path / "src" / "main.py").write_text("pass\n", encoding="utf-8")
     assembler = DirectCodingPromptAssembler(tmp_path, role_prompt="role guidance")
-    projection = assembler.prepare_for_task("edit `src/main.py`")
+    projection = assembler.prepare_for_task()
 
     messages = assembler.system_messages(projection=projection)
     contents = [message.content for message in messages]
@@ -66,21 +66,6 @@ def test_direct_assembly_orders_authority_and_labels_project_scope(tmp_path: Pat
     assert rendered.count("权限") == 1
     for defensive_phrase in ("不可信", "禁止", "不能授权", "不能执行"):
         assert defensive_phrase not in rendered
-
-
-def test_prompt_extension_keeps_the_root_projection_unchanged(tmp_path: Path) -> None:
-    (tmp_path / "AGENTS.md").write_text("root guidance", encoding="utf-8")
-    (tmp_path / "src").mkdir()
-    (tmp_path / "src" / "AGENTS.md").write_text("src guidance", encoding="utf-8")
-    (tmp_path / "docs").mkdir()
-    (tmp_path / "docs" / "AGENTS.md").write_text("docs guidance", encoding="utf-8")
-    assembler = DirectCodingPromptAssembler(tmp_path)
-
-    admitted = assembler.prepare_for_task("edit `src/main.py`")
-    extended = assembler.extend_projection(admitted, target_paths=("docs/readme.md",))
-
-    assert [item.reference.path for item in extended.project_instructions] == ["AGENTS.md"]
-    assert extended == admitted
 
 
 def test_context_builder_does_not_override_frozen_prompt_with_pending_projection(
@@ -122,10 +107,10 @@ def test_context_builder_does_not_override_frozen_prompt_with_pending_projection
     assert "unfrozen live guidance" not in system_text
 
 
-def test_assembler_without_workspace_ignores_touched_targets() -> None:
+def test_assembler_without_workspace_has_no_project_instructions() -> None:
     assembler = DirectCodingPromptAssembler()
 
-    projection = assembler.prepare_for_task(target_paths=("src/main.py",))
+    projection = assembler.prepare_for_task()
 
     assert projection.project_instructions == ()
 
@@ -155,7 +140,7 @@ def test_context_builder_uses_frozen_projection_and_keeps_tools_out_of_structure
     assembler = DirectCodingPromptAssembler(tmp_path)
     session = Session(session_id="s")
     session.log.begin_turn(UserMessage(content="inspect `app.py`"))
-    session.pending_prompt_projection = assembler.prepare_for_task("inspect `app.py`")
+    session.pending_prompt_projection = assembler.prepare_for_task()
     builder = ContextBuilder(
         run_policy=make_run_policy(),
         estimate_request_chars=estimate_request_chars,
@@ -225,7 +210,7 @@ def test_durable_prompt_evidence_contains_only_the_root_source(tmp_path: Path) -
     (tmp_path / "src").mkdir()
     (tmp_path / "src" / "AGENTS.md").write_text("nested", encoding="utf-8")
     assembler = DirectCodingPromptAssembler(tmp_path)
-    projection = assembler.prepare_for_task(target_paths=("src/main.py",))
+    projection = assembler.prepare_for_task()
     snapshot = build_agent_run_snapshot(
         Session(session_id="s"),
         model=ModelRef(provider_id="p", model_id="m"),
@@ -305,7 +290,7 @@ async def test_direct_prompt_reaches_openai_compatible_wire_serializer(tmp_path:
     assembler = DirectCodingPromptAssembler(tmp_path)
     session = Session(session_id="s")
     session.log.begin_turn(UserMessage(content="inspect `main.py`"))
-    session.pending_prompt_projection = assembler.prepare_for_task("inspect `main.py`")
+    session.pending_prompt_projection = assembler.prepare_for_task()
     messages = (
         ContextBuilder(
             run_policy=make_run_policy(),

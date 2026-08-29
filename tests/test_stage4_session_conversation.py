@@ -52,7 +52,7 @@ async def test_user_commit_precedes_turn_started_and_survives_restart(tmp_path):
         if isinstance(item, AgentEvent)
     ]
     assert events[0].type == "turn.started"
-    assert products.session.messages[0].content == "hello there"
+    assert products.session.log.messages_view()[0].content == "hello there"
     assert events[0].turn_id
     assert products.session.persisted is True
     assert products.session.dirty is False
@@ -64,7 +64,7 @@ async def test_user_commit_precedes_turn_started_and_survives_restart(tmp_path):
         model=ModelRef(provider_id="p", model_id="m"),
         resume_session_id=session_id,
     )
-    assert [message.content for message in resumed.session.messages] == [
+    assert [message.content for message in resumed.session.log.messages_view()] == [
         "hello there",
         "saved answer",
     ]
@@ -109,16 +109,16 @@ async def test_client_message_id_replay_recovery_and_conflict(tmp_path):
         )[0]
         == turns_before
     )
-    assert [message.content for message in session.messages].count("same text") == 1
+    assert [message.content for message in session.log.messages_view()].count("same text") == 1
 
     conflict = [
         event
         async for event in runtime.run_turn(session, "different text", client_message_id="client-1")
     ]
     assert conflict[-1].payload["finish_reason"] == FinishReason.ERROR.value
-    assert [message.content for message in session.messages].count("different text") == 0
+    assert [message.content for message in session.log.messages_view()].count("different text") == 0
 
-    message_count = len(session.messages)
+    message_count = len(session.log.messages_view())
     receipt = journal.get_receipt(identity.workspace_id, session.session_id, "client-1")
     journal.update_receipt(
         identity.workspace_id,
@@ -130,7 +130,7 @@ async def test_client_message_id_replay_recovery_and_conflict(tmp_path):
     ]
     assert session.health is SessionHealth.NEEDS_RECOVERY
     assert recovery[-1].payload["finish_reason"] == FinishReason.ERROR.value
-    assert len(session.messages) == message_count
+    assert len(session.log.messages_view()) == message_count
     assert products.commands.execute("/new").action is None
 
 
@@ -142,7 +142,7 @@ async def test_new_keeps_old_session_and_exit_does_not_discard(tmp_path):
     assert products.commands.execute("/new").action == "new"
     products.orchestrator.reset_session()
     assert products.session.session_id != old_id
-    assert products.session.messages == ()
+    assert products.session.log.messages_view() == ()
     assert products.session.preferences.language is None
     loaded = products.session.committer.journal.get_session(identity.workspace_id, old_id)
     assert loaded is not None
@@ -169,7 +169,7 @@ def test_process_local_dirty_new_still_requires_discard():
         project_store=None,
     )
     assert commands.execute("/new").action == "discard_new"
-    assert session.messages[0].content == "unsaved"
+    assert session.log.messages_view()[0].content == "unsaved"
     assert Profile(name="x").name == "x"
 
 
@@ -211,7 +211,7 @@ def test_quarantine_rejects_invalid_sequence_without_rewriting_lifecycle(tmp_pat
     assert products.session.health is SessionHealth.QUARANTINED
     row = journal.get_session(identity.workspace_id, products.session.session_id)
     assert row.lifecycle is SessionLifecycle.ACTIVE
-    assert products.session.messages == ()
+    assert products.session.log.messages_view() == ()
 
 
 def test_duplicate_open_submit_commits_recovery_and_restores_active_projection(tmp_path):
@@ -282,4 +282,4 @@ def test_restore_quarantines_malformed_conversation_json(tmp_path):
     durable = journal.get_session(identity.workspace_id, products.session.session_id)
     assert durable is not None
     assert durable.health is SessionHealth.QUARANTINED
-    assert products.session.messages == ()
+    assert products.session.log.messages_view() == ()

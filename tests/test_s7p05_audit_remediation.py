@@ -22,7 +22,6 @@ from morrow.core.models import (
     SystemMessage,
     ToolApprovalDecision,
 )
-from morrow.runtime.agent import _AgentRunState, _prompt_refresh_targets
 from morrow.runtime.capabilities import CapabilityPolicy
 from morrow.runtime.tools import ToolExecutor, ToolRegistry
 from morrow.services.changes import ChangeSetService
@@ -51,18 +50,6 @@ class _RejectApproval:
     async def request(self, request):
         del request
         return ToolApprovalDecision(approved=False)
-
-
-def test_prompt_refresh_keeps_all_recent_unique_directories_for_batched_resolution():
-    state = _AgentRunState(
-        turn_id="turn-1",
-        run_context=ToolRunContext(run_id="run-1", session_id="session-1"),
-    )
-    state.touched_paths = [f"package-{index}/module.py" for index in range(12)]
-
-    assert _prompt_refresh_targets(state) == tuple(
-        f"package-{index}/module.py" for index in range(12)
-    )
 
 
 @pytest.mark.asyncio
@@ -198,7 +185,9 @@ async def test_first_nested_write_runs_without_dynamic_scope_discovery(tmp_path:
 
     [item async for item in session_app.orchestrator.stream("修改模块")]
 
-    tool_messages = [message for message in session_app.session.messages if message.role == "tool"]
+    tool_messages = [
+        message for message in session_app.session.log.messages_view() if message.role == "tool"
+    ]
     assert json.loads(tool_messages[0].content)["ok"] is True
     assert json.loads(tool_messages[1].content)["error"]["code"] == "edit_not_found"
     assert target.read_text(encoding="utf-8") == "value = 2\n"

@@ -496,7 +496,7 @@ async def test_dirty_confirmation_eof_exits_two_without_reset(monkeypatch):
     code = await terminal_module.run_repl(orchestrator, session=session)
     assert code == 2
     assert orchestrator.reset_count == 0
-    assert session.messages[0].content == "unsaved"
+    assert session.log.messages_view()[0].content == "unsaved"
 
 
 @pytest.mark.asyncio
@@ -509,7 +509,7 @@ async def test_dirty_new_confirmed_discards_only_process_local_session(monkeypat
     code = await terminal_module.run_repl(orchestrator, session=session)
     assert code == 0
     assert orchestrator.reset_count == 1
-    assert session.messages == ()
+    assert session.log.messages_view() == ()
 
 
 @pytest.mark.asyncio
@@ -522,7 +522,7 @@ async def test_dirty_new_cancelled_preserves_session(monkeypatch):
     code = await terminal_module.run_repl(orchestrator, session=session)
     assert code == 0
     assert orchestrator.reset_count == 0
-    assert session.messages[0].content == "unsaved"
+    assert session.log.messages_view()[0].content == "unsaved"
 
 
 @pytest.mark.asyncio
@@ -536,7 +536,7 @@ async def test_dirty_exit_cancelled_stays_in_repl_then_confirmed_exits(monkeypat
     )
     assert code == 0
     assert terminal.prompt_count == 4
-    assert session.messages[0].content == "unsaved"
+    assert session.log.messages_view()[0].content == "unsaved"
 
 
 @pytest.mark.asyncio

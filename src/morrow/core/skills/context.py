@@ -6,7 +6,7 @@ import re
 from dataclasses import dataclass
 from typing import Literal
 
-from pydantic import AliasChoices, Field, field_validator, model_validator
+from pydantic import Field, field_validator, model_validator
 
 from morrow.core.domain import canonical_json_bytes, sha256_digest
 from morrow.core.models import ProtocolModel
@@ -66,10 +66,7 @@ class SkillContextEntry(ProtocolModel):
     scope_id: str | None = None
     tree_digest: str
     content: str = Field(default="", max_length=SKILL_CONTEXT_MAX_CONTENT_CHARS)
-    context_digest: str = Field(
-        validation_alias=AliasChoices("context_digest", "content_digest"),
-        serialization_alias="context_digest",
-    )
+    context_digest: str
     omitted_count: int = Field(default=0, ge=0)
     truncated: bool = False
 
@@ -107,12 +104,6 @@ class SkillContextEntry(ProtocolModel):
         if len(canonical_json_bytes(self.model_dump(mode="json"))) > SKILL_CONTEXT_ENTRY_MAX_BYTES:
             raise ValueError("Skill context entry metadata exceeds its byte budget")
         return self
-
-    @property
-    def content_digest(self) -> str:
-        """Compatibility name used by the context builder and older callers."""
-
-        return self.context_digest
 
 
 @dataclass(frozen=True, slots=True)

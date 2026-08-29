@@ -4,82 +4,15 @@ import pytest
 
 from morrow.adapters.credentials.keyring import MemoryCredentialStore
 from morrow.application.commands import CommandService
-from morrow.application.context import ContextBuilder
+from morrow.application.configuration import ConfigurationCommand
 from morrow.application.orchestrator import SessionOrchestrator
 from morrow.bootstrap import build_application, build_session_application
 from morrow.core.capabilities import PermissionPreset, PermissionProfile
-from morrow.core.models import (
-    ConfigPatch,
-    ConfigPatchOperation,
-    ModelRef,
-    Preferences,
-    Profile,
-)
+from morrow.core.models import ModelRef, Preferences, Profile
 from morrow.runtime.agent import AgentRuntime
 from morrow.runtime.session import Session
 from morrow.services.preferences import ConfigPatchService
-from morrow.services.workspace import WorkspaceStateService
 from morrow.testing import ScriptedModelProvider, make_context_builder, seed_user_turn
-
-
-def test_config_patch_updates_workspace_preferences_only_after_validation(tmp_path):
-    app = build_application(state_root=tmp_path / "state", credentials=MemoryCredentialStore())
-    project = tmp_path / "project"
-    project.mkdir()
-    identity = app.workspace_service.confirm(app.workspace_service.resolve(project))
-    service = ConfigPatchService(app.project_store, app.global_store, identity.workspace_id)
-    patch = ConfigPatch(
-        scope="workspace",
-        target="preferences",
-        operations=[ConfigPatchOperation(op="set", path="language", value="中文")],
-    )
-    service.apply(patch)
-    assert (
-        app.project_store.load_preferences(identity.workspace_id).value.preferences.language
-        == "中文"
-    )
-    invalid = ConfigPatch(
-        scope="workspace",
-        target="preferences",
-        operations=[ConfigPatchOperation(op="set", path="workspace_id", value="bad")],
-    )
-    with pytest.raises(ValueError):
-        service.apply(invalid)
-
-
-def test_successful_config_patch_refreshes_next_turn_snapshot_and_unset_reveals_lower_layer(
-    tmp_path,
-):
-    app = build_application(state_root=tmp_path / "state", credentials=MemoryCredentialStore())
-    project = tmp_path / "project"
-    project.mkdir()
-    identity = app.workspace_service.confirm(app.workspace_service.resolve(project))
-    session = Session(session_id="s", global_preferences=Preferences(language="中文"))
-    service = ConfigPatchService(
-        app.project_store, app.global_store, identity.workspace_id, session
-    )
-    service.apply(
-        ConfigPatch(
-            scope="workspace",
-            target="preferences",
-            operations=[ConfigPatchOperation(op="set", path="language", value="English")],
-        )
-    )
-    assert session.workspace_preferences.language == "English"
-    service.apply(
-        ConfigPatch(
-            scope="workspace",
-            target="preferences",
-            operations=[ConfigPatchOperation(op="unset", path="language")],
-        )
-    )
-    assert session.workspace_preferences.language is None
-    assert (
-        ContextBuilder.merge_preferences(
-            session.global_preferences, session.workspace_preferences, session.preferences
-        ).language
-        == "中文"
-    )
 
 
 def test_command_service_routes_deterministic_edits_to_one_patch_path(tmp_path):
@@ -116,7 +49,7 @@ def test_command_service_routes_deterministic_edits_to_one_patch_path(tmp_path):
         "Preferences 的 /config edit/reset 已退役；请使用 /preferences 管理原子规则。"
     ]
     assert results[1].lines[-1] == "- set summary = a demo"
-    patch_service.apply(results[1].value)
+    patch_service.apply_command(results[1].value)
 
 
 def test_dirty_session_transition_requires_discard_and_removed_commands_are_unknown(tmp_path):
@@ -231,63 +164,6 @@ def test_reset_clears_only_process_local_history():
     assert session.log.snapshot().records == ()
 
 
-def test_legacy_handoff_files_are_ignored_and_remain_byte_identical(tmp_path):
-    app = build_application(state_root=tmp_path / "state", credentials=MemoryCredentialStore())
-    project = tmp_path / "project"
-    project.mkdir()
-    identity = app.workspace_service.confirm(app.workspace_service.resolve(project))
-    workspace_dir = app.data_root.workspaces_path / identity.workspace_id
-    workspace_dir.mkdir(parents=True, exist_ok=True)
-    primary = workspace_dir / "handoff.yaml"
-    backup = workspace_dir / "handoff.yaml.bak"
-    primary.write_bytes(b"schema_version: 99\nrevision: 5\n")
-    backup.write_bytes(b"not: [valid")
-    before = (primary.read_bytes(), backup.read_bytes())
-
-    class FailOnLegacyAccess:
-        def __init__(self, wrapped):
-            self.wrapped = wrapped
-
-        def __getattr__(self, name):
-            return getattr(self.wrapped, name)
-
-        def load_handoff(self, workspace_id):
-            raise AssertionError(f"legacy primary read attempted: {workspace_id}")
-
-        def load_handoff_backup(self, workspace_id):
-            raise AssertionError(f"legacy backup read attempted: {workspace_id}")
-
-        def write_handoff(self, *args, **kwargs):
-            raise AssertionError("legacy write attempted")
-
-        def clear_handoff(self, *args, **kwargs):
-            raise AssertionError("legacy clear attempted")
-
-    guarded_store = FailOnLegacyAccess(app.project_store)
-    workspace_state = WorkspaceStateService(guarded_store)
-    inspection = workspace_state.inspect(identity.workspace_id)
-    result = workspace_state.onboard(identity.workspace_id, display_name="demo", summary="summary")
-    config = ConfigPatchService(
-        guarded_store, app.global_store, identity.workspace_id, Session(session_id="s")
-    )
-    config.apply(
-        ConfigPatch(
-            scope="workspace",
-            target="preferences",
-            operations=[ConfigPatchOperation(op="set", path="language", value="中文")],
-        )
-    )
-
-    assert inspection.read_only is False
-    assert result == 1
-    assert app.project_store.load_profile(identity.workspace_id).value.profile.name == "demo"
-    assert (
-        app.project_store.load_preferences(identity.workspace_id).value.preferences.language
-        == "中文"
-    )
-    assert (primary.read_bytes(), backup.read_bytes()) == before
-
-
 @pytest.mark.asyncio
 async def test_corrupt_workspace_preferences_is_an_isolated_non_overwritable_empty_layer(tmp_path):
     app = build_application(state_root=tmp_path / "state", credentials=MemoryCredentialStore())
@@ -320,21 +196,25 @@ async def test_corrupt_workspace_preferences_is_an_isolated_non_overwritable_emp
     assert session.workspace_preferences == Preferences()
     assert session.profile.name == "valid profile"
     with pytest.raises(RuntimeError):
-        commands.config_service.apply(
-            ConfigPatch(
+        commands.config_service.apply_command(
+            ConfigurationCommand(
                 scope="workspace",
                 target="preferences",
-                operations=[ConfigPatchOperation(op="set", path="language", value="English")],
+                operation="set",
+                path="language",
+                value="English",
             )
         )
     assert commands.execute("/config reset workspace").action is None
     assert "已退役" in commands.execute("/config reset workspace").lines[0]
     assert commands.execute("/config edit workspace language English").action is None
-    commands.config_service.apply(
-        ConfigPatch(
+    commands.config_service.apply_command(
+        ConfigurationCommand(
             scope="workspace",
             target="profile",
-            operations=[ConfigPatchOperation(op="set", path="summary", value="allowed")],
+            operation="set",
+            path="summary",
+            value="allowed",
         )
     )
     assert app.project_store.load_profile(workspace_id).value.profile.summary == "allowed"

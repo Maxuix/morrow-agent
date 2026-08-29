@@ -14,7 +14,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any, Literal
 
-from pydantic import AliasChoices, Field, field_validator, model_validator
+from pydantic import Field, field_validator, model_validator
 
 from morrow.core.domain import canonical_json_bytes, sha256_digest
 from morrow.core.models import ProtocolModel, ToolEffect, utc_now
@@ -141,9 +141,7 @@ class McpToolRiskMapping(ProtocolModel):
 class McpToolPolicy(ProtocolModel):
     """Explicit local allowlist plus per-tool local risk mapping."""
 
-    allowlist: tuple[str, ...] = Field(
-        default=(), validation_alias=AliasChoices("allowlist", "allowed_tools")
-    )
+    allowlist: tuple[str, ...] = ()
     mappings: tuple[McpToolRiskMapping, ...] = ()
 
     @field_validator("allowlist")
@@ -176,33 +174,22 @@ class McpToolPolicy(ProtocolModel):
 class McpServerDefinition(ProtocolModel):
     """Frozen stdio desired state stored in an Extension YAML document."""
 
-    server_id: str = Field(validation_alias=AliasChoices("server_id", "id"))
-    display_name: str = Field(
-        validation_alias=AliasChoices("display_name", "name"),
-        serialization_alias="display_name",
-    )
+    server_id: str
+    display_name: str
     transport: McpTransport = McpTransport.STDIO
-    executable: str = Field(
-        validation_alias=AliasChoices("executable", "command", "command_or_endpoint")
-    )
-    argv: tuple[str, ...] = Field(default=(), validation_alias=AliasChoices("argv", "args"))
+    executable: str
+    argv: tuple[str, ...] = ()
     executable_kind: Literal["absolute", "managed"] = "absolute"
     cwd_policy: McpCwdPolicy = McpCwdPolicy.WORKSPACE
     cwd: str | None = None
     timeout_ms: int = Field(
-        default=MCP_DEFAULT_TIMEOUT_MS,
-        validation_alias=AliasChoices("timeout_ms", "timeout"),
-        ge=MCP_MIN_TIMEOUT_MS,
-        le=MCP_MAX_TIMEOUT_MS,
+        default=MCP_DEFAULT_TIMEOUT_MS, ge=MCP_MIN_TIMEOUT_MS, le=MCP_MAX_TIMEOUT_MS
     )
     credential_refs: tuple[str, ...] = ()
     workspace_visibility: McpWorkspaceVisibility = McpWorkspaceVisibility.NONE
     requested_launch_risks: tuple[McpLaunchRisk, ...] = ()
     enabled: bool = False
-    tool_policy: McpToolPolicy = Field(
-        default_factory=McpToolPolicy,
-        validation_alias=AliasChoices("tool_policy", "capability_policy"),
-    )
+    tool_policy: McpToolPolicy = Field(default_factory=McpToolPolicy)
     revision: int = Field(default=1, ge=1, le=2_147_483_647)
     scope: Literal["global", "workspace"] = "global"
     scope_id: str | None = None
@@ -295,10 +282,6 @@ class McpServerDefinition(ProtocolModel):
     @property
     def launch_risk_values(self) -> tuple[str, ...]:
         return tuple(item.value for item in self.requested_launch_risks)
-
-
-# A descriptive constructor name used by callers that prefer "config".
-McpServerConfig = McpServerDefinition
 
 
 class McpRemoteTool(ProtocolModel):
@@ -670,7 +653,6 @@ __all__ = [
     "McpLaunchSnapshot",
     "McpRemoteTool",
     "McpResultArtifactLink",
-    "McpServerConfig",
     "McpServerDefinition",
     "McpServerInspection",
     "McpServerProjection",

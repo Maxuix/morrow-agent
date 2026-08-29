@@ -23,16 +23,3 @@
 - 不为每个 Stage 再建立更深的长期路线层级；大型实现只在 `.agent/subplans/` 中拆分。
 - Stage 1–6 是已完成基线；Stage 4 的最终验收证据位于 `docs/acceptance/`；Stage 7–10
   只有在用户请求激活时才根据实际代码再次评审。
-
-## 旧文件迁移
-
-旧路线中的 Stage 4–7 被重新拆分：
-
-| 旧文件 | 新归属 |
-|---|---|
-| `stage-4-sessions-context-and-memory.md` | Stage 4 的运行持久化 + Stage 5 的学习/记忆 |
-| `stage-5-skills-and-extensions.md` | Stage 6 |
-| `stage-6-automation-and-complex-tasks.md` | Stage 7 的 Workflow + Stage 9 的后台自动化 |
-| `stage-7-experience-and-channels.md` | Stage 8 的 GUI + Stage 10 的产品化 |
-
-兼容入口文件只用于解释迁移，不再作为路线权威。

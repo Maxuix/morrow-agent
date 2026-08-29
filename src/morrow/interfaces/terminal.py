@@ -369,7 +369,7 @@ async def _run_repl_loop(
                     return _closed_input(terminal)
                 if confirmation == "yes":
                     try:
-                        _command_service(orchestrator).config_service.apply(result.value)
+                        _command_service(orchestrator).config_service.apply_command(result.value)
                     except (ValueError, RuntimeError) as exc:
                         terminal.console.print(f"配置保存失败：{exc}")
                     else:

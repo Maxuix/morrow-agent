@@ -424,7 +424,9 @@ async def test_full_access_host_policy_deny_closes_before_handler(tmp_path):
         assert execution.intent.policy_reason_codes == ("full_access_grant_required",)
         assert execution.state is ToolExecutionState.CLOSED
         assert execution.disposition.value == "denied"
-        tool_messages = [message for message in session.messages if message.role == "tool"]
+        tool_messages = [
+            message for message in session.log.messages_view() if message.role == "tool"
+        ]
         denied = json.loads(tool_messages[0].content)
         assert "full_access_grant_required" in denied["error"]["message"]
         assert "bash 会自动捕获 stdout/stderr" in denied["error"]["message"]

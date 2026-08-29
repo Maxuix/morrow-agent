@@ -5,7 +5,6 @@ import asyncio
 import pytest
 
 from morrow.application.context import ContextBudgetError
-from morrow.application.structured import StructuredCompletionError, complete_structured
 from morrow.core.models import (
     AssistantMessage,
     FinishReason,
@@ -16,6 +15,7 @@ from morrow.core.models import (
     UserMessage,
 )
 from morrow.runtime.session import Session
+from morrow.runtime.structured import StructuredCompletionError, complete_structured
 from morrow.testing import ScriptedModelProvider, make_context_builder, seed_user_turn
 
 

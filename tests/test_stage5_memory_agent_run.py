@@ -163,7 +163,7 @@ def test_new_turn_freezes_selection_and_effective_preferences_atomically(tmp_pat
         assert revisions["workspace_preferences"].revision == 7
         assert revisions["session_preferences"].revision == 0
         assert len(journal.load_records("ws_1", "ses_1")) == 1
-        assert session.messages[0].content == "Operational SQLite"
+        assert session.log.messages_view()[0].content == "Operational SQLite"
     finally:
         handle.close()
 
@@ -196,7 +196,7 @@ def test_selection_admission_rolls_back_before_user_message_is_published(tmp_pat
         assert journal.get_task_run("ws_1", "task_2") is None
         assert journal.list_memory_selections("ws_1") == ()
         assert journal.load_records("ws_1", "ses_1") == ()
-        assert session.messages == ()
+        assert session.log.messages_view() == ()
     finally:
         handle.close()
 

@@ -49,13 +49,13 @@ from morrow.core.domain import (
     DurableAgentRun,
     DurableConversationRecord,
     DurableSession,
-    DurableTaskOutcome,
     DurableTaskRun,
     DurableTaskRunTransition,
     DurableTurn,
     SessionHealth,
     SessionLifecycle,
     TaskCommandReceipt,
+    TaskOutcome,
     TaskRunStatus,
     TurnSubmitReceipt,
     session_can_start_work,
@@ -96,7 +96,7 @@ from morrow.core.permissions import (
     CapabilityGrant,
     PermissionSnapshot,
 )
-from morrow.core.preference_models import (
+from morrow.core.preference_persistence_models import (
     PreferenceWriteBatch,
     PreferenceWriteBatchStatus,
 )
@@ -1218,17 +1218,13 @@ class SqliteOperationalJournal:
     ) -> tuple[DurableTaskRunTransition, ...]:
         return self._task_journal.list_transitions(workspace_id, task_run_id)
 
-    def put_task_outcome(
-        self, workspace_id: str, outcome: DurableTaskOutcome
-    ) -> DurableTaskOutcome:
+    def put_task_outcome(self, workspace_id: str, outcome: TaskOutcome) -> TaskOutcome:
         return self._task_journal.put_outcome(workspace_id, outcome)
 
-    def get_task_outcome(self, workspace_id: str, outcome_id: str) -> DurableTaskOutcome | None:
+    def get_task_outcome(self, workspace_id: str, outcome_id: str) -> TaskOutcome | None:
         return self._task_journal.get_outcome(workspace_id, outcome_id)
 
-    def list_task_outcomes(
-        self, workspace_id: str, task_run_id: str
-    ) -> tuple[DurableTaskOutcome, ...]:
+    def list_task_outcomes(self, workspace_id: str, task_run_id: str) -> tuple[TaskOutcome, ...]:
         return self._task_journal.list_outcomes(workspace_id, task_run_id)
 
     def reserve_artifact(self, workspace_id: str, metadata: ArtifactMetadata) -> ArtifactMetadata:

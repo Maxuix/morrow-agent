@@ -19,11 +19,11 @@ from morrow.core.domain import (
     DurableAgentRun,
     DurableConversationRecord,
     DurableSession,
-    DurableTaskOutcome,
     DurableTaskRun,
     DurableTaskRunTransition,
     DurableTurn,
     TaskCommandReceipt,
+    TaskOutcome,
     TaskRunStatus,
     TurnSubmitReceipt,
 )
@@ -103,15 +103,13 @@ class SessionLifecyclePort(Protocol):
         self, workspace_id: str, task_run_id: str
     ) -> tuple[DurableTaskRunTransition, ...]: ...
 
-    def put_task_outcome(
-        self, workspace_id: str, outcome: DurableTaskOutcome
-    ) -> DurableTaskOutcome: ...
+    def put_task_outcome(self, workspace_id: str, outcome: TaskOutcome) -> TaskOutcome: ...
 
-    def get_task_outcome(self, workspace_id: str, outcome_id: str) -> DurableTaskOutcome | None: ...
+    def get_task_outcome(self, workspace_id: str, outcome_id: str) -> TaskOutcome | None: ...
 
     def list_task_outcomes(
         self, workspace_id: str, task_run_id: str
-    ) -> tuple[DurableTaskOutcome, ...]: ...
+    ) -> tuple[TaskOutcome, ...]: ...
 
     def get_task_command_receipt(
         self, workspace_id: str, command_id: str

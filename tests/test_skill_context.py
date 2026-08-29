@@ -20,7 +20,7 @@ def _entry(content: str = "safe instructions") -> SkillContextEntry:
         scope="global",
         tree_digest="a" * 64,
         content=content,
-        content_digest=sha256_digest(content.encode()),
+        context_digest=sha256_digest(content.encode()),
     )
 
 
@@ -45,5 +45,5 @@ def test_skill_context_is_separate_and_action_oriented() -> None:
 
 def test_skill_context_entry_digest_and_budget_are_verified() -> None:
     entry = _entry("bounded")
-    assert entry.content_digest == sha256_digest(b"bounded")
+    assert entry.context_digest == sha256_digest(b"bounded")
     assert skill_context_projection_digest((entry,))

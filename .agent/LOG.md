@@ -3990,3 +3990,21 @@
 - Focused runtime/policy/preparation tests passed `139`; the complete offline gate passed
   `1362 passed, 2 deselected in 111.45s`. Ruff format/check, compileall, both CLI help commands and
   `git diff --check` passed. No Live Provider request or evaluation admission was run.
+## 2026-08-30 — Current-version-only compatibility policy opened
+
+- The user explicitly chose not to retain any old Morrow version compatibility. Deterministically
+  migratable user state will move to the current format; unsupported and evaluation-only historical
+  data will be removed.
+- External interoperability protocols remain current product contracts, not version compatibility.
+- Activated Subplan 94 from clean local `main@da5f89a`; no Live request or evaluation evidence
+  mutation is authorized.
+
+## 2026-08-30 — Repository compatibility surfaces removed
+
+- Removed dead re-export modules, unused type/method aliases, the old ConfigPatch API, Preference
+  candidate bridge, lazy cross-module exports, dead project-instruction refresh, speculative Skill
+  table probes, current-input aliases and test-only history projections.
+- Deleted the legacy Stage 5 deterministic evaluator, its 24-KiB dataset, dedicated tests, obsolete
+  roadmap redirect files and retired Handoff acceptance records. The slice deletes 3,135 net lines.
+- Focused suites passed. The complete offline gate passed `1338 passed, 2 deselected in 112.98s`;
+  Ruff format/check, compileall, CLI help and diff checks passed. No Live request was run.

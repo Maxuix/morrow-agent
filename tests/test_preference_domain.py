@@ -4,8 +4,8 @@ from datetime import UTC, datetime
 
 import pytest
 
+from morrow.core.preference_documents import PreferenceDocument
 from morrow.core.preference_models import (
-    PreferenceDocument,
     PreferenceEntry,
     PreferenceLifecycleKind,
     PreferenceLifecycleOperation,

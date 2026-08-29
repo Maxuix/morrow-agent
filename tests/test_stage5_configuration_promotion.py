@@ -15,9 +15,9 @@ from morrow.bootstrap import build_application
 from morrow.core.application import ApplicationError, ApplicationErrorCode
 from morrow.core.domain import (
     DurableSession,
-    DurableTaskOutcome,
     DurableTaskRun,
     DurableTaskRunTransition,
+    TaskOutcome,
     TaskOutcomeTrigger,
     TaskRunStatus,
     canonical_json_bytes,
@@ -219,7 +219,7 @@ def _promotion_subjects(
     )
     journal.put_task_outcome(
         workspace_id,
-        DurableTaskOutcome(
+        TaskOutcome(
             outcome_id="out_1",
             workspace_id=workspace_id,
             session_id="ses_1",

@@ -389,12 +389,6 @@ class ModelCost(ProtocolModel):
         return cls()
 
 
-# Compatibility aliases make the contract discoverable without multiplying wire types.
-UsageStatus = UsageAvailability
-NormalizedUsage = ModelUsage
-NormalizedCost = ModelCost
-
-
 class ModelProviderError(RuntimeError):
     def __init__(
         self,
@@ -628,20 +622,6 @@ class WorkspaceResolution(MorrowModel):
     status: Literal["existing", "candidate"]
     identity: WorkspaceIdentity | None = None
     candidate: WorkspaceCandidate | None = None
-
-
-class ConfigPatchOperation(MorrowModel):
-    op: Literal["set", "unset", "append", "remove"]
-    path: str
-    value: Any | None = None
-
-
-class ConfigPatch(MorrowModel):
-    result: Literal["config_patch"] = "config_patch"
-    scope: Literal["global", "workspace", "session"]
-    target: Literal["preferences", "profile"]
-    operations: list[ConfigPatchOperation] = Field(min_length=1)
-    reason: str | None = None
 
 
 class AgentEvent(MorrowModel):

@@ -951,7 +951,7 @@ async def test_scripted_direct_production_bash_executes_registered_workspace_com
     assert (project / "new.txt").read_text(encoding="utf-8") == "rename\n"
     tool_payloads = [
         json.loads(message.content)
-        for message in session_app.session.messages
+        for message in session_app.session.log.messages_view()
         if message.role == "tool"
     ]
     assert tool_payloads[0]["ok"] is True

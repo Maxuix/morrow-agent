@@ -284,7 +284,7 @@ async def test_cancellation_after_text_progress_discards_partial_assistant_and_r
     task.cancel()
     events = await task
 
-    assert [message.role for message in session.messages] == ["user"]
+    assert [message.role for message in session.log.messages_view()] == ["user"]
     assert events[-1].payload == {
         "finish_reason": "cancelled",
         "text": "",
@@ -328,7 +328,7 @@ async def test_cancellation_after_complete_before_acceptance_discards_assistant(
         _collect(AgentLoop(Provider(), MODEL, make_context_builder()).run_task(session, "go"))
     )
     events = await task
-    assert [message.role for message in session.messages] == ["user"]
+    assert [message.role for message in session.log.messages_view()] == ["user"]
     assert events[-1].payload["finish_reason"] == "cancelled"
 
 
@@ -387,7 +387,7 @@ async def test_cancellation_after_a_tool_result_preserves_it_and_closes_remainin
     )
     events = await task
 
-    results = [message for message in session.messages if message.role == "tool"]
+    results = [message for message in session.log.messages_view() if message.role == "tool"]
     assert json.loads(results[0].content)["ok"] is True
     if call_count == 2:
         assert json.loads(results[1].content)["error"]["code"] == "cancelled"
@@ -418,7 +418,11 @@ async def test_aclose_while_yielded_closes_active_turn_for_the_next_begin():
         )
     )
     assert events[-1].payload["finish_reason"] == "stop"
-    assert [message.content for message in session.messages] == ["go", "again", "recovered"]
+    assert [message.content for message in session.log.messages_view()] == [
+        "go",
+        "again",
+        "recovered",
+    ]
 
 
 @pytest.mark.asyncio
@@ -439,7 +443,7 @@ async def test_aclose_after_tool_running_closes_unresolved_cycle():
 
     assert session.log.has_active_turn is False
     assert session.log.unresolved_call_ids == ()
-    results = [message for message in session.messages if message.role == "tool"]
+    results = [message for message in session.log.messages_view() if message.role == "tool"]
     assert [json.loads(message.content)["error"]["code"] for message in results] == [
         "cancelled",
         "cancelled",
@@ -462,4 +466,4 @@ async def test_cancellation_after_final_assistant_append_is_ignored_as_committed
     )
     assert events[-1].payload["finish_reason"] == "stop"
     assert session.log.snapshot().records[-1].finish_reason.value == "stop"
-    assert [message.content for message in session.messages] == ["go", "committed"]
+    assert [message.content for message in session.log.messages_view()] == ["go", "committed"]

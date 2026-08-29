@@ -316,15 +316,9 @@ def _excerpt(content: str) -> str:
     )
 
 
-# Keep the service-shaped name available to callers while the implementation remains an explicit
-# enqueue collaborator at the Turn boundary.
-PreferenceReviewJobService = PreferenceReviewJobEnqueuer
-
-
 __all__ = [
     "PreferenceReviewEnqueueResult",
     "PreferenceReviewJobView",
     "PreferenceReviewStatusView",
     "PreferenceReviewJobEnqueuer",
-    "PreferenceReviewJobService",
 ]

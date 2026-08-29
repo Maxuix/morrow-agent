@@ -23,9 +23,9 @@ from morrow.core.models import (
     WorkspaceResolution,
 )
 from morrow.core.permissions import CapabilityGrant, PermissionSnapshot
-from morrow.core.preference_models import (
+from morrow.core.preference_models import PreferenceOperation
+from morrow.core.preference_persistence_models import (
     PreferenceEvidence,
-    PreferenceOperation,
     PreferenceProposal,
     PreferenceProposalStatus,
     PreferenceReviewJob,

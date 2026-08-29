@@ -224,7 +224,7 @@ async def test_failed_validation_telemetry_does_not_reject_model_stop():
 
     assert events[-1].type == "turn.completed"
     assert events[-1].payload["finish_reason"] == "stop"
-    assert session.messages[-1].content == "I am done despite the failed check."
+    assert session.log.messages_view()[-1].content == "I am done despite the failed check."
     assert session.latest_metrics is not None
     assert session.latest_metrics.validation_outcome == "failed"
 
@@ -243,5 +243,5 @@ async def test_model_stop_is_not_preceded_by_an_intent_request_or_output_gate():
 
     assert len(provider.stream_calls) == 1
     assert provider.complete_calls == []
-    assert session.messages[-1].content == "Useful final answer."
+    assert session.log.messages_view()[-1].content == "Useful final answer."
     assert events[-1].payload["finish_reason"] == "stop"

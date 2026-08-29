@@ -434,7 +434,9 @@ async def test_fake_provider_can_recover_after_host_command_failure(tmp_path):
     )
     [item async for item in session_app.orchestrator.stream("执行校验并在失败后修正")]
 
-    messages = [message for message in session_app.session.messages if message.role == "tool"]
+    messages = [
+        message for message in session_app.session.log.messages_view() if message.role == "tool"
+    ]
     first = json.loads(messages[0].content)
     second = json.loads(messages[1].content)
     assert first["result"]["status"] == "exited"

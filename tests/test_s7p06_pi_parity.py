@@ -51,7 +51,7 @@ from morrow.core.runtime_policy import (
     PI_DEFAULT_MAX_RETRIES,
 )
 from morrow.runtime.agent import AgentLoop
-from morrow.runtime.policy import LongHorizonPolicySettings, load_agent_policy
+from morrow.runtime.policy import LongHorizonPolicySettings, load_runtime_policy
 from morrow.runtime.session import Session
 from morrow.runtime.tool_cycle import ToolCycleExecutor
 from morrow.runtime.tools import (
@@ -69,7 +69,7 @@ MODEL = ModelRef(provider_id="test", model_id="test")
 
 def _v2_policy(*, context_window_tokens: int | None = 10_000_000, **settings):
     selected = LongHorizonPolicySettings(**settings)
-    return load_agent_policy().resolve(
+    return load_runtime_policy().agent_run.resolve(
         MODEL,
         tool_protocol="openai_function",
         multiple_tool_calls=True,
@@ -156,7 +156,12 @@ async def test_v2_loop_can_repeat_and_exceed_retired_caps_before_normal_stop():
 
     assert events[-1].payload["finish_reason"] == FinishReason.STOP.value
     assert provider.stream_calls == 514
-    assert len([message for message in session.messages if isinstance(message, ToolMessage)]) == 513
+    assert (
+        len(
+            [message for message in session.log.messages_view() if isinstance(message, ToolMessage)]
+        )
+        == 513
+    )
     assert not any(
         event.type == "error"
         and event.payload.get("stop_code")
@@ -238,7 +243,10 @@ async def test_v2_retry_uses_provider_delay_cap_and_does_not_duplicate_history()
 
     assert provider.stream_calls == 4
     assert delays == [10.0, 4.0, 60.0]
-    assert [message.content for message in session.messages] == ["retry this", "recovered"]
+    assert [message.content for message in session.log.messages_view()] == [
+        "retry this",
+        "recovered",
+    ]
     assert [
         event.payload["retry_delay_seconds"]
         for event in events

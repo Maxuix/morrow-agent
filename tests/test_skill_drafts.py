@@ -12,8 +12,8 @@ from morrow.application.skills.drafts import SkillDraftServiceError
 from morrow.application.skills.lifecycle import SkillLifecycleError
 from morrow.bootstrap import build_application, build_skill_services
 from morrow.core.learning import (
-    CandidateDraft,
     LearningCandidate,
+    LearningCandidateDraft,
     LearningCandidateOperation,
     LearningCandidateStatus,
     LearningCandidateType,
@@ -39,7 +39,7 @@ def _accepted_candidate(journal: SqliteOperationalJournal) -> LearningCandidate:
         candidate_id="lcn_skill_draft",
         workspace_id="ws_1",
         origin_review_id="lrv_1",
-        draft=CandidateDraft(
+        draft=LearningCandidateDraft(
             candidate_type=LearningCandidateType.SKILL_CANDIDATE,
             operation=LearningCandidateOperation.SET,
             semantic_key="skill.report_writer",

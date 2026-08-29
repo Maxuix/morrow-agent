@@ -19,13 +19,13 @@ from morrow.core.domain import (
     TASK_RUN_ID_PREFIX,
     TASK_TRANSITION_ID_PREFIX,
     ArtifactReference,
-    DurableTaskOutcome,
     DurableTaskRun,
     DurableTaskRunTransition,
     SessionHealth,
     SessionLifecycle,
     TaskCommandDisposition,
     TaskCommandReceipt,
+    TaskOutcome,
     TaskOutcomeEvidenceKind,
     TaskOutcomeEvidenceRef,
     TaskOutcomeTrigger,
@@ -64,7 +64,7 @@ class TaskCommandConflict(TaskCommandError):
 class TaskCommandResult:
     kind: TaskCommandKind
     task: DurableTaskRun | None
-    outcome: DurableTaskOutcome | None = None
+    outcome: TaskOutcome | None = None
     receipt: TaskCommandReceipt | None = None
     learning_review_id: str | None = None
 
@@ -97,7 +97,7 @@ class TaskOutcomeAssembler:
         summary: str | None = None,
         feedback: tuple[str, ...] = (),
         artifact_refs: tuple[ArtifactReference, ...] = (),
-    ) -> DurableTaskOutcome:
+    ) -> TaskOutcome:
         turns = self.journal.list_task_turns(self.workspace_id, task.task_run_id)
         executions = self.journal.list_task_executions(self.workspace_id, task.task_run_id)
         transitions = self.journal.list_task_transitions(self.workspace_id, task.task_run_id)
@@ -192,7 +192,7 @@ class TaskOutcomeAssembler:
                 key=lambda reference: (reference.artifact_id, reference.role),
             )
         )
-        return DurableTaskOutcome(
+        return TaskOutcome(
             outcome_id=self.id_source.new_id(TASK_OUTCOME_ID_PREFIX),
             workspace_id=self.workspace_id,
             session_id=task.session_id,
@@ -669,7 +669,7 @@ class TaskService:
         trigger: TaskOutcomeTrigger,
         summary: str | None = None,
         feedback: tuple[str, ...] = (),
-    ) -> DurableTaskOutcome:
+    ) -> TaskOutcome:
         assembler = TaskOutcomeAssembler(
             txn,
             workspace_id=self.workspace_id,

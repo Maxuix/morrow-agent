@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
 
 from morrow.application.configuration import (
     ConfigurationChangeResult,
@@ -13,10 +12,7 @@ from morrow.application.configuration import (
     configuration_state_digest,
     render_configuration_preview,
 )
-from morrow.application.legacy_configuration import LEGACY_ALLOWED_PATHS
 from morrow.core.models import (
-    ConfigPatch,
-    ConfigPatchOperation,
     Preferences,
     Profile,
     StateLoadStatus,
@@ -29,8 +25,6 @@ from morrow.core.preference_models import (
     PreferenceScope,
     PreferenceStatus,
 )
-
-ALLOWED_PATHS = LEGACY_ALLOWED_PATHS
 
 
 class ConfigurationValidationError(ValueError):
@@ -51,48 +45,6 @@ class ConfigurationConflictError(RuntimeError):
 
 class ConfigurationStateError(RuntimeError):
     """A state store rejected an otherwise valid configuration write."""
-
-
-def _legacy_command(patch: ConfigPatch, operation: ConfigPatchOperation) -> ConfigurationCommand:
-    if operation.op == "unset":
-        if "value" in operation.model_fields_set:
-            raise ConfigurationValidationError("unset 不接受 value")
-    elif "value" not in operation.model_fields_set:
-        raise ConfigurationValidationError("此操作需要 value")
-    payload: dict[str, Any] = {
-        "scope": patch.scope,
-        "target": patch.target,
-        "operation": operation.op,
-        "path": operation.path,
-    }
-    if operation.op != "unset":
-        payload["value"] = operation.value
-    try:
-        return ConfigurationCommand.model_validate(payload, strict=True)
-    except ValueError as exc:
-        raise ConfigurationValidationError(str(exc)) from None
-
-
-def _commands_from_patch(patch: ConfigPatch) -> tuple[ConfigurationCommand, ...]:
-    if not patch.operations:
-        raise ConfigurationValidationError("配置操作不能为空")
-    return tuple(_legacy_command(patch, operation) for operation in patch.operations)
-
-
-def validate_patch(patch: ConfigPatch) -> None:
-    """Validate the unchanged legacy patch shape through the new command authority."""
-    _commands_from_patch(patch)
-
-
-def render_patch_preview(patch: ConfigPatch) -> list[str]:
-    validate_patch(patch)
-    lines = ["配置预览：", f"作用域：{patch.scope}", f"目标：{patch.target}"]
-    for operation in patch.operations:
-        line = f"- {operation.op} {operation.path}"
-        if operation.op != "unset":
-            line += f" = {operation.value}"
-        lines.append(line)
-    return lines
 
 
 class ConfigPatchService:
@@ -791,46 +743,3 @@ class ConfigPatchService:
             preference_mode=self._uses_generic_preferences(self._command(command)),
         )
         return self.apply_prepared(prepared, operation_id=prepared.after_digest)
-
-    def _apply_patch(self, patch: ConfigPatch) -> tuple[ConfigurationChangeResult, ...]:
-        commands = _commands_from_patch(patch)
-        state = self._target_state(commands[0])
-        current = state.base
-        plans: list[ConfigPatchService._OperationPlan] = []
-        for command in commands:
-            plan = self._prepare_from_state(
-                command,
-                self._TargetState(
-                    current,
-                    state.revision,
-                    state.presence if not plans else plans[-1].after_presence,
-                ),
-            )
-            plans.append(plan)
-            current = plan.candidate
-        if not any(plan.changed for plan in plans) or current == state.base:
-            return tuple(
-                self._result(plan.command, ConfigurationChangeStatus.UNCHANGED, state.revision)
-                for plan in plans
-            )
-        final_command = next(plan.command for plan in reversed(plans) if plan.changed)
-        revision = self._commit_target(state, final_command, current)
-        return tuple(
-            self._result(
-                plan.command,
-                ConfigurationChangeStatus.APPLIED
-                if plan.changed
-                else ConfigurationChangeStatus.UNCHANGED,
-                revision,
-            )
-            for plan in plans
-        )
-
-    def apply(
-        self, patch: ConfigPatch | ConfigurationCommand
-    ) -> ConfigurationChangeResult | tuple[ConfigurationChangeResult, ...]:
-        if isinstance(patch, ConfigurationCommand):
-            return self.apply_command(patch)
-        if not isinstance(patch, ConfigPatch):
-            raise ConfigurationValidationError("配置补丁类型无效")
-        return self._apply_patch(patch)

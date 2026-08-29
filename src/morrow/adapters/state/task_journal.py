@@ -10,11 +10,11 @@ from morrow.adapters.state.transaction import SqliteJournalBackend
 from morrow.core.domain import (
     ArtifactReference,
     DurableSession,
-    DurableTaskOutcome,
     DurableTaskRun,
     DurableTaskRunTransition,
     TaskCommandDisposition,
     TaskCommandReceipt,
+    TaskOutcome,
     TaskRunStatus,
     canonical_json_bytes,
     session_can_start_work,
@@ -305,13 +305,13 @@ class SqliteTaskJournal:
         )
         return tuple(_transition_from_row(row) for row in rows)
 
-    def put_outcome(self, workspace_id: str, outcome: DurableTaskOutcome) -> DurableTaskOutcome:
+    def put_outcome(self, workspace_id: str, outcome: TaskOutcome) -> TaskOutcome:
         if outcome.workspace_id != workspace_id:
             raise StorageError(
                 StorageErrorCode.UNAVAILABLE, "operational outcome is outside the workspace"
             )
 
-        def work() -> DurableTaskOutcome:
+        def work() -> TaskOutcome:
             task = self.get(workspace_id, outcome.task_run_id)
             if task is None or task.session_id != outcome.session_id:
                 raise StorageError(StorageErrorCode.NOT_FOUND, "operational task is missing")
@@ -368,7 +368,7 @@ class SqliteTaskJournal:
 
         return self.backend.transact(work)
 
-    def get_outcome(self, workspace_id: str, outcome_id: str) -> DurableTaskOutcome | None:
+    def get_outcome(self, workspace_id: str, outcome_id: str) -> TaskOutcome | None:
         row = self.backend.read_one(
             f"SELECT {_OUTCOME_COLUMNS} FROM task_outcomes "
             "WHERE outcome_id = ? AND workspace_id = ?",
@@ -376,7 +376,7 @@ class SqliteTaskJournal:
         )
         return _outcome_from_row(row) if row is not None else None
 
-    def list_outcomes(self, workspace_id: str, task_run_id: str) -> tuple[DurableTaskOutcome, ...]:
+    def list_outcomes(self, workspace_id: str, task_run_id: str) -> tuple[TaskOutcome, ...]:
         rows = self.backend.read_all(
             f"SELECT {_OUTCOME_COLUMNS} FROM task_outcomes "
             "WHERE workspace_id = ? AND task_run_id = ? ORDER BY version ASC",
@@ -537,12 +537,12 @@ def _transition_from_row(row: tuple[object, ...]) -> DurableTaskRunTransition:
     )
 
 
-def _outcome_from_row(row: tuple[object, ...]) -> DurableTaskOutcome:
+def _outcome_from_row(row: tuple[object, ...]) -> TaskOutcome:
     try:
         payload = json.loads(str(row[7]))
         if not isinstance(payload, dict):
             raise ValueError("operational outcome is not a mapping")
-        outcome = DurableTaskOutcome.model_validate(payload)
+        outcome = TaskOutcome.model_validate(payload)
         artifact_refs = _artifact_refs_from_raw(row[10])
         if (
             outcome.outcome_id != str(row[0])

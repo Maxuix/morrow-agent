@@ -35,7 +35,7 @@ from morrow.core.local_tools import (
 )
 
 MAX_RELATIVE_PATH_CHARS = WORKSPACE_RELATIVE_PATH_MAX_CHARS
-LEGACY_MAX_READ_LINES = 400
+DEFAULT_READ_LINES = 400
 MAX_READ_LINES = 2_000
 MAX_READ_TEXT_BYTES = 8 * 1024
 MAX_DIRECTORY_ENTRIES = 500
@@ -391,7 +391,7 @@ class WorkspaceFileService:
         path: str,
         *,
         start_line: int = 1,
-        line_count: int = LEGACY_MAX_READ_LINES,
+        line_count: int = DEFAULT_READ_LINES,
         result_limit: int = MAX_RESULT_BYTES,
         max_bytes: int | None = None,
         max_lines: int | None = None,

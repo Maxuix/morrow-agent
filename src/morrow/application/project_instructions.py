@@ -25,14 +25,11 @@ DEFAULT_PROJECT_INSTRUCTION_FILENAMES = (
     "AGENTS.md",
     "CLAUDE.md",
 )
-PROJECT_INSTRUCTION_MAX_TARGETS = 8
-PROJECT_INSTRUCTION_MAX_DEPTH = 16
 PROJECT_INSTRUCTION_MAX_TOTAL_BYTES = 64 * 1024
-PROJECT_INSTRUCTION_MAX_TASK_BYTES = 64 * 1024
 
 
 class ProjectInstructionError(ValueError):
-    """Stable compatibility error for an unavailable workspace root."""
+    """Stable error for an unavailable workspace root."""
 
     def __init__(self, code: str, *, path: str | None = None, scope: str | None = None) -> None:
         self.code = code
@@ -67,10 +64,6 @@ class ProjectInstructionResolution:
         return tuple(item.reference for item in self.sources)
 
     @property
-    def source_refs(self) -> tuple[ProjectInstructionSourceRef, ...]:
-        return self.references
-
-    @property
     def rendered_block(self) -> str:
         return render_project_instruction_block(self.sources)
 
@@ -83,9 +76,6 @@ class ProjectInstructionResolver:
         workspace_root: Path,
         *,
         filenames: Sequence[str] = DEFAULT_PROJECT_INSTRUCTION_FILENAMES,
-        compatible_names: Sequence[str] = (),
-        max_targets: int = PROJECT_INSTRUCTION_MAX_TARGETS,
-        max_depth: int = PROJECT_INSTRUCTION_MAX_DEPTH,
         max_sources: int = PROMPT_MAX_PROJECT_SOURCES,
         max_file_bytes: int = PROMPT_MAX_PROJECT_SOURCE_BYTES,
         max_total_bytes: int = PROJECT_INSTRUCTION_MAX_TOTAL_BYTES,
@@ -96,27 +86,16 @@ class ProjectInstructionResolver:
             raise ProjectInstructionError("workspace_unavailable") from exc
         if not self.root.is_dir():
             raise ProjectInstructionError("workspace_unavailable")
-        self.filenames = _unique_names((*filenames, *compatible_names))
-        # Compatibility attributes remain for existing prompt evidence and callers. Discovery no
-        # longer consumes task targets or walks task-derived paths.
-        self.max_targets = 0
-        self.max_depth = max_depth
+        self.filenames = _unique_names(filenames)
         self.max_sources = max_sources
         self.max_file_bytes = min(max_file_bytes, PROMPT_MAX_PROJECT_SOURCE_BYTES)
         self.max_total_bytes = max_total_bytes
-        del max_targets
 
     @property
     def version(self) -> str:
         return PROJECT_INSTRUCTION_RESOLVER_VERSION
 
-    def resolve(
-        self,
-        task_text: str = "",
-        *,
-        target_paths: Sequence[str | Path] | str | Path | None = None,
-    ) -> ProjectInstructionResolution:
-        del task_text, target_paths
+    def resolve(self) -> ProjectInstructionResolution:
         source = self._load_root_source()
         sources = () if source is None else (source,)
         return ProjectInstructionResolution(
@@ -227,9 +206,6 @@ def _warn_skip(filename: str, reason: str) -> None:
 
 __all__ = [
     "DEFAULT_PROJECT_INSTRUCTION_FILENAMES",
-    "PROJECT_INSTRUCTION_MAX_DEPTH",
-    "PROJECT_INSTRUCTION_MAX_TASK_BYTES",
-    "PROJECT_INSTRUCTION_MAX_TARGETS",
     "PROJECT_INSTRUCTION_MAX_TOTAL_BYTES",
     "PROJECT_INSTRUCTION_RESOLVER_VERSION",
     "PROJECT_INSTRUCTION_SOURCE_VERSION",

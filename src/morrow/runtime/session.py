@@ -27,7 +27,6 @@ from morrow.core.models import (
     AgentStopCode,
     AssistantMessage,
     FinishReason,
-    Message,
     ModelUsage,
     Preferences,
     Profile,
@@ -253,11 +252,6 @@ class Session:
     @property
     def persisted(self) -> bool:
         return self.committer is not None
-
-    @property
-    def messages(self) -> tuple[Message, ...]:
-        """Read-only projection of the log; never mutate history through it."""
-        return self.log.messages_view()
 
     def commit_append(self, planned: ConversationAppend) -> None:
         if self.committer is None:

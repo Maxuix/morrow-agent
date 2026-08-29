@@ -551,7 +551,9 @@ async def test_manual_provider_path_approves_pi_style_edit_and_records_facts(tmp
 
     assert source.read_text(encoding="utf-8") == "fixed old\n"
     assert approval.requests == []
-    messages = [message for message in session_app.session.messages if message.role == "tool"]
+    messages = [
+        message for message in session_app.session.log.messages_view() if message.role == "tool"
+    ]
     patch_result = json.loads(messages[2].content)
     assert "-needle old" in patch_result["result"]["diff"]
     assert "+fixed old" in patch_result["result"]["diff"]

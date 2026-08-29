@@ -23,14 +23,13 @@ from morrow.core.runtime_policy import RuntimePolicyOverrides
 from morrow.runtime.policy import (
     AgentPolicy,
     PolicyLoadError,
-    load_agent_policy,
     load_runtime_policy,
-    parse_agent_policy,
+    parse_runtime_policy,
 )
 
 
 def _values(**updates):
-    values = load_agent_policy().model_dump()
+    values = load_runtime_policy().agent_run.model_dump()
     values.update(updates)
     return values
 
@@ -57,7 +56,7 @@ def test_bundled_runtime_policy_has_approved_defaults_and_empty_exact_model_tabl
 
 
 def test_unknown_model_uses_fallback_and_v2_result_limit():
-    run = load_agent_policy().resolve(
+    run = load_runtime_policy().agent_run.resolve(
         ModelRef(provider_id="unknown", model_id="model"),
         tool_protocol="openai_function",
         multiple_tool_calls=True,
@@ -69,7 +68,7 @@ def test_unknown_model_uses_fallback_and_v2_result_limit():
 
 
 def test_unknown_window_keeps_conservative_character_fallback():
-    run = load_agent_policy().resolve(
+    run = load_runtime_policy().agent_run.resolve(
         ModelRef(provider_id="unknown", model_id="model"),
         tool_protocol="openai_function",
         multiple_tool_calls=True,
@@ -82,7 +81,7 @@ def test_unknown_window_keeps_conservative_character_fallback():
 
 
 def test_policy_reserves_known_maximum_output_capacity():
-    run = load_agent_policy().resolve(
+    run = load_runtime_policy().agent_run.resolve(
         ModelRef(provider_id="vendor", model_id="large-context"),
         tool_protocol="openai_function",
         multiple_tool_calls=True,
@@ -96,7 +95,7 @@ def test_policy_reserves_known_maximum_output_capacity():
 
 def test_policy_rejects_output_capacity_that_consumes_the_window():
     with pytest.raises(ValueError, match="output reserve"):
-        load_agent_policy().resolve(
+        load_runtime_policy().agent_run.resolve(
             ModelRef(provider_id="vendor", model_id="invalid-window"),
             tool_protocol="openai_function",
             multiple_tool_calls=True,
@@ -278,9 +277,9 @@ def test_invalid_runtime_policy_makes_config_unavailable_instead_of_being_partia
 
 def test_missing_and_malformed_policy_fail_clearly():
     with pytest.raises(PolicyLoadError, match="missing"):
-        load_agent_policy(resource_name="missing-policy.toml")
+        load_runtime_policy(resource_name="missing-policy.toml")
     with pytest.raises(PolicyLoadError, match="invalid"):
-        parse_agent_policy(b"not = [valid")
+        parse_runtime_policy(b"not = [valid")
 
 
 def test_policy_resource_is_packaged_and_adapter_metadata_is_explicit():

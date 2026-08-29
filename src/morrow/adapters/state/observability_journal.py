@@ -117,7 +117,6 @@ _RETRY_COLUMNS = (
     "agent_run_id, workspace_id, consecutive_model_retries, total_retry_count, "
     "summary_retry_count, updated_at_unix"
 )
-_RETRY_PROGRESS_SCHEMA_VERSION = 21
 
 
 class SqliteObservabilityJournal:
@@ -508,11 +507,6 @@ class SqliteObservabilityJournal:
     def get_retry_progress(
         self, workspace_id: str, agent_run_id: str
     ) -> AgentRunRetryProgress | None:
-        # Read-only inspection intentionally remains compatible with a v20 store that has
-        # not been migrated yet.  A current-schema store must still surface a missing table
-        # as a storage-integrity error rather than silently hiding corruption.
-        if self.backend.schema_version() < _RETRY_PROGRESS_SCHEMA_VERSION:
-            return None
         row = self.backend.read_one(
             f"SELECT {_RETRY_COLUMNS} FROM agent_run_retry_progress "
             "WHERE workspace_id = ? AND agent_run_id = ?",

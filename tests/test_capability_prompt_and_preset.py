@@ -8,7 +8,6 @@ from morrow.application.context import render_system_boundary
 from morrow.bootstrap import build_application, build_session_application
 from morrow.core.capabilities import PermissionPreset, PermissionProfile
 from morrow.core.models import (
-    ConfigPatch,
     ModelRef,
     Preferences,
     Profile,
@@ -95,6 +94,6 @@ def test_auto_sandboxed_cli_fails_closed_without_a_backend(tmp_path, monkeypatch
 
 
 def test_configuration_and_state_models_cannot_select_or_elevate_permission_mode():
-    for model in (UpdateConfigurationArguments, ConfigPatch, Preferences, Profile):
+    for model in (UpdateConfigurationArguments, Preferences, Profile):
         fields = set(model.model_fields)
         assert fields.isdisjoint({"permission", "permission_mode", "access_scope", "full_access"})

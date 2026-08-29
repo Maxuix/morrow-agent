@@ -56,10 +56,6 @@ def render_system_boundary(tools: tuple[ToolDefinition, ...] = ()) -> str:
     return _SYSTEM_BOUNDARY_PREFIX + provided
 
 
-# Compatibility export for callers that need a tool-free boundary snapshot.
-SYSTEM_BOUNDARY = render_system_boundary()
-
-
 class ContextRequest(ProtocolModel):
     purpose: ContextPurpose
     snapshot: ConversationSnapshot
@@ -131,11 +127,6 @@ class ContextBuilder:
         self.estimate_request_chars = estimate_request_chars
         self.estimate_request_tokens = estimate_request_tokens or self._pi_estimate_tokens
         self.prompt_assembler = prompt_assembler
-
-    @property
-    def max_chars(self) -> int:
-        """Read-only compatibility name for Stage 1 diagnostics."""
-        return self.request_char_limit
 
     @staticmethod
     def merge_preferences(
@@ -276,22 +267,6 @@ class ContextBuilder:
         if checkpoint is not None:
             messages.append(SystemMessage(content=render_checkpoint_projection(checkpoint)))
         return tuple(messages)
-
-    def prepare_prompt_projection(
-        self,
-        task_text: str = "",
-        *,
-        target_paths=None,
-    ):
-        """Resolve one Direct prompt projection before durable admission."""
-        if self.prompt_assembler is None:
-            return None
-        return self.prompt_assembler.prepare_for_task(task_text, target_paths=target_paths)
-
-    @staticmethod
-    def _chars(messages: tuple[Message, ...] | list[Message]) -> int:
-        """Legacy test diagnostic; request admission uses the canonical estimator."""
-        return sum(len(message.content) for message in messages if message.content is not None)
 
     def _pi_estimate_tokens(
         self, messages: tuple[Message, ...], tools: tuple[ToolDefinition, ...]

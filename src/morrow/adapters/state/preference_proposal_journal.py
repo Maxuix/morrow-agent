@@ -15,10 +15,11 @@ from morrow.adapters.state.preference_journal_codec import (
     _unix,
     _workspace_error,
 )
-from morrow.core.preference_models import PreferenceOperation, preference_operation_fingerprint
+from morrow.core.preference_models import PreferenceOperation
 from morrow.core.preference_persistence_models import (
     PreferenceProposal,
     PreferenceProposalStatus,
+    preference_operation_fingerprint,
 )
 from morrow.core.store import StorageError, StorageErrorCode
 
