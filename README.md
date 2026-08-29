@@ -118,9 +118,9 @@ REPL 常用命令包括 `/workspace`、`/workspace edit summary ...`、`/workspa
 展示活动；有副作用的
 配置调用仍在工具执行前由终端审批；普通工作空间文件工具和 Host 命令直接执行。Full Access 与扩展能力
 仍使用各自的授权/审批合同。审批拒绝、审批通道不可用或审批等待超时都会安全地形成普通工具结果，
-模型可以继续恢复；默认工具超时为 120 秒，并可在安全上限内通过用户运行策略覆盖。旧 `/config edit` fixed-field 入口已退役，
-`append/remove` 由自然语言工具提供。达到模型、工具、时间、上下文、结果或循环上限时，任务以稳定的
-`stop_code` 结束。
+模型可以继续恢复；默认单工具超时为 120 秒，并可在安全上限内通过用户运行策略覆盖。
+当前 long-horizon 运行没有累计模型请求、工具轮次、调用次数、总时长或重复循环上限；上下文压缩、
+单次工具超时和结果预算仍会以稳定的 `stop_code` 或工具结果显式结束相应边界。
 
 Host 命令接受 argv 或 shell，支持 Git、管道和重定向，不按命令字符串启发式拒绝或要求审批。命令输出
 保持有界，并只遮蔽当前运行已知凭据的精确值；完整命令、输出和秘密不进入公开事件或持久状态。
@@ -173,13 +173,14 @@ Project Knowledge 进入 SQLite 版本化记录；Skill、Workflow 和 Orchestra
 Headless `learning accept/edit/reject`、全新 Project Knowledge 首次 Promotion、新进程、重启、Doctor
 与 backup verify 均由离线测试覆盖。真实 Provider 质量评估需要用户显式授权和兼容凭据。
 
-`state doctor` 对 v13 Preference Review/Evidence/Proposal/Writer、既有 Learning Review、Candidate、决策、Promotion、Knowledge、Memory Selection
-和 AgentRun 冻结引用执行只读检查；它也会检查 Stage 6 Skill 包、Draft、Usage、Binding、Selection、MCP 引用和 v16 表。
+`state doctor` 对当前 Preference Review/Evidence/Proposal/Writer、既有 Learning Review、Candidate、决策、Promotion、Knowledge、Memory Selection
+和 AgentRun 冻结引用执行只读检查；它也会检查 Skill 包、Draft、Usage、Binding、Selection 和 MCP 引用。
 `state backup` 只生成当前完整 bundle：隔离的 Operational SQLite、Artifact、当前 Preference/Profile、
 脱敏后的 Provider/Model 与扩展 YAML，以及被引用的 managed Skill 版本。`state verify-backup` 只校验该格式；
 恢复只允许写入新的隔离目标，不包含 CredentialStore、Keychain 或凭据字节。
 禁止原始 Reviewer 输出、Provider reasoning、密钥和受保护内容进入事件、日志、候选、YAML 或模型上下文。
-当前确定性离线安全门禁与模拟用户回放已完成；真实 Provider 质量评估仍需显式授权和兼容凭据，未授权时不运行。
+当前确定性离线安全门禁与正式 CLI 链路可行性测试见
+[`docs/acceptance/current-chain-feasibility.md`](docs/acceptance/current-chain-feasibility.md)；真实 Provider 质量评估仍需显式授权和兼容凭据，未授权时不运行。
 
 Stage 6 当前已提供受治理的 Skill 生命周期、生成 Draft 审查、按 AgentRun 冻结的 Selection/Context、Usage、受限脚本 Artifact，
 Provider/Model 控制面，以及离线 Fake stdio MCP 的 Catalog、审批、结果归一化、崩溃隔离和恢复证据。可从
@@ -190,8 +191,6 @@ Artifact cleanup 默认只 dry-run，并以同一 data root 内所有 workspace 
 reference 为权威。`--apply` 不销毁字节：它只会把经目录、类型、权限、单链接和事务内
 全局权威复查的非托管候选原子移入随机私有 quarantine。成功报告是
 `removed=0` 与 `quarantined=1`；原字节仍保留，无法证明安全时 fail closed。
-
-旧版本留下的 `handoff.yaml` 或 `handoff.yaml.bak` 已无对应功能，当前版本不读取；可直接删除。
 
 状态写入经过校验、revision 检查、同目录临时文件、文件/目录 `fsync` 和原子替换，并保留 `.bak`。
 Profile 损坏或版本较新时，工作空间持久状态进入只读模式；workspace Preferences 损坏时只隔离该层。

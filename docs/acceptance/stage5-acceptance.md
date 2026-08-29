@@ -20,7 +20,8 @@
 - `update_configuration` 只管理 Workspace Profile，不解释 Preference fixed fields。
 - 普通加载只接受当前 global schema 2 和 workspace schema 3；旧 YAML 只能在状态门面处一次性迁移。
 - AgentRun 只保存通用冻结条目及其 digest，不接受历史 fixed-field 或 singular Skill 引用。
-- `state doctor` 保持只读；SQLite backup 不包含 YAML 与凭据权威。
+- `state doctor` 保持只读；当前完整 backup 包含 SQLite、当前 Preference/Profile 与扩展
+  YAML、Artifact 和被引用的 managed Skill，但不包含 CredentialStore、Keychain 或凭据字节。
 
 标准离线门禁：
 

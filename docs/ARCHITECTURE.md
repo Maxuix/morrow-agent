@@ -1,16 +1,15 @@
 # Morrow 架构基线
 
-> 状态：阶段 2–6 已完成；Stage 7 前置基线（S7P-00–S7P-08 可靠性序列、主流工具接口与遗留
-> 适配器清理，Subplans 78–89、91–92）已集成本地 `main`；Subplan 90（S7P-09 重复 Direct/Pi
-> 对照评估）活跃中，其正式评估准入暂因冻结计划的 Token 容量上限阻塞（macOS；Linux 原生
-> 运行仍 unsupported）
+> 状态：阶段 2–6 已完成；Stage 7 前置的 direct-agent 可靠性、可观察性、正式 headless 入口、
+> 主流工具接口和旧适配器清理已经集成本地 `main`。Stage 7 Workflow 尚未开始；重复外部 Provider
+> 对照评估不属于当前离线验收（macOS；Linux 原生运行仍 unsupported）。
 
 本文锁定当前依赖方向、数据所有权和安全边界。阶段 3 的能力策略、配置工具、工作空间读搜、冲突安全文件变更、直接 Host 命令、只读 Git 和当前 macOS 原生沙箱
 已经交付；Linux 原生运行尚未声明支持。Stage 4 已落地数据根 SQLite Operational Store 的
-身份/迁移/备份基础、v2 无工具 Session 历史、v3 工具执行/审批日志、v4 恢复分类与
-崩溃对账，以及 v5 TaskRun 生命周期、转移审计、版本化 TaskOutcome、v6 Artifact 元数据/引用与受控字节发布、v7 确定性 ContextCheckpoint 与不可变 Session lineage、v8 有界 application event/command receipt、v9 按 AgentRun 冻结的权限证据与可撤销 grant。Stage 5 Subplans 49–54 已增加 LearningPolicy、Review、Evidence、Candidate、Suppression 的有界领域与 v10–v12 SQLite 持久化；accepted TaskOutcome 的同事务 Review 请求、一次性 lease Runner、Evidence/Context 安全边界和候选去重/抑制；Inbox、Candidate 决策、Project Knowledge 生命周期；公开 prepared 配置契约、SQLite/YAML Promotion Saga、激活来源、恢复/撤销和 CLI/REPL 入口；确定性 MemorySelection、AgentRun 冻结/恢复复用、RunContextProjection；以及 no-tool production Reviewer、离线评估、只读 Learning doctor 和隔离 backup 引用校验。Reviewer v4 的真实 Provider 质量目标已通过，不由离线证据替代。Stage 6 的 Skills 包、生命周期、选择/上下文、Draft/Usage、受限脚本执行、Provider/Model 控制面以及 MCP desired state/Catalog/v16 持久化已在本地完成；MCP Runtime/Security、当前完整 Backup 与 Stage 6 Doctor 也已完成；S7P-01 增加了不改变公开事件的 AgentRun request/terminal observability 与复用同一 SessionOrchestrator/AgentLoop 的 headless JSONL 入口；Stage 7–10 的 Workflow、GUI、后台自动化和产品化均尚未开始。
+身份/迁移/备份基础、无工具 Session 历史、工具执行/审批日志、恢复分类与
+崩溃对账，以及 TaskRun 生命周期、转移审计、版本化 TaskOutcome、Artifact 元数据/引用与受控字节发布、确定性 ContextCheckpoint 与不可变 Session lineage、有界 application event/command receipt、按 AgentRun 冻结的权限证据与可撤销 grant。Stage 5 已增加 LearningPolicy、Review、Evidence、Candidate、Suppression 的有界领域与 SQLite 持久化；accepted TaskOutcome 的同事务 Review 请求、一次性 lease Runner、Evidence/Context 安全边界和候选去重/抑制；Inbox、Candidate 决策、Project Knowledge 生命周期；Profile Promotion Saga；确定性 MemorySelection、AgentRun 冻结注入、RunContextProjection；以及 no-tool production Reviewer、离线评估、只读 Learning doctor 和完整 backup 引用校验。Stage 6 的 Skills 包、生命周期、选择/上下文、Draft/Usage、受限脚本执行、Provider/Model 控制面以及 MCP desired state/Catalog 持久化已在本地完成；MCP Runtime/Security、当前完整 Backup 与 Stage 6 Doctor 也已完成；S7P-01 增加了不改变公开事件的 AgentRun request/terminal observability 与复用同一 SessionOrchestrator/AgentLoop 的 headless JSONL 入口；Stage 7–10 的 Workflow、GUI、后台自动化和产品化均尚未开始。真实 Provider 质量验证未在当前离线证据中运行。
 
-S56–S61 已冻结并接通 generic Preference 契约、decode-only legacy 迁移、workspace Preference v3、
+S56–S61 已冻结并接通 generic Preference 契约、加载前一次性旧 YAML 迁移、当前 workspace Preference、
 Operational Store v13 Review/Evidence/Proposal/Writer saga、异步 Worker、Inbox、Writer 和下一
 AgentRun 注入。v13 DDL 与 checksum 保持不变。
 
@@ -18,10 +17,10 @@ Stage 6 的当前所有权如下：`application/skills/` 负责 Catalog、生命
 Doctor；`application/mcp/` 负责 desired-state、Catalog、run-scoped runtime、策略桥接和结果归一化；Provider/Model
 控制面仍由 Provider service 与 Adapter Registry 持有。SkillBinding、MCP desired state、Provider/Model 非敏感配置和
 Workspace 扩展配置继续由 YAML 持有，CredentialStore 是唯一凭据权威。Operational Store v14–v22 持有 Skill/MCP
-运行证据与 AgentRun 观测；v17–v20 的 request ledger、completion-truth 兼容列与 long-horizon accounting，
+运行证据与 AgentRun 观测；request ledger、保留但不参与当前判定的历史 completion 列与 long-horizon accounting，
 以及 v21 的有界 retry progress、v22 的 durable runtime-control queue 独立于不可变
 AgentRun admission snapshot。
-`application/backup_v2.py` 组合在线 SQLite、Artifact、脱敏 YAML 和被引用 managed Skill 版本，并以新目标
+`application/backup_service.py` 组合在线 SQLite、Artifact、脱敏 YAML 和被引用 managed Skill 版本，并以新目标
 目录执行原子、隔离 restore。Backup 只有当前完整格式，且不复制凭据。
 
 ## 分层与依赖方向
@@ -64,7 +63,7 @@ Core 不依赖 CLI、Rich、具体模型 SDK、YAML、数据库或操作系统�
 ### Runtime 与应用服务
 
 普通对话只有一条状态机路径：`AgentLoop.run_task()` 负责任务生命周期、模型重试、工具轮次、
-deadline/预算、取消闭合、循环检测和全部聊天历史写入；`AgentRuntime.run_turn()` 是薄委托。
+上下文压缩、单次工具/结果预算、取消闭合和全部聊天历史写入；`AgentRuntime.run_turn()` 是薄委托。
 有序公开事件的构造由 loop 内部事件发射协作者负责，但状态转换、事件时机和 ConversationLog
 写入权仍只属于 `AgentLoop.run_task()`。持久化运行能力由显式 `DurableRunCoordinator` 合同提供；
 AgentLoop 在每次 Provider 调用前后经该合同记录 bounded request admission/settlement，并在终态
@@ -72,8 +71,8 @@ AgentLoop 在每次 Provider 调用前后经该合同记录 bounded request admi
 usage/cost availability，不含 prompt、message、reasoning、完整工具参数/结果、SDK object 或 traceback。
 有效且不含 tool calls 的模型 `stop` 直接决定普通回合结束；Runtime 不再推断 OutcomeContract、扫描
 workspace baseline，或依据 diff、validation、verifier 和其他输出事实拒绝最终回答。`ValidationFact`
-仍是独立、精确 scoped 的执行遥测，不是回答发送门禁。旧 AgentRunSnapshot/schema-v19 中的 contract、
-baseline 和 completion 列只为读取兼容保留，新运行不写入或解释这些遗留字段。
+仍是独立、精确 scoped 的执行遥测，不是回答发送门禁。当前 AgentRunSnapshot 不包含 contract、
+workspace baseline 或 completion gate；旧快照不能通过当前严格模型加载。
 工具 handler 的审批、权限复查、超时/取消和 durable execution 状态由 `ToolCycleExecutor` 执行，
 但它不拥有聊天历史或公开事件。只有实现有界、单行且拒绝密钥材料的 `PublicDiagnosticError`
 合同的领域失败可越过 Agent 的通用异常边界；未知异常仍只产生固定内部错误，不暴露 traceback。
@@ -166,21 +165,21 @@ AgentRun 有 grant 而获得 elevated 证据，`full_access + auto` 保持 unsup
 命令识别归 CommandService；状态/生命周期 Command、Query、Event 统一归
 `OperationalApplicationService`；调度归 SessionOrchestrator；输入、确认、渲染和退出码归终端接口。
 Slash `CommandService` 是薄适配器，CLI、REPL 和未来客户端不直接访问 SQL 或 Artifact 文件。
-`OperationalApplicationService` 保留兼容 facade；Recovery 与 Permission/Approval 命令事务由独立
+`OperationalApplicationService` 是公开应用边界；Recovery 与 Permission/Approval 命令事务由独立
 领域协作者实现，并只接收显式 `ApplicationCommandContext`，不持有或穿透父 facade。命令上下文统一
 拥有 command replay、application event/receipt、时钟、ID 和错误翻译。Artifact、Task、Checkpoint/Fork、Grant、Recovery 与 durable conversation 服务依赖
 `core/journal.py` 的窄端口；只有 composition、跨域事务聚合、诊断和备份持有具体 SQLite adapter。
-`SqliteOperationalJournal` 只保留 Session 聚合与兼容委托；application event、Artifact、Context、
+`SqliteOperationalJournal` 保留 Session 聚合与领域委托；application event、Artifact、Context、
 Conversation/Turn、Permission、Recovery、RuntimeControl、Task 与 Tool SQL 分属有界 repository。全部 repository 共享
 一个 `SqliteJournalBackend` 的外层事务、时间戳、replayability 与 touched-Session 状态，因此拆分不会
 拆散跨域原子事务，也不会形成 repository 对父 facade 的反向依赖。
-配置补丁显式分派到 Preferences 或 Profile，不存在兜底目标。`build_session_application()` 返回命名的
+Profile 配置补丁与通用 Preference Writer 是两条显式领域入口，不存在固定字段 Preference 兜底目标。`build_session_application()` 返回命名的
 `SessionApplication`，包含 `session`、`context_builder`、`commands`、`orchestrator`、`files`、`search`、`mutation`、`changes`、
 `process`、`checkpoints`、`forks`、统一 `api`、只读 `doctor` 和 `backup` 服务。
 交互 bootstrap 与 headless CLI（包括 `morrow run`）通过 `build_operational_services()` / `build_operational_api()` 复用同一
 Operational 组装路径；接口层不自行复制领域服务构造。
 
-`SessionPersistence` 继续作为运行时兼容 facade，但 Turn 提交、Session 恢复、权限证据、durable tool
+`SessionPersistence` 是运行时组合门面；Turn 提交、Session 恢复、权限证据、durable tool
 状态以及 Tool/Conversation 原子写分别由聚焦 coordinator 持有。外部应用协作者只能调用公开同步方法，
 不能修改其 Session、Task 或 AgentRun 私有投影。
 
@@ -194,7 +193,8 @@ Knowledge 由 SQLite Learning application services 持有；`ConfigurationPromot
 记录 decision、activation、events 和 receipt。它不连接后台自动晋升或第二配置权威。`OperationalDoctor`
 通过 `learning_doctor` 的域校验入口检查 Review/Candidate/Promotion/Knowledge 链接，Memory doctor
 继续检查 Selection/AgentRun/derived terms；`OperationalBackupService` 在 SQLite online backup 后
-分别验证 Learning、Memory 与 Preference v13 引用，YAML、workspace index、凭据和 Keychain 始终在 bundle 外。
+分别验证 Learning、Memory 与 Preference 引用；当前 Preference/Profile、workspace index 与扩展 YAML
+进入完整 bundle，凭据和 Keychain 始终在 bundle 外。
 
 普通前台工作的共享准入条件是 `Session.lifecycle=active` 且 `Session.health=ok`。
 Orchestrator 在调度前刷新 durable lifecycle/health；Task/Turn application service 执行稳定错误映射，
@@ -230,8 +230,7 @@ Service 或 Port：
 
 `read`、`ls`、`find` 与 `grep` 通过简洁适配器和注入的文件/搜索服务访问冻结工作空间；
 `edit` 与 `write` 通过适配器自动补全内部 revision/mode，再由 mutation/ChangeSet 服务执行和报告
-实际变更。旧的专用文件/Git/ChangeSet schema、参数模型和工厂已删除；旧名称只在明确标注的 durable
-recovery 兼容表中保留，用于分类缺少冻结声明的历史执行记录，不能通过当前生产注册门；
+实际变更。旧的专用文件/Git/ChangeSet schema、参数模型、工厂和 recovery 声明已删除；
 `bash` 通过注入的 `ProcessExecutionService` 执行 Host 命令，或在 Auto Sandboxed 中执行原生快照命令；
 `run_skill_script` 通过注入的 `SkillScriptExecutionService` 执行已冻结 Skill 包中的脚本，并只发布有界、脱敏的
 声明输出 Artifact；
@@ -369,9 +368,9 @@ timeout、输出/Artifact 保留上限仍是独立的 per-operation 安全边界
 `OperationalDoctor` 使用 diagnose/read-only 连接检查 schema、SQLite integrity/FK、Conversation grammar、
 Task/Execution、Review/Evidence/Candidate/Promotion/Knowledge、Memory Selection/AgentRun/derived terms、Skill/MCP
 运行证据、Artifact metadata/bytes/reference 和 application-event cursor；报告只包含有界摘要与计数，绝不自动改写历史。
-`OperationalBackupService` 的 v1 使用 SQLite online backup 生成隔离 bundle，同时写入 Artifact hash/size manifest，并验证
-Learning/Memory/Preference v13 引用和可验证副本；v2 另外在维护锁下捕获脱敏的 config/workspace-index/extensions YAML、
-被引用的 imported/generated Skill 版本和 MCP 引用，并提供只写入新目标的隔离 restore。两个版本都不读取或复制 CredentialStore。
+`OperationalBackupService` 只生成当前完整 bundle：使用 SQLite online backup，写入 Artifact hash/size manifest，
+验证 Learning/Memory/Preference 引用，并在维护锁下捕获当前 config/workspace-index、Preference/Profile、扩展 YAML、
+被引用的 imported/generated Skill 版本和 MCP 引用。隔离 restore 只写入不存在的新目标；服务不读取或复制 CredentialStore。
 缺失、损坏或变化的 Artifact、backup 中断裂的 Learning/Memory/Preference 引用在 manifest/restore verification 中显式可见。Doctor 在遍历前验证
 data-root/`artifacts`/`tmp` 目录链，并区分 managed-unreferenced、unmanaged-removable 和
 unsafe-refused；受管 `tmp/` 本身不是 orphan。
@@ -419,7 +418,7 @@ Session/Task/Artifact 列表的 Application page 合同在 CLI 中不被丢弃�
 - 无工具 Session 对话可持久化并在重启后恢复；Artifact 的 missing/corrupt/staging/orphan 状态保持可见，
   只产生 retention/orphan 报告，不自动修复；显式 cleanup 默认 dry-run，apply 只做保字节隔离；
   conversation Fork、工具恢复和确定性 checkpoint 已实现；
-  工作空间/代码 rewind 不属于 Stage 4；Stage 5 已实现 Learning 基础、Project Knowledge/MemorySelection、通用 Preference 的异步 Review/Inbox/Writer/AgentRun 注入和 v13 doctor/backup 门禁。模拟用户与真实 Provider 质量验收均已通过。
+  工作空间/代码 rewind 不属于 Stage 4；Stage 5 已实现 Learning 基础、Project Knowledge/MemorySelection、通用 Preference 的异步 Review/Inbox/Writer/AgentRun 注入和 doctor/backup 门禁。当前离线门禁与正式 CLI 可行性证据记录在 `docs/acceptance/`；真实 Provider 质量验证需要单独授权。
   当前不存在过渡兼容写入器。
 
 若未来实现需要突破这些边界，先更新架构与当前阶段计划。

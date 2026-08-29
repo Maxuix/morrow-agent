@@ -1,9 +1,8 @@
 # Morrow 个人 Agent 工作台开发路线总览
 
-> 状态：阶段 1–6 已完成（Subplans 63–89 与 91–92 已在本地完成；Subplan 90 活跃中）；阶段 7–10 未开始。
-> Stage 7 的前置基线（S7P 直接编码可靠性序列与评估协议）已集成本地 `main`，其重复 Direct/Pi
-> 对照评估（S7P-09）的正式准入暂因冻结计划的 Token 容量上限阻塞。
-> 基线日期：2026-08-29
+> 状态：阶段 1–6 已完成；阶段 7–10 未开始。Stage 7 前置的 direct-agent 可靠性、可观察性、
+> 正式 headless 入口和主流工具接口已集成本地 `main`；重复外部 Provider 对照评估不属于当前离线验收。
+> 基线日期：2026-08-30
 > 用途：维护 Morrow 的长期产品方向、阶段顺序、稳定边界与详细阶段文档入口。
 > 执行约定：具体实现任务、活跃子计划、进度与验证结果继续维护在 `.agent/`；本文不承担实时 TODO 或开发日志职责。
 > 当前实现：[架构基线](ARCHITECTURE.md)；本文出现的未来领域对象不代表代码中已经存在，除非架构基线已明确标记为当前能力。
@@ -202,7 +201,7 @@ Morrow 必须在数据模型中区分以下信息，不允许都塞入一个“m
 | 状态 | 推荐权威来源 | 原因 |
 |---|---|---|
 | Provider 非敏感配置、全局 Preferences | 现有版本化 YAML | 可读、可导出、已有事务边界 |
-| Workspace Profile、Active Preferences | 现有工作空间 YAML / 后续兼容文档 | 用户可直接检查，保持工作空间隔离 |
+| Workspace Profile、Active Preferences | 当前工作空间 YAML 文档 | 用户可直接检查，保持工作空间隔离 |
 | AgentDefinition、WorkflowDefinition | 版本化 YAML/Markdown | 适合人工编辑、Diff 与导出 |
 | Skill 内容 | 文件系统目录，核心为 `SKILL.md` | 与开放 Skill 目录格式兼容 |
 | Session、TaskRun、AgentRun、WorkflowRun、NodeRun | SQLite Operational Store | 需要事务、查询、恢复、迁移与关联 |
@@ -225,7 +224,7 @@ Morrow 必须在数据模型中区分以下信息，不允许都塞入一个“m
 | 2. Agent 核心能力 | 已完成 | 建立稳定 AgentLoop、ToolCycle、预算、取消与错误闭环 | [阶段 2](roadmap/stage-2-agent-core.md) |
 | 3. 本地 Code Agent 与安全闭环 | 已完成 | 在指定工作空间中可靠定位、修改、验证，并可在当前 macOS 原生沙箱中自动运行项目命令 | [阶段 3](roadmap/stage-3-local-tools-and-safety.md) |
 | 4. Task、Session、Artifact 与持久化 | 已完成 | 生产实现、全链路故障/迁移验收、当前平台安全门禁与包安装恢复均已通过 | [阶段 4](roadmap/stage-4-task-session-and-persistence.md) |
-| 5. 可审查学习与长期记忆 | 已完成 | 通用原子 Preference、no-tool Reviewer、SQLite 异步队列、Inbox/Writer、下一 AgentRun 冻结注入、Project Knowledge/Memory 与 v13 doctor/backup 已实现；Reviewer v4 live 验收通过 | [阶段 5](roadmap/stage-5-reviewable-learning-and-memory.md) |
+| 5. 可审查学习与长期记忆 | 已完成 | 通用原子 Preference、no-tool Reviewer、SQLite 异步队列、Inbox/Writer、下一 AgentRun 冻结注入、Project Knowledge/Memory 与 doctor/backup 已实现；当前离线验收通过 | [阶段 5](roadmap/stage-5-reviewable-learning-and-memory.md) |
 | 6. Skills 与扩展生命周期 | 已完成 | Skill 生命周期、Draft/Usage、受限脚本、Provider/Model 控制面、MCP desired state/runtime、Doctor、当前完整 Backup 与离线综合验收已通过 | [阶段 6](roadmap/stage-6-skills-and-extensions.md) |
 | 7. Agent Definition 与静态 Workflow Runtime | 未开始 | 用户可定义多个 Agent，并运行经编译验证的版本化 Workflow | [阶段 7](roadmap/stage-7-workflow-runtime.md) |
 | 8. 自适应编排与 GUI 控制面 | 未开始 | 系统生成可编辑 Workflow Draft，用户在 GUI 中观察与控制运行 | [阶段 8](roadmap/stage-8-adaptive-orchestration-and-gui.md) |
@@ -267,7 +266,7 @@ Morrow 必须在数据模型中区分以下信息，不允许都塞入一个“m
 
 - 权威来源、Schema 版本、迁移、备份、恢复、删除和损坏降级行为已定义并测试。
 - 状态变化具备 revision、版本或事件证据；冲突不会使用 last-write-wins 静默覆盖。
-- 旧版本数据不被隐式删除或错误解释。
+- 可确定转换的用户状态在加载前一次性迁移；不支持的旧格式不会被运行时错误解释。
 
 ### 10.4 可观察性门禁
 

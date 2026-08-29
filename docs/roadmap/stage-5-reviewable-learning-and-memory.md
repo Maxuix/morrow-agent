@@ -1,7 +1,7 @@
 # Stage 5：可审查学习与长期记忆
 
-> 状态：Preference Learning v2 实现、最终集成审查、模拟用户与真实 Provider 验收完成
-> 阶段结果：通用原子 Preference、异步 no-tool Reviewer、可审查 Inbox、确定性 Writer、下一 AgentRun 冻结注入、Project Knowledge/Memory 和 v13 诊断/备份边界均已落地
+> 状态：当前通用 Preference Learning 实现与离线集成验收完成；真实 Provider 质量验证需单独授权
+> 阶段结果：通用原子 Preference、异步 no-tool Reviewer、可审查 Inbox、确定性 Writer、下一 AgentRun 冻结注入、Project Knowledge/Memory 和当前诊断/备份边界均已落地
 
 ## 当前通用 Preference 已实施
 
@@ -596,8 +596,8 @@ Stage 5 只定义记录格式；Stage 7/8 才产生和应用这些信号。
 
 - 已交付 bounded no-tool production Reviewer、foreground review/retry 与 `off | review_only` 控制。
 - 已交付版本化离线安全/分类数据集，覆盖错误学习、一次性指令、Prompt Injection、秘密和未来候选类型。
-- 已交付 Learning doctor、隔离 SQLite backup 验证、REPL/headless/restart/crash/workspace acceptance evidence。
-- 真实 Provider 多任务长期试跑仅在显式授权下执行；Reviewer v4 的 2026-08-23 隔离 corpus 已通过，不将离线结果冒充真实模型质量。
+- 已交付 Learning doctor、当前完整 backup 验证、REPL/headless/restart/crash/workspace acceptance evidence。
+- 真实 Provider 多任务长期试跑仅在显式授权下执行；当前仓库只把离线证据作为实现与安全门禁，不把它冒充真实模型质量。
 
 ## 十二、暂不包含
 
@@ -668,7 +668,7 @@ Assistant 多次使用详细回答，但用户从未表达偏好。不得仅根�
 - Workspace 隔离和 Scope 合并测试。
 - Memory Selection 预算与解释测试。
 - Fake Learning Model 的确定性集成测试。
-- Live 模型只在显式授权下用于评估，不成为默认测试；Reviewer v4 真实 Provider 质量评估已通过。
+- Live 模型只在显式授权下用于评估，不成为默认测试；当前验收不声明真实 Provider 质量已通过。
 - 用户删除、拒绝、never-suggest 和 supersedes 全生命周期测试。
 
 ## 十六、阶段指标
