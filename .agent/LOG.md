@@ -3921,3 +3921,17 @@
   parent evidence, and the frozen tail is locally re-ordinalized without duplicating prior usage.
 - The evaluator suite passed 67 tests; the complete offline gate passed `1369 passed, 2 deselected`
   in 87.59 seconds. Ruff format/check, compileall and `git diff --check` passed before commit.
+
+## 2026-08-29 — DeepSeek r20 continuation completed
+
+- Pinned r20 from clean `main@7fd23a5` with an exact binding to r19's plan hash, evidence-root ID and
+  six-entry prefix. Plan-check, source/evidence preflight, all eight permission cases and the 8-run
+  cumulative reservation passed under the user-approved 50M ceiling.
+- Finalized all eight remaining entries in order. Morrow produced 3 `PASS`, 1 `FAIL_MODEL` and
+  2 `BUDGET_EXHAUSTED`; Pi produced 2 `FAIL_MODEL`. No unrecovered Provider error stopped a run.
+- Mechanical composition with r19 reproduced the exact frozen 14-run reduced schedule. All 14
+  bundles validate. Combined results are Morrow 3 `PASS`, 1 `FAIL_MODEL`, 2 `FAIL_RUNTIME`,
+  4 `BUDGET_EXHAUSTED`; Pi 3 `FAIL_MODEL`, 1 `FAIL_RUNTIME`.
+- Final conservative capacity is `47,987,509 / 50,000,000`, leaving `2,012,491`. Known bundle usage
+  is 25,738,704 tokens, with three total-token fields unavailable. The standard comparison remains
+  incomplete and no S7P-09 PASS is claimed.

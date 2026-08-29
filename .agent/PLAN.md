@@ -32,8 +32,9 @@ paused only by explicit campaign gates; the repair remains provider-neutral. Fre
 completed six immutable entries before Pi MORROW-005 consumed
 21,553,066 tokens and pushed cumulative accounting above its frozen 30M ceiling. The user approved
 a 50M cumulative ceiling and an eight-entry continuation instead of repeating the completed prefix.
-The evaluator must bind that continuation to the exact r19 plan/evidence root and completed prefix,
-then refreeze it from a new clean source; r17-r19 admissions remain immutable and are not reused.
+The evaluator binds that continuation to the exact r19 plan/evidence root and completed prefix.
+Fresh r20 finalized all eight remaining entries within capacity; r17-r19 admissions remain immutable
+and were not reused. Three unavailable total-token fields still block the standard comparison gate.
 
 ## 1a. Completed product objective
 

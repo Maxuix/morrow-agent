@@ -9,14 +9,16 @@ and explicit 14-run reduced single-repetition variant are implemented. Pi-aligne
 classification, partial-usage evaluation and Pi-compatible optional tool-call text normalization are
 now implemented. The reduced continuation contract is also implemented and binds an exact immutable
 parent prefix before any tail admission. Its evaluator tests passed `67`, and the complete offline
-gate passed `1369 passed, 2 deselected`.
+gate passed `1369 passed, 2 deselected`. The r20 continuation then finalized all eight tail entries;
+r19+r20 combine into 14/14 structurally valid reduced-campaign bundles.
 
 ## Active task
 
 Fresh DeepSeek r19 finalized six entries. Its one `network` failure was retried successfully and did
 not terminate the run. Pi MORROW-005 then reported 21,553,066 tokens across 140 unique assistant
 messages, mostly cache-read tokens, pushing cumulative accounting to `35,987,509` and triggering
-the frozen 30M capacity gate before entry seven. The user approved a 50M cumulative continuation.
+the frozen 30M capacity gate before entry seven. The user approved a 50M cumulative continuation;
+r20 executed the exact remaining eight entries and completed within that ceiling.
 
 ## Implemented boundary
 
@@ -43,12 +45,12 @@ the frozen 30M capacity gate before entry seven. The user approved a 50M cumulat
 
 ## Next action
 
-Commit the verified continuation contract, then freeze r20 from that clean source with r19 as its
-exact six-entry parent and r17-r19 included in cumulative capacity. Admit only r19 entries 7-14,
-rebased as local continuation ordinals 1-8. The 50M ceiling leaves 2,012,491 tokens beyond the
-12M reservation, so recompute capacity after every finalized run and stop before the next admission
-if actual usage consumes that margin. Recovered transient errors do not notify the user; only an
-unrecovered terminal Provider failure pauses execution.
+Retain r19 and r20 as the immutable DeepSeek reduced campaign. The exact continuation binding and
+combined schedule validation pass, and all 14 bundles are structurally valid. The combined result
+distribution is Morrow: 3 `PASS`, 1 `FAIL_MODEL`, 2 `FAIL_RUNTIME`, 4 `BUDGET_EXHAUSTED`; Pi:
+3 `FAIL_MODEL`, 1 `FAIL_RUNTIME`. Three bundles retain unavailable total-token metrics, so the
+standard comparison remains incomplete and no baseline PASS is claimed. Full Subplan 90 completion
+still requires a separately authorized primary repeated campaign with complete mandatory usage.
 
 ## Blockers
 
@@ -86,5 +88,8 @@ unrecovered terminal Provider failure pauses execution.
   the same Provider variant and completed normally with a valid tool call.
 - r19 has six immutable finalized entries. Its sixth Pi run alone consumed 21,553,066 tokens, so the
   original 30M plan is over ceiling and cannot admit entry seven. The approved 50M continuation has
-  only 2,012,491 tokens of planned margin and may still stop early if another Pi run exceeds its
-  reservation.
+  now completed all eight remaining entries. Final cumulative conservative accounting is
+  `47,987,509 / 50,000,000`, leaving `2,012,491`.
+- Combined known bundle usage is 25,738,704 tokens, but three Morrow bundles preserve unavailable
+  total-token fields. This blocks the mandatory complete-usage comparison gate even though all
+  admission, schedule and bundle-integrity checks pass.

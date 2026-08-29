@@ -273,3 +273,18 @@ A missing, substituted or incomplete parent is rejected. This contract is provid
 The focused evaluator suite passed 67 tests and the complete offline gate passed 1,369 tests with
 two explicit Live tests deselected. The user approved a 50M cumulative ceiling for the eight-entry
 r19 continuation; execution remains subject to a capacity check before every admission.
+
+The continuation was pinned as
+`s7p-09-deepseek-v4-flash-7fd23a5-continuation-r20` and all eight tail entries finalized. Mechanical
+composition with r19's six-entry prefix exactly reproduced the frozen 14-run reduced schedule, and
+all 14 bundles passed structural validation. The combined result distribution is:
+
+| Agent | Result distribution |
+|---|---|
+| Morrow | 3 `PASS`; 1 `FAIL_MODEL`; 2 `FAIL_RUNTIME`; 4 `BUDGET_EXHAUSTED` |
+| Pi | 3 `FAIL_MODEL`; 1 `FAIL_RUNTIME` |
+
+No unrecovered Provider failure terminated the continuation. Conservative cumulative capacity is
+47,987,509 / 50,000,000, leaving 2,012,491. Combined known bundle usage is 25,738,704 tokens, while
+three bundles retain unavailable total-token metrics. The standard mandatory-usage comparison gate
+therefore remains incomplete; the evidence does not support an S7P-09 baseline PASS.

@@ -66,8 +66,10 @@ it has one Morrow PASS, but only one repetition and incomplete Provider usage.
 - `[x]` Add a provider-neutral reduced continuation variant that freezes the remaining schedule,
   binds the exact parent campaign/plan/evidence root and completed prefix, and rejects capacity or
   admission checks when that parent evidence is omitted or incomplete.
-- `[>]` Commit the verified continuation contract, freeze r20's eight remaining entries under the
-  user-approved cumulative 50M ceiling, and execute sequentially while capacity permits.
+- `[x]` Commit the verified continuation contract, freeze r20's eight remaining entries under the
+  user-approved cumulative 50M ceiling, and execute sequentially. All eight continuation entries
+  finalized; the combined r19+r20 schedule has 14/14 structurally valid bundles and remained within
+  capacity at `47,987,509 / 50,000,000`.
 
 ## Earlier completed tasks
 
