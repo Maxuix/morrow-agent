@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
+from typing import Literal
 
 from pydantic import Field, field_validator, model_validator
 
@@ -176,6 +177,19 @@ class AgentRunTerminalMetrics(ProtocolModel):
     turn_id: str
     finish_reason: FinishReason
     stop_code: AgentStopCode | None = None
+    # Internal-only provenance for an unexpected AgentLoop failure. It is diagnostic evidence,
+    # never a retry, permission, lifecycle, or recovery input.
+    stop_detail: (
+        Literal[
+            "run_setup",
+            "run_control",
+            "context_build",
+            "model_call",
+            "conversation_commit",
+            "tool_cycle",
+        ]
+        | None
+    ) = None
     model_attempts: int = Field(default=0, ge=0)
     retry_count: int = Field(default=0, ge=0)
     tool_rounds: int = Field(default=0, ge=0)

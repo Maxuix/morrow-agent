@@ -9,6 +9,11 @@ it has one Morrow PASS, but only one repetition and incomplete Provider usage.
 
 ## Tasks
 
+- `[x]` Add a minimal fail-open source detail for unexpected AgentLoop `internal` stops using the
+  existing terminal observation slot; do not change public events, task decisions, or schema.
+- `[x]` Verify focused persistence/runtime regressions and the complete offline/static gate, then
+  commit the isolated repair.
+
 - `[x]` Replace the unknown-model 160,000-character fallback with 256 KiB and route new
   configured-Provider runs through the existing long-horizon compaction path.
 - `[x]` Propagate the frozen comparison plan's context-window and maximum-output capabilities into

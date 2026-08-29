@@ -383,6 +383,8 @@ class _AgentRunState:
     crashed: bool = False
     terminal_finish_reason: FinishReason | None = None
     stop_code: AgentStopCode | None = None
+    internal_phase: str = "run_setup"
+    stop_detail: str | None = None
     touched_paths: list[str] = field(default_factory=list)
 
 
@@ -930,6 +932,7 @@ class AgentLoop:
                     agent_run_id=state.agent_run_id,
                     finish_reason=finish_reason,
                     stop_code=state.stop_code,
+                    stop_detail=state.stop_detail,
                     model_attempts=state.model_attempts,
                     retry_count=state.total_retry_count,
                     tool_rounds=state.tool_rounds,
@@ -1052,6 +1055,7 @@ class AgentLoop:
                             session_id=session.session_id,
                         )
             else:
+                state.internal_phase = "run_setup"
                 if durable_runtime is not None:
                     requested_agent_run_id = (
                         agent_run_id
@@ -1198,6 +1202,7 @@ class AgentLoop:
                             _remember_call_paths(state, prior_call)
 
             while True:
+                state.internal_phase = "run_control"
                 if _pending_cancellation():
                     _consume_cancellation_request()
                     raise asyncio.CancelledError
@@ -1234,6 +1239,7 @@ class AgentLoop:
                         yield item
                     return
                 try:
+                    state.internal_phase = "context_build"
                     try:
                         refresh_prompt_projection()
                     except (ProjectInstructionError, PromptAssemblyError) as exc:
@@ -1289,6 +1295,7 @@ class AgentLoop:
                         state.accounting_basis = context.accounting_basis
                     elif state.accounting_basis != context.accounting_basis:
                         state.accounting_basis = None
+                state.internal_phase = "model_call"
                 state.model_attempts += 1
                 admission = None
                 request_state: str | None = None
@@ -1509,6 +1516,7 @@ class AgentLoop:
                         )
                         return
                     try:
+                        state.internal_phase = "conversation_commit"
                         freeze_permissions()
                         session.append_assistant(message)
                     except ConversationLogError:
@@ -1590,6 +1598,7 @@ class AgentLoop:
                 }
 
                 try:
+                    state.internal_phase = "conversation_commit"
                     freeze_permissions()
                     planned = session.log.plan_append_assistant(message)
                     if durable_runtime is not None:
@@ -1653,6 +1662,7 @@ class AgentLoop:
 
                 state.tool_calls += len(calls)
                 state.tool_rounds += 1
+                state.internal_phase = "tool_cycle"
                 cycle_outcomes: list[ToolExecutionOutcome] = []
                 for index, call in enumerate(calls, start=1):
                     if _pending_cancellation():
@@ -1823,11 +1833,9 @@ class AgentLoop:
                 state.started = True
                 yield event("turn.started", {})
             state.settled = True
-            stop_code = (
-                AgentStopCode.KNOWN_FAILURE
-                if isinstance(exc, ApplicationError)
-                else AgentStopCode.INTERNAL
-            )
+            known_failure = isinstance(exc, ApplicationError)
+            state.stop_detail = None if known_failure else state.internal_phase
+            stop_code = AgentStopCode.KNOWN_FAILURE if known_failure else AgentStopCode.INTERNAL
             unresolved = session.log.unresolved_call_ids
             interrupted = self._close_unresolved(
                 session,

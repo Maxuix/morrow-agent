@@ -45,6 +45,11 @@ compaction even when exact metadata is absent, propagate frozen comparison capab
 isolated Morrow model config, and reserve known maximum output capacity before admitting context.
 Historical AgentRun snapshots and r19/r20 evidence remain immutable.
 
+The user then authorized one deliberately small diagnostic repair for otherwise opaque Morrow
+`internal` stops. It must remain internal-only and fail-open: record only a fixed low-cardinality
+AgentLoop source in the existing terminal observation path, without adding a policy layer, changing
+public events, affecting retry/permission/lifecycle decisions, or requiring a schema migration.
+
 ## 1a. Completed product objective
 
 Keep learning best-effort and mechanically triggered after an accepted completed task. Tool-call

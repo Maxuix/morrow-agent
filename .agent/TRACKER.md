@@ -18,15 +18,17 @@ windows compact at 256 KiB; exact context/output capabilities drive token accoun
 S7P-09 isolated Morrow admission now freezes the plan's generic context/output capabilities instead
 of copying `capabilities: null`. Existing v1 snapshots and r19/r20 evidence remain unchanged.
 
+Unexpected AgentLoop failures now retain one fixed internal source on the existing terminal
+observation. The public event lifecycle and stop code remain unchanged, and observation failure is
+explicitly covered as fail-open. No new module, callback framework, policy decision, or schema
+migration was introduced.
+
 ## Active task
 
-The repair has passed focused regression (`136`) and the complete offline gate
-(`1376 passed, 2 deselected`), plus Ruff format/check, compileall, both CLI help commands,
-evaluator self-check and `git diff --check`. Commit the verified checkpoint. Any future Live rerun
-must refreeze source/profile/evidence and receive a fresh explicit admission; this task did not
-authorize or execute one.
-
-Verified implementation checkpoint: `52f1e9e` (`fix(runtime): activate safe context compaction`).
+The small internal-source repair is implemented and verified. Focused runtime/observation tests pass
+`63`; the complete offline gate passes `1378 passed, 2 deselected`; Ruff format/check, compileall,
+both CLI help commands, evaluator self-check and `git diff --check` pass. No Live request or
+evaluation admission was run.
 
 ## Implemented boundary
 

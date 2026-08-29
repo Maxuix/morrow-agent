@@ -3956,3 +3956,20 @@
   Provider request or formal campaign admission was run.
 - Committed the verified implementation as `52f1e9e` (`fix(runtime): activate safe context
   compaction`).
+
+## 2026-08-30 — Minimal fail-open internal-source observation
+
+- Added one fixed, internal-only source detail for unexpected AgentLoop exceptions. The detail uses
+  the existing terminal observation and already-null bounded reason-code storage slot; no public
+  event, stop code, retry/permission/recovery decision, module, callback framework, or schema version
+  changed.
+- The detail is assigned only by the unexpected exception boundary. Known `ApplicationError`
+  failures and Provider outcomes do not receive it, so it cannot broaden Provider retries or
+  relabel ordinary failures.
+- Added regressions proving `context_build` survives the terminal observation round trip while the
+  public error remains unchanged, and proving an observation-finalization exception cannot change a
+  successful task result.
+- Focused observation/tool-loop/guardrail tests passed `63`; the complete offline gate passed
+  `1378 passed, 2 deselected in 87.42s`. Ruff format/check, compileall, both CLI help commands,
+  evaluator self-check for all ten tasks, and `git diff --check` passed. No Live request or formal
+  evaluation admission was run.

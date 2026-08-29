@@ -909,6 +909,63 @@ async def test_agent_loop_records_one_durable_request_and_terminal_metrics(tmp_p
 
 
 @pytest.mark.asyncio
+async def test_unexpected_context_failure_records_internal_source_without_public_change(
+    tmp_path, monkeypatch
+):
+    handle, _journal, session, persistence = _open(tmp_path)
+    try:
+        builder = make_context_builder()
+
+        def fail_build(*_args, **_kwargs):
+            raise RuntimeError("private context failure")
+
+        monkeypatch.setattr(builder, "build", fail_build)
+        loop = AgentLoop(
+            ScriptedModelProvider(["unused"]),
+            ModelRef(provider_id="p", model_id="m"),
+            builder,
+            id_source=FixedIdSource(),
+            clock=FixedClock(),
+        )
+
+        events = [event async for event in loop.run_task(session, "question")]
+
+        assert events[-1].payload["finish_reason"] == FinishReason.ERROR.value
+        assert events[-1].payload["stop_code"] == AgentStopCode.INTERNAL.value
+        assert "stop_detail" not in events[-1].payload
+        observation = persistence.get_agent_run_observation()
+        assert observation is not None and observation.terminal_metrics is not None
+        assert observation.terminal_metrics.stop_detail == "context_build"
+    finally:
+        handle.close()
+
+
+@pytest.mark.asyncio
+async def test_terminal_observation_failure_never_changes_task_result(tmp_path, monkeypatch):
+    handle, _journal, session, persistence = _open(tmp_path)
+    try:
+
+        def fail_observation(**_kwargs):
+            raise RuntimeError("observation unavailable")
+
+        monkeypatch.setattr(persistence, "finalize_agent_run", fail_observation)
+        loop = AgentLoop(
+            ScriptedModelProvider(["done"]),
+            ModelRef(provider_id="p", model_id="m"),
+            make_context_builder(),
+            id_source=FixedIdSource(),
+            clock=FixedClock(),
+        )
+
+        events = [event async for event in loop.run_task(session, "question")]
+
+        assert events[-1].payload["finish_reason"] == FinishReason.STOP.value
+        assert events[-1].payload["text"] == "done"
+    finally:
+        handle.close()
+
+
+@pytest.mark.asyncio
 async def test_agent_loop_marks_an_empty_provider_stream_as_invalid_response(tmp_path):
     class EmptyProvider:
         async def stream(self, _model, _messages, _tools=()):
