@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal
 
-from morrow.adapters.state.preference_migration import legacy_entries_from_preferences
 from morrow.application.compaction_persistence import compaction_entries_from_checkpoints
 from morrow.application.preferences.jobs import PreferenceReviewJobEnqueuer
 from morrow.application.preferences.run_projection import select_run_preferences
@@ -496,8 +495,8 @@ class TurnSubmissionCoordinator:
         session.run_context_projection = projection
         session.skill_context_projection = projection.skill_context
         if preference_sources is not None:
-            session.generic_global_preferences = preference_sources.global_document
-            session.generic_workspace_preferences = preference_sources.workspace_document
+            session.global_preferences = preference_sources.global_document
+            session.workspace_preferences = preference_sources.workspace_document
             session.global_preferences_revision = preference_sources.global_document.revision
             session.preferences_revision = preference_sources.workspace_document.revision
             session.workspace_preferences_presence = preference_sources.workspace_presence
@@ -852,28 +851,14 @@ def build_agent_run_snapshot(
     global_entries = (
         global_document.entries
         if global_document is not None
-        else session.generic_global_preferences.entries
-        if session.generic_global_preferences is not None
-        else legacy_entries_from_preferences(
-            "global", session.global_preferences.model_dump(mode="python")
-        )
+        else session.global_preferences.entries
     )
     workspace_entries = (
         workspace_document.entries
         if workspace_document is not None
-        else session.generic_workspace_preferences.entries
-        if session.generic_workspace_preferences is not None
-        else legacy_entries_from_preferences(
-            "workspace", session.workspace_preferences.model_dump(mode="python")
-        )
+        else session.workspace_preferences.entries
     )
-    session_entries = (
-        session.generic_session_preferences
-        if session.generic_session_preferences
-        else legacy_entries_from_preferences(
-            "session", session.preferences.model_dump(mode="python"), allow_session=True
-        )
-    )
+    session_entries = session.session_preferences
     preference_projection = select_run_preferences(
         global_entries,
         workspace_entries,
@@ -901,7 +886,7 @@ def build_agent_run_snapshot(
             revision=global_revision,
             content_sha256=source_digest(
                 StatePresence.PRESENT,
-                global_document or session.generic_global_preferences or session.global_preferences,
+                global_document or session.global_preferences,
             ),
         ),
         SourceRevisionRef(
@@ -914,9 +899,7 @@ def build_agent_run_snapshot(
             revision=workspace_revision,
             content_sha256=source_digest(
                 workspace_presence,
-                workspace_document
-                or session.generic_workspace_preferences
-                or session.workspace_preferences,
+                workspace_document or session.workspace_preferences,
             ),
         ),
         SourceRevisionRef(
@@ -1004,7 +987,7 @@ def build_agent_run_snapshot(
         preference_omitted_count=preference_projection.omitted_count,
         preference_source_scopes=preference_projection.source_scopes,
         preference_refresh_status=(
-            preference_sources.refresh_status if preference_sources is not None else "legacy"
+            preference_sources.refresh_status if preference_sources is not None else "ok"
         ),
         preference_refresh_error=(
             preference_sources.refresh_error if preference_sources is not None else None
@@ -1058,7 +1041,4 @@ def _closed_turn_replay(
         return terminal.finish_reason, stop_code, assistant_text
     if metrics is not None:
         return metrics.finish_reason, metrics.stop_code, None
-    # A concurrent loser can observe an older/synthetic closed receipt before the
-    # winner's durable Turn and terminal metrics are visible. Preserve the legacy
-    # empty-STOP replay in that evidence-free compatibility case.
-    return FinishReason.STOP, None, None
+    return FinishReason.ERROR, AgentStopCode.INTERNAL, None

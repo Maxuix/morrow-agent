@@ -6,9 +6,8 @@ import json
 import sqlite3
 from datetime import UTC, datetime
 
-from morrow.adapters.state.preference_snapshot_compat import decode_agent_run_snapshot
 from morrow.application.learning.memory_selector import memory_selection_digest
-from morrow.core.domain import canonical_json_bytes
+from morrow.core.domain import AgentRunSnapshot, canonical_json_bytes
 from morrow.core.learning import LearningSensitivity
 from morrow.core.learning_memory import (
     ProjectKnowledgeCategory,
@@ -120,7 +119,7 @@ def verify_memory_references(connection: sqlite3.Connection) -> tuple[bool, tupl
         "ORDER BY r.created_at_unix ASC, r.agent_run_id ASC"
     ).fetchall():
         try:
-            snapshot = decode_agent_run_snapshot(json.loads(str(row[2])))
+            snapshot = AgentRunSnapshot.model_validate(json.loads(str(row[2])))
             selection_id = snapshot.memory_selection_id
             if selection_id is None:
                 continue

@@ -1,8 +1,8 @@
 # Current-Version-Only Compatibility Removal
 
 > Status: active
-> Active subplan: 94 — remove repository compatibility surfaces
-> Activation base: `main@da5f89a`
+> Active subplan: 95 — make generic Preferences the only current format
+> Activation base: `main@ba1a028`
 > Source authority: current user request and current code/tests
 
 ## Objective
@@ -14,7 +14,8 @@ decode-only or test-only compatibility.
 
 ## Decisions
 
-- Current source models, YAML documents, SQLite schema and Backup v2 are the only supported formats.
+- Current source models, YAML documents, SQLite schema and the complete Backup bundle are the only
+  supported formats.
 - Historical evaluation bundles and fixtures do not require migration and may be deleted.
 - Compatibility that exists only for internal tests is removed; tests must use current public or
   owning-module contracts.
@@ -33,7 +34,7 @@ decode-only or test-only compatibility.
    explicit migration path and no decode-only legacy model afterward.
 3. Remove retired completion-truth, legacy tool recovery, permissive ToolExecutor and old AgentRun
    snapshot fields; consolidate the Operational Store around the current schema.
-4. Make Backup v2 the sole backup contract and remove v1 creation/verification/documentation.
+4. Make the complete Backup bundle the sole backup contract and remove versioned alternatives.
 5. Update architecture, roadmap and human documentation to describe only the current baseline.
 6. Run focused tests after each slice and the complete offline/static/CLI/diff gate before merge.
 

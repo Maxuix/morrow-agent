@@ -24,13 +24,13 @@ from morrow.core.agent_runs import (
 from morrow.core.domain import AgentRunSnapshot, canonical_json_bytes, sha256_digest
 from morrow.core.models import (
     CredentialRef,
-    GlobalConfig,
     ModelRef,
     ProviderConfig,
     ProviderModelConfig,
     RunPolicy,
     ToolDefinition,
 )
+from morrow.core.preference_documents import GlobalConfig
 from morrow.runtime.policy import AgentPolicy, LongHorizonPolicySettings
 from morrow.runtime.tools import ToolExecutor, ToolRegistry
 
@@ -289,9 +289,7 @@ class AgentRunPreparationService:
             tool_schema_digest=snapshot.tool_schema_digest,
             tool_count=len(tools),
             skill_selection_ids=snapshot.skill_selection_ids,
-            skill_selection_id=snapshot.skill_selection_id,
             skill_context_ids=snapshot.skill_context_ids,
-            skill_context_id=snapshot.skill_context_id,
             skill_selection_digest=snapshot.skill_selection_digest,
             skill_context_digest=snapshot.skill_context_digest,
             mcp_run_snapshot_ids=snapshot.mcp_run_snapshot_ids,

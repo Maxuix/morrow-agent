@@ -169,13 +169,9 @@ def test_production_declarations_cover_only_the_current_inventory():
     assert "calculate" not in PRODUCTION_TOOL_NAMES
     assert "lookup_record" not in PRODUCTION_TOOL_NAMES
     assert tool_declaration("calculate").effect_class is EffectClass.PURE
-    assert tool_declaration("show_changes").effect_class is EffectClass.DURABLE_STATE_READ
-    git = tool_declaration("git_status")
-    assert git.effect_class is EffectClass.BOUNDED_EXTERNAL_READ
-    assert git.requires_frozen_confinement is True
-    write = tool_declaration("write_file")
+    write = tool_declaration("write")
     assert write.missing_handler_completed is MissingCompletionPolicy.REQUIRES_RECONCILIATION
-    sandbox = tool_declaration("run_command", process_isolation=ProcessIsolation.NATIVE_SANDBOX)
+    sandbox = tool_declaration("bash", process_isolation=ProcessIsolation.NATIVE_SANDBOX)
     assert sandbox.effect_class is EffectClass.PROCESS_EFFECT_NON_DURABLE
     assert sandbox.missing_handler_completed is MissingCompletionPolicy.OUTCOME_UNKNOWN
     skill_script = tool_declaration("run_skill_script")
@@ -183,7 +179,7 @@ def test_production_declarations_cover_only_the_current_inventory():
     assert skill_script.missing_handler_completed is MissingCompletionPolicy.OUTCOME_UNKNOWN
     assert skill_script.requires_frozen_confinement is True
     with pytest.raises(UnknownToolDeclarationError, match="process isolation"):
-        tool_declaration("run_command")
+        tool_declaration("bash")
     with pytest.raises(UnknownToolDeclarationError, match="no durable declaration"):
         tool_declaration("invented_tool")
     assert missing_declarations(("read", "read_file", "invented_tool")) == (

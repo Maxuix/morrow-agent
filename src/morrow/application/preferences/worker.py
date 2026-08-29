@@ -373,7 +373,7 @@ class ReviewWorker:
         )
 
     async def _drain_learning(self, review_id: str) -> ReviewWorkerResult:
-        """Run one legacy Learning Review; its runner owns claim and attempt mutation."""
+        """Run one non-Preference Learning Review; its runner owns claim and attempt mutation."""
 
         try:
             result = await self.learning_runner.run(review_id)

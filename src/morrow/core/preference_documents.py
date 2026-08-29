@@ -63,8 +63,8 @@ class PreferenceEntriesPayload(ProtocolModel):
         return self
 
 
-class GlobalConfigV2(ProtocolModel):
-    """Complete global config aggregate used by the v2 migration codec."""
+class GlobalConfig(ProtocolModel):
+    """Current global config aggregate."""
 
     schema_version: Literal[GLOBAL_CONFIG_SCHEMA_VERSION] = GLOBAL_CONFIG_SCHEMA_VERSION
     revision: int = Field(default=0, ge=0)
@@ -77,7 +77,7 @@ class GlobalConfigV2(ProtocolModel):
     _normalize_time = field_validator("updated_at", mode="before")(_aware)
 
     @model_validator(mode="after")
-    def active_model_is_registered(self) -> GlobalConfigV2:
+    def active_model_is_registered(self) -> GlobalConfig:
         if self.active_model:
             provider = self.providers.get(self.active_model.provider_id)
             if provider is None or self.active_model.model_id not in provider.models:
@@ -85,8 +85,8 @@ class GlobalConfigV2(ProtocolModel):
         return self
 
 
-class WorkspacePreferenceDocumentV3(ProtocolModel):
-    """Versioned workspace Preference document, independent of Profile v2."""
+class WorkspacePreferenceDocument(ProtocolModel):
+    """Current workspace Preference document, independent of Profile."""
 
     schema_version: Literal[WORKSPACE_PREFERENCE_SCHEMA_VERSION] = (
         WORKSPACE_PREFERENCE_SCHEMA_VERSION
@@ -99,7 +99,7 @@ class WorkspacePreferenceDocumentV3(ProtocolModel):
     _normalize_time = field_validator("updated_at", mode="before")(_aware)
 
     @model_validator(mode="after")
-    def payload_matches_state(self) -> WorkspacePreferenceDocumentV3:
+    def payload_matches_state(self) -> WorkspacePreferenceDocument:
         if (self.state == "present") != (self.entries is not None):
             raise ValueError("workspace Preference entries must match envelope state")
         if self.entries is not None:
@@ -157,9 +157,9 @@ class PreferenceReviewSnapshot(ProtocolModel):
 
 __all__ = [
     "FrozenPreferenceSummary",
-    "GlobalConfigV2",
+    "GlobalConfig",
     "PreferenceDocument",
     "PreferenceEntriesPayload",
     "PreferenceReviewSnapshot",
-    "WorkspacePreferenceDocumentV3",
+    "WorkspacePreferenceDocument",
 ]

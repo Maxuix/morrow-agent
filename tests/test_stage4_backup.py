@@ -48,12 +48,18 @@ def test_backup_contains_database_manifest_artifacts_and_detects_changed_restore
     assert backup.verify(bundle).ok
 
     manifest = bundle / "manifest.json"
-    payload = json.loads(manifest.read_text(encoding="utf-8"))
+    manifest_bytes = manifest.read_bytes()
+    digest_bytes = (bundle / "manifest.sha256").read_bytes()
+    payload = json.loads(manifest_bytes)
     payload["created_at"] = "2026-08-19T00:00:01Z"
     manifest.write_text(json.dumps(payload), encoding="utf-8")
     changed_manifest = backup.verify(bundle)
     assert not changed_manifest.ok
-    assert "manifest_changed" in changed_manifest.issues
+    assert "manifest_invalid" in changed_manifest.issues
+
+    # Restore the signed manifest so the artifact corruption is assessed independently.
+    manifest.write_bytes(manifest_bytes)
+    (bundle / "manifest.sha256").write_bytes(digest_bytes)
 
     target = bundle / "artifacts" / artifact.filename
     target.write_bytes(b"changed")
@@ -85,7 +91,7 @@ def test_backup_creation_fails_closed_when_an_available_artifact_is_missing(tmp_
     artifact = artifacts.publish_bytes(b"missing later", kind=ArtifactKind.COMMAND_OUTPUT)
     filesystem.existing_final_path(artifact.artifact_id).unlink()
     backup = OperationalBackupService(store, journal=journal)
-    with pytest.raises(BackupBundleError, match="failed verification"):
+    with pytest.raises(BackupBundleError, match="could not be completed"):
         backup.create("missing-artifact")
     assert not (store.layout.backups_dir / "missing-artifact.bundle").exists()
     handle.close()

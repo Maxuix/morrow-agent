@@ -27,7 +27,9 @@ from morrow.core.execution import (
     ToolExecutionState,
     transition_execution,
 )
-from morrow.core.models import ModelRef, Preferences, Profile
+from morrow.core.models import ModelRef, Profile
+from morrow.core.preference_documents import PreferenceDocument
+from morrow.core.preference_models import PreferenceEntry, PreferenceScope
 from morrow.core.recovery import RecoveryResolution
 from morrow.core.store import StorageError, StorageErrorCode
 from morrow.runtime.durable_log import DurableConversationWriter
@@ -66,14 +68,42 @@ def _seed_terms(journal: SqliteOperationalJournal) -> None:
 
 
 def _session() -> Session:
+    def entry(preference_id: str, statement: str, scope: PreferenceScope) -> PreferenceEntry:
+        return PreferenceEntry(
+            preference_id=preference_id,
+            statement=statement,
+            scope=scope,
+            created_at=NOW,
+            updated_at=NOW,
+        )
+
     return Session(
         session_id="ses_1",
         profile=Profile(name="frozen profile"),
-        global_preferences=Preferences(language="en", instructions=["global rule"]),
-        workspace_preferences=Preferences(
-            response_detail="detailed", instructions=["workspace rule"]
+        global_preferences=PreferenceDocument(
+            scope="global",
+            revision=2,
+            entries=(
+                entry("pref_global_rule", "global rule", PreferenceScope.GLOBAL),
+                entry("pref_global_lang", "回答时默认使用 en。", PreferenceScope.GLOBAL),
+            ),
         ),
-        preferences=Preferences(language="zh", instructions=["session rule"]),
+        workspace_preferences=PreferenceDocument(
+            scope="workspace",
+            revision=7,
+            entries=(
+                entry("pref_workspace_rule", "workspace rule", PreferenceScope.WORKSPACE),
+                entry(
+                    "pref_workspace_detail",
+                    "回答默认提供详细说明。",
+                    PreferenceScope.WORKSPACE,
+                ),
+            ),
+        ),
+        session_preferences=(
+            entry("pref_session_rule", "session rule", PreferenceScope.SESSION),
+            entry("pref_session_lang", "回答时默认使用 zh。", PreferenceScope.SESSION),
+        ),
         profile_revision=4,
         preferences_revision=7,
         global_preferences_revision=2,

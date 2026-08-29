@@ -15,7 +15,7 @@ from morrow.adapters.skills.envelope import (
     verify_envelope_against_tree,
 )
 from morrow.adapters.skills.tree import PackageTreeError, build_canonical_tree
-from morrow.core.backup import BackupV2FileEntry, BackupV2FileKind, BackupV2SkillEntry
+from morrow.core.backup import BackupFileEntry, BackupFileKind, BackupSkillEntry
 from morrow.core.skills.catalog import SkillVersion
 from morrow.core.skills.trust import SourceKind
 
@@ -26,8 +26,8 @@ class SkillBackupError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class SkillBackupCapture:
-    files: tuple[BackupV2FileEntry, ...]
-    skills: tuple[BackupV2SkillEntry, ...]
+    files: tuple[BackupFileEntry, ...]
+    skills: tuple[BackupSkillEntry, ...]
     version_ids: frozenset[str]
 
 
@@ -106,8 +106,8 @@ def capture_referenced_skills(
             )
             selected.add(candidates[0].version_id)
 
-    captures: list[BackupV2FileEntry] = []
-    manifests: list[BackupV2SkillEntry] = []
+    captures: list[BackupFileEntry] = []
+    manifests: list[BackupSkillEntry] = []
     captured_ids: set[str] = set()
     for version_id in sorted(selected):
         version = by_id.get(version_id)
@@ -143,17 +143,17 @@ def capture_referenced_skills(
             _file_entry(
                 target_root,
                 target / ENVELOPE_NAME,
-                BackupV2FileKind.SKILL_PACKAGE,
+                BackupFileKind.SKILL_PACKAGE,
             )
         )
         file_paths: list[str] = []
         for entry in tree.entries:
             relative = target / "package" / entry.relative_path
             _write_bytes(relative, tree_contents[entry.relative_path])
-            captures.append(_file_entry(target_root, relative, BackupV2FileKind.SKILL_PACKAGE))
+            captures.append(_file_entry(target_root, relative, BackupFileKind.SKILL_PACKAGE))
             file_paths.append(_relative(target_root, relative))
         manifests.append(
-            BackupV2SkillEntry(
+            BackupSkillEntry(
                 skill_id=version.skill_id,
                 version_id=version.version_id,
                 source_kind=version.source_kind.value,
@@ -175,7 +175,7 @@ def capture_referenced_skills(
 
 
 def verify_skill_capture(
-    root: Path, manifest_items: tuple[BackupV2SkillEntry, ...]
+    root: Path, manifest_items: tuple[BackupSkillEntry, ...]
 ) -> tuple[bool, tuple[str, ...]]:
     issues: list[str] = []
     for item in manifest_items:
@@ -253,9 +253,9 @@ def _write_bytes(path: Path, content: bytes) -> None:
     os.chmod(path, 0o600)
 
 
-def _file_entry(root: Path, path: Path, kind: BackupV2FileKind) -> BackupV2FileEntry:
+def _file_entry(root: Path, path: Path, kind: BackupFileKind) -> BackupFileEntry:
     digest, size = _hash_file(path)
-    return BackupV2FileEntry(path=_relative(root, path), kind=kind, sha256=digest, byte_size=size)
+    return BackupFileEntry(path=_relative(root, path), kind=kind, sha256=digest, byte_size=size)
 
 
 def _relative(root: Path, path: Path) -> str:

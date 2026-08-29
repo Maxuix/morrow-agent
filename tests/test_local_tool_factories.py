@@ -267,6 +267,7 @@ def test_production_inventory_is_exact_and_demo_tools_are_not_exposed(tmp_path):
         "write",
         "bash",
         "run_skill_script",
+        "manage_preferences",
     }
     assert "lookup_record" not in names
     assert "calculate" not in names
@@ -403,6 +404,7 @@ def test_supported_auto_sandbox_inventory_adds_only_current_run_promotion(tmp_pa
         "bash",
         "run_skill_script",
         "promote_sandbox_changes",
+        "manage_preferences",
     }
 
 

@@ -142,14 +142,14 @@ def test_handwritten_skill_scope_selection_usage_doctor_and_backup_restore(tmp_p
         assert "skill_usage_version" not in codes
 
         backup = OperationalBackupService(store, journal=journal)
-        report = backup.create_v2("stage6-integrated")
+        report = backup.create("stage6-integrated")
         bundle = store.layout.backups_dir / report.bundle_name
-        assert backup.verify_v2(bundle).ok
+        assert backup.verify(bundle).ok
         assert {item.version_id for item in report.skill_versions} == {
             first.version_id,
             second.version_id,
         }
-        restored = backup.restore_v2(bundle, tmp_path / "restored")
+        restored = backup.restore(bundle, tmp_path / "restored")
         assert restored.ok
         assert OperationalStore(tmp_path / "restored").classify().ok
 

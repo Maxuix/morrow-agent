@@ -2,18 +2,20 @@
 
 ## Current task
 
-Subplan 94 is complete, verified and integrated. No implementation subplan is active.
+Subplan 95: make generic Preference documents the only runtime format.
 
 ## Tasks
 
-- `[x]` Delete dead re-export modules, unused aliases/methods and unreachable compatibility paths.
-- `[x]` Move internal imports/tests from compatibility entrypoints to current owning contracts.
-- `[x]` Delete historical evaluation-only resources and their dedicated tests.
-- `[x]` Run focused tests and the complete offline/static/CLI/diff gate.
-- `[x]` Commit, integrate and retire Subplan 94 before beginning persisted-state cleanup.
+- `[x]` Trace the fixed/generic dual state and define the one-shot YAML migration boundary.
+- `[x]` Remove fixed Preference models and Session/AgentRun compatibility fields.
+- `[x]` Collapse context, turn lifecycle, bootstrap and Review preparation to generic entries.
+- `[x]` Delete decode-only modules, historical fixtures and compatibility tests.
+- `[x]` Remove the old backup format and fixed-field Learning Preference Candidate path.
+- `[x]` Update current architecture/docs and run focused plus complete gates.
+- `[>]` Commit, integrate and retire Subplan 95.
 
 ## Boundaries
 
-- Preserve current external interoperability behavior.
-- Do not modify or execute retained Live evaluation evidence.
-- Do not add dependencies or run Live/network tests.
+- Preserve Provider/Profile configuration and current generic Preference Writer semantics.
+- Do not reinterpret retained Live evaluation evidence.
+- Do not run Live/network tests or expose user state.

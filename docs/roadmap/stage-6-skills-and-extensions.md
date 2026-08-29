@@ -3,7 +3,7 @@
 > 状态：已完成（Subplans 63–77 已在本地完成，含 runtime-policy 与 Skill Script diagnostics/context 修复；macOS 离线验收通过，Linux 原生运行仍 unsupported）
 > 当前进展：Skill Catalog/生命周期、Selection/Context、Draft/Usage、受限脚本、Provider/Model 控制面，
 > MCP desired state、stdio Catalog discovery、确定性命名空间、Operational Store v16、run-scoped lazy runtime、
-> 安全策略桥接、结果 Artifact 引用、普通 ToolExecutor 接入、Doctor 和 Backup v2 均已完成。
+> 安全策略桥接、结果 Artifact 引用、普通 ToolExecutor 接入、Doctor 和当前完整 Backup 均已完成。
 > 阶段结果：Morrow 可以在隔离状态中发现、加载、测试、版本化和治理 Skills，并以统一安全边界接入 MCP 与更多 Provider；
 > 完整离线验收证据见 [Stage 6 acceptance](../acceptance/stage6-skills-and-extensions.md)
 > 上级文档：[开发路线总览](../ROADMAP.md)
@@ -457,7 +457,7 @@ requested hint，不能提升自身 Trust。
   扩展证据使用 SQLite。
 - AgentRun 主快照只保存 Skill/MCP 证据引用和 digest，完整 Skill context 放入专用、受预算的运行
   表，不能依赖一个正文字符上限推断 64 KiB 主快照必然合法。
-- Stage 6 新增显式 Backup bundle v2，覆盖 SQLite、Artifact、Extension YAML 和被引用的 managed
+- Stage 6 新增显式 当前完整 Backup bundle，覆盖 SQLite、Artifact、Extension YAML 和被引用的 managed
   Skill versions；现有 v1 的含义和 verifier 保持不变，CredentialStore 永不打包。
 - 安装、加载和执行都校验 canonical package tree 与文件摘要；symlink、路径逃逸和检查后替换失败
   关闭。

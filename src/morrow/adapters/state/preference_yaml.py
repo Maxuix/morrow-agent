@@ -10,13 +10,7 @@ from filelock import FileLock
 
 from morrow.adapters.state.preference_migration import (
     GLOBAL_CONFIG_PREFERENCE_SCHEMA_VERSION,
-    LEGACY_GLOBAL_SCHEMA_VERSION,
-    LEGACY_WORKSPACE_PREFERENCE_SCHEMA_VERSION,
     WORKSPACE_PREFERENCE_SCHEMA_VERSION,
-    PreferenceYamlDecodeError,
-    decode_global_config,
-    decode_legacy_agent_run_preferences,
-    decode_workspace_preferences,
 )
 from morrow.adapters.state.preference_yaml_io import (
     PreferenceYamlIoError,
@@ -45,7 +39,7 @@ from morrow.adapters.state.preference_yaml_types import (
     PreferenceYamlLoadStatus,
 )
 from morrow.core.domain import canonical_json_bytes
-from morrow.core.preference_documents import GlobalConfigV2, WorkspacePreferenceDocumentV3
+from morrow.core.preference_documents import GlobalConfig, WorkspacePreferenceDocument
 
 
 def _read_raw(path: Path) -> dict | None:
@@ -64,7 +58,7 @@ def _schema_version(raw: dict | None) -> int | None:
         raise PreferenceYamlError("corrupt", "Preference YAML schema is invalid") from exc
 
 
-def _value_digest(value: GlobalConfigV2 | WorkspacePreferenceDocumentV3) -> str:
+def _value_digest(value: GlobalConfig | WorkspacePreferenceDocument) -> str:
     payload = value.model_dump(mode="json")
     payload.pop("updated_at", None)
     return hashlib.sha256(canonical_json_bytes(payload)).hexdigest()
@@ -125,32 +119,34 @@ class PreferenceYamlStore(PreferenceYamlMigrationMixin):
 
     def _load_global(self, raw: dict | None) -> PreferenceYamlLoad:
         if raw is None:
-            value = GlobalConfigV2()
+            value = GlobalConfig()
             return PreferenceYamlLoad(
                 PreferenceYamlLoadStatus.OK, value, 0, GLOBAL_CONFIG_PREFERENCE_SCHEMA_VERSION
             )
         schema = _schema_version(raw)
-        try:
-            value = decode_global_config(raw)
-        except PreferenceYamlDecodeError as exc:
-            status = (
-                PreferenceYamlLoadStatus.UNSUPPORTED_SCHEMA
-                if exc.code.startswith("future_")
-                else PreferenceYamlLoadStatus.CORRUPT
-            )
+        if schema != GLOBAL_CONFIG_PREFERENCE_SCHEMA_VERSION:
             return PreferenceYamlLoad(
-                status,
+                PreferenceYamlLoadStatus.UNSUPPORTED_SCHEMA,
                 None,
                 int(raw.get("revision", 0) or 0),
                 schema,
-                error=exc.code,
+                error="unsupported_global_schema",
+            )
+        try:
+            value = GlobalConfig.model_validate(raw)
+        except ValueError:
+            return PreferenceYamlLoad(
+                PreferenceYamlLoadStatus.CORRUPT,
+                None,
+                int(raw.get("revision", 0) or 0),
+                schema,
+                error="invalid_global_config",
             )
         return PreferenceYamlLoad(
             PreferenceYamlLoadStatus.OK,
             value,
             value.revision,
             schema,
-            migrated=schema == LEGACY_GLOBAL_SCHEMA_VERSION,
             presence="present",
         )
 
@@ -179,39 +175,41 @@ class PreferenceYamlStore(PreferenceYamlMigrationMixin):
         if raw is None:
             return PreferenceYamlLoad(
                 PreferenceYamlLoadStatus.OK,
-                WorkspacePreferenceDocumentV3(state="cleared", entries=None),
+                WorkspacePreferenceDocument(state="cleared", entries=None),
                 0,
                 WORKSPACE_PREFERENCE_SCHEMA_VERSION,
                 presence="missing",
             )
         schema = _schema_version(raw)
-        try:
-            value = decode_workspace_preferences(raw)
-        except PreferenceYamlDecodeError as exc:
-            status = (
-                PreferenceYamlLoadStatus.UNSUPPORTED_SCHEMA
-                if exc.code.startswith("future_")
-                else PreferenceYamlLoadStatus.CORRUPT
-            )
+        if schema != WORKSPACE_PREFERENCE_SCHEMA_VERSION:
             return PreferenceYamlLoad(
-                status,
+                PreferenceYamlLoadStatus.UNSUPPORTED_SCHEMA,
                 None,
                 int(raw.get("revision", 0) or 0),
                 schema,
-                error=exc.code,
+                error="unsupported_workspace_preference_schema",
+            )
+        try:
+            value = WorkspacePreferenceDocument.model_validate(raw)
+        except ValueError:
+            return PreferenceYamlLoad(
+                PreferenceYamlLoadStatus.CORRUPT,
+                None,
+                int(raw.get("revision", 0) or 0),
+                schema,
+                error="invalid_workspace_preferences",
             )
         return PreferenceYamlLoad(
             PreferenceYamlLoadStatus.OK,
             value,
             value.revision,
             schema,
-            migrated=schema in {1, LEGACY_WORKSPACE_PREFERENCE_SCHEMA_VERSION},
             presence=value.state,
         )
 
     def write_global(
         self,
-        value: GlobalConfigV2,
+        value: GlobalConfig,
         *,
         expected_revision: int | None = None,
         expected_value_digest: str | None = None,
@@ -228,7 +226,7 @@ class PreferenceYamlStore(PreferenceYamlMigrationMixin):
     def write_workspace(
         self,
         workspace_id: str,
-        value: WorkspacePreferenceDocumentV3,
+        value: WorkspacePreferenceDocument,
         *,
         expected_revision: int | None = None,
         expected_value_digest: str | None = None,
@@ -244,7 +242,7 @@ class PreferenceYamlStore(PreferenceYamlMigrationMixin):
 
     def _write_value(
         self,
-        value: GlobalConfigV2 | WorkspacePreferenceDocumentV3,
+        value: GlobalConfig | WorkspacePreferenceDocument,
         path: Path,
         scope: str,
         workspace_id: str | None,
@@ -267,9 +265,9 @@ class PreferenceYamlStore(PreferenceYamlMigrationMixin):
             if expected_value_digest is not None:
                 if current.value is None or _value_digest(current.value) != expected_value_digest:
                     raise PreferenceYamlConflict()
-            if scope == "global" and not isinstance(value, GlobalConfigV2):
+            if scope == "global" and not isinstance(value, GlobalConfig):
                 raise PreferenceYamlError("scope", "global Preference document has the wrong type")
-            if scope == "workspace" and not isinstance(value, WorkspacePreferenceDocumentV3):
+            if scope == "workspace" and not isinstance(value, WorkspacePreferenceDocument):
                 raise PreferenceYamlError(
                     "scope", "workspace Preference document has the wrong type"
                 )
@@ -294,17 +292,11 @@ class PreferenceYamlStore(PreferenceYamlMigrationMixin):
 
 __all__ = [
     "GLOBAL_CONFIG_PREFERENCE_SCHEMA_VERSION",
-    "LEGACY_GLOBAL_SCHEMA_VERSION",
-    "LEGACY_WORKSPACE_PREFERENCE_SCHEMA_VERSION",
     "PreferenceMigrationPlan",
     "PreferenceYamlConflict",
-    "PreferenceYamlDecodeError",
     "PreferenceYamlError",
     "PreferenceYamlLoad",
     "PreferenceYamlLoadStatus",
     "PreferenceYamlStore",
     "WORKSPACE_PREFERENCE_SCHEMA_VERSION",
-    "decode_global_config",
-    "decode_legacy_agent_run_preferences",
-    "decode_workspace_preferences",
 ]

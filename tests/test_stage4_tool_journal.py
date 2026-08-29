@@ -35,7 +35,7 @@ from morrow.core.execution import (
     resolve_approval,
     transition_execution,
 )
-from morrow.core.models import ModelRef, Preferences, Profile
+from morrow.core.models import ModelRef, Profile
 from morrow.core.store import StorageError, StorageErrorCode, StoreOpenMode
 from morrow.testing import FixedClock
 
@@ -63,7 +63,6 @@ def _digest(label: str) -> str:
 def _snapshot() -> AgentRunSnapshot:
     return AgentRunSnapshot(
         profile=Profile(name="demo"),
-        legacy_preferences=Preferences(language="中文"),
         model=ModelRef(provider_id="p", model_id="m"),
         provider_id="p",
         source_revisions=(

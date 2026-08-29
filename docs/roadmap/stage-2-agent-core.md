@@ -430,7 +430,7 @@ AgentPolicy
 └── loop_max_pattern_cycles
 ```
 
-兼容 v1 默认值锚定现代 Agent 的多步能力，属于可由实现/Live 证据调整的开发者策略：30 个工具轮次、40 次模型尝试、128 个工具调用、每 Cycle 32 个调用、1800 秒总时间、120 秒单工具上限、3 次模型重试、800000 请求字符目标、262144 未知模型 fallback、64000 单结果字符、0.10 单结果比例、256000 单 Cycle 字符、0.35 Cycle 比例、3 条验证错误、重复检测开启、重复阈值 3、最大模式长度 4。新配置型 Provider 默认使用 v2 long-horizon；这些 v1 累计上限仅用于显式兼容运行和旧快照恢复。
+AgentRun 只使用当前 long-horizon 策略：单工具超时、Provider 重试、上下文压缩与结果预算继续受代码和运行策略约束，不再选择累计轮次/请求/调用上限的旧执行路径，也不恢复旧策略快照。
 
 每个真实 Provider 请求（包括重试）计一次模型尝试；每个独立 FunctionToolCall 计一次 tool call；每个已闭合 batch 计一个 tool round。每个 call 开始前重新计算剩余总时间，有效 timeout 是单工具上限与剩余时间的较小值。
 

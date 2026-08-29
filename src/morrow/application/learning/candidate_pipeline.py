@@ -46,14 +46,12 @@ class LearningCandidatePipeline:
         id_source: IdSource,
         clock: Callable[[], datetime],
         events,
-        preference_v2_enabled: bool = False,
     ) -> None:
         self.journal = journal
         self.workspace_id = workspace_id
         self.id_source = id_source
         self.clock = clock
         self.events = events
-        self.preference_v2_enabled = preference_v2_enabled
 
     def persist(
         self,
@@ -124,11 +122,7 @@ class LearningCandidatePipeline:
                     LearningCandidateStatus.EDITED_AND_ACCEPTED,
                 }
                 and (
-                    item.candidate_type
-                    not in {
-                        LearningCandidateType.PREFERENCE,
-                        LearningCandidateType.PROFILE,
-                    }
+                    item.candidate_type is not LearningCandidateType.PROFILE
                     or self._has_current_configuration_activation(txn, item)
                 )
                 for item in existing
@@ -207,17 +201,12 @@ class LearningCandidatePipeline:
         )
 
     def _has_current_configuration_activation(self, txn, candidate: LearningCandidate) -> bool:
-        target = (
-            "preferences"
-            if candidate.candidate_type is LearningCandidateType.PREFERENCE
-            else "profile"
-        )
         path = getattr(candidate.proposed_payload, "path", None)
         if path is None:
             return True
         activations = txn.list_configuration_activations(
             self.workspace_id,
-            target=target,
+            target="profile",
             path=path,
             status=ConfigurationActivationStatus.ACTIVE,
             limit=500,
@@ -228,8 +217,6 @@ class LearningCandidatePipeline:
         )
 
     def _eligible_draft(self, draft, evidence_by_id, outcome):
-        if self.preference_v2_enabled and draft.candidate_type is LearningCandidateType.PREFERENCE:
-            return None
         if draft.temporary_or_durable != "durable":
             return None
         selected = [evidence_by_id.get(item) for item in draft.evidence_ids]
@@ -249,11 +236,7 @@ class LearningCandidatePipeline:
             is_positive_explicit_user_evidence(item) for item in evidence
         )
         if (
-            draft.candidate_type
-            in {
-                LearningCandidateType.PREFERENCE,
-                LearningCandidateType.PROFILE,
-            }
+            draft.candidate_type is LearningCandidateType.PROFILE
             and not has_positive_explicit_evidence
         ):
             return None

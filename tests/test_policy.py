@@ -14,7 +14,6 @@ from morrow.adapters.state.operational import OperationalStore
 from morrow.bootstrap import build_application, build_operational_api, build_operational_services
 from morrow.core.models import (
     ModelRef,
-    Preferences,
     ProviderToolSupport,
     RunPolicy,
     StateLoadStatus,
@@ -235,7 +234,7 @@ def test_config_yaml_override_is_applied_and_preserved_by_unrelated_writes(tmp_p
         handle.close()
 
     written = application.global_store.update(
-        lambda value: value.model_copy(update={"preferences": Preferences(language="中文")})
+        lambda value: value.model_copy(update={"providers": {}})
     )
     assert written.status.value == "ok"
     persisted = yaml.safe_load(config_path.read_text(encoding="utf-8"))

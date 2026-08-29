@@ -39,6 +39,8 @@ from morrow.core.models import (
     ToolFunction,
     UserMessage,
 )
+from morrow.core.preference_documents import PreferenceEntriesPayload
+from morrow.core.preference_models import PreferenceEntry, PreferenceScope
 
 
 class AsyncChunks:
@@ -259,16 +261,21 @@ def test_provider_reconfigure_keeps_active_model_and_global_preferences(tmp_path
     app = build_application(state_root=tmp_path / "state", credentials=credentials)
     app.registry.register("openai-compatible", lambda config, credential: FakeProvider())
     first = app.provider_service.add("opencode-go", "first")
+    entry = PreferenceEntry(
+        preference_id="pref_provider_test",
+        statement="默认使用中文。",
+        scope=PreferenceScope.GLOBAL,
+    )
     app.global_store.update(
         lambda value: value.model_copy(
-            update={"preferences": value.preferences.model_copy(update={"language": "中文"})}
+            update={"preferences": PreferenceEntriesPayload(entries=(entry,))}
         ),
         expected_revision=app.global_store.load().revision,
     )
     app.provider_service.configure("opencode-go", secret="second")
     config = app.global_store.load().value
     assert config.active_model == first
-    assert config.preferences.language == "中文"
+    assert config.preferences.entries == (entry,)
     assert credentials.get(config.providers["opencode-go"].credential_ref.ref) == "second"
 
 

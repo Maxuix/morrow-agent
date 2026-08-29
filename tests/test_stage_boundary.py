@@ -151,6 +151,7 @@ def test_no_forbidden_tool_capability_is_registered_or_exposed(tmp_path):
         "write",
         "bash",
         "run_skill_script",
+        "manage_preferences",
     }
     for name in names:
         if name == "bash":
@@ -168,7 +169,7 @@ def test_workspace_state_documents_are_exactly_preferences_and_profile():
         and issubclass(value, core_models.WorkspaceDocument)
         and value is not core_models.WorkspaceDocument
     }
-    assert document_types == {"ProjectPreferencesDocument", "ProfileDocument"}
+    assert document_types == {"ProfileDocument"}
 
 
 def test_handoff_implementation_symbols_are_absent_from_product_surface():

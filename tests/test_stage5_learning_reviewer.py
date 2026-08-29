@@ -78,10 +78,10 @@ def _context(*, evidence_ids: tuple[str, ...] = ("lev_1",), candidate_budget: in
 
 def _valid_response(evidence_id: str = "lev_1") -> str:
     return (
-        '{"drafts":[{"candidate_type":"preference","operation":"set",'
-        '"semantic_key":"preference.language","proposed_scope":"workspace",'
-        '"proposed_payload":{"candidate_type":"preference","path":"language",'
-        f'"value":"zh"}},"evidence_ids":["{evidence_id}"],'
+        '{"drafts":[{"candidate_type":"profile","operation":"set",'
+        '"semantic_key":"profile.summary","proposed_scope":"workspace",'
+        '"proposed_payload":{"candidate_type":"profile","path":"summary",'
+        f'"value":"Python project"}},"evidence_ids":["{evidence_id}"],'
         '"temporary_or_durable":"durable"}]}'
     )
 

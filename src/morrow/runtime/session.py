@@ -28,7 +28,6 @@ from morrow.core.models import (
     AssistantMessage,
     FinishReason,
     ModelUsage,
-    Preferences,
     Profile,
     StatePresence,
     ToolDefinition,
@@ -196,12 +195,13 @@ class DurableRunCoordinator(SessionCommitter, Protocol):
 class Session:
     session_id: str
     profile: Profile | None = None
-    preferences: Preferences = field(default_factory=Preferences)
-    global_preferences: Preferences = field(default_factory=Preferences)
-    workspace_preferences: Preferences = field(default_factory=Preferences)
-    generic_global_preferences: PreferenceDocument | None = None
-    generic_workspace_preferences: PreferenceDocument | None = None
-    generic_session_preferences: tuple[PreferenceEntry, ...] = ()
+    global_preferences: PreferenceDocument = field(
+        default_factory=lambda: PreferenceDocument(scope="global")
+    )
+    workspace_preferences: PreferenceDocument = field(
+        default_factory=lambda: PreferenceDocument(scope="workspace")
+    )
+    session_preferences: tuple[PreferenceEntry, ...] = ()
     log: ConversationLog = field(default_factory=ConversationLog)
     # Process-local unsaved history, or an in-flight durable turn.
     dirty: bool = False
@@ -244,7 +244,7 @@ class Session:
         if self.profile is not None and self.profile_presence is StatePresence.MISSING:
             self.profile_presence = StatePresence.PRESENT
         if (
-            self.workspace_preferences != Preferences()
+            self.workspace_preferences.entries
             and self.workspace_preferences_presence is StatePresence.MISSING
         ):
             self.workspace_preferences_presence = StatePresence.PRESENT
@@ -337,8 +337,7 @@ class Session:
     def reset(self, session_id: str) -> None:
         self.session_id = session_id
         self.log.reset()
-        self.preferences = Preferences()
-        self.generic_session_preferences = ()
+        self.session_preferences = ()
         self.dirty = False
         self.health = SessionHealth.OK
         self.latest_run_id = None

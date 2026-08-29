@@ -65,7 +65,7 @@ Preference Review 调优默认值统一到随包 `runtime-policy.toml`。可选�
 
 | 命令 | 结果 |
 |---|---|
-| `UV_CACHE_DIR=/private/tmp/morrow-stage6-uv-cache uv run --offline pytest -q tests/test_policy.py tests/test_preference_reviewer.py tests/test_review_worker.py tests/test_stage5_review_pipeline.py tests/test_preference_yaml.py tests/test_state_and_workspace.py tests/test_provider_control.py tests/test_agent_run_preparation.py` | `135 passed in 5.64s` |
+| `uv run pytest -m 'not live'` | 当前完整离线门禁见 Stage 5 当前验收记录 |
 | `UV_CACHE_DIR=/private/tmp/morrow-stage6-uv-cache uv run --offline pytest -m 'not live'` | `1074 passed, 2 skipped, 2 deselected in 42.11s` |
 | `UV_CACHE_DIR=/private/tmp/morrow-stage6-uv-cache uv run --offline ruff format --check .` | `433 files already formatted` |
 | `UV_CACHE_DIR=/private/tmp/morrow-stage6-uv-cache uv run --offline ruff check .` | `All checks passed!` |

@@ -28,7 +28,6 @@ from morrow.core.learning import (
     LearningScope,
     LearningSensitivity,
     LearningSuppression,
-    PreferenceCandidatePayload,
     ProfileCandidatePayload,
     ProjectKnowledgeCandidatePayload,
     ProjectKnowledgeCategory,
@@ -42,11 +41,11 @@ DIGEST = "a" * 64
 
 def _draft(*, evidence_ids: tuple[str, ...] = ("lev_1",)) -> LearningCandidateDraft:
     return LearningCandidateDraft(
-        candidate_type=LearningCandidateType.PREFERENCE,
+        candidate_type=LearningCandidateType.PROFILE,
         operation=LearningCandidateOperation.SET,
         semantic_key="communication.language",
         proposed_scope=LearningScope.WORKSPACE,
-        proposed_payload=PreferenceCandidatePayload(path="language", value="中文"),
+        proposed_payload=ProfileCandidatePayload(path="summary", value="中文"),
         evidence_ids=evidence_ids,
         temporary_or_durable="durable",
     )
@@ -155,7 +154,7 @@ def test_discriminated_payloads_scope_and_fingerprint_are_deterministic():
             operation=LearningCandidateOperation.SET,
             semantic_key="identity.name",
             proposed_scope=LearningScope.GLOBAL,
-            proposed_payload=PreferenceCandidatePayload(path="language", value="中文"),
+            proposed_payload=ProfileCandidatePayload(path="summary", value="中文"),
             evidence_ids=("lev_1",),
             temporary_or_durable="durable",
         )
@@ -228,7 +227,7 @@ def test_suppression_requires_a_match_key_and_is_workspace_scoped():
     suppression = LearningSuppression(
         suppression_id="lsp_1",
         workspace_id="ws_1",
-        candidate_type=LearningCandidateType.PREFERENCE,
+        candidate_type=LearningCandidateType.PROFILE,
         scope=LearningScope.WORKSPACE,
         semantic_key="communication.language",
         reason="用户明确拒绝该建议。",
@@ -240,7 +239,7 @@ def test_suppression_requires_a_match_key_and_is_workspace_scoped():
         LearningSuppression(
             suppression_id="lsp_2",
             workspace_id="ws_1",
-            candidate_type=LearningCandidateType.PREFERENCE,
+            candidate_type=LearningCandidateType.PROFILE,
             scope=LearningScope.WORKSPACE,
             reason="missing key",
         )

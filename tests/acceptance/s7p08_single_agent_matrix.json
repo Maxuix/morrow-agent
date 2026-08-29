@@ -279,11 +279,11 @@
       ],
       "failure_selectors": [
         "tests/test_stage5_memory_agent_run.py::test_selection_admission_rolls_back_before_user_message_is_published",
-        "tests/test_stage5_configuration_promotion.py::test_prepared_configuration_rejects_later_same_content_revision_as_drift"
+        "tests/test_configuration_tool.py::test_service_maps_revision_conflict_and_write_failure_without_projection_changes"
       ],
       "recovery_selectors": [
         "tests/test_stage5_memory_agent_run.py::test_recovery_agent_run_reuses_selection_after_memory_revision_changes",
-        "tests/test_stage5_configuration_promotion.py::test_configuration_saga_replays_after_sqlite_finalize_crash"
+        "tests/test_current_preference_yaml.py::test_global_facade_migrates_once_then_runtime_reads_current_only"
       ],
       "acceptance_sources": ["docs/acceptance/stage5-acceptance.md"],
       "platform_conditions": [],
@@ -394,7 +394,7 @@
         "tests/test_stage4_application_api.py::test_application_event_payload_rejects_secret_material"
       ],
       "recovery_selectors": [
-        "tests/test_stage6_backup.py::test_stage6_v2_round_trip_without_secret_authorities"
+        "tests/test_stage6_backup.py::test_stage6_current_round_trip_without_secret_authorities"
       ],
       "acceptance_sources": [
         "docs/acceptance/stage-2-evidence.md",

@@ -54,7 +54,7 @@ from morrow.core.learning import (
     LearningSensitivity,
     LearningSuppression,
     LearningSuppressionStatus,
-    PreferenceCandidatePayload,
+    ProfileCandidatePayload,
 )
 from morrow.core.learning_memory import (
     LearningCandidateDecision,
@@ -198,11 +198,11 @@ def _evidence(**overrides) -> LearningEvidence:
 
 def _candidate() -> LearningCandidate:
     draft = LearningCandidateDraft(
-        candidate_type=LearningCandidateType.PREFERENCE,
+        candidate_type=LearningCandidateType.PROFILE,
         operation=LearningCandidateOperation.SET,
         semantic_key="communication.language",
         proposed_scope=LearningScope.WORKSPACE,
-        proposed_payload=PreferenceCandidatePayload(path="language", value="中文"),
+        proposed_payload=ProfileCandidatePayload(path="summary", value="中文"),
         evidence_ids=("lev_1",),
         temporary_or_durable="durable",
     )
@@ -357,7 +357,7 @@ def test_learning_records_round_trip_and_default_policy_is_read_only(tmp_path):
             LearningSuppression(
                 suppression_id="lsp_1",
                 workspace_id="ws_1",
-                candidate_type=LearningCandidateType.PREFERENCE,
+                candidate_type=LearningCandidateType.PROFILE,
                 scope=LearningScope.WORKSPACE,
                 semantic_key="communication.language",
                 reason="用户拒绝该建议。",

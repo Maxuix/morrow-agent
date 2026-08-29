@@ -28,9 +28,7 @@ from morrow.core.capabilities import (
 )
 from morrow.core.execution import (
     PRODUCTION_TOOL_NAMES,
-    EffectClass,
     FileMutationEvidence,
-    MissingCompletionPolicy,
     RecoveryClassification,
     ToolExecutionDisposition,
     ToolExecutionState,
@@ -78,16 +76,11 @@ def test_workspace_change_service_operations_and_statuses_remain_complete():
     } == set(MutationStatus)
 
 
-def test_retired_destructive_tool_names_are_legacy_recovery_metadata_only():
+def test_retired_destructive_tool_names_have_no_declarations():
     assert {"delete_file", "move_file", "rename_file"}.isdisjoint(PRODUCTION_TOOL_NAMES)
     for name in ("delete_file", "move_file", "rename_file"):
-        declaration = tool_declaration(name)
-        assert declaration.effect_class is EffectClass.RECONCILEABLE_FILE_WRITE
-        assert (
-            declaration.missing_handler_completed is MissingCompletionPolicy.REQUIRES_RECONCILIATION
-        )
         with pytest.raises(UnknownToolDeclarationError):
-            tool_declaration(name, production_only=True)
+            tool_declaration(name)
 
 
 def test_production_session_keeps_destructive_factories_out_of_the_core_surface(tmp_path):
@@ -732,7 +725,7 @@ def test_recovery_expected_absence_requires_existing_confined_parent(tmp_path):
 
 
 def test_closed_unknown_file_execution_is_reconciled_from_ordered_observations():
-    declaration = tool_declaration("rename_file")
+    declaration = tool_declaration("edit")
     expected = (FileObservation.MATCHES_EXPECTED, FileObservation.MATCHES_EXPECTED)
     before = (FileObservation.MATCHES_BEFORE, FileObservation.MATCHES_BEFORE)
     mixed = (FileObservation.MATCHES_EXPECTED, FileObservation.THIRD_PARTY)

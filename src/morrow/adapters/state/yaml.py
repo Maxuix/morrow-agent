@@ -14,21 +14,17 @@ import yaml
 from filelock import FileLock, Timeout
 from pydantic import BaseModel, ValidationError
 
-from morrow.adapters.state.preference_migration import legacy_entries_from_preferences
-from morrow.adapters.state.preference_projection import preferences_from_entries
 from morrow.adapters.state.preference_yaml import PreferenceYamlStore
 from morrow.adapters.state.preference_yaml_types import (
     PreferenceYamlConflict,
+    PreferenceYamlError,
     PreferenceYamlLoadStatus,
 )
 from morrow.core.models import (
     CURRENT_SCHEMA_VERSION,
     WORKSPACE_DOCUMENT_SCHEMA_VERSION,
-    GlobalConfig,
-    Preferences,
     Profile,
     ProfileDocument,
-    ProjectPreferencesDocument,
     StateLoadResult,
     StateLoadStatus,
     StatePresence,
@@ -38,11 +34,8 @@ from morrow.core.models import (
     utc_now,
 )
 from morrow.core.preference_documents import (
-    GlobalConfigV2,
-    PreferenceEntriesPayload,
-    WorkspacePreferenceDocumentV3,
+    GlobalConfig,
 )
-from morrow.core.preference_models import PreferenceScope
 
 T = TypeVar("T", bound=BaseModel)
 R = TypeVar("R")
@@ -245,129 +238,50 @@ class GlobalConfigYamlStore:
         self, root: Path, *, failure_injector: Callable[[str], None] | None = None
     ) -> None:
         root.mkdir(parents=True, exist_ok=True)
-        locks = root / "locks"
-        locks.mkdir(parents=True, exist_ok=True)
-        self.document = YamlDocument(
-            root / "config.yaml",
-            GlobalConfig,
-            default_factory=GlobalConfig,
-            lock_path=locks / "config.lock",
-            failure_injector=failure_injector,
-        )
         self.preference_store = PreferenceYamlStore(root, failure_injector=failure_injector)
 
     def load(self) -> StateLoadResult:
-        generic = self.preference_store.load_global()
-        if generic.source_schema_version == 2:
-            return self._legacy_load(generic)
-        return self.document.load()
+        try:
+            self.preference_store.migrate_global()
+        except PreferenceYamlError as exc:
+            return StateLoadResult(status=StateLoadStatus.CORRUPT, error=exc.code)
+        return self._state_load(self.preference_store.load_global())
 
     def update(
         self, mutator: Callable[[GlobalConfig], GlobalConfig], expected_revision: int | None = None
     ) -> StateWriteResult:
-        generic = self.preference_store.load_global()
-        if (
-            self.preference_store.global_path.exists()
-            and generic.source_schema_version == 2
-            and generic.value is not None
-        ):
-            return self._update_generic(generic.value, mutator, expected_revision)
+        current = self.load()
+        if current.status is not StateLoadStatus.OK or current.value is None:
+            return StateWriteResult(status=StateWriteStatus.FAILED, error=current.status.value)
+        revision = current.revision or 0
+        if expected_revision is not None and revision != expected_revision:
+            return StateWriteResult(status=StateWriteStatus.REVISION_CONFLICT, revision=revision)
         try:
-            self.document.path.parent.mkdir(parents=True, exist_ok=True)
-            with FileLock(str(self.document.lock_path), timeout=5):
-                current = self.document.load()
-                if current.status != StateLoadStatus.OK:
-                    return StateWriteResult(
-                        status=StateWriteStatus.FAILED, error=current.status.value
-                    )
-                revision = current.revision or 0
-                if expected_revision is not None and revision != expected_revision:
-                    return StateWriteResult(
-                        status=StateWriteStatus.REVISION_CONFLICT, revision=revision
-                    )
-                updated = mutator(current.value)
-                return self.document._write_locked(updated, revision)
-        except Timeout:
-            return StateWriteResult(status=StateWriteStatus.FAILED, error="state is busy")
-
-    @staticmethod
-    def _legacy_value(value: GlobalConfigV2) -> GlobalConfig:
-        return GlobalConfig(
-            revision=value.revision,
-            updated_at=value.updated_at,
-            preferences=preferences_from_entries(value.preferences.entries),
-            providers=value.providers,
-            active_model=value.active_model,
-            runtime_policy=value.runtime_policy,
+            updated = mutator(current.value)
+            written = self.preference_store.write_global(updated, expected_revision=revision)
+        except PreferenceYamlConflict:
+            return StateWriteResult(status=StateWriteStatus.REVISION_CONFLICT, revision=revision)
+        except (OSError, ValueError, ValidationError, RuntimeError) as exc:
+            return StateWriteResult(status=StateWriteStatus.FAILED, error=type(exc).__name__)
+        if written.status is not PreferenceYamlLoadStatus.OK or written.value is None:
+            return StateWriteResult(status=StateWriteStatus.FAILED, error=written.error)
+        return StateWriteResult(
+            status=StateWriteStatus.OK, value=written.value, revision=written.revision
         )
 
-    @classmethod
-    def _legacy_load(cls, generic) -> StateLoadResult:
+    @staticmethod
+    def _state_load(generic) -> StateLoadResult:
         if generic.status is not PreferenceYamlLoadStatus.OK or generic.value is None:
             status = StateLoadStatus(generic.status.value)
             return StateLoadResult(status=status, revision=generic.revision, error=generic.error)
         return StateLoadResult(
             status=StateLoadStatus.OK,
-            value=cls._legacy_value(generic.value),
+            value=generic.value,
             revision=generic.revision,
         )
 
     def load_backup(self) -> StateLoadResult:
-        generic = self.preference_store.load_global_backup()
-        if generic.source_schema_version == 2:
-            return self._legacy_load(generic)
-        return self.document.load_backup()
-
-    def _update_generic(
-        self,
-        current: GlobalConfigV2,
-        mutator: Callable[[GlobalConfig], GlobalConfig],
-        expected_revision: int | None,
-    ) -> StateWriteResult:
-        if expected_revision is not None and current.revision != expected_revision:
-            return StateWriteResult(
-                status=StateWriteStatus.REVISION_CONFLICT,
-                revision=current.revision,
-            )
-        before = self._legacy_value(current)
-        try:
-            updated = mutator(before)
-            entries = current.preferences.entries
-            if updated.preferences != before.preferences:
-                entries = legacy_entries_from_preferences(
-                    PreferenceScope.GLOBAL,
-                    updated.preferences.model_dump(mode="python"),
-                    timestamp=current.updated_at,
-                )
-            next_value = GlobalConfigV2.model_validate(
-                current.model_dump(mode="python")
-                | {
-                    "preferences": PreferenceEntriesPayload(entries=entries),
-                    "providers": updated.providers,
-                    "active_model": updated.active_model,
-                    "runtime_policy": updated.runtime_policy,
-                }
-            )
-            written = self.preference_store.write_global(
-                next_value, expected_revision=current.revision
-            )
-        except PreferenceYamlConflict:
-            return StateWriteResult(
-                status=StateWriteStatus.REVISION_CONFLICT, revision=current.revision
-            )
-        except (OSError, ValueError, ValidationError, RuntimeError) as exc:
-            return StateWriteResult(status=StateWriteStatus.FAILED, error=type(exc).__name__)
-        if written.status is not PreferenceYamlLoadStatus.OK or written.value is None:
-            if written.error == "revision_conflict":
-                return StateWriteResult(
-                    status=StateWriteStatus.REVISION_CONFLICT, revision=written.revision
-                )
-            return StateWriteResult(status=StateWriteStatus.FAILED, error=written.error)
-        return StateWriteResult(
-            status=StateWriteStatus.OK,
-            value=self._legacy_value(written.value),
-            revision=written.revision,
-        )
+        return self._state_load(self.preference_store.load_global_backup())
 
 
 class WorkspaceIndexYamlStore:
@@ -487,6 +401,8 @@ class ProjectStateYamlStore:
         workspace_id: str,
         name: str,
         model_type: type[T],
+        *,
+        migrate_profile: bool = False,
     ) -> YamlDocument:
         if not workspace_id or "/" in workspace_id or "\\" in workspace_id:
             raise ValueError("invalid workspace_id")
@@ -497,52 +413,81 @@ class ProjectStateYamlStore:
             lock_path=self.locks / f"{workspace_id}-{name}.lock",
             failure_injector=self.failure_injector,
             supported_schema_version=WORKSPACE_DOCUMENT_SCHEMA_VERSION,
-            load_transform=_load_workspace_envelope,
+            load_transform=_load_workspace_envelope if migrate_profile else None,
             workspace_envelope=True,
         )
 
+    def _migrate_profile(self, workspace_id: str) -> StateLoadResult | None:
+        document = self._document(workspace_id, "profile.yaml", ProfileDocument)
+        if not document.path.exists():
+            return None
+        try:
+            raw = yaml.safe_load(document.path.read_text(encoding="utf-8"))
+            if not isinstance(raw, dict) or int(raw.get("schema_version", 0)) != 1:
+                return None
+            with FileLock(str(document.lock_path), timeout=5):
+                legacy_document = self._document(
+                    workspace_id,
+                    "profile.yaml",
+                    ProfileDocument,
+                    migrate_profile=True,
+                )
+                loaded = legacy_document.load()
+                if loaded.status is not StateLoadStatus.OK or loaded.value is None:
+                    return StateLoadResult(
+                        status=StateLoadStatus.CORRUPT, error="profile_migration"
+                    )
+                written = document._write_locked(loaded.value, loaded.revision or 0)
+                if written.status is not StateWriteStatus.OK:
+                    return StateLoadResult(
+                        status=StateLoadStatus.CORRUPT, error="profile_migration"
+                    )
+        except (OSError, Timeout, TypeError, ValueError, yaml.YAMLError):
+            return StateLoadResult(status=StateLoadStatus.CORRUPT, error="profile_migration")
+        return None
+
     def load_preferences(self, workspace_id: str) -> StateLoadResult:
+        try:
+            self.preference_store.migrate_workspace(workspace_id)
+        except PreferenceYamlError as exc:
+            return StateLoadResult(status=StateLoadStatus.CORRUPT, error=exc.code)
         generic = self.preference_store.load_workspace(workspace_id)
-        if (
-            self.preference_store.workspace_path(workspace_id).exists()
-            and generic.source_schema_version == 3
-        ):
-            return self._legacy_preferences_load(generic)
-        return self._document(workspace_id, "preferences.yaml", ProjectPreferencesDocument).load()
+        if generic.status is not PreferenceYamlLoadStatus.OK or generic.value is None:
+            return StateLoadResult(
+                status=StateLoadStatus(generic.status.value),
+                revision=generic.revision,
+                error=generic.error,
+            )
+        return StateLoadResult(
+            status=StateLoadStatus.OK,
+            presence=StatePresence(generic.presence or StatePresence.MISSING.value),
+            value=generic.value if generic.presence != StatePresence.MISSING.value else None,
+            revision=generic.revision,
+        )
 
     def load_profile(self, workspace_id: str) -> StateLoadResult:
+        migration_error = self._migrate_profile(workspace_id)
+        if migration_error is not None:
+            return migration_error
         return self._document(workspace_id, "profile.yaml", ProfileDocument).load()
 
     def load_preferences_backup(self, workspace_id: str) -> StateLoadResult:
-        path = self.preference_store.workspace_path(workspace_id)
         generic = self.preference_store.load_workspace_backup(workspace_id)
-        if path.with_suffix(".yaml.bak").exists() and generic.source_schema_version == 3:
-            return self._legacy_preferences_load(generic)
-        return self._document(
-            workspace_id, "preferences.yaml", ProjectPreferencesDocument
-        ).load_backup()
+        if generic.status is not PreferenceYamlLoadStatus.OK or generic.value is None:
+            return StateLoadResult(
+                status=StateLoadStatus(generic.status.value),
+                revision=generic.revision,
+                error=generic.error,
+            )
+        return StateLoadResult(
+            status=StateLoadStatus.OK,
+            presence=StatePresence(generic.presence or StatePresence.PRESENT.value),
+            value=generic.value,
+            revision=generic.revision,
+        )
 
     def load_profile_backup(self, workspace_id: str) -> StateLoadResult:
         return self._document(workspace_id, "profile.yaml", ProfileDocument).load_backup()
-
-    def write_preferences(
-        self, workspace_id: str, value: Preferences, expected_revision: int | None = None
-    ) -> StateWriteResult:
-        generic = self.preference_store.load_workspace(workspace_id)
-        if (
-            self.preference_store.workspace_path(workspace_id).exists()
-            and generic.source_schema_version == 3
-            and generic.value is not None
-        ):
-            return self._write_generic_preferences(workspace_id, value, generic, expected_revision)
-        existing = self.load_preferences(workspace_id)
-        document = self._document(workspace_id, "preferences.yaml", ProjectPreferencesDocument)
-        return document.write(
-            ProjectPreferencesDocument(preferences=value),
-            expected_revision=expected_revision
-            if expected_revision is not None
-            else existing.revision,
-        )
 
     def write_profile(
         self, workspace_id: str, value: Profile, expected_revision: int | None = None
@@ -558,107 +503,6 @@ class ProjectStateYamlStore:
     ) -> StateWriteResult:
         return self._clear_document(
             workspace_id, "profile.yaml", ProfileDocument, expected_revision
-        )
-
-    def clear_preferences(
-        self, workspace_id: str, expected_revision: int | None = None
-    ) -> StateWriteResult:
-        generic = self.preference_store.load_workspace(workspace_id)
-        if (
-            self.preference_store.workspace_path(workspace_id).exists()
-            and generic.source_schema_version == 3
-            and generic.value is not None
-        ):
-            if expected_revision is not None and generic.revision != expected_revision:
-                return StateWriteResult(
-                    status=StateWriteStatus.REVISION_CONFLICT, revision=generic.revision
-                )
-            try:
-                written = self.preference_store.write_workspace(
-                    workspace_id,
-                    WorkspacePreferenceDocumentV3(
-                        revision=generic.revision,
-                        state="cleared",
-                        entries=None,
-                    ),
-                    expected_revision=generic.revision,
-                )
-            except PreferenceYamlConflict:
-                return StateWriteResult(
-                    status=StateWriteStatus.REVISION_CONFLICT, revision=generic.revision
-                )
-            except (OSError, RuntimeError, ValueError) as exc:
-                return StateWriteResult(status=StateWriteStatus.FAILED, error=type(exc).__name__)
-            return self._legacy_preferences_write_result(written)
-        return self._clear_document(
-            workspace_id, "preferences.yaml", ProjectPreferencesDocument, expected_revision
-        )
-
-    @staticmethod
-    def _legacy_preferences_load(generic) -> StateLoadResult:
-        if generic.status is not PreferenceYamlLoadStatus.OK or generic.value is None:
-            return StateLoadResult(
-                status=StateLoadStatus(generic.status.value),
-                revision=generic.revision,
-                error=generic.error,
-            )
-        value = generic.value
-        assert isinstance(value, WorkspacePreferenceDocumentV3)
-        presence = StatePresence(value.state)
-        return StateLoadResult(
-            status=StateLoadStatus.OK,
-            presence=presence,
-            value=(
-                ProjectPreferencesDocument(
-                    revision=value.revision,
-                    updated_at=value.updated_at,
-                    state="present",
-                    preferences=preferences_from_entries(value.entries or ()),
-                )
-                if presence is StatePresence.PRESENT
-                else None
-            ),
-            revision=value.revision,
-        )
-
-    @staticmethod
-    def _legacy_preferences_write_result(written) -> StateWriteResult:
-        if written.status is not PreferenceYamlLoadStatus.OK or written.value is None:
-            return StateWriteResult(status=StateWriteStatus.FAILED, error=written.error)
-        value = written.value
-        assert isinstance(value, WorkspacePreferenceDocumentV3)
-        presence = StatePresence(value.state)
-        return StateWriteResult(
-            status=StateWriteStatus.OK,
-            value=(
-                ProjectPreferencesDocument(
-                    revision=value.revision,
-                    updated_at=value.updated_at,
-                    state="present",
-                    preferences=preferences_from_entries(value.entries or ()),
-                )
-                if presence is StatePresence.PRESENT
-                else None
-            ),
-            revision=value.revision,
-        )
-
-    def _write_generic_preferences(
-        self,
-        workspace_id: str,
-        value: Preferences,
-        generic,
-        expected_revision: int | None,
-    ) -> StateWriteResult:
-        if expected_revision is not None and generic.revision != expected_revision:
-            return StateWriteResult(
-                status=StateWriteStatus.REVISION_CONFLICT, revision=generic.revision
-            )
-        del workspace_id, value
-        return StateWriteResult(
-            status=StateWriteStatus.FAILED,
-            revision=generic.revision,
-            error="legacy_preference_write_retired",
         )
 
     def _clear_document(

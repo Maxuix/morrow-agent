@@ -1002,7 +1002,7 @@ async def _blocking_mutation(callback):
         raise
 
 
-def _compatibility_mutation_tool(
+def _mutation_tool(
     *,
     name: str,
     description: str,
@@ -1082,7 +1082,7 @@ def make_edit_tool(mutation: WorkspaceMutationService, changes: ChangeSetService
             run=context.run,
         )
 
-    return _compatibility_mutation_tool(
+    return _mutation_tool(
         name="edit",
         description="Replace exact text in a file. Read the file first and use unique oldText.",
         arguments_model=EditArguments,
@@ -1114,7 +1114,7 @@ def make_write_tool(
             run=context.run,
         )
 
-    return _compatibility_mutation_tool(
+    return _mutation_tool(
         name="write",
         description="Create or overwrite a text file with complete content.",
         arguments_model=WriteArguments,

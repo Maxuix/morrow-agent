@@ -8,7 +8,6 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Literal
 
-from morrow.adapters.state.preference_migration import legacy_entries_from_preferences
 from morrow.core.compaction import (
     CompactionEntry,
     CompactionSummary,
@@ -22,7 +21,6 @@ from morrow.core.models import (
     ModelCost,
     ModelRef,
     ModelUsage,
-    Preferences,
     ProtocolModel,
     SystemMessage,
     ToolDefinition,
@@ -30,7 +28,7 @@ from morrow.core.models import (
     UsageAvailability,
     UserMessage,
 )
-from morrow.core.preferences import merge_preference_entries, merge_preferences
+from morrow.core.preferences import merge_preference_entries
 from morrow.runtime.conversation import ConversationSnapshot, MessageRecord, PublicTurnView
 from morrow.runtime.policy import RunPolicy
 from morrow.runtime.session import Session
@@ -128,12 +126,6 @@ class ContextBuilder:
         self.estimate_request_tokens = estimate_request_tokens or self._pi_estimate_tokens
         self.prompt_assembler = prompt_assembler
 
-    @staticmethod
-    def merge_preferences(
-        global_prefs: Preferences, workspace_prefs: Preferences, session_prefs: Preferences
-    ) -> Preferences:
-        return merge_preferences(global_prefs, workspace_prefs, session_prefs)
-
     def _system_messages(
         self,
         session: Session,
@@ -150,47 +142,12 @@ class ContextBuilder:
             state = None
             profile = None
         elif projection is None:
-            if (
-                session.generic_global_preferences is not None
-                or session.generic_workspace_preferences is not None
-                or session.generic_session_preferences
-            ):
-                generic_entries = merge_preference_entries(
-                    session.generic_global_preferences.entries
-                    if session.generic_global_preferences is not None
-                    else (),
-                    session.generic_workspace_preferences.entries
-                    if session.generic_workspace_preferences is not None
-                    else (),
-                    session.generic_session_preferences
-                    + (
-                        ()
-                        if session.generic_global_preferences is not None
-                        else legacy_entries_from_preferences(
-                            "global", session.global_preferences.model_dump(mode="python")
-                        )
-                    )
-                    + (
-                        ()
-                        if session.generic_workspace_preferences is not None
-                        else legacy_entries_from_preferences(
-                            "workspace", session.workspace_preferences.model_dump(mode="python")
-                        )
-                    )
-                    + legacy_entries_from_preferences(
-                        "session",
-                        session.preferences.model_dump(mode="python"),
-                        allow_session=True,
-                    ),
-                )
-                preference_state = {
-                    "entries": [entry.model_dump(mode="json") for entry in generic_entries]
-                }
-            else:
-                effective = self.merge_preferences(
-                    session.global_preferences, session.workspace_preferences, session.preferences
-                )
-                preference_state = effective.model_dump(exclude_none=True)
+            entries = merge_preference_entries(
+                session.global_preferences.entries,
+                session.workspace_preferences.entries,
+                session.session_preferences,
+            )
+            preference_state = {"entries": [entry.model_dump(mode="json") for entry in entries]}
             profile = session.profile
             state = {
                 "preferences": preference_state,
@@ -199,13 +156,6 @@ class ContextBuilder:
         else:
             profile = projection.snapshot.profile
             state = {"profile": profile.model_dump(exclude_none=True) if profile else None}
-            if (
-                projection.snapshot.preference_projection_digest is None
-                and projection.snapshot.legacy_preferences is not None
-            ):
-                state["legacy_preferences"] = projection.snapshot.legacy_preferences.model_dump(
-                    exclude_none=True
-                )
         prompt_projection = (
             projection.prompt_projection
             if projection is not None

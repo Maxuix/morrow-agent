@@ -4009,3 +4009,25 @@
 - Focused suites passed. The complete offline gate passed `1338 passed, 2 deselected in 112.98s`;
   Ruff format/check, compileall, CLI help and diff checks passed. No Live request was run.
 - Committed as `db7835c` and fast-forward integrated into local `main`.
+
+## 2026-08-30 — Generic Preference consolidation opened
+
+- Activated Subplan 95 from verified local `main@ba1a028`.
+- Generic global/workspace Preference documents become the only runtime authority. Fixed-field YAML
+  may be transformed once before load; decode-only runtime compatibility and evaluation fixtures
+  will be removed afterward.
+
+## 2026-08-30 — Current-only Preference, Learning and Backup consolidation verified
+
+- Generic Preference documents are now the only Session, Context, AgentRun and YAML runtime shape.
+  Supported fixed-field user YAML migrates once under lock with a backup; normal loaders are strict.
+- Removed fixed Preference models/services/snapshot fields, decode-only modules, retired tool
+  declarations, historical Preference fixtures and obsolete acceptance/evaluation records.
+- Removed the fixed-field Learning Preference Candidate path. The generic Preference
+  Review/Proposal/Writer pipeline is the only Preference learning path.
+- Removed backup v1 and version selection. The sole current bundle includes SQLite, Artifacts,
+  current Preference/Profile and extension YAML, and referenced managed Skills; isolated restore
+  restores this complete set without credentials.
+- Focused Backup/Profile/Preference tests passed `118`; focused Learning tests passed `36`; the
+  complete offline gate passed `1280 passed, 2 deselected in 101.49s`. Ruff format/check,
+  compileall, CLI help and `git diff --check` passed. No Live request was run.

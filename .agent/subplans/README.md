@@ -33,6 +33,8 @@ refreeze its source/profile/evidence contract before any future admission. On 20
 explicitly opened Subplan 93 to remove the v1 bounded runtime compatibility path.
 On 2026-08-30 the user selected a current-version-only support policy and opened Subplan 94 to
 remove remaining repository compatibility surfaces before persisted-state consolidation.
+Subplan 95 then makes generic Preference documents the only runtime format, with a one-shot
+current-format migration instead of permanent legacy readers.
 
 ## Stage 7 reliability sequence
 
@@ -54,6 +56,7 @@ remove remaining repository compatibility surfaces before persisted-state consol
 | 92 | `92-remove-legacy-tool-adapters.md` | completed, verified and integrated on S7P-09 stack |
 | 93 | `93-remove-v1-bounded.md` | completed, verified and integrated locally |
 | 94 | `94-remove-repository-compat.md` | completed, verified and integrated locally |
+| 95 | `95-current-preferences.md` | verified; integration pending |
 
 ## Stage 7 pre-baseline
 

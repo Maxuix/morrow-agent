@@ -13,7 +13,6 @@ from morrow.core.models import (
     ModelEvent,
     ModelFinishReason,
     ModelRef,
-    Preferences,
     Profile,
     UserMessage,
 )
@@ -64,16 +63,6 @@ def test_context_contains_only_supported_profile_and_preferences_state():
     assert "demo" in state
     assert '"handoff"' not in state
     assert "current_goal" not in state
-
-
-def test_preferences_have_global_workspace_session_precedence():
-    value = ContextBuilder.merge_preferences(
-        Preferences(language="中文", instructions=["global", "same"]),
-        Preferences(instructions=["workspace", "same"]),
-        Preferences(language="English", instructions=["session", "same"]),
-    )
-    assert value.language == "English"
-    assert value.instructions == ["global", "workspace", "session", "same"]
 
 
 def test_context_marks_compaction_without_breaking_user_assistant_pairs():

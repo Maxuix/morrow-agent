@@ -211,9 +211,7 @@ class PreparedAgentRunSpec(ProtocolModel):
     # Reference-only MCP evidence; full snapshots live in the MCP journal.
     mcp_run_snapshot_ids: tuple[str, ...] = ()
     skill_selection_ids: tuple[str, ...] = ()
-    skill_selection_id: str | None = Field(default=None, exclude=True)
     skill_context_ids: tuple[str, ...] = ()
-    skill_context_id: str | None = Field(default=None, exclude=True)
     skill_selection_digest: str | None = None
     skill_context_digest: str | None = None
     prompt_profile_id: str | None = None

@@ -95,7 +95,6 @@ from morrow.core.capabilities import (
 )
 from morrow.core.domain import DurableSession, SessionLifecycle
 from morrow.core.models import (
-    Preferences,
     ProviderConfig,
     ProviderModelConfig,
     StateLoadStatus,
@@ -128,8 +127,8 @@ from morrow.services.files import (
     WorkspacePathResolver,
 )
 from morrow.services.git import GitInspectionService
-from morrow.services.preferences import ConfigPatchService
 from morrow.services.process import ProcessExecutionService
+from morrow.services.profile_configuration import ConfigPatchService
 from morrow.services.provider import ProviderService
 from morrow.services.sandbox import SandboxSnapshotService
 from morrow.services.search import WorkspaceSearchService
@@ -476,7 +475,6 @@ def build_operational_api(
     learning_model=None,
     preference_reviewer=None,
     preference_model=None,
-    preference_v2_enabled: bool | None = None,
 ) -> OperationalApplicationService:
     """Compose the shared command/query boundary over operational domain services."""
 
@@ -557,11 +555,6 @@ def build_operational_api(
         preference_inbox=preference_inbox,
         preference_queries=preference_queries,
         preference_review_runner=preference_review_runner,
-        preference_v2_enabled=(
-            preference_writer is not None
-            if preference_v2_enabled is None
-            else preference_v2_enabled
-        ),
     )
     service.review_worker = ReviewWorker(
         journal=services.journal,
@@ -632,21 +625,19 @@ def build_session_application(
     generic_preferences = PreferenceYamlStore(app.data_root.root)
     generic_global_load = generic_preferences.load_global()
     generic_workspace_load = generic_preferences.load_workspace(identity.workspace_id)
-    generic_global = (
+    global_preferences = (
         PreferenceWriter._document_from_value(PreferenceScope.GLOBAL, generic_global_load.value)
-        if generic_preferences.global_path.exists()
-        and generic_global_load.status is PreferenceYamlLoadStatus.OK
+        if generic_global_load.status is PreferenceYamlLoadStatus.OK
         and generic_global_load.value is not None
-        else None
+        else PreferenceDocument(scope="global")
     )
-    generic_workspace = (
+    workspace_preferences = (
         PreferenceWriter._document_from_value(
             PreferenceScope.WORKSPACE, generic_workspace_load.value
         )
-        if generic_preferences.workspace_path(identity.workspace_id).exists()
-        and generic_workspace_load.status is PreferenceYamlLoadStatus.OK
+        if generic_workspace_load.status is PreferenceYamlLoadStatus.OK
         and generic_workspace_load.value is not None
-        else None
+        else PreferenceDocument(scope="workspace")
     )
 
     def load_run_preferences() -> PreferenceRunSources:
@@ -684,12 +675,7 @@ def build_session_application(
             refresh_error="+".join(errors) if errors else None,
         )
 
-    generic_authority_active = (
-        generic_preferences.global_path.exists() and generic_global_load.source_schema_version == 2
-    ) or (
-        generic_preferences.workspace_path(identity.workspace_id).exists()
-        and generic_workspace_load.source_schema_version == 3
-    )
+    generic_authority_active = True
     permission_profile = permission_profile or PermissionProfile()
     workspace_capability = WorkspaceCapability(
         workspace_id=identity.workspace_id,
@@ -704,12 +690,8 @@ def build_session_application(
             if profile_result.value and not inspection.read_only
             else None
         ),
-        global_preferences=config.preferences if config else Preferences(),
-        workspace_preferences=preferences_result.value.preferences
-        if preferences_result.value
-        else Preferences(),
-        generic_global_preferences=generic_global,
-        generic_workspace_preferences=generic_workspace,
+        global_preferences=global_preferences,
+        workspace_preferences=workspace_preferences,
         read_only=inspection.read_only,
         workspace_preferences_read_only=inspection.preferences_read_only,
         permission_profile=permission_profile,

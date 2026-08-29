@@ -143,7 +143,7 @@ async def test_new_keeps_old_session_and_exit_does_not_discard(tmp_path):
     products.orchestrator.reset_session()
     assert products.session.session_id != old_id
     assert products.session.log.messages_view() == ()
-    assert products.session.preferences.language is None
+    assert products.session.session_preferences == ()
     loaded = products.session.committer.journal.get_session(identity.workspace_id, old_id)
     assert loaded is not None
     assert loaded.lifecycle is SessionLifecycle.ACTIVE

@@ -170,17 +170,14 @@ Preference Review job 与当前用户 Evidence，提交后只唤醒进程内 Wor
 Project Knowledge 进入 SQLite 版本化记录；Skill、Workflow 和 Orchestration 候选只保留为候选，
 不会创建文件、工具、权限或运行时规则。`explicit-auto` 被拒绝，`off` 可关闭任务后 Review。
 
-Subplan 55 已修复并复测 headless `learning accept/edit/reject` 的确认后路径和全新 Project Knowledge
-首次 Promotion；隔离回放中的新进程、重启、Doctor 与 backup verify 均通过。真实模型质量评估仍 pending，
-不将该确定性回放描述为 Live Provider 质量结论。历史问题与回放证据见
-`docs/acceptance/stage5-simulated-user-evaluation.md`。
+Headless `learning accept/edit/reject`、全新 Project Knowledge 首次 Promotion、新进程、重启、Doctor
+与 backup verify 均由离线测试覆盖。真实 Provider 质量评估需要用户显式授权和兼容凭据。
 
 `state doctor` 对 v13 Preference Review/Evidence/Proposal/Writer、既有 Learning Review、Candidate、决策、Promotion、Knowledge、Memory Selection
 和 AgentRun 冻结引用执行只读检查；它也会检查 Stage 6 Skill 包、Draft、Usage、Binding、Selection、MCP 引用和 v16 表。
-`state backup` 默认保持 v1 兼容格式；使用 `state backup --version 2` 会把隔离的 Operational SQLite、Artifact bundle、脱敏后的
-Provider/Model 与扩展 YAML、以及被引用的 managed Skill 版本一起纳入 v2 bundle。`state verify-backup` 会自动识别两种格式；v2 的
-`OperationalBackupService.restore_v2` 只允许恢复到新的隔离目标，不包含 CredentialStore、Keychain 或凭据字节。
-跨存储的 Preference/Profile 恢复仍需按文档核对 YAML；SQLite 中的 activation provenance 不能单独重建未纳入 bundle 的外部状态。
+`state backup` 只生成当前完整 bundle：隔离的 Operational SQLite、Artifact、当前 Preference/Profile、
+脱敏后的 Provider/Model 与扩展 YAML，以及被引用的 managed Skill 版本。`state verify-backup` 只校验该格式；
+恢复只允许写入新的隔离目标，不包含 CredentialStore、Keychain 或凭据字节。
 禁止原始 Reviewer 输出、Provider reasoning、密钥和受保护内容进入事件、日志、候选、YAML 或模型上下文。
 当前确定性离线安全门禁与模拟用户回放已完成；真实 Provider 质量评估仍需显式授权和兼容凭据，未授权时不运行。
 
@@ -194,8 +191,7 @@ reference 为权威。`--apply` 不销毁字节：它只会把经目录、类型
 全局权威复查的非托管候选原子移入随机私有 quarantine。成功报告是
 `removed=0` 与 `quarantined=1`；原字节仍保留，无法证明安全时 fail closed。
 
-旧版本可能留下 `handoff.yaml` 或 `handoff.yaml.bak`。当前版本不读取、校验、迁移、覆盖或自动删除
-这些遗留文件；是否导入或清理需要未来单独的产品与数据决策。
+旧版本留下的 `handoff.yaml` 或 `handoff.yaml.bak` 已无对应功能，当前版本不读取；可直接删除。
 
 状态写入经过校验、revision 检查、同目录临时文件、文件/目录 `fsync` 和原子替换，并保留 `.bak`。
 Profile 损坏或版本较新时，工作空间持久状态进入只读模式；workspace Preferences 损坏时只隔离该层。

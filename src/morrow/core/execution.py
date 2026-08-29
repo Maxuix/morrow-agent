@@ -824,67 +824,6 @@ PRODUCTION_TOOL_DECLARATIONS: tuple[ToolRecoveryDeclaration, ...] = (
     ),
 )
 
-# Old durable rows may predate frozen per-intent declarations. Keep only their effect/recovery
-# classification here; these names are not valid for current production registration.
-LEGACY_TOOL_DECLARATIONS: tuple[ToolRecoveryDeclaration, ...] = (
-    _declaration("list_directory", EffectClass.BOUNDED_READ, MissingCompletionPolicy.SAFE_TO_RETRY),
-    _declaration("read_file", EffectClass.BOUNDED_READ, MissingCompletionPolicy.SAFE_TO_RETRY),
-    _declaration("find_files", EffectClass.BOUNDED_READ, MissingCompletionPolicy.SAFE_TO_RETRY),
-    _declaration("search_text", EffectClass.BOUNDED_READ, MissingCompletionPolicy.SAFE_TO_RETRY),
-    _declaration(
-        "show_changes", EffectClass.DURABLE_STATE_READ, MissingCompletionPolicy.SAFE_TO_RETRY
-    ),
-    _declaration(
-        "git_status",
-        EffectClass.BOUNDED_EXTERNAL_READ,
-        MissingCompletionPolicy.SAFE_TO_RETRY,
-        frozen=True,
-    ),
-    _declaration(
-        "git_diff",
-        EffectClass.BOUNDED_EXTERNAL_READ,
-        MissingCompletionPolicy.SAFE_TO_RETRY,
-        frozen=True,
-    ),
-    _declaration(
-        "apply_patch",
-        EffectClass.RECONCILEABLE_FILE_WRITE,
-        MissingCompletionPolicy.REQUIRES_RECONCILIATION,
-    ),
-    _declaration(
-        "write_file",
-        EffectClass.RECONCILEABLE_FILE_WRITE,
-        MissingCompletionPolicy.REQUIRES_RECONCILIATION,
-    ),
-    _declaration(
-        "delete_file",
-        EffectClass.RECONCILEABLE_FILE_WRITE,
-        MissingCompletionPolicy.REQUIRES_RECONCILIATION,
-    ),
-    _declaration(
-        "move_file",
-        EffectClass.RECONCILEABLE_FILE_WRITE,
-        MissingCompletionPolicy.REQUIRES_RECONCILIATION,
-    ),
-    _declaration(
-        "rename_file",
-        EffectClass.RECONCILEABLE_FILE_WRITE,
-        MissingCompletionPolicy.REQUIRES_RECONCILIATION,
-    ),
-    _declaration(
-        "run_command",
-        EffectClass.UNCONFINED_EXTERNAL_EFFECT,
-        MissingCompletionPolicy.OUTCOME_UNKNOWN,
-        isolation=ProcessIsolation.HOST,
-    ),
-    _declaration(
-        "run_command",
-        EffectClass.PROCESS_EFFECT_NON_DURABLE,
-        MissingCompletionPolicy.OUTCOME_UNKNOWN,
-        isolation=ProcessIsolation.NATIVE_SANDBOX,
-    ),
-)
-
 FIXTURE_TOOL_DECLARATIONS: tuple[ToolRecoveryDeclaration, ...] = (
     _declaration("calculate", EffectClass.PURE, MissingCompletionPolicy.SAFE_TO_RETRY),
     _declaration("lookup_record", EffectClass.PURE, MissingCompletionPolicy.SAFE_TO_RETRY),
@@ -908,9 +847,7 @@ def _declaration_index(
 
 
 _PRODUCTION_INDEX = _declaration_index(PRODUCTION_TOOL_DECLARATIONS)
-_ALL_INDEX = _declaration_index(
-    PRODUCTION_TOOL_DECLARATIONS + LEGACY_TOOL_DECLARATIONS + FIXTURE_TOOL_DECLARATIONS
-)
+_ALL_INDEX = _declaration_index(PRODUCTION_TOOL_DECLARATIONS + FIXTURE_TOOL_DECLARATIONS)
 
 
 def tool_declaration(

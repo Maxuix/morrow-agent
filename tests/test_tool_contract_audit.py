@@ -170,6 +170,10 @@ def _valid_inventory_arguments(name):
             "path": "summary",
             "value": "x",
         },
+        "manage_preferences": {
+            "scope": "workspace",
+            "operations": [{"operation": "add", "statement": "x"}],
+        },
         "promote_sandbox_changes": {
             "change_set_id": "sbx_" + "0" * 24,
             "paths": ["out.txt"],

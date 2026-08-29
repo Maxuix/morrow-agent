@@ -26,12 +26,6 @@ from morrow.application.turn_lifecycle import (
 )
 from morrow.bootstrap import build_application, build_session_application
 from morrow.core.agent_runs import ModelCapabilities, ProviderCapabilities, exact_model_capabilities
-from morrow.core.completion import (
-    OutcomeContract,
-    ValidationRequirement,
-    WorkspaceBaseline,
-    WorkspaceBaselineStatus,
-)
 from morrow.core.domain import (
     AGENT_RUN_SNAPSHOT_MAX_BYTES,
     AgentRunSnapshot,
@@ -457,53 +451,6 @@ async def test_prepared_submit_freezes_provider_evidence_in_snapshot(tmp_path: P
     assert len(payload) < AGENT_RUN_SNAPSHOT_MAX_BYTES
 
 
-async def test_new_submit_omits_and_rehydration_ignores_legacy_completion_evidence(
-    tmp_path: Path,
-) -> None:
-    app = _app(tmp_path)
-    _register_fake_adapter(app, constructions=[])
-    _configure_active(app)
-    project = tmp_path / "project"
-    project.mkdir()
-    session_app = _open_session_application(app, project)
-    prepared = session_app.orchestrator.preparation.prepare_new()
-    accepted = session_app.persistence.submit_user(
-        session_app.session,
-        "fix answer.txt and run pytest tests",
-        "cmsg_completion_freeze",
-        turn_id="turn_1",
-        agent_run_id="arun_1",
-        prepared_spec=prepared.spec,
-    )
-    snapshot = session_app.persistence.get_open_run_snapshot()
-    assert accepted.kind == "accepted"
-    assert snapshot is not None
-    assert snapshot.outcome_contract is None
-    assert snapshot.workspace_baseline is None
-
-    contract = OutcomeContract(
-        mode="change",
-        target_paths=("answer.txt",),
-        required_validations=(ValidationRequirement(validator_kind="pytest", scope="tests"),),
-    )
-    baseline = WorkspaceBaseline(
-        status=WorkspaceBaselineStatus.COMPLETE,
-        entries=(),
-        repository_state="filesystem",
-    )
-    legacy_snapshot = snapshot.model_copy(
-        update={"outcome_contract": contract, "workspace_baseline": baseline}
-    )
-
-    hydrated = _preparation(app).rehydrate(legacy_snapshot)
-    try:
-        assert not hasattr(hydrated.spec, "outcome_contract")
-        assert not hasattr(hydrated.spec, "workspace_baseline")
-    finally:
-        hydrated.close()
-        prepared.close()
-
-
 async def test_rehydrate_rebuilds_exact_provider_from_frozen_evidence(tmp_path: Path) -> None:
     app = _app(tmp_path)
     constructions: list = []
@@ -747,7 +694,7 @@ async def test_run_task_closes_unused_runtime_on_concurrent_loser(tmp_path: Path
         ]
     finally:
         coordinator.preference_loader = original_loader
-    assert events[-1].payload["finish_reason"] == "stop"  # closed replay outcome
+    assert events[-1].payload["finish_reason"] == "error"
     assert closed == [True]
 
 

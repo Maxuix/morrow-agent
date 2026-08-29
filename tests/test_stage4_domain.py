@@ -24,7 +24,7 @@ from morrow.core.domain import (
     utf8_size,
     validate_prefixed_id,
 )
-from morrow.core.models import ModelRef, Preferences, Profile, UserMessage
+from morrow.core.models import ModelRef, Profile, UserMessage
 
 
 def _digest(label: str = "x") -> str:
@@ -34,7 +34,6 @@ def _digest(label: str = "x") -> str:
 def _snapshot(**overrides) -> AgentRunSnapshot:
     values = {
         "profile": Profile(name="demo"),
-        "legacy_preferences": Preferences(language="中文"),
         "model": ModelRef(provider_id="p", model_id="m"),
         "provider_id": "p",
         "source_revisions": (

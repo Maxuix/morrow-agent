@@ -29,7 +29,6 @@ from morrow.core.learning_memory import (
     ProjectKnowledgeStatus,
 )
 from morrow.core.learning_payloads import (
-    PreferenceCandidatePayload,
     ProfileCandidatePayload,
     ProjectKnowledgeCandidatePayload,
 )
@@ -387,24 +386,7 @@ def learning_edit(
     def action(api) -> None:
         view = _candidate_or_error(api, candidate_id)
         payload = view.candidate.proposed_payload
-        if isinstance(payload, PreferenceCandidatePayload):
-            if any(item is not None for item in (statement, semantic_key, category)):
-                raise ApplicationError(
-                    ApplicationErrorCode.INVALID, "Preference 不能使用 Project Knowledge 字段"
-                )
-            selected_path = path or payload.path
-            selected_value = edit_value
-            if selected_value is None:
-                final_payload = payload.model_copy(update={"path": selected_path})
-            elif selected_path == "instructions":
-                final_payload = payload.model_copy(
-                    update={"path": selected_path, "value": (selected_value,)}
-                )
-            else:
-                final_payload = payload.model_copy(
-                    update={"path": selected_path, "value": selected_value}
-                )
-        elif isinstance(payload, ProfileCandidatePayload):
+        if isinstance(payload, ProfileCandidatePayload):
             if any(item is not None for item in (statement, semantic_key, category)):
                 raise ApplicationError(
                     ApplicationErrorCode.INVALID, "Profile 不能使用 Project Knowledge 字段"

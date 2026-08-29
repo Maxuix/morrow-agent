@@ -67,7 +67,6 @@ class LearningReviewRunner:
         context_char_limit: int = LEARNING_CONTEXT_MAX_RENDERED_CHARS,
         reviewer: LearningReviewerPort | None = None,
         model: ModelRef | None = None,
-        preference_v2_enabled: bool = False,
     ) -> None:
         if (
             isinstance(timeout_seconds, bool)
@@ -113,7 +112,6 @@ class LearningReviewRunner:
             id_source=id_source,
             clock=clock,
             events=self.events,
-            preference_v2_enabled=preference_v2_enabled,
         )
 
     async def run(

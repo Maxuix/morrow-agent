@@ -148,7 +148,6 @@ class LearningEvidenceSourceKind(StrEnum):
 
 
 class LearningCandidateType(StrEnum):
-    PREFERENCE = "preference"
     PROFILE = "profile"
     PROJECT_KNOWLEDGE = "project_knowledge"
     SKILL_CANDIDATE = "skill_candidate"
@@ -274,7 +273,6 @@ from morrow.core.learning_payloads import (  # noqa: E402
     LearningCandidateDraft,
     LearningPayload,
     OrchestrationPolicyCandidatePayload,
-    PreferenceCandidatePayload,
     ProfileCandidatePayload,
     ProjectKnowledgeCandidatePayload,
     ProjectKnowledgeCategory,
@@ -539,10 +537,7 @@ class LearningCandidate(ProtocolModel):
     def valid_candidate(self) -> LearningCandidate:
         if self.proposed_payload.candidate_type is not self.candidate_type:
             raise ValueError("candidate type does not match its payload")
-        if self.candidate_type is LearningCandidateType.PREFERENCE:
-            if self.proposed_scope not in {LearningScope.GLOBAL, LearningScope.WORKSPACE}:
-                raise ValueError("preference candidate scope must be global or workspace")
-        elif self.proposed_scope is not LearningScope.WORKSPACE:
+        if self.proposed_scope is not LearningScope.WORKSPACE:
             raise ValueError("candidate type is workspace scoped")
         terminal_statuses = {
             LearningCandidateStatus.REJECTED,
@@ -723,7 +718,6 @@ __all__ = [
     "LEARNING_KNOWLEDGE_REVISION_ID_PREFIX",
     "LEARNING_KNOWLEDGE_STATEMENT_MAX_CHARS",
     "OrchestrationPolicyCandidatePayload",
-    "PreferenceCandidatePayload",
     "ProfileCandidatePayload",
     "ProjectKnowledgeCandidatePayload",
     "ProjectKnowledgeCategory",

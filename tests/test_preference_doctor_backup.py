@@ -58,7 +58,7 @@ def test_backup_verification_detects_tampered_preference_snapshot(tmp_path):
         bundle = store.layout.backups_dir / created.bundle_name
         verified = backup.verify(bundle)
         assert verified.ok
-        assert verified.preference_references_ok
+        assert verified.references_ok
 
         connection = sqlite3.connect(bundle / "database.sqlite")
         connection.execute(
@@ -70,7 +70,7 @@ def test_backup_verification_detects_tampered_preference_snapshot(tmp_path):
 
         broken = backup.verify(bundle)
         assert not broken.ok
-        assert not broken.preference_references_ok
+        assert not broken.references_ok
         assert "preference_job_snapshot" in broken.issues
     finally:
         handle.close()

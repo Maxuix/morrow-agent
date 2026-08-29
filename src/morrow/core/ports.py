@@ -9,7 +9,6 @@ from typing import Any, Protocol
 
 from morrow.core.artifacts import ArtifactMetadata
 from morrow.core.models import (
-    GlobalConfig,
     Message,
     ModelEvent,
     ModelRef,
@@ -23,6 +22,7 @@ from morrow.core.models import (
     WorkspaceResolution,
 )
 from morrow.core.permissions import CapabilityGrant, PermissionSnapshot
+from morrow.core.preference_documents import GlobalConfig
 from morrow.core.preference_models import PreferenceOperation
 from morrow.core.preference_persistence_models import (
     PreferenceEvidence,

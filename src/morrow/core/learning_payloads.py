@@ -29,38 +29,6 @@ class LearningPayload(ProtocolModel):
     """Strict base for every discriminated candidate payload."""
 
 
-class PreferenceCandidatePayload(LearningPayload):
-    candidate_type: Literal[LearningCandidateType.PREFERENCE] = LearningCandidateType.PREFERENCE
-    path: Literal["language", "response_detail", "instructions"]
-    value: str | tuple[str, ...]
-
-    @field_validator("value")
-    @classmethod
-    def valid_value(cls, value: str | tuple[str, ...]) -> str | tuple[str, ...]:
-        if isinstance(value, str):
-            return normalize_learning_text(value, label="preference value", maximum=2_048)
-        if len(value) > 32:
-            raise ValueError("preference instructions contain too many items")
-        return tuple(
-            normalize_learning_text(item, label="preference instruction", maximum=512)
-            for item in value
-        )
-
-    @model_validator(mode="after")
-    def path_value_match(self) -> PreferenceCandidatePayload:
-        if self.path == "instructions" and not isinstance(self.value, tuple):
-            raise ValueError("instructions preference requires a tuple of strings")
-        if self.path != "instructions" and not isinstance(self.value, str):
-            raise ValueError("scalar preference requires a string value")
-        if self.path == "response_detail" and self.value not in {
-            "concise",
-            "balanced",
-            "detailed",
-        }:
-            raise ValueError("response_detail must be concise, balanced, or detailed")
-        return self
-
-
 class ProfileCandidatePayload(LearningPayload):
     candidate_type: Literal[LearningCandidateType.PROFILE] = LearningCandidateType.PROFILE
     path: Literal["name", "summary", "goals", "tech_stack", "constraints", "conventions"]
@@ -196,8 +164,7 @@ class OrchestrationPolicyCandidatePayload(LearningPayload):
 
 
 type CandidatePayload = Annotated[
-    PreferenceCandidatePayload
-    | ProfileCandidatePayload
+    ProfileCandidatePayload
     | ProjectKnowledgeCandidatePayload
     | SkillCandidatePayload
     | WorkflowFeedbackCandidatePayload
@@ -233,10 +200,7 @@ class LearningCandidateDraft(ProtocolModel):
     def matching_payload_and_scope(self) -> LearningCandidateDraft:
         if self.proposed_payload.candidate_type is not self.candidate_type:
             raise ValueError("candidate draft type does not match its payload")
-        if self.candidate_type is LearningCandidateType.PREFERENCE:
-            if self.proposed_scope not in {LearningScope.GLOBAL, LearningScope.WORKSPACE}:
-                raise ValueError("preference candidate scope must be global or workspace")
-        elif self.proposed_scope is not LearningScope.WORKSPACE:
+        if self.proposed_scope is not LearningScope.WORKSPACE:
             raise ValueError("this candidate type is workspace scoped")
         payload_budget = canonical_json_bytes(self.proposed_payload.model_dump(mode="json"))
         require_payload_budget(
@@ -268,7 +232,6 @@ __all__ = [
     "LearningCandidateDraft",
     "LearningPayload",
     "OrchestrationPolicyCandidatePayload",
-    "PreferenceCandidatePayload",
     "ProfileCandidatePayload",
     "ProjectKnowledgeCandidatePayload",
     "ProjectKnowledgeCategory",

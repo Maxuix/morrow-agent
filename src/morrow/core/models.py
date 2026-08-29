@@ -15,9 +15,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from morrow.core.runtime_policy import RuntimePolicyOverrides
 from morrow.core.state_schema import (
-    GLOBAL_CONFIG_LEGACY_SCHEMA_VERSION,
     WORKSPACE_INDEX_SCHEMA_VERSION,
     WORKSPACE_PROFILE_SCHEMA_VERSION,
 )
@@ -478,24 +476,6 @@ class ModelEvent(MorrowModel):
     cost: ModelCost = Field(default_factory=ModelCost.unavailable)
 
 
-class Preferences(MorrowModel):
-    """Legacy fixed-field projection used only for v1/v2 decode and compatibility state."""
-
-    language: str | None = None
-    response_detail: Literal["concise", "balanced", "detailed"] | None = None
-    instructions: list[str] = Field(default_factory=list)
-
-    @field_validator("instructions")
-    @classmethod
-    def clean_instructions(cls, values: list[str]) -> list[str]:
-        result: list[str] = []
-        for value in values:
-            value = " ".join(value.split())
-            if value and value not in result:
-                result.append(value)
-        return result
-
-
 class Profile(MorrowModel):
     name: str
     summary: str | None = None
@@ -532,24 +512,6 @@ class ProviderConfig(MorrowModel):
     last_test: LastTestResult | None = None
 
 
-class GlobalConfig(MorrowModel):
-    schema_version: int = GLOBAL_CONFIG_LEGACY_SCHEMA_VERSION
-    revision: int = 0
-    updated_at: datetime = Field(default_factory=utc_now)
-    preferences: Preferences = Field(default_factory=Preferences)
-    providers: dict[str, ProviderConfig] = Field(default_factory=dict)
-    active_model: ModelRef | None = None
-    runtime_policy: RuntimePolicyOverrides | None = None
-
-    @model_validator(mode="after")
-    def active_model_is_registered(self) -> GlobalConfig:
-        if self.active_model:
-            provider = self.providers.get(self.active_model.provider_id)
-            if not provider or self.active_model.model_id not in provider.models:
-                raise ValueError("active_model must refer to a registered provider model")
-        return self
-
-
 class WorkspaceIndexEntry(MorrowModel):
     workspace_id: str
     path: str
@@ -582,16 +544,6 @@ class WorkspaceDocument(MorrowModel):
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("workspace document updated_at must be timezone-aware")
         return value
-
-
-class ProjectPreferencesDocument(WorkspaceDocument):
-    preferences: Preferences | None = None
-
-    @model_validator(mode="after")
-    def payload_matches_state(self) -> ProjectPreferencesDocument:
-        if (self.state == "present") != (self.preferences is not None):
-            raise ValueError("workspace Preferences payload must match envelope state")
-        return self
 
 
 class ProfileDocument(WorkspaceDocument):

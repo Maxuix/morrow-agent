@@ -23,10 +23,10 @@ from morrow.adapters.state.preference_yaml_types import (
 from morrow.core.domain import canonical_json_bytes, validate_prefixed_id
 from morrow.core.ports import IdSource
 from morrow.core.preference_documents import (
-    GlobalConfigV2,
+    GlobalConfig,
     PreferenceDocument,
     PreferenceEntriesPayload,
-    WorkspacePreferenceDocumentV3,
+    WorkspacePreferenceDocument,
 )
 from morrow.core.preference_models import (
     PREFERENCE_MAX_OPERATIONS,
@@ -118,7 +118,7 @@ def _document_digest(document: PreferenceDocument) -> str:
     )
 
 
-def _authority_digest(value: GlobalConfigV2 | WorkspacePreferenceDocumentV3) -> str:
+def _authority_digest(value: GlobalConfig | WorkspacePreferenceDocument) -> str:
     payload = value.model_dump(mode="json")
     payload.pop("updated_at", None)
     return _digest(payload)
@@ -498,10 +498,10 @@ class PreferenceWriter:
 
     @staticmethod
     def _document_from_value(
-        scope: PreferenceScope, value: GlobalConfigV2 | WorkspacePreferenceDocumentV3
+        scope: PreferenceScope, value: GlobalConfig | WorkspacePreferenceDocument
     ) -> PreferenceDocument:
         if scope is PreferenceScope.GLOBAL:
-            if not isinstance(value, GlobalConfigV2):
+            if not isinstance(value, GlobalConfig):
                 raise PreferenceWriterError("scope", "global Preference YAML has wrong type")
             entries = value.preferences.entries
             return PreferenceDocument(
@@ -510,7 +510,7 @@ class PreferenceWriter:
                 updated_at=value.updated_at,
                 entries=entries,
             )
-        if not isinstance(value, WorkspacePreferenceDocumentV3):
+        if not isinstance(value, WorkspacePreferenceDocument):
             raise PreferenceWriterError("scope", "workspace Preference YAML has wrong type")
         return PreferenceDocument(
             scope="workspace",
@@ -531,9 +531,9 @@ class PreferenceWriter:
         if current.value is None:
             raise PreferenceWriterNeedsResolution()
         if scope is PreferenceScope.GLOBAL:
-            assert isinstance(current.value, GlobalConfigV2)
+            assert isinstance(current.value, GlobalConfig)
             payload = PreferenceEntriesPayload(entries=document.entries)
-            value = GlobalConfigV2.model_validate(
+            value = GlobalConfig.model_validate(
                 current.value.model_dump(mode="python") | {"preferences": payload}
             )
             self.yaml_store.write_global(
@@ -542,10 +542,10 @@ class PreferenceWriter:
                 expected_value_digest=expected_value_digest,
             )
             return
-        value = WorkspacePreferenceDocumentV3(
+        value = WorkspacePreferenceDocument(
             revision=current.revision,
             updated_at=current.value.updated_at
-            if isinstance(current.value, WorkspacePreferenceDocumentV3)
+            if isinstance(current.value, WorkspacePreferenceDocument)
             else document.updated_at,
             state="present",
             entries=document.entries,

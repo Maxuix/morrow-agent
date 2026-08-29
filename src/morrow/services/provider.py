@@ -11,7 +11,6 @@ from morrow.adapters.registry import PRESETS, AdapterRegistry
 from morrow.application.providers.control import ProviderControlMixin
 from morrow.core.models import (
     CredentialRef,
-    GlobalConfig,
     LastTestResult,
     Message,
     ModelErrorCode,
@@ -22,6 +21,7 @@ from morrow.core.models import (
     UserMessage,
     provider_error_message,
 )
+from morrow.core.preference_documents import GlobalConfig
 from morrow.core.providers import validate_base_url
 
 

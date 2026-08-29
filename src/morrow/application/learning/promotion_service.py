@@ -26,8 +26,8 @@ from morrow.core.learning_commands import (
     AcceptLearningCandidateCommand,
     EditAndAcceptLearningCandidateCommand,
 )
-from morrow.core.learning_payloads import CandidatePayload, PreferenceCandidatePayload
-from morrow.services.preferences import (
+from morrow.core.learning_payloads import CandidatePayload
+from morrow.services.profile_configuration import (
     ConfigPatchService,
     ConfigurationConflictError,
     ConfigurationNotFoundError,
@@ -156,11 +156,7 @@ class ConfigurationPromotionService(
         selected_scope = self._scope(scope or candidate.proposed_scope.value)
         command = self._command_for_candidate(candidate, final_payload, selected_scope)
         try:
-            prepared = self.config_service.prepare(  # type: ignore[union-attr]
-                command,
-                preference_mode=isinstance(final_payload, PreferenceCandidatePayload),
-                preference_command_id=preference_command_id,
-            )
+            prepared = self.config_service.prepare(command)  # type: ignore[union-attr]
         except (
             ConfigurationValidationError,
             ConfigurationNotFoundError,

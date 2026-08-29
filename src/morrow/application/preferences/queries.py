@@ -31,7 +31,7 @@ class PreferenceContextStatusView(ProtocolModel):
     injected_digest: str | None = None
     omitted_count: int = Field(ge=0)
     source_scopes: tuple[Literal["global", "workspace", "session"], ...] = ()
-    refresh_status: Literal["legacy", "ok", "degraded"] = "legacy"
+    refresh_status: Literal["ok", "degraded"] = "ok"
     refresh_error: str | None = Field(default=None, max_length=128)
     memory_selection_id: str | None = None
     memory_selection_revision: int | None = Field(default=None, ge=0)
@@ -118,9 +118,7 @@ class PreferenceQueries:
             ),
             omitted_count=snapshot.preference_omitted_count if snapshot is not None else 0,
             source_scopes=snapshot.preference_source_scopes if snapshot is not None else (),
-            refresh_status=(
-                snapshot.preference_refresh_status if snapshot is not None else "legacy"
-            ),
+            refresh_status=(snapshot.preference_refresh_status if snapshot is not None else "ok"),
             refresh_error=(snapshot.preference_refresh_error if snapshot is not None else None),
             memory_selection_id=(
                 memory_selection.selection_id if memory_selection is not None else None

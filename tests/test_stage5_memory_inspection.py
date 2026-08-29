@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import json
 import sqlite3
+from types import SimpleNamespace
 
 import pytest
 from typer.testing import CliRunner
@@ -9,19 +9,40 @@ from typer.testing import CliRunner
 from morrow.adapters.state.operational import OperationalStore
 from morrow.application.api import OperationalApplicationService
 from morrow.application.backup import OperationalBackupService
+from morrow.application.commands import CommandService
 from morrow.application.doctor import OperationalDoctor
 from morrow.application.learning.memory_backup import verify_memory_references
 from morrow.application.learning.memory_selector import memory_selection_digest
 from morrow.interfaces import cli as cli_module
 from morrow.interfaces import learning_cli
 from morrow.testing import FixedIdSource
-from test_stage5_learning_cli import _command_service
 from test_stage5_memory_agent_run import (
     _open,
     _persistence,
     _seed_terms,
     _session,
 )
+
+
+def _command_service(api, tmp_path):
+    session = SimpleNamespace(
+        read_only=False,
+        workspace_preferences_read_only=False,
+        persisted=True,
+        dirty=False,
+        session_id="ses_1",
+    )
+    identity = SimpleNamespace(workspace_id="ws_1", display_name="test", path=tmp_path)
+    return (
+        CommandService(
+            session=session,
+            identity=identity,
+            project_store=None,
+            api=api,
+            id_source=api.id_source,
+        ),
+        session,
+    )
 
 
 def _admitted(tmp_path, *, goal: str = "Operational SQLite"):
@@ -156,7 +177,7 @@ def test_backup_verification_checks_memory_selection_and_knowledge_links(tmp_pat
         bundle = store.layout.backups_dir / report.bundle_name
         verified = backup.verify(bundle)
         assert verified.ok
-        assert verified.memory_references_ok
+        assert verified.references_ok
 
         connection = sqlite3.connect(bundle / "database.sqlite")
         connection.execute(
@@ -167,39 +188,8 @@ def test_backup_verification_checks_memory_selection_and_knowledge_links(tmp_pat
         connection.close()
         broken = backup.verify(bundle)
         assert not broken.ok
-        assert not broken.memory_references_ok
+        assert not broken.references_ok
         assert "memory_selection_digest" in broken.issues
-    finally:
-        handle.close()
-
-
-def test_backup_memory_verification_decodes_historical_fixed_preference_snapshot(tmp_path):
-    handle, journal, _api, _session = _admitted(tmp_path)
-    try:
-        store = OperationalStore(tmp_path / "state")
-        backup = OperationalBackupService(store, journal=journal)
-        report = backup.create("memory-legacy-agent-run")
-        bundle = store.layout.backups_dir / report.bundle_name
-        with sqlite3.connect(bundle / "database.sqlite") as connection:
-            row = connection.execute(
-                "SELECT agent_run_id, snapshot_json FROM agent_runs LIMIT 1"
-            ).fetchone()
-            raw = json.loads(str(row[1]))
-            raw["preferences"] = {
-                "language": "中文",
-                "response_detail": None,
-                "instructions": ["只解释关键设计。"],
-            }
-            connection.execute(
-                "UPDATE agent_runs SET snapshot_json = ? WHERE agent_run_id = ?",
-                (json.dumps(raw, ensure_ascii=False, sort_keys=True), str(row[0])),
-            )
-            connection.commit()
-
-        verified = backup.verify(bundle)
-
-        assert verified.ok
-        assert verified.memory_references_ok
     finally:
         handle.close()
 

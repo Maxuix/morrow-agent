@@ -23,7 +23,6 @@
 
 ## 相关资料
 
-- [Stage 5 真实 Provider 评估](acceptance/stage5-real-provider-evaluation.md)
 - [Pi 使用方式与设计原则](https://pi.dev/docs/latest/usage)
 - [Pi 上下文压缩](https://pi.dev/docs/latest/compaction)
 - [Pi Session](https://pi.dev/docs/latest/sessions)

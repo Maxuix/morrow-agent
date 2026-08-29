@@ -89,7 +89,7 @@ async def test_stage5_sqlite_backup_preserves_learning_state_in_isolation(tmp_pa
 
         assert report.integrity_ok
         assert verified.ok
-        assert verified.learning_references_ok
+        assert verified.references_ok
         manifest = json.loads((bundle / "manifest.json").read_text(encoding="utf-8"))
         assert candidate.candidate_id
         assert manifest["schema_version"] == 22
@@ -140,7 +140,7 @@ async def test_stage5_backup_rejects_tampered_decision_reference(tmp_path):
         verified = backup.verify(bundle)
 
         assert not verified.ok
-        assert not verified.learning_references_ok
+        assert not verified.references_ok
         assert "learning_decision_candidate" in verified.issues
     finally:
         session.close()

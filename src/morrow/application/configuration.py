@@ -7,11 +7,6 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from morrow.application.legacy_configuration import (
-    LEGACY_LIST_PATHS,
-    PROFILE_PATHS,
-    validate_legacy_configuration_fields,
-)
 from morrow.core.capabilities import (
     OperationIntent,
     OperationKind,
@@ -26,14 +21,15 @@ from morrow.core.domain import (
 )
 from morrow.core.execution import tool_declaration
 from morrow.core.models import StatePresence, ToolEffect
-from morrow.core.preference_models import PreferenceLifecycleOperation, PreferenceOperation
 from morrow.runtime.policy import ToolApproval, ToolExecutionPolicy
 from morrow.runtime.tool_arguments import MAX_STRING_CHARS, SCHEMA_DIALECT
 from morrow.runtime.tools import RegisteredTool, ToolErrorCode, ToolExecutionError, make_tool
 
-ConfigurationScope = Literal["session", "workspace", "global"]
-ConfigurationTarget = Literal["preferences", "profile"]
+ConfigurationScope = Literal["workspace"]
+ConfigurationTarget = Literal["profile"]
 ConfigurationOperation = Literal["set", "unset", "append", "remove", "reset"]
+PROFILE_PATHS = frozenset({"name", "summary", "goals", "tech_stack", "constraints", "conventions"})
+PROFILE_LIST_PATHS = frozenset({"goals", "tech_stack", "constraints", "conventions"})
 
 
 def _configuration_string(*, max_length: int, minimum: int = 1) -> dict[str, object]:
@@ -66,8 +62,8 @@ def _configuration_branch(
     return branch
 
 
-_PROFILE_SCALAR_PATHS = tuple(sorted(PROFILE_PATHS - LEGACY_LIST_PATHS))
-_PROFILE_LIST_PATHS = tuple(sorted(PROFILE_PATHS & LEGACY_LIST_PATHS))
+_PROFILE_SCALAR_PATHS = tuple(sorted(PROFILE_PATHS - PROFILE_LIST_PATHS))
+_PROFILE_LIST_PATHS = tuple(sorted(PROFILE_LIST_PATHS))
 
 CONFIGURATION_PROVIDER_SCHEMA = {
     "$schema": SCHEMA_DIALECT,
@@ -122,7 +118,32 @@ CONFIGURATION_PROVIDER_SCHEMA = {
 def _validate_profile_fields(model: BaseModel, *, validate_values: bool = True) -> None:
     if model.scope != "workspace" or model.target != "profile":
         raise ValueError("update_configuration 只支持 workspace Profile")
-    validate_legacy_configuration_fields(model, validate_values=validate_values)
+    operation = model.operation
+    path = model.path
+    if operation == "reset":
+        if path is not None or model.value is not None:
+            raise ValueError("reset 不接受 path 或 value")
+        return
+    if path not in PROFILE_PATHS:
+        raise ValueError(f"不允许修改字段: {path}")
+    if path == "name" and operation == "unset":
+        raise ValueError("Profile 的 name 不能取消设置")
+    is_list = path in PROFILE_LIST_PATHS
+    if operation == "unset":
+        if model.value is not None or is_list:
+            raise ValueError("unset 只支持可选标量字段且不接受 value")
+        return
+    if "value" not in model.model_fields_set:
+        raise ValueError(f"{operation} 操作需要 value")
+    if operation in {"append", "remove"} and not is_list:
+        raise ValueError("标量字段只能使用 set 或 unset")
+    if operation == "set" and is_list:
+        raise ValueError("列表字段只能使用 append 或 remove")
+    if validate_values and (not isinstance(model.value, str) or not model.value.strip()):
+        raise ValueError("Profile 配置值必须是非空字符串")
+    maximum = 512 if is_list else 2_048
+    if validate_values and len(model.value) > maximum:
+        raise ValueError("Profile 配置值超出长度限制")
 
 
 class UpdateConfigurationArguments(BaseModel):
@@ -167,9 +188,7 @@ class ConfigurationCommand(BaseModel):
 
     @model_validator(mode="after")
     def valid_operation(self) -> ConfigurationCommand:
-        # The application service owns value/type validation so legacy callers can receive the
-        # stable ConfigurationValidationError instead of a construction-time Pydantic error.
-        validate_legacy_configuration_fields(self, validate_values=False)
+        _validate_profile_fields(self, validate_values=False)
         return self
 
 
@@ -218,9 +237,6 @@ class PreparedConfigurationChange(BaseModel):
     after_digest: str
     expected_applied_revision: int | None = Field(default=None, ge=1)
     inverse_command: ConfigurationCommand | None = None
-    preference_operations: tuple[PreferenceOperation, ...] = ()
-    preference_lifecycle_operations: tuple[PreferenceLifecycleOperation, ...] = ()
-    preference_command_id: str | None = None
     changed: bool
     preview_lines: tuple[str, ...] = Field(max_length=16)
     preparation_version: int = Field(default=1, ge=1, le=1)
@@ -268,7 +284,7 @@ CONFIGURATION_TOOL_DESCRIPTION = (
 
 
 def _configuration_tool_error(error: Exception) -> ToolExecutionError:
-    from morrow.services.preferences import (
+    from morrow.services.profile_configuration import (
         ConfigurationConflictError,
         ConfigurationNotFoundError,
         ConfigurationReadOnlyError,

@@ -6,10 +6,10 @@ import json
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 
-from morrow.adapters.state.preference_snapshot_compat import decode_agent_run_snapshot
 from morrow.adapters.state.transaction import SqliteJournalBackend
 from morrow.core.capabilities import AccessScope, ApprovalMode, ProcessIsolation
 from morrow.core.domain import (
+    AgentRunSnapshot,
     DurableAgentRun,
     DurableTaskRun,
     DurableTurn,
@@ -563,7 +563,7 @@ def _agent_from_row(row: tuple[object, ...]) -> DurableAgentRun:
         raw = json.loads(str(row[4]))
         if not isinstance(raw, Mapping):
             raise ValueError("AgentRun snapshot must be a mapping")
-        snapshot = decode_agent_run_snapshot(raw)
+        snapshot = AgentRunSnapshot.model_validate(raw)
         return DurableAgentRun(
             agent_run_id=str(row[0]),
             turn_id=str(row[1]),

@@ -98,7 +98,6 @@ class OperationalApplicationService:
         preference_queries: PreferenceQueries | None = None,
         preference_review_runner: PreferenceReviewRunner | None = None,
         review_worker=None,
-        preference_v2_enabled: bool = False,
     ) -> None:
         self.journal = journal
         try:
@@ -152,7 +151,6 @@ class OperationalApplicationService:
             context_char_limit=learning_review_context_chars,
             reviewer=learning_reviewer,
             model=learning_model,
-            preference_v2_enabled=preference_v2_enabled,
         )
         self.preference_inbox = preference_inbox
         self.preference_queries = preference_queries

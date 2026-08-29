@@ -6,7 +6,6 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
-from morrow.adapters.state.preference_migration import legacy_entries_from_preferences
 from morrow.application.preferences.context import snapshot_from_documents
 from morrow.core.domain import sha256_digest
 from morrow.core.execution import ToolExecutionDisposition
@@ -284,26 +283,8 @@ class PreferenceReviewJobEnqueuer:
 def _active_documents(
     session: Session, *, now: datetime
 ) -> tuple[PreferenceDocument, PreferenceDocument]:
-    global_document = session.generic_global_preferences
-    if global_document is None:
-        global_document = PreferenceDocument(
-            scope="global",
-            revision=session.global_preferences_revision,
-            updated_at=now,
-            entries=legacy_entries_from_preferences(
-                "global", session.global_preferences.model_dump(mode="python")
-            ),
-        )
-    workspace_document = session.generic_workspace_preferences
-    if workspace_document is None:
-        workspace_document = PreferenceDocument(
-            scope="workspace",
-            revision=session.preferences_revision,
-            updated_at=now,
-            entries=legacy_entries_from_preferences(
-                "workspace", session.workspace_preferences.model_dump(mode="python")
-            ),
-        )
+    global_document = session.global_preferences
+    workspace_document = session.workspace_preferences
     return global_document, workspace_document
 
 

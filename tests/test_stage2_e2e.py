@@ -189,6 +189,7 @@ async def test_ordinary_chat_can_finish_without_calling_advertised_guarded_tools
         "write",
         "bash",
         "run_skill_script",
+        "manage_preferences",
     }
 
 

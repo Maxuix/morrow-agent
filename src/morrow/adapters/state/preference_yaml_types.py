@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
-from morrow.core.preference_documents import GlobalConfigV2, WorkspacePreferenceDocumentV3
+from morrow.core.preference_documents import GlobalConfig, WorkspacePreferenceDocument
 
 
 class PreferenceYamlLoadStatus(StrEnum):
@@ -30,10 +30,9 @@ class PreferenceYamlConflict(PreferenceYamlError):
 @dataclass(frozen=True)
 class PreferenceYamlLoad:
     status: PreferenceYamlLoadStatus
-    value: GlobalConfigV2 | WorkspacePreferenceDocumentV3 | None
+    value: GlobalConfig | WorkspacePreferenceDocument | None
     revision: int
     source_schema_version: int | None
-    migrated: bool = False
     presence: str | None = None
     error: str | None = None
 
@@ -44,7 +43,7 @@ class PreferenceMigrationPlan:
     source_revision: int
     source_schema_version: int
     source_digest: str
-    value: GlobalConfigV2 | WorkspacePreferenceDocumentV3
+    value: GlobalConfig | WorkspacePreferenceDocument
 
 
 __all__ = [

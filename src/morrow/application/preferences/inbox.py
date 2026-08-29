@@ -71,7 +71,7 @@ class PreferenceInboxError(RuntimeError):
 
 
 class PreferenceInbox:
-    """Keep list/show/preview and decisions separate from the legacy Learning Inbox."""
+    """Keep list/show/preview and decisions separate from the general Learning Inbox."""
 
     def __init__(
         self,

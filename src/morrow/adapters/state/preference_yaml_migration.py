@@ -9,6 +9,9 @@ from morrow.adapters.state.preference_migration import (
     LEGACY_GLOBAL_SCHEMA_VERSION,
     LEGACY_WORKSPACE_PREFERENCE_SCHEMA_VERSION,
     WORKSPACE_PREFERENCE_SCHEMA_VERSION,
+    PreferenceYamlDecodeError,
+    decode_global_config,
+    decode_workspace_preferences,
 )
 from morrow.adapters.state.preference_yaml_io import (
     PreferenceYamlIoError,
@@ -33,7 +36,6 @@ from morrow.adapters.state.preference_yaml_types import (
     PreferenceYamlConflict,
     PreferenceYamlError,
     PreferenceYamlLoad,
-    PreferenceYamlLoadStatus,
 )
 
 
@@ -49,37 +51,40 @@ class PreferenceYamlMigrationMixin:
 
     def prepare_global_migration(self) -> PreferenceMigrationPlan | None:
         raw = _read_raw(self.global_path)
-        load = self._load_global(raw)
-        if load.status is not PreferenceYamlLoadStatus.OK or load.value is None:
-            raise PreferenceYamlError(
-                load.error or "corrupt", "global Preference YAML is not migratable"
-            )
-        if load.source_schema_version != LEGACY_GLOBAL_SCHEMA_VERSION:
+        if raw is None or int(raw.get("schema_version", 0)) != LEGACY_GLOBAL_SCHEMA_VERSION:
             return None
+        try:
+            value = decode_global_config(raw)
+        except PreferenceYamlDecodeError as exc:
+            raise PreferenceYamlError(exc.code, "global Preference YAML is not migratable") from exc
         return PreferenceMigrationPlan(
             scope="global",
-            source_revision=load.revision,
-            source_schema_version=load.source_schema_version,
+            source_revision=value.revision,
+            source_schema_version=LEGACY_GLOBAL_SCHEMA_VERSION,
             source_digest=_raw_digest(raw),
-            value=load.value,
+            value=value,
         )
 
     def prepare_workspace_migration(self, workspace_id: str) -> PreferenceMigrationPlan | None:
         path = self.workspace_path(workspace_id)
         raw = _read_raw(path)
-        load = self.load_workspace(workspace_id)
-        if load.status is not PreferenceYamlLoadStatus.OK or load.value is None:
-            raise PreferenceYamlError(
-                load.error or "corrupt", "workspace Preference YAML is not migratable"
-            )
-        if load.source_schema_version not in {1, LEGACY_WORKSPACE_PREFERENCE_SCHEMA_VERSION}:
+        if raw is None:
             return None
+        source_schema = int(raw.get("schema_version", 0))
+        if source_schema not in {1, LEGACY_WORKSPACE_PREFERENCE_SCHEMA_VERSION}:
+            return None
+        try:
+            value = decode_workspace_preferences(raw)
+        except PreferenceYamlDecodeError as exc:
+            raise PreferenceYamlError(
+                exc.code, "workspace Preference YAML is not migratable"
+            ) from exc
         return PreferenceMigrationPlan(
             scope=workspace_id,
-            source_revision=load.revision,
-            source_schema_version=load.source_schema_version,
+            source_revision=value.revision,
+            source_schema_version=source_schema,
             source_digest=_raw_digest(raw),
-            value=load.value,
+            value=value,
         )
 
     def publish_migration(
@@ -93,27 +98,24 @@ class PreferenceYamlMigrationMixin:
         path = self.global_path if is_global else self.workspace_path(plan.scope)
         with self._lock("global" if is_global else "workspace", workspace_id):
             raw = _read_raw(path)
-            current = self._load_global(raw) if is_global else self.load_workspace(plan.scope)
-            if current.status is not PreferenceYamlLoadStatus.OK or current.value is None:
-                raise PreferenceYamlError(
-                    current.error or "corrupt", "Preference YAML is not writable"
-                )
+            current_revision = int((raw or {}).get("revision", 0) or 0)
+            current_schema = int((raw or {}).get("schema_version", 0) or 0)
             expected = plan.source_revision if expected_revision is None else expected_revision
             expected_schema = (
                 GLOBAL_CONFIG_PREFERENCE_SCHEMA_VERSION
                 if is_global
                 else WORKSPACE_PREFERENCE_SCHEMA_VERSION
             )
-            if current.revision != expected:
-                if current.source_schema_version == expected_schema:
-                    return current
+            if current_revision != expected:
+                if current_schema == expected_schema:
+                    return self._load_global(raw) if is_global else self.load_workspace(plan.scope)
                 raise PreferenceYamlConflict()
             if _raw_digest(raw) != plan.source_digest:
                 raise PreferenceYamlConflict()
             if self.failure_injector:
                 self.failure_injector("backup")
             self._backup(path)
-            value = _with_revision(plan.value, current.revision + 1)
+            value = _with_revision(plan.value, current_revision + 1)
             _write_bytes(path, _yaml_bytes(value), self.failure_injector)
             return (
                 self._load_global(_read_raw(path)) if is_global else self.load_workspace(plan.scope)

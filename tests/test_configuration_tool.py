@@ -21,7 +21,6 @@ from morrow.core.models import (
     FinishReason,
     FunctionToolCall,
     ModelRef,
-    Preferences,
     Profile,
     StatePresence,
     StateWriteResult,
@@ -34,7 +33,7 @@ from morrow.runtime.agent import AgentLoop
 from morrow.runtime.policy import ToolApproval
 from morrow.runtime.session import Session
 from morrow.runtime.tools import ToolErrorCode, ToolExecutor, ToolRegistry
-from morrow.services.preferences import (
+from morrow.services.profile_configuration import (
     ConfigPatchService,
     ConfigurationConflictError,
     ConfigurationNotFoundError,
@@ -120,8 +119,6 @@ def _products(tmp_path, *, profile: Profile | None = None):
     session = Session(
         session_id="s",
         profile=profile,
-        global_preferences=Preferences(),
-        workspace_preferences=Preferences(),
     )
     service = ConfigPatchService(
         app.project_store, app.global_store, identity.workspace_id, session
@@ -224,26 +221,23 @@ def test_service_applies_one_typed_command_and_returns_minimal_result(tmp_path):
     result = service.apply_command(
         ConfigurationCommand(
             scope="workspace",
-            target="preferences",
+            target="profile",
             operation="set",
-            path="language",
-            value="中文",
+            path="summary",
+            value="中文项目",
         )
     )
 
     assert result.model_dump(mode="json") == {
         "status": ConfigurationChangeStatus.APPLIED,
         "scope": "workspace",
-        "target": "preferences",
+        "target": "profile",
         "operation": "set",
-        "path": "language",
-        "revision": 1,
+        "path": "summary",
+        "revision": 2,
     }
-    assert session.workspace_preferences.language == "中文"
-    assert (
-        app.project_store.load_preferences(identity.workspace_id).value.preferences.language
-        == "中文"
-    )
+    assert session.profile.summary == "中文项目"
+    assert app.project_store.load_profile(identity.workspace_id).value.profile.summary == "中文项目"
     assert set(result.model_dump()) == {
         "status",
         "scope",
@@ -259,90 +253,52 @@ def test_service_noop_matrix_does_not_write_or_increment_revision(tmp_path):
     applied = service.apply_command(
         ConfigurationCommand(
             scope="workspace",
-            target="preferences",
-            operation="set",
-            path="language",
-            value="中文",
+            target="profile",
+            operation="append",
+            path="goals",
+            value="先给结论",
         )
     )
-    before = app.project_store.load_preferences(identity.workspace_id)
+    before = app.project_store.load_profile(identity.workspace_id)
     same = service.apply_command(
         ConfigurationCommand(
             scope="workspace",
-            target="preferences",
-            operation="set",
-            path="language",
-            value="中文",
+            target="profile",
+            operation="append",
+            path="goals",
+            value="先给结论",
         )
     )
     empty_unset = service.apply_command(
         ConfigurationCommand(
             scope="workspace",
-            target="preferences",
-            operation="unset",
-            path="response_detail",
-        )
-    )
-    assert applied.revision == 1
-    assert same.status == ConfigurationChangeStatus.UNCHANGED
-    assert same.revision == before.revision == 1
-    assert empty_unset.status == ConfigurationChangeStatus.UNCHANGED
-    assert app.project_store.load_preferences(identity.workspace_id).revision == 1
-
-    session.preferences = Preferences(instructions=["先给 结论"])
-    duplicate = service.apply_command(
-        ConfigurationCommand(
-            scope="session",
-            target="preferences",
-            operation="append",
-            path="instructions",
-            value=" 先给   结论 ",
-        )
-    )
-    zero_remove = service.apply_command(
-        ConfigurationCommand(
-            scope="session",
-            target="preferences",
+            target="profile",
             operation="remove",
-            path="instructions",
+            path="goals",
             value="不存在",
         )
     )
-    assert duplicate.status == ConfigurationChangeStatus.UNCHANGED
-    assert zero_remove.status == ConfigurationChangeStatus.UNCHANGED
-    assert session.preferences == Preferences(instructions=["先给 结论"])
+    assert applied.revision == 2
+    assert same.status == ConfigurationChangeStatus.UNCHANGED
+    assert same.revision == before.revision == 2
+    assert empty_unset.status == ConfigurationChangeStatus.UNCHANGED
+    assert app.project_store.load_profile(identity.workspace_id).revision == 2
 
 
 def test_reset_preserves_tombstone_and_session_projections(tmp_path):
     app, identity, session, service = _products(tmp_path, profile=Profile(name="demo"))
-    service.apply_command(
-        ConfigurationCommand(
-            scope="workspace",
-            target="preferences",
-            operation="set",
-            path="language",
-            value="中文",
-        )
-    )
-    service.apply_command(
+    profile_reset = service.apply_command(
         ConfigurationCommand(scope="workspace", target="profile", operation="reset")
     )
-    preferences_reset = service.apply_command(
-        ConfigurationCommand(scope="workspace", target="preferences", operation="reset")
-    )
 
-    assert preferences_reset.status == ConfigurationChangeStatus.APPLIED
-    assert (
-        app.project_store.load_preferences(identity.workspace_id).presence == StatePresence.CLEARED
-    )
+    assert profile_reset.status == ConfigurationChangeStatus.APPLIED
     assert app.project_store.load_profile(identity.workspace_id).presence == StatePresence.CLEARED
-    assert session.workspace_preferences == Preferences()
     assert session.profile is None
     unchanged = service.apply_command(
-        ConfigurationCommand(scope="workspace", target="preferences", operation="reset")
+        ConfigurationCommand(scope="workspace", target="profile", operation="reset")
     )
     assert unchanged.status == ConfigurationChangeStatus.UNCHANGED
-    assert unchanged.revision == preferences_reset.revision
+    assert unchanged.revision == profile_reset.revision
 
 
 def test_preflight_has_no_write_and_rejects_missing_or_read_only_state(tmp_path):
@@ -371,13 +327,13 @@ def test_preflight_has_no_write_and_rejects_missing_or_read_only_state(tmp_path)
 
 @pytest.mark.parametrize(
     ("path", "value"),
-    [("language", 42), ("response_detail", "verbose")],
+    [("name", 42), ("summary", 42)],
 )
 def test_assignment_validation_errors_are_mapped_to_configuration_validation(tmp_path, path, value):
     _, _, _, service = _products(tmp_path, profile=Profile(name="demo"))
     command = ConfigurationCommand(
         scope="workspace",
-        target="preferences",
+        target="profile",
         operation="set",
         path=path,
         value=value,
@@ -393,32 +349,30 @@ def test_service_maps_revision_conflict_and_write_failure_without_projection_cha
     app, _, session, service = _products(tmp_path, profile=Profile(name="demo"))
     command = ConfigurationCommand(
         scope="workspace",
-        target="preferences",
+        target="profile",
         operation="set",
-        path="language",
-        value="中文",
+        path="summary",
+        value="中文项目",
     )
-    before = session.workspace_preferences
-
     monkeypatch.setattr(
         app.project_store,
-        "write_preferences",
+        "write_profile",
         lambda *args, **kwargs: StateWriteResult(
             status=StateWriteStatus.REVISION_CONFLICT, revision=9
         ),
     )
     with pytest.raises(ConfigurationConflictError):
         service.apply_command(command)
-    assert session.workspace_preferences == before
+    assert session.profile == Profile(name="demo")
 
     monkeypatch.setattr(
         app.project_store,
-        "write_preferences",
+        "write_profile",
         lambda *args, **kwargs: StateWriteResult(status=StateWriteStatus.FAILED, error="injected"),
     )
     with pytest.raises(ConfigurationStateError):
         service.apply_command(command)
-    assert session.workspace_preferences == before
+    assert session.profile == Profile(name="demo")
 
 
 @pytest.mark.asyncio
@@ -545,7 +499,9 @@ async def test_configuration_sensitive_path_fails_before_approval(tmp_path):
 
     assert outcome.error_code == ToolErrorCode.INVALID_ARGUMENTS
     assert approval.requests == []
-    assert app.project_store.load_preferences(identity.workspace_id).value is None
+    assert app.project_store.load_profile(identity.workspace_id).value.profile == Profile(
+        name="demo"
+    )
 
 
 @pytest.mark.asyncio
@@ -582,7 +538,7 @@ async def test_non_persistence_or_ambiguous_inputs_stay_in_ordinary_chat(
     assert items[-1].action is None
     assert provider.stream_tools[0]
     assert approval.requests == []
-    assert session_app.session.preferences == Preferences()
+    assert session_app.session.session_preferences == ()
     assert app.project_store.load_preferences(identity.workspace_id).value is None
 
 
@@ -772,6 +728,7 @@ async def test_production_composition_uses_one_agent_loop_and_refreshes_state_pr
         "write",
         "bash",
         "run_skill_script",
+        "manage_preferences",
     }
     assert "中文项目" in str(provider.stream_calls[1])
     assert len(approval.requests) == 1

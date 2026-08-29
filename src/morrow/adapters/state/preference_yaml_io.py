@@ -13,8 +13,7 @@ from pathlib import Path
 
 import yaml
 
-from morrow.core.domain import canonical_json_bytes
-from morrow.core.preference_documents import GlobalConfigV2, WorkspacePreferenceDocumentV3
+from morrow.core.preference_documents import GlobalConfig, WorkspacePreferenceDocument
 
 
 class PreferenceYamlIoError(RuntimeError):
@@ -41,7 +40,8 @@ def fsync_directory(path: Path) -> None:
 def raw_digest(raw: object) -> str:
     if raw is None:
         return hashlib.sha256(b"").hexdigest()
-    return hashlib.sha256(canonical_json_bytes(raw)).hexdigest()
+    encoded = yaml.safe_dump(raw, allow_unicode=True, sort_keys=True).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def read_raw(path: Path) -> dict | None:
@@ -79,7 +79,7 @@ def write_bytes(path: Path, data: bytes, failure_injector: Callable[[str], None]
         temporary.unlink(missing_ok=True)
 
 
-def yaml_bytes(value: GlobalConfigV2 | WorkspacePreferenceDocumentV3) -> bytes:
+def yaml_bytes(value: GlobalConfig | WorkspacePreferenceDocument) -> bytes:
     return yaml.safe_dump(
         value.model_dump(mode="json", exclude_none=False),
         allow_unicode=True,
@@ -88,8 +88,8 @@ def yaml_bytes(value: GlobalConfigV2 | WorkspacePreferenceDocumentV3) -> bytes:
 
 
 def with_revision(
-    value: GlobalConfigV2 | WorkspacePreferenceDocumentV3, revision: int
-) -> GlobalConfigV2 | WorkspacePreferenceDocumentV3:
+    value: GlobalConfig | WorkspacePreferenceDocument, revision: int
+) -> GlobalConfig | WorkspacePreferenceDocument:
     return type(value).model_validate(
         value.model_copy(update={"revision": revision, "updated_at": datetime.now(UTC)})
     )

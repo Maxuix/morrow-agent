@@ -307,16 +307,11 @@ class PreferenceManagementService:
     def _sync_session(self, document) -> None:
         if self.session is None:
             return
-        from morrow.adapters.state.preference_projection import preferences_from_entries
-
-        projected = preferences_from_entries(document.entries)
         if document.scope == PreferenceScope.GLOBAL.value:
-            self.session.generic_global_preferences = document
-            self.session.global_preferences = projected
+            self.session.global_preferences = document
             self.session.global_preferences_revision = document.revision
         else:
-            self.session.generic_workspace_preferences = document
-            self.session.workspace_preferences = projected
+            self.session.workspace_preferences = document
             self.session.preferences_revision = document.revision
 
     def apply_with_session_sync(

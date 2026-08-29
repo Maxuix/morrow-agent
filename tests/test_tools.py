@@ -221,7 +221,7 @@ async def test_required_approval_receives_only_sanitized_local_preview():
     assert request.effect == ToolEffect.SESSION_WRITE
     assert request.preview == ("scope: session operation: set", "不要显示模型参数")
     assert request.policy_verdict == "require_approval"
-    assert request.reason_codes == ("legacy_static_approval",)
+    assert request.reason_codes == ("static_approval",)
     assert "secret" not in str(request.model_dump())
 
 

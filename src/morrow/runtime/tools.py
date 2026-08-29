@@ -559,8 +559,8 @@ def _sanitize_approval_preview(
     return tuple(lines)
 
 
-def _fallback_recovery_declaration(name: str) -> ToolRecoveryDeclaration:
-    """Keep legacy test and extension tools conservative until they declare recovery."""
+def _undeclared_recovery_declaration(name: str) -> ToolRecoveryDeclaration:
+    """Fail closed for local extension tools without an explicit recovery declaration."""
 
     return ToolRecoveryDeclaration(
         tool_name=name,
@@ -577,7 +577,7 @@ def _recovery_declaration(
     try:
         return tool_declaration(name)
     except UnknownToolDeclarationError:
-        return _fallback_recovery_declaration(name)
+        return _undeclared_recovery_declaration(name)
 
 
 @dataclass(frozen=True)
@@ -731,7 +731,7 @@ class ToolExecutor:
     def recovery_declaration(self, tool_name: str) -> ToolRecoveryDeclaration:
         registered = self.tool_set.tools.get(tool_name)
         if registered is None or registered.recovery_declaration is None:
-            return _fallback_recovery_declaration(tool_name)
+            return _undeclared_recovery_declaration(tool_name)
         return registered.recovery_declaration
 
     def resolve_policy(
@@ -806,7 +806,7 @@ class ToolExecutor:
                 limit=limit,
             )
         call_context = ToolCallContext(
-            run=self._active_run_context or ToolRunContext(run_id="legacy", session_id="legacy"),
+            run=self._active_run_context or ToolRunContext(run_id="local", session_id="local"),
             call_id=call.id,
             tool_name=call.name,
             ordinal=self._active_ordinal,
@@ -890,7 +890,7 @@ class ToolExecutor:
                     reason_codes=(
                         tuple(policy_decision.reason_codes)
                         if policy_decision is not None
-                        else ("legacy_static_approval",)
+                        else ("static_approval",)
                     ),
                 )
             except asyncio.CancelledError:
@@ -1121,7 +1121,7 @@ class ToolExecutor:
         if len(envelope) <= limit:
             return envelope, False, len(envelope)
         if not semantic:
-            return ToolExecutor._legacy_success_envelope(result, limit, len(envelope))
+            return ToolExecutor._opaque_success_envelope(result, limit, len(envelope))
         original_chars = len(envelope)
         base_result = {"truncated": True, "original_chars": original_chars, "content": ""}
         base = _dump({"ok": True, "result": base_result})
@@ -1162,7 +1162,7 @@ class ToolExecutor:
         return None, False, original_chars
 
     @staticmethod
-    def _legacy_success_envelope(
+    def _opaque_success_envelope(
         result: object, limit: int, original_chars: int
     ) -> tuple[str | None, bool, int | None]:
         base_result = {"truncated": True, "original_chars": original_chars, "content": ""}

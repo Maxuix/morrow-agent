@@ -8,10 +8,10 @@ from morrow.application.configuration import ConfigurationCommand
 from morrow.application.orchestrator import SessionOrchestrator
 from morrow.bootstrap import build_application, build_session_application
 from morrow.core.capabilities import PermissionPreset, PermissionProfile
-from morrow.core.models import ModelRef, Preferences, Profile
+from morrow.core.models import ModelRef, Profile
 from morrow.runtime.agent import AgentRuntime
 from morrow.runtime.session import Session
-from morrow.services.preferences import ConfigPatchService
+from morrow.services.profile_configuration import ConfigPatchService
 from morrow.testing import ScriptedModelProvider, make_context_builder, seed_user_turn
 
 
@@ -171,7 +171,6 @@ async def test_corrupt_workspace_preferences_is_an_isolated_non_overwritable_emp
     project.mkdir()
     identity = app.workspace_service.confirm(app.workspace_service.resolve(project))
     workspace_id = identity.workspace_id
-    app.project_store.write_preferences(workspace_id, Preferences(language="中文"))
     app.project_store.write_profile(workspace_id, Profile(name="valid profile"))
     preferences_path = app.data_root.workspaces_path / workspace_id / "preferences.yaml"
     preferences_path.write_bytes(b"not: [valid")
@@ -193,18 +192,8 @@ async def test_corrupt_workspace_preferences_is_an_isolated_non_overwritable_emp
     assert inspection.preferences_read_only is True
     assert session.read_only is False
     assert session.workspace_preferences_read_only is True
-    assert session.workspace_preferences == Preferences()
+    assert session.workspace_preferences.entries == ()
     assert session.profile.name == "valid profile"
-    with pytest.raises(RuntimeError):
-        commands.config_service.apply_command(
-            ConfigurationCommand(
-                scope="workspace",
-                target="preferences",
-                operation="set",
-                path="language",
-                value="English",
-            )
-        )
     assert commands.execute("/config reset workspace").action is None
     assert "已退役" in commands.execute("/config reset workspace").lines[0]
     assert commands.execute("/config edit workspace language English").action is None

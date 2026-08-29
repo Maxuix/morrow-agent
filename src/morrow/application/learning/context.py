@@ -40,7 +40,7 @@ def _utc(clock: Callable[[], datetime]) -> datetime:
 
 
 class LearningEvidenceExtractor:
-    """Read accepted-Task evidence for the legacy non-Preference Learning pipeline.
+    """Read accepted-Task evidence for the non-Preference Learning pipeline.
 
     Preference v2 reads its own current-user Evidence and has no keyword classifier.
     """

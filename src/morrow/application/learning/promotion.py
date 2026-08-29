@@ -74,10 +74,7 @@ class LearningPromotionService:
                 self.workspace_id, command.candidate_id
             )
         )
-        if candidate is not None and candidate.candidate_type in {
-            LearningCandidateType.PREFERENCE,
-            LearningCandidateType.PROFILE,
-        }:
+        if candidate is not None and candidate.candidate_type is LearningCandidateType.PROFILE:
             return self.configuration.accept_candidate(command, edit=edit)
         operation = "learning_candidate_edit_and_accept" if edit else "learning_candidate_accept"
         payload = {
@@ -700,10 +697,7 @@ class LearningPromotionService:
 
     @staticmethod
     def _validate_scope(candidate_type: LearningCandidateType, scope: LearningScope) -> None:
-        if candidate_type is LearningCandidateType.PREFERENCE:
-            allowed = {LearningScope.GLOBAL, LearningScope.WORKSPACE}
-        else:
-            allowed = {LearningScope.WORKSPACE}
+        allowed = {LearningScope.WORKSPACE}
         if scope not in allowed:
             raise ApplicationError(
                 ApplicationErrorCode.INVALID, "Learning scope is invalid for candidate type"

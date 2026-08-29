@@ -30,10 +30,10 @@ from morrow.core.models import (
     UserMessage,
 )
 from morrow.core.preference_documents import (
-    GlobalConfigV2,
+    GlobalConfig,
     PreferenceDocument,
     PreferenceEntriesPayload,
-    WorkspacePreferenceDocumentV3,
+    WorkspacePreferenceDocument,
 )
 from morrow.core.preference_models import PreferenceEntry, PreferenceScope, PreferenceStatus
 from morrow.core.store import StorageError, StorageErrorCode
@@ -253,7 +253,7 @@ def test_unavailable_preference_reload_uses_diagnosable_empty_layer(tmp_path):
     try:
         session = Session(session_id="ses_1")
 
-        session.generic_workspace_preferences = _document(
+        session.workspace_preferences = _document(
             PreferenceScope.WORKSPACE,
             1,
             _entry("stale", "must not survive", PreferenceScope.WORKSPACE),
@@ -387,12 +387,12 @@ def test_status_and_doctor_keep_preference_and_memory_fields_separate(tmp_path):
         status=PreferenceStatus.DISABLED,
     )
     yaml_store.write_global(
-        GlobalConfigV2(preferences=PreferenceEntriesPayload(entries=(global_entry,))),
+        GlobalConfig(preferences=PreferenceEntriesPayload(entries=(global_entry,))),
         expected_revision=0,
     )
     yaml_store.write_workspace(
         "ws_1",
-        WorkspacePreferenceDocumentV3(entries=(workspace_active, workspace_disabled)),
+        WorkspacePreferenceDocument(entries=(workspace_active, workspace_disabled)),
         expected_revision=0,
     )
     sources = PreferenceRunSources(

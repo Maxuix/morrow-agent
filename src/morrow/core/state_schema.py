@@ -1,8 +1,7 @@
 """Independent state-document schema constants.
 
-The legacy ``CURRENT_SCHEMA_VERSION`` remains for older wire/event contracts;
-new state documents use named constants so one domain cannot silently advance
-another domain's schema.
+State documents use named constants so one domain cannot silently advance
+another domain's schema. Event envelope versions remain owned by the event model.
 """
 
 GLOBAL_CONFIG_LEGACY_SCHEMA_VERSION = 1

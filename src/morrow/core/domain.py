@@ -16,10 +16,8 @@ from typing import Any, Literal
 from pydantic import Field, field_validator, model_validator
 
 from morrow.core.agent_runs import ProviderRuntimeSnapshot
-from morrow.core.completion import OutcomeContract, WorkspaceBaseline
 from morrow.core.models import (
     ModelRef,
-    Preferences,
     Profile,
     ProtocolModel,
     RunPolicy,
@@ -540,7 +538,6 @@ class AgentRunSnapshot(ProtocolModel):
     """Immutable non-secret AgentRun evidence. Not a configuration authority."""
 
     profile: Profile | None = None
-    legacy_preferences: Preferences | None = None
     model: ModelRef
     provider_id: str
     source_revisions: tuple[SourceRevisionRef, ...] = ()
@@ -554,18 +551,16 @@ class AgentRunSnapshot(ProtocolModel):
     memory_selection_digest: str | None = None
     memory_snapshot_revision: int | None = Field(default=None, ge=0)
     frozen_preferences: tuple[FrozenRunPreference, ...] = ()
-    preference_projection_digest: str | None = None
+    preference_projection_digest: str = Field(default_factory=lambda: sha256_digest(""))
     preference_omitted_count: int = Field(default=0, ge=0)
     preference_source_scopes: tuple[Literal["global", "workspace", "session"], ...] = ()
-    preference_refresh_status: Literal["legacy", "ok", "degraded"] = "legacy"
+    preference_refresh_status: Literal["ok", "degraded"] = "ok"
     preference_refresh_error: str | None = Field(default=None, max_length=128)
     # Skill selection/context are reference-only. Full context remains in the
     # dedicated v14 rows and is verified when a Run projection is rebuilt.
     skill_selection_ids: tuple[str, ...] = ()
-    skill_selection_id: str | None = Field(default=None, exclude=True)
     skill_selection_digest: str | None = None
     skill_context_ids: tuple[str, ...] = ()
-    skill_context_id: str | None = Field(default=None, exclude=True)
     skill_context_digest: str | None = None
     skill_selected_count: int = Field(default=0, ge=0)
     skill_omitted_count: int = Field(default=0, ge=0)
@@ -580,12 +575,8 @@ class AgentRunSnapshot(ProtocolModel):
     project_instruction_resolver_version: str | None = None
     project_instruction_sources: tuple[ProjectInstructionSourceRef, ...] = ()
     project_instruction_selection_digest: str | None = None
-    # Optional frozen preparation evidence keeps older snapshots decodable.
     provider_runtime: ProviderRuntimeSnapshot | None = None
     run_policy: RunPolicy | None = None
-    # Read-only legacy fields: new runs never populate or evaluate them.
-    outcome_contract: OutcomeContract | None = None
-    workspace_baseline: WorkspaceBaseline | None = None
 
     @field_validator("provider_id", "runtime_instance_id")
     @classmethod
@@ -619,9 +610,7 @@ class AgentRunSnapshot(ProtocolModel):
 
     @field_validator("preference_projection_digest")
     @classmethod
-    def valid_preference_projection_digest(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
+    def valid_preference_projection_digest(cls, value: str) -> str:
         if not DIGEST_PATTERN.match(value):
             raise ValueError("Preference projection digest must be a SHA-256 hex digest")
         return value
@@ -715,19 +704,6 @@ class AgentRunSnapshot(ProtocolModel):
             raise ValueError("AgentRun MCP snapshot reference is invalid")
         return value
 
-    @model_validator(mode="before")
-    @classmethod
-    def accept_singular_skill_refs(cls, value):
-        if isinstance(value, dict):
-            value = dict(value)
-            if value.get("skill_selection_id") and not value.get("skill_selection_ids"):
-                value["skill_selection_ids"] = (value["skill_selection_id"],)
-            if value.get("skill_context_id") and not value.get("skill_context_ids"):
-                value["skill_context_ids"] = (value["skill_context_id"],)
-            if value.get("skill_selection_ids") and "skill_selected_count" not in value:
-                value["skill_selected_count"] = len(value["skill_selection_ids"])
-        return value
-
     @model_validator(mode="after")
     def enforce_budget_and_redaction(self) -> AgentRunSnapshot:
         memory_fields = (
@@ -744,21 +720,12 @@ class AgentRunSnapshot(ProtocolModel):
         preference_ids = [entry.preference_id for entry in self.frozen_preferences]
         if len(preference_ids) != len(set(preference_ids)):
             raise ValueError("AgentRun frozen Preference IDs must be unique")
-        if self.preference_projection_digest is None and (
-            self.frozen_preferences
-            or self.preference_omitted_count
-            or self.preference_source_scopes
-        ):
-            raise ValueError("AgentRun Preference projection metadata is incomplete")
         scopes = tuple(
             scope
             for scope in ("global", "workspace", "session")
             if any(entry.scope == scope for entry in self.frozen_preferences)
         )
-        if (
-            self.preference_projection_digest is not None
-            and scopes != self.preference_source_scopes
-        ):
+        if scopes != self.preference_source_scopes:
             raise ValueError("AgentRun Preference source scopes do not match frozen entries")
         if (self.preference_refresh_status == "degraded") != (
             self.preference_refresh_error is not None
@@ -815,10 +782,6 @@ class AgentRunSnapshot(ProtocolModel):
             != self.project_instruction_selection_digest
         ):
             raise ValueError("AgentRun project instruction selection digest is invalid")
-        if self.skill_selection_id is None and len(self.skill_selection_ids) == 1:
-            object.__setattr__(self, "skill_selection_id", self.skill_selection_ids[0])
-        if self.skill_context_id is None and len(self.skill_context_ids) == 1:
-            object.__setattr__(self, "skill_context_id", self.skill_context_ids[0])
         dumped = self.model_dump(mode="json")
         payload = canonical_json_bytes(dumped)
         require_payload_budget(payload, AGENT_RUN_SNAPSHOT_MAX_BYTES, label="AgentRun snapshot")

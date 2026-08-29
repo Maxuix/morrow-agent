@@ -43,7 +43,6 @@ from morrow.core.learning import (
     LearningScope,
     LearningSuppression,
     LearningSuppressionStatus,
-    PreferenceCandidatePayload,
 )
 from morrow.core.learning_payloads import LearningCandidateDraft, SkillCandidatePayload
 from morrow.core.learning_ports import LEARNING_CONTEXT_MAX_RENDERED_CHARS
@@ -199,7 +198,7 @@ def test_task_accept_requests_learning_even_when_tool_failures_are_recorded(tmp_
 
 
 @pytest.mark.asyncio
-async def test_worker_routes_legacy_learning_review_without_foreground_execution(tmp_path):
+async def test_worker_routes_learning_review_without_foreground_execution(tmp_path):
     session, journal, api = _api(tmp_path, reviewer=ScriptedLearningReviewer())
     try:
         accepted = _accepted(api, journal)
@@ -222,28 +221,6 @@ async def test_worker_routes_legacy_learning_review_without_foreground_execution
         assert api.get_learning_review(review.review_id).status is LearningReviewStatus.COMPLETED
     finally:
         session.close()
-
-
-def test_preference_v2_flag_blocks_new_legacy_preference_drafts():
-    pipeline = LearningCandidatePipeline(
-        journal=object(),
-        workspace_id="ws_1",
-        id_source=FixedIdSource(),
-        clock=lambda: NOW,
-        events=None,
-        preference_v2_enabled=True,
-    )
-    draft = LearningCandidateDraft(
-        candidate_type=LearningCandidateType.PREFERENCE,
-        operation="set",
-        semantic_key="preference.language",
-        proposed_scope=LearningScope.WORKSPACE,
-        proposed_payload=PreferenceCandidatePayload(path="language", value="zh-CN"),
-        evidence_ids=("lev_one",),
-        temporary_or_durable="durable",
-    )
-
-    assert pipeline._eligible_draft(draft, {}, None) is None
 
 
 def test_skill_candidate_accepts_the_evidence_the_extractor_actually_produces():

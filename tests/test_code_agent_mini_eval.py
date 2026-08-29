@@ -1507,7 +1507,7 @@ def test_permission_equivalence_and_evaluation_approval_contract(tmp_path: Path)
             ToolApprovalRequest(
                 call_id="unknown",
                 effect=ToolEffect.NONE,
-                reason_codes=("legacy_static_approval",),
+                reason_codes=("static_approval",),
             )
         )
     )

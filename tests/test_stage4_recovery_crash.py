@@ -44,7 +44,6 @@ from morrow.core.models import (
     AssistantMessage,
     FunctionToolCall,
     ModelRef,
-    Preferences,
     Profile,
     UserMessage,
 )
@@ -76,7 +75,6 @@ def _digest(label: str) -> str:
 def _snapshot() -> AgentRunSnapshot:
     return AgentRunSnapshot(
         profile=Profile(name="demo"),
-        legacy_preferences=Preferences(language="中文"),
         model=ModelRef(provider_id="p", model_id="m"),
         provider_id="p",
         source_revisions=(
@@ -129,7 +127,7 @@ def _seed(journal: SqliteOperationalJournal, workspace_id: str = "ws_1") -> None
 
 def _intent(**overrides) -> PreparedIntent:
     values = {
-        "tool_name": "read_file",
+        "tool_name": "read",
         "call_id": "call1",
         "ordinal": 1,
         "arguments_digest": _digest("args"),
@@ -185,10 +183,10 @@ def test_discover_classifies_host_command_as_unknown(tmp_path: Path):
     try:
         _seed(journal)
         intent = _intent(
-            tool_name="run_command",
+            tool_name="bash",
             effect_class=EffectClass.UNCONFINED_EXTERNAL_EFFECT,
         )
-        prepared = journal.put_execution("ws_1", _execution(intent, tool_name="run_command"))
+        prepared = journal.put_execution("ws_1", _execution(intent, tool_name="bash"))
         executing = transition_execution(
             prepared,
             ToolExecutionState.EXECUTING,
@@ -225,11 +223,11 @@ def test_file_reconciliation_after_restart(tmp_path: Path):
     try:
         _seed(journal)
         intent = _intent(
-            tool_name="write_file",
+            tool_name="write",
             effect_class=EffectClass.RECONCILEABLE_FILE_WRITE,
             file_evidence=(evidence,),
         )
-        prepared = journal.put_execution("ws_1", _execution(intent, tool_name="write_file"))
+        prepared = journal.put_execution("ws_1", _execution(intent, tool_name="write"))
         executing = transition_execution(
             prepared,
             ToolExecutionState.EXECUTING,
@@ -329,7 +327,7 @@ def test_application_recovery_updates_health_and_resume_run_atomically(tmp_path:
         writer.commit(
             log.plan_append_assistant(
                 AssistantMessage(
-                    tool_calls=(FunctionToolCall(id="call1", name="read_file", arguments="{}"),)
+                    tool_calls=(FunctionToolCall(id="call1", name="read", arguments="{}"),)
                 )
             )
         )
@@ -467,7 +465,7 @@ async def test_session_application_recovery_commands_acknowledge_and_resume(tmp_
                     tool_calls=(
                         FunctionToolCall(
                             id=provider_call_id,
-                            name="read_file",
+                            name="read",
                             arguments="{}",
                         ),
                     )
@@ -476,7 +474,7 @@ async def test_session_application_recovery_commands_acknowledge_and_resume(tmp_
         )
         call_id = durable_call_id(provider_call_id)
         intent = PreparedIntent(
-            tool_name="read_file",
+            tool_name="read",
             call_id=call_id,
             ordinal=1,
             arguments_digest=_digest("args"),
@@ -495,7 +493,7 @@ async def test_session_application_recovery_commands_acknowledge_and_resume(tmp_
                 agent_run_id="arun_crash",
                 call_id=call_id,
                 ordinal=1,
-                tool_name="read_file",
+                tool_name="read",
                 intent=intent,
             ),
         )
@@ -600,8 +598,8 @@ def test_item_recovery_does_not_close_other_open_executions(tmp_path: Path):
             log.plan_append_assistant(
                 AssistantMessage(
                     tool_calls=(
-                        FunctionToolCall(id="call1", name="read_file", arguments="{}"),
-                        FunctionToolCall(id="call2", name="read_file", arguments="{}"),
+                        FunctionToolCall(id="call1", name="read", arguments="{}"),
+                        FunctionToolCall(id="call2", name="read", arguments="{}"),
                     )
                 )
             )
@@ -744,7 +742,7 @@ def test_recovery_resume_creates_an_ungranted_agent_run(tmp_path: Path):
             ),
         )
         intent = _intent(
-            tool_name="run_command",
+            tool_name="bash",
             effect_class=EffectClass.UNCONFINED_EXTERNAL_EFFECT,
             requires_approval=True,
             preview=("unconfined_host: prior opaque Host command",),
@@ -753,7 +751,7 @@ def test_recovery_resume_creates_an_ungranted_agent_run(tmp_path: Path):
             "ws_1",
             _execution(
                 intent,
-                tool_name="run_command",
+                tool_name="bash",
                 permission_snapshot_id="psnap_1",
                 grant_id="grt_1",
                 isolation=IsolationLabel.UNCONFINED_HOST,
@@ -904,10 +902,10 @@ def _crash_at_state(root: str, state: str) -> None:
         _seed(journal)
         if state == "executing_host":
             intent = _intent(
-                tool_name="run_command",
+                tool_name="bash",
                 effect_class=EffectClass.UNCONFINED_EXTERNAL_EFFECT,
             )
-            execution = journal.put_execution("ws_1", _execution(intent, tool_name="run_command"))
+            execution = journal.put_execution("ws_1", _execution(intent, tool_name="bash"))
             execution = transition_execution(
                 execution,
                 ToolExecutionState.EXECUTING,

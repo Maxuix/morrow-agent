@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from morrow.core.models import (
-    GlobalConfig,
     ModelCapabilityOverrides,
     ModelErrorCode,
     ModelProviderError,
@@ -13,6 +12,7 @@ from morrow.core.models import (
     StateWriteStatus,
     provider_error_message,
 )
+from morrow.core.preference_documents import GlobalConfig
 from morrow.core.providers import (
     validate_base_url,
     validate_model_id,
@@ -29,7 +29,7 @@ class ProviderControlConflict(ProviderControlError):
 
 
 class ProviderControlMixin:
-    """Mixin kept separate from legacy onboarding for a small composition surface."""
+    """Mixin kept separate from preset onboarding for a small composition surface."""
 
     def _commit(self, current: GlobalConfig, mutator) -> GlobalConfig:
         result = self.global_store.update(mutator, expected_revision=current.revision)
@@ -269,7 +269,7 @@ class ProviderControlMixin:
         raise RuntimeError("在异步上下文中请使用 sync_models_async")
 
     # Verbose aliases keep the control-plane vocabulary discoverable to callers
-    # without changing the legacy ``ProviderService.add`` preset API.
+    # without changing the ``ProviderService.add`` preset API.
     def provider_add(self, provider_id: str, **kwargs) -> ProviderConfig:
         return self.add_provider(provider_id, **kwargs)
 

@@ -3,9 +3,9 @@
 > 状态：Preference Learning v2 实现、最终集成审查、模拟用户与真实 Provider 验收完成
 > 阶段结果：通用原子 Preference、异步 no-tool Reviewer、可审查 Inbox、确定性 Writer、下一 AgentRun 冻结注入、Project Knowledge/Memory 和 v13 诊断/备份边界均已落地
 
-## 2026-08-23 Preference v2 已实施
+## 当前通用 Preference 已实施
 
-S56–S61 已实现 generic `PreferenceEntry`、同 scope 原子 Writer、v1/v2 decode-only 迁移、
+S56–S61 已实现 generic `PreferenceEntry`、同 scope 原子 Writer、旧 YAML 一次性迁移、
 Operational Store v13 Review/Evidence/Proposal/Writer saga、终态 Turn 同事务 enqueue、进程内异步
 Worker、no-tool Reviewer、独立 Inbox、直接 `manage_preferences` 管理，以及每个新 AgentRun 的
 64-entry/8-KiB 冻结注入。YAML 仍是 Active Preference 唯一权威；SQLite 保存队列、证据与审计，
@@ -28,7 +28,7 @@ Worker、no-tool Reviewer、独立 Inbox、直接 `manage_preferences` 管理，
 原子 Writer 写入通用 `PreferenceEntry`；每个新 AgentRun（包括恢复 Session 的下一 Turn）重新加载
 Active Preferences。Profile、Project Knowledge、YAML/SQLite 单一权威和能力安全边界不随此修订改变。
 
-Preference v2 中，用户明确要求立即管理偏好时使用受审批的 `manage_preferences`；后台推断只能进入
+当前 Preference 中，用户明确要求立即管理偏好时使用受审批的 `manage_preferences`；后台推断只能进入
 Inbox，不能自动写入。该工具复用现有 configuration-write 审批与恢复语义，不修改 bundled capability
 policy 或公开 `AgentEvent` 类型。下文 §3.2、§4.4、§6.1 的固定字段/前台 Preference 描述均只代表
 v12 历史基线；当前行为以本节和已实现代码为准。
@@ -78,7 +78,7 @@ TaskRun 显式进入 accepted
 - TaskOutcome 在显式 acceptance、显式 snapshot 或既有终态关闭里程碑生成；只有 accepted Outcome
   默认触发 Stage 5 Review。
 - 已交付的 v12 基线没有后台 Worker：交互入口使用提交后的有界前台 Review，headless 入口显式执行。
-  Preference v2 已改为 SQLite 持久队列与进程内异步 Worker，并保留显式
+  Preference 已改为 SQLite 持久队列与进程内异步 Worker，并保留显式
   run-pending 入口；它不承诺本阶段未实现的 daemon。
 - LearningReview 失败不影响 TaskOutcome 和任务完成状态。
 - LearningReview 不直接写 Active Preference、Profile、Knowledge 或 Skill。
@@ -391,7 +391,7 @@ purge、安全擦除和备份级删除属于 Stage 10，界面不得把逻辑删
 ### 8.1 只检索 Active 且相关的记录
 
 每次 AgentRun 不应注入全部 Project Knowledge。Stage 5 第一版继续把现有体量很小的合并
-Profile/Preferences 作为兼容 baseline 冻结到 AgentRun；Project Knowledge 必须经过选择。
+Profile/Preferences 以当前结构冻结到 AgentRun；Project Knowledge 必须经过选择。
 
 建议建立：
 

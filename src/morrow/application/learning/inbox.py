@@ -259,10 +259,7 @@ class LearningApplicationService:
 
         fingerprint = self._candidate_fingerprint(candidate, payload, selected_scope, semantic_key)
         configuration_preview: tuple[str, ...] = ()
-        if candidate.candidate_type in {
-            LearningCandidateType.PREFERENCE,
-            LearningCandidateType.PROFILE,
-        }:
+        if candidate.candidate_type is LearningCandidateType.PROFILE:
             (
                 before,
                 available,

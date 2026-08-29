@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import re
-
 from morrow.core.application import ApplicationError, ApplicationErrorCode
 from morrow.core.configuration_promotion import (
     ConfigurationActivationOperation,
@@ -22,10 +20,9 @@ from morrow.core.learning import (
 )
 from morrow.core.learning_payloads import (
     CandidatePayload,
-    PreferenceCandidatePayload,
     ProfileCandidatePayload,
 )
-from morrow.services.preferences import (
+from morrow.services.profile_configuration import (
     ConfigurationConflictError,
     ConfigurationNotFoundError,
     ConfigurationReadOnlyError,
@@ -34,14 +31,6 @@ from morrow.services.preferences import (
 )
 
 from .configuration_promotion_support import promotion_now
-
-_PROJECT_CONTENT_PATTERN = re.compile(
-    r"(?ix)"
-    r"(?:^|\s)(?:pytest|tox|nox|unittest|npm\s+(?:test|run)|yarn\s+(?:test|run)|make\s+test)\b"
-    r"|(?:^|\s)(?:python|python3|node|bash|sh|zsh|git|cargo|uv)\s+"
-    r"|(?:^|[\s])(?:src|tests|docs|\.github|\.git)/[A-Za-z0-9_.${}/-]+"
-    r"|\b(?:repository|repo|working\s+directory|environment|env|architecture|build|deploy)\b"
-)
 
 
 class ConfigurationPromotionPolicyMixin:
@@ -68,7 +57,6 @@ class ConfigurationPromotionPolicyMixin:
     @staticmethod
     def _validate_explicit_evidence(candidate, evidence) -> None:
         if candidate.candidate_type in {
-            LearningCandidateType.PREFERENCE,
             LearningCandidateType.PROFILE,
         } and not any(is_positive_explicit_user_evidence(item) for item in evidence):
             raise ApplicationError(
@@ -148,53 +136,16 @@ class ConfigurationPromotionPolicyMixin:
         edit: bool,
     ) -> None:
         del edit
-        if candidate.candidate_type not in {
-            LearningCandidateType.PREFERENCE,
-            LearningCandidateType.PROFILE,
-        }:
+        if candidate.candidate_type is not LearningCandidateType.PROFILE:
             raise ApplicationError(ApplicationErrorCode.INVALID, "Candidate 不是配置类型")
         if payload.candidate_type is not candidate.candidate_type:
             raise ApplicationError(ApplicationErrorCode.INVALID, "编辑后的 Candidate 类型不匹配")
-        if candidate.candidate_type is LearningCandidateType.PROFILE and scope not in {
+        if scope not in {
             None,
             LearningScope.WORKSPACE.value,
         }:
             raise ApplicationError(ApplicationErrorCode.INVALID, "Profile 只能写入 workspace")
-        if candidate.candidate_type is LearningCandidateType.PREFERENCE:
-            if candidate.proposed_scope is LearningScope.GLOBAL and scope is None:
-                raise ApplicationError(
-                    ApplicationErrorCode.INVALID,
-                    "global Preference 必须由用户在最终预览中显式选择",
-                )
-            selected = self._scope(scope or candidate.proposed_scope.value)
-            if selected not in {LearningScope.GLOBAL, LearningScope.WORKSPACE}:
-                raise ApplicationError(ApplicationErrorCode.INVALID, "Preference scope 无效")
-        if isinstance(payload, PreferenceCandidatePayload):
-            if payload.path == "instructions":
-                if len(payload.value) != 1:
-                    raise ApplicationError(
-                        ApplicationErrorCode.INVALID,
-                        "一次配置变更只能处理一条 instruction",
-                    )
-                if _PROJECT_CONTENT_PATTERN.search(payload.value[0]):
-                    raise ApplicationError(
-                        ApplicationErrorCode.INVALID,
-                        "instruction 必须描述交互偏好，不能包含项目命令、路径或仓库事实",
-                    )
-                if candidate.operation not in {
-                    LearningCandidateOperation.APPEND,
-                    LearningCandidateOperation.REMOVE,
-                }:
-                    raise ApplicationError(
-                        ApplicationErrorCode.INVALID, "instructions 只能 append/remove"
-                    )
-            elif candidate.operation not in {
-                LearningCandidateOperation.SET,
-                LearningCandidateOperation.REPLACE,
-                LearningCandidateOperation.REMOVE,
-            }:
-                raise ApplicationError(ApplicationErrorCode.INVALID, "标量 Preference 操作无效")
-        elif isinstance(payload, ProfileCandidatePayload):
+        if isinstance(payload, ProfileCandidatePayload):
             if payload.path in {"goals", "tech_stack", "constraints", "conventions"}:
                 if len(payload.value) != 1 or candidate.operation not in {
                     LearningCandidateOperation.APPEND,
@@ -216,8 +167,7 @@ class ConfigurationPromotionPolicyMixin:
         payload: CandidatePayload,
         scope: LearningScope,
     ):
-        target = "preferences" if isinstance(payload, PreferenceCandidatePayload) else "profile"
-        if not isinstance(payload, (PreferenceCandidatePayload, ProfileCandidatePayload)):
+        if not isinstance(payload, ProfileCandidatePayload):
             raise ApplicationError(
                 ApplicationErrorCode.INVALID, "Candidate payload 不是配置 payload"
             )
@@ -249,7 +199,7 @@ class ConfigurationPromotionPolicyMixin:
             )
         return self.configuration_command_type(
             scope=scope.value,
-            target=target,
+            target="profile",
             operation=mapped,
             path=payload.path,
             **({} if mapped == "unset" else {"value": value}),

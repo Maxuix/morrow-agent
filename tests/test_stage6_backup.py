@@ -1,4 +1,4 @@
-"""Stage 6 Backup v2 creation, verification and isolated restore."""
+"""Stage 6 Backup creation, verification and isolated restore."""
 
 from __future__ import annotations
 
@@ -40,7 +40,7 @@ def _store(tmp_path):
     return store, handle, journal
 
 
-def test_stage6_v2_round_trip_without_secret_authorities(tmp_path):
+def test_stage6_current_round_trip_without_secret_authorities(tmp_path):
     store, handle, journal = _store(tmp_path)
     artifact = ArtifactService(
         journal=journal,
@@ -51,7 +51,7 @@ def test_stage6_v2_round_trip_without_secret_authorities(tmp_path):
     ExtensionYamlStore(store.layout.data_root).write_global(GlobalExtensionDocument())
     backup = OperationalBackupService(store, journal=journal)
 
-    report = backup.create_v2("stage6-fixture")
+    report = backup.create("stage6-fixture")
     bundle = store.layout.backups_dir / report.bundle_name
     assert report.integrity_ok
     assert (
@@ -59,7 +59,7 @@ def test_stage6_v2_round_trip_without_secret_authorities(tmp_path):
     )
     assert backup.verify(bundle).ok
 
-    restored = backup.restore_v2(bundle, tmp_path / "restored")
+    restored = backup.restore(bundle, tmp_path / "restored")
     assert restored.ok
     assert (tmp_path / "restored" / "store" / "operational.sqlite").is_file()
     assert (tmp_path / "restored" / "extensions.yaml").is_file()
@@ -69,36 +69,23 @@ def test_stage6_v2_round_trip_without_secret_authorities(tmp_path):
     handle.close()
 
 
-def test_stage6_v2_rejects_manifest_file_tampering(tmp_path):
+def test_stage6_current_rejects_manifest_file_tampering(tmp_path):
     store, handle, journal = _store(tmp_path)
     backup = OperationalBackupService(store, journal=journal)
-    report = backup.create_v2("stage6-tamper")
+    report = backup.create("stage6-tamper")
     bundle = store.layout.backups_dir / report.bundle_name
     manifest = bundle / "manifest.json"
     payload = json.loads(manifest.read_text(encoding="utf-8"))
     payload["workspace_ids"] = ["ws_2"]
     manifest.write_text(json.dumps(payload), encoding="utf-8")
-    assert not backup.verify_v2(bundle).ok
+    assert not backup.verify(bundle).ok
     handle.close()
 
 
-def test_stage6_keeps_v1_bundle_decodable(tmp_path):
+def test_stage6_current_rejects_symlinks_and_unsafe_restore_parents(tmp_path):
     store, handle, journal = _store(tmp_path)
     backup = OperationalBackupService(store, journal=journal)
-    report = backup.create("stage6-v1")
-    bundle = store.layout.backups_dir / report.bundle_name
-
-    assert backup.verify(bundle).ok
-    assert (
-        json.loads((bundle / "manifest.json").read_text(encoding="utf-8"))["manifest_version"] == 1
-    )
-    handle.close()
-
-
-def test_stage6_v2_rejects_symlinks_and_unsafe_restore_parents(tmp_path):
-    store, handle, journal = _store(tmp_path)
-    backup = OperationalBackupService(store, journal=journal)
-    report = backup.create_v2("stage6-paths")
+    report = backup.create("stage6-paths")
     bundle = store.layout.backups_dir / report.bundle_name
 
     real_parent = tmp_path / "real-parent"
@@ -106,19 +93,19 @@ def test_stage6_v2_rejects_symlinks_and_unsafe_restore_parents(tmp_path):
     unsafe_parent = tmp_path / "unsafe-parent"
     unsafe_parent.mkdir()
     os.symlink(real_parent, unsafe_parent / "link")
-    restored = backup.restore_v2(bundle, unsafe_parent / "link" / "restored")
+    restored = backup.restore(bundle, unsafe_parent / "link" / "restored")
     assert not restored.ok
     assert restored.issues == ("restore_target_unavailable",)
     assert not (real_parent / "restored").exists()
 
     os.symlink(bundle / "database.sqlite", bundle / "unexpected-link")
-    verification = backup.verify_v2(bundle)
+    verification = backup.verify(bundle)
     assert not verification.ok
     assert "symlink_present" in verification.issues
     handle.close()
 
 
-def test_stage6_v2_copies_only_referenced_managed_skill_and_doctor_detects_drift(tmp_path):
+def test_stage6_current_copies_only_referenced_managed_skill_and_doctor_detects_drift(tmp_path):
     app = build_application(
         state_root=tmp_path / "state",
         credentials=MemoryCredentialStore(),
@@ -139,7 +126,7 @@ def test_stage6_v2_copies_only_referenced_managed_skill_and_doctor_detects_drift
     services.lifecycle.enable("backup-skill")
 
     backup = OperationalBackupService(store, journal=journal)
-    report = backup.create_v2("stage6-skill")
+    report = backup.create("stage6-skill")
     bundle = store.layout.backups_dir / report.bundle_name
     manifest = json.loads((bundle / "manifest.json").read_text(encoding="utf-8"))
     assert {item["version_id"] for item in manifest["skill_versions"]} == {
@@ -148,7 +135,7 @@ def test_stage6_v2_copies_only_referenced_managed_skill_and_doctor_detects_drift
     }
     assert (bundle / "skills" / "imported" / "backup-skill" / first.version_id).is_dir()
     assert (bundle / "skills" / "imported" / "backup-skill" / installed.version_id).is_dir()
-    assert backup.verify_v2(bundle).ok
+    assert backup.verify(bundle).ok
 
     doctor = OperationalDoctor(store).inspect("ws_1")
     assert "skill_package_drift" not in {issue.code for issue in doctor.issues}
@@ -174,7 +161,7 @@ def test_stage6_v2_copies_only_referenced_managed_skill_and_doctor_detects_drift
     handle.close()
 
 
-def test_stage6_v2_is_selectable_from_state_backup_cli(tmp_path):
+def test_current_backup_is_the_only_state_backup_cli_format(tmp_path):
     root = tmp_path / "state"
     OperationalStore(root, maintenance_timeout=0).initialize().close()
     result = CliRunner().invoke(
@@ -184,8 +171,6 @@ def test_stage6_v2_is_selectable_from_state_backup_cli(tmp_path):
             "backup",
             "--name",
             "stage6-cli",
-            "--version",
-            "2",
             "--state-root",
             str(root),
         ],

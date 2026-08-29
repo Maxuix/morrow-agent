@@ -1,19 +1,15 @@
 from __future__ import annotations
 
-import shutil
-
 from morrow.adapters.state.journal import SqliteOperationalJournal
 from morrow.adapters.state.operational import OperationalStore
 from morrow.adapters.state.preference_yaml import PreferenceYamlStore
-from morrow.adapters.state.yaml import ProjectStateYamlStore
 from morrow.application.backup import OperationalBackupService
 from morrow.application.configuration import UpdateConfigurationArguments
 from morrow.core.domain import AgentRunSnapshot
-from morrow.core.models import Preferences, StateWriteStatus
 from morrow.core.preference_documents import (
-    GlobalConfigV2,
+    GlobalConfig,
     PreferenceEntriesPayload,
-    WorkspacePreferenceDocumentV3,
+    WorkspacePreferenceDocument,
 )
 from morrow.core.preference_models import PreferenceEntry, PreferenceScope
 from morrow.core.store import StoreOpenMode
@@ -35,7 +31,7 @@ def test_active_schemas_expose_generic_preferences_and_profile_only_configuratio
     snapshot_fields = AgentRunSnapshot.model_json_schema()["properties"]
     assert "preferences" not in snapshot_fields
     assert "frozen_preferences" in snapshot_fields
-    assert "legacy_preferences" in snapshot_fields
+    assert "legacy_preferences" not in snapshot_fields
 
     tool_schema = UpdateConfigurationArguments.model_json_schema()["properties"]
     assert tool_schema["scope"]["const"] == "workspace"
@@ -50,7 +46,7 @@ def test_isolated_restore_keeps_yaml_authority_and_sqlite_audit_separate(tmp_pat
     try:
         yaml_store = PreferenceYamlStore(source_store.layout.data_root)
         yaml_store.write_global(
-            GlobalConfigV2(
+            GlobalConfig(
                 preferences=PreferenceEntriesPayload(
                     entries=(_entry("pref_global", "默认使用中文回复。", PreferenceScope.GLOBAL),)
                 )
@@ -59,7 +55,7 @@ def test_isolated_restore_keeps_yaml_authority_and_sqlite_audit_separate(tmp_pat
         )
         yaml_store.write_workspace(
             "ws_1",
-            WorkspacePreferenceDocumentV3(
+            WorkspacePreferenceDocument(
                 entries=(
                     _entry(
                         "pref_workspace",
@@ -73,20 +69,13 @@ def test_isolated_restore_keeps_yaml_authority_and_sqlite_audit_separate(tmp_pat
         backup = OperationalBackupService(source_store, journal=journal)
         created = backup.create("isolated-preference-restore")
         bundle = source_store.layout.backups_dir / created.bundle_name
-        assert backup.verify(bundle).preference_references_ok
-        assert not any(
-            "yaml" in path.name or "credential" in path.name for path in bundle.rglob("*")
-        )
+        assert backup.verify(bundle).references_ok
+        assert not any("credential" in path.name for path in bundle.rglob("*"))
 
         destination_root = tmp_path / "restored"
+        assert backup.restore(bundle, destination_root).ok
         destination_store = OperationalStore(destination_root)
-        destination_store.layout.database.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(bundle / "database.sqlite", destination_store.layout.database)
         destination_yaml = PreferenceYamlStore(destination_root)
-        shutil.copy2(yaml_store.global_path, destination_yaml.global_path)
-        destination_workspace_path = destination_yaml.workspace_path("ws_1")
-        destination_workspace_path.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(yaml_store.workspace_path("ws_1"), destination_workspace_path)
 
         restored_global = destination_yaml.load_global()
         restored_workspace = destination_yaml.load_workspace("ws_1")
@@ -98,27 +87,3 @@ def test_isolated_restore_keeps_yaml_authority_and_sqlite_audit_separate(tmp_pat
             assert restored_journal.get_preference_evidence_for_job("ws_1", "prjob_one")
     finally:
         source_handle.close()
-
-
-def test_legacy_workspace_facade_refuses_to_replace_generic_v3_document(tmp_path):
-    root = tmp_path / "state"
-    generic = PreferenceYamlStore(root)
-    generic.write_workspace(
-        "ws_1",
-        WorkspacePreferenceDocumentV3(
-            entries=(_entry("pref_generic", "Keep this generic rule.", PreferenceScope.WORKSPACE),)
-        ),
-        expected_revision=0,
-    )
-    path = generic.workspace_path("ws_1")
-    before = path.read_bytes()
-
-    result = ProjectStateYamlStore(root).write_preferences(
-        "ws_1", Preferences(language="中文"), expected_revision=1
-    )
-
-    assert result.status is StateWriteStatus.FAILED
-    assert result.error == "legacy_preference_write_retired"
-    assert path.read_bytes() == before
-    loaded = generic.load_workspace("ws_1")
-    assert loaded.value.entries[0].preference_id == "pref_generic"

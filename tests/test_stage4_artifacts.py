@@ -41,7 +41,7 @@ from morrow.core.domain import (
 from morrow.core.execution import DurableToolExecution, EffectClass, PreparedIntent
 from morrow.core.faults import FaultPoint, InjectedFault, OnceFaultInjector
 from morrow.core.mcp import McpResultArtifactLink
-from morrow.core.models import ModelRef, Preferences, Profile
+from morrow.core.models import ModelRef, Profile
 from morrow.core.store import DIRECTORY_MODE, FILE_MODE, StorageError, StoreOpenMode
 from morrow.testing import FixedClock, FixedIdSource
 
@@ -449,7 +449,6 @@ def test_tool_execution_can_link_a_command_artifact(tmp_path):
                 session_id="ses_1",
                 snapshot=AgentRunSnapshot(
                     profile=Profile(name="demo"),
-                    legacy_preferences=Preferences(),
                     model=ModelRef(provider_id="p", model_id="m"),
                     provider_id="p",
                     run_policy_digest=digest,

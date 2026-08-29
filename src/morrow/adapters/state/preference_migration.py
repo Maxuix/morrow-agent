@@ -10,9 +10,9 @@ from typing import Any
 from morrow.core.domain import canonical_json_bytes
 from morrow.core.models import ModelRef, ProviderConfig, utc_now
 from morrow.core.preference_documents import (
-    GlobalConfigV2,
+    GlobalConfig,
     PreferenceEntriesPayload,
-    WorkspacePreferenceDocumentV3,
+    WorkspacePreferenceDocument,
 )
 from morrow.core.preference_models import (
     PreferenceEntry,
@@ -179,7 +179,7 @@ def _mapping(value: object, *, code: str) -> dict[str, Any]:
     return dict(value)
 
 
-def decode_global_config(raw: Mapping[str, Any]) -> GlobalConfigV2:
+def decode_global_config(raw: Mapping[str, Any]) -> GlobalConfig:
     """Decode v1 or v2 global config without publishing a migration."""
 
     data = _mapping(raw, code="invalid_global_config")
@@ -191,7 +191,7 @@ def decode_global_config(raw: Mapping[str, Any]) -> GlobalConfigV2:
         raise PreferenceYamlDecodeError("future_global_schema")
     if schema_version == GLOBAL_CONFIG_PREFERENCE_SCHEMA_VERSION:
         try:
-            return GlobalConfigV2.model_validate(data)
+            return GlobalConfig.model_validate(data)
         except ValueError as exc:
             raise PreferenceYamlDecodeError("invalid_global_config") from exc
     if schema_version != LEGACY_GLOBAL_SCHEMA_VERSION:
@@ -216,7 +216,7 @@ def decode_global_config(raw: Mapping[str, Any]) -> GlobalConfigV2:
             if data.get("active_model") is None
             else ModelRef.model_validate(data["active_model"])
         )
-        result = GlobalConfigV2(
+        result = GlobalConfig(
             revision=int(data.get("revision", 0)),
             updated_at=timestamp,
             preferences=PreferenceEntriesPayload(entries=entries),
@@ -228,7 +228,7 @@ def decode_global_config(raw: Mapping[str, Any]) -> GlobalConfigV2:
     return result
 
 
-def decode_workspace_preferences(raw: Mapping[str, Any]) -> WorkspacePreferenceDocumentV3:
+def decode_workspace_preferences(raw: Mapping[str, Any]) -> WorkspacePreferenceDocument:
     """Decode v2 envelope/fixed fields or v3 generic entries."""
 
     data = _mapping(raw, code="invalid_workspace_preferences")
@@ -240,7 +240,7 @@ def decode_workspace_preferences(raw: Mapping[str, Any]) -> WorkspacePreferenceD
         raise PreferenceYamlDecodeError("future_workspace_preference_schema")
     if schema_version == WORKSPACE_PREFERENCE_SCHEMA_VERSION:
         try:
-            return WorkspacePreferenceDocumentV3.model_validate(data)
+            return WorkspacePreferenceDocument.model_validate(data)
         except ValueError as exc:
             raise PreferenceYamlDecodeError("invalid_workspace_preferences") from exc
     if schema_version not in {1, LEGACY_WORKSPACE_PREFERENCE_SCHEMA_VERSION}:
@@ -258,7 +258,7 @@ def decode_workspace_preferences(raw: Mapping[str, Any]) -> WorkspacePreferenceD
             PreferenceScope.WORKSPACE, legacy_preferences, timestamp=timestamp
         )
     try:
-        return WorkspacePreferenceDocumentV3(
+        return WorkspacePreferenceDocument(
             revision=int(data.get("revision", 0)),
             updated_at=timestamp,
             state=state,
@@ -268,16 +268,6 @@ def decode_workspace_preferences(raw: Mapping[str, Any]) -> WorkspacePreferenceD
         raise PreferenceYamlDecodeError("invalid_workspace_preferences") from exc
 
 
-def decode_legacy_agent_run_preferences(raw: object) -> tuple[PreferenceEntry, ...]:
-    """Compatibility wrapper for the read-only historical snapshot decoder."""
-
-    from morrow.adapters.state.preference_snapshot_compat import (
-        decode_legacy_agent_run_preferences as decode_snapshot,
-    )
-
-    return decode_snapshot(raw)
-
-
 __all__ = [
     "GLOBAL_CONFIG_PREFERENCE_SCHEMA_VERSION",
     "LEGACY_GLOBAL_SCHEMA_VERSION",
@@ -285,7 +275,6 @@ __all__ = [
     "WORKSPACE_PREFERENCE_SCHEMA_VERSION",
     "PreferenceYamlDecodeError",
     "decode_global_config",
-    "decode_legacy_agent_run_preferences",
     "decode_workspace_preferences",
     "legacy_entries_from_preferences",
     "preference_id_from_legacy",

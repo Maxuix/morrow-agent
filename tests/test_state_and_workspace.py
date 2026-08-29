@@ -13,7 +13,7 @@ from morrow.adapters.state.yaml import (
     WorkspaceIndexYamlStore,
 )
 from morrow.bootstrap import build_application
-from morrow.core.models import Preferences, Profile, StateLoadStatus, StateWriteStatus
+from morrow.core.models import Profile, StateLoadStatus, StateWriteStatus
 from morrow.services.workspace import (
     DataRoot,
     WorkspaceError,
@@ -202,7 +202,7 @@ def test_distinct_git_worktree_roots_receive_distinct_identities(tmp_path):
     assert first_identity.workspace_id != second_identity.workspace_id
 
 
-def test_two_workspaces_have_isolated_profile_and_preferences(tmp_path):
+def test_two_workspaces_have_isolated_profile_state(tmp_path):
     project_a = tmp_path / "a"
     project_b = tmp_path / "b"
     project_a.mkdir()
@@ -211,7 +211,6 @@ def test_two_workspaces_have_isolated_profile_and_preferences(tmp_path):
     a = app.workspace_service.confirm(app.workspace_service.resolve(project_a))
     b = app.workspace_service.confirm(app.workspace_service.resolve(project_b))
     app.project_store.write_profile(a.workspace_id, Profile(name="A"))
-    app.project_store.write_preferences(a.workspace_id, Preferences(language="中文"))
     assert app.project_store.load_profile(b.workspace_id).value is None
     assert app.project_store.load_preferences(b.workspace_id).value is None
 
@@ -220,19 +219,12 @@ def test_two_workspaces_have_isolated_profile_and_preferences(tmp_path):
     ("document_name", "write_method", "clear_method", "first_value", "second_value"),
     [
         (
-            "preferences.yaml",
-            "write_preferences",
-            "clear_preferences",
-            Preferences(language="中文"),
-            Preferences(language="English"),
-        ),
-        (
             "profile.yaml",
             "write_profile",
             "clear_profile",
             Profile(name="first"),
             Profile(name="second"),
-        ),
+        )
     ],
 )
 def test_clear_persists_revision_and_rejects_stale_recreation(
@@ -323,76 +315,8 @@ def test_missing_workspace_backup_is_distinct_from_missing_primary(tmp_path):
 
 
 @pytest.mark.parametrize(
-    ("document_name", "load_method", "write_method", "legacy_payload", "replacement"),
-    [
-        (
-            "preferences.yaml",
-            "load_preferences",
-            "write_preferences",
-            {"preferences": {"language": "中文"}},
-            Preferences(language="English"),
-        ),
-        (
-            "profile.yaml",
-            "load_profile",
-            "write_profile",
-            {"profile": {"name": "legacy"}},
-            Profile(name="updated"),
-        ),
-    ],
-)
-def test_version_one_workspace_document_is_read_without_rewrite_and_upgraded_on_mutation(
-    tmp_path,
-    document_name,
-    load_method,
-    write_method,
-    legacy_payload,
-    replacement,
-):
-    app = build_application(state_root=tmp_path / "state", credentials=MemoryCredentialStore())
-    path = app.data_root.workspaces_path / "ws_legacy" / document_name
-    path.parent.mkdir(parents=True)
-    path.write_text(
-        yaml.safe_dump(
-            {
-                "schema_version": 1,
-                "revision": 7,
-                "updated_at": "2026-08-14T00:00:00+00:00",
-                **legacy_payload,
-            },
-            sort_keys=False,
-        ),
-        encoding="utf-8",
-    )
-    before = path.read_bytes()
-
-    loaded = getattr(app.project_store, load_method)("ws_legacy")
-
-    assert loaded.status == StateLoadStatus.OK
-    assert loaded.presence.value == "present"
-    assert loaded.revision == 7
-    assert path.read_bytes() == before
-    written = getattr(app.project_store, write_method)(
-        "ws_legacy", replacement, expected_revision=7
-    )
-    assert written.status == StateWriteStatus.OK
-    upgraded = yaml.safe_load(path.read_text(encoding="utf-8"))
-    assert upgraded["schema_version"] == 2
-    assert upgraded["state"] == "present"
-    assert upgraded["revision"] == 8
-
-
-@pytest.mark.parametrize(
     ("document_name", "write_method", "clear_method", "value"),
-    [
-        (
-            "preferences.yaml",
-            "write_preferences",
-            "clear_preferences",
-            Preferences(language="中文"),
-        ),
-        ("profile.yaml", "write_profile", "clear_profile", Profile(name="valid")),
-    ],
+    [("profile.yaml", "write_profile", "clear_profile", Profile(name="valid"))],
 )
 @pytest.mark.parametrize(
     "invalid_bytes",
@@ -421,13 +345,11 @@ def test_invalid_workspace_documents_are_never_overwritten_by_write_or_clear(
 
 def test_revision_conflict_does_not_overwrite_document(tmp_path):
     store = GlobalConfigYamlStore(tmp_path)
-    first = store.update(
-        lambda value: value.model_copy(update={"preferences": Preferences(language="中文")})
-    )
+    first = store.update(lambda value: value)
     assert first.status == StateWriteStatus.OK
     before = (tmp_path / "config.yaml").read_bytes()
     conflict = store.update(
-        lambda value: value.model_copy(update={"preferences": Preferences(language="English")}),
+        lambda value: value,
         expected_revision=0,
     )
     assert conflict.status == StateWriteStatus.REVISION_CONFLICT
@@ -444,9 +366,7 @@ def test_failed_atomic_replace_preserves_source_and_valid_backup(tmp_path):
             raise OSError("injected replacement failure")
 
     failing = GlobalConfigYamlStore(tmp_path, failure_injector=inject)
-    result = failing.update(
-        lambda value: value.model_copy(update={"preferences": Preferences(language="中文")})
-    )
+    result = failing.update(lambda value: value)
     assert result.status == StateWriteStatus.FAILED
     assert (tmp_path / "config.yaml").read_bytes() == before
     assert failing.load().status == StateLoadStatus.OK
@@ -501,12 +421,10 @@ def test_workspace_publication_failures_leave_deterministic_valid_state(
 def test_last_valid_backup_can_be_inspected_without_undo_command(tmp_path):
     store = GlobalConfigYamlStore(tmp_path)
     store.update(lambda value: value)
-    store.update(
-        lambda value: value.model_copy(update={"preferences": Preferences(language="中文")})
-    )
-    backup = store.document.load_backup()
+    store.update(lambda value: value)
+    backup = store.load_backup()
     assert backup.status == StateLoadStatus.OK
-    assert backup.value.preferences.language is None
+    assert backup.value.revision == 1
 
 
 def test_corrupt_and_future_documents_are_distinguishable(tmp_path):
@@ -656,3 +574,31 @@ def test_competing_workspace_publications_are_serialized_across_processes(
     loaded = store.load_profile(workspace_id)
     assert loaded.revision == expected_success_revision
     assert loaded.presence.value == expected_presence
+
+
+def test_profile_v1_is_migrated_once_and_normal_loads_are_current_only(tmp_path):
+    workspace_id = "ws_profile_migration"
+    path = tmp_path / "workspaces" / workspace_id / "profile.yaml"
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        yaml.safe_dump(
+            {
+                "schema_version": 1,
+                "revision": 4,
+                "profile": {"name": "migrated"},
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    loaded = ProjectStateYamlStore(tmp_path).load_profile(workspace_id)
+
+    assert loaded.status is StateLoadStatus.OK
+    assert loaded.revision == 5
+    assert loaded.value.profile.name == "migrated"
+    assert yaml.safe_load(path.read_text(encoding="utf-8"))["schema_version"] == 2
+    assert (
+        yaml.safe_load(path.with_suffix(".yaml.bak").read_text(encoding="utf-8"))["schema_version"]
+        == 1
+    )

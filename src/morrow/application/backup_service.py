@@ -1,4 +1,4 @@
-"""Stage 6 Backup bundle v2 creation, verification and isolated restore."""
+"""Stage 6 Backup bundle creation, verification and isolated restore."""
 
 from __future__ import annotations
 
@@ -33,18 +33,22 @@ from morrow.application.skills.backup import (
 )
 from morrow.core.artifacts import ArtifactIntegrityError, ArtifactState
 from morrow.core.backup import (
-    BackupV2ArtifactEntry,
-    BackupV2FileEntry,
-    BackupV2FileKind,
-    BackupV2Manifest,
-    BackupV2Reference,
-    BackupV2RestoreReport,
-    BackupV2SkillEntry,
-    BackupV2VerificationReport,
-    BackupV2YamlEntry,
+    BackupArtifactEntry,
+    BackupFileEntry,
+    BackupFileKind,
+    BackupManifest,
+    BackupReference,
+    BackupRestoreReport,
+    BackupSkillEntry,
+    BackupVerificationReport,
+    BackupYamlEntry,
 )
 from morrow.core.preference_documents import GLOBAL_CONFIG_SCHEMA_VERSION
-from morrow.core.state_schema import WORKSPACE_INDEX_SCHEMA_VERSION
+from morrow.core.state_schema import (
+    WORKSPACE_INDEX_SCHEMA_VERSION,
+    WORKSPACE_PREFERENCE_SCHEMA_VERSION,
+    WORKSPACE_PROFILE_SCHEMA_VERSION,
+)
 from morrow.core.store import (
     DIRECTORY_MODE,
     FILE_MODE,
@@ -54,24 +58,24 @@ from morrow.core.store import (
 )
 
 
-class BackupV2Error(RuntimeError):
-    """Sanitized v2 backup/restore failure."""
+class BackupError(RuntimeError):
+    """Sanitized backup/restore failure."""
 
 
-class Stage6BackupService:
+class BackupService:
     """Own the Stage 6-specific half of the operational backup composition."""
 
     def __init__(self, store: OperationalStore) -> None:
         self.store = store
 
-    def create(self, bundle_name: str) -> tuple[Path, BackupV2Manifest, str]:
+    def create(self, bundle_name: str) -> tuple[Path, BackupManifest, str]:
         self._validate_name(bundle_name)
         final = self.store.layout.backups_dir / f"{bundle_name}.bundle"
         if os.path.lexists(final):
-            raise BackupV2Error("backup bundle already exists")
+            raise BackupError("backup bundle already exists")
         self.store.ensure_layout()
         staging = Path(
-            tempfile.mkdtemp(prefix=f".{bundle_name}.v2-", dir=self.store.layout.backups_dir)
+            tempfile.mkdtemp(prefix=f".{bundle_name}.bundle-", dir=self.store.layout.backups_dir)
         )
         temporary_database: Path | None = None
         source_handle = None
@@ -120,17 +124,17 @@ class Stage6BackupService:
                 self._write_manifest(staging, manifest)
                 verification = self.verify(staging, allow_staging=True)
                 if not verification.ok:
-                    raise BackupV2Error("backup v2 failed verification")
+                    raise BackupError("backup failed verification")
                 if os.path.lexists(final):
-                    raise BackupV2Error("backup bundle already exists")
+                    raise BackupError("backup bundle already exists")
                 os.replace(staging, final)
                 _fsync_directory(final.parent)
                 staging = Path()
             return final, manifest, _manifest_digest(final / "manifest.json")
-        except (BackupV2Error, SkillBackupError, StorageError, Timeout) as exc:
-            raise BackupV2Error("backup v2 could not be completed") from exc
+        except (BackupError, SkillBackupError, StorageError, Timeout) as exc:
+            raise BackupError("backup could not be completed") from exc
         except (OSError, sqlite3.Error, TypeError, ValueError, yaml.YAMLError) as exc:
-            raise BackupV2Error("backup v2 could not be completed") from exc
+            raise BackupError("backup could not be completed") from exc
         finally:
             if source_handle is not None:
                 source_handle.close()
@@ -139,7 +143,7 @@ class Stage6BackupService:
             if staging != Path() and staging.exists():
                 _remove_owned_directory(staging)
 
-    def verify(self, bundle: Path, *, allow_staging: bool = False) -> BackupV2VerificationReport:
+    def verify(self, bundle: Path, *, allow_staging: bool = False) -> BackupVerificationReport:
         root = self._validate_bundle(bundle, allow_staging=allow_staging)
         issues: list[str] = []
         manifest, manifest_ok = self._read_manifest(root, issues)
@@ -157,7 +161,7 @@ class Stage6BackupService:
         credentials_excluded = _credentials_excluded(root)
         if not credentials_excluded:
             issues.append("credentials_present")
-        return BackupV2VerificationReport(
+        return BackupVerificationReport(
             bundle_name=root.name,
             manifest_ok=manifest_ok,
             database_integrity_ok=database_ok,
@@ -171,10 +175,10 @@ class Stage6BackupService:
             issues=tuple(dict.fromkeys(issues)),
         )
 
-    def restore(self, bundle: Path, target_root: Path) -> BackupV2RestoreReport:
+    def restore(self, bundle: Path, target_root: Path) -> BackupRestoreReport:
         verification = self.verify(bundle)
         if not verification.ok:
-            return BackupV2RestoreReport(
+            return BackupRestoreReport(
                 bundle_name=bundle.name,
                 target_root=str(target_root),
                 restored=False,
@@ -183,7 +187,7 @@ class Stage6BackupService:
         root = self._validate_bundle(bundle)
         target = target_root.expanduser().absolute()
         if os.path.lexists(target):
-            return BackupV2RestoreReport(
+            return BackupRestoreReport(
                 bundle_name=root.name,
                 target_root=str(target),
                 restored=False,
@@ -191,7 +195,7 @@ class Stage6BackupService:
             )
         try:
             target.relative_to(root)
-            return BackupV2RestoreReport(
+            return BackupRestoreReport(
                 bundle_name=root.name,
                 target_root=str(target),
                 restored=False,
@@ -205,7 +209,7 @@ class Stage6BackupService:
             _assert_directory_chain(target.parent)
             temporary = Path(tempfile.mkdtemp(prefix=f".{root.name}.restore-", dir=target.parent))
         except OSError:
-            return BackupV2RestoreReport(
+            return BackupRestoreReport(
                 bundle_name=root.name,
                 target_root=str(target),
                 restored=False,
@@ -214,27 +218,27 @@ class Stage6BackupService:
         try:
             manifest, _ = self._read_manifest(root, [])
             if manifest is None:
-                raise BackupV2Error("backup v2 manifest is unavailable")
+                raise BackupError("backup manifest is unavailable")
             for item in manifest.files:
                 source = root / item.path
                 relative = Path(item.path)
                 destination = temporary / relative
-                if item.kind is BackupV2FileKind.DATABASE:
+                if item.kind is BackupFileKind.DATABASE:
                     destination = temporary / "store" / "operational.sqlite"
                 _copy_verified_file(source, destination, expected_digest=item.sha256)
             _fsync_directory(temporary)
             if os.path.lexists(target):
-                raise BackupV2Error("restore target appeared during publication")
+                raise BackupError("restore target appeared during publication")
             os.replace(temporary, target)
             _fsync_directory(target.parent)
             temporary = Path()
-            return BackupV2RestoreReport(
+            return BackupRestoreReport(
                 bundle_name=root.name,
                 target_root=str(target),
                 restored=True,
             )
-        except (OSError, ValueError, BackupV2Error):
-            return BackupV2RestoreReport(
+        except (OSError, ValueError, BackupError):
+            return BackupRestoreReport(
                 bundle_name=root.name,
                 target_root=str(target),
                 restored=False,
@@ -254,25 +258,25 @@ class Stage6BackupService:
 
     def _capture_artifacts(
         self, journal: SqliteOperationalJournal, target: Path
-    ) -> tuple[tuple[BackupV2ArtifactEntry, ...], tuple[BackupV2FileEntry, ...]]:
+    ) -> tuple[tuple[BackupArtifactEntry, ...], tuple[BackupFileEntry, ...]]:
         target.mkdir(parents=True, exist_ok=True, mode=DIRECTORY_MODE)
         filesystem = FilesystemArtifactStore(self.store.layout)
-        entries: list[BackupV2ArtifactEntry] = []
-        files: list[BackupV2FileEntry] = []
+        entries: list[BackupArtifactEntry] = []
+        files: list[BackupFileEntry] = []
         for workspace_id in journal.list_workspace_ids():
             for metadata in journal.list_artifacts(workspace_id):
                 if metadata.state is not ArtifactState.AVAILABLE:
-                    raise BackupV2Error("v2 backup requires every Artifact to be available")
+                    raise BackupError("current backup requires every Artifact to be available")
                 try:
                     filesystem.verify(metadata)
                     source = filesystem.existing_final_path(metadata.artifact_id)
                     destination = target / metadata.filename
                     _copy_verified_file(source, destination, expected_digest=metadata.sha256)
                 except (ArtifactIntegrityError, OSError) as exc:
-                    raise BackupV2Error("referenced Artifact is missing or changed") from exc
+                    raise BackupError("referenced Artifact is missing or changed") from exc
                 digest, size = _hash_file(destination)
                 relative = _relative(self._staging_root(target), destination)
-                entry = BackupV2ArtifactEntry(
+                entry = BackupArtifactEntry(
                     artifact_id=metadata.artifact_id,
                     workspace_id=metadata.workspace_id,
                     state=metadata.state.value,
@@ -285,9 +289,9 @@ class Stage6BackupService:
                 )
                 entries.append(entry)
                 files.append(
-                    BackupV2FileEntry(
+                    BackupFileEntry(
                         path=relative,
-                        kind=BackupV2FileKind.ARTIFACT,
+                        kind=BackupFileKind.ARTIFACT,
                         sha256=digest,
                         byte_size=size,
                     )
@@ -299,20 +303,20 @@ class Stage6BackupService:
         connection: sqlite3.Connection,
         database: Path,
         workspace_ids: tuple[str, ...],
-        yaml_documents: tuple[tuple[BackupV2YamlEntry, Path], ...],
+        yaml_documents: tuple[tuple[BackupYamlEntry, Path], ...],
         skills: SkillBackupCapture,
-        artifacts: tuple[BackupV2ArtifactEntry, ...],
-        artifact_files: tuple[BackupV2FileEntry, ...],
+        artifacts: tuple[BackupArtifactEntry, ...],
+        artifact_files: tuple[BackupFileEntry, ...],
         schema_version: int,
-    ) -> BackupV2Manifest:
+    ) -> BackupManifest:
         yaml_entries = tuple(item for item, _path in yaml_documents)
         yaml_files = tuple(
-            BackupV2FileEntry(
+            BackupFileEntry(
                 path=item.path,
                 kind=(
-                    BackupV2FileKind.EXTENSION_YAML
+                    BackupFileKind.EXTENSION_YAML
                     if item.path.endswith("extensions.yaml")
-                    else BackupV2FileKind.CONFIGURATION
+                    else BackupFileKind.CONFIGURATION
                 ),
                 sha256=item.sha256,
                 byte_size=(root / item.path).stat().st_size,
@@ -321,28 +325,28 @@ class Stage6BackupService:
         )
         database_path = "database.sqlite"
         database_digest, database_size = _hash_file(database)
-        database_file = BackupV2FileEntry(
+        database_file = BackupFileEntry(
             path=database_path,
-            kind=BackupV2FileKind.DATABASE,
+            kind=BackupFileKind.DATABASE,
             sha256=database_digest,
             byte_size=database_size,
         )
         references = [
-            BackupV2Reference(
+            BackupReference(
                 kind="skill_version", identifier=item.version_id, target=item.package_path
             )
             for item in skills.skills
         ]
         references.extend(
-            BackupV2Reference(kind="artifact", identifier=item.artifact_id, target=item.path)
+            BackupReference(kind="artifact", identifier=item.artifact_id, target=item.path)
             for item in artifacts
         )
         references.extend(
-            BackupV2Reference(kind="yaml", identifier=item.path, target=item.path)
+            BackupReference(kind="yaml", identifier=item.path, target=item.path)
             for item in yaml_entries
         )
         schema_versions = {"operational": schema_version, "extension_yaml": 1}
-        return BackupV2Manifest(
+        return BackupManifest(
             schema_version=schema_version,
             schema_versions=schema_versions,
             workspace_ids=tuple(sorted(set(workspace_ids))),
@@ -359,7 +363,7 @@ class Stage6BackupService:
         )
 
     @staticmethod
-    def _write_manifest(root: Path, manifest: BackupV2Manifest) -> None:
+    def _write_manifest(root: Path, manifest: BackupManifest) -> None:
         raw = json.dumps(
             manifest.model_dump(mode="json"),
             ensure_ascii=False,
@@ -382,7 +386,7 @@ class Stage6BackupService:
         os.replace(digest, root / "manifest.sha256")
         _fsync_directory(root)
 
-    def _capture_yaml_documents(self, staging: Path) -> tuple[tuple[BackupV2YamlEntry, Path], ...]:
+    def _capture_yaml_documents(self, staging: Path) -> tuple[tuple[BackupYamlEntry, Path], ...]:
         source_root = self.store.layout.data_root
         candidates: list[tuple[Path, str, str | None]] = []
         for relative, scope, scope_id in (
@@ -393,8 +397,14 @@ class Stage6BackupService:
             candidates.append((source_root / relative, scope, scope_id))
         for workspace_id in self._workspace_ids_from_paths():
             base = source_root / "workspaces" / workspace_id
-            candidates.append((base / "extensions.yaml", "workspace", workspace_id))
-        captured: list[tuple[BackupV2YamlEntry, Path]] = []
+            candidates.extend(
+                (
+                    (base / "extensions.yaml", "workspace", workspace_id),
+                    (base / "preferences.yaml", "workspace", workspace_id),
+                    (base / "profile.yaml", "workspace", workspace_id),
+                )
+            )
+        captured: list[tuple[BackupYamlEntry, Path]] = []
         for source, scope, scope_id in candidates:
             if not os.path.lexists(source):
                 continue
@@ -405,7 +415,7 @@ class Stage6BackupService:
             schema = _schema_int(payload)
             revision = _revision_int(payload)
             if schema > _supported_configuration_schema(relative):
-                raise BackupV2Error("configuration schema is newer than this client")
+                raise BackupError("configuration schema is newer than this client")
             if relative.endswith("extensions.yaml"):
                 extension_store = ExtensionYamlStore(staging, create=False)
                 destination = staging / relative
@@ -416,7 +426,7 @@ class Stage6BackupService:
                     else extension_store.load_workspace(scope_id or "")
                 )
                 if load.status is not ExtensionYamlLoadStatus.OK or load.value is None:
-                    raise BackupV2Error("Extension YAML is unavailable")
+                    raise BackupError("Extension YAML is unavailable")
                 schema = load.source_schema_version or schema
                 revision = load.revision
             else:
@@ -424,7 +434,7 @@ class Stage6BackupService:
                 _copy_bytes(source, destination)
             captured.append(
                 (
-                    BackupV2YamlEntry(
+                    BackupYamlEntry(
                         path=relative,
                         scope=scope,
                         scope_id=scope_id,
@@ -440,18 +450,18 @@ class Stage6BackupService:
     def _recheck_source(
         self,
         signatures: dict[str, tuple[str, int]],
-        skills: tuple[BackupV2SkillEntry, ...],
+        skills: tuple[BackupSkillEntry, ...],
     ) -> None:
         current = {}
         for path in signatures:
             current[path] = _file_signature(self.store.layout.data_root / path)
         if current != signatures:
-            raise BackupV2Error("configuration changed while backup was being created")
+            raise BackupError("configuration changed while backup was being created")
         ok, _issues = verify_skill_capture(self.store.layout.data_root, skills)
         if not ok:
-            raise BackupV2Error("Skill package changed while backup was being created")
+            raise BackupError("Skill package changed while backup was being created")
 
-    def _signatures(self, documents: tuple[tuple[BackupV2YamlEntry, Path], ...]):
+    def _signatures(self, documents: tuple[tuple[BackupYamlEntry, Path], ...]):
         return {
             item.path: _file_signature(self.store.layout.data_root / item.path)
             for item, _root in documents
@@ -500,7 +510,7 @@ class Stage6BackupService:
                 for ch in name
             )
         ):
-            raise BackupV2Error("backup bundle name is invalid")
+            raise BackupError("backup bundle name is invalid")
 
     def _validate_bundle(self, bundle: Path, *, allow_staging: bool = False) -> Path:
         root = bundle.expanduser().absolute()
@@ -508,14 +518,14 @@ class Stage6BackupService:
         try:
             root.relative_to(base)
         except ValueError as exc:
-            raise BackupV2Error("backup bundle is outside the managed store") from exc
+            raise BackupError("backup bundle is outside the managed store") from exc
         if not root.is_dir() or root.is_symlink():
-            raise BackupV2Error("backup bundle is missing")
+            raise BackupError("backup bundle is missing")
         if not allow_staging and not root.name.endswith(".bundle"):
-            raise BackupV2Error("backup bundle target is invalid")
+            raise BackupError("backup bundle target is invalid")
         return root
 
-    def _read_manifest(self, root: Path, issues: list[str]) -> tuple[BackupV2Manifest | None, bool]:
+    def _read_manifest(self, root: Path, issues: list[str]) -> tuple[BackupManifest | None, bool]:
         path = root / "manifest.json"
         digest_path = root / "manifest.sha256"
         try:
@@ -530,12 +540,12 @@ class Stage6BackupService:
             payload = json.loads(raw.decode("utf-8"))
             if payload.get("manifest_version") != 2:
                 raise ValueError
-            return BackupV2Manifest.model_validate(payload), True
+            return BackupManifest.model_validate(payload), True
         except (OSError, UnicodeError, ValueError, TypeError, json.JSONDecodeError):
             issues.append("manifest_invalid")
             return None, False
 
-    def _verify_files(self, root: Path, manifest: BackupV2Manifest, issues: list[str]) -> bool:
+    def _verify_files(self, root: Path, manifest: BackupManifest, issues: list[str]) -> bool:
         expected = {item.path for item in manifest.files}
         actual: set[str] = set()
         safe = True
@@ -567,7 +577,7 @@ class Stage6BackupService:
                 safe = False
         return safe
 
-    def _verify_yaml(self, root: Path, manifest: BackupV2Manifest, issues: list[str]) -> bool:
+    def _verify_yaml(self, root: Path, manifest: BackupManifest, issues: list[str]) -> bool:
         valid = True
         by_path = {item.path: item for item in manifest.files}
         for item in manifest.yaml_documents:
@@ -577,9 +587,17 @@ class Stage6BackupService:
                 if item.path.endswith("extensions.yaml"):
                     if item.path != expected_path:
                         raise ValueError
-                elif item.path not in {"config.yaml", "workspace-index.yaml"}:
-                    raise ValueError
-                elif item.scope != "global" or item.scope_id is not None:
+                elif item.path in {"config.yaml", "workspace-index.yaml"}:
+                    if item.scope != "global" or item.scope_id is not None:
+                        raise ValueError
+                elif item.scope == "workspace" and item.scope_id is not None:
+                    expected = {
+                        f"workspaces/{item.scope_id}/preferences.yaml",
+                        f"workspaces/{item.scope_id}/profile.yaml",
+                    }
+                    if item.path not in expected:
+                        raise ValueError
+                else:
                     raise ValueError
                 raw = _read_regular_file(path)
                 payload = _parse_safe_yaml(raw)
@@ -601,8 +619,8 @@ class Stage6BackupService:
                         raise ValueError
                 file_entry = by_path.get(item.path)
                 if file_entry is None or file_entry.kind not in {
-                    BackupV2FileKind.EXTENSION_YAML,
-                    BackupV2FileKind.CONFIGURATION,
+                    BackupFileKind.EXTENSION_YAML,
+                    BackupFileKind.CONFIGURATION,
                 }:
                     raise ValueError
             except (OSError, UnicodeError, TypeError, ValueError, yaml.YAMLError):
@@ -610,7 +628,7 @@ class Stage6BackupService:
                 valid = False
         return valid
 
-    def _verify_artifacts(self, root: Path, manifest: BackupV2Manifest, issues: list[str]) -> bool:
+    def _verify_artifacts(self, root: Path, manifest: BackupManifest, issues: list[str]) -> bool:
         valid = True
         for item in manifest.artifacts:
             path = root / item.path
@@ -626,7 +644,7 @@ class Stage6BackupService:
         return valid
 
     def _verify_database(
-        self, root: Path, manifest: BackupV2Manifest, issues: list[str]
+        self, root: Path, manifest: BackupManifest, issues: list[str]
     ) -> tuple[bool, bool, bool]:
         path = root / manifest.database_path
         integrity = foreign_keys = references = False
@@ -645,13 +663,21 @@ class Stage6BackupService:
                     issues.append("database_integrity")
                 if not foreign_keys:
                     issues.append("foreign_keys")
-                _, memory_issues = verify_memory_references(connection)
-                _, learning_issues = verify_learning_references(connection)
-                _, preference_issues = verify_preference_references(connection)
+                memory_ok, memory_issues = verify_memory_references(connection)
+                learning_ok, learning_issues = verify_learning_references(connection)
+                preference_ok, preference_issues = verify_preference_references(connection)
                 issues.extend(memory_issues + learning_issues + preference_issues)
                 mcp_ok, mcp_issues = verify_mcp_backup_references(connection)
                 issues.extend(mcp_issues)
-                references = self._verify_cross_store_rows(connection, manifest, issues) and mcp_ok
+                references = all(
+                    (
+                        memory_ok,
+                        learning_ok,
+                        preference_ok,
+                        mcp_ok,
+                        self._verify_cross_store_rows(connection, manifest, issues),
+                    )
+                )
             finally:
                 connection.close()
         except (OSError, sqlite3.Error):
@@ -660,7 +686,7 @@ class Stage6BackupService:
 
     @staticmethod
     def _verify_cross_store_rows(
-        connection: sqlite3.Connection, manifest: BackupV2Manifest, issues: list[str]
+        connection: sqlite3.Connection, manifest: BackupManifest, issues: list[str]
     ) -> bool:
         valid = True
         if _has_table(connection, "skill_versions"):
@@ -729,7 +755,7 @@ class _ConnectionExecutor:
         return self.connection.execute(sql, parameters).fetchall()
 
 
-def _extension_bindings(item: BackupV2YamlEntry, root: Path):
+def _extension_bindings(item: BackupYamlEntry, root: Path):
     raw = _parse_safe_yaml(_read_regular_file(root / item.path))
     from morrow.core.skills.bindings import GlobalExtensionDocument, WorkspaceExtensionDocument
 
@@ -760,6 +786,10 @@ def _supported_configuration_schema(path: str) -> int:
         return max(GLOBAL_CONFIG_SCHEMA_VERSION, 2)
     if path == "workspace-index.yaml":
         return WORKSPACE_INDEX_SCHEMA_VERSION
+    if path.endswith("/preferences.yaml"):
+        return WORKSPACE_PREFERENCE_SCHEMA_VERSION
+    if path.endswith("/profile.yaml"):
+        return WORKSPACE_PROFILE_SCHEMA_VERSION
     return 1
 
 
@@ -841,14 +871,14 @@ def _assert_safe_chain(root: Path, path: Path) -> None:
     try:
         relative = path.absolute().relative_to(root.absolute())
     except ValueError as exc:
-        raise BackupV2Error("backup source path escapes the data root") from exc
+        raise BackupError("backup source path escapes the data root") from exc
     current = root.absolute()
     for part in relative.parts:
         current /= part
         info = os.lstat(current)
         if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):
             if current != path.absolute():
-                raise BackupV2Error("backup source path contains an unsafe directory")
+                raise BackupError("backup source path contains an unsafe directory")
 
 
 def _assert_directory_chain(path: Path) -> None:
@@ -869,7 +899,7 @@ def _assert_directory_chain(path: Path) -> None:
 def _copy_bytes(source: Path, destination: Path) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True, mode=DIRECTORY_MODE)
     if destination.exists() and destination.is_symlink():
-        raise BackupV2Error("backup destination is a symlink")
+        raise BackupError("backup destination is a symlink")
     destination.write_bytes(_read_regular_file(source))
     os.chmod(destination, FILE_MODE)
 
@@ -880,10 +910,10 @@ def _copy_verified_file(
     raw = _read_regular_file(source)
     digest = hashlib.sha256(raw).hexdigest()
     if expected_digest is not None and digest != expected_digest:
-        raise BackupV2Error("source file changed during backup")
+        raise BackupError("source file changed during backup")
     destination.parent.mkdir(parents=True, exist_ok=True, mode=DIRECTORY_MODE)
     if destination.exists() and destination.is_symlink():
-        raise BackupV2Error("restore destination is a symlink")
+        raise BackupError("restore destination is a symlink")
     destination.write_bytes(raw)
     os.chmod(destination, FILE_MODE)
 
@@ -943,4 +973,4 @@ def _fsync_directory(path: Path) -> None:
         os.close(descriptor)
 
 
-__all__ = ["BackupV2Error", "Stage6BackupService"]
+__all__ = ["BackupError", "BackupService"]
