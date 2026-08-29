@@ -118,7 +118,6 @@ from morrow.runtime.ids import RandomIdSource
 from morrow.runtime.policy import (
     AgentPolicy,
     RuntimePolicy,
-    has_legacy_agent_run_overrides,
     load_runtime_policy,
 )
 from morrow.runtime.session import Session
@@ -329,11 +328,9 @@ def _default_tool_executor(
         registry.register(make_configuration_tool(config_service))
     if preference_service is not None:
         registry.register(make_preference_management_tool(preference_service))
-    for tool in make_mainstream_read_search_tools(
-        files, search, long_horizon=run_policy.is_long_horizon
-    ):
+    for tool in make_mainstream_read_search_tools(files, search):
         registry.register(tool)
-    if run_policy.is_long_horizon and artifacts is not None:
+    if artifacts is not None:
         registry.register(make_read_artifact_tool(artifacts))
     registry.register(make_edit_tool(mutation, changes))
     registry.register(make_write_tool(mutation, changes))
@@ -633,7 +630,6 @@ def build_session_application(
     permission_profile: PermissionProfile | None = None,
     metrics_enabled: bool = True,
     resume_session_id: str | None = None,
-    long_horizon: bool | None = None,
 ):
     inspection = app.workspace_state_service.inspect(identity.workspace_id)
     profile_result = inspection.profile
@@ -784,7 +780,6 @@ def build_session_application(
         sandbox_available=sandbox_capability.supported,
     )
     adapter_id = provider_config.adapter if provider_config else "openai-compatible"
-    adapter_support = app.registry.tool_support(adapter_id)
     configured_model = (
         provider_config.models.get(model.model_id) if provider_config is not None else None
     )
@@ -794,32 +789,14 @@ def build_session_application(
         model,
         configured_model.capabilities if configured_model is not None else None,
     )
-    configured_overrides = (
-        config.runtime_policy.agent_run if config is not None and config.runtime_policy else None
+    run_policy = app.agent_policy.resolve(
+        model,
+        tool_protocol=exact_capabilities.tool_protocol,
+        multiple_tool_calls=exact_capabilities.multiple_tool_calls,
+        context_window_tokens=exact_capabilities.context_window_tokens,
+        max_output_tokens=exact_capabilities.max_output_tokens,
+        settings=app.runtime_policy.long_horizon,
     )
-    legacy_overrides = has_legacy_agent_run_overrides(configured_overrides)
-    use_long_horizon = long_horizon if long_horizon is not None else provider_config is not None
-    if long_horizon is None and legacy_overrides:
-        use_long_horizon = False
-    if use_long_horizon:
-        if legacy_overrides:
-            raise ValueError(
-                "legacy runtime-policy overrides require migration before a long-horizon run"
-            )
-        run_policy = app.agent_policy.resolve_long_horizon(
-            model,
-            tool_protocol=exact_capabilities.tool_protocol,
-            multiple_tool_calls=exact_capabilities.multiple_tool_calls,
-            context_window_tokens=exact_capabilities.context_window_tokens,
-            max_output_tokens=exact_capabilities.max_output_tokens,
-            settings=app.runtime_policy.long_horizon,
-        )
-    else:
-        run_policy = app.agent_policy.resolve(
-            model,
-            tool_protocol=adapter_support.tool_protocol,
-            multiple_tool_calls=adapter_support.multiple_tool_calls,
-        )
     context_builder = ContextBuilder(
         run_policy=run_policy,
         estimate_request_chars=estimate_request_chars,
@@ -1073,7 +1050,7 @@ def build_session_application(
             tools=tool_executor.definitions if tool_executor is not None else (),
             prompt_assembler=prompt_assembler,
         )
-        legacy_prepared = PreparedAgentRunRuntime(
+        injected_prepared = PreparedAgentRunRuntime(
             spec=legacy_spec,
             provider=provider,
             model=model,
@@ -1089,12 +1066,11 @@ def build_session_application(
             frozen_credential_resolver=app.provider_service.resolve_frozen_credential,
             estimate_request_chars=estimate_request_chars,
             tool_factory=make_tools,
-            legacy=legacy_prepared,
+            injected=injected_prepared,
             workspace_id=identity.workspace_id,
             mcp_factory=prepare_mcp,
             mcp_rehydrate_factory=rehydrate_mcp,
             prompt_assembler=prompt_assembler,
-            long_horizon=use_long_horizon,
             long_horizon_settings=app.runtime_policy.long_horizon,
         )
         if resume_session_id:

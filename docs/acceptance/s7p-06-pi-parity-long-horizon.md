@@ -1,7 +1,10 @@
 # S7P-06 Pi-Parity Long-Horizon Acceptance
 
-Status: implementation complete locally; root integration is pending on
-`codex/feat/s7p-06-pi-parity`.
+Status: implemented; amended by Subplan 93 to make v2 the only runtime policy.
+
+Subplan 93 verification: focused runtime/policy/preparation tests passed `139`; the complete offline
+gate passed `1362 passed, 2 deselected` in 111.45 seconds. Ruff format/check, compileall, both CLI
+help commands and `git diff --check` passed. No Live Provider request was run.
 
 The behavioral reference is Pi Agent 0.84.2 at commit
 `209bc7b9a89b01c8fd05861cf5bbdda3e300037a`. This document is the checked-in
@@ -22,25 +25,19 @@ claim a live same-model comparison.
 | Provider retry | [`_retryAfterError`](https://raw.githubusercontent.com/earendil-works/pi/209bc7b9a89b01c8fd05861cf5bbdda3e300037a/packages/coding-agent/src/core/agent-session.ts#L2533-L2625) and [`settings`](https://raw.githubusercontent.com/earendil-works/pi/209bc7b9a89b01c8fd05861cf5bbdda3e300037a/packages/coding-agent/src/core/settings-manager.ts#L10-L30) | Retry transient failures up to 3 times with 2s, 4s and 8s exponential delays, cap provider-directed delay at 60s, abort backoff immediately, and reset retry state after success. | Single AgentLoop retry owner; `test_v2_retry_uses_provider_delay_cap_and_does_not_duplicate_history` | Adapt |
 | Tool truncation constants | [`truncate.ts`](https://raw.githubusercontent.com/earendil-works/pi/209bc7b9a89b01c8fd05861cf5bbdda3e300037a/packages/coding-agent/src/core/tools/truncate.ts#L0-L258) | Shared defaults are 2000 lines and 50 KiB; head truncation is for reads/search, tail truncation is for command output, and UTF-8 byte boundaries are preserved. Grep lines use 500 characters. | `morrow.runtime.truncation`; service adapters and fixture tests | Adapt / Harden |
 
-## Morrow v1 inventory and v2 map
+## Retired v1 surface
 
-The pre-S7P-06 implementation uses the following active v1 controls:
-
-| v1 surface | Current owner | v2 treatment |
-|---|---|---|
-| `max_tool_rounds`, `max_model_attempts`, `max_tool_calls`, `max_tool_calls_per_cycle` | `AgentPolicy`, `RunPolicy`, `AgentLoop` | Kept readable for old snapshots; absent from the v2 enforcement path. |
-| `max_run_seconds` | `AgentPolicy`, `_AgentRunState.deadline`, `ToolCycleExecutor` | Retained only for v1 resume; v2 keeps per-operation tool timeout and no task deadline. |
-| `model_retry_limit` | `AgentPolicy`, `AgentLoop` | Replaced for v2 by enabled/max-retry/base-delay/provider-cap fields. |
-| `requested_context_chars`, unknown-model fallback and result/cycle ratios | policy, `ContextBuilder`, `_cycle_result_limit`, observability journal | v2 uses the exact token window when known; an explicit v2 run without it retains the conservative character request boundary without reporting a guessed token window. |
-| `loop_detection_enabled`, repeat/pattern limits | `AgentLoop` | Historical/readable only; no v2 repetition or inferred no-progress stop. |
-| `RunPolicy` in prepared snapshots | `PreparedAgentRunSpec`, `AgentRunSnapshot` | Add explicit policy version and token/retry facts; never encode unlimited as a huge integer. |
-| request/terminal observations | `core.observability`, `SqliteObservabilityJournal` | v20 stores bounded accounting/compaction facts; v21 adds one mutable retry-progress projection without storing prompts, arguments or results. |
+Subplan 93 removed the former v1 resolver and its cumulative rounds, attempts, calls, task deadline,
+Cycle character budget and strict repeated-cycle detector. The packaged policy and user overlay no
+longer accept those fields. `RunPolicy` accepts schema version 2 only; a v1 snapshot fails validation
+instead of selecting a compatibility loop. Per-tool timeout, context/result bounds, compaction,
+Provider retry, cancellation, steering and durable observations remain active.
 
 ## Explicit Morrow adaptations and safety boundaries
 
 | Area | Morrow decision | Reason |
 |---|---|---|
-| Runtime mode selection | New configured-Provider runs select v2 by default. Exact `context_window_tokens` enables token thresholds; otherwise the 256-KiB conservative character boundary triggers compaction and token-window telemetry remains absent. Known maximum output expands the reserve. Legacy/injected runtimes and frozen v1 snapshots remain v1-compatible. | Missing metadata must not disable long-horizon compaction, but Morrow must not invent or report a token window. |
+| Runtime mode selection | Configured, injected and restored runs accept v2 only. Exact `context_window_tokens` enables token thresholds; otherwise the 256-KiB conservative character boundary triggers compaction and token-window telemetry remains absent. Known maximum output expands the reserve. | Missing metadata must not disable long-horizon compaction, but Morrow must not invent or report a token window. |
 | Summary ingestion | Provider summary text may include a code fence, surrounding prose, trailing container commas, `null` list fields, or unknown fields. Provider-only parsing normalizes those forms before validation; durable `CompactionSummary` and checkpoint decoding still reject unknown fields and enforce size/secret/type boundaries. | Presentation noise should not terminate an otherwise recoverable compaction, while stored state remains strict. |
 | Durable history | Compaction uses the existing immutable `ContextCheckpoint` repository with a `pi_compaction` codec; `ConversationLog` and durable ToolCycles are never rewritten. | Preserve the single chat-history authority and restart/recovery invariants. |
 | Host stop result | A host stop at the completed-tool-cycle boundary is represented by Morrow's existing `cancelled` finish reason and status payload. | Reuse the frozen public event lifecycle instead of adding a new event type. |
@@ -50,7 +47,7 @@ The pre-S7P-06 implementation uses the following active v1 controls:
 ## Phase A scripted trace catalog
 
 The offline fixture catalog uses deterministic providers and fake clocks. The
-covered traces are: 513 tool cycles and fake elapsed time beyond the retired caps;
+covered traces are: 513 tool cycles beyond the retired call caps;
 repeated cycles followed by a tool-free success; strict threshold accounting and
 split-turn/tool-pair compaction; structured summary and bounded summary retries;
 one overflow recovery; transient retry with provider delay/cap; head/tail UTF-8

@@ -2,12 +2,21 @@
 
 ## Current task
 
-Resume Subplan 90 from the consolidated local `main`, repair the permission-equivalence regression,
-then refreeze and capacity-check a new S7P-09 campaign without reusing prior admissions. The
-authorized r16 14-run reduced pilot is now executed and retained as bounded evaluation evidence;
-it has one Morrow PASS, but only one repetition and incomplete Provider usage.
+Remove v1 bounded runtime compatibility and leave one v2 long-horizon execution policy. Preserve
+existing evaluation evidence without running Live requests.
 
 ## Tasks
+
+- `[x]` Remove the v1 policy model, bundled defaults, legacy override selector and strict repeated
+  tool-cycle detector.
+- `[x]` Route configured and injected Providers through one v2 resolver; reject v1 snapshots and
+  retired overrides explicitly.
+- `[x]` Collapse v1/v2 runtime, context and tool-execution branches to the v2 behavior.
+- `[x]` Update focused tests, architecture and runtime-policy decision documentation.
+- `[x]` Run focused tests and the complete offline/static/CLI/diff gates, then commit and integrate
+  the verified change.
+
+## Paused Subplan 90 history
 
 - `[x]` Add a minimal fail-open source detail for unexpected AgentLoop `internal` stops using the
   existing terminal observation slot; do not change public events, task decisions, or schema.

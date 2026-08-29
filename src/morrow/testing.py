@@ -24,18 +24,32 @@ from morrow.core.preference_review import PreferenceReviewContext, PreferenceRev
 
 def make_run_policy(*, request_char_limit: int | None = None, **overrides):
     """Resolve an injected test policy without introducing production defaults."""
-    from morrow.runtime.policy import AgentPolicy, load_agent_policy
+    from morrow.runtime.policy import (
+        AgentPolicy,
+        LongHorizonPolicySettings,
+        load_runtime_policy,
+    )
 
-    values = load_agent_policy().model_dump()
+    runtime = load_runtime_policy()
+    values = runtime.agent_run.model_dump()
+    settings_values = runtime.long_horizon.model_dump()
     if request_char_limit is not None:
         values["requested_context_chars"] = request_char_limit
         values["unknown_model_fallback_chars"] = request_char_limit
-    values.update(overrides)
+    for name, value in overrides.items():
+        if name in AgentPolicy.model_fields:
+            values[name] = value
+        elif name in LongHorizonPolicySettings.model_fields:
+            settings_values[name] = value
+        else:
+            raise TypeError(f"unknown v2 run-policy override: {name}")
     policy = AgentPolicy.model_validate(values, strict=True)
     return policy.resolve(
         ModelRef(provider_id="test", model_id="test"),
         tool_protocol="openai_function",
         multiple_tool_calls=True,
+        context_window_tokens=None,
+        settings=LongHorizonPolicySettings.model_validate(settings_values, strict=True),
     )
 
 

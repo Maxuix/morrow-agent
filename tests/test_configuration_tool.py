@@ -798,6 +798,7 @@ async def test_production_composition_uses_one_agent_loop_and_refreshes_state_pr
     assert {tool.function.name for tool in provider.stream_tools[0]} == {
         "ls",
         "read",
+        "read_artifact",
         "find",
         "grep",
         "update_configuration",

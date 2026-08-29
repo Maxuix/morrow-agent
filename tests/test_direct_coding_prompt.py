@@ -13,7 +13,7 @@ from morrow.adapters.models.openai_compatible import (
     OpenAICompatibleProvider,
     estimate_request_chars,
 )
-from morrow.application.context import ContextBudgetError, ContextBuilder
+from morrow.application.context import ContextBuilder
 from morrow.application.learning.memory_run_projection import build_run_context_projection
 from morrow.application.prompt import (
     DirectCodingProfile,
@@ -237,7 +237,7 @@ def test_durable_prompt_evidence_contains_only_the_root_source(tmp_path: Path) -
     assert [source.path for source in snapshot.project_instruction_sources] == ["AGENTS.md"]
 
 
-def test_protected_prompt_layers_fail_with_context_budget_error(tmp_path: Path) -> None:
+def test_protected_prompt_layers_request_compaction_when_over_budget(tmp_path: Path) -> None:
     (tmp_path / "AGENTS.md").write_text("x" * 5000, encoding="utf-8")
     assembler = DirectCodingPromptAssembler(tmp_path)
     session = Session(session_id="s")
@@ -249,9 +249,8 @@ def test_protected_prompt_layers_fail_with_context_budget_error(tmp_path: Path) 
         prompt_assembler=assembler,
     )
 
-    with pytest.raises(ContextBudgetError) as exc_info:
-        builder.build(session)
-    assert exc_info.value.code == "context_budget"
+    pack = builder.build(session)
+    assert pack.compaction_required is True
 
 
 @pytest.mark.asyncio

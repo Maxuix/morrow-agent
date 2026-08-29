@@ -154,6 +154,7 @@ def _valid_inventory_arguments(name):
         "grep": {"pattern": "needle"},
         "ls": {},
         "read": {"path": "README.md"},
+        "read_artifact": {"artifact_id": "art_12345678"},
         "write": {"path": "new.txt", "content": "x"},
         "run_skill_script": {
             "selection_id": "ssel_selection",

@@ -2,6 +2,11 @@
 
 ## Current status
 
+Subplan 90 is paused without changing its immutable r19/r20 evidence. The user explicitly opened
+Subplan 93 to remove v1 bounded runtime compatibility, including its strict repeated-cycle detector,
+legacy override selection and injected-Provider fallback. Implementation is active on
+`refactor/remove-v1-bounded`; no Live request is authorized or required.
+
 Subplan 90 was explicitly resumed from the consolidated local `main`. The harness self-check,
 permission matrix, historical capacity audit, reduced-plan preflight and capacity check passed.
 The explicit risk-denial repair, cumulative prior-campaign capacity guard, full reservation check
@@ -25,10 +30,10 @@ migration was introduced.
 
 ## Active task
 
-The small internal-source repair is implemented and verified. Focused runtime/observation tests pass
-`63`; the complete offline gate passes `1378 passed, 2 deselected`; Ruff format/check, compileall,
-both CLI help commands, evaluator self-check and `git diff --check` pass. No Live request or
-evaluation admission was run.
+Subplan 93 implementation and validation are complete. The focused runtime/policy/preparation suite
+passes `139`; the final complete offline gate passes `1362 passed, 2 deselected`. Ruff format/check,
+compileall, both CLI help commands and `git diff --check` pass. Integration into local `main` is the
+remaining mechanical step; no Live request was run.
 
 ## Implemented boundary
 
@@ -55,12 +60,8 @@ evaluation admission was run.
 
 ## Next action
 
-Retain r19 and r20 as the immutable DeepSeek reduced campaign. The exact continuation binding and
-combined schedule validation pass, and all 14 bundles are structurally valid. The combined result
-distribution is Morrow: 3 `PASS`, 1 `FAIL_MODEL`, 2 `FAIL_RUNTIME`, 4 `BUDGET_EXHAUSTED`; Pi:
-3 `FAIL_MODEL`, 1 `FAIL_RUNTIME`. Three bundles retain unavailable total-token metrics, so the
-standard comparison remains incomplete and no baseline PASS is claimed. Full Subplan 90 completion
-still requires a separately authorized primary repeated campaign with complete mandatory usage.
+Commit and fast-forward integrate the verified Subplan 93 branch, retire it cleanly, and leave
+S7P-09 paused until a future campaign is separately authorized and refrozen.
 
 ## Blockers
 

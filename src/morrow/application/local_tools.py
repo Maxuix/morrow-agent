@@ -46,7 +46,6 @@ from morrow.runtime.tools import (
 from morrow.runtime.truncation import PI_DEFAULT_MAX_BYTES, PI_DEFAULT_MAX_LINES
 from morrow.services.changes import ChangeSetService
 from morrow.services.files import (
-    LEGACY_MAX_READ_LINES,
     LocalFileError,
     WorkspaceFileService,
     WorkspaceMutationService,
@@ -534,12 +533,8 @@ def make_read_artifact_tool(artifacts: ArtifactService) -> RegisteredTool:
 def make_mainstream_read_search_tools(
     files: WorkspaceFileService,
     search: WorkspaceSearchService,
-    *,
-    long_horizon: bool = False,
 ) -> tuple[RegisteredTool, ...]:
     """Build the Pi-compatible read/ls/find/grep surface over Morrow services."""
-
-    read_max = PI_DEFAULT_MAX_LINES if long_horizon else LEGACY_MAX_READ_LINES
 
     async def read_handler(arguments: ReadArguments, context: ToolCallContext):
         try:
@@ -548,10 +543,10 @@ def make_mainstream_read_search_tools(
                 files.read_file,
                 path,
                 start_line=max(1, arguments.offset),
-                line_count=_bounded(arguments.limit, minimum=1, maximum=read_max),
+                line_count=_bounded(arguments.limit, minimum=1, maximum=PI_DEFAULT_MAX_LINES),
                 result_limit=context.result_limit,
-                max_bytes=context.truncation_max_bytes if context.long_horizon else None,
-                max_lines=context.truncation_max_lines if context.long_horizon else None,
+                max_bytes=context.truncation_max_bytes,
+                max_lines=context.truncation_max_lines,
             )
         except LocalFileError as exc:
             raise _tool_error(exc) from exc
@@ -651,7 +646,7 @@ def make_mainstream_read_search_tools(
                 path,
                 query=query,
                 result_limit=context.result_limit,
-                max_line_chars=context.grep_max_line_chars if context.long_horizon else None,
+                max_line_chars=context.grep_max_line_chars,
             )
         except LocalFileError as exc:
             raise _tool_error(exc) from exc
@@ -736,12 +731,8 @@ def make_bash_tool(process: ProcessExecutionService) -> RegisteredTool:
                 tool_name=context.tool_name,
                 ordinal=context.ordinal,
                 approval_verdict=context.approval_verdict,
-                truncation_max_bytes=(
-                    context.truncation_max_bytes if context.long_horizon else None
-                ),
-                truncation_max_lines=(
-                    context.truncation_max_lines if context.long_horizon else None
-                ),
+                truncation_max_bytes=context.truncation_max_bytes,
+                truncation_max_lines=context.truncation_max_lines,
             )
         except ProcessServiceError as exc:
             raise _tool_error(exc) from exc

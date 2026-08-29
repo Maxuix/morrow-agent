@@ -65,7 +65,10 @@ def _realistic_snapshot() -> AgentRunSnapshot:
     )
     model = ModelRef(provider_id="openai-compatible", model_id="gpt-5-mini")
     run_policy = load_agent_policy().resolve(
-        model, tool_protocol="openai_function", multiple_tool_calls=True
+        model,
+        tool_protocol="openai_function",
+        multiple_tool_calls=True,
+        context_window_tokens=None,
     )
     provider_runtime = ProviderRuntimeSnapshot(
         provider_id="openai-compatible",

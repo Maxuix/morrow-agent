@@ -253,26 +253,13 @@ class ModelCapabilityOverrides(ProtocolModel):
 
 
 class RunPolicy(ProtocolModel):
-    """Immutable per-AgentRun policy, including v1 compatibility and v2 Pi parity."""
+    """Immutable v2 per-AgentRun policy."""
 
-    policy_schema_version: Literal[1, 2] = 1
-    task_lifetime_mode: Literal["bounded", "long_horizon"] = "bounded"
-    # ``None`` is the explicit v2 representation of a retired cumulative control.  It is never
-    # replaced by a sentinel integer and v1 snapshots continue to carry their original numbers.
-    max_tool_rounds: int | None = Field(default=None, gt=0)
-    max_model_attempts: int | None = Field(default=None, gt=0)
-    max_tool_calls: int | None = Field(default=None, gt=0)
-    max_tool_calls_per_cycle: int | None = Field(default=None, gt=0)
-    max_run_seconds: float | None = Field(default=None, gt=0)
+    policy_schema_version: Literal[2] = 2
     tool_timeout_seconds: float = Field(default=300.0, gt=0)
-    model_retry_limit: int | None = Field(default=None, ge=0)
     effective_request_chars: int = Field(default=1, gt=0)
     effective_result_limit: int = Field(default=1, gt=0)
-    effective_cycle_limit: int | None = Field(default=None, gt=0)
     max_validation_errors: int = Field(default=1, gt=0)
-    loop_detection_enabled: bool = False
-    loop_repeat_limit: int | None = Field(default=None, ge=2)
-    loop_max_pattern_cycles: int | None = Field(default=None, gt=0)
     compaction_enabled: bool = False
     context_window_tokens: int | None = Field(default=None, gt=0)
     reserve_tokens: int = Field(default=16_384, gt=0)
@@ -288,25 +275,7 @@ class RunPolicy(ProtocolModel):
     provider_tool_support: ProviderToolSupport
 
     @model_validator(mode="after")
-    def version_contract(self) -> RunPolicy:
-        if self.policy_schema_version == 1:
-            if self.task_lifetime_mode != "bounded":
-                raise ValueError("v1 RunPolicy must use bounded task lifetime")
-            return self
-        if self.task_lifetime_mode != "long_horizon":
-            raise ValueError("v2 RunPolicy must use long_horizon task lifetime")
-        retired = (
-            self.max_tool_rounds,
-            self.max_model_attempts,
-            self.max_tool_calls,
-            self.max_tool_calls_per_cycle,
-            self.max_run_seconds,
-            self.model_retry_limit,
-            self.loop_repeat_limit,
-            self.loop_max_pattern_cycles,
-        )
-        if any(value is not None for value in retired):
-            raise ValueError("v2 RunPolicy must not carry active v1 cumulative controls")
+    def valid_accounting(self) -> RunPolicy:
         if (
             self.context_window_tokens is not None
             and self.reserve_tokens >= self.context_window_tokens
@@ -315,10 +284,6 @@ class RunPolicy(ProtocolModel):
         if self.max_provider_retry_delay_seconds < self.retry_base_delay_seconds:
             raise ValueError("provider retry cap must cover the base retry delay")
         return self
-
-    @property
-    def is_long_horizon(self) -> bool:
-        return self.policy_schema_version == 2 and self.task_lifetime_mode == "long_horizon"
 
 
 class ModelRef(MorrowModel):

@@ -144,6 +144,7 @@ def test_no_forbidden_tool_capability_is_registered_or_exposed(tmp_path):
         "update_configuration",
         "ls",
         "read",
+        "read_artifact",
         "find",
         "grep",
         "edit",

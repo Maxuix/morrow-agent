@@ -76,7 +76,7 @@ def test_preferences_have_global_workspace_session_precedence():
     assert value.instructions == ["global", "workspace", "session", "same"]
 
 
-def test_context_never_keeps_assistant_without_its_paired_user():
+def test_context_marks_compaction_without_breaking_user_assistant_pairs():
     session = Session(session_id="s")
     seed_user_turn(session, "u" * 20, assistant="a")
     session.log.begin_turn(UserMessage(content="now"))
@@ -86,12 +86,13 @@ def test_context_never_keeps_assistant_without_its_paired_user():
 
     context = builder.build(session)
 
+    assert context.compaction_required is True
     assert [
         (message.role, message.content) for message in context.messages if message.role != "system"
-    ] == [("user", "now")]
+    ] == [("user", "u" * 20), ("assistant", "a"), ("user", "now")]
 
 
-def test_context_does_not_skip_newest_oversized_turn_to_admit_older_turn():
+def test_context_marks_compaction_without_dropping_complete_turns():
     session = Session(session_id="s")
     seed_user_turn(session, "old", assistant="ok")
     seed_user_turn(session, "n" * 10, assistant="a" * 10)
@@ -102,9 +103,16 @@ def test_context_does_not_skip_newest_oversized_turn_to_admit_older_turn():
 
     context = builder.build(session)
 
+    assert context.compaction_required is True
     assert [
         (message.role, message.content) for message in context.messages if message.role != "system"
-    ] == [("user", "now")]
+    ] == [
+        ("user", "old"),
+        ("assistant", "ok"),
+        ("user", "n" * 10),
+        ("assistant", "a" * 10),
+        ("user", "now"),
+    ]
 
 
 def test_context_retains_unmatched_cancelled_user_as_its_own_history_unit():

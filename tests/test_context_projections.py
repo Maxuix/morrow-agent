@@ -8,7 +8,7 @@ import pytest
 from pydantic import ValidationError
 
 from morrow.adapters.models.openai_compatible import estimate_request_chars
-from morrow.application.context import OMITTED_TOOL_RESULT, ContextBudgetError
+from morrow.application.context import ContextBudgetError
 from morrow.core.models import (
     AssistantMessage,
     FinishReason,
@@ -82,7 +82,7 @@ def test_context_request_pack_and_source_snapshot_are_immutable_and_build_is_pur
         first.messages = ()
 
 
-def test_multi_result_cycle_is_cleared_atomically_without_touching_log():
+def test_multi_result_cycle_is_retained_atomically_while_compaction_is_requested():
     session = Session(session_id="s")
     session.log.begin_turn(UserMessage(content="old tool request"))
     calls = (_call("c1"), _call("c2"))
@@ -92,19 +92,12 @@ def test_multi_result_cycle_is_cleared_atomically_without_touching_log():
     session.log.begin_turn(UserMessage(content="current"))
     source = session.log.snapshot()
 
-    probe = make_context_builder(100_000).build(session)
-    cleared_messages = tuple(
-        ToolMessage(tool_call_id=message.tool_call_id, content=OMITTED_TOOL_RESULT)
-        if isinstance(message, ToolMessage)
-        else message
-        for message in probe.messages
-    )
-    limit = estimate_request_chars(cleared_messages, ())
-    pack = make_context_builder(limit).build(session)
+    pack = make_context_builder(100).build(session)
 
     results = [message for message in pack.messages if isinstance(message, ToolMessage)]
-    assert [message.content for message in results] == [OMITTED_TOOL_RESULT] * 2
-    assert pack.cleared_cycle_count == 1
+    assert [message.content for message in results] == ["x" * 1000, "y" * 1000]
+    assert pack.compaction_required is True
+    assert pack.cleared_cycle_count == 0
     assert session.log.snapshot() == source
     assert [record.message.content for record in source.records if hasattr(record, "message")][
         2:4
@@ -114,7 +107,7 @@ def test_multi_result_cycle_is_cleared_atomically_without_touching_log():
     ]
 
 
-def test_hard_trim_drops_oldest_whole_turn_and_counts_source_records():
+def test_over_budget_context_retains_oldest_whole_turn_for_compaction():
     session = Session(session_id="s")
     seed_user_turn(session, "old user" * 100, assistant="old answer" * 100)
     session.log.begin_turn(UserMessage(content="current"))
@@ -124,44 +117,43 @@ def test_hard_trim_drops_oldest_whole_turn_and_counts_source_records():
 
     pack = make_context_builder(limit).build(session)
 
-    assert [message.content for message in pack.messages if message.role != "system"] == ["current"]
-    assert pack.dropped_record_count == 3
-    assert pack.dropped_turn_count == 1
+    assert [message.content for message in pack.messages if message.role != "system"] == [
+        "old user" * 100,
+        "old answer" * 100,
+        "current",
+    ]
+    assert pack.compaction_required is True
+    assert pack.dropped_record_count == 0
+    assert pack.dropped_turn_count == 0
     assert pack.dropped_cycle_count == 0
 
 
-def test_hard_trim_drops_oldest_closed_cycle_but_preserves_current_user():
+def test_over_budget_context_retains_closed_cycles_for_compaction():
     session = Session(session_id="s")
     session.log.begin_turn(UserMessage(content="current"))
     _append_cycle(session, [_call("large", arguments="x" * 2000)], ["small"])
     _append_cycle(session, [_call("keep")], ["kept-result"])
     probe = make_context_builder(100_000)
     systems = probe._system_messages(session)
-    retained = (
-        *systems,
-        UserMessage(content="current"),
-        AssistantMessage(tool_calls=(_call("keep"),)),
-        ToolMessage(tool_call_id="keep", content=OMITTED_TOOL_RESULT),
-    )
-    limit = estimate_request_chars(retained, ())
+    limit = estimate_request_chars((*systems, UserMessage(content="current")), ())
 
     pack = make_context_builder(limit).build(session)
 
-    assert "large" not in [
+    assert [
         call.id for message in pack.messages for call in getattr(message, "tool_calls", ())
-    ]
+    ] == ["large", "keep"]
+    assert pack.compaction_required is True
     assert pack.messages[2].content == "current"
-    assert pack.dropped_record_count == 2
+    assert pack.dropped_record_count == 0
     assert pack.dropped_turn_count == 0
-    assert pack.dropped_cycle_count == 1
+    assert pack.dropped_cycle_count == 0
 
 
-def test_protected_context_overflow_is_typed_context_budget_failure():
+def test_protected_context_overflow_requests_compaction():
     session = Session(session_id="s")
     session.log.begin_turn(UserMessage(content="x" * 1000))
-    with pytest.raises(ContextBudgetError) as exc_info:
-        make_context_builder(10).build(session)
-    assert exc_info.value.code == "context_budget"
+    pack = make_context_builder(10).build(session)
+    assert pack.compaction_required is True
 
 
 def test_canonical_estimator_counts_tool_schema_and_rejects_wire_oversize():
@@ -178,8 +170,11 @@ def test_canonical_estimator_counts_tool_schema_and_rejects_wire_oversize():
     no_tools = (*probe._system_messages(session), UserMessage(content="short"))
     content_only_limit = estimate_request_chars(no_tools, ())
 
+    builder = make_context_builder(content_only_limit)
+    pack = builder.build(session, tools=(tool,))
+    assert pack.compaction_required is True
     with pytest.raises(ContextBudgetError):
-        make_context_builder(content_only_limit).build(session, tools=(tool,))
+        builder.validate_request(pack.messages, pack.tools)
 
 
 def test_estimator_is_exact_compact_canonical_json_length():

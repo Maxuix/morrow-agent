@@ -84,11 +84,12 @@ Preference Reviewer 的单次超时统一为 5 分钟。用户不需要也不应
 ```yaml
 runtime_policy:
   agent_run:
-    max_run_seconds: 2400
+    tool_timeout_seconds: 180
+    reserve_tokens: 20000
 ```
 
 覆盖在进程启动时加载。未知字段、错误类型、非有限数、违反字段组合或超过代码级安全上限的值会使
-配置整体拒绝加载，不会部分生效。权限、审批、循环检测开关、密钥/路径过滤、schema/payload/storage
+配置整体拒绝加载，不会部分生效。权限、审批、密钥/路径过滤、schema/payload/storage
 预算与重试的错误分类边界不允许通过 YAML 放宽；重试次数等可调字段受代码级上限约束；Agent 的配置
 与学习工具也不能写 `runtime_policy`。完整字段
 和硬编码分类见 [Runtime Policy Configuration Boundary](docs/decisions/runtime-policy-configuration.md)。

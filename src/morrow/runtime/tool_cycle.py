@@ -64,7 +64,6 @@ class ToolCycleExecutor:
         ordinal: int,
         total: int,
         result_limit: int,
-        remaining_run_seconds: float | None,
         preflight_error: tuple[ToolErrorCode, str] | None = None,
     ) -> ToolCallExecution:
         durable = durable_execution
@@ -154,12 +153,9 @@ class ToolCycleExecutor:
                     skip_approval=skip_approval,
                     allow_unconfined_host=allow_unconfined_host,
                 )
-                timeout = self.run_policy.tool_timeout_seconds
-                if remaining_run_seconds is not None:
-                    timeout = min(timeout, remaining_run_seconds)
                 result = await asyncio.wait_for(
                     self.await_with_cancellation(execution, session, durable),
-                    timeout=timeout,
+                    timeout=self.run_policy.tool_timeout_seconds,
                 )
                 if durable is not None:
                     self._coordinator(session).check_fault(FaultPoint.HANDLER_AFTER_RETURN)
@@ -211,16 +207,15 @@ class ToolCycleExecutor:
                 now=self.wall_now(session),
                 disposition=handler_disposition,
             )
-        if self.run_policy.is_long_horizon:
-            result = self._attach_artifact_references(
-                result,
-                (
-                    *result.artifact_refs,
-                    *result.mcp_result_artifact_refs,
-                    *(durable.artifact_refs if durable is not None else ()),
-                ),
-                result_limit=result_limit,
-            )
+        result = self._attach_artifact_references(
+            result,
+            (
+                *result.artifact_refs,
+                *result.mcp_result_artifact_refs,
+                *(durable.artifact_refs if durable is not None else ()),
+            ),
+            result_limit=result_limit,
+        )
         self.tool_executor.cleanup_call(
             call,
             run_context=run_context,

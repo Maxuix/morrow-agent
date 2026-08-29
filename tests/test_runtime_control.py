@@ -94,7 +94,7 @@ class _MutableSteering:
 
 
 def _long_horizon_context() -> ContextBuilder:
-    policy = load_agent_policy().resolve_long_horizon(
+    policy = load_agent_policy().resolve(
         MODEL,
         tool_protocol="openai_function",
         multiple_tool_calls=True,

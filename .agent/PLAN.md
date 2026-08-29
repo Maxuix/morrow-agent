@@ -1,12 +1,24 @@
-# Stage 7 — S7P-09 Repeated Direct/Pi Baseline Resumed
+# Stage 7 — Remove v1 Bounded Runtime Compatibility
 
-> Status: active; continuing Subplan 90 from local `main`
-> Active subplan: Subplan 90 — S7P-09 Repeated Direct Evaluation and Same-Condition Pi Baseline
+> Status: active; Subplan 90 paused with immutable evidence
+> Active subplan: Subplan 93 — Remove v1 Bounded Runtime Compatibility
 > Consolidation base: `a7e22e5`; current source includes the later Learning checkpoints
 > Activation base: verified local `main@1fd7e229bef276d1a0361e775ce800ade4b318fc`
 > Source authority: current user request, S7P-00 protocol v1, completed S7P-08, current code/tools
 
 ## 1. Current objective
+
+The user explicitly requested removing the v1 bounded compatibility mode after identifying that
+its strict repeated-cycle detector cannot recognize broader no-progress behavior. New and injected
+Provider runs must use the single v2 long-horizon policy. Legacy runtime-policy overrides and v1
+AgentRun snapshots must fail validation instead of silently selecting the retired execution path.
+Existing evaluation bundles remain immutable and are not reinterpreted.
+
+Remove the v1-only cumulative controls, loop detector, policy resolver, runtime branches and bundled
+defaults. Preserve per-operation safety bounds, cancellation/steering, context compaction, Provider
+retry, tool timeouts, output truncation, durable evidence and the public lifecycle used by v2.
+
+## 1a. Paused S7P-09 objective
 
 Resume Subplan 90 from the consolidated local `main`. First restore the explicit denial boundary
 required by the frozen Morrow/Pi permission-equivalence contract, then run the complete offline/static

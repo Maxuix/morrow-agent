@@ -14,19 +14,11 @@ from morrow.core.runtime_policy import (
     AGENT_MAX_CONTEXT_WINDOW_TOKENS,
     AGENT_MAX_GREP_LINE_CHARS,
     AGENT_MAX_KEEP_RECENT_TOKENS,
-    AGENT_MAX_LOOP_PATTERN_CYCLES,
-    AGENT_MAX_LOOP_REPEAT,
-    AGENT_MAX_MODEL_ATTEMPTS,
     AGENT_MAX_MODEL_RETRIES,
     AGENT_MAX_REQUEST_CHARS,
     AGENT_MAX_RESERVE_TOKENS,
     AGENT_MAX_RETRY_DELAY_SECONDS,
-    AGENT_MAX_RUN_SECONDS,
-    AGENT_MAX_TOOL_CALLS,
-    AGENT_MAX_TOOL_CALLS_PER_CYCLE,
-    AGENT_MAX_TOOL_CYCLE_CHARS,
     AGENT_MAX_TOOL_RESULT_CHARS,
-    AGENT_MAX_TOOL_ROUNDS,
     AGENT_MAX_TOOL_TIMEOUT_SECONDS,
     AGENT_MAX_TRUNCATION_BYTES,
     AGENT_MAX_TRUNCATION_LINES,
@@ -46,7 +38,6 @@ from morrow.core.runtime_policy import (
     RUNTIME_POLICY_SCHEMA_VERSION,
     RuntimePolicyOverrides,
     finite_number,
-    has_legacy_agent_run_overrides,
 )
 
 __all__ = [
@@ -61,7 +52,6 @@ __all__ = [
     "ToolExecutionPolicy",
     "load_agent_policy",
     "load_runtime_policy",
-    "has_legacy_agent_run_overrides",
     "parse_agent_policy",
     "parse_runtime_policy",
     "resolve_runtime_policy",
@@ -137,35 +127,15 @@ class LongHorizonPolicySettings(ProtocolModel):
 class AgentPolicy(ProtocolModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    max_tool_rounds: int = Field(gt=0, le=AGENT_MAX_TOOL_ROUNDS)
-    max_model_attempts: int = Field(gt=0, le=AGENT_MAX_MODEL_ATTEMPTS)
-    max_tool_calls: int = Field(gt=0, le=AGENT_MAX_TOOL_CALLS)
-    max_tool_calls_per_cycle: int = Field(gt=0, le=AGENT_MAX_TOOL_CALLS_PER_CYCLE)
-    max_run_seconds: float = Field(gt=0, le=AGENT_MAX_RUN_SECONDS)
     tool_timeout_seconds: float = Field(gt=0, le=AGENT_MAX_TOOL_TIMEOUT_SECONDS)
-    model_retry_limit: int = Field(ge=0, le=AGENT_MAX_MODEL_RETRIES)
     requested_context_chars: int = Field(gt=0, le=AGENT_MAX_REQUEST_CHARS)
     unknown_model_fallback_chars: int = Field(gt=0, le=AGENT_MAX_REQUEST_CHARS)
     max_tool_result_chars: int = Field(gt=0, le=AGENT_MAX_TOOL_RESULT_CHARS)
-    max_tool_result_request_ratio: float = Field(gt=0, le=1)
-    max_tool_cycle_chars: int = Field(gt=0, le=AGENT_MAX_TOOL_CYCLE_CHARS)
-    max_tool_cycle_request_ratio: float = Field(gt=0, le=1)
     max_validation_errors: int = Field(gt=0, le=AGENT_MAX_VALIDATION_ERRORS)
-    loop_detection_enabled: bool
-    loop_repeat_limit: int = Field(ge=2, le=AGENT_MAX_LOOP_REPEAT)
-    loop_max_pattern_cycles: int = Field(gt=0, le=AGENT_MAX_LOOP_PATTERN_CYCLES)
     model_safe_request_chars: dict[str, int] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def valid_combinations(self) -> AgentPolicy:
-        if self.max_tool_calls_per_cycle > self.max_tool_calls:
-            raise ValueError("max_tool_calls_per_cycle cannot exceed max_tool_calls")
-        if self.tool_timeout_seconds > self.max_run_seconds:
-            raise ValueError("tool_timeout_seconds cannot exceed max_run_seconds")
-        if self.model_retry_limit >= self.max_model_attempts:
-            raise ValueError("model_retry_limit must be below max_model_attempts")
-        if self.loop_repeat_limit * self.loop_max_pattern_cycles > self.max_tool_rounds:
-            raise ValueError("longest repeated pattern must fit within max_tool_rounds")
         if any(not key.strip() or "/" not in key for key in self.model_safe_request_chars):
             raise ValueError("model safe-size keys must be exact provider_id/model_id values")
         if any(
@@ -184,57 +154,12 @@ class AgentPolicy(ProtocolModel):
         *,
         tool_protocol: Literal["none", "openai_function"],
         multiple_tool_calls: bool,
-    ) -> RunPolicy:
-        exact_key = f"{model.provider_id}/{model.model_id}"
-        safe = self.model_safe_request_chars.get(exact_key)
-        request_limit = min(
-            self.requested_context_chars,
-            safe if safe is not None else self.unknown_model_fallback_chars,
-        )
-        result_limit = min(
-            self.max_tool_result_chars,
-            int(request_limit * self.max_tool_result_request_ratio),
-        )
-        cycle_limit = min(
-            self.max_tool_cycle_chars,
-            int(request_limit * self.max_tool_cycle_request_ratio),
-        )
-        return RunPolicy(
-            policy_schema_version=1,
-            task_lifetime_mode="bounded",
-            max_tool_rounds=self.max_tool_rounds,
-            max_model_attempts=self.max_model_attempts,
-            max_tool_calls=self.max_tool_calls,
-            max_tool_calls_per_cycle=self.max_tool_calls_per_cycle,
-            max_run_seconds=self.max_run_seconds,
-            tool_timeout_seconds=self.tool_timeout_seconds,
-            model_retry_limit=self.model_retry_limit,
-            effective_request_chars=request_limit,
-            effective_result_limit=result_limit,
-            effective_cycle_limit=cycle_limit,
-            max_validation_errors=self.max_validation_errors,
-            loop_detection_enabled=self.loop_detection_enabled,
-            loop_repeat_limit=self.loop_repeat_limit,
-            loop_max_pattern_cycles=self.loop_max_pattern_cycles,
-            provider_tool_support=ProviderToolSupport(
-                tool_protocol=tool_protocol,
-                multiple_tool_calls=multiple_tool_calls,
-                safe_request_chars=safe,
-            ),
-        )
-
-    def resolve_long_horizon(
-        self,
-        model: ModelRef,
-        *,
-        tool_protocol: Literal["none", "openai_function"],
-        multiple_tool_calls: bool,
         context_window_tokens: int | None,
         max_output_tokens: int | None = None,
         settings: LongHorizonPolicySettings | None = None,
         host_stop_source: Literal["none", "provided"] = "none",
     ) -> RunPolicy:
-        """Resolve v2 with exact token accounting or a bounded character fallback."""
+        """Resolve the v2 policy with exact token accounting or a character fallback."""
         if context_window_tokens is not None and (
             isinstance(context_window_tokens, bool)
             or context_window_tokens <= 0
@@ -262,23 +187,10 @@ class AgentPolicy(ProtocolModel):
         result_limit = min(self.max_tool_result_chars, selected.truncation_max_bytes)
         return RunPolicy(
             policy_schema_version=2,
-            task_lifetime_mode="long_horizon",
-            max_tool_rounds=None,
-            max_model_attempts=None,
-            max_tool_calls=None,
-            max_tool_calls_per_cycle=None,
-            max_run_seconds=None,
             tool_timeout_seconds=self.tool_timeout_seconds,
-            model_retry_limit=None,
             effective_request_chars=request_limit,
             effective_result_limit=max(1, result_limit),
-            # A cycle has no behavioral call-count/character ceiling in v2.  ``None`` is the
-            # explicit representation; an artificial maximum would blur the v1/v2 contract.
-            effective_cycle_limit=None,
             max_validation_errors=self.max_validation_errors,
-            loop_detection_enabled=False,
-            loop_repeat_limit=None,
-            loop_max_pattern_cycles=None,
             compaction_enabled=selected.compaction_enabled,
             context_window_tokens=context_window_tokens,
             reserve_tokens=reserve_tokens,

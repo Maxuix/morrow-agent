@@ -523,10 +523,11 @@ async def test_session_application_recovery_commands_acknowledge_and_resume(tmp_
     finally:
         crashed.persistence.close()
 
+    provider = ScriptedModelProvider(["resumed answer"])
     resumed = build_session_application(
         app,
         identity,
-        provider=ScriptedModelProvider(["resumed answer"]),
+        provider=provider,
         model=ModelRef(provider_id="p", model_id="m"),
         resume_session_id=session_id,
     )
@@ -555,7 +556,8 @@ async def test_session_application_recovery_commands_acknowledge_and_resume(tmp_
         )
         events = [item async for item in resumed.orchestrator.resume_recovery()]
         assert events
-        assert resumed.session.messages[-1].content == "resumed answer"
+        assert "原始工具结果未能提交" in resumed.session.messages[-1].content
+        assert provider.stream_calls == []
         assert resumed.session.log.has_active_turn is False
     finally:
         resumed.persistence.close()

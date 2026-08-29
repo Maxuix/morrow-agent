@@ -182,6 +182,7 @@ async def test_ordinary_chat_can_finish_without_calling_advertised_guarded_tools
     assert {tool.function.name for tool in provider.stream_tools[0]} == {
         "ls",
         "read",
+        "read_artifact",
         "find",
         "grep",
         "update_configuration",

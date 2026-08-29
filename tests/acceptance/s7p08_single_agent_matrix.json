@@ -359,7 +359,7 @@
     },
     {
       "id": "runtime_control",
-      "checklist_text": "Runtime cancellation, steering, follow-up, deadline and budget exhaustion preserve legal pairing and safe recovery.",
+      "checklist_text": "Runtime cancellation, steering, follow-up and per-tool timeout preserve legal pairing and safe recovery.",
       "risk": "high",
       "classification": "covered",
       "positive_selectors": [
@@ -367,7 +367,7 @@
         "tests/test_runtime_control.py::test_active_follow_up_drains_after_normal_stop_in_fifo_order"
       ],
       "failure_selectors": [
-        "tests/test_agent_limits.py::test_deadline_between_tools_preserves_result_and_budget_closes_unstarted_call",
+        "tests/test_agent_limits.py::test_tool_timeout_becomes_one_bounded_result_and_loop_continues",
         "tests/test_runtime_control.py::test_pre_stop_steering_rejects_candidate_without_publishing_it"
       ],
       "recovery_selectors": [

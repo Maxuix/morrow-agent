@@ -58,7 +58,6 @@ def render_system_boundary(tools: tuple[ToolDefinition, ...] = ()) -> str:
 
 # Compatibility export for callers that need a tool-free boundary snapshot.
 SYSTEM_BOUNDARY = render_system_boundary()
-OMITTED_TOOL_RESULT = "[tool result omitted from active context: budget]"
 
 
 class ContextRequest(ProtocolModel):
@@ -238,7 +237,7 @@ class ContextBuilder:
             )
         else:
             messages = [SystemMessage(content=render_system_boundary(tools))]
-        if self.run_policy.is_long_horizon and session.compaction_summary is not None:
+        if session.compaction_summary is not None:
             messages.append(
                 SystemMessage(
                     content=(
@@ -337,9 +336,7 @@ class ContextBuilder:
         session: Session,
         messages: tuple[Message, ...],
         tools: tuple[ToolDefinition, ...],
-    ) -> TokenAccounting | None:
-        if not self.run_policy.is_long_horizon:
-            return None
+    ) -> TokenAccounting:
         usage = getattr(session, "latest_model_usage", ModelUsage.unavailable())
         usage_digest = getattr(session, "latest_model_usage_context_digest", None)
         current_digest = self.context_digest(messages, tools)
@@ -459,8 +456,6 @@ class ContextBuilder:
     ) -> CompactionCandidate | None:
         """Select an old complete-turn/cycle prefix for one LLM compaction request."""
 
-        if not self.run_policy.is_long_horizon:
-            return None
         if not isinstance(instructions, str) or len(instructions) > 512:
             raise ContextBudgetError("上下文压缩指令超出安全边界")
         instructions = instructions.strip()
@@ -650,7 +645,7 @@ class ContextBuilder:
         session.latest_model_usage_context_digest = None
         return entry
 
-    def _chat_long_horizon(self, request: ContextRequest, session: Session) -> ContextPack:
+    def _chat(self, request: ContextRequest, session: Session) -> ContextPack:
         turns = list(request.snapshot.public_turns(require_closed=False))
         if not turns:
             raise ContextBudgetError("聊天上下文缺少当前用户请求")
@@ -660,8 +655,6 @@ class ContextBuilder:
         projected = self._messages_for_boundary(request.snapshot, boundary)
         messages = (*request.system_messages, *projected)
         accounting = self._accounting(session, messages, request.tools)
-        if accounting is None:
-            raise ContextBudgetError("long-horizon context accounting is unavailable")
         estimated = self._estimate(messages, request.tools)
         threshold = accounting.threshold_tokens
         compaction_required = (
@@ -679,93 +672,6 @@ class ContextBuilder:
             accounting_basis=accounting.basis,
             token_threshold=threshold,
             compaction_required=compaction_required,
-            checkpoint_id=request.checkpoint.checkpoint_id if request.checkpoint else None,
-        )
-
-    def _chat(self, request: ContextRequest) -> ContextPack:
-        turns = list(request.snapshot.public_turns())
-        if not turns:
-            raise ContextBudgetError("聊天上下文缺少当前用户请求")
-        if any(turn.unresolved_call_ids for turn in turns):
-            raise ContextBudgetError("上下文包含未闭合的工具调用")
-
-        cleared_sequences: set[int] = set()
-        dropped_turns: set[int] = set()
-        dropped_cycles: set[tuple[int, int]] = set()
-
-        def compose() -> tuple[Message, ...]:
-            projected: list[Message] = list(request.system_messages)
-            for turn_index, turn in enumerate(turns):
-                if turn_index in dropped_turns:
-                    continue
-                projected.append(turn.user.message)
-                for cycle_index, cycle in enumerate(turn.cycles):
-                    if (turn_index, cycle_index) in dropped_cycles:
-                        continue
-                    projected.append(cycle.assistant.message)
-                    for result_record in cycle.results:
-                        message = result_record.message
-                        if result_record.sequence in cleared_sequences:
-                            message = ToolMessage(
-                                tool_call_id=message.tool_call_id,
-                                content=OMITTED_TOOL_RESULT,
-                            )
-                        projected.append(message)
-                if turn.final_assistant is not None:
-                    projected.append(turn.final_assistant.message)
-            return tuple(projected)
-
-        messages = compose()
-        cleared_count = 0
-        if self._estimate(messages, request.tools) > request.request_char_limit:
-            for turn in turns:
-                for cycle in turn.cycles:
-                    for record in cycle.results:
-                        cleared_sequences.add(record.sequence)
-                    cleared_count += 1
-                    messages = compose()
-                    if self._estimate(messages, request.tools) <= request.request_char_limit:
-                        break
-                else:
-                    continue
-                break
-
-        dropped_record_count = 0
-        if self._estimate(messages, request.tools) > request.request_char_limit:
-            current_index = len(turns) - 1
-            for turn_index, turn in enumerate(turns[:-1]):
-                dropped_turns.add(turn_index)
-                dropped_record_count += len(turn.records)
-                messages = compose()
-                if self._estimate(messages, request.tools) <= request.request_char_limit:
-                    break
-
-            if self._estimate(messages, request.tools) > request.request_char_limit:
-                current = turns[current_index]
-                for cycle_index, cycle in enumerate(current.cycles):
-                    dropped_cycles.add((current_index, cycle_index))
-                    dropped_record_count += len(cycle.records)
-                    messages = compose()
-                    if self._estimate(messages, request.tools) <= request.request_char_limit:
-                        break
-
-        estimated = self._estimate(messages, request.tools)
-        if estimated > request.request_char_limit:
-            raise ContextBudgetError("必要上下文超过预算，请缩短当前输入或状态")
-        self._validate_tool_pairing(messages)
-        dropped_turn_count = len(dropped_turns)
-        dropped_cycle_count = len(dropped_cycles) + sum(
-            len(turns[turn_index].cycles) for turn_index in dropped_turns
-        )
-        return ContextPack(
-            messages=messages,
-            tools=request.tools,
-            purpose=request.purpose,
-            estimated_request_chars=estimated,
-            cleared_cycle_count=cleared_count,
-            dropped_turn_count=dropped_turn_count,
-            dropped_cycle_count=dropped_cycle_count,
-            dropped_record_count=dropped_record_count,
             checkpoint_id=request.checkpoint.checkpoint_id if request.checkpoint else None,
         )
 
@@ -809,24 +715,15 @@ class ContextBuilder:
         checkpoint: ContextCheckpoint | None = None,
     ) -> ContextPack:
         request = self._request(session, purpose, tools, checkpoint)
-        if purpose == "chat" and self.run_policy.is_long_horizon:
-            return self._chat_long_horizon(request, session)
-        return self._chat(request) if purpose == "chat" else self._non_chat(request)
+        return self._chat(request, session) if purpose == "chat" else self._non_chat(request)
 
     def validate_request(
         self, messages: list[Message] | tuple[Message, ...], tools: tuple[ToolDefinition, ...]
     ) -> int:
         self._validate_tool_pairing(tuple(messages))
         estimated = self._estimate(messages, tools)
-        if self.run_policy.is_long_horizon:
-            if (
-                self.run_policy.context_window_tokens is None
-                and estimated > self.request_char_limit
-            ):
-                raise ContextBudgetError("模型请求超过保守上下文预算")
-            return estimated
-        if estimated > self.request_char_limit:
-            raise ContextBudgetError("模型请求超过上下文预算")
+        if self.run_policy.context_window_tokens is None and estimated > self.request_char_limit:
+            raise ContextBudgetError("模型请求超过保守上下文预算")
         return estimated
 
 

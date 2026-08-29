@@ -29,7 +29,8 @@ Subplan 90 built the repeated Morrow/Pi campaign and remains recoverable, but it
 paused after the user requested a Pi-aligned tool-interface repair. Subplans 91 and 92 completed the
 seven-tool interface and legacy-adapter cleanup. Their verified branch histories were consolidated
 with the later core/Learning repair on local `main`; Subplan 90 remains paused and must
-refreeze its source/profile/evidence contract before any future admission.
+refreeze its source/profile/evidence contract before any future admission. On 2026-08-30 the user
+explicitly opened Subplan 93 to remove the v1 bounded runtime compatibility path.
 
 ## Stage 7 reliability sequence
 
@@ -46,9 +47,10 @@ refreeze its source/profile/evidence contract before any future admission.
 | 87 | `87-remove-runtime-outcome-gate.md` | completed and integrated locally |
 | 88 | `88-s7p-07-runtime-control-steering.md` | completed and integrated locally |
 | 89 | `89-s7p-08-single-agent-function-matrix.md` | completed and integrated locally |
-| 90 | `90-s7p-09-repeated-direct-pi-baseline.md` | active; reduced r16 complete, primary comparison incomplete |
+| 90 | `90-s7p-09-repeated-direct-pi-baseline.md` | paused; retained evidence immutable |
 | 91 | `91-mainstream-tool-interface.md` | completed and verified on the S7P-09 stack |
 | 92 | `92-remove-legacy-tool-adapters.md` | completed, verified and integrated on S7P-09 stack |
+| 93 | `93-remove-v1-bounded.md` | active |
 
 ## Stage 7 pre-baseline
 

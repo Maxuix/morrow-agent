@@ -205,76 +205,7 @@ async def test_finish_reason_must_match_the_assistant_message_shape(finish_reaso
 
 
 @pytest.mark.asyncio
-async def test_repeated_single_cycle_stops_at_configured_repeat_limit():
-    provider = ScriptedModelProvider(
-        [AssistantMessage(tool_calls=(_call(f"c{index}", "same"),)) for index in range(1, 5)]
-    )
-    builder = make_context_builder(
-        max_tool_rounds=6,
-        loop_repeat_limit=3,
-        loop_max_pattern_cycles=2,
-    )
-    session = Session(session_id="s")
-    events = await _collect(
-        AgentLoop(
-            provider,
-            MODEL,
-            builder,
-            tool_executor=_executor(builder=builder),
-        ).run_task(session, "go")
-    )
-    assert len(provider.stream_calls) == 3
-    assert events[-2].payload["stop_code"] == "loop_detected"
-    assert session.log.unresolved_call_ids == ()
-
-
-@pytest.mark.asyncio
-async def test_repeated_two_cycle_pattern_detects_but_near_match_does_not():
-    repeated = ["A", "B"] * 3
-    provider = ScriptedModelProvider(
-        [
-            AssistantMessage(tool_calls=(_call(f"r{index}", value),))
-            for index, value in enumerate(repeated)
-        ]
-    )
-    builder = make_context_builder(
-        max_tool_rounds=6,
-        loop_repeat_limit=3,
-        loop_max_pattern_cycles=2,
-    )
-    repeated_events = await _collect(
-        AgentLoop(
-            provider,
-            MODEL,
-            builder,
-            tool_executor=_executor(builder=builder),
-        ).run_task(Session(session_id="repeat"), "go")
-    )
-    assert len(provider.stream_calls) == 6
-    assert repeated_events[-2].payload["stop_code"] == "loop_detected"
-
-    near_provider = ScriptedModelProvider(
-        [
-            AssistantMessage(tool_calls=(_call("n1", "A"),)),
-            AssistantMessage(tool_calls=(_call("n2", "A"),)),
-            AssistantMessage(tool_calls=(_call("n3", "changed"),)),
-            AssistantMessage(content="done"),
-        ]
-    )
-    near_session = Session(session_id="near")
-    near_events = await _collect(
-        AgentLoop(
-            near_provider,
-            MODEL,
-            builder,
-            tool_executor=_executor(builder=builder),
-        ).run_task(near_session, "go")
-    )
-    assert near_events[-1].payload["finish_reason"] == "stop"
-
-
-@pytest.mark.asyncio
-async def test_changing_results_breaks_loop_equality_and_tool_events_are_secret_safe():
+async def test_repeated_tool_events_are_secret_safe():
     counter = 0
 
     async def changing(arguments: _Args) -> object:
@@ -290,7 +221,7 @@ async def test_changing_results_breaks_loop_equality_and_tool_events_are_secret_
             AssistantMessage(content="done"),
         ]
     )
-    builder = make_context_builder(loop_repeat_limit=3, loop_max_pattern_cycles=1)
+    builder = make_context_builder()
     events = await _collect(
         AgentLoop(
             provider,

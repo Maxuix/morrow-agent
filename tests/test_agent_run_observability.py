@@ -1033,74 +1033,6 @@ async def test_agent_loop_persists_normalized_usage_on_request_and_terminal_metr
 
 
 @pytest.mark.asyncio
-async def test_agent_loop_settles_request_when_deadline_expires_after_text(tmp_path):
-    class TextThenCompleted:
-        async def stream(self, _model, _messages, _tools=()):
-            yield ModelEvent(kind="text_delta", text="partial")
-            yield ModelEvent(
-                kind="completed",
-                finish_reason=ModelFinishReason.STOP,
-                message=AssistantMessage(content="partial"),
-            )
-
-    handle, _journal, session, persistence = _open(tmp_path)
-    try:
-        steps = iter((0.0, 0.0, 0.0, 61.0))
-
-        def monotonic():
-            return next(steps, 61.0)
-
-        loop = AgentLoop(
-            TextThenCompleted(),
-            ModelRef(provider_id="p", model_id="m"),
-            make_context_builder(max_run_seconds=60.0, tool_timeout_seconds=1.0),
-            id_source=FixedIdSource(),
-            clock=FixedClock(),
-            monotonic=monotonic,
-        )
-
-        events = [event async for event in loop.run_task(session, "deadline")]
-
-        assert events[-1].payload["stop_code"] == AgentStopCode.RUN_TIMEOUT.value
-        observation = persistence.get_agent_run_observation()
-        assert observation is not None and observation.terminal_metrics is not None
-        assert observation.requests[0].state.value == "failed"
-        assert observation.requests[0].error_code is ModelErrorCode.TIMEOUT
-        assert observation.terminal_metrics.stop_code is AgentStopCode.RUN_TIMEOUT
-    finally:
-        handle.close()
-
-
-@pytest.mark.asyncio
-async def test_agent_loop_settles_request_when_deadline_expires_before_provider(tmp_path):
-    handle, _journal, session, persistence = _open(tmp_path)
-    try:
-        steps = iter((0.0, 0.0, 61.0))
-
-        def monotonic():
-            return next(steps, 61.0)
-
-        loop = AgentLoop(
-            ScriptedModelProvider(["unreachable"]),
-            ModelRef(provider_id="p", model_id="m"),
-            make_context_builder(max_run_seconds=60.0, tool_timeout_seconds=1.0),
-            id_source=FixedIdSource(),
-            clock=FixedClock(),
-            monotonic=monotonic,
-        )
-
-        events = [event async for event in loop.run_task(session, "deadline")]
-
-        assert events[-1].payload["stop_code"] == AgentStopCode.RUN_TIMEOUT.value
-        observation = persistence.get_agent_run_observation()
-        assert observation is not None and observation.terminal_metrics is not None
-        assert observation.requests[0].state.value == "failed"
-        assert observation.requests[0].error_code is ModelErrorCode.TIMEOUT
-    finally:
-        handle.close()
-
-
-@pytest.mark.asyncio
 async def test_agent_loop_uses_a_new_agent_run_for_each_new_turn(tmp_path):
     handle, _journal, session, persistence = _open(tmp_path)
     try:
@@ -1263,7 +1195,7 @@ async def test_agent_loop_terminal_metrics_count_durable_tool_dispositions(tmp_p
 
 
 @pytest.mark.asyncio
-async def test_agent_loop_budget_closes_durable_tool_executions_before_finalization(tmp_path):
+async def test_agent_loop_closes_multiple_durable_tool_executions_before_finalization(tmp_path):
     class EchoArguments(BaseModel):
         model_config = ConfigDict(extra="forbid")
 
@@ -1272,7 +1204,7 @@ async def test_agent_loop_budget_closes_durable_tool_executions_before_finalizat
     async def echo(arguments: EchoArguments):
         return {"echo": arguments.value}
 
-    builder = make_context_builder(max_tool_calls=1, max_tool_calls_per_cycle=1)
+    builder = make_context_builder()
     registry = ToolRegistry()
     registry.register(
         make_tool(name="echo", description="echo", arguments_model=EchoArguments, handler=echo)
@@ -1292,6 +1224,7 @@ async def test_agent_loop_budget_closes_durable_tool_executions_before_finalizat
                         FunctionToolCall(id="call_2", name="echo", arguments='{"value":"two"}'),
                     )
                 ),
+                AssistantMessage(content="done"),
             ]
         )
         loop = AgentLoop(
@@ -1305,18 +1238,16 @@ async def test_agent_loop_budget_closes_durable_tool_executions_before_finalizat
 
         events = [event async for event in loop.run_task(session, "use echo")]
 
-        assert events[-1].payload["finish_reason"] == FinishReason.ERROR.value
-        assert events[-1].payload["stop_code"] == AgentStopCode.TOOL_CALL_LIMIT.value
+        assert events[-1].payload["finish_reason"] == FinishReason.STOP.value
         observation = persistence.get_agent_run_observation()
         assert observation is not None and observation.terminal_metrics is not None
         executions = journal.list_executions("ws_1", agent_run_id=observation.agent_run_id)
         assert len(executions) == 2
         assert all(item.state is ToolExecutionState.CLOSED for item in executions)
         dispositions = [item.disposition for item in executions]
-        assert dispositions.count(ToolExecutionDisposition.SUCCEEDED) == 1
-        assert dispositions.count(ToolExecutionDisposition.CANCELLED) == 1
-        assert observation.terminal_metrics.tool_terminal_counts.succeeded == 1
-        assert observation.terminal_metrics.tool_terminal_counts.cancelled == 1
+        assert dispositions.count(ToolExecutionDisposition.SUCCEEDED) == 2
+        assert observation.terminal_metrics.tool_terminal_counts.succeeded == 2
+        assert observation.terminal_metrics.tool_terminal_counts.cancelled == 0
         assert observation.terminal_metrics.tool_terminal_counts.terminal_total == 2
     finally:
         handle.close()

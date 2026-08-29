@@ -69,7 +69,7 @@ MODEL = ModelRef(provider_id="test", model_id="test")
 
 def _v2_policy(*, context_window_tokens: int | None = 10_000_000, **settings):
     selected = LongHorizonPolicySettings(**settings)
-    return load_agent_policy().resolve_long_horizon(
+    return load_agent_policy().resolve(
         MODEL,
         tool_protocol="openai_function",
         multiple_tool_calls=True,
@@ -138,7 +138,6 @@ class ManyToolProvider:
 async def test_v2_loop_can_repeat_and_exceed_retired_caps_before_normal_stop():
     policy = _v2_policy(compaction_enabled=False)
     provider = ManyToolProvider(tool_cycles=513)
-    monotonic = _AdvancingMonotonic(step=1_000.0)
     session = Session(session_id="s")
     loop = AgentLoop(
         provider,
@@ -150,7 +149,6 @@ async def test_v2_loop_can_repeat_and_exceed_retired_caps_before_normal_stop():
             ),
         ),
         id_source=FixedIdSource(),
-        monotonic=monotonic,
         tool_executor=_echo_executor(policy),
     )
 
@@ -158,7 +156,6 @@ async def test_v2_loop_can_repeat_and_exceed_retired_caps_before_normal_stop():
 
     assert events[-1].payload["finish_reason"] == FinishReason.STOP.value
     assert provider.stream_calls == 514
-    assert monotonic.value > 3_600
     assert len([message for message in session.messages if isinstance(message, ToolMessage)]) == 513
     assert not any(
         event.type == "error"
@@ -166,16 +163,6 @@ async def test_v2_loop_can_repeat_and_exceed_retired_caps_before_normal_stop():
         in {"model_call_limit", "tool_call_limit", "run_timeout", "loop_detected"}
         for event in events
     )
-
-
-class _AdvancingMonotonic:
-    def __init__(self, *, step: float) -> None:
-        self.step = step
-        self.value = 0.0
-
-    def __call__(self) -> float:
-        self.value += self.step
-        return self.value
 
 
 @pytest.mark.asyncio

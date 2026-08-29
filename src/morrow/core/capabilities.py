@@ -470,7 +470,6 @@ class ToolCallContext:
     total: int
     result_limit: int
     approval_verdict: PolicyVerdict = PolicyVerdict.ALLOW
-    long_horizon: bool = False
     truncation_max_bytes: int = 8 * 1024
     truncation_max_lines: int = 400
     grep_max_line_chars: int = 512

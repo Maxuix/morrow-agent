@@ -57,7 +57,6 @@ def test_prompt_refresh_keeps_all_recent_unique_directories_for_batched_resoluti
     state = _AgentRunState(
         turn_id="turn-1",
         run_context=ToolRunContext(run_id="run-1", session_id="session-1"),
-        deadline=0,
     )
     state.touched_paths = [f"package-{index}/module.py" for index in range(12)]
 

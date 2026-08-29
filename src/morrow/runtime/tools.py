@@ -717,12 +717,9 @@ class ToolExecutor:
         self.approval_port = approval_port
         self.capability_policy = capability_policy
         self.expected_process_isolation = resolved_isolation
-        self.long_horizon = run_policy.is_long_horizon
-        self.truncation_max_bytes = (
-            run_policy.truncation_max_bytes if self.long_horizon else 8 * 1024
-        )
-        self.truncation_max_lines = run_policy.truncation_max_lines if self.long_horizon else 400
-        self.grep_max_line_chars = run_policy.grep_max_line_chars if self.long_horizon else 512
+        self.truncation_max_bytes = run_policy.truncation_max_bytes
+        self.truncation_max_lines = run_policy.truncation_max_lines
+        self.grep_max_line_chars = run_policy.grep_max_line_chars
         self._active_run_context: ToolRunContext | None = None
         self._active_ordinal = 1
         self._active_total = 1
@@ -815,7 +812,6 @@ class ToolExecutor:
             ordinal=self._active_ordinal,
             total=self._active_total,
             result_limit=limit,
-            long_horizon=self.long_horizon,
             truncation_max_bytes=self.truncation_max_bytes,
             truncation_max_lines=self.truncation_max_lines,
             grep_max_line_chars=self.grep_max_line_chars,
@@ -1064,7 +1060,6 @@ class ToolExecutor:
                     ordinal=ordinal,
                     total=total,
                     result_limit=result_limit or self.run_policy.effective_result_limit,
-                    long_horizon=self.long_horizon,
                     truncation_max_bytes=self.truncation_max_bytes,
                     truncation_max_lines=self.truncation_max_lines,
                     grep_max_line_chars=self.grep_max_line_chars,
@@ -1097,7 +1092,6 @@ class ToolExecutor:
             ordinal=ordinal,
             total=total,
             result_limit=result_limit,
-            long_horizon=self.long_horizon,
             truncation_max_bytes=self.truncation_max_bytes,
             truncation_max_lines=self.truncation_max_lines,
             grep_max_line_chars=self.grep_max_line_chars,

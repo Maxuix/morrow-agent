@@ -3973,3 +3973,20 @@
   `1378 passed, 2 deselected in 87.42s`. Ruff format/check, compileall, both CLI help commands,
   evaluator self-check for all ten tasks, and `git diff --check` passed. No Live request or formal
   evaluation admission was run.
+
+## 2026-08-30 — v1 bounded runtime compatibility removed
+
+- The user explicitly retired the v1 bounded mode because its strict repeated-cycle detector did
+  not represent broader task progress. Existing r19/r20 evaluation evidence remains immutable.
+- Removed the v1 RunPolicy shape, resolver, bundled defaults, legacy override selector, cumulative
+  model/tool/task limits, Cycle character budget, strict repeated-cycle detector and runtime/context
+  dual branches. The change deletes substantially more code than it adds.
+- Configured and injected Providers now share one v2 resolver. `RunPolicy` accepts schema version 2
+  only; v1 snapshots, incomplete pre-frozen snapshots and retired YAML override fields fail strict
+  validation instead of silently selecting a compatibility runtime.
+- Preserved per-tool timeout, result/truncation bounds, compaction, Provider retry,
+  cancellation/steering, durable tool recovery and observability. `read_artifact` is now part of the
+  single production tool inventory.
+- Focused runtime/policy/preparation tests passed `139`; the complete offline gate passed
+  `1362 passed, 2 deselected in 111.45s`. Ruff format/check, compileall, both CLI help commands and
+  `git diff --check` passed. No Live Provider request or evaluation admission was run.

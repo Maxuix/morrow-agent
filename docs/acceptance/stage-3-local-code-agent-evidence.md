@@ -1,5 +1,7 @@
 # Stage 3 本地 Code Agent 验收证据矩阵
 
+> 历史证据：文中显示的 `max_tool_rounds` 打包策略早于 Subplan 93；当前资源已移除 v1 bounded 字段。
+
 > 验收日期：2026-08-19
 > 当前声明平台：macOS 26.6.1 / Darwin 25.6.0 / arm64
 > 状态：通过（macOS）；外部实现 review 的 12 项结论及真实 Mimo 用户报告问题已逐条复核并修复；Linux 尚未声明运行支持，Windows 不是首个 Auto Sandboxed 目标

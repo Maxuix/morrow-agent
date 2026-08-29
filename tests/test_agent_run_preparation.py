@@ -6,6 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from pydantic import ValidationError
 
 from morrow.adapters.credentials.keyring import MemoryCredentialStore
 from morrow.adapters.models.openai_compatible import estimate_request_chars
@@ -109,7 +110,7 @@ def _configure_active(app, *, model_id="m1", base_url=None, capabilities=None):
     return credential_ref
 
 
-def _preparation(app, *, constructions=None, tool_factory=None, legacy=None):
+def _preparation(app, *, constructions=None, tool_factory=None, injected=None):
     if constructions is None:
         constructions = []
         _register_fake_adapter(app, constructions=constructions)
@@ -120,7 +121,7 @@ def _preparation(app, *, constructions=None, tool_factory=None, legacy=None):
         credential_resolver=app.provider_service.credential_resolver,
         estimate_request_chars=estimate_request_chars,
         tool_factory=tool_factory or (lambda policy: None),
-        legacy=legacy,
+        injected=injected,
     )
 
 
@@ -258,7 +259,7 @@ def test_configured_provider_session_defaults_to_long_horizon_with_unknown_windo
     session_app = _open_session_application(app, project)
 
     policy = session_app.context_builder.run_policy
-    assert policy.is_long_horizon is True
+    assert policy.policy_schema_version == 2
     assert policy.context_window_tokens is None
     assert policy.effective_request_chars == 262_144
     assert policy.compaction_enabled is True
@@ -286,44 +287,23 @@ def test_configured_model_window_and_output_capacity_drive_long_horizon_policy(
     assert policy.reserve_tokens == 384_000
 
 
-def test_automatic_long_horizon_preserves_explicit_legacy_policy_overrides(
-    tmp_path: Path,
-) -> None:
-    credentials = MemoryCredentialStore()
-    app = build_application(state_root=tmp_path / "state", credentials=credentials)
-    constructions: list = []
-    _register_fake_adapter(app, constructions=constructions)
-    _configure_active(app)
-    loaded = app.global_store.load()
-    updated = app.global_store.update(
-        lambda value: value.model_copy(
-            update={
-                "runtime_policy": RuntimePolicyOverrides.model_validate(
-                    {"agent_run": {"max_tool_rounds": 12}}, strict=True
-                )
-            }
-        ),
-        expected_revision=loaded.revision,
-    )
-    assert updated.status.value == "ok"
-    app = build_application(state_root=tmp_path / "state", credentials=credentials)
-    _register_fake_adapter(app, constructions=[])
-    project = tmp_path / "project"
-    project.mkdir()
-
-    policy = _open_session_application(app, project).context_builder.run_policy
-
-    assert policy.is_long_horizon is False
-    assert policy.max_tool_rounds == 12
+def test_retired_bounded_policy_overrides_are_rejected() -> None:
+    with pytest.raises(ValidationError):
+        RuntimePolicyOverrides.model_validate({"agent_run": {"max_tool_rounds": 12}}, strict=True)
 
 
-def test_prepare_new_without_config_returns_legacy_runtime(tmp_path: Path) -> None:
+def test_prepare_new_without_config_returns_injected_v2_runtime(tmp_path: Path) -> None:
     app = _app(tmp_path)
     constructions: list = []
     _register_fake_adapter(app, constructions=constructions)
     model = ModelRef(provider_id="fake-provider", model_id="m")
-    run_policy = AGENT_POLICY.resolve(model, tool_protocol="none", multiple_tool_calls=False)
-    legacy = PreparedAgentRunRuntime(
+    run_policy = AGENT_POLICY.resolve(
+        model,
+        tool_protocol="none",
+        multiple_tool_calls=False,
+        context_window_tokens=None,
+    )
+    injected = PreparedAgentRunRuntime(
         spec=build_prepared_spec(
             provider_config=ProviderConfig(
                 adapter="fake-adapter",
@@ -344,9 +324,10 @@ def test_prepare_new_without_config_returns_legacy_runtime(tmp_path: Path) -> No
         tool_executor=None,
         run_policy=run_policy,
     )
-    service = _preparation(app, legacy=legacy)
+    service = _preparation(app, injected=injected)
 
-    assert service.prepare_new() is legacy
+    assert service.prepare_new() is injected
+    assert injected.run_policy.policy_schema_version == 2
     assert constructions == []
 
 
@@ -597,37 +578,34 @@ def test_rehydrate_unavailable_frozen_credential_has_no_fallback(tmp_path: Path)
         ),
         run_policy=run_policy,
     )
-    with_legacy = _preparation(app, legacy=prepared)
+    with_injected = _preparation(app, injected=prepared)
 
-    # Even with a legacy runtime present, a frozen CredentialRef that cannot be
+    # Even with an injected runtime present, a frozen CredentialRef that cannot be
     # resolved makes the run unavailable: no silent fallback.
     with pytest.raises(ProviderUnavailableError):
-        with_legacy.rehydrate(snapshot)
+        with_injected.rehydrate(snapshot)
 
 
-def test_rehydrate_legacy_snapshot_uses_legacy_runtime(tmp_path: Path) -> None:
+def test_rehydrate_snapshot_without_frozen_runtime_is_rejected(tmp_path: Path) -> None:
     app = _app(tmp_path)
     _register_fake_adapter(app, constructions=[])
     _configure_active(app)
-    legacy = _preparation(app).prepare_new()
-    with_legacy = _preparation(app, legacy=legacy)
+    injected = _preparation(app).prepare_new()
+    with_injected = _preparation(app, injected=injected)
 
     old_snapshot = AgentRunSnapshot(
         profile=None,
-        model=legacy.model,
-        provider_id=legacy.model.provider_id,
+        model=injected.model,
+        provider_id=injected.model.provider_id,
         source_revisions=(),
-        run_policy_digest=legacy.spec.run_policy_digest,
-        tool_schema_digest=legacy.spec.tool_schema_digest,
-        permission_profile_digest=legacy.spec.tool_schema_digest,
+        run_policy_digest=injected.spec.run_policy_digest,
+        tool_schema_digest=injected.spec.tool_schema_digest,
+        permission_profile_digest=injected.spec.tool_schema_digest,
         runtime_instance_id="inst-1",
     )
     assert old_snapshot.provider_runtime is None
-    assert with_legacy.rehydrate(old_snapshot) is legacy
-
-    without_legacy = _preparation(app)
     with pytest.raises(AgentRunPreparationError):
-        without_legacy.rehydrate(old_snapshot)
+        with_injected.rehydrate(old_snapshot)
 
 
 def test_rehydrate_rejects_tool_schema_drift(tmp_path: Path) -> None:

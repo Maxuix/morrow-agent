@@ -31,11 +31,7 @@ from morrow.core.models import (
     RunPolicy,
     ToolDefinition,
 )
-from morrow.runtime.policy import (
-    AgentPolicy,
-    LongHorizonPolicySettings,
-    has_legacy_agent_run_overrides,
-)
+from morrow.runtime.policy import AgentPolicy, LongHorizonPolicySettings
 from morrow.runtime.tools import ToolExecutor, ToolRegistry
 
 
@@ -139,13 +135,12 @@ class AgentRunPreparationService:
         frozen_credential_resolver: Callable[[str, CredentialRef | None], str | None] | None = None,
         estimate_request_chars,
         tool_factory: Callable[[RunPolicy], ToolExecutor | None],
-        legacy: PreparedAgentRunRuntime | None = None,
+        injected: PreparedAgentRunRuntime | None = None,
         workspace_id: str | None = None,
         mcp_factory: Callable[[str, RunPolicy], PreparedMcpRun | None] | None = None,
         mcp_rehydrate_factory: Callable[[AgentRunSnapshot, str], PreparedMcpRun | None]
         | None = None,
         prompt_assembler=None,
-        long_horizon: bool = False,
         long_horizon_settings: LongHorizonPolicySettings | None = None,
     ) -> None:
         self.global_store = global_store
@@ -155,12 +150,11 @@ class AgentRunPreparationService:
         self.frozen_credential_resolver = frozen_credential_resolver or credential_resolver
         self.estimate_request_chars = estimate_request_chars
         self.tool_factory = tool_factory
-        self.legacy = legacy
+        self.injected = injected
         self.workspace_id = workspace_id
         self.mcp_factory = mcp_factory
         self.mcp_rehydrate_factory = mcp_rehydrate_factory
         self.prompt_assembler = prompt_assembler
-        self.long_horizon = long_horizon
         self.long_horizon_settings = long_horizon_settings
 
     def prepare_new(self, *, agent_run_id: str | None = None) -> PreparedAgentRunRuntime:
@@ -172,11 +166,8 @@ class AgentRunPreparationService:
         loaded = self.global_store.load()
         config: GlobalConfig | None = loaded.value
         if config is None or config.active_model is None:
-            # No current configuration (explicit provider/model integrations):
-            # the boot-time legacy runtime is the compatible answer, exactly like
-            # the pre-Stage-6 behavior.
-            if self.legacy is not None:
-                return self.legacy
+            if self.injected is not None:
+                return self.injected
             raise ValueError("尚未配置 active_model")
         model = config.active_model
         provider_config = config.providers.get(model.provider_id)
@@ -195,28 +186,14 @@ class AgentRunPreparationService:
             model,
             model_config.capabilities,
         )
-        if self.long_horizon:
-            configured_overrides = (
-                config.runtime_policy.agent_run if config.runtime_policy else None
-            )
-            if has_legacy_agent_run_overrides(configured_overrides):
-                raise AgentRunPreparationError(
-                    "legacy runtime-policy overrides require migration before a long-horizon run"
-                )
-            run_policy = self.agent_policy.resolve_long_horizon(
-                model,
-                tool_protocol=exact.tool_protocol,
-                multiple_tool_calls=exact.multiple_tool_calls,
-                context_window_tokens=exact.context_window_tokens,
-                max_output_tokens=exact.max_output_tokens,
-                settings=self.long_horizon_settings,
-            )
-        else:
-            run_policy = self.agent_policy.resolve(
-                model,
-                tool_protocol=exact.tool_protocol,
-                multiple_tool_calls=exact.multiple_tool_calls,
-            )
+        run_policy = self.agent_policy.resolve(
+            model,
+            tool_protocol=exact.tool_protocol,
+            multiple_tool_calls=exact.multiple_tool_calls,
+            context_window_tokens=exact.context_window_tokens,
+            max_output_tokens=exact.max_output_tokens,
+            settings=self.long_horizon_settings,
+        )
         provider = self.registry.create(provider_config, credential)
         context_builder = ContextBuilder(
             run_policy=run_policy,
@@ -262,15 +239,9 @@ class AgentRunPreparationService:
     ) -> PreparedAgentRunRuntime:
         """Rebuild a runtime from stored AgentRun evidence only.
 
-        Runs without frozen provider evidence (pre-Stage-6 snapshots) use the
-        compatible boot-time runtime. New runs rebuild exactly: an unresolvable
-        frozen CredentialRef makes the run unavailable instead of falling back.
+        An unresolvable frozen CredentialRef makes the run unavailable instead of falling back.
         """
         frozen = snapshot.provider_runtime
-        if frozen is None and snapshot.run_policy is None:
-            if self.legacy is not None:
-                return self.legacy
-            raise AgentRunPreparationError("AgentRun has no frozen provider evidence to rehydrate")
         if frozen is None or snapshot.run_policy is None:
             raise AgentRunPreparationError("AgentRun frozen evidence is incomplete")
         if run_policy_digest(snapshot.run_policy) != snapshot.run_policy_digest:

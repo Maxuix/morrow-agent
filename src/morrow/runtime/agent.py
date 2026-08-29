@@ -6,7 +6,6 @@ import asyncio
 import inspect
 import json
 import math
-import time
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING
@@ -43,7 +42,6 @@ from morrow.core.models import (
     ProtocolModel,
     ToolDefinition,
     ToolEffect,
-    ToolMessage,
     UserMessage,
     provider_error_message,
     sanitize_text,
@@ -58,7 +56,6 @@ from morrow.runtime.tool_cycle import ToolCycleExecutor
 from morrow.runtime.tools import (
     MIN_ERROR_ENVELOPE_CHARS,
     ToolErrorCode,
-    ToolExecutionOutcome,
     ToolExecutor,
 )
 
@@ -214,52 +211,6 @@ def _retryable_provider_exception(error: ModelProviderError) -> bool:
     )
 
 
-def _canonical_json_or_text(value: str) -> str:
-    try:
-        return json.dumps(
-            json.loads(value), ensure_ascii=False, sort_keys=True, separators=(",", ":")
-        )
-    except (TypeError, ValueError, json.JSONDecodeError):
-        return value.strip()
-
-
-def _outcome_signature(outcome: ToolExecutionOutcome) -> tuple:
-    try:
-        payload = json.loads(outcome.envelope)
-    except (TypeError, ValueError, json.JSONDecodeError):
-        payload = {}
-    if outcome.ok:
-        return ("ok", _canonical_json_or_text(json.dumps(payload.get("result"))))
-    error = payload.get("error") if isinstance(payload, dict) else {}
-    return (
-        "error",
-        str(error.get("code", outcome.error_code.value if outcome.error_code else "internal")),
-        bool(error.get("retryable", False)),
-    )
-
-
-def _cycle_signature(message: AssistantMessage, outcomes: list[ToolExecutionOutcome]) -> tuple:
-    return tuple(
-        (
-            call.name,
-            _canonical_json_or_text(call.arguments),
-            _outcome_signature(outcome),
-        )
-        for call, outcome in zip(message.tool_calls, outcomes, strict=True)
-    )
-
-
-def _has_repeated_suffix(signatures: list[tuple], repeat: int, max_pattern: int) -> bool:
-    for pattern_length in range(1, min(max_pattern, len(signatures) // repeat) + 1):
-        pattern = signatures[-pattern_length:]
-        if all(
-            signatures[-pattern_length * (index + 1) : -pattern_length * index or None] == pattern
-            for index in range(repeat)
-        ):
-            return True
-    return False
-
-
 def _pending_cancellation() -> bool:
     task = asyncio.current_task()
     return bool(task and task.cancelling())
@@ -345,11 +296,10 @@ def _prompt_refresh_failure_code(error: Exception) -> str:
 
 @dataclass
 class _AgentRunState:
-    """Mutable state for one bounded AgentLoop run."""
+    """Mutable state for one AgentLoop run."""
 
     turn_id: str
     run_context: ToolRunContext
-    deadline: float | None
     agent_run_id: str | None = None
     visible: str = ""
     model_attempts: int = 0
@@ -370,7 +320,6 @@ class _AgentRunState:
     max_context_tokens: int = 0
     last_context_tokens: int | None = None
     accounting_basis: TokenAccountingBasis | None = None
-    cycle_signatures: list[tuple] = field(default_factory=list)
     active_calls: tuple[FunctionToolCall, ...] = ()
     durable_executions: tuple[DurableToolExecution, ...] = ()
     active_running_id: str | None = None
@@ -510,7 +459,6 @@ class AgentLoop:
         clock: Clock | None = None,
         tool_executor: ToolExecutor | None = None,
         grant_provider=None,
-        monotonic=None,
         should_stop_after_turn=None,
         retry_sleep=None,
         runtime_control=None,
@@ -522,7 +470,6 @@ class AgentLoop:
         self.run_policy = context_builder.run_policy
         self.tool_executor = tool_executor
         self.grant_provider = grant_provider
-        self.monotonic = monotonic or time.monotonic
         self.should_stop_after_turn = should_stop_after_turn
         self.retry_sleep = retry_sleep or asyncio.sleep
         self.runtime_control = runtime_control
@@ -691,8 +638,6 @@ class AgentLoop:
     async def compact_idle(self, session: Session, *, instructions: str = "") -> bool:
         """Run the manual Pi-style compaction command only while the Session is idle."""
 
-        if not self.run_policy.is_long_horizon:
-            raise ContextBudgetError("当前 AgentRun 策略未启用 long-horizon 上下文压缩")
         if session.read_only:
             raise ContextBudgetError("只读 Session 不能持久化上下文压缩")
         if session.log.has_active_turn:
@@ -783,11 +728,6 @@ class AgentLoop:
                 session_id=session.session_id,
             ),
             agent_run_id=initial_agent_run_id,
-            deadline=(
-                self.monotonic() + policy.max_run_seconds
-                if policy.max_run_seconds is not None
-                else None
-            ),
         )
 
         observation_runtime = (
@@ -944,20 +884,12 @@ class AgentLoop:
                     dropped_cycle_count=state.dropped_cycle_count,
                     dropped_record_count=state.dropped_record_count,
                     policy_schema_version=policy.policy_schema_version,
-                    max_context_tokens=(
-                        state.max_context_tokens if policy.is_long_horizon else None
-                    ),
-                    last_context_tokens=(
-                        state.last_context_tokens if policy.is_long_horizon else None
-                    ),
-                    context_window_tokens=(
-                        policy.context_window_tokens if policy.is_long_horizon else None
-                    ),
-                    reserve_tokens=policy.reserve_tokens if policy.is_long_horizon else None,
-                    keep_recent_tokens=policy.keep_recent_tokens
-                    if policy.is_long_horizon
-                    else None,
-                    accounting_basis=(state.accounting_basis if policy.is_long_horizon else None),
+                    max_context_tokens=state.max_context_tokens,
+                    last_context_tokens=state.last_context_tokens,
+                    context_window_tokens=policy.context_window_tokens,
+                    reserve_tokens=policy.reserve_tokens,
+                    keep_recent_tokens=policy.keep_recent_tokens,
+                    accounting_basis=state.accounting_basis,
                     compaction_count=state.compaction_count,
                     overflow_recovery_count=state.overflow_recovery_count,
                     validation_outcome=run_metrics.validation_outcome,
@@ -1218,26 +1150,6 @@ class AgentLoop:
                         completion_payload(FinishReason.STEERED, state.visible),
                     )
                     return
-                if state.deadline is not None and self.monotonic() >= state.deadline:
-                    for item in terminal_error("任务超过总运行时间", AgentStopCode.RUN_TIMEOUT):
-                        yield item
-                    return
-                if (
-                    policy.max_model_attempts is not None
-                    and state.model_attempts >= policy.max_model_attempts
-                ):
-                    for item in terminal_error(
-                        "模型调用次数已达上限", AgentStopCode.MODEL_CALL_LIMIT
-                    ):
-                        yield item
-                    return
-                if (
-                    policy.max_tool_rounds is not None
-                    and state.tool_rounds >= policy.max_tool_rounds
-                ):
-                    for item in terminal_error("工具轮次已达上限", AgentStopCode.TOOL_CALL_LIMIT):
-                        yield item
-                    return
                 try:
                     state.internal_phase = "context_build"
                     try:
@@ -1251,7 +1163,7 @@ class AgentLoop:
                             yield item
                         return
                     context = context_builder.build(session, tools=tools)
-                    while policy.is_long_horizon and context.compaction_required:
+                    while context.compaction_required:
                         if not policy.compaction_enabled:
                             raise ContextBudgetError("模型上下文需要压缩，但自动压缩已禁用")
                         previous_boundary = session.compaction_boundary_sequence
@@ -1285,21 +1197,18 @@ class AgentLoop:
                 state.dropped_turn_count += context.dropped_turn_count
                 state.dropped_cycle_count += context.dropped_cycle_count
                 state.dropped_record_count += context.dropped_record_count
-                if policy.is_long_horizon:
-                    state.context_observation_count += 1
-                    state.max_context_tokens = max(
-                        state.max_context_tokens, context.estimated_context_tokens
-                    )
-                    state.last_context_tokens = context.estimated_context_tokens
-                    if state.context_observation_count == 1:
-                        state.accounting_basis = context.accounting_basis
-                    elif state.accounting_basis != context.accounting_basis:
-                        state.accounting_basis = None
+                state.context_observation_count += 1
+                state.max_context_tokens = max(
+                    state.max_context_tokens, context.estimated_context_tokens
+                )
+                state.last_context_tokens = context.estimated_context_tokens
+                if state.context_observation_count == 1:
+                    state.accounting_basis = context.accounting_basis
+                elif state.accounting_basis != context.accounting_basis:
+                    state.accounting_basis = None
                 state.internal_phase = "model_call"
                 state.model_attempts += 1
                 admission = None
-                request_state: str | None = None
-                request_error: ModelErrorCode | None = None
                 if observation_runtime is not None and state.agent_run_id is not None:
                     request_projection = (
                         session.run_context_projection.prompt_projection
@@ -1318,76 +1227,27 @@ class AgentLoop:
                         tool_rounds=state.tool_rounds,
                         tool_calls=state.tool_calls,
                         policy_schema_version=policy.policy_schema_version,
-                        estimated_context_tokens=(
-                            context.estimated_context_tokens if policy.is_long_horizon else None
-                        ),
-                        context_window_tokens=(
-                            policy.context_window_tokens if policy.is_long_horizon else None
-                        ),
-                        reserve_tokens=policy.reserve_tokens if policy.is_long_horizon else None,
-                        keep_recent_tokens=policy.keep_recent_tokens
-                        if policy.is_long_horizon
-                        else None,
-                        accounting_basis=(
-                            context.accounting_basis if policy.is_long_horizon else None
-                        ),
-                        compaction_required=(
-                            context.compaction_required if policy.is_long_horizon else None
-                        ),
+                        estimated_context_tokens=context.estimated_context_tokens,
+                        context_window_tokens=policy.context_window_tokens,
+                        reserve_tokens=policy.reserve_tokens,
+                        keep_recent_tokens=policy.keep_recent_tokens,
+                        accounting_basis=context.accounting_basis,
+                        compaction_required=context.compaction_required,
                         purpose="agent",
                         prompt_evidence=(
                             request_projection.evidence if request_projection is not None else None
                         ),
                     )
-                remaining_model_time = (
-                    state.deadline - self.monotonic() if state.deadline is not None else None
-                )
-                if remaining_model_time is not None and remaining_model_time <= 0:
-                    request_state = "failed"
-                    request_error = ModelErrorCode.TIMEOUT
-                    settle_model_request(
-                        admission,
-                        state_name="failed",
-                        error_code=request_error,
-                    )
-                    for item in terminal_error("任务超过总运行时间", AgentStopCode.RUN_TIMEOUT):
-                        yield item
-                    return
                 candidate_chunks: list[str] = []
                 stream = runner.attempt(call_messages, tools)
                 try:
                     while True:
                         try:
-                            if remaining_model_time is None:
-                                model_event = await anext(stream)
-                            else:
-                                async with asyncio.timeout(remaining_model_time):
-                                    model_event = await anext(stream)
+                            model_event = await anext(stream)
                         except StopAsyncIteration:
                             break
-                        except TimeoutError:
-                            request_state = "failed"
-                            request_error = ModelErrorCode.TIMEOUT
-                            for item in terminal_error(
-                                "任务超过总运行时间", AgentStopCode.RUN_TIMEOUT
-                            ):
-                                yield item
-                            return
                         if model_event.kind == "text_delta" and model_event.text:
                             candidate_chunks.append(model_event.text)
-                        remaining_model_time = (
-                            state.deadline - self.monotonic()
-                            if state.deadline is not None
-                            else None
-                        )
-                        if remaining_model_time is not None and remaining_model_time <= 0:
-                            request_state = "failed"
-                            request_error = ModelErrorCode.TIMEOUT
-                            for item in terminal_error(
-                                "任务超过总运行时间", AgentStopCode.RUN_TIMEOUT
-                            ):
-                                yield item
-                            return
                 finally:
                     try:
                         close = getattr(stream, "aclose", None)
@@ -1399,15 +1259,10 @@ class AgentLoop:
                                 settle_model_request(
                                     admission,
                                     state_name="cancelled",
-                                    error_code=ModelErrorCode.TIMEOUT
-                                    if request_error is ModelErrorCode.TIMEOUT
-                                    else None,
                                 )
                             else:
                                 attempt_outcome = runner.outcome
-                                if request_state == "failed":
-                                    settled_state = "failed"
-                                elif attempt_outcome.error_code is not None:
+                                if attempt_outcome.error_code is not None:
                                     settled_state = "failed"
                                 else:
                                     settled_state = "completed"
@@ -1415,7 +1270,7 @@ class AgentLoop:
                                     admission,
                                     state_name=settled_state,
                                     finish_reason=attempt_outcome.finish_reason,
-                                    error_code=request_error or attempt_outcome.error_code,
+                                    error_code=attempt_outcome.error_code,
                                     usage=attempt_outcome.usage,
                                     cost=attempt_outcome.cost,
                                 )
@@ -1432,11 +1287,7 @@ class AgentLoop:
                 )
                 if outcome.error_code is not None:
                     if outcome.error_code is ModelErrorCode.CONTEXT_OVERFLOW:
-                        if (
-                            policy.is_long_horizon
-                            and policy.compaction_enabled
-                            and state.overflow_recovery_count == 0
-                        ):
+                        if policy.compaction_enabled and state.overflow_recovery_count == 0:
                             state.overflow_recovery_count += 1
                             yield event("status.changed", {"status": "compacting"})
                             try:
@@ -1456,11 +1307,7 @@ class AgentLoop:
                                 state.compaction_count += 1
                                 yield event("status.changed", {"status": "compacted"})
                                 continue
-                    retry_limit = (
-                        policy.max_retries
-                        if policy.is_long_horizon and policy.retry_enabled
-                        else (policy.model_retry_limit or 0)
-                    )
+                    retry_limit = policy.max_retries if policy.retry_enabled else 0
                     can_retry = state.retry_count < retry_limit and _retryable_provider_outcome(
                         outcome
                     )
@@ -1468,19 +1315,19 @@ class AgentLoop:
                         state.retry_count += 1
                         state.total_retry_count += 1
                         persist_retry_progress()
-                        payload = {"status": "retrying"}
-                        if policy.is_long_horizon:
-                            exponential = policy.retry_base_delay_seconds * (
-                                2 ** (state.retry_count - 1)
-                            )
-                            provider_delay = outcome.retry_after_seconds or 0.0
-                            payload["retry_delay_seconds"] = min(
+                        exponential = policy.retry_base_delay_seconds * (
+                            2 ** (state.retry_count - 1)
+                        )
+                        provider_delay = outcome.retry_after_seconds or 0.0
+                        payload = {
+                            "status": "retrying",
+                            "retry_delay_seconds": min(
                                 max(exponential, provider_delay),
                                 policy.max_provider_retry_delay_seconds,
-                            )
+                            ),
+                        }
                         yield event("status.changed", payload)
-                        if policy.is_long_horizon:
-                            await self.retry_sleep(payload["retry_delay_seconds"])
+                        await self.retry_sleep(payload["retry_delay_seconds"])
                         continue
                     if outcome.finish_reason == ModelFinishReason.LENGTH:
                         stop_code = AgentStopCode.MODEL_OUTPUT_LIMIT
@@ -1556,16 +1403,7 @@ class AgentLoop:
                     ):
                         yield item
                     return
-                if (
-                    policy.max_tool_calls_per_cycle is not None
-                    and len(calls) > policy.max_tool_calls_per_cycle
-                ):
-                    for item in terminal_error(
-                        "单轮工具调用数量已达上限", AgentStopCode.TOOL_CALL_LIMIT
-                    ):
-                        yield item
-                    return
-                per_call_result_limit = self._cycle_result_limit(message, policy, context_builder)
+                per_call_result_limit = self._cycle_result_limit(policy)
                 if per_call_result_limit is None:
                     for item in terminal_error(
                         "模型工具调用输出超过 Cycle 预算",
@@ -1630,69 +1468,13 @@ class AgentLoop:
                 state.active_calls = calls
                 state.active_running_id = None
                 state.active_result_limit = per_call_result_limit
-                if (
-                    policy.max_tool_calls is not None
-                    and state.tool_calls + len(calls) > policy.max_tool_calls
-                ):
-                    unresolved = session.log.unresolved_call_ids
-                    interrupted = self._close_unresolved(
-                        session,
-                        state.active_calls,
-                        state.durable_executions,
-                        ToolErrorCode.BUDGET_EXHAUSTED,
-                        "工具调用总数已达上限",
-                        tool_executor=tool_executor,
-                        result_limit=per_call_result_limit,
-                    )
-                    for status_event in synthetic_statuses(
-                        unresolved,
-                        code=ToolErrorCode.BUDGET_EXHAUSTED,
-                        running_status="skipped",
-                    ):
-                        yield status_event
-                    state.tool_calls += len(calls)
-                    state.tool_rounds += 1
-                    for item in terminal_error(
-                        "工具调用总数已达上限",
-                        AgentStopCode.TOOL_CALL_LIMIT,
-                        interrupted=interrupted,
-                    ):
-                        yield item
-                    return
-
                 state.tool_calls += len(calls)
                 state.tool_rounds += 1
                 state.internal_phase = "tool_cycle"
-                cycle_outcomes: list[ToolExecutionOutcome] = []
                 for index, call in enumerate(calls, start=1):
                     if _pending_cancellation():
                         _consume_cancellation_request()
                         raise asyncio.CancelledError
-                    now = self.monotonic()
-                    if state.deadline is not None and now >= state.deadline:
-                        unresolved = session.log.unresolved_call_ids
-                        interrupted = self._close_unresolved(
-                            session,
-                            state.active_calls,
-                            state.durable_executions,
-                            ToolErrorCode.BUDGET_EXHAUSTED,
-                            "任务总运行时间已耗尽",
-                            tool_executor=tool_executor,
-                            result_limit=state.active_result_limit,
-                        )
-                        for status_event in synthetic_statuses(
-                            unresolved,
-                            code=ToolErrorCode.BUDGET_EXHAUSTED,
-                            running_status="skipped",
-                        ):
-                            yield status_event
-                        for item in terminal_error(
-                            "任务超过总运行时间",
-                            AgentStopCode.RUN_TIMEOUT,
-                            interrupted=interrupted,
-                        ):
-                            yield item
-                        return
                     state.active_running_id = call.id
                     yield tool_status(call, "running", index, len(calls))
                     durable = (
@@ -1708,9 +1490,6 @@ class AgentLoop:
                         ordinal=index,
                         total=len(calls),
                         result_limit=per_call_result_limit,
-                        remaining_run_seconds=(
-                            state.deadline - now if state.deadline is not None else None
-                        ),
                         preflight_error=(
                             (
                                 ToolErrorCode.PREFLIGHT_FAILED,
@@ -1733,7 +1512,6 @@ class AgentLoop:
                         )
                     else:
                         session.append_tool_result(call.id, result.envelope)
-                    cycle_outcomes.append(result)
                     state.run_context.note_tool_outcome(ok=result.ok, error_code=result.error_code)
                     state.active_running_id = None
                     yield tool_status(
@@ -1751,21 +1529,7 @@ class AgentLoop:
                         if isinstance(fact, ChangeToolFact):
                             for p in fact.relative_paths:
                                 _remember_touched_path(state, p)
-                if policy.loop_detection_enabled and not policy.is_long_horizon:
-                    state.cycle_signatures.append(_cycle_signature(message, cycle_outcomes))
-                if (
-                    policy.loop_detection_enabled
-                    and not policy.is_long_horizon
-                    and _has_repeated_suffix(
-                        state.cycle_signatures,
-                        policy.loop_repeat_limit,
-                        policy.loop_max_pattern_cycles,
-                    )
-                ):
-                    for item in terminal_error("检测到重复工具循环", AgentStopCode.LOOP_DETECTED):
-                        yield item
-                    return
-                if policy.is_long_horizon and await self._host_stop_requested(session, message):
+                if await self._host_stop_requested(session, message):
                     yield event("status.changed", {"status": "stopped", "source": "host"})
                     session.finish_turn(FinishReason.CANCELLED)
                     state.terminal_finish_reason = FinishReason.CANCELLED
@@ -1901,35 +1665,11 @@ class AgentLoop:
                     if inspect.isawaitable(result):
                         await result
 
-    def _cycle_result_limit(self, message: AssistantMessage, policy, context_builder) -> int | None:
-        """Largest equal raw envelope cap safe under worst-case JSON escaping."""
-        calls = message.tool_calls
+    @staticmethod
+    def _cycle_result_limit(policy) -> int | None:
+        """Return the per-call raw envelope cap when it can fit an error envelope."""
         high = policy.effective_result_limit
-        low = MIN_ERROR_ENVELOPE_CHARS
-
-        if policy.is_long_horizon:
-            return high if high >= low else None
-        cycle_limit = policy.effective_cycle_limit
-        if cycle_limit is None:
-            return None
-
-        def estimated(limit: int) -> int:
-            worst_case = tuple(
-                ToolMessage(tool_call_id=call.id, content="\\" * limit) for call in calls
-            )
-            return context_builder.estimate_request_chars((message, *worst_case), ())
-
-        if high < low or estimated(low) > cycle_limit:
-            return None
-        accepted = low
-        while low <= high:
-            middle = (low + high) // 2
-            if estimated(middle) <= cycle_limit:
-                accepted = middle
-                low = middle + 1
-            else:
-                high = middle - 1
-        return accepted
+        return high if high >= MIN_ERROR_ENVELOPE_CHARS else None
 
     def _close_unresolved(
         self,
@@ -1989,16 +1729,15 @@ class AgentLoop:
                     now=self._wall_now(session),
                     disposition=ToolExecutionDisposition.UNKNOWN,
                 )
-            if self.run_policy.is_long_horizon:
-                outcome = ToolCycleExecutor._attach_artifact_references(
-                    outcome,
-                    (
-                        *outcome.artifact_refs,
-                        *outcome.mcp_result_artifact_refs,
-                        *durable.artifact_refs,
-                    ),
-                    result_limit=effective_result_limit,
-                )
+            outcome = ToolCycleExecutor._attach_artifact_references(
+                outcome,
+                (
+                    *outcome.artifact_refs,
+                    *outcome.mcp_result_artifact_refs,
+                    *durable.artifact_refs,
+                ),
+                result_limit=effective_result_limit,
+            )
             if durable.state not in {
                 ToolExecutionState.CLOSED,
                 ToolExecutionState.HANDLER_COMPLETED,

@@ -342,10 +342,11 @@ immutable AgentRun snapshot，也不复制 ToolExecution payload。未迁移的 
 时当前 Turn 以 `FinishReason.STEERED` 合法闭合，随后队列文本用其 `client_message_id` 经普通
 probe → prepare → Turn admission 路径提交。正常 STOP 后才按 FIFO 一次 drain 一个 follow-up；
 cancel/error/host stop 不自动消费 follow-up。
-没有显式 legacy v1 override 的新配置型 Provider AgentRun 默认启用 v2；exact model capability 提供 context window 时按 token
+所有新建、注入和恢复的 Provider AgentRun 只接受 v2 long-horizon RunPolicy；v1 snapshot 与已退役的
+累计轮次、调用次数、总时长和重复循环覆盖字段会严格拒绝，不再静默降级。exact model capability 提供 context window 时按 token
 窗口减去输出 reserve 触发压缩，缺少该 capability 时以 256 KiB 保守字符预算触发同一压缩路径，并保持
-context-window/token-threshold 观测为空，不猜测或伪造 token window。legacy override 保持 v1，直到用户显式迁移。已知 maximum output capability
-会扩大 reserve，避免输入投影占用模型可能需要的输出空间。v1 恢复仍按冻结的旧 RunPolicy 执行。上述路径都不保存命令参数、
+context-window/token-threshold 观测为空，不猜测或伪造 token window。已知 maximum output capability
+会扩大 reserve，避免输入投影占用模型可能需要的输出空间。上述路径都不保存命令参数、
 输出、项目指令正文、文件内容、模型原始回复或 verifier 私有数据。
 Selection 只引用不可变 Project Knowledge revision，AgentRunSnapshot 保存
 selection/digest/memory revision，运行时由 `RunContextProjection` 重建。Promotion 只保存审计/恢复/来源
