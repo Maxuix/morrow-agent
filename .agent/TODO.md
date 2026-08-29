@@ -2,8 +2,8 @@
 
 ## Current task
 
-Remove v1 bounded runtime compatibility and leave one v2 long-horizon execution policy. Preserve
-existing evaluation evidence without running Live requests.
+Subplan 93 is complete and integrated. v2 long-horizon is the only AgentRun execution policy;
+existing evaluation evidence was preserved and no Live request was run.
 
 ## Tasks
 

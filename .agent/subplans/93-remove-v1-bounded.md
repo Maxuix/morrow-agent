@@ -1,5 +1,7 @@
 # Subplan 93 — Remove v1 Bounded Runtime Compatibility
 
+Status: completed, verified and fast-forward integrated into local `main` at `058b508`.
+
 ## Objective
 
 Keep one AgentRun execution contract: v2 long-horizon. Remove the v1 bounded resolver, cumulative

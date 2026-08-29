@@ -1,7 +1,7 @@
 # Stage 7 — Remove v1 Bounded Runtime Compatibility
 
-> Status: active; Subplan 90 paused with immutable evidence
-> Active subplan: Subplan 93 — Remove v1 Bounded Runtime Compatibility
+> Status: Subplan 93 complete and integrated; Subplan 90 paused with immutable evidence
+> Active subplan: none
 > Consolidation base: `a7e22e5`; current source includes the later Learning checkpoints
 > Activation base: verified local `main@1fd7e229bef276d1a0361e775ce800ade4b318fc`
 > Source authority: current user request, S7P-00 protocol v1, completed S7P-08, current code/tools

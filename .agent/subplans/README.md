@@ -50,7 +50,7 @@ explicitly opened Subplan 93 to remove the v1 bounded runtime compatibility path
 | 90 | `90-s7p-09-repeated-direct-pi-baseline.md` | paused; retained evidence immutable |
 | 91 | `91-mainstream-tool-interface.md` | completed and verified on the S7P-09 stack |
 | 92 | `92-remove-legacy-tool-adapters.md` | completed, verified and integrated on S7P-09 stack |
-| 93 | `93-remove-v1-bounded.md` | active |
+| 93 | `93-remove-v1-bounded.md` | completed, verified and integrated locally |
 
 ## Stage 7 pre-baseline
 
