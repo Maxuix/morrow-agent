@@ -45,6 +45,9 @@ it has one Morrow PASS, but only one repetition and incomplete Provider usage.
   ceiling. Morrow failed its first readiness request as `invalid_response`, while the authorized Pi
   probe completed with 536 tokens. Stop before plan creation or formal admission and repair the
   Morrow Adapter response-compatibility blocker.
+- `[x]` Diagnose the DeepSeek Adapter failure without retaining response content. OpenCode emits
+  monotonic cumulative usage on multiple stream chunks; Morrow rejects changed repeated usage as a
+  conflict and maps the resulting `ValueError` to terminal `invalid_response`.
 - `[x]` Fold frozen isolated Morrow configuration and `build_active()` keyring loading directly into
   admission; do not add a readiness command or model probe.
 

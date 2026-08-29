@@ -3864,3 +3864,11 @@
   7.5 seconds with 506 input, 30 output and 536 total tokens plus available cost. The common
   Provider, credential and DeepSeek model are therefore reachable; the readiness blocker is
   Morrow's OpenAI-compatible Adapter response parsing/validation. No formal admission was created.
+- A non-stream Morrow Adapter request then succeeded with visible content, isolating the defect to
+  streaming. Sanitized structural inspection found 11 chunks, visible content, a normal `stop`, and
+  usage on nine chunks. Usage was cumulative and monotonic: prompt tokens stayed 89 while
+  completion/total progressed from 1/90 to 21/110 across seven distinct values.
+- `_merge_usage()` currently accepts repeated fields only when values are identical. It therefore
+  raises `ValueError` on DeepSeek's first cumulative increase; `classify_error()` maps that local
+  validation exception to terminal `invalid_response`, explaining the single attempt and missing
+  usage. Reasoning chunks were present but were intentionally isolated and were not the failure.

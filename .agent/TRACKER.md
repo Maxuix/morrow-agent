@@ -73,3 +73,7 @@ Adapter response handling. Resume only after that compatibility path is repaired
 - The matching Pi no-tool probe completed in 7.5 seconds with 506 input, 30 output and 536 total
   tokens. This rules out a general OpenCode credential/model outage for the probe and identifies
   Morrow's Adapter response contract as the current blocker.
+- Structural inspection confirmed the exact incompatibility. DeepSeek streamed usage on nine
+  chunks with fixed prompt tokens and increasing completion/total tokens; Morrow's `_merge_usage`
+  requires repeated non-null values to be identical, raises `ValueError` on the first increase and
+  classifies it as terminal `invalid_response`. Visible content and `stop` were both present.
