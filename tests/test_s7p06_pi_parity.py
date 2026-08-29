@@ -344,6 +344,23 @@ class ProactiveCompactionProvider(OverflowProvider):
 
 
 @pytest.mark.asyncio
+async def test_manual_idle_compaction_uses_the_same_durable_summary_path():
+    provider = ProactiveCompactionProvider()
+    session = Session(session_id="s")
+    seed_user_turn(session, "old request", assistant="old answer")
+    seed_user_turn(session, "another old request", assistant="another answer")
+    loop = AgentLoop(provider, MODEL, _v2_context(keep_recent_tokens=1))
+
+    compacted = await loop.compact_idle(session, instructions="保留接口决策")
+
+    assert compacted is True
+    assert provider.complete_calls == 1
+    assert len(session.compaction_entries) == 1
+    assert session.compaction_entries[0].instructions == "保留接口决策"
+    assert session.compaction_summary is not None
+
+
+@pytest.mark.asyncio
 async def test_context_overflow_has_one_compaction_recovery_path():
     provider = OverflowProvider()
     policy = _v2_policy(context_window_tokens=1_024, reserve_tokens=64, keep_recent_tokens=40)
@@ -498,7 +515,7 @@ def test_long_horizon_without_exact_window_uses_conservative_character_budget():
     policy = _v2_policy(context_window_tokens=None)
     builder = ContextBuilder(
         run_policy=policy,
-        estimate_request_chars=lambda messages, tools: 200_000,
+        estimate_request_chars=lambda messages, tools: 300_000,
         estimate_request_tokens=lambda messages, tools: 50_000,
     )
     session = Session(session_id="s")

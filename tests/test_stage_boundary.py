@@ -260,7 +260,7 @@ def test_unsupported_adapter_capability_preserves_plain_chat_without_tools(tmp_p
 
     assert session_app.orchestrator.runtime.loop.tool_executor is None
     assert session_app.context_builder.run_policy.provider_tool_support.tool_protocol == "none"
-    assert session_app.context_builder.run_policy.effective_request_chars == 160000
+    assert session_app.context_builder.run_policy.effective_request_chars == 262144
 
 
 def _snapshot_tree(root: Path) -> dict[str, bytes]:

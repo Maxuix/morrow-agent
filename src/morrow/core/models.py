@@ -247,6 +247,7 @@ class ModelCapabilityOverrides(ProtocolModel):
     safe_request_chars: int | None = Field(default=None, gt=0)
     safe_context_chars: int | None = Field(default=None, gt=0)
     context_window_tokens: int | None = Field(default=None, gt=0)
+    max_output_tokens: int | None = Field(default=None, gt=0)
     input_types: tuple[InputModality, ...] | None = None
     cost_metadata: CostMetadata | None = None
 

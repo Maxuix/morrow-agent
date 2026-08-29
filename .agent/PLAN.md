@@ -36,6 +36,15 @@ The evaluator binds that continuation to the exact r19 plan/evidence root and co
 Fresh r20 finalized all eight remaining entries within capacity; r17-r19 admissions remain immutable
 and were not reused. Three unavailable total-token fields still block the standard comparison gate.
 
+Post-run analysis found that the frozen comparison plan carried a verified 1,000,000-token model
+window, but isolated Morrow admission copied a model config with `capabilities: null`. Ordinary
+composition therefore selected bounded v1 and its 160,000-character fallback instead of the already
+implemented long-horizon compaction path. The user authorized a provider-neutral repair: use a
+256-KiB conservative fallback for unknown windows, make new configured-Provider runs use v2
+compaction even when exact metadata is absent, propagate frozen comparison capabilities into the
+isolated Morrow model config, and reserve known maximum output capacity before admitting context.
+Historical AgentRun snapshots and r19/r20 evidence remain immutable.
+
 ## 1a. Completed product objective
 
 Keep learning best-effort and mechanically triggered after an accepted completed task. Tool-call
@@ -106,6 +115,13 @@ malformed optional context warns/skips instead of blocking task preparation.
   Provider/service/model selection plus the matching configured Keychain reference, then calls the
   existing `build_active()`. Admission is created only after that load succeeds; this is not a new
   readiness command and does not add a no-tool model probe.
+- New configured-Provider AgentRuns use long-horizon v2 by default. Exact model context/output
+  capabilities drive token accounting and output reserve; missing exact context metadata uses the
+  bundled 256-KiB character fallback to trigger the same automatic compaction path. Explicit legacy
+  or rehydrated v1 snapshots retain their historical bounded projection behavior.
+- S7P-09 isolated Morrow configuration freezes the plan's already validated context window and
+  maximum output capability into the exact model config. This is generic capability propagation,
+  not a Provider/model-name exception.
 
 ## 3. Evaluation context and current hold point
 
@@ -145,6 +161,9 @@ incomplete. The unrelated `docs/notes/` work remains preserved in its named reco
    scheduling; otherwise retain the new plan as blocked evidence and stop. The authorized r16
    reduced pilot has completed this step and is retained as bounded evaluation evidence. Its single
    Morrow PASS does not promote the reduced campaign to a comparison PASS.
+6. Before any later campaign, repair the context-policy mismatch found in r19/r20, run the complete
+   offline/static gate, and refreeze all source/profile/evidence hashes. Do not reinterpret or
+   overwrite prior results.
 
 ## 5. Completion
 

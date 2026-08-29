@@ -9,6 +9,17 @@ it has one Morrow PASS, but only one repetition and incomplete Provider usage.
 
 ## Tasks
 
+- `[x]` Replace the unknown-model 160,000-character fallback with 256 KiB and route new
+  configured-Provider runs through the existing long-horizon compaction path.
+- `[x]` Propagate the frozen comparison plan's context-window and maximum-output capabilities into
+  isolated Morrow model configuration without Provider/model-name branches.
+- `[x]` Make the long-horizon reserve include known maximum output capacity and preserve old v1/v2
+  AgentRun snapshot compatibility.
+- `[x]` Add policy, bootstrap, evaluator and compaction regressions; run focused and complete
+  offline/static/CLI/diff gates.
+- `[>]` Commit the verified repair, update Subplan 90 evidence/state, and leave future live reruns
+  behind a fresh explicit admission.
+
 - `[x]` Verify the consolidated baseline, harness self-check, permission matrix and historical
   campaign-capacity state.
 - `[x]` Restore explicit `network`, `git_write` and `privilege_escalation` denial precedence without

@@ -230,6 +230,7 @@ class AgentPolicy(ProtocolModel):
         tool_protocol: Literal["none", "openai_function"],
         multiple_tool_calls: bool,
         context_window_tokens: int | None,
+        max_output_tokens: int | None = None,
         settings: LongHorizonPolicySettings | None = None,
         host_stop_source: Literal["none", "provided"] = "none",
     ) -> RunPolicy:
@@ -240,7 +241,16 @@ class AgentPolicy(ProtocolModel):
             or context_window_tokens > AGENT_MAX_CONTEXT_WINDOW_TOKENS
         ):
             raise ValueError("exact model context window is outside the supported range")
+        if max_output_tokens is not None and (
+            isinstance(max_output_tokens, bool)
+            or max_output_tokens <= 0
+            or max_output_tokens > AGENT_MAX_RESERVE_TOKENS
+        ):
+            raise ValueError("exact model maximum output is outside the supported range")
         selected = settings or LongHorizonPolicySettings()
+        reserve_tokens = max(selected.reserve_tokens, max_output_tokens or 0)
+        if context_window_tokens is not None and reserve_tokens >= context_window_tokens:
+            raise ValueError("model output reserve must be below the context window")
         exact_key = f"{model.provider_id}/{model.model_id}"
         safe = self.model_safe_request_chars.get(exact_key)
         # When the exact token window is unavailable, this remains an explicit conservative
@@ -271,7 +281,7 @@ class AgentPolicy(ProtocolModel):
             loop_max_pattern_cycles=None,
             compaction_enabled=selected.compaction_enabled,
             context_window_tokens=context_window_tokens,
-            reserve_tokens=selected.reserve_tokens,
+            reserve_tokens=reserve_tokens,
             keep_recent_tokens=selected.keep_recent_tokens,
             retry_enabled=selected.retry_enabled,
             max_retries=selected.max_retries,

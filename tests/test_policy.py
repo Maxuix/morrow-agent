@@ -42,7 +42,7 @@ def test_bundled_runtime_policy_has_approved_defaults_and_empty_exact_model_tabl
         "tool_timeout_seconds": 120.0,
         "model_retry_limit": 3,
         "requested_context_chars": 800000,
-        "unknown_model_fallback_chars": 160000,
+        "unknown_model_fallback_chars": 262144,
         "max_tool_result_chars": 64000,
         "max_tool_result_request_ratio": 0.10,
         "max_tool_cycle_chars": 256000,
@@ -68,9 +68,9 @@ def test_unknown_model_uses_fallback_and_derived_ratio_limits():
         tool_protocol="openai_function",
         multiple_tool_calls=True,
     )
-    assert run.effective_request_chars == 160000
-    assert run.effective_result_limit == 16000
-    assert run.effective_cycle_limit == 56000
+    assert run.effective_request_chars == 262144
+    assert run.effective_result_limit == 26214
+    assert run.effective_cycle_limit == 91750
     assert run.provider_tool_support.safe_request_chars is None
 
 
@@ -84,7 +84,31 @@ def test_long_horizon_unknown_window_keeps_conservative_character_fallback():
 
     assert run.is_long_horizon is True
     assert run.context_window_tokens is None
-    assert run.effective_request_chars == 160000
+    assert run.effective_request_chars == 262144
+
+
+def test_long_horizon_reserves_known_maximum_output_capacity():
+    run = load_agent_policy().resolve_long_horizon(
+        ModelRef(provider_id="vendor", model_id="large-context"),
+        tool_protocol="openai_function",
+        multiple_tool_calls=True,
+        context_window_tokens=1_000_000,
+        max_output_tokens=384_000,
+    )
+
+    assert run.context_window_tokens == 1_000_000
+    assert run.reserve_tokens == 384_000
+
+
+def test_long_horizon_rejects_output_capacity_that_consumes_the_window():
+    with pytest.raises(ValueError, match="output reserve"):
+        load_agent_policy().resolve_long_horizon(
+            ModelRef(provider_id="vendor", model_id="invalid-window"),
+            tool_protocol="openai_function",
+            multiple_tool_calls=True,
+            context_window_tokens=100_000,
+            max_output_tokens=100_000,
+        )
 
 
 @pytest.mark.parametrize(
@@ -111,7 +135,7 @@ def test_exact_model_hit_is_used_without_prefix_guessing(
     assert exact.effective_result_limit == expected_result
     assert exact.effective_cycle_limit == expected_cycle
     assert exact.provider_tool_support.safe_request_chars == safe
-    assert prefix_only.effective_request_chars == 160000
+    assert prefix_only.effective_request_chars == 262144
 
 
 @pytest.mark.parametrize(

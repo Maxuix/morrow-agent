@@ -794,14 +794,15 @@ def build_session_application(
         model,
         configured_model.capabilities if configured_model is not None else None,
     )
-    use_long_horizon = (
-        long_horizon
-        if long_horizon is not None
-        else provider_config is not None and exact_capabilities.context_window_tokens is not None
+    configured_overrides = (
+        config.runtime_policy.agent_run if config is not None and config.runtime_policy else None
     )
+    legacy_overrides = has_legacy_agent_run_overrides(configured_overrides)
+    use_long_horizon = long_horizon if long_horizon is not None else provider_config is not None
+    if long_horizon is None and legacy_overrides:
+        use_long_horizon = False
     if use_long_horizon:
-        configured_overrides = config.runtime_policy.agent_run if config else None
-        if has_legacy_agent_run_overrides(configured_overrides):
+        if legacy_overrides:
             raise ValueError(
                 "legacy runtime-policy overrides require migration before a long-horizon run"
             )
@@ -810,6 +811,7 @@ def build_session_application(
             tool_protocol=exact_capabilities.tool_protocol,
             multiple_tool_calls=exact_capabilities.multiple_tool_calls,
             context_window_tokens=exact_capabilities.context_window_tokens,
+            max_output_tokens=exact_capabilities.max_output_tokens,
             settings=app.runtime_policy.long_horizon,
         )
     else:

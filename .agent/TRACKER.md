@@ -12,13 +12,19 @@ parent prefix before any tail admission. Its evaluator tests passed `67`, and th
 gate passed `1369 passed, 2 deselected`. The r20 continuation then finalized all eight tail entries;
 r19+r20 combine into 14/14 structurally valid reduced-campaign bundles.
 
+The post-evaluation context-policy repair is implemented and verified. New configured-Provider runs
+default to long-horizon v2 unless an explicit legacy v1 override requires compatibility. Unknown
+windows compact at 256 KiB; exact context/output capabilities drive token accounting and reserve.
+S7P-09 isolated Morrow admission now freezes the plan's generic context/output capabilities instead
+of copying `capabilities: null`. Existing v1 snapshots and r19/r20 evidence remain unchanged.
+
 ## Active task
 
-Fresh DeepSeek r19 finalized six entries. Its one `network` failure was retried successfully and did
-not terminate the run. Pi MORROW-005 then reported 21,553,066 tokens across 140 unique assistant
-messages, mostly cache-read tokens, pushing cumulative accounting to `35,987,509` and triggering
-the frozen 30M capacity gate before entry seven. The user approved a 50M cumulative continuation;
-r20 executed the exact remaining eight entries and completed within that ceiling.
+The repair has passed focused regression (`136`) and the complete offline gate
+(`1376 passed, 2 deselected`), plus Ruff format/check, compileall, both CLI help commands,
+evaluator self-check and `git diff --check`. Commit the verified checkpoint. Any future Live rerun
+must refreeze source/profile/evidence and receive a fresh explicit admission; this task did not
+authorize or execute one.
 
 ## Implemented boundary
 

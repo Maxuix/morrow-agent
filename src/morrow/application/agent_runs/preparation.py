@@ -208,6 +208,7 @@ class AgentRunPreparationService:
                 tool_protocol=exact.tool_protocol,
                 multiple_tool_calls=exact.multiple_tool_calls,
                 context_window_tokens=exact.context_window_tokens,
+                max_output_tokens=exact.max_output_tokens,
                 settings=self.long_horizon_settings,
             )
         else:

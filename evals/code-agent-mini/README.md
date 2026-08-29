@@ -22,6 +22,10 @@
 预算不足时可以在 comparison plan 中显式选择 reduced single-repetition pilot；它不修改
 S7P-00，也不产生两轮重复基线或统计结论。
 
+S7P-09 admission 会把 comparison plan 已校验的 `common_model.context_window` 和
+`common_model.max_output_tokens` 冻结到隔离 Morrow 模型配置。该传播只使用计划中的通用能力字段，
+不按 Provider 或模型名称分支；它确保 Morrow 使用与 Pi profile 相同的窗口事实和 v2 压缩策略。
+
 `profile.template.json` 是严格的非秘密运行 profile 模板。复制到评测目录之外后填写 Agent、
 Provider/model revision、采样、工具 schema hash、权限、预算、system prompt/project
 instructions 快照和执行版本。不能写入 credential、reasoning、完整工具参数/结果或 traceback；

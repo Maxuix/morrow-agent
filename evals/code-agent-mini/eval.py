@@ -2916,6 +2916,8 @@ def validate_comparison_plan(plan: Mapping[str, object]) -> dict[str, object]:
         "sampling": _validate_sampling_contract(common["sampling"]),
         "service": _resolved_text(common["service"], "provider service"),
     }
+    if common_normalized["max_output_tokens"] >= common_normalized["context_window"]:
+        raise EvalError("comparison plan maximum output must be below the context window")
     sampling_output = common_normalized["sampling"]["max_output_tokens"]
     if not isinstance(sampling_output, Mapping) and (
         sampling_output != common_normalized["max_output_tokens"]
@@ -4306,7 +4308,7 @@ def _prepare_campaign_morrow_state(
         return None
 
     from morrow.bootstrap import build_application
-    from morrow.core.models import ModelRef
+    from morrow.core.models import ModelCapabilityOverrides, ModelRef
 
     common = _mapping(plan["common_model"], "comparison plan common_model")
     provider_id = _text(common["provider_family"], "comparison plan provider family")
@@ -4329,6 +4331,29 @@ def _prepare_campaign_morrow_state(
         raise EvalError("configured Provider model differs from the frozen comparison plan")
     if source_provider.credential_ref is None:
         raise EvalError("frozen campaign Provider has no keyring reference")
+    context_window = int(
+        _positive_number(common["context_window"], "comparison plan context window", integer=True)
+    )
+    max_output_tokens = int(
+        _positive_number(
+            common["max_output_tokens"], "comparison plan maximum output", integer=True
+        )
+    )
+    source_capabilities = source_model.capabilities or ModelCapabilityOverrides()
+    for field_name, planned in (
+        ("context_window_tokens", context_window),
+        ("max_output_tokens", max_output_tokens),
+    ):
+        configured = getattr(source_capabilities, field_name)
+        if configured is not None and planned > configured:
+            raise EvalError(f"comparison plan {field_name} exceeds the configured model capability")
+    frozen_capabilities = source_capabilities.model_copy(
+        update={
+            "context_window_tokens": context_window,
+            "max_output_tokens": max_output_tokens,
+        }
+    )
+    frozen_model = source_model.model_copy(update={"capabilities": frozen_capabilities})
 
     states_root = root.resolve() / "morrow-states"
     final_state = campaign_morrow_state_root(root, entry)
@@ -4347,7 +4372,7 @@ def _prepare_campaign_morrow_state(
         staging.chmod(0o700)
         isolated_app = build_application(state_root=staging, credentials=credentials)
         frozen_provider = source_provider.model_copy(
-            update={"models": {model_id: source_model}, "last_test": None}
+            update={"models": {model_id: frozen_model}, "last_test": None}
         )
         written = isolated_app.global_store.update(
             lambda current: current.model_copy(

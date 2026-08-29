@@ -41,12 +41,14 @@ from morrow.core.domain import (
 from morrow.core.models import (
     CredentialRef,
     FinishReason,
+    ModelCapabilityOverrides,
     ModelRef,
     ProviderConfig,
     ProviderModelConfig,
     ToolDefinition,
     ToolFunction,
 )
+from morrow.core.runtime_policy import RuntimePolicyOverrides
 from morrow.runtime.policy import load_agent_policy
 from morrow.testing import ScriptedModelProvider
 
@@ -80,7 +82,7 @@ def _register_fake_adapter(
     return factory
 
 
-def _configure_active(app, *, model_id="m1", base_url=None):
+def _configure_active(app, *, model_id="m1", base_url=None, capabilities=None):
     config = app.global_store.load()
     credential_ref = CredentialRef(ref="provider:fake-provider:test", version=3)
     app.credentials.set(credential_ref.ref, "topsecret-value")
@@ -92,7 +94,11 @@ def _configure_active(app, *, model_id="m1", base_url=None):
                         adapter="fake-adapter",
                         base_url=base_url or "https://api.example.test/v1",
                         credential_ref=credential_ref,
-                        models={model_id: ProviderModelConfig(api_model_id=f"api-{model_id}")},
+                        models={
+                            model_id: ProviderModelConfig(
+                                api_model_id=f"api-{model_id}", capabilities=capabilities
+                            )
+                        },
                     )
                 },
                 "active_model": ModelRef(provider_id="fake-provider", model_id=model_id),
@@ -211,6 +217,8 @@ def test_model_capability_overrides_only_narrow_adapter_defaults() -> None:
             multiple_tool_calls=False,
             structured_output=False,
             safe_request_chars=100,
+            context_window_tokens=1_000_000,
+            max_output_tokens=128_000,
             input_types=("text",),
         ),
         model,
@@ -221,6 +229,8 @@ def test_model_capability_overrides_only_narrow_adapter_defaults() -> None:
             multiple_tool_calls=True,
             structured_output=True,
             safe_request_chars=1000,
+            context_window_tokens=800_000,
+            max_output_tokens=64_000,
             input_types=("image", "text"),
         ),
     )
@@ -230,7 +240,81 @@ def test_model_capability_overrides_only_narrow_adapter_defaults() -> None:
     assert exact.multiple_tool_calls is False
     assert exact.structured_output is False
     assert exact.safe_request_chars == 100
+    assert exact.context_window_tokens == 800_000
+    assert exact.max_output_tokens == 64_000
     assert exact.input_types == ("text",)
+
+
+def test_configured_provider_session_defaults_to_long_horizon_with_unknown_window(
+    tmp_path: Path,
+) -> None:
+    app = _app(tmp_path)
+    constructions: list = []
+    _register_fake_adapter(app, constructions=constructions)
+    _configure_active(app)
+    project = tmp_path / "project"
+    project.mkdir()
+
+    session_app = _open_session_application(app, project)
+
+    policy = session_app.context_builder.run_policy
+    assert policy.is_long_horizon is True
+    assert policy.context_window_tokens is None
+    assert policy.effective_request_chars == 262_144
+    assert policy.compaction_enabled is True
+
+
+def test_configured_model_window_and_output_capacity_drive_long_horizon_policy(
+    tmp_path: Path,
+) -> None:
+    app = _app(tmp_path)
+    constructions: list = []
+    _register_fake_adapter(app, constructions=constructions)
+    _configure_active(
+        app,
+        capabilities=ModelCapabilityOverrides(
+            context_window_tokens=1_000_000,
+            max_output_tokens=384_000,
+        ),
+    )
+    project = tmp_path / "project"
+    project.mkdir()
+
+    policy = _open_session_application(app, project).context_builder.run_policy
+
+    assert policy.context_window_tokens == 1_000_000
+    assert policy.reserve_tokens == 384_000
+
+
+def test_automatic_long_horizon_preserves_explicit_legacy_policy_overrides(
+    tmp_path: Path,
+) -> None:
+    credentials = MemoryCredentialStore()
+    app = build_application(state_root=tmp_path / "state", credentials=credentials)
+    constructions: list = []
+    _register_fake_adapter(app, constructions=constructions)
+    _configure_active(app)
+    loaded = app.global_store.load()
+    updated = app.global_store.update(
+        lambda value: value.model_copy(
+            update={
+                "runtime_policy": RuntimePolicyOverrides.model_validate(
+                    {"agent_run": {"max_tool_rounds": 12}}, strict=True
+                )
+            }
+        ),
+        expected_revision=loaded.revision,
+    )
+    assert updated.status.value == "ok"
+    app = build_application(state_root=tmp_path / "state", credentials=credentials)
+    _register_fake_adapter(app, constructions=[])
+    project = tmp_path / "project"
+    project.mkdir()
+
+    policy = _open_session_application(app, project).context_builder.run_policy
+
+    assert policy.is_long_horizon is False
+    assert policy.max_tool_rounds == 12
 
 
 def test_prepare_new_without_config_returns_legacy_runtime(tmp_path: Path) -> None:

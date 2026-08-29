@@ -3935,3 +3935,22 @@
 - Final conservative capacity is `47,987,509 / 50,000,000`, leaving `2,012,491`. Known bundle usage
   is 25,738,704 tokens, with three total-token fields unavailable. The standard comparison remains
   incomplete and no S7P-09 PASS is claimed.
+
+## 2026-08-29 — Context fallback and compaction activation repaired
+
+- Post-run analysis proved the 1,000,000-token comparison-plan window was not propagated into the
+  isolated Morrow model config, which retained `capabilities: null`; ordinary composition therefore
+  selected bounded v1 and repeatedly cleared tool cycles at the 160,000-character fallback.
+- With explicit user approval, changed the unknown-window fallback to 256 KiB and made new runs with
+  a persisted ProviderConfig select long-horizon v2 by default. Explicit legacy v1 overrides and
+  frozen historical snapshots preserve their prior behavior.
+- Added provider-neutral `max_output_tokens` model capability propagation. Exact context/output
+  capabilities now drive v2 accounting, and the effective reserve is at least the known maximum
+  output. Invalid output capacities that consume the full context window fail before admission.
+- S7P-09 isolated Morrow state now freezes the already validated comparison-plan context window and
+  maximum output into the exact model config without Provider/model-name branches. Existing r19/r20
+  bundles were not changed or reinterpreted.
+- Focused policy/preparation/compaction/evaluator regression passed `136`. The complete offline gate
+  passed `1376 passed, 2 deselected in 87.51s`; `uv sync`, Ruff format/check, compileall, both CLI
+  help commands, evaluator self-check for all ten tasks, and `git diff --check` passed. No Live
+  Provider request or formal campaign admission was run.

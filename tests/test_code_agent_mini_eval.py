@@ -893,6 +893,17 @@ def test_comparison_plan_accepts_explicit_reduced_single_repetition_variant() ->
     assert {entry["repetition"] for entry in normalized["schedule"]} == {1}
 
 
+def test_comparison_plan_rejects_output_capacity_that_consumes_the_context_window() -> None:
+    plan = _comparison_plan()
+    plan["common_model"]["max_output_tokens"] = plan["common_model"]["context_window"]
+    plan["integrity"] = eval_module.content_hash(
+        {key: value for key, value in plan.items() if key != "integrity"}
+    )
+
+    with pytest.raises(eval_module.EvalError, match="maximum output"):
+        eval_module.validate_comparison_plan(plan)
+
+
 def test_comparison_plan_accepts_parent_bound_reduced_continuation() -> None:
     parent = _comparison_plan()
     parent["campaign_variant"] = eval_module.REDUCED_CAMPAIGN_VARIANT
@@ -1544,6 +1555,10 @@ def test_campaign_admission_loads_frozen_isolated_config_before_creation(
     assert str(model) == "fake/fake/model"
     assert set(config.providers) == {"fake"}
     assert config.providers["fake"].credential_ref == CredentialRef(ref="provider:fake:evaluation")
+    capabilities = config.providers["fake"].models["fake/model"].capabilities
+    assert capabilities is not None
+    assert capabilities.context_window_tokens == 16_384
+    assert capabilities.max_output_tokens == 4_096
     assert "fixture-provider-value" not in (state_root / "config.yaml").read_text(encoding="utf-8")
 
 

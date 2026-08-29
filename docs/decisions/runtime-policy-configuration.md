@@ -33,12 +33,13 @@ apply the remaining keys. Runtime policy is not writable through `update_configu
 
 S7P-06 splits AgentRun behavior into two explicit policy shapes. Historical v1 snapshots keep their
 bounded rounds/attempts/calls/deadline and character compatibility fields. A new v2 long-horizon run
-has no cumulative model-request, tool-round, tool-call, repetition or task-time stop. With an exact
-configured model context window it uses the Pi token threshold; without one, an explicit v2 run uses
-the existing conservative character request boundary to trigger compaction and leaves token-window
-telemetry absent. The default composition still selects v2 only when the active configured model
-exposes the exact capability. Legacy/injected runtimes without a persisted ProviderConfig remain
-v1-compatible.
+has no cumulative model-request, tool-round, tool-call, repetition or task-time stop. New runs backed
+by a persisted ProviderConfig and without legacy v1 overrides select v2 by default. Legacy overrides
+keep automatic selection on v1 until explicitly migrated. With an exact configured model context window it
+uses the Pi token threshold and expands the reserve to include a known maximum output capability;
+without an exact window it uses the 256-KiB conservative character request boundary to trigger the
+same compaction path and leaves token-window telemetry absent. Legacy/injected runtimes without a
+persisted ProviderConfig and historical v1 snapshots remain v1-compatible.
 
 Optional v2 overlay fields use the same `runtime_policy.agent_run` block:
 
