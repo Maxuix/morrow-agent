@@ -6,8 +6,9 @@ Subplan 90 was explicitly resumed from the consolidated local `main`. The harnes
 permission matrix, historical capacity audit, reduced-plan preflight and capacity check passed.
 The explicit risk-denial repair, cumulative prior-campaign capacity guard, full reservation check
 and explicit 14-run reduced single-repetition variant are implemented. Pi-aligned transient Provider
-classification and partial-usage evaluation are now also implemented; focused affected tests passed
-`194`, and the complete offline gate passed `1363 passed, 2 deselected`.
+classification, partial-usage evaluation and Pi-compatible optional tool-call text normalization are
+now implemented. The latest Provider tests passed `74` with one explicit Live test skipped, and the
+complete offline gate passed `1365 passed, 2 deselected`.
 
 ## Active task
 
@@ -50,7 +51,12 @@ The requested DeepSeek replacement is paused before campaign creation: its first
 probe returned `invalid_response` after one model attempt with no usage. The authorized Pi probe
 then completed normally with 536 tokens and complete usage, isolating the blocker to Morrow's
 Adapter response handling. The compatibility path is now repaired and re-probed successfully.
-Next, commit the verified repair and refreeze a new DeepSeek 14-run plan before any admission.
+The retained r17 attempt stopped after three runs at its original 21M capacity boundary. The
+user-authorized cumulative 30M r18 plan then stopped after its first admission when a sixth model
+request returned `invalid_response`. Safe exact-size sampling reproduced the cause as
+whitespace-only optional content accompanying valid tool calls. The generic repair is verified.
+Next, commit it and refreeze a new DeepSeek 14-run plan from the new clean source; do not resume or
+rewrite r17/r18 admissions.
 
 ## Blockers
 
@@ -82,3 +88,7 @@ Next, commit the verified repair and refreeze a new DeepSeek 14-run plan before 
   matching Pi 0.84.2. Malformed usage makes telemetry unavailable but cannot invalidate otherwise
   valid text/tool/finish evidence. The behavior is model-neutral. The repaired real Morrow probe
   completed in one round with 3,150 input, 21 output and 3,171 total tokens.
+- r18 request 6 retained complete usage but failed `AssistantMessage.content` validation because
+  OpenCode paired valid tool calls with whitespace-only optional text. Equal-size diagnostic samples
+  reproduced the same Pydantic field failure. After normalization, a Live equal-size sample observed
+  the same Provider variant and completed normally with a valid tool call.

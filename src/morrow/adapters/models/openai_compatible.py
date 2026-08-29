@@ -275,7 +275,11 @@ class StreamAccumulator:
         if reason == ModelFinishReason.TOOL_CALLS:
             if not calls:
                 raise ValueError("tool_calls finish without tool call fragments")
-            return AssistantMessage(content=self.text or None, tool_calls=calls), reason
+            # Pi accepts OpenAI-compatible tool responses whose optional text
+            # block contains only whitespace. Preserve meaningful companion
+            # text, but do not let an empty text block invalidate valid calls.
+            content = self.text if self.text.strip() else None
+            return AssistantMessage(content=content, tool_calls=calls), reason
         if reason == ModelFinishReason.STOP:
             if not self.text:
                 return None, reason

@@ -24,7 +24,12 @@ stopped as `invalid_response` with unavailable usage. The subsequently authorize
 with 536 tokens, isolating the blocker to Morrow's Adapter response handling. No DeepSeek campaign
 plan or admission was created. The Adapter now follows Pi's provider-neutral latest-usage-snapshot
 semantics, its full offline gate passes, and a repaired Morrow readiness probe completed with 3,171
-tokens. Formal execution remains paused until a fresh campaign is pinned from the repaired source.
+tokens. Subsequent retained r17/r18 attempts exposed a second generic compatibility gap: OpenCode
+occasionally accompanies valid tool calls with whitespace-only text, which Pi accepts but Morrow
+passed into its non-empty `AssistantMessage.content` validator. The Adapter now normalizes that
+optional tool-call text to `None` without weakening final-text validation. Formal execution remains
+paused until a fresh campaign is pinned from the newly repaired source; r17/r18 admissions are not
+reused.
 
 ## 1a. Completed product objective
 

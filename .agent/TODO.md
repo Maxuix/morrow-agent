@@ -52,6 +52,12 @@ it has one Morrow PASS, but only one repetition and incomplete Provider usage.
   prior snapshot, malformed usage degrades telemetry without discarding valid semantic completion,
   and no model/provider ID branch is introduced. Focused and complete offline gates pass; the real
   repaired Morrow probe completes with 3,171 tokens.
+- `[x]` Diagnose the retained DeepSeek r18 `invalid_response`: an otherwise valid tool-call stream
+  intermittently contains whitespace-only optional text, causing `AssistantMessage.content`
+  validation to fail after assembly.
+- `[x]` Match Pi's provider-neutral tolerance by normalizing whitespace-only text to `None` only
+  when valid tool calls exist. Deterministic regression, the complete offline gate and an exact-size
+  Live structural sample all pass without weakening ordinary final-text validation.
 - `[x]` Fold frozen isolated Morrow configuration and `build_active()` keyring loading directly into
   admission; do not add a readiness command or model probe.
 

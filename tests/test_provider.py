@@ -869,6 +869,49 @@ def test_accumulator_preserves_argument_string_fidelity():
     assert message.tool_calls[0].arguments == '{"a": 1, "b": [2, 3]} '
 
 
+def test_accumulator_ignores_whitespace_only_text_alongside_tool_calls():
+    accumulator = StreamAccumulator()
+    accumulator.add_text(" \n\t")
+    accumulator.add_tool_fragment(
+        tool_call_fragment(0, call_id="call_1", name="lookup_record", arguments='{"key": 1}')
+    )
+    accumulator.set_finish("tool_calls")
+
+    message, reason = accumulator.build()
+
+    assert reason == ModelFinishReason.TOOL_CALLS
+    assert message.content is None
+    assert message.tool_calls[0].name == "lookup_record"
+
+
+@pytest.mark.asyncio
+async def test_adapter_accepts_whitespace_only_text_with_valid_tool_calls():
+    provider = provider_with_stream(
+        AsyncChunks(
+            [
+                tool_stream_chunk(
+                    [
+                        tool_call_fragment(
+                            0,
+                            call_id="call_1",
+                            name="lookup_record",
+                            arguments='{"key": 1}',
+                        )
+                    ],
+                    text=" \n\t",
+                    finish="tool_calls",
+                )
+            ]
+        )
+    )
+
+    events = await collect_stream_with_tools(provider, (demo_tool(),))
+
+    assert events[-1].kind == "completed"
+    assert events[-1].finish_reason == ModelFinishReason.TOOL_CALLS
+    assert events[-1].message.content is None
+
+
 @pytest.mark.parametrize(
     "chunks",
     [

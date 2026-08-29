@@ -3889,3 +3889,20 @@
   `git diff --check` passed. The complete offline gate passed `1363 passed, 2 deselected in 86.74s`.
 - The repaired real Morrow/DeepSeek no-tool probe completed normally in one round with 3,150 input,
   21 output and 3,171 total tokens. No formal campaign admission was created.
+
+## 2026-08-29 — Pi-compatible whitespace tool-call response repair
+
+- Retained r17 stopped after three admissions at its original capacity boundary. After the user
+  increased the cumulative DeepSeek budget to 30M, fresh r18 passed plan/preflight/capacity but its
+  first Morrow run stopped on request 6 as `invalid_response`; the prior five requests completed.
+- Safe equal-size sampling reproduced the failure as a Pydantic `AssistantMessage.content`
+  validation error. OpenCode intermittently emitted whitespace-only optional text alongside valid
+  tool calls. Pi tolerates this response shape; Morrow's accumulator treated whitespace as truthy
+  and passed it to the Core non-empty-content validator.
+- Updated the generic accumulator to normalize whitespace-only companion text to `None` only for a
+  valid tool-call completion. Meaningful companion text remains intact, ordinary final text remains
+  strict, and no Provider/model identifier is consulted.
+- Provider tests passed `74` with one explicit Live test skipped. The complete offline gate passed
+  `1365 passed, 2 deselected`; Ruff format/check, compileall and `git diff --check` passed. A
+  protected exact-size Live sample observed the same whitespace-plus-tool-call variant and completed
+  normally with a valid tool call and no Adapter error.

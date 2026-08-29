@@ -242,3 +242,18 @@ OpenCode-specific branch was added.
 The repaired Morrow probe completed with 3,171 total tokens. Focused regression passed 167 tests,
 and the complete offline gate passed 1,363 tests with two explicit Live tests deselected. No formal
 DeepSeek campaign admission was consumed.
+
+## DeepSeek optional tool-call text compatibility
+
+Retained r18 request 6 exposed a separate generic OpenAI-compatible variant. The Provider returned
+available usage and valid tool-call structure, but also emitted optional assistant text containing
+only whitespace. Pi accepts that combination. Morrow's accumulator previously passed the truthy
+whitespace string into `AssistantMessage`, whose non-empty-content validator correctly rejected it;
+the Adapter then surfaced terminal `invalid_response` with no retry.
+
+The Adapter now preserves meaningful text alongside tool calls but normalizes whitespace-only
+optional text to `None`. It does not change plain `stop` final-answer validation and introduces no
+Provider or model branch. Provider regression passed 74 tests with one explicit Live test skipped;
+the complete offline gate passed 1,365 tests with two Live tests deselected. An exact-size protected
+structural sample then observed the same whitespace-plus-tool-call variant and completed normally,
+with available usage and no Adapter error.
