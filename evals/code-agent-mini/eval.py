@@ -4522,10 +4522,10 @@ def run_bounded_process(
     }
 
 
-def pi_agent_command(prompt: str, extension: Path) -> list[str]:
+def pi_agent_command(prompt: str, extension: Path, *, model_id: str) -> list[str]:
     """Build the pinned Pi 0.84.2 invocation without credentials or mutable user resources."""
 
-    if not prompt.strip() or not extension.resolve().is_file():
+    if not prompt.strip() or not model_id.strip() or not extension.resolve().is_file():
         raise EvalError("Pi evaluation prompt or policy extension is unavailable")
     return [
         "pi",
@@ -4535,7 +4535,7 @@ def pi_agent_command(prompt: str, extension: Path) -> list[str]:
         "--provider",
         "opencode-go",
         "--model",
-        "mimo-v2.5",
+        model_id,
         "--thinking",
         "off",
         "--no-session",
@@ -4553,13 +4553,13 @@ def pi_agent_command(prompt: str, extension: Path) -> list[str]:
 
 
 def run_pi_agent(
-    *, workspace: Path, evidence_dir: Path, prompt: str, output: Path
+    *, workspace: Path, evidence_dir: Path, prompt: str, output: Path, model_id: str
 ) -> dict[str, object]:
     """Run pinned Pi under the content-hashed evaluation policy and normalize its JSONL."""
 
     extension = DATASET_ROOT / "pi-evaluation-policy.ts"
     process = run_bounded_process(
-        pi_agent_command(prompt, extension),
+        pi_agent_command(prompt, extension, model_id=model_id),
         cwd=workspace.resolve(),
         evidence_dir=evidence_dir.resolve(),
         timeout_seconds=EXTERNAL_DEADLINE_SECONDS,
@@ -4963,6 +4963,7 @@ def build_parser() -> argparse.ArgumentParser:
     run_pi.add_argument("evidence_dir", type=Path)
     run_pi.add_argument("prompt", type=Path)
     run_pi.add_argument("output", type=Path)
+    run_pi.add_argument("--model", required=True, dest="model_id")
     compare = subparsers.add_parser("compare", help="mechanically compare Morrow and Pi campaigns")
     compare.add_argument("plan", type=Path)
     compare.add_argument("morrow_root", type=Path)
@@ -5114,6 +5115,7 @@ def main() -> int:
                 evidence_dir=arguments.evidence_dir,
                 prompt=prompt,
                 output=arguments.output,
+                model_id=arguments.model_id,
             )
             print(canonical_json(result).strip())
             return 0

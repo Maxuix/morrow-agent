@@ -1784,9 +1784,9 @@ def test_bounded_process_retains_only_hash_metadata_and_refuses_overwrite(tmp_pa
         )
 
 
-def test_pi_agent_command_pins_model_policy_and_resources() -> None:
+def test_pi_agent_command_pins_policy_resources_and_selected_model() -> None:
     extension = EVAL_PATH.parent / "pi-evaluation-policy.ts"
-    command = eval_module.pi_agent_command("fixture prompt", extension)
+    command = eval_module.pi_agent_command("fixture prompt", extension, model_id="fixture-model")
 
     assert command[:8] == [
         "pi",
@@ -1796,7 +1796,7 @@ def test_pi_agent_command_pins_model_policy_and_resources() -> None:
         "--provider",
         "opencode-go",
         "--model",
-        "mimo-v2.5",
+        "fixture-model",
     ]
     assert command[command.index("--extension") + 1] == str(extension.resolve())
     assert command[command.index("--tools") + 1] == "read,bash,edit,write,grep,find,ls"

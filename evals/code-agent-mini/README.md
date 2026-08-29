@@ -172,7 +172,7 @@ extension/skill/template/session，并用 macOS Seatbelt 约束 bash：
   /protected/run/morrow.normalized.json
 .venv/bin/python evals/code-agent-mini/eval.py run-pi \
   /protected/run/workspace /protected/run/pi-raw /protected/run/prompt.txt \
-  /protected/run/pi.normalized.json
+  /protected/run/pi.normalized.json --model <model-id>
 ```
 
 `run-pi` 的 evidence directory 必须预先以 mode `0700` 创建；raw stdout/stderr 只保留在该非 Git
