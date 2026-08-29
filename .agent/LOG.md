@@ -4058,3 +4058,6 @@
   Live Provider/network evaluation was not authorized and was not run.
 - Fast-forward integrated the verified topic branch into local `main` at `3215909`; unrelated dirty
   secret-preview work remained untouched and outside both audit commits.
+- Remote push was not performed: local `main` was already 18 commits ahead of `origin/main` before
+  this audit, so pushing would also publish unrelated pre-existing history outside the current
+  request. Local completion remains recoverable on `main`.
