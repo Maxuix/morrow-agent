@@ -26,6 +26,8 @@ evaluator self-check and `git diff --check`. Commit the verified checkpoint. Any
 must refreeze source/profile/evidence and receive a fresh explicit admission; this task did not
 authorize or execute one.
 
+Verified implementation checkpoint: `52f1e9e` (`fix(runtime): activate safe context compaction`).
+
 ## Implemented boundary
 
 - Accepted outcomes create Learning Reviews regardless of recorded tool failures or unresolved

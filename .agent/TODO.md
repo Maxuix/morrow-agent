@@ -17,7 +17,7 @@ it has one Morrow PASS, but only one repetition and incomplete Provider usage.
   AgentRun snapshot compatibility.
 - `[x]` Add policy, bootstrap, evaluator and compaction regressions; run focused and complete
   offline/static/CLI/diff gates.
-- `[>]` Commit the verified repair, update Subplan 90 evidence/state, and leave future live reruns
+- `[x]` Commit the verified repair, update Subplan 90 evidence/state, and leave future live reruns
   behind a fresh explicit admission.
 
 - `[x]` Verify the consolidated baseline, harness self-check, permission matrix and historical

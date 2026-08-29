@@ -3954,3 +3954,5 @@
   passed `1376 passed, 2 deselected in 87.51s`; `uv sync`, Ruff format/check, compileall, both CLI
   help commands, evaluator self-check for all ten tasks, and `git diff --check` passed. No Live
   Provider request or formal campaign admission was run.
+- Committed the verified implementation as `52f1e9e` (`fix(runtime): activate safe context
+  compaction`).
