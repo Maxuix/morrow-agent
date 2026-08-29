@@ -12,8 +12,10 @@ Resume Subplan 90 from the consolidated local `main`. First restore the explicit
 required by the frozen Morrow/Pi permission-equivalence contract, then run the complete offline/static
 gate and create a new clean source/profile/evidence pin. If the approved ceiling cannot carry the
 28-run primary, use the explicitly marked 14-run reduced single-repetition pilot; formal admission
-remains gated by preflight and cumulative capacity. The authorized r15 pilot has completed admission
-and execution, with runtime evidence retained as incomplete provider-diagnostic evidence.
+remains gated by preflight and cumulative capacity. The authorized r16 pilot has completed all 14
+fresh admissions and executions after successful short Mimo probes. It produced one Morrow PASS,
+but the reduced one-repetition sample and incomplete Provider usage cannot satisfy the primary
+comparison gate.
 
 ## 1a. Completed product objective
 
@@ -104,10 +106,11 @@ Pi credential readiness and its exact-model no-tool probe pass without exposing 
 credential. Retained formal attempts include known usage and incomplete requests, and the
 conservative reservation for a fresh complete campaign currently exceeds the remaining capacity
 under the active 80,000,000-token ceiling before all unknown-usage requests are resolved. The
-reduced r15 plan was freshly pinned and all 14 frozen admissions were executed. Every bundle
-validates, but the live Provider returned no usable Morrow token usage and one Pi stream ended
-without evidence, so the paired comparison remains incomplete. The unrelated `docs/notes/` work
-remains preserved in its named recoverable stash.
+reduced r16 plan was freshly pinned at `main@90b0e9b` and all 14 frozen admissions were executed.
+Every bundle validates. Morrow produced one PASS, two model failures, one budget exhaustion and six
+runtime failures; Pi produced two model failures and two runtime failures. Some Morrow usage remains
+unavailable, and the reduced schedule has only one repetition, so the paired comparison remains
+incomplete. The unrelated `docs/notes/` work remains preserved in its named recoverable stash.
 
 ## 4. Execution order
 
@@ -120,9 +123,9 @@ remains preserved in its named recoverable stash.
    every retained campaign root explicitly into the cumulative budget audit. Use the reduced
    variant's 14-run reservation when the full 28-run primary does not fit.
 5. If capacity and all hold-point facts pass, present the exact formal admission boundary before
-   scheduling; otherwise retain the new plan as blocked evidence and stop. The authorized r15
-   reduced pilot has now completed this step; its runtime evidence is retained for provider-side
-   diagnosis and is not promoted to a comparison PASS.
+   scheduling; otherwise retain the new plan as blocked evidence and stop. The authorized r16
+   reduced pilot has completed this step and is retained as bounded evaluation evidence. Its single
+   Morrow PASS does not promote the reduced campaign to a comparison PASS.
 
 ## 5. Completion
 

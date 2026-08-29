@@ -3828,3 +3828,22 @@
   unavailable usage as zero.
 - Cumulative capacity is `52,877,509 / 80,000,000` tokens, leaving `27,122,491`; no ceiling was
   exceeded. The pilot is retained as provider-runtime diagnostic evidence, not as an S7P-09 PASS.
+
+## 2026-08-29 — Fresh r16 reduced evaluation completed
+
+- After one non-stream and four streaming Mimo probes passed, created protected campaign
+  `s7p-09-mimo-v25-90b0e9b-reduced-r16` at clean `main@90b0e9b`. Plan-check, preflight, all eight
+  permission-equivalence cases and the 14-run capacity reservation passed before admission.
+- Admitted and executed all 14 entries once in frozen order. All bundles validate. Morrow results
+  are 1 `PASS`, 2 `FAIL_MODEL`, 1 `BUDGET_EXHAUSTED` and 6 `FAIL_RUNTIME`; Pi results are
+  2 `FAIL_MODEL` and 2 `FAIL_RUNTIME`.
+- Morrow `EXTERNAL-002` passed with 101,407 tokens. `EXTERNAL-001` passed its verifier but had an
+  unexpected `__pycache__` artifact. `MORROW-006` exhausted the frozen budget at 1,062,637 tokens.
+  Pi completed both external tasks but failed their verifiers. Product-task pairs failed at the
+  Provider/runtime boundary with zero or unavailable usage.
+- The generic bundle summaries report 10/10 valid Morrow and 4/4 valid Pi bundles with zero invalid
+  bundles. The standard comparison remains `NOT_EVALUATED` because the reduced variant has one
+  repetition and mandatory Morrow usage is incomplete; no repeated-baseline PASS is claimed.
+- Cumulative conservative accounting is `73,877,509 / 80,000,000`, leaving `6,122,491`. Two Morrow
+  runs emitted non-fatal HTTP client cleanup warnings after their evidence-bearing turns; both
+  finalized normally and their bundle integrity checks passed.

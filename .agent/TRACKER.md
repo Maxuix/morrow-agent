@@ -14,7 +14,9 @@ classification and partial-usage evaluation are now also implemented; focused af
 The ordinary bundled retry default is aligned with Pi at three and committed as `c0b14b9`. Fresh
 reduced plan r14 passed plan-check, source/evidence preflight and permission equivalence, but its
 full remaining-schedule capacity check blocked before admission. After the user's additional
-30,000,000-token authorization, fresh r15 was admitted and all 14 entries were executed.
+30,000,000-token authorization, fresh r15 was admitted and all 14 entries were executed. After the
+Provider retry repair and successful short probes, fresh r16 was pinned at `main@90b0e9b` and all
+14 entries were executed once.
 
 ## Implemented boundary
 
@@ -41,9 +43,9 @@ full remaining-schedule capacity check blocked before admission. After the user'
 
 ## Next action
 
-Preserve r14 as a no-admission blocked plan and retain r15 as the completed runtime-diagnostic
-pilot. A further comparison run requires Provider-side response/usage reliability and a new explicit
-execution decision; do not silently retry any admitted run key.
+Retain r16 as the latest reduced evaluation. Do not silently retry any admitted run key. Full
+Subplan 90 completion still requires a separately authorized primary two-repetition campaign with
+complete mandatory usage and enough capacity; the current ceiling leaves only `6,122,491` tokens.
 
 ## Blockers
 
@@ -54,3 +56,9 @@ execution decision; do not silently retry any admitted run key.
   `FAIL_RUNTIME` on 10/10 entries with unavailable token usage, Pi is `FAIL_RUNTIME` on 3/4 and
   `BLOCKED_ENV` on 1/4, and the comparison gate rejects incomplete mandatory metrics. No PASS claim
   is made.
+- All 14 r16 bundles revalidate. Morrow is 1 `PASS`, 2 `FAIL_MODEL`, 1 `BUDGET_EXHAUSTED` and
+  6 `FAIL_RUNTIME`; Pi is 2 `FAIL_MODEL` and 2 `FAIL_RUNTIME`. Mimo completed several formal tasks,
+  so it is usable but unreliable under this workload. The standard summary remains incomplete
+  because the approved reduced variant has one repetition and some Morrow usage is unavailable.
+- Cumulative conservative accounting after r16 is `73,877,509 / 80,000,000`, leaving `6,122,491`.
+  No further full or reduced campaign fits without a new budget/scope decision.

@@ -1,8 +1,8 @@
 # S7P-09 Repeated Direct/Pi Baseline — Offline Harness Evidence
 
 > Status: Phase A harness/runners and Pi-aligned Morrow Provider retry repair verified; the
-> authorized reduced r15 pilot is executed and structurally valid, but Provider/runtime evidence
-> is incomplete. This is not an S7P-09 PASS claim.
+> authorized reduced r16 pilot is executed and structurally valid, with one Morrow PASS. The
+> primary repeated comparison remains incomplete. This is not an S7P-09 PASS claim.
 
 ## Scope and boundary
 
@@ -79,8 +79,8 @@ inputs, so an empty new root cannot hide previously accounted usage.
   not block comparison; token usage remains mandatory.
 - No credential value, task network access, dependency addition or public event change occurred. Pi
   uses the same Keychain credential by reference, not by copied value. Its exact-model no-tool probe
-  passed; the repaired Morrow Agent probe also passed. The later authorized r15 formal pilot is
-  recorded below with its runtime failure evidence.
+  passed; the repaired Morrow Agent probe also passed. The later authorized r15 and r16 formal
+  pilots are recorded below with their immutable evidence.
 
 ## Offline validation on 2026-08-28
 
@@ -117,16 +117,15 @@ copied. Pi auth readiness is `ready/api_key`, and its bounded no-tool probe retu
 provider/model with a normal stop, 404 total tokens and complete Provider cost.
 
 The approved budget was a hard 50,000,000-token ceiling with no currency ceiling; the user later
-added 30,000,000 tokens, making the active r15 ceiling 80,000,000. Provider/runtime
-cost is recorded when available and otherwise remains explicitly unavailable; it is not a campaign
-gate and is never inferred as zero. Retained formal attempts and conservative reservations currently
-exceed the remaining capacity for a fresh complete 28-run campaign, while the reduced r15 pilot
-fits within the expanded ceiling.
+added 30,000,000 tokens, making the active ceiling 80,000,000. Provider/runtime cost is recorded
+when available and otherwise remains explicitly unavailable; it is not a campaign gate and is
+never inferred as zero. After r16, retained formal attempts and conservative reservations leave
+only 6,122,491 tokens, which cannot carry another complete campaign.
 Before the first admission, the capacity command also accepts a conservative per-admission
 reservation and remaining-admission count, and compares the complete planned schedule against the
 same cumulative prior-root total.
-The r15 source/profile/evidence pin was created before its admissions; no prior plan or run key was
-reused.
+The r15 and r16 source/profile/evidence pins were each created before their admissions; no prior
+plan or run key was reused.
 
 The fresh offline preflight and permission-equivalence check passed. The explicit cumulative audit
 counts `27,577,509` retained tokens and rejects the conservative `42,000,000`-token reservation
@@ -197,3 +196,31 @@ bundles. The provider/runtime result distribution is:
 `compare_campaign` correctly rejects the pilot because mandatory usage metrics are incomplete. The
 observed blocker is provider/runtime response availability, not a capacity overrun or a missing
 finalization artifact. The r15 evidence is diagnostic and cannot be presented as a comparison PASS.
+
+## Authorized r16 pilot outcome
+
+After one non-stream and four streaming short Mimo probes completed successfully, the fresh
+protected campaign `s7p-09-mimo-v25-90b0e9b-reduced-r16` was pinned to clean
+`main@90b0e9b9ce8603118f39ba41cda08cf138487cb5`. Plan validation, campaign preflight, all eight
+permission-equivalence cases and the complete 14-run reservation check passed before admission.
+The protected evidence root is
+`/Users/ruirui/Documents/Project/Agent/s7p09-evidence-90b0e9b-reduced-r16`.
+
+All 14 admissions were created in frozen order, executed once and finalized into valid bundles:
+
+| Agent | Valid bundles | Result distribution |
+|---|---:|---|
+| Morrow | 10/10 | 1 `PASS`; 2 `FAIL_MODEL`; 1 `BUDGET_EXHAUSTED`; 6 `FAIL_RUNTIME` |
+| Pi | 4/4 | 2 `FAIL_MODEL`; 2 `FAIL_RUNTIME` |
+
+Morrow passed `EXTERNAL-002` with 101,407 tokens. `EXTERNAL-001` passed its verifier but remained
+`FAIL_MODEL` because Python bytecode was an unexpected workspace change. `MORROW-006` exhausted
+the frozen budget after 1,062,637 tokens. Pi completed both external paired tasks but neither
+passed its verifier. The two Morrow/Pi product-task pairs failed at runtime before usable output.
+
+The generic summary validator accepted every discovered bundle and reported zero invalid or
+duplicate runs. Its standard 20-run-per-Agent gate remains `NOT_EVALUATED` because this approved
+variant intentionally contains one repetition and only four Pi runs; unavailable Morrow token
+fields are also preserved rather than replaced with zero. Cumulative conservative capacity after
+r16 is `73,877,509 / 80,000,000`, leaving `6,122,491`. The evidence supports “Mimo is usable but
+intermittently unreliable for this formal workload,” not a completed Morrow/Pi baseline claim.

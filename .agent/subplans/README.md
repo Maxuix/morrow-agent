@@ -46,7 +46,7 @@ refreeze its source/profile/evidence contract before any future admission.
 | 87 | `87-remove-runtime-outcome-gate.md` | completed and integrated locally |
 | 88 | `88-s7p-07-runtime-control-steering.md` | completed and integrated locally |
 | 89 | `89-s7p-08-single-agent-function-matrix.md` | completed and integrated locally |
-| 90 | `90-s7p-09-repeated-direct-pi-baseline.md` | active; new profile/capacity freeze pending |
+| 90 | `90-s7p-09-repeated-direct-pi-baseline.md` | active; reduced r16 complete, primary comparison incomplete |
 | 91 | `91-mainstream-tool-interface.md` | completed and verified on the S7P-09 stack |
 | 92 | `92-remove-legacy-tool-adapters.md` | completed, verified and integrated on S7P-09 stack |
 

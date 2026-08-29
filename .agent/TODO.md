@@ -4,8 +4,8 @@
 
 Resume Subplan 90 from the consolidated local `main`, repair the permission-equivalence regression,
 then refreeze and capacity-check a new S7P-09 campaign without reusing prior admissions. The
-authorized r15 14-run reduced pilot is now executed and retained as incomplete provider-runtime
-diagnostic evidence because its mandatory usage metrics are unavailable.
+authorized r16 14-run reduced pilot is now executed and retained as bounded evaluation evidence;
+it has one Morrow PASS, but only one repetition and incomplete Provider usage.
 
 ## Tasks
 
@@ -34,6 +34,13 @@ diagnostic evidence because its mandatory usage metrics are unavailable.
 - `[!]` Execute authorized r15 under the added 30,000,000-token ceiling. All 14 bundles validate,
   but Provider/runtime evidence is incomplete (Morrow 10/10 `FAIL_RUNTIME`; Pi 3/4
   `FAIL_RUNTIME`, 1/4 `BLOCKED_ENV`), so paired comparison remains blocked.
+- `[x]` Verify Mimo with one non-stream and four streaming short probes, then refreeze and execute
+  fresh reduced r16 in frozen order without reusing r15 admissions. All 14 bundles validate:
+  Morrow 1 `PASS`, 2 `FAIL_MODEL`, 1 `BUDGET_EXHAUSTED`, 6 `FAIL_RUNTIME`; Pi 2 `FAIL_MODEL`,
+  2 `FAIL_RUNTIME`.
+- `[!]` Complete the primary repeated comparison. The reduced r16 sample has only one repetition,
+  mandatory Morrow usage is partially unavailable, and the standard comparison gate therefore
+  remains `NOT_EVALUATED`.
 - `[x]` Fold frozen isolated Morrow configuration and `build_active()` keyring loading directly into
   admission; do not add a readiness command or model probe.
 

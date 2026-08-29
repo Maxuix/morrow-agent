@@ -1,7 +1,6 @@
 # Subplan 90 — S7P-09 Repeated Direct Evaluation and Same-Condition Pi Baseline
 
-> Status: active; explicit risk-denial repair verified, reduced pilot is capacity-approved pending
-> explicit start confirmation
+> Status: active; reduced r16 pilot executed, primary repeated comparison remains incomplete
 > Branch: `feat/s7p-09-direct-pi-baseline`
 > Activation base: verified local `main@1fd7e229bef276d1a0361e775ce800ade4b318fc`
 > Dependency: Subplan 89 / S7P-08 passed and is integrated locally
@@ -27,10 +26,9 @@ runs: all ten Morrow tasks once and the four Pi comparison tasks once. It preser
 coverage and one paired observation, but it is not a repeated baseline and cannot satisfy the full
 Subplan 90 completion criteria.
 
-The reduced plan passed final offline preflight and cumulative capacity checks. Its 14 conservative
-admissions fit below the approved ceiling after all retained campaign roots are counted. Formal
-admission and model execution remain a separate, sequential step requiring explicit start
-confirmation.
+The reduced r16 plan passed final offline preflight and cumulative capacity checks. Its 14
+admissions were executed sequentially and all bundles validate. One Morrow task passed, but the
+single-repetition pilot and incomplete Provider usage do not satisfy the primary completion gate.
 
 ## 2. Activation facts
 
