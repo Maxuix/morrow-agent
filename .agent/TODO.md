@@ -2,7 +2,7 @@
 
 ## Current task
 
-Subplan 94: remove repository-level compatibility surfaces before changing persisted-state schemas.
+Subplan 94 is complete, verified and integrated. No implementation subplan is active.
 
 ## Tasks
 
@@ -10,7 +10,7 @@ Subplan 94: remove repository-level compatibility surfaces before changing persi
 - `[x]` Move internal imports/tests from compatibility entrypoints to current owning contracts.
 - `[x]` Delete historical evaluation-only resources and their dedicated tests.
 - `[x]` Run focused tests and the complete offline/static/CLI/diff gate.
-- `[>]` Commit, integrate and retire Subplan 94 before beginning persisted-state cleanup.
+- `[x]` Commit, integrate and retire Subplan 94 before beginning persisted-state cleanup.
 
 ## Boundaries
 

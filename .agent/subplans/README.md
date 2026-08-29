@@ -53,7 +53,7 @@ remove remaining repository compatibility surfaces before persisted-state consol
 | 91 | `91-mainstream-tool-interface.md` | completed and verified on the S7P-09 stack |
 | 92 | `92-remove-legacy-tool-adapters.md` | completed, verified and integrated on S7P-09 stack |
 | 93 | `93-remove-v1-bounded.md` | completed, verified and integrated locally |
-| 94 | `94-remove-repository-compat.md` | completed and verified; integration pending |
+| 94 | `94-remove-repository-compat.md` | completed, verified and integrated locally |
 
 ## Stage 7 pre-baseline
 

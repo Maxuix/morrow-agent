@@ -1,6 +1,6 @@
 # Subplan 94 — Remove Repository Compatibility Surfaces
 
-Status: completed and verified on `refactor/remove-legacy-compat`; integration pending.
+Status: completed, verified and fast-forward integrated into local `main` at `db7835c`.
 
 ## Objective
 
