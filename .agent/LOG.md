@@ -4031,3 +4031,5 @@
 - Focused Backup/Profile/Preference tests passed `118`; focused Learning tests passed `36`; the
   complete offline gate passed `1280 passed, 2 deselected in 101.49s`. Ruff format/check,
   compileall, CLI help and `git diff --check` passed. No Live request was run.
+- Committed as `bb88a73`, fast-forward integrated into local `main`, and retired the topic branch.
+  Concurrent uncommitted secret-preview work was preserved outside this commit.

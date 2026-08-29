@@ -2,16 +2,16 @@
 
 ## Current status
 
-Subplan 95 implementation and validation are complete on `refactor/current-preferences` from
-`main@ba1a028`; integration is pending.
+Subplan 95 is verified and integrated into local `main` at `bb88a73`. No implementation subplan is
+active.
 
 ## Active task
 
-Commit the verified current-only Preference, Learning and Backup consolidation.
+None.
 
 ## Next action
 
-Fast-forward the verified commit into local `main`, retire the topic branch and record completion.
+Await the next explicit user request.
 
 ## Blockers
 

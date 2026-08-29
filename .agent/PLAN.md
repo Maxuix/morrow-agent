@@ -1,7 +1,7 @@
 # Current-Version-Only Compatibility Removal
 
-> Status: active
-> Active subplan: 95 — make generic Preferences the only current format
+> Status: completed
+> Active subplan: none
 > Activation base: `main@ba1a028`
 > Source authority: current user request and current code/tests
 
@@ -45,3 +45,5 @@ decode-only or test-only compatibility.
 - Fresh and deterministically migrated current state load through one code path.
 - The complete offline suite, Ruff, compileall, CLI help and diff checks pass.
 - Verified commits are fast-forward integrated into local `main`; no Live request is run.
+
+Completed by Subplans 94–95; final implementation commit `bb88a73` is integrated into local `main`.

@@ -56,7 +56,7 @@ current-format migration instead of permanent legacy readers.
 | 92 | `92-remove-legacy-tool-adapters.md` | completed, verified and integrated on S7P-09 stack |
 | 93 | `93-remove-v1-bounded.md` | completed, verified and integrated locally |
 | 94 | `94-remove-repository-compat.md` | completed, verified and integrated locally |
-| 95 | `95-current-preferences.md` | verified; integration pending |
+| 95 | `95-current-preferences.md` | completed, verified and integrated locally |
 
 ## Stage 7 pre-baseline
 

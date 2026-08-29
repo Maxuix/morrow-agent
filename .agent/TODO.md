@@ -12,7 +12,7 @@ Subplan 95: make generic Preference documents the only runtime format.
 - `[x]` Delete decode-only modules, historical fixtures and compatibility tests.
 - `[x]` Remove the old backup format and fixed-field Learning Preference Candidate path.
 - `[x]` Update current architecture/docs and run focused plus complete gates.
-- `[>]` Commit, integrate and retire Subplan 95.
+- `[x]` Commit, integrate and retire Subplan 95.
 
 ## Boundaries
 

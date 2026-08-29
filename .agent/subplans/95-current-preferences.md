@@ -1,6 +1,6 @@
 # Subplan 95 — Generic Preferences as the Only Current Format
 
-Status: verified; ready to integrate from `refactor/current-preferences` into `main`.
+Status: completed and integrated into `main` at `bb88a73`.
 
 ## Objective
 
