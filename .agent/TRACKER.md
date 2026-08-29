@@ -49,7 +49,8 @@ complete mandatory usage and enough capacity; the current ceiling leaves only `6
 The requested DeepSeek replacement is paused before campaign creation: its first Morrow no-tool
 probe returned `invalid_response` after one model attempt with no usage. The authorized Pi probe
 then completed normally with 536 tokens and complete usage, isolating the blocker to Morrow's
-Adapter response handling. Resume only after that compatibility path is repaired and re-probed.
+Adapter response handling. The compatibility path is now repaired and re-probed successfully.
+Next, commit the verified repair and refreeze a new DeepSeek 14-run plan before any admission.
 
 ## Blockers
 
@@ -77,3 +78,7 @@ Adapter response handling. Resume only after that compatibility path is repaired
   chunks with fixed prompt tokens and increasing completion/total tokens; Morrow's `_merge_usage`
   requires repeated non-null values to be identical, raises `ValueError` on the first increase and
   classifies it as terminal `invalid_response`. Visible content and `stop` were both present.
+- The repaired Adapter treats every valid OpenAI-compatible usage payload as a replacement snapshot,
+  matching Pi 0.84.2. Malformed usage makes telemetry unavailable but cannot invalidate otherwise
+  valid text/tool/finish evidence. The behavior is model-neutral. The repaired real Morrow probe
+  completed in one round with 3,150 input, 21 output and 3,171 total tokens.

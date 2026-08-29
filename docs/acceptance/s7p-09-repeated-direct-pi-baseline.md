@@ -224,3 +224,21 @@ variant intentionally contains one repetition and only four Pi runs; unavailable
 fields are also preserved rather than replaced with zero. Cumulative conservative capacity after
 r16 is `73,877,509 / 80,000,000`, leaving `6,122,491`. The evidence supports “Mimo is usable but
 intermittently unreliable for this formal workload,” not a completed Morrow/Pi baseline claim.
+
+## DeepSeek replacement readiness repair
+
+The requested `opencode-go/deepseek-v4-flash` replacement was stopped before campaign admission
+when Morrow returned `invalid_response`, while an exact-model Pi probe completed with 536 tokens.
+Sanitized stream inspection showed that OpenCode emits cumulative usage snapshots on multiple
+chunks. Morrow previously required repeated usage values to remain identical, so the first increase
+raised a local `ValueError`; the Provider stream itself contained visible text and a normal `stop`.
+
+The generic OpenAI-compatible Adapter now follows Pi 0.84.2's provider-neutral behavior: each valid
+usage payload replaces the previous snapshot, so terminal or cumulative streams both retain their
+latest valid accounting. Individual payload validation remains strict. Malformed usage becomes
+explicitly unavailable but does not invalidate valid semantic response evidence. No DeepSeek or
+OpenCode-specific branch was added.
+
+The repaired Morrow probe completed with 3,171 total tokens. Focused regression passed 167 tests,
+and the complete offline gate passed 1,363 tests with two explicit Live tests deselected. No formal
+DeepSeek campaign admission was consumed.

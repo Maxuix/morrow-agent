@@ -48,6 +48,10 @@ it has one Morrow PASS, but only one repetition and incomplete Provider usage.
 - `[x]` Diagnose the DeepSeek Adapter failure without retaining response content. OpenCode emits
   monotonic cumulative usage on multiple stream chunks; Morrow rejects changed repeated usage as a
   conflict and maps the resulting `ValueError` to terminal `invalid_response`.
+- `[x]` Port Pi's provider-neutral stream-usage behavior: each valid usage payload replaces the
+  prior snapshot, malformed usage degrades telemetry without discarding valid semantic completion,
+  and no model/provider ID branch is introduced. Focused and complete offline gates pass; the real
+  repaired Morrow probe completes with 3,171 tokens.
 - `[x]` Fold frozen isolated Morrow configuration and `build_active()` keyring loading directly into
   admission; do not add a readiness command or model probe.
 

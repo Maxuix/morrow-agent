@@ -3872,3 +3872,20 @@
   raises `ValueError` on DeepSeek's first cumulative increase; `classify_error()` maps that local
   validation exception to terminal `invalid_response`, explaining the single attempt and missing
   usage. Reasoning chunks were present but were intentionally isolated and were not the failure.
+
+## 2026-08-29 — Provider-neutral stream usage aligned with Pi
+
+- Inspected installed Pi 0.84.2's `openai-completions` implementation. For every `chunk.usage`, Pi
+  parses a complete usage snapshot and replaces `output.usage`; a generic `choice.usage` fallback
+  handles non-standard placement. DeepSeek's model compatibility metadata affects reasoning,
+  message roles and max-token fields, not usage handling.
+- Updated Morrow's generic OpenAI-compatible Adapter with the same latest-valid-snapshot model. No
+  Provider or model identifier is consulted. Each snapshot still requires supported non-negative
+  integer fields, consistent aliases and a valid internal total. Malformed usage degrades usage to
+  unavailable instead of converting valid semantic completion into `invalid_response`; a later
+  valid snapshot can restore usage.
+- Adapter tests passed `72` with one explicit Live test skipped. Provider/observability/evaluator
+  regression passed `167` with the same Live skip. Ruff format/check, compileall and
+  `git diff --check` passed. The complete offline gate passed `1363 passed, 2 deselected in 86.74s`.
+- The repaired real Morrow/DeepSeek no-tool probe completed normally in one round with 3,150 input,
+  21 output and 3,171 total tokens. No formal campaign admission was created.

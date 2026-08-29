@@ -165,24 +165,17 @@ def _normalize_usage(raw_usage) -> ModelUsage:
 
 
 def _merge_usage(current: ModelUsage, candidate: ModelUsage) -> ModelUsage:
+    """Keep the latest valid Provider usage snapshot.
+
+    OpenAI-compatible streams do not agree on whether usage appears only on a
+    terminal chunk or as a cumulative snapshot on multiple chunks. Treat each
+    supported payload as a replacement snapshot, matching Pi's provider-neutral
+    behavior, while retaining explicit unavailable state when no snapshot exists.
+    """
+
     if candidate.availability is UsageAvailability.UNAVAILABLE:
         return current
-    if current.availability is UsageAvailability.UNAVAILABLE:
-        return candidate
-    values: dict[str, int | None] = {}
-    for name in ("input_tokens", "output_tokens", "total_tokens"):
-        previous = getattr(current, name)
-        incoming = getattr(candidate, name)
-        if previous is not None and incoming is not None and previous != incoming:
-            raise ValueError(f"conflicting usage values for {name}")
-        values[name] = incoming if previous is None else previous
-    if values["input_tokens"] is not None and values["output_tokens"] is not None:
-        expected = values["input_tokens"] + values["output_tokens"]
-        if values["total_tokens"] is None:
-            values["total_tokens"] = expected
-        elif values["total_tokens"] != expected:
-            raise ValueError("usage total_tokens must equal input_tokens + output_tokens")
-    return ModelUsage(availability=UsageAvailability.AVAILABLE, **values)
+    return candidate
 
 
 class _CallFragments:
@@ -564,11 +557,16 @@ class OpenAICompatibleProvider:
                     )
                     return
                 first = False
-                try:
-                    usage = _merge_usage(usage, _normalize_usage(getattr(chunk, "usage", None)))
-                except (TypeError, ValueError):
-                    usage = ModelUsage.unavailable()
-                    raise
+                raw_usage = getattr(chunk, "usage", None)
+                if raw_usage is not None:
+                    try:
+                        usage = _merge_usage(usage, _normalize_usage(raw_usage))
+                    except (TypeError, ValueError):
+                        # Usage is telemetry, not semantic response content. A
+                        # malformed snapshot must not discard otherwise valid
+                        # text, tool calls, or a terminal signal. A later valid
+                        # snapshot may restore availability.
+                        usage = ModelUsage.unavailable()
                 choices = getattr(chunk, "choices", None) or []
                 if not choices:
                     continue

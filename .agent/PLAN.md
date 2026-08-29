@@ -22,7 +22,9 @@ The user next requested a fresh model-scoped 14-run budget using
 to retain and select that exact model, but the first bounded Morrow no-tool readiness request
 stopped as `invalid_response` with unavailable usage. The subsequently authorized Pi probe completed
 with 536 tokens, isolating the blocker to Morrow's Adapter response handling. No DeepSeek campaign
-plan or admission was created; formal execution is paused at readiness.
+plan or admission was created. The Adapter now follows Pi's provider-neutral latest-usage-snapshot
+semantics, its full offline gate passes, and a repaired Morrow readiness probe completed with 3,171
+tokens. Formal execution remains paused until a fresh campaign is pinned from the repaired source.
 
 ## 1a. Completed product objective
 

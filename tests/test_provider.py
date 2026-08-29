@@ -785,23 +785,47 @@ async def test_adapter_marks_missing_usage_unavailable_and_preserves_explicit_ze
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "chunks",
-    [
-        [stream_chunk(text="ok", finish="stop"), usage_only_chunk(total_tokens="3")],
-        [
-            usage_only_chunk(prompt_tokens=1, completion_tokens=1, total_tokens=2),
-            usage_only_chunk(prompt_tokens=1, completion_tokens=1, total_tokens=3),
-            stream_chunk(text="ok", finish="stop"),
-        ],
-        [
-            stream_chunk(text="ok", finish="stop"),
-            stream_chunk(text="late"),
-        ],
-    ],
-)
-async def test_adapter_rejects_malformed_usage_conflicts_and_post_finish_semantics(chunks):
-    events = await collect_stream(provider_with_stream(AsyncChunks(chunks)))
+async def test_adapter_keeps_semantic_completion_when_usage_snapshot_is_malformed():
+    events = await collect_stream(
+        provider_with_stream(
+            AsyncChunks(
+                [stream_chunk(text="ok", finish="stop"), usage_only_chunk(total_tokens="3")]
+            )
+        )
+    )
+
+    assert [event.kind for event in events] == ["text_delta", "completed"]
+    assert events[-1].usage.availability.value == "unavailable"
+
+
+@pytest.mark.asyncio
+async def test_adapter_uses_latest_cumulative_usage_snapshot_without_model_special_case():
+    events = await collect_stream(
+        provider_with_stream(
+            AsyncChunks(
+                [
+                    usage_only_chunk(prompt_tokens=1, completion_tokens=1, total_tokens=2),
+                    usage_only_chunk(prompt_tokens=1, completion_tokens=2, total_tokens=3),
+                    stream_chunk(text="ok", finish="stop"),
+                ]
+            )
+        )
+    )
+
+    assert [event.kind for event in events] == ["text_delta", "completed"]
+    assert events[-1].usage.input_tokens == 1
+    assert events[-1].usage.output_tokens == 2
+    assert events[-1].usage.total_tokens == 3
+
+
+@pytest.mark.asyncio
+async def test_adapter_still_rejects_semantic_content_after_finish():
+    events = await collect_stream(
+        provider_with_stream(
+            AsyncChunks([stream_chunk(text="ok", finish="stop"), stream_chunk(text="late")])
+        )
+    )
+
     assert events[-1].kind == "error"
     assert events[-1].error_code == ModelErrorCode.INVALID_RESPONSE
     assert events[-1].usage.availability.value == "unavailable"
