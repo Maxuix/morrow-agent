@@ -47,8 +47,9 @@ Retain r16 as the latest reduced evaluation. Do not silently retry any admitted 
 Subplan 90 completion still requires a separately authorized primary two-repetition campaign with
 complete mandatory usage and enough capacity; the current ceiling leaves only `6,122,491` tokens.
 The requested DeepSeek replacement is paused before campaign creation: its first Morrow no-tool
-probe returned `invalid_response` after one model attempt with no usage. Resume only after deciding
-whether to diagnose the upstream response through the Pi side or repair adapter compatibility.
+probe returned `invalid_response` after one model attempt with no usage. The authorized Pi probe
+then completed normally with 536 tokens and complete usage, isolating the blocker to Morrow's
+Adapter response handling. Resume only after that compatibility path is repaired and re-probed.
 
 ## Blockers
 
@@ -69,3 +70,6 @@ whether to diagnose the upstream response through the Pi side or repair adapter 
   same exact model. The first Morrow readiness request failed in 1.7 seconds as
   `invalid_response`, with zero tool calls and unavailable usage. No DeepSeek formal admission was
   consumed.
+- The matching Pi no-tool probe completed in 7.5 seconds with 506 input, 30 output and 536 total
+  tokens. This rules out a general OpenCode credential/model outage for the probe and identifies
+  Morrow's Adapter response contract as the current blocker.

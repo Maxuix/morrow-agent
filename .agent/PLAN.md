@@ -19,9 +19,10 @@ comparison gate.
 
 The user next requested a fresh model-scoped 14-run budget using
 `opencode-go/deepseek-v4-flash`, with immediate notification on Provider failure. Morrow was updated
-to retain and select that exact model, but the first bounded no-tool readiness request stopped as
-`invalid_response` with unavailable usage. No DeepSeek campaign plan, admission or Pi request was
-created; formal execution is paused at readiness.
+to retain and select that exact model, but the first bounded Morrow no-tool readiness request
+stopped as `invalid_response` with unavailable usage. The subsequently authorized Pi probe completed
+with 536 tokens, isolating the blocker to Morrow's Adapter response handling. No DeepSeek campaign
+plan or admission was created; formal execution is paused at readiness.
 
 ## 1a. Completed product objective
 

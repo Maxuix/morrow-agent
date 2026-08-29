@@ -42,8 +42,9 @@ it has one Morrow PASS, but only one repetition and incomplete Provider usage.
   mandatory Morrow usage is partially unavailable, and the standard comparison gate therefore
   remains `NOT_EVALUATED`.
 - `[!]` Refreeze a 14-run `opencode-go/deepseek-v4-flash` campaign under a fresh model-scoped 21M
-  ceiling. The first Morrow readiness request failed as `invalid_response` with unavailable usage;
-  stop before plan creation, Pi probing or formal admission and report the Provider/adapter blocker.
+  ceiling. Morrow failed its first readiness request as `invalid_response`, while the authorized Pi
+  probe completed with 536 tokens. Stop before plan creation or formal admission and repair the
+  Morrow Adapter response-compatibility blocker.
 - `[x]` Fold frozen isolated Morrow configuration and `build_active()` keyring loading directly into
   admission; do not add a readiness command or model probe.
 

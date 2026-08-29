@@ -3860,3 +3860,7 @@
   `invalid_response`, with zero tool calls and unavailable usage. This is not an auth, network,
   rate-limit or timeout classification. Stopped immediately as requested: no Pi request, comparison
   plan, campaign admission or formal run was created.
+- After explicit authorization, ran one matching Pi 0.84.2 no-tool probe. It completed normally in
+  7.5 seconds with 506 input, 30 output and 536 total tokens plus available cost. The common
+  Provider, credential and DeepSeek model are therefore reachable; the readiness blocker is
+  Morrow's OpenAI-compatible Adapter response parsing/validation. No formal admission was created.
