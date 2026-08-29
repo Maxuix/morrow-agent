@@ -3906,3 +3906,18 @@
   `1365 passed, 2 deselected`; Ruff format/check, compileall and `git diff --check` passed. A
   protected exact-size Live sample observed the same whitespace-plus-tool-call variant and completed
   normally with a valid tool call and no Adapter error.
+
+## 2026-08-29 — DeepSeek r19 capacity stop and continuation contract
+
+- Fresh r19 finalized six entries. A Morrow `network` failure at request 24 was automatically retried
+  once; request 25 succeeded at the same tool progress, so it was recovered telemetry rather than a
+  terminal Provider failure.
+- Pi `MORROW-005` emitted 140 unique assistant usage records totaling 21,553,066 tokens, including
+  21,302,272 cache-read tokens. Cumulative accounting reached `35,987,509 / 30,000,000`; stopped
+  before admission seven without modifying any retained result.
+- The user approved a 50M cumulative ceiling and a continuation of only the remaining eight entries.
+  Added a provider-neutral continuation variant bound to the exact parent campaign, evidence root,
+  plan hash and six-entry prefix. Capacity/admission rejects missing, substituted or incomplete
+  parent evidence, and the frozen tail is locally re-ordinalized without duplicating prior usage.
+- The evaluator suite passed 67 tests; the complete offline gate passed `1369 passed, 2 deselected`
+  in 87.59 seconds. Ruff format/check, compileall and `git diff --check` passed before commit.

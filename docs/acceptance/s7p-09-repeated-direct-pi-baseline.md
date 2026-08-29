@@ -257,3 +257,19 @@ Provider or model branch. Provider regression passed 74 tests with one explicit 
 the complete offline gate passed 1,365 tests with two Live tests deselected. An exact-size protected
 structural sample then observed the same whitespace-plus-tool-call variant and completed normally,
 with available usage and no Adapter error.
+
+## Reduced campaign continuation contract
+
+DeepSeek r19 finalized its first six frozen entries before Pi `MORROW-005` reported 21,553,066
+tokens across 140 unique assistant messages. The amount consists of 21,302,272 cache-read, 167,661
+input and 83,133 output tokens; it is not duplicate event accounting. Cumulative conservative usage
+therefore reached 35,987,509 and stopped further admissions under r19's immutable 30M ceiling.
+
+The evaluator now supports an explicit reduced continuation variant instead of copying or rerunning
+the completed prefix. A continuation freezes the remaining single-repetition schedule with local
+ordinals, records the exact parent campaign ID, evidence-root ID, plan hash and completed-prefix
+length, and requires the corresponding parent root in every cumulative capacity/admission check.
+A missing, substituted or incomplete parent is rejected. This contract is provider/model neutral.
+The focused evaluator suite passed 67 tests and the complete offline gate passed 1,369 tests with
+two explicit Live tests deselected. The user approved a 50M cumulative ceiling for the eight-entry
+r19 continuation; execution remains subject to a capacity check before every admission.

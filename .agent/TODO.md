@@ -60,6 +60,14 @@ it has one Morrow PASS, but only one repetition and incomplete Provider usage.
   Live structural sample all pass without weakening ordinary final-text validation.
 - `[x]` Fold frozen isolated Morrow configuration and `build_active()` keyring loading directly into
   admission; do not add a readiness command or model probe.
+- `[x]` Retain r19's first six finalized entries. Treat its recovered request-24 `network` failure
+  as retry telemetry rather than a terminal Provider incident; stop after Pi MORROW-005 raises
+  cumulative accounting to `35,987,509 / 30,000,000`.
+- `[x]` Add a provider-neutral reduced continuation variant that freezes the remaining schedule,
+  binds the exact parent campaign/plan/evidence root and completed prefix, and rejects capacity or
+  admission checks when that parent evidence is omitted or incomplete.
+- `[>]` Commit the verified continuation contract, freeze r20's eight remaining entries under the
+  user-approved cumulative 50M ceiling, and execute sequentially while capacity permits.
 
 ## Earlier completed tasks
 

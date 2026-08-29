@@ -893,6 +893,73 @@ def test_comparison_plan_accepts_explicit_reduced_single_repetition_variant() ->
     assert {entry["repetition"] for entry in normalized["schedule"]} == {1}
 
 
+def test_comparison_plan_accepts_parent_bound_reduced_continuation() -> None:
+    parent = _comparison_plan()
+    parent["campaign_variant"] = eval_module.REDUCED_CAMPAIGN_VARIANT
+    parent["schedule"] = eval_module.frozen_campaign_schedule(repetitions=(1,))
+    parent["integrity"] = eval_module.content_hash(
+        {key: value for key, value in parent.items() if key != "integrity"}
+    )
+    parent = eval_module.validate_comparison_plan(parent)
+
+    plan = _comparison_plan()
+    completed_prefix = 6
+    plan["campaign_variant"] = eval_module.CONTINUATION_CAMPAIGN_VARIANT
+    plan["continuation"] = {
+        "campaign_id": parent["campaign_id"],
+        "evidence_root_id": parent["evidence_root"]["id"],
+        "plan_sha256": parent["integrity"],
+        "completed_prefix": completed_prefix,
+    }
+    plan["schedule"] = [
+        {**entry, "ordinal": ordinal}
+        for ordinal, entry in enumerate(
+            eval_module.frozen_campaign_schedule(repetitions=(1,))[completed_prefix:], start=1
+        )
+    ]
+    plan["integrity"] = eval_module.content_hash(
+        {key: value for key, value in plan.items() if key != "integrity"}
+    )
+
+    normalized = eval_module.validate_comparison_plan(plan)
+
+    assert normalized["campaign_variant"] == eval_module.CONTINUATION_CAMPAIGN_VARIANT
+    assert normalized["continuation"]["completed_prefix"] == 6
+    assert len(normalized["schedule"]) == 8
+    assert normalized["schedule"][0] == {
+        "ordinal": 1,
+        "agent": "morrow",
+        "task_id": "MORROW-004",
+        "repetition": 1,
+    }
+    assert normalized["schedule"][-1]["task_id"] == "EXTERNAL-002"
+
+
+def test_comparison_plan_rejects_unbound_or_drifted_continuation() -> None:
+    unbound = _comparison_plan()
+    unbound["campaign_variant"] = eval_module.CONTINUATION_CAMPAIGN_VARIANT
+    unbound["integrity"] = eval_module.content_hash(
+        {key: value for key, value in unbound.items() if key != "integrity"}
+    )
+    with pytest.raises(eval_module.EvalError, match="missing parent metadata"):
+        eval_module.validate_comparison_plan(unbound)
+
+    drifted = _comparison_plan()
+    drifted["campaign_variant"] = eval_module.CONTINUATION_CAMPAIGN_VARIANT
+    drifted["continuation"] = {
+        "campaign_id": "parent",
+        "evidence_root_id": "parent-root",
+        "plan_sha256": "sha256:" + "a" * 64,
+        "completed_prefix": 6,
+    }
+    drifted["schedule"] = eval_module.frozen_campaign_schedule(repetitions=(1,))[6:]
+    drifted["integrity"] = eval_module.content_hash(
+        {key: value for key, value in drifted.items() if key != "integrity"}
+    )
+    with pytest.raises(eval_module.EvalError, match="frozen continuation tail"):
+        eval_module.validate_comparison_plan(drifted)
+
+
 def test_comparison_plan_rejects_unknown_sensitive_mixed_and_unapproved_values() -> None:
     unknown = _comparison_plan()
     unknown["extra"] = True
@@ -1741,6 +1808,109 @@ def test_campaign_capacity_includes_explicit_prior_campaigns(tmp_path: Path) -> 
             reserve_cost=1.0,
             prior_roots=(prior_root,),
             **admission_dependencies,
+        )
+
+
+def test_continuation_capacity_requires_exact_parent_with_completed_prefix(
+    tmp_path: Path,
+) -> None:
+    dependencies = _campaign_admission_dependencies(tmp_path)
+    parent_root = tmp_path / "continuation-parent"
+    parent = _comparison_plan()
+    parent["campaign_variant"] = eval_module.REDUCED_CAMPAIGN_VARIANT
+    parent["schedule"] = eval_module.frozen_campaign_schedule(repetitions=(1,))
+    parent["evidence_root"]["id"] = "continuation-parent"
+    parent["evidence_root"]["path_sha256"] = eval_module.bytes_hash(
+        str(parent_root.resolve()).encode("utf-8")
+    )
+    parent["integrity"] = eval_module.content_hash(
+        {key: value for key, value in parent.items() if key != "integrity"}
+    )
+    for ordinal in range(1, 7):
+        eval_module.admit_campaign_run(
+            parent,
+            parent_root,
+            ordinal=ordinal,
+            reserve_tokens=10,
+            reserve_cost=1.0,
+            **dependencies,
+        )
+    (parent_root / "comparison-plan.json").write_text(json.dumps(parent), encoding="utf-8")
+
+    current_root = tmp_path / "continuation-current"
+    current = _comparison_plan()
+    current["campaign_variant"] = eval_module.CONTINUATION_CAMPAIGN_VARIANT
+    current["continuation"] = {
+        "campaign_id": parent["campaign_id"],
+        "evidence_root_id": parent["evidence_root"]["id"],
+        "plan_sha256": parent["integrity"],
+        "completed_prefix": 6,
+    }
+    current["schedule"] = [
+        {**entry, "ordinal": ordinal}
+        for ordinal, entry in enumerate(parent["schedule"][6:], start=1)
+    ]
+    current["evidence_root"]["path_sha256"] = eval_module.bytes_hash(
+        str(current_root.resolve()).encode("utf-8")
+    )
+    current["integrity"] = eval_module.content_hash(
+        {key: value for key, value in current.items() if key != "integrity"}
+    )
+
+    with pytest.raises(eval_module.EvalError, match="exact parent evidence root"):
+        eval_module.campaign_capacity_usage(current, current_root)
+
+    capacity = eval_module.campaign_capacity_usage(
+        current,
+        current_root,
+        prior_roots=(parent_root,),
+    )
+
+    assert capacity["accounted_tokens"] == 60
+    assert capacity["prior_campaigns"][0]["plan_sha256"] == parent["integrity"]
+    assert capacity["prior_campaigns"][0]["run_count"] == 6
+
+
+def test_continuation_capacity_rejects_incomplete_parent_prefix(tmp_path: Path) -> None:
+    parent_root = tmp_path / "incomplete-continuation-parent"
+    parent = _comparison_plan()
+    parent["campaign_variant"] = eval_module.REDUCED_CAMPAIGN_VARIANT
+    parent["schedule"] = eval_module.frozen_campaign_schedule(repetitions=(1,))
+    parent["evidence_root"]["id"] = "incomplete-continuation-parent"
+    parent["evidence_root"]["path_sha256"] = eval_module.bytes_hash(
+        str(parent_root.resolve()).encode("utf-8")
+    )
+    parent["integrity"] = eval_module.content_hash(
+        {key: value for key, value in parent.items() if key != "integrity"}
+    )
+    parent_root.mkdir()
+    (parent_root / "comparison-plan.json").write_text(json.dumps(parent), encoding="utf-8")
+
+    current_root = tmp_path / "incomplete-continuation-current"
+    current = _comparison_plan()
+    current["campaign_variant"] = eval_module.CONTINUATION_CAMPAIGN_VARIANT
+    current["continuation"] = {
+        "campaign_id": parent["campaign_id"],
+        "evidence_root_id": parent["evidence_root"]["id"],
+        "plan_sha256": parent["integrity"],
+        "completed_prefix": 6,
+    }
+    current["schedule"] = [
+        {**entry, "ordinal": ordinal}
+        for ordinal, entry in enumerate(parent["schedule"][6:], start=1)
+    ]
+    current["evidence_root"]["path_sha256"] = eval_module.bytes_hash(
+        str(current_root.resolve()).encode("utf-8")
+    )
+    current["integrity"] = eval_module.content_hash(
+        {key: value for key, value in current.items() if key != "integrity"}
+    )
+
+    with pytest.raises(eval_module.EvalError, match="frozen completed prefix"):
+        eval_module.campaign_capacity_usage(
+            current,
+            current_root,
+            prior_roots=(parent_root,),
         )
 
 

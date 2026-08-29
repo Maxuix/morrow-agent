@@ -7,17 +7,16 @@ permission matrix, historical capacity audit, reduced-plan preflight and capacit
 The explicit risk-denial repair, cumulative prior-campaign capacity guard, full reservation check
 and explicit 14-run reduced single-repetition variant are implemented. Pi-aligned transient Provider
 classification, partial-usage evaluation and Pi-compatible optional tool-call text normalization are
-now implemented. The latest Provider tests passed `74` with one explicit Live test skipped, and the
-complete offline gate passed `1365 passed, 2 deselected`.
+now implemented. The reduced continuation contract is also implemented and binds an exact immutable
+parent prefix before any tail admission. Its evaluator tests passed `67`, and the complete offline
+gate passed `1369 passed, 2 deselected`.
 
 ## Active task
 
-The ordinary bundled retry default is aligned with Pi at three and committed as `c0b14b9`. Fresh
-reduced plan r14 passed plan-check, source/evidence preflight and permission equivalence, but its
-full remaining-schedule capacity check blocked before admission. After the user's additional
-30,000,000-token authorization, fresh r15 was admitted and all 14 entries were executed. After the
-Provider retry repair and successful short probes, fresh r16 was pinned at `main@90b0e9b` and all
-14 entries were executed once.
+Fresh DeepSeek r19 finalized six entries. Its one `network` failure was retried successfully and did
+not terminate the run. Pi MORROW-005 then reported 21,553,066 tokens across 140 unique assistant
+messages, mostly cache-read tokens, pushing cumulative accounting to `35,987,509` and triggering
+the frozen 30M capacity gate before entry seven. The user approved a 50M cumulative continuation.
 
 ## Implemented boundary
 
@@ -44,19 +43,12 @@ Provider retry repair and successful short probes, fresh r16 was pinned at `main
 
 ## Next action
 
-Retain r16 as the latest reduced evaluation. Do not silently retry any admitted run key. Full
-Subplan 90 completion still requires a separately authorized primary two-repetition campaign with
-complete mandatory usage and enough capacity; the current ceiling leaves only `6,122,491` tokens.
-The requested DeepSeek replacement is paused before campaign creation: its first Morrow no-tool
-probe returned `invalid_response` after one model attempt with no usage. The authorized Pi probe
-then completed normally with 536 tokens and complete usage, isolating the blocker to Morrow's
-Adapter response handling. The compatibility path is now repaired and re-probed successfully.
-The retained r17 attempt stopped after three runs at its original 21M capacity boundary. The
-user-authorized cumulative 30M r18 plan then stopped after its first admission when a sixth model
-request returned `invalid_response`. Safe exact-size sampling reproduced the cause as
-whitespace-only optional content accompanying valid tool calls. The generic repair is verified.
-Next, commit it and refreeze a new DeepSeek 14-run plan from the new clean source; do not resume or
-rewrite r17/r18 admissions.
+Commit the verified continuation contract, then freeze r20 from that clean source with r19 as its
+exact six-entry parent and r17-r19 included in cumulative capacity. Admit only r19 entries 7-14,
+rebased as local continuation ordinals 1-8. The 50M ceiling leaves 2,012,491 tokens beyond the
+12M reservation, so recompute capacity after every finalized run and stop before the next admission
+if actual usage consumes that margin. Recovered transient errors do not notify the user; only an
+unrecovered terminal Provider failure pauses execution.
 
 ## Blockers
 
@@ -92,3 +84,7 @@ rewrite r17/r18 admissions.
   OpenCode paired valid tool calls with whitespace-only optional text. Equal-size diagnostic samples
   reproduced the same Pydantic field failure. After normalization, a Live equal-size sample observed
   the same Provider variant and completed normally with a valid tool call.
+- r19 has six immutable finalized entries. Its sixth Pi run alone consumed 21,553,066 tokens, so the
+  original 30M plan is over ceiling and cannot admit entry seven. The approved 50M continuation has
+  only 2,012,491 tokens of planned margin and may still stop early if another Pi run exceeds its
+  reservation.

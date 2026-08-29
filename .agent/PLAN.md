@@ -28,8 +28,12 @@ tokens. Subsequent retained r17/r18 attempts exposed a second generic compatibil
 occasionally accompanies valid tool calls with whitespace-only text, which Pi accepts but Morrow
 passed into its non-empty `AssistantMessage.content` validator. The Adapter now normalizes that
 optional tool-call text to `None` without weakening final-text validation. Formal execution remains
-paused until a fresh campaign is pinned from the newly repaired source; r17/r18 admissions are not
-reused.
+paused only by explicit campaign gates; the repair remains provider-neutral. Fresh r19 then
+completed six immutable entries before Pi MORROW-005 consumed
+21,553,066 tokens and pushed cumulative accounting above its frozen 30M ceiling. The user approved
+a 50M cumulative ceiling and an eight-entry continuation instead of repeating the completed prefix.
+The evaluator must bind that continuation to the exact r19 plan/evidence root and completed prefix,
+then refreeze it from a new clean source; r17-r19 admissions remain immutable and are not reused.
 
 ## 1a. Completed product objective
 

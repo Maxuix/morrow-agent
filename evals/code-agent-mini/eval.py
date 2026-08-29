@@ -60,6 +60,7 @@ TOOL_DIAGNOSTIC_FIELDS = (
 )
 FIXED_PI_TASK_IDS = ("MORROW-003", "MORROW-005", "EXTERNAL-003", "EXTERNAL-004")
 REDUCED_CAMPAIGN_VARIANT = "reduced-single-repetition-v1"
+CONTINUATION_CAMPAIGN_VARIANT = "reduced-single-repetition-continuation-v1"
 CAMPAIGN_AGENTS = ("morrow", "pi")
 CAPABILITY_FAMILIES = ("read", "search", "edit", "create", "command")
 COMPARISON_PLAN_SCHEMA = "morrow.s7p-09.comparison-plan.v1"
@@ -2678,7 +2679,10 @@ def _validate_permission_equivalence(value: object) -> dict[str, object]:
 
 
 def validate_campaign_schedule(
-    value: object, *, repetitions: Sequence[int] = (1, 2)
+    value: object,
+    *,
+    repetitions: Sequence[int] = (1, 2),
+    completed_prefix: int | None = None,
 ) -> list[dict[str, object]]:
     if not isinstance(value, list):
         raise EvalError("comparison plan schedule must be a list")
@@ -2709,7 +2713,14 @@ def validate_campaign_schedule(
             }
         )
     expected_schedule = frozen_campaign_schedule(repetitions=repetitions)
+    if completed_prefix is not None:
+        expected_schedule = [
+            {**entry, "ordinal": ordinal}
+            for ordinal, entry in enumerate(expected_schedule[completed_prefix:], start=1)
+        ]
     if normalized != expected_schedule:
+        if completed_prefix is not None:
+            raise EvalError("comparison plan schedule does not match the frozen continuation tail")
         if tuple(repetitions) == (1, 2):
             raise EvalError("comparison plan schedule does not match the frozen 28-run order")
         raise EvalError("comparison plan schedule does not match the frozen reduced campaign order")
@@ -2719,14 +2730,59 @@ def validate_campaign_schedule(
     return normalized
 
 
-def _campaign_variant(root: Mapping[str, object]) -> tuple[str | None, tuple[int, ...]]:
+def _validate_continuation(value: object) -> dict[str, object]:
+    continuation = _mapping(value, "comparison plan continuation")
+    _required_keys(
+        continuation,
+        {"campaign_id", "evidence_root_id", "plan_sha256", "completed_prefix"},
+        "comparison plan continuation",
+    )
+    completed_prefix = continuation["completed_prefix"]
+    reduced_schedule = frozen_campaign_schedule(repetitions=(1,))
+    if (
+        isinstance(completed_prefix, bool)
+        or not isinstance(completed_prefix, int)
+        or completed_prefix < 1
+        or completed_prefix >= len(reduced_schedule)
+    ):
+        raise EvalError("comparison plan continuation prefix is outside the reduced campaign")
+    campaign_id = _resolved_text(
+        continuation["campaign_id"], "comparison plan continuation campaign_id"
+    )
+    if not IDENTIFIER_RE.fullmatch(campaign_id):
+        raise EvalError("comparison plan continuation campaign_id has unsupported characters")
+    return {
+        "campaign_id": campaign_id,
+        "completed_prefix": completed_prefix,
+        "evidence_root_id": _resolved_text(
+            continuation["evidence_root_id"],
+            "comparison plan continuation evidence_root_id",
+        ),
+        "plan_sha256": _required_sha256(
+            continuation["plan_sha256"], "comparison plan continuation plan hash"
+        ),
+    }
+
+
+def _campaign_variant(
+    root: Mapping[str, object],
+) -> tuple[str | None, tuple[int, ...], dict[str, object] | None]:
     value = root.get("campaign_variant")
     if value is None:
-        return None, (1, 2)
+        if "continuation" in root:
+            raise EvalError("comparison plan continuation requires the continuation variant")
+        return None, (1, 2), None
     variant = _text(value, "comparison plan campaign_variant")
-    if variant != REDUCED_CAMPAIGN_VARIANT:
+    if variant == REDUCED_CAMPAIGN_VARIANT:
+        if "continuation" in root:
+            raise EvalError("reduced campaign cannot contain continuation metadata")
+        return variant, (1,), None
+    if variant == CONTINUATION_CAMPAIGN_VARIANT:
+        if "continuation" not in root:
+            raise EvalError("continuation campaign is missing parent metadata")
+        return variant, (1,), _validate_continuation(root["continuation"])
+    else:
         raise EvalError("comparison plan campaign_variant is unsupported")
-    return variant, (1,)
 
 
 def validate_comparison_plan(plan: Mapping[str, object]) -> dict[str, object]:
@@ -2751,7 +2807,7 @@ def validate_comparison_plan(plan: Mapping[str, object]) -> dict[str, object]:
         "hold_point",
         "integrity",
     }
-    optional_fields = {"campaign_variant"}
+    optional_fields = {"campaign_variant", "continuation"}
     _exact_keys(root, fields | optional_fields, "comparison plan")
     missing = sorted(fields - set(root))
     if missing:
@@ -2761,7 +2817,7 @@ def validate_comparison_plan(plan: Mapping[str, object]) -> dict[str, object]:
     campaign_id = _resolved_text(root["campaign_id"], "comparison plan campaign_id")
     if not IDENTIFIER_RE.fullmatch(campaign_id):
         raise EvalError("comparison plan campaign_id has unsupported characters")
-    campaign_variant, campaign_repetitions = _campaign_variant(root)
+    campaign_variant, campaign_repetitions, continuation = _campaign_variant(root)
 
     protocol = _mapping(root["protocol"], "comparison plan protocol")
     _required_keys(protocol, {"id", "version", "sha256"}, "comparison plan protocol")
@@ -2977,13 +3033,21 @@ def validate_comparison_plan(plan: Mapping[str, object]) -> dict[str, object]:
         "permissions": _validate_permission_equivalence(root["permissions"]),
         "deadlines": dict(deadlines),
         "ceilings": ceilings_normalized,
-        "schedule": validate_campaign_schedule(root["schedule"], repetitions=campaign_repetitions),
+        "schedule": validate_campaign_schedule(
+            root["schedule"],
+            repetitions=campaign_repetitions,
+            completed_prefix=(
+                int(continuation["completed_prefix"]) if continuation is not None else None
+            ),
+        ),
         "evidence_root": evidence_normalized,
         "start_not_before": start_not_before,
         "hold_point": hold_normalized,
     }
     if campaign_variant is not None:
         normalized["campaign_variant"] = campaign_variant
+    if continuation is not None:
+        normalized["continuation"] = continuation
     integrity = _required_sha256(root["integrity"], "comparison plan integrity")
     expected_integrity = content_hash(normalized)
     if integrity != expected_integrity:
@@ -4125,6 +4189,7 @@ def _prior_campaign_capacities(
             {
                 "campaign_id": prior_plan["campaign_id"],
                 "evidence_root_id": prior_plan["evidence_root"]["id"],
+                "plan_sha256": prior_plan["integrity"],
                 "known_tokens": capacity["known_tokens"],
                 "reserved_tokens": capacity["reserved_tokens"],
                 "accounted_tokens": capacity["accounted_tokens"],
@@ -4165,6 +4230,19 @@ def _campaign_capacity_with_prior(
         total_tokens=int(normalized["ceilings"]["total_tokens"]),
     )
     prior = _prior_campaign_capacities(resolved, prior_roots)
+    continuation = normalized.get("continuation")
+    if continuation is not None:
+        parent_matches = [
+            item
+            for item in prior
+            if item["campaign_id"] == continuation["campaign_id"]
+            and item["evidence_root_id"] == continuation["evidence_root_id"]
+            and item["plan_sha256"] == continuation["plan_sha256"]
+        ]
+        if len(parent_matches) != 1:
+            raise EvalError("continuation campaign requires its exact parent evidence root")
+        if parent_matches[0]["run_count"] != continuation["completed_prefix"]:
+            raise EvalError("continuation parent does not contain the frozen completed prefix")
     prior_known = sum(int(item["known_tokens"]) for item in prior)
     prior_reserved = sum(int(item["reserved_tokens"]) for item in prior)
     prior_accounted = sum(int(item["accounted_tokens"]) for item in prior)
