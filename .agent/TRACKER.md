@@ -2,8 +2,8 @@
 
 ## Current status
 
-Subplan 95 is verified and integrated into local `main` at `bb88a73`. No implementation subplan is
-active.
+Subplan 96 is verified on `docs/current-chain-audit`; documentation and acceptance evidence are in
+`8da196b`. No implementation subplan is active.
 
 ## Active task
 
@@ -11,7 +11,7 @@ None.
 
 ## Next action
 
-Await the next explicit user request.
+Integrate the verified topic branch into local `main`, then await the next explicit request.
 
 ## Blockers
 

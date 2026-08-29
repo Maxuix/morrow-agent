@@ -47,3 +47,6 @@ decode-only or test-only compatibility.
 - Verified commits are fast-forward integrated into local `main`; no Live request is run.
 
 Completed by Subplans 94–95; final implementation commit `bb88a73` is integrated into local `main`.
+
+Subplan 96 validated the resulting public product chain and corrected current documentation drift
+in `8da196b`; it did not reopen retired compatibility contracts.

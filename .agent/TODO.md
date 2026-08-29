@@ -2,20 +2,19 @@
 
 ## Current task
 
-Subplan 95: make generic Preference documents the only runtime format.
+None. Subplan 96 is complete and verified.
 
 ## Tasks
 
-- `[x]` Trace the fixed/generic dual state and define the one-shot YAML migration boundary.
-- `[x]` Remove fixed Preference models and Session/AgentRun compatibility fields.
-- `[x]` Collapse context, turn lifecycle, bootstrap and Review preparation to generic entries.
-- `[x]` Delete decode-only modules, historical fixtures and compatibility tests.
-- `[x]` Remove the old backup format and fixed-field Learning Preference Candidate path.
-- `[x]` Update current architecture/docs and run focused plus complete gates.
-- `[x]` Commit, integrate and retire Subplan 95.
+- `[x]` Inventory reachable public surfaces and current documentation drift.
+- `[x]` Correct current README, architecture, roadmap and acceptance records.
+- `[x]` Generate isolated realistic scenarios and three distinct complex journeys.
+- `[x]` Execute public CLI/conversational paths and capture sanitized evidence.
+- `[x]` Reproduce and diagnose failures or blockers without unauthorized product fixes.
+- `[x]` Run offline/static/link gates, commit, integrate and retire Subplan 96.
 
 ## Boundaries
 
-- Preserve Provider/Profile configuration and current generic Preference Writer semantics.
-- Do not reinterpret retained Live evaluation evidence.
+- Preserve unrelated dirty secret-preview work.
+- Use public entry points and disposable state; internal APIs may diagnose but cannot prove PASS.
 - Do not run Live/network tests or expose user state.

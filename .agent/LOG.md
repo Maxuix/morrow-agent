@@ -4033,3 +4033,26 @@
   compileall, CLI help and `git diff --check` passed. No Live request was run.
 - Committed as `bb88a73`, fast-forward integrated into local `main`, and retired the topic branch.
   Concurrent uncommitted secret-preview work was preserved outside this commit.
+
+## 2026-08-30 — Current-chain feasibility audit opened
+
+- The user requested documentation reconciliation after compatibility removal and a realistic
+  feasibility test of the formal public chain.
+- Activated Subplan 96 from local `main@a740a3e`. The real-user simulation uses disposable state,
+  public entry points and offline configured fixtures; Live Provider/network calls remain excluded.
+- Four unrelated dirty secret-preview files are preserved outside this subplan.
+
+## 2026-08-30 — Current-chain feasibility audit completed
+
+- Reconciled README, architecture, roadmap, current Stage 5/6 acceptance records and added an
+  acceptance index plus `docs/acceptance/current-chain-feasibility.md` in `8da196b`.
+- Exercised isolated public journeys for Provider/Model configuration, workspace onboarding,
+  REPL/headless conversation, Session continuation, model-issued workspace write, Task acceptance,
+  Learning Review queueing, Preference CRUD, Doctor/current backup, Skill lifecycle and Fake stdio
+  MCP lifecycle. The formal current chain passed.
+- Diagnosed two non-blocking existing control-plane weaknesses: generic conflict/schema diagnostics
+  and one synthetic concurrent MCP query returning SQLite busy; sequential MCP lifecycle passed.
+  A first Provider-test failure was isolated to an invalid local fake response shape, not product code.
+- Focused gate: `123 passed in 11.00s`. Full offline gate: `1280 passed, 2 deselected in 103.15s`.
+  Ruff format/check, compileall, CLI help, current-doc link check and `git diff --check` passed.
+  Live Provider/network evaluation was not authorized and was not run.
