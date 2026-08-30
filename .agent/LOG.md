@@ -4079,3 +4079,13 @@
   was run.
 - Committed the decision and acceptance evidence as `7167636`; Subplan 97 is retired after
   fast-forward integration into local `main`.
+
+## 2026-08-30 — S7P-10 targeted GO proof opened
+
+- The user explicitly requested execution after the CONDITIONAL GO decision, authorizing the one
+  bounded current-code complex-run proof and its existing CredentialRef-backed Provider request.
+- Activated Subplan 98 from clean local `main@59789bc`. Selected difficult EXTERNAL-003 because it
+  exercises implementation and validation and has an older r20 passing reference without repeating
+  the 14-run campaign.
+- Prepared a fresh baseline in a mode-0700 temporary evidence root. No model request or credential
+  access occurred during preparation.

@@ -1,40 +1,35 @@
-# Stage 7 Entry Review
+# S7P-10 GO Upgrade Proof
 
-> Status: completed; CONDITIONAL GO
-> Active subplan: none
-> Activation base: `main@c22647b`
-> Source authority: current user request, immutable r19/r20 evidence and current code/tests
+> Status: active
+> Active subplan: 98 — targeted current-code complex-run proof
+> Activation base: `main@59789bc`
+> Source authority: current user request, S7P-10 upgrade condition and current code/evidence
 
 ## Objective
 
-Accept the existing 14-run reduced S7P-09 campaign as sufficient in sample count per the user's
-explicit decision, then perform the S7P-10 hard-gate review without rerunning or relabeling the
-immutable evidence.
+Execute the one bounded current-main complex-run proof required by the S7P-10 CONDITIONAL GO
+decision. Do not repeat the accepted 14-run campaign.
 
 ## Decisions
 
-- The user waives the second repetition and accepts the ten Morrow plus four Pi runs as the S7P-09
-  evidence set.
-- This changes campaign sufficiency only. It does not turn failures into passes, fill unavailable
-  usage/cost fields or create repeated/statistical evidence.
-- S7P-10 still applies every leaf-executor readiness gate and records one of the three approved
-  verdicts: GO, CONDITIONAL GO or NO-GO.
-- No Workflow production implementation begins in this subplan.
+- Use difficult task EXTERNAL-003 because it exercises implementation, multiple tool rounds and
+  validation and has an older passing reference point.
+- Use the current configured DeepSeek Provider through an isolated state containing no credential
+  value, with ordinary AgentLoop and capability policy composition.
+- A task may fail for model quality and still prove the leaf runtime boundary only if its terminal
+  source and all tool states are complete. An unexplained runtime failure cannot upgrade the gate.
+- Workflow implementation remains out of scope until this proof closes.
 
 ## Execution order
 
-1. Freeze the user's reduced S7P-09 evidence decision while preserving original run facts.
-2. Audit the eight S7P-10 hard gates against current evidence and code ownership.
-3. Publish the verdict, residual risks and permitted next action.
-4. Run focused and complete offline/static gates, commit and integrate the result.
+1. Freeze source, workspace, config projection and evidence boundary.
+2. Execute one externally bounded AgentRun and frozen verifier.
+3. Repair and rerun only if evidence identifies a leaf runtime defect.
+4. Publish the updated S7P-10 verdict and run offline/static validation.
+5. Commit, fast-forward into local `main` and retire the branch.
 
 ## Completion
 
-- S7P-09 is closed under the explicit 14-run evidence policy.
-- Every S7P-10 gate has a traceable result and the verdict does not exceed its evidence.
-- The complete offline suite, Ruff, compileall, CLI help and diff checks pass.
-- Verified documentation is fast-forward integrated into local `main`; no Live request is run.
-
-Completed by Subplan 97. The next permitted task is Stage 7 documentation/domain modelling or an
-isolated non-production Spike; production Workflow execution remains gated by the targeted current
-complex-run proof in the acceptance decision.
+- Current-code complex-run evidence satisfies or rejects the explicit GO upgrade condition.
+- The decision preserves single-sample and unavailable-metric limitations.
+- All relevant validation passes and no secret/raw model evidence enters Git.

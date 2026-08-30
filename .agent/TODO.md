@@ -2,18 +2,20 @@
 
 ## Current task
 
-None. Subplan 97 is complete and verified with CONDITIONAL GO.
+`[>]` Execute the bounded current-code EXTERNAL-003 proof.
 
 ## Tasks
 
-- `[x]` Record the user's acceptance of the existing 14-run S7P-09 evidence set.
-- `[x]` Audit all S7P-10 hard gates against immutable and current evidence.
-- `[x]` Publish the verdict and residual-risk boundary.
-- `[x]` Run focused and complete offline/static validation.
-- `[x]` Commit, integrate and retire Subplan 97.
+- `[x]` Select the difficult task and isolate a fresh baseline workspace.
+- `[>]` Freeze current source and isolated Provider/Model state.
+- `[ ]` Execute one live Morrow AgentRun and frozen verifier.
+- `[ ]` Classify terminal/tool/path evidence and decide the S7P-10 upgrade.
+- `[ ]` Run focused and complete offline/static validation.
+- `[ ]` Commit, integrate and retire Subplan 98.
 
 ## Boundaries
 
-- Preserve the protected r19/r20 evidence byte-for-byte.
-- Do not infer unavailable metrics or relabel measured failures.
-- Do not run Live/network tests or implement Stage 7 production behavior.
+- Exactly one proof run unless a diagnosed leaf-runtime repair requires rerunning that proof.
+- No Pi or 14-run campaign repetition.
+- No credentials, raw model stream, reasoning or complete tool arguments/results in Git or output.
+- No Workflow implementation.
