@@ -2,19 +2,18 @@
 
 ## Current task
 
-None. Subplan 96 is complete and verified.
+`[>]` Commit, integrate and retire the verified CONDITIONAL GO review.
 
 ## Tasks
 
-- `[x]` Inventory reachable public surfaces and current documentation drift.
-- `[x]` Correct current README, architecture, roadmap and acceptance records.
-- `[x]` Generate isolated realistic scenarios and three distinct complex journeys.
-- `[x]` Execute public CLI/conversational paths and capture sanitized evidence.
-- `[x]` Reproduce and diagnose failures or blockers without unauthorized product fixes.
-- `[x]` Run offline/static/link gates, commit, integrate and retire Subplan 96.
+- `[x]` Record the user's acceptance of the existing 14-run S7P-09 evidence set.
+- `[x]` Audit all S7P-10 hard gates against immutable and current evidence.
+- `[x]` Publish the verdict and residual-risk boundary.
+- `[x]` Run focused and complete offline/static validation.
+- `[>]` Commit, integrate and retire Subplan 97.
 
 ## Boundaries
 
-- Preserve unrelated dirty secret-preview work.
-- Use public entry points and disposable state; internal APIs may diagnose but cannot prove PASS.
-- Do not run Live/network tests or expose user state.
+- Preserve the protected r19/r20 evidence byte-for-byte.
+- Do not infer unavailable metrics or relabel measured failures.
+- Do not run Live/network tests or implement Stage 7 production behavior.

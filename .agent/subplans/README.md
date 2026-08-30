@@ -25,11 +25,12 @@ formally approved and fast-forward integrated into local `main`; the sequence is
 S7P-08. The user then explicitly opened S7P-08. Subplan 89 completed the 18-cell offline
 single-Agent matrix, published Stage 1–6 regression, real current-platform Seatbelt gate and
 current acceptance evidence, and was integrated locally. The user then explicitly opened S7P-09.
-Subplan 90 built the repeated Morrow/Pi campaign and remains recoverable, but its live lane is
-paused after the user requested a Pi-aligned tool-interface repair. Subplans 91 and 92 completed the
+Subplan 90 built the Morrow/Pi campaign. On 2026-08-30 the user accepted its combined 14-run r19/r20
+evidence and declined another repetition; measured failures remain unchanged. Subplan 97 performs
+the separate S7P-10 entry review. Subplans 91 and 92 completed the
 seven-tool interface and legacy-adapter cleanup. Their verified branch histories were consolidated
-with the later core/Learning repair on local `main`; Subplan 90 remains paused and must
-refreeze its source/profile/evidence contract before any future admission. On 2026-08-30 the user
+with the later core/Learning repair on local `main`. Any future evaluation admission must use a new
+source/profile/evidence contract; the accepted bundles are not resumed. On 2026-08-30 the user
 explicitly opened Subplan 93 to remove the v1 bounded runtime compatibility path.
 On 2026-08-30 the user selected a current-version-only support policy and opened Subplan 94 to
 remove remaining repository compatibility surfaces before persisted-state consolidation.
@@ -51,13 +52,14 @@ current-format migration instead of permanent legacy readers.
 | 87 | `87-remove-runtime-outcome-gate.md` | completed and integrated locally |
 | 88 | `88-s7p-07-runtime-control-steering.md` | completed and integrated locally |
 | 89 | `89-s7p-08-single-agent-function-matrix.md` | completed and integrated locally |
-| 90 | `90-s7p-09-repeated-direct-pi-baseline.md` | paused; retained evidence immutable |
+| 90 | `90-s7p-09-repeated-direct-pi-baseline.md` | completed on user-accepted 14-run evidence; retained bundles immutable |
 | 91 | `91-mainstream-tool-interface.md` | completed and verified on the S7P-09 stack |
 | 92 | `92-remove-legacy-tool-adapters.md` | completed, verified and integrated on S7P-09 stack |
 | 93 | `93-remove-v1-bounded.md` | completed, verified and integrated locally |
 | 94 | `94-remove-repository-compat.md` | completed, verified and integrated locally |
 | 95 | `95-current-preferences.md` | completed, verified and integrated locally |
 | 96 | `96-current-chain-feasibility.md` | completed, verified and integrated locally |
+| 97 | `97-s7p-10-stage7-entry-review.md` | decision and validation complete; pending integration |
 
 ## Stage 7 pre-baseline
 

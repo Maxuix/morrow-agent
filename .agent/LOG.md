@@ -4061,3 +4061,19 @@
 - Remote push was not performed: local `main` was already 18 commits ahead of `origin/main` before
   this audit, so pushing would also publish unrelated pre-existing history outside the current
   request. Local completion remains recoverable on `main`.
+
+## 2026-08-30 — S7P-09 reduced evidence accepted and S7P-10 opened
+
+- The user explicitly accepted the existing combined 14-run DeepSeek r19/r20 campaign as sufficient
+  and declined another repetition. The protected bundles remain immutable; their measured Morrow
+  distribution remains 3 PASS, 1 FAIL_MODEL, 2 FAIL_RUNTIME and 4 BUDGET_EXHAUSTED.
+- Activated Subplan 97 from local `main@4371b5d` to perform the separate Stage 7 entry review. The
+  user decision removes the second-repetition requirement only; it does not infer unavailable
+  metrics, relabel failures or waive leaf-executor readiness evidence.
+- The hard-gate audit yields CONDITIONAL GO. Stage 7 documentation, domain modelling and isolated
+  non-production Spikes may begin. Production Workflow execution and Direct migration remain gated
+  on one bounded current-code complex-run proof with attributable terminal evidence.
+- Focused S7P-08 acceptance passed 3 tests; AgentRun preparation, ConversationLog and guardrail
+  focus passed 44 tests. The complete offline gate passed 1,284 tests with two Live tests
+  deselected; Ruff format/check, compileall, CLI help and `git diff --check` passed. No Live request
+  was run.

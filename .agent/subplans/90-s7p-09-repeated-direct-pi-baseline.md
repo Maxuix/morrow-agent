@@ -1,6 +1,7 @@
 # Subplan 90 — S7P-09 Repeated Direct Evaluation and Same-Condition Pi Baseline
 
-> Status: active; reduced r16 pilot executed, primary repeated comparison remains incomplete
+> Status: completed with accepted failed evidence; the user accepted the 14-run r19/r20 campaign
+> and declined another repetition on 2026-08-30
 > Branch: `feat/s7p-09-direct-pi-baseline`
 > Activation base: verified local `main@1fd7e229bef276d1a0361e775ce800ade4b318fc`
 > Dependency: Subplan 89 / S7P-08 passed and is integrated locally
@@ -20,6 +21,11 @@ Create the immutable Direct single-Agent baseline required by Stage 7:
 
 The primary campaign contains exactly 28 formal runs: 20 Morrow runs and 8 Pi runs. A run is never
 silently replaced after seeing its result.
+
+The current user request supersedes the original two-repetition completion requirement: the
+combined 14-run r19/r20 campaign is the final S7P-09 evidence set. Original thresholds remain
+visible as decision history; unmet quality, runtime and usage gates remain unmet facts and flow into
+S7P-10 rather than being relabelled.
 
 The current user-authorized budget fallback is an explicit reduced pilot variant with 14 formal
 runs: all ten Morrow tasks once and the four Pi comparison tasks once. It preserves broad task

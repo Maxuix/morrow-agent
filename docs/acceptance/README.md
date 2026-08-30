@@ -9,6 +9,7 @@
 - [`stage5-acceptance.md`](stage5-acceptance.md)：当前通用 Preference、Learning 与 Memory 离线验收入口。
 - [`stage6-skills-and-extensions.md`](stage6-skills-and-extensions.md)：当前 Skill、Provider/Model、MCP、Doctor 与完整 Backup 验收入口。
 - [`stage7-direct-agent-baseline.md`](stage7-direct-agent-baseline.md)：当前 direct-agent 可靠性基线状态。
+- [`s7p-10-stage7-entry-review.md`](s7p-10-stage7-entry-review.md)：Stage 7 进入审查、CONDITIONAL GO 边界与升级条件。
 
 ## Historical evidence
 

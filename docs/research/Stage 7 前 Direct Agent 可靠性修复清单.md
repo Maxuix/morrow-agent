@@ -1,6 +1,6 @@
 # Stage 7 前 Direct Agent 可靠性修复清单
 
-> 状态：待评审、待逐项实施
+> 状态：S7P-00 至 S7P-09 已闭环；S7P-10 于 2026-08-30 给出 CONDITIONAL GO
 >
 > 日期：2026-08-26
 >
@@ -9,6 +9,10 @@
 > 输入：[Morrow Agent 深度审计与可执行修复清单](<Morrow Agent 深度审计与可执行修复清单.md>)、[Stage 7 前置 Direct Agent 基线](../acceptance/stage7-direct-agent-baseline.md)、当前代码与离线验证结果
 >
 > 后续事项：[Morrow Agent 未来修复清单](<Morrow Agent 未来修复清单.md>)
+>
+> 当前结论：[S7P-10 Stage 7 进入审查](../acceptance/s7p-10-stage7-entry-review.md)。用户接受
+> 现有 14-run r19/r20 证据并取消第二次重复；原始成绩不变。当前只允许 Stage 7 文档、领域建模
+> 和隔离 Spike，生产 Workflow 迁移仍受定向 GO 升级条件约束。
 
 ## 一、这份清单要达成什么
 

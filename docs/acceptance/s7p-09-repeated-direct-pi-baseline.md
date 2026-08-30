@@ -1,8 +1,8 @@
 # S7P-09 Repeated Direct/Pi Baseline — Offline Harness Evidence
 
-> Status: Phase A harness/runners and Pi-aligned Morrow Provider retry repair verified; the
-> authorized reduced r16 pilot is executed and structurally valid, with one Morrow PASS. The
-> primary repeated comparison remains incomplete. This is not an S7P-09 PASS claim.
+> Status: **CLOSED on the user-accepted 14-run r19/r20 evidence set.** The user explicitly declined
+> a second repetition on 2026-08-30. The measured quality/usage gates remain failed or incomplete;
+> this is not a repeated/statistical or 7/10 PASS claim. S7P-10 consumes the evidence as recorded.
 
 ## Scope and boundary
 
@@ -288,3 +288,13 @@ No unrecovered Provider failure terminated the continuation. Conservative cumula
 47,987,509 / 50,000,000, leaving 2,012,491. Combined known bundle usage is 25,738,704 tokens, while
 three bundles retain unavailable total-token metrics. The standard mandatory-usage comparison gate
 therefore remains incomplete; the evidence does not support an S7P-09 baseline PASS.
+
+## 2026-08-30 user evidence decision
+
+The user declared the combined 14-run r19/r20 campaign sufficient and declined another repetition.
+This closes S7P-09 as an accepted measured baseline despite its failed quality thresholds; it does
+not alter the protected bundles or their mechanical result classes. The combined summary integrity
+is `sha256:5f934893b7f2c616f5aa0f9d51e1b16e8dec32a11fdf145f35a4ee959c1dde8b`.
+
+The resulting Stage 7 readiness decision is made separately in
+[`s7p-10-stage7-entry-review.md`](s7p-10-stage7-entry-review.md).

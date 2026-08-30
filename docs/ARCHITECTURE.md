@@ -1,8 +1,8 @@
 # Morrow 架构基线
 
-> 状态：阶段 2–6 已完成；Stage 7 前置的 direct-agent 可靠性、可观察性、正式 headless 入口、
-> 主流工具接口和旧适配器清理已经集成本地 `main`。Stage 7 Workflow 尚未开始；重复外部 Provider
-> 对照评估不属于当前离线验收（macOS；Linux 原生运行仍 unsupported）。
+> 状态：阶段 2–6 已完成；Stage 7 前置能力已经集成本地 `main`。S7P-10 当前为
+> **CONDITIONAL GO**：允许 Stage 7 文档、领域建模和隔离 Spike，生产 Workflow 执行仍未开始，
+> 并须先满足当前复杂任务的定向 GO 升级条件（macOS；Linux 原生运行仍 unsupported）。
 
 本文锁定当前依赖方向、数据所有权和安全边界。阶段 3 的能力策略、配置工具、工作空间读搜、冲突安全文件变更、直接 Host 命令、只读 Git 和当前 macOS 原生沙箱
 已经交付；Linux 原生运行尚未声明支持。Stage 4 已落地数据根 SQLite Operational Store 的
