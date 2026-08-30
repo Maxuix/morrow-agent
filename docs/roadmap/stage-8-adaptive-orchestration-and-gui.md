@@ -15,13 +15,13 @@ Stage 8 把 Stage 5–7 的能力组合成用户可直接掌控的个人 Agent �
 ```text
 用户提交任务
 → Task Classifier/Orchestration Policy 判断复杂度
-→ 从已验证模板中选择 Direct 或 Multi-Agent
-→ 填充 AgentDefinition、模型、Skill、权限和预算
-→ 生成 Workflow Draft
+→ 受约束 GraphPlanner 基于任务和 Catalog 生成初版 Workflow Draft
 → WorkflowCompiler 预检
 → 按用户策略直接运行或等待编辑
 → GUI 实时显示 Task / Node / Agent / Tool / Artifact 状态
-→ 用户可暂停并修改尚未执行节点
+→ 用户可在运行前拖拽/新增/删除节点
+→ 执行中由用户或 ReplanSignal 请求 future-only 修改
+→ Pause/Drain 后只修改尚未开始节点
 → 形成新 Workflow Revision 和子 WorkflowRun 后继续
 → 记录用户编辑为 WorkflowFeedback
 → LearningReview 只提出 Orchestration Preference 候选
@@ -30,7 +30,7 @@ Stage 8 把 Stage 5–7 的能力组合成用户可直接掌控的个人 Agent �
 本阶段的重点不是“画一张漂亮流程图”，而是建立：
 
 - 同一核心状态的可视化投影。
-- 可解释的自动编排。
+- 可解释、受 Catalog/GraphGrammar 约束的任务特化编排。
 - 运行时可控编辑。
 - 可配置 Agent 模块。
 - Multi-Agent 相对单 Agent 的效果反馈闭环。
@@ -63,26 +63,30 @@ Morrow Core Process
 ## 三、进入条件
 
 - Stage 7 已支持手写静态 Workflow、AgentDefinition、Artifact 和运行观察。
-- Command/Query/Event/Approval 接口能够表达完整运行状态。
+- Command/Query/Approval 接口能够表达完整运行状态；若 Stage 7 未获授权扩展
+  ApplicationEvent，则 Stage 8A 在建立 Event Stream 前先取得该 public contract 授权。
 - Stage 5 的候选、Active Preference 和 Knowledge 可被查询和编辑。
 - Stage 6 的 Skill 生命周期、来源、权限和版本可被查询。
-- Direct 与 Multi-Agent 已有真实任务对照数据。
-- 运行中暂停、取消和恢复语义已经稳定。
+- Stage 7 已有最小离线 Direct/Multi 成对证据。缺少真实 Provider 对照不阻止 GUI、手工 Draft
+  编辑或 suggestion-only GraphPlanner；它只阻止自动执行/自动 Replan 的产品推广。
+- Stage 7 的取消、恢复、blocked/unknown outcome 语义稳定。Pause/Drain 与运行中 future-only
+  编辑是 Stage 8 自己的首要运行控制前置，不假定 Stage 7 已实现。
 
 ## 四、自适应编排策略
 
-### 4.1 从模板选择开始
+### 4.1 受约束的任务特化 Draft
 
-第一版不得让模型从空白自由生成任意 DAG。流程：
+第一版不允许模型凭空输出任意 DAG，也不把模板当作唯一完整图。模板是结构先验、可编辑脚手架和
+失败回退；GraphPlanner 必须针对当前任务选择实际节点、依赖、合同与 Artifact 绑定：
 
 ```text
 任务特征提取
-→ 候选模板排序
-→ Direct 基线检查
-→ 选择模板
-→ 参数化填充
+→ 可选一次只读 Scout 产出 TaskBrief
+→ 读取冻结 Node/Agent/Artifact/Capability Catalog
+→ 选择模板先验或最小 GraphGrammar 组合
+→ 受约束 GraphPlanner 生成 TaskGraphDraft
 → Compiler 校验
-→ Draft
+→ 用户编辑/批准，或按已获推广的策略运行
 ```
 
 首批模板沿用 Stage 7：
@@ -91,6 +95,12 @@ Morrow Core Process
 - Explore–Implement–Verify。
 - Parallel Research。
 - Planned Refactor。
+
+`NodeCatalog + ArtifactCatalog + CapabilityCatalog` 是现有 AgentDefinition、Artifact contract 和
+Capability authority 的有界只读投影，不是第二套 Registry。`GraphGrammar` 只描述当前 Runtime 真正
+支持的 Agent 节点、依赖、绑定和并行规则，初版直接复用 Compiler schema，不单独持久化或发展成
+通用 DSL。若没有足够信息生成有针对性的合法 Draft，则回退 Direct 或要求用户补充，而不是硬套
+一个模板。
 
 ### 4.2 Task Feature
 
@@ -158,6 +168,15 @@ Draft compile failed
 
 不允许静默执行未经编译的图。
 
+### 4.6 推广与可运行性分离
+
+- 手工编辑、Compiler、future-only Patch 和 suggestion-only Draft 属于工程能力，可用确定性离线
+  证据验收。
+- 自动选择后直接运行、自动接受 FutureGraphPatch 属于产品推广，必须有对应任务类型的 Direct/Multi
+  对照收益和用户策略授权。
+- 证据不足时系统仍正常运行，只把 Draft/Patch 交给用户批准；不得以“为了安全”禁用 Direct、手工
+  Workflow 或 GUI。
+
 ## 五、Orchestration Policy
 
 ### 5.1 定义
@@ -219,23 +238,105 @@ draft
 - 修改 Node Task Contract。
 - 修改输入输出绑定。
 
-每次编辑后重新编译。
+每次编辑后用 pure Compiler validate 当前 Draft；只有用户 freeze/run 时才通过唯一 publication
+service 生成 immutable Revision，避免拖拽过程制造大量无意义 Revision。
 
 ### 6.3 运行中编辑
 
 固定语义：
 
 - 已完成 Node 不可修改。
-- 正在运行 Node 不可修改；必须先暂停/取消该 Node。
-- Pending/Blocked Node 可在 Workflow 暂停后修改。
+- 正在运行 Node 不可修改。Pause 请求进入 drain：不再启动新节点，当前节点完成、失败或取消后
+  成为不可变历史；不能通过“先取消”把它伪装成可编辑 Pending。
+- Past 的判定是“曾 admission/start，或已有 AgentRun/effect/evidence”，不是“数据库已有预创建
+  attempt-1 row”。因此 Active、completed/failed/blocked 以及 admission 后 cancelled 的节点不可修改；
+  queued 或明确 cancelled-before-admission/supersession 的旧 row 本身仍不可改写，但对应 semantic node
+  仍是 Future，可在 child 中以新 attempt-1 row 编辑/执行。
+- 只有 Future Node 可修改。它的目标边/输入 binding 也可修改：允许 exact immutable Past
+  `node_id.slot`/Artifact → Future 的只读依赖，或 Future → Future；Past node/output、Past 内部边、任何
+  指向 Past 的新边、Future → Past 与既有 Artifact provenance 都不可修改。
 - 编辑产生新 `WorkflowRevision`。
-- 新 Revision 保留与旧 Revision 的 parent/diff。
+- 新 Revision 保留旧 Revision parent 和 FutureGraphPatch diff。
 - 已完成 Artifact 可被新 Revision 引用，但不能伪造为新节点产物。
+- Patch 可显式替换 Workflow `required_outputs`，但每个 ref 必须指向 exact immutable Past slot 或新
+  Revision 的 Future slot并通过 Compiler；这不修改 Past Artifact/provenance。
 - 修改只影响尚未启动节点。
 
-Stage 7 的“一个 WorkflowRun 永远引用一个冻结 Revision”继续成立：暂停后的原 Run 标记为
-`superseded`/`continued`（最终状态名在子计划锁定），新建引用新 Revision 的子 WorkflowRun，并显式记录
-`parent_run_id` 与复用的 Artifact。禁止在同一个 WorkflowRun 上原地替换 `workflow_revision`。
+Pause 不是 process-local flag。Stage 8 增加 durable nonterminal `draining`/`paused` Workflow 状态，以及
+唯一正交布尔事实 `pause_requested`；它只保存 drain 意图，不扩展成通用 command queue。Pause 以 OCC
+把 `running,pause_requested=false -> draining,true`。每次 Node admission 在同一 authoritative store
+transaction 同时重检 parent `status=running` 且 `pause_requested=false`，因此 Pause 与 queued→running
+竞态只能有一个赢家。draining 不再准入新节点；active 安全完成且仍无终态映射时转为 paused。等待未
+consume 的 Approval 时 Node 保持 running + approval-pending 投影、Workflow 保持 draining；它不是
+blocked。若 in-flight Tool 的结果变成 unknown，Workflow 可按既有恢复语义进入 blocked，但必须保留
+`pause_requested=true`。Recovery resolve 为安全成功且 Workflow/root 仍 nonterminal 时，根据剩余 Active
+node 回到 draining 或 paused，绝不准入 queued node；resolve 为 failed/cancelled 则按既有 terminal
+mapping 收口。Resume 只对无 child/patch handoff 的 paused Run 原子清除 `pause_requested` 并改回
+running。若 ordinary crash/unknown Run 已先进入 exact blocked 且
+`pending_terminal_intent=null`，Pause 也可用 OCC 只把 `pause_requested=false -> true`，status 与 unknown
+evidence 不变；其 resolve-success 直接走上述 draining/paused 分支，不经过可准入 queued node 的 running
+窗口。带 `pending_terminal_intent=user_cancel` 的 blocked Run 拒绝 Pause，cancel intent 优先，resolve 仍
+必须按 Stage 7 terminal cancel 收口。Core restart 继续遵守该事实，
+paused/draining/blocked-with-pause 期间 root ownership 不释放。
+
+Stage 7 的“一个 WorkflowRun 永远引用一个冻结 Revision”继续成立。Stage 8 固定新增 terminal
+`WorkflowRun.status=superseded(reason=continued_by_patch)`；不是待定的 `continued` 非终态。handoff 对
+exact paused parent row version、无 Active node 和无 unknown outcome 做 CAS，且确认原 Workflow/root 仍
+nonterminal 后，才可在同一个
+Operational Store transaction 中把原 Run 及其尚未启动 NodeRuns 关闭为
+superseded/cancelled-by-supersession、创建引用新 Revision 的 child WorkflowRun，并把同一 root 的唯一
+nonterminal ownership 原子交给 child。不存在 ordinary Turn/Task 可插入的“旧 Run 已释放、child 尚未拥有”
+窗口。非空 execution set 的 handoff child 在该事务中明确创建为
+`status=running,pause_requested=false`，随后才可准入其 queued rows；pause intent 是 run-local，不从
+paused parent 自动继承。禁止在同一个 WorkflowRun 上原地替换 `workflow_revision_id`。
+
+若 drain 中 Active node failed 或被 cancelled，Stage 7 已终态化 Workflow/root，不能再改写成
+superseded；Patch 仍可保存，但继续执行必须走相应显式 root resume（仅现有合法 transition）与
+child/new Run，或新建 Task。Reviewer blocking verdict 只完成 Reviewer node：若它是 current Revision
+required outputs 指定的 result-driving report，且同时使每个 declared node completed，Stage 7 才终态化
+为 `completed/needs_revision`；非 result-driving block 只保留 evidence，整图仍可 succeeded。若仍有
+queued execution-required Future，drain 到 paused，保留该不可变 ReviewReport，并允许用户对 Future
+patch 或 resume，不能提前跳过它们。
+只有 child 当前 Revision `required_outputs` 中 exact ReviewReport slots 驱动最终结果：修复后 Replan 可
+显式改指 Future 新 Reviewer；旧 blocking report 仍是 inherited evidence，但不永久污染新 child。多个
+result-driving reports 仍按 Stage 7 any-blocking 规则。
+unknown outcome 继续 blocked。
+
+child 显式记录 `parent_run_id`、`execution_node_ids` 与 inherited Artifact bindings。对
+`run_relation=continuation`，该集合是新 Revision 中所有未映射为 immutable inherited Past 的 retained
+execution-required nodes；显式从新 Revision 删除才可不执行。它自然包含 unchanged pending
+ancestors/siblings/disconnected or independent branches，并经 Compiler 补齐合同/依赖闭包；不是当前 ready
+frontier，也不是简单 descendants 或“只够 required outputs”的子集。Compiler 证明每个 child input 要么绑定
+exact inherited Past Artifact/root input，要么来自集合内 producer，并在创建事务中为整个集合全量预创建
+attempt-1 NodeRun。Past/Active/blocked attempt 不在 continuation child 中重新物化或调度，只通过不可变
+parent NodeRun/Artifact provenance 出现。若原 Run仍有 blocked/outcome-unknown Tool，Patch
+可以保存和编译，但 handoff/child Start 必须拒绝；Recovery resolve/reconcile 后只有 durable result 使
+old Workflow/root 仍 nonterminal 时才能重新 drain 并原子 handoff，若解析为 failed/cancelled 则走
+terminal-parent child/new-Run 路径。选择 abandon 则按 Stage 7 关闭旧 root/lineage，不能在同一 root 上偷偷继续；用户若仍要运行
+该 Patch，需显式创建新的 user Task/Workflow lineage。
+
+`execution_node_ids` 可以为空，例如用户显式删除全部 Future，或全部 retained nodes 都已成为 inherited
+Past。Compiler 只有在 exact inherited Artifacts 已满足新 Revision 的全部 required contracts 时才接受；
+handoff transaction 此时不创建 queued NodeRun，而是创建并立即终态化 continuation child，通过 Stage 7
+同一个 fixed result owner、只按新 Revision required outputs 中 exact inherited result-driving
+ReviewReport 收口：`succeeded` 写 READY transition + marked Workflow result snapshot；`needs_revision`
+写 FAILED transition + 引用 required blocking reports 的 terminal TaskOutcome，不伪造 success snapshot。
+两条路径都在同一 transaction terminalize old parent/child/root。若合同未满足则 Patch compile 失败。绝不留下
+`running` 的空 child，也不增加单独 finalize command。
+
+WorkflowRun 记录 `run_relation: initial | continuation | rerun` 与
+`lineage_budget_root_run_id`，避免把 Replan 当作免费重置预算。初始/new Run（`initial`）与显式
+`rerun` 都把自己设为新的 budget root；`continuation` 继承 parent
+的 budget root。累计 `agent_generation_request_count` 只从该 root 所属 continuation chain 的 durable
+`purpose=agent` rows 推导，遍历不得越过最近的 rerun/new-root 边界；child 只获得新 Revision aggregate
+cap 减去该 budget lineage 已消费量后的剩余额度，默认继承原
+`admission_deadline_at`，不能以 child `started_at` 自动重算。FutureGraphPatch 若提高 cap 或延长期限，
+必须把变化列为用户 exact edit 或经用户明确批准的 proposal，并与 parent cap/deadline 一起做 OCC；Agent
+signal/模板不能静默扩容。剩余额度非正或 inherited deadline 已过期时 Patch 仍可保存，但 continuation
+child 的非空 execution set 不启动；empty child 不做 Node/model admission，仍可按上段用 inherited
+contracts 原子终态闭合。只有 terminal parent 后用户显式触发的 `rerun`/new WorkflowRun（并先完成现有合法 root
+transition）才把自己设为新 `lineage_budget_root_run_id` 并获得一份新的 Revision budget/deadline，且
+UI/CLI 明示这是新预算；它后续的 continuation 只累计这个新 root 之内的消费。
 
 ### 6.4 删除节点
 
@@ -247,6 +348,44 @@ Stage 7 的“一个 WorkflowRun 永远引用一个冻结 Revision”继续成�
 - 是否造成无终止路径。
 
 Compiler 返回可操作错误，GUI 不自行猜测重连。
+
+### 6.5 Global future-only Replan
+
+用户精确编辑不经过模型重新解释；Agent/Orchestrator 只能提出建议。两者最终共用同一个确定性
+Patch application/publication 路径：
+
+```text
+User exact edit
+→ explicit FutureGraphPatch ───────────────────────────┐
+                                                       ├→ PatchApplicationService
+Node Agent / Orchestrator                              │  → pure WorkflowCompiler + OCC/CAS publish
+→ ReplanSignal / ReplanProposal                        │  → new WorkflowRevision
+→ ReplanCoordinator proposes FutureGraphPatch          │  → continuation child WorkflowRun
+→ user approves ───────────────────────────────────────┘
+```
+
+固定规则：
+
+- Past（曾 admission/start 或已有 AgentRun/effect/evidence）和 Active 节点不可篡改；预创建但从未
+  admission 的 queued/cancelled rows 不会把 semantic node 变成 Past。Patch 只能修改 Future node，以及
+  target 为 Future 的 binding/edge；其 source 可是 exact immutable Past output 或 Future producer，不能
+  修改 Past producer/provenance、给 Past 增加 incoming work 或建立 Future → Past。
+- ReplanCoordinator 是唯一自动/Agent Patch proposer，不是 Revision writer，也不要求实现成另一个
+  LLM Agent。Node Agent 只能发出 ReplanSignal，不能直接改 Revision。
+- `PatchApplicationService` 是手工和建议 Patch 的唯一 deterministic apply 入口，并复用 Stage 7 的
+  pure Compiler + publication service。Patch 必须引用 base Revision 并经过 OCC/CAS、权限/合同/预算
+  校验；stale patch 返回冲突供重新生成或用户处理，不静默重放。
+- 新 child Run 显式引用 parent run、复用的历史 Artifact 和新 Revision；旧 Run/Revision/NodeRun
+  永不原地修改。
+- handoff 是 old Run terminal + future NodeRun supersession + child/root ownership creation 的单事务；
+  continuation child 为 Compiler 闭包后的完整 `execution_node_ids` 全量预创建 attempt-1 rows，不按
+  Stage 7 full-Start 重建 Past 节点，也不把集合简化为 immediate frontier/descendants。
+- blocked/outcome-unknown parent 只能产出 Patch proposal，不能启动 child；先 Recovery resolve/reconcile，
+  或 abandon 并结束该 root lineage。
+- 初版仅支持人工编辑与建议式 Replan（默认需用户批准）。有限自动接受只能在特定 task class 有
+  对照收益、操作不扩大权限且用户策略明确允许后启用。
+- Node 内部 Agent 仍可在固定 Node Contract、ToolSet 和预算内调整下一次模型/工具动作，这属于
+  leaf-local replanning；第一版不让叶子创建嵌套 DAG，也不绕过 ReplanCoordinator 修改全局图。
 
 ## 七、Agent 模块编辑
 
@@ -450,9 +589,9 @@ initial query snapshot
 生成 Draft 时，系统必须提供简短解释：
 
 ```text
-选择：Explore–Implement–Verify
-原因：涉及多个模块、需要代码修改、独立 Review 价值较高
-未选择 Parallel Research：任务没有多个独立研究方向
+结构先验：Explore–Implement–Verify
+任务特化：Explorer 聚焦 API/持久化；Coder 修改两个目标模块；Reviewer 校验恢复语义
+未加入 Parallel Research：任务没有多个独立研究方向
 预计节点：3
 总预算：...
 写入节点：Coder（唯一）
@@ -469,8 +608,17 @@ GUI/CLI 同等支持：
 - Resume。
 - Cancel。
 - Resolve Approval。
-- Retry failed Node（同一 Revision 下创建新 attempt）。
-- Rerun from Node（需要改图时创建新 Revision 和子 WorkflowRun；不改图时创建新 Run/attempt，保留旧记录）。
+- Retry failed Node：parent WorkflowRun/NodeRun 保持 terminal immutable；用户先显式把 FAILED root
+  `resume` 到 OPEN，再创建 `run_relation=rerun`、引用同一 Revision 的 child/new WorkflowRun。
+  `execution_node_ids` 包含所选失败节点，以及目标 Revision 中所有未由 immutable Past 满足的 retained
+  execution-required nodes（包括 cancelled-before-admission、disconnected/independent branches），再由
+  Compiler 验证合同/依赖闭包；继承仍有效的上游 Artifact。若用户确实不想执行某个 Future node，必须
+  显式 Patch 删除它并生成新 Revision，不能用 descendants/required-output 子集静默省略。
+- Full rerun：创建 `run_relation=rerun` 的 new WorkflowRun，可引用原 Revision 或用户已发布的新
+  Revision；它把所选 Revision 的全部 declared nodes 作为新 execution set，不继承 prior node-output
+  Artifacts，并建立新 budget root。Stage 8 v1 不提供 completed-node partial rerun，因为那需要传递
+  consumer Artifact invalidation/provenance replacement；要重做 completed node 必须 full rerun，不能混用
+  新 producer 与旧 downstream evidence。
 - Edit pending graph。
 - Accept/Correct TaskOutcome。
 
@@ -532,7 +680,76 @@ Reviewer 有价值/无价值
 
 门禁：GUI 与 CLI 展示同一个 WorkflowRun 状态，重连后无丢失或重复状态。
 
-### 8B：Context、Learning 与 Skill 管理
+核心链路按 `8A → 8B → 8C → 8D → 8E` 实施。完整 Context/Learning/Skill 管理不是任务特化 DAG、
+编辑或 Replan 的技术前置，放到 8F；8B/8D 只实现 Editor/Planner 当下需要的只读 Catalog 与选择器。
+
+### 8B：Workflow Editor 与 Agent Module Inspector
+
+交付：
+
+- 节点图、边、Inspector。
+- AgentDefinition 编辑。
+- Editor 所需的 Provider/Model/Skill/Tool/Artifact 只读 Catalog、选择器与 Budget 配置。
+- 编译错误可视化。
+- Definition/Revision Diff。
+
+门禁：用户可创建一个合法 Workflow，非法图无法运行。
+
+### 8C：Pause/Drain 与手工 FutureGraphPatch
+
+交付：
+
+- Pause/Drain/Resume。
+- durable `pause_requested` admission guard，以及 pause → unknown/blocked → resolve 后仍不准入 queued
+  节点的恢复语义。
+- 最小 Operational Store migration：Stage 7 存量 Run 回填 `pause_requested=false`、
+  `run_relation=initial`、`lineage_budget_root_run_id=self`；验证升级中的 running/blocked Run 仍可按
+  原恢复路径继续，不以 NULL 误阻塞 admission 或重置预算。
+- 仅 Future Node 的手工修改。
+- explicit FutureGraphPatch 与唯一 PatchApplicationService。
+- old Run terminal supersession + child/root ownership 原子 handoff。
+- 新 Revision、全量预创建所有未由 immutable Past 满足的 retained execution-required
+  `execution_node_ids` 的子 WorkflowRun、parent_run_id 和 Diff；handoff child 明确从
+  `running,pause_requested=false` 开始。
+- empty execution set 在 inherited contracts 已满足时同事务创建并立即终态化 child/root；不满足则
+  Compiler 拒绝，不留下空 running Run。
+- 已完成 Artifact 继承，以及 blocked/unknown parent 不得启动 child。
+- `lineage_budget_root_run_id` 边界内的 continuation 累计 request budget、继承 deadline 与显式扩容
+  审批；rerun 建立新 budget root。
+- 统一 failed-node retry child 与 full-rerun new-Run 语义，不向 terminal parent 增加 attempt；completed-node
+  partial rerun/Artifact invalidation 延后。
+
+门禁：运行中编辑不会改写 Past/Active 节点或原 Run 的 Revision；UI 能展示父子 Run 与继承
+Artifact。Pause 遇到 in-flight Approval 时 Node 保持 `running` + approval-pending 投影、Workflow 保持
+draining；等待审批不是 `blocked`。只有取消/崩溃留下 unknown outcome 才使用 recovery-only blocked。
+
+### 8D：任务特化 GraphPlanner Draft
+
+交付：
+
+- TaskFeatures。
+- 可选只读 Scout/TaskBrief。
+- Node/Agent/Artifact/Capability Catalog 与最小 GraphGrammar。
+- 模板先验、Agent/Model/Skill 参数化和受约束 TaskGraphDraft。
+- Draft 解释、Compiler 和 Direct 回退。
+- Auto-run 用户策略。
+
+门禁：简单任务保持 Direct；不同复杂任务能生成具有任务差异、可编辑且编译通过的 Draft；模板不
+是唯一完整图来源。无推广证据时只建议/待批准，不阻塞手工运行。
+
+### 8E：Global future-only Replan
+
+交付：
+
+- ReplanSignal/ReplanProposal 与 sole automatic Patch proposer ReplanCoordinator。
+- 对 8C PatchApplicationService 的复用；不增加第二个 Revision writer。
+- Past/Active immutable enforcement、Artifact 复用/来源投影。
+- user-approval first 的 Replan UI；有限自动策略保持关闭，直到证据和用户策略同时满足。
+
+门禁：用户编辑与 Agent 建议走同一写路径；并发 stale Patch 不覆盖新 Revision；恢复和 Replan 都不
+重跑/改写已完成节点，也不把 unknown side effect 伪装为安全。
+
+### 8F：Context、Learning 与 Skill 管理
 
 交付：
 
@@ -541,45 +758,10 @@ Reviewer 有价值/无价值
 - Skill Catalog、Draft、Diff、Eval 和启停。
 - 统一 Command Service 调用。
 
-门禁：GUI 修改和 CLI 修改产生完全一致的 revision、事件和运行时解析结果。
+门禁：GUI 修改和 CLI 修改产生完全一致的 revision、事件和运行时解析结果；该产品面延期不能阻塞
+8B–8E 的 Workflow 核心链路。
 
-### 8C：Workflow Editor 与 Agent Module Inspector
-
-交付：
-
-- 节点图、边、Inspector。
-- AgentDefinition 编辑。
-- Provider/Model/Skill/Tool/Budget 配置。
-- 编译错误可视化。
-- Definition/Revision Diff。
-
-门禁：用户可创建一个合法 Workflow，非法图无法运行。
-
-### 8D：运行中暂停和 Pending 编辑
-
-交付：
-
-- Pause/Resume。
-- Pending Node 修改。
-- 新 Revision、子 WorkflowRun、parent_run_id 和 Diff。
-- 已完成 Artifact 继承。
-- retry/rerun 语义。
-
-门禁：运行中编辑不会改写已完成节点或原 Run 的 Revision；UI 能展示父子 Run 与继承 Artifact。
-
-### 8E：模板选择与自动 Workflow Draft
-
-交付：
-
-- TaskFeatures。
-- Template selector。
-- Agent/Model/Skill 参数化。
-- Draft 解释、Compiler 和 Direct 回退。
-- Auto-run 用户策略。
-
-门禁：简单任务保持 Direct；复杂任务能生成可编辑且编译通过的 Draft。
-
-### 8F：反馈学习与效果评估
+### 8G：反馈学习与效果评估
 
 交付：
 
@@ -588,7 +770,8 @@ Reviewer 有价值/无价值
 - Direct/Multi-Agent 对照 Dashboard。
 - 无效节点、编辑频率和 Reviewer 价值指标。
 
-门禁：系统不会因为一次用户编辑就自动永久改路由，且能证明至少一类自动 Workflow 有收益。
+门禁：系统不会因为一次用户编辑就自动永久改路由；有收益的 task class 才能升级自动运行/自动
+Replan，无收益不阻止 suggestion-only 和手工能力的工程验收。
 
 ## 十六、测试与验收
 
@@ -607,7 +790,39 @@ Reviewer 有价值/无价值
 - Provider/Skill 在编辑期间被停用。
 - 新 Revision 编译失败。
 - Pause 时有 in-flight Tool/Approval。
-- Retry 产生新 attempt 而非覆盖旧记录。
+- Failed-node Retry 创建 child Run、Full rerun 创建 new Run，均不向 terminal parent 增加 attempt；同
+  Revision 与新 Revision 路径都为各自完整 `execution_node_ids` 全量预创建 attempt-1 rows。full rerun
+  不继承 prior node-output，completed-node partial rerun 请求被拒绝并提示 full rerun。
+- User/Agent Replan 同时提交导致 stale base Revision。
+- Patch 尝试修改 Past/Active Node 或伪造历史 Artifact producer。
+- continuation child Run 恢复后错误重跑已完成节点。
+- old Run terminal supersession 与 child/root ownership handoff 的事务故障注入，不出现 ownership 空窗。
+- 删除全部 Future/全部工作已由 inherited Past 满足时，empty execution set 同事务完成 child 与 root
+  result closure，包括 lineage budget=0/deadline 已过期的相邻案例；缺 required inherited
+  contract 的 Patch 被拒绝。分别证明 succeeded 的 READY + marked snapshot 与 needs_revision 的 FAILED +
+  terminal Outcome，后者不产生 success snapshot。
+- Past blocking ReviewReport + Future fix/new Reviewer pass 的 Patch 必须显式把新 Revision required output
+  指向新 report；旧 block 保留 evidence 但不驱动 child。对照 empty child 仍引用 inherited blocking
+  required report 时确定得到 needs_revision。
+- drain 中 active failure/cancel 保留 Stage 7 terminal parent，并要求显式合法 root transition 后创建
+  child/new Run；result-driving blocking ReviewReport 在仍有 queued declared node 时只让 Reviewer
+  completed 并 drain 到 paused，只有整图结束时才形成 terminal `needs_revision` parent；非
+  result-driving block 只作 evidence。
+- blocked/outcome-unknown parent 可保存 Patch 但不能启动 child；resolve 后仅当 old Workflow/root 仍
+  nonterminal 才可重新 drain/handoff。若 durable result 为 failed/cancelled，必须先完成相应 root
+  transition，再创建 `run_relation=rerun` child/new Run；abandon 后同 root continuation 被拒绝。
+- continuation child 不能重置其 `lineage_budget_root_run_id` 内已耗 request count 或 absolute deadline；
+  显式获批提高 cap/延长期限与普通 inherited-budget 路径分别验证。覆盖 failed Run → explicit rerun
+  （新 budget root）→ replan continuation，证明后者只累计 rerun root 之后的消费。
+- approval-pending drain 保持 running/draining 而不是误用 blocked；unknown effect 才进入 blocked。
+- Pause 后 in-flight Tool outcome unknown 时保留 `pause_requested`；resolve-success 回到 draining/paused
+  且不准入 queued，resolve-failure 走 terminal mapping，只有显式 Resume 才清除 pause intent。
+- `pending_terminal_intent=null` 的 blocked/outcome-unknown Run 也可 OCC 设置
+  `pause_requested=true` 而不改 unknown evidence；resolve-success 不经过 running admission 窗口。
+  user-cancel-intent blocked Run 的 Pause 相邻拒绝案例证明 cancel 优先并仍 terminalize；handoff child 不
+  继承 parent pause intent。
+- Stage 7 存量 running/blocked WorkflowRun migration 后具有 false pause intent、initial relation 和
+  self budget root；重启/resolve 不因新增 NULL 字段卡死或重置消费。
 
 ### 16.3 安全
 
@@ -618,7 +833,7 @@ Reviewer 有价值/无价值
 - Workflow 文件中的注入式字段。
 - MCP/Skill 内容在 GUI 中诱导审批。
 
-### 16.4 自动编排
+### 16.4 自动编排与 Replan
 
 - 小任务误选多 Agent。
 - 大任务漏选 Reviewer。
@@ -626,6 +841,9 @@ Reviewer 有价值/无价值
 - 预算不足。
 - 用户明确排除某角色。
 - 工作空间 OrchestrationPolicy 覆盖全局默认。
+- 相似但范围不同的任务生成有差异的 TaskGraphDraft，而不是机械复制同一模板。
+- Node Agent 只能发 ReplanSignal，不能直接修改 Revision。
+- 无收益/无授权时保持建议式，不误阻塞 Direct 或手工 Workflow。
 
 ### 16.5 可用性
 
@@ -642,8 +860,9 @@ Reviewer 有价值/无价值
 - Active Context、Learning 与 Skill 管理界面。
 - Agent Definition 编辑器。
 - Workflow 节点编辑器与 Compiler 错误展示。
-- 运行中 Pause/Resume/Pending Revision 编辑。
-- TaskFeatures、模板选择和 Workflow Draft 生成。
+- 运行中 Pause/Drain、future-only Revision 编辑与 continuation child Run。
+- TaskFeatures、可选 Scout、受约束任务特化 Workflow Draft 生成。
+- Global ReplanSignal、ReplanCoordinator 与 FutureGraphPatch。
 - WorkflowFeedback、OrchestrationPolicy Candidate 和评估 Dashboard。
 - GUI 安全、可访问性和端到端测试。
 
@@ -656,20 +875,31 @@ Reviewer 有价值/无价值
 5. 用户可以通过 GUI 管理 Learning Candidate 和 Skill 生命周期。
 6. 用户可以配置 Agent 的 Provider、Role Prompt、Skill、能力、Context 和预算。
 7. 用户可以创建、验证、运行和保存 Workflow。
-8. 自动编排先从验证过的模板生成 Draft，不执行任意未经编译图。
+8. 自动编排从受支持 Catalog/GraphGrammar 生成任务特化 Draft；模板只是先验/回退，不执行任意未经
+   编译的图。
 9. 简单任务默认 Direct，复杂任务的升级理由和成本可见。
-10. 运行中只能在暂停后修改 Pending 节点，并生成新 Revision 与引用它的子 WorkflowRun；原 Run 的
-    Revision 保持不变。
+10. 运行中只能在 Pause/Drain 后修改从未启动的 Future 节点，并生成新 Revision 与引用它的子
+    WorkflowRun；原 Run 的 Revision 保持不变且以 terminal `superseded` 与 child/root ownership 在同一
+    事务交接。child 为完整 Compiler-closed `execution_node_ids` 全量预创建 rows，按
+    `lineage_budget_root_run_id` 继承 continuation 已耗 budget/deadline；empty execution set 合法时同事务
+    终态闭合而不遗留 running child；blocked/outcome-unknown parent 未 resolve 前不能启动，pause intent
+    也不能因 blocked/restart 丢失。
 11. GUI 断线重连、Core 重启和事件缺口不会造成错误状态。
 12. 用户的 Workflow 编辑只形成候选，不被一次行为永久自动学习。
-13. 至少一种自动选择的 Workflow 在真实任务上优于 Direct 基线。
-14. GUI 安全测试确认 loopback、XSS、Credential 和权限边界可靠。
+13. User exact edit 直接形成 FutureGraphPatch；Agent Replan 经 Coordinator 形成建议 Patch。两者只在
+    同一个 PatchApplication/Compiler publication 路径汇合，Past/Active Node、旧 Revision 和历史
+    Artifact provenance 不被改写。
+14. 自动运行或自动接受 Replan 只对已有明确对照收益且用户允许的 task class 推广；否则保持建议/
+    批准模式，不阻止 Stage 8 工程完成。
+15. GUI 安全测试确认 loopback、XSS、Credential 和权限边界可靠。
 
 ## 十九、明确不包含
 
 - 桌面安装器、自动更新和应用商店发布。
 - 定时任务、后台 daemon 和进程退出后自动执行。
 - 模型自由生成任意代码型节点或无限图。
+- 叶子 Agent 自行修改全局 DAG、嵌套动态子图和多个 Replan writer。
+- completed-node partial rerun 及其传递 consumer Artifact invalidation；v1 使用 full rerun。
 - 多用户协同编辑和团队权限。
 - 分布式 Agent、远程 Worker 和跨设备同步。
 - 用 UI 隐藏工具副作用、来源或审批。

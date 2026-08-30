@@ -1,7 +1,19 @@
-# Current-plan subplans
+# Stage 7 current-plan subplans
 
-This directory is reserved for child plans of the current `.agent/PLAN.md`. There is no active
-subplan now, so no numbered child-plan file is present.
+This directory contains only child plans owned by the active Stage 7 master plan. Production
+implementation is not started; Subplan 1 is ready and all later children are pending.
+
+| Order | File | Status |
+|---|---|---|
+| 1 | `1-stage7-agent-definition-foundation.md` | ready, not started |
+| 2 | `2-stage7-workflow-revision-artifacts.md` | pending Subplan 1 |
+| 3 | `3-stage7-workflow-compiler.md` | pending Subplan 2 |
+| 4 | `4-stage7-direct-workflow.md` | pending Subplan 3 |
+| 5 | `5-stage7-serial-dag-scheduler.md` | pending Subplan 4 |
+| 6 | `6-stage7-multi-agent-pipeline.md` | pending Subplan 5 |
+| 7 | `7-stage7-readonly-parallelism.md` | pending Subplan 6 |
+| 8 | `8-stage7-management-templates.md` | pending Subplan 7 |
+| 9 | `9-stage7-acceptance-closeout.md` | pending Subplan 8 |
 
 ## Lifecycle
 
@@ -13,6 +25,12 @@ subplan now, so no numbered child-plan file is present.
 - Never reactivate or renumber an archived child plan. Use Git history and the archive for recovery.
 - Keep at most one child plan active at a time; record its state in `.agent/TODO.md` and
   `.agent/TRACKER.md`.
+- Start every production child from the latest verified `main`; do not implement later interfaces
+  or schemas early.
+- A child closes only after its declared validation, coherent commits,
+  fast-forward integration, ancestry verification and clean branch/worktree retirement.
+- New hard gates must meet the proportionality test in `.agent/PLAN.md`; quality, cost and temporary
+  availability facts must not be promoted into safety blockers.
 
 The retired global sequence 36–100 is archived under
 `.agent/archive/subplans/legacy-sequence-36-100/`.

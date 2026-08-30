@@ -2,18 +2,19 @@
 
 ## Current task
 
-None. Subplan 100 is complete, verified and archived.
+None. Production implementation has not been authorized or activated.
 
-## Tasks
+## Activation note
 
-- `[x]` Freeze current source and prepare fresh isolated task/state roots.
-- `[x]` Execute exactly one bounded Live Morrow run.
-- `[x]` Run the frozen verifier and classify safe terminal/tool evidence.
-- `[x]` Update S7P-10 verdict and run offline/static validation.
-- `[x]` Commit, integrate and retire Subplan 100.
+Subplan 1 is ready in `.agent/subplans/1-stage7-agent-definition-foundation.md`. When the user
+explicitly authorizes production implementation, activate it and copy only its current executable
+tasks into this file before making code changes.
 
 ## Boundaries
 
-- No repeat of the 14-run campaign and no second EXTERNAL-003 sample.
-- No raw model stream, reasoning, credential value, complete tool arguments/results or traceback.
-- No code repair or Workflow implementation in this testing-only subplan.
+- No production task is in progress until the user explicitly starts Subplan 1.
+- No WorkflowDefinition, compiler, scheduler, multi-node execution or default-path switch.
+- No second chat-history store or AgentRun/Workflow-owned ConversationLog writer.
+- No new dependency, public AgentEvent lifecycle change, runtime-policy default change or Live test.
+- Every new rejection rule must include an adjacent legal acceptance test and satisfy the master
+  plan's proportionality criteria.

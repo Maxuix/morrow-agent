@@ -1,7 +1,8 @@
 # Morrow 个人 Agent 工作台开发路线总览
 
 > 状态：阶段 1–6 已完成；S7P-10 定向证明已把 Stage 7 从 **CONDITIONAL GO** 升级为 **GO**。
-> Stage 7 生产实现尚未开始；后续可围绕现有冻结 Direct AgentRun 叶节点启动独立实现子计划。
+> Stage 7 静态 Workflow Runtime 生产总计划已激活，九个顺序子计划已准备；当前无生产子计划
+> active，Subplan 1 ready，生产代码尚未开始。
 > 基线日期：2026-08-30
 > 用途：维护 Morrow 的长期产品方向、阶段顺序、稳定边界与详细阶段文档入口。
 > 执行约定：具体实现任务、活跃子计划、进度与验证结果继续维护在 `.agent/`；本文不承担实时 TODO 或开发日志职责。
@@ -152,7 +153,8 @@ flowchart LR
 ### 4.2 配置对象与运行对象必须分离
 
 - `AgentDefinition` 是可编辑、可版本化的模块定义；`AgentRun` 是一次实际执行。
-- `WorkflowDefinition` 是可编辑模板；`WorkflowRun` 是运行开始时冻结的快照。
+- `WorkflowDefinition` 是可编辑图定义（内置模板只是其来源之一）；`WorkflowRun` 固定引用一个
+  不可变 WorkflowRevision。
 - `SkillDefinition` / `SkillVersion` 是长期资产；Skill 激活快照属于具体 AgentRun。
 - 用户在 GUI 中编辑的是定义或待运行草稿，不是直接篡改已完成的运行记录。
 
@@ -226,7 +228,7 @@ Morrow 必须在数据模型中区分以下信息，不允许都塞入一个“m
 | 4. Task、Session、Artifact 与持久化 | 已完成 | 生产实现、全链路故障/迁移验收、当前平台安全门禁与包安装恢复均已通过 | [阶段 4](roadmap/stage-4-task-session-and-persistence.md) |
 | 5. 可审查学习与长期记忆 | 已完成 | 通用原子 Preference、no-tool Reviewer、SQLite 异步队列、Inbox/Writer、下一 AgentRun 冻结注入、Project Knowledge/Memory 与 doctor/backup 已实现；当前离线验收通过 | [阶段 5](roadmap/stage-5-reviewable-learning-and-memory.md) |
 | 6. Skills 与扩展生命周期 | 已完成 | Skill 生命周期、Draft/Usage、受限脚本、Provider/Model 控制面、MCP desired state/runtime、Doctor、当前完整 Backup 与离线综合验收已通过 | [阶段 6](roadmap/stage-6-skills-and-extensions.md) |
-| 7. Agent Definition 与静态 Workflow Runtime | 未开始 | 用户可定义多个 Agent，并运行经编译验证的版本化 Workflow | [阶段 7](roadmap/stage-7-workflow-runtime.md) |
+| 7. Agent Definition 与静态 Workflow Runtime | 进行中（计划已激活，生产代码未开始） | 用户可定义多个 Agent，并运行经编译验证的版本化 Workflow | [阶段 7](roadmap/stage-7-workflow-runtime.md) |
 | 8. 自适应编排与 GUI 控制面 | 未开始 | 系统生成可编辑 Workflow Draft，用户在 GUI 中观察与控制运行 | [阶段 8](roadmap/stage-8-adaptive-orchestration-and-gui.md) |
 | 9. 后台任务与可靠自动化 | 未开始 | Workflow 可作为可恢复、可暂停、可审计的后台或周期任务运行 | [阶段 9](roadmap/stage-9-background-automation.md) |
 | 10. 产品化与 Morrow 1.0 | 未开始 | 形成可安装、升级、诊断、备份并长期日用的个人 Agent 产品 | [阶段 10](roadmap/stage-10-productization-and-1.0.md) |
@@ -242,7 +244,7 @@ Morrow 必须在数据模型中区分以下信息，不允许都塞入一个“m
 | Reviewable Learning Preview | Stage 5 | 能提出偏好与项目知识候选，来源可见、可拒绝和撤销 |
 | Extensible Agent | Stage 6 | 支持受治理的 Skills、MCP 与多 Provider 能力 |
 | Workflow Runtime Preview | Stage 7 | 支持手写、版本化、可验证的多 Agent Workflow |
-| Visual Orchestration Beta | Stage 8 | 支持模板化自动编排和 GUI 拖拽编辑、实时运行观察 |
+| Visual Orchestration Beta | Stage 8 | 支持受约束的任务特化 Draft、GUI 拖拽编辑和 future-only Replan 观察/控制 |
 | Automation Beta | Stage 9 | 支持持久后台任务、周期执行、恢复与通知 |
 | Morrow 1.0 | Stage 10 | 完整安装、升级、数据管理、桌面入口与发布维护能力 |
 
@@ -333,7 +335,9 @@ Stage 3 → Stage 4 → Stage 5 → Stage 6 → Stage 7 → Stage 8 → Stage 9 
 
 - Stage 4 期间可以验证只读事件观察页面，帮助稳定 GUI 所需事件投影。
 - Stage 6 期间可以验证 AgentDefinition/WorkflowSpec 的文件格式，但不运行多 Agent。
-- Stage 7 期间可以验证 React Flow 或其他节点编辑器，但不让 UI 直接控制未冻结的运行状态。
+- Stage 7 不把 React Flow、节点编辑器或 GUI 选型作为生产门禁；这些工作从 Stage 8 的已验证
+  Command/Query 投影开始。Event Stream 若需要扩展 public ApplicationEvent，单独取得授权，避免
+  前端实验反向冻结尚未落地的 Runtime。
 - Stage 8 期间可以验证桌面壳与本地进程通信，但正式安装、升级与自动更新留到 Stage 10。
 
 Spike 的代码若不能满足当前阶段边界，应保持实验性、可删除，不得成为隐含依赖。

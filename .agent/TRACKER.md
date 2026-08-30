@@ -2,8 +2,8 @@
 
 ## Current status
 
-Subplan 100 is complete, verified and archived. EXTERNAL-003 is `FAIL_MODEL`, while its normal
-terminal and complete accounting satisfy the targeted proof; S7P-10 is now GO.
+Stage 7 entry is GO. The production master plan and nine sequential child contracts are prepared;
+production implementation has not started. The retired sequence 36–100 is archived.
 
 ## Active task
 
@@ -11,9 +11,12 @@ None.
 
 ## Next action
 
-Await an explicit request to open the first Stage 7 production implementation subplan.
+Await explicit authorization to start Subplan 1 — Agent Definition Foundation from the latest
+verified `main`; planning integration itself does not activate production work.
 
 ## Blockers
 
-No S7P-10 entry blocker remains. Production Workflow implementation has not started and still
-requires its own active plan and acceptance gates.
+No local Stage 7 implementation blocker is known. Remote recovery/publication remains incomplete:
+local `main` is ahead of `origin/main`, and pushing the default branch to
+`https://github.com/Maxuix/morrow-agent.git` requires explicit user authorization for that exact
+remote mutation.

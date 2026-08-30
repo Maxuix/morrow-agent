@@ -4148,3 +4148,61 @@
   `README.md` because no child plan is active.
 - Made plan rollover explicit in `AGENTS.md`: archive the outgoing plan's children before replacing
   the master plan, keep only current-plan children active, and restart every new plan at Subplan 1.
+
+## 2026-08-30 — Stage 7 production plan opened
+
+- Corrected the stale Stage 7 entry state to GO and replaced the completed S7P-10 testing plan with
+  a static Workflow Runtime production master plan. Production implementation is not started.
+- Split Stage 7 into nine sequential children: AgentDefinition, Workflow/Artifact domain,
+  deterministic Compiler, Direct vertical slice, serial Scheduler, serial multi-Agent pipeline,
+  bounded read-only parallelism, management/templates and acceptance closeout.
+- Locked a proportionality rule for safety and validation: only current invariant, permission,
+  persistent-corruption and duplicate/unknown-side-effect risks may fail closed. Quality, cost and
+  harmless parallelism limits use truthful warnings/Direct-or-serial fallback; temporary Provider/
+  MCP availability fails only the target Node, and `blocked` is reserved for an unresolved Tool
+  outcome. Every new rejection owns its closest legal positive test.
+- Kept Session-owned `ConversationLog` as the only chat-history writer. Direct reuses the root
+  Session/TaskRun; isolated leaves use a fresh standalone Session plus a matching internal
+  `workflow_node` TaskRun rather than Session fork lineage or a second log authority.
+- Locked editable user Definition sources apart from packaged read-only built-ins and immutable
+  SQLite Version/Revision/Head authority. Added raw-byte current-backup inventory for malformed
+  unpublished desired drafts without making those drafts an application-start or published-runtime
+  blocker.
+- Resolved the pre-start design review by making WorkflowCompiler the sole Revision publisher,
+  assigning opaque Revision IDs, locking source-form graph fields and typed multi-output slots,
+  defining root/internal-leaf Task ownership, limiting Stage 7 to attempt 1/full-run rerun, and
+  specifying failure, reviewer-needs-revision, cancellation intent, resume and abandon outcomes
+  without a configurable policy matrix.
+- Reduced AgentDefinition v1 to fields with immediate consumers: bounded role prompt, exact Skill
+  versions, tool allow/deny, access ceiling, one request ceiling and exact-or-invoking-active model
+  selection. Document revision/per-definition body hash are adapter metadata. Workflow compilation
+  freezes an exact resolved model that leaf execution must use even if the active model later
+  changes; publication no-op compares the full compiled hash rather than source hash alone.
+- Locked graph determinism without an optional-node policy: every declared node executes and any
+  failure uses the fixed whole-graph mapping; optional output slots are observation-only and cannot
+  feed bindings/required results. Every cross-node binding needs a matching visible edge, while a
+  binding-free edge remains a legal control dependency. Only exact ReviewReport refs in the frozen
+  Workflow required outputs drive deterministic any-blocking `needs_revision`; other reports remain
+  evidence.
+- Narrowed hard aggregate budget enforcement to authoritative primary
+  `agent_generation_request_count`, request-admission deadline and concurrency. Static DAG/unique
+  NodeRun rows bound node admissions without a second counter; compaction requests are explicitly
+  excluded/unavailable, and Provider token/cost remains truthful telemetry. Durable per-Node caps
+  make parallel reservations recoverable without rewriting admitted request rows.
+- Locked output commit/recovery before terminal state, exact READY-transition-bound Workflow result
+  snapshots, root evidence projection from isolated leaves and acceptance inheritance without stale
+  Workflow refs. A minimal internal TextSafetyProfile reuses the existing owner so benign security
+  vocabulary cannot block Workflow Artifact/TaskOutcome closure while legacy callers remain
+  unchanged; actual credentials are still omitted/redacted with explicit evidence.
+- Recorded that additive ApplicationEvent types require a separate public-lifecycle authorization.
+  Query/CLI remains the mandatory observation path if events are deferred.
+- Updated the Stage 8 direction to task-specific constrained GraphPlanner Drafts, GUI editing and a
+  sole-coordinator future-only Replan path; templates are priors/fallbacks rather than the only graph
+  source. Safe live continuation atomically terminalizes the old Run and transfers root ownership to
+  a child with a Compiler-closed execution set; terminal parents are never mutated with retry
+  attempts. Durable pause intent survives an unknown-outcome block, and continuation budget
+  accounting stops at an explicit rerun/new budget root. Full Context/Learning/Skill management is
+  no longer a blocker for the core editor/replan path.
+- A push of the existing local `main` to `https://github.com/Maxuix/morrow-agent.git` was rejected
+  because authorization for that exact default-branch remote mutation was not explicit. Local
+  planning continues; remote publication remains recorded as requiring explicit user approval.
