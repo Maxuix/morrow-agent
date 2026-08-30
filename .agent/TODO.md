@@ -2,18 +2,18 @@
 
 ## Current task
 
-None. Subplan 99 is complete and verified.
+Subplan 100 — execute the one authorized EXTERNAL-003 proof rerun.
 
 ## Tasks
 
-- `[x]` Add the shared typed failure contract and migrate Adapter output.
-- `[x]` Reduce ModelCallRunner and AgentLoop to one failure/retry path.
-- `[x]` Update fixtures, consumers and focused tests.
-- `[x]` Run complete offline/static validation.
-- `[x]` Commit, integrate and retire Subplan 99.
+- `[>]` Freeze current source and prepare fresh isolated task/state roots.
+- `[ ]` Execute exactly one bounded Live Morrow run.
+- `[ ]` Run the frozen verifier and classify safe terminal/tool evidence.
+- `[ ]` Update S7P-10 verdict and run offline/static validation.
+- `[ ]` Commit, integrate and retire Subplan 100.
 
 ## Boundaries
 
-- No new Provider probes, admission gates, content validators or dependencies.
-- No live Provider/network run.
-- No raw exception, SDK object, credential or traceback in events or durable state.
+- No repeat of the 14-run campaign and no second EXTERNAL-003 sample.
+- No raw model stream, reasoning, credential value, complete tool arguments/results or traceback.
+- No code repair or Workflow implementation in this testing-only subplan.

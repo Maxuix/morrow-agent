@@ -1,42 +1,29 @@
-# Unified Model Failure Chain
+# S7P-10 Attributed Proof Rerun
 
-> Status: completed
-> Active subplan: none
-> Activation base: `main@21d707f`
-> Source authority: current user request and current runtime implementation
+> Status: active
+> Active subplan: 100
+> Activation base: `main@519d4d7`
+> Source authority: current user authorization, Subplans 98–99 and current evaluator code
 
 ## Objective
 
-Collapse model-call error handling into one typed failure chain. The Adapter produces one safe,
-attributed failure fact; AgentLoop alone decides retry and terminal behavior; durable observations
-consume that same fact without adding a new probe, gate, or content validator.
+Run exactly one fresh EXTERNAL-003 proof after the unified model-failure-chain repair. Decide whether
+the S7P-10 GO upgrade condition is now met using the existing frozen task/verifier and safe durable
+origin evidence; do not repeat the accepted 14-run campaign.
 
 ## Decisions
 
-- Replace parallel `ModelEvent` error fields and `ModelProviderError` retry flags with one immutable
-  `ModelFailure` value shared by streaming and non-streaming Provider boundaries.
-- OpenAI-compatible streaming reports all expected failures as an error event; AgentLoop keeps one
-  defensive exception normalizer for contract violations and unexpected implementations.
-- Retryability is an Adapter classification fact, while retry execution and limits remain owned by
-  AgentLoop and RunPolicy.
-- Persist safe origin detail only where `internal` would otherwise be ambiguous; do not expand the
-  database schema or expose SDK exceptions.
-- Do not run another live proof as part of this refactor.
-
-## Execution order
-
-1. Introduce the unified failure value and migrate the Provider boundary.
-2. Simplify ModelCallRunner and AgentLoop to consume that value once.
-3. Update fake providers, reviewers and tests; remove obsolete retry helpers and split fields.
-4. Run focused and full offline/static validation.
-5. Commit, fast-forward into local `main` and retire the branch.
+- Use current configured `opencode-go/deepseek-v4-flash` through a fresh mode-0700 isolated state
+  containing only its Provider/Model configuration and CredentialRef.
+- Exercise the ordinary public evaluator path: prepared workspace, `run-morrow`, durable AgentRun
+  observation and frozen EXTERNAL-003 verifier.
+- Execute one Live run only, under the existing 1,800-second external bound. No no-tool probe or
+  additional Provider request is allowed.
+- Do not repair code during this testing-only task. Classify and report the observed result.
 
 ## Completion
 
-- A streaming failure has one typed representation from Adapter through AgentLoop.
-- AgentLoop contains the only retry-policy decision for AgentRun and compaction requests.
-- Provider-versus-Adapter internal origin survives into safe terminal evidence.
-- Relevant and full offline/static validation passes.
-
-Completed by Subplan 99. A separately authorized current-code proof rerun is still required before
-the S7P-10 gate can change from CONDITIONAL GO.
+- Exactly one current-main EXTERNAL-003 run has safe runtime evidence and a verifier result.
+- Internal failure, if any, is attributable as Provider, Adapter or Runtime without raw payloads.
+- S7P-10 acceptance evidence and execution state reflect the mechanical result.
+- Relevant offline/static validation passes and verified evidence is integrated locally.

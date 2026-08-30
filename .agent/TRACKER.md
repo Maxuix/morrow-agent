@@ -2,18 +2,17 @@
 
 ## Current status
 
-Subplan 99 is complete and verified. Streaming model failures now follow one typed chain; S7P-10
-remains CONDITIONAL GO until a separately authorized proof rerun.
+Subplan 100 is active. The user authorized exactly one fresh EXTERNAL-003 proof after the unified
+failure-chain repair; S7P-10 remains CONDITIONAL GO until that sample is classified.
 
 ## Active task
 
-None.
+Freeze current source and prepare fresh isolated EXTERNAL-003 task/state roots.
 
 ## Next action
 
-Await explicit authorization for one fresh EXTERNAL-003 proof rerun, without repeating the 14-run
-campaign.
+Execute the single bounded Live Morrow run, then run the frozen verifier.
 
 ## Blockers
 
-Production Workflow remains blocked pending a separately authorized current-code proof rerun.
+Production Workflow remains blocked pending this proof result.

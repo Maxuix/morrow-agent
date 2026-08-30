@@ -62,6 +62,7 @@ current-format migration instead of permanent legacy readers.
 | 97 | `97-s7p-10-stage7-entry-review.md` | completed and verified; CONDITIONAL GO |
 | 98 | `98-s7p10-go-upgrade-proof.md` | completed; GO upgrade not met, CONDITIONAL GO retained |
 | 99 | `99-unified-model-failure-chain.md` | completed and verified locally |
+| 100 | `100-s7p10-external003-rerun.md` | active |
 
 ## Stage 7 pre-baseline
 
