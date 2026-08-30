@@ -1,6 +1,6 @@
 # Subplan 98 — S7P-10 GO Upgrade Proof
 
-> Status: active
+> Status: completed and verified; GO upgrade condition not met
 > Branch: `chore/s7p10-go-proof`
 > Activation base: local `main@59789bc`
 > Authorization: the user explicitly requested execution after the CONDITIONAL GO decision
@@ -46,3 +46,6 @@ complete tool accounting, and no leaf runtime blocker remains.
 - Every tool call has exactly one terminal state and no unexpected path or false-diff success exists.
 - The S7P-10 verdict is updated without overstating one-sample quality.
 - Focused and complete offline/static gates pass; verified changes are integrated into local `main`.
+
+The one proof ended on an unattributed internal model-request failure after four successful tools.
+S7P-10 remains CONDITIONAL GO; evidence is committed in `90d6f96`.

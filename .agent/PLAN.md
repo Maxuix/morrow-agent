@@ -1,7 +1,7 @@
 # S7P-10 GO Upgrade Proof
 
-> Status: active
-> Active subplan: 98 — targeted current-code complex-run proof
+> Status: completed; GO upgrade condition not met
+> Active subplan: none
 > Activation base: `main@59789bc`
 > Source authority: current user request, S7P-10 upgrade condition and current code/evidence
 
@@ -33,3 +33,7 @@ decision. Do not repeat the accepted 14-run campaign.
 - Current-code complex-run evidence satisfies or rejects the explicit GO upgrade condition.
 - The decision preserves single-sample and unavailable-metric limitations.
 - All relevant validation passes and no secret/raw model evidence enters Git.
+
+Completed by Subplan 98. S7P-10 remains CONDITIONAL GO. The next blocking repair is safe
+Provider-versus-Adapter internal-failure attribution at the model-request boundary; after repair,
+rerun only EXTERNAL-003 once with fresh source/evidence pins.

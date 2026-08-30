@@ -2,7 +2,7 @@
 
 ## Current task
 
-`[>]` Commit, integrate and retire the verified failed GO-upgrade proof.
+None. Subplan 98 is complete and verified; the GO upgrade was not granted.
 
 ## Tasks
 
@@ -11,7 +11,7 @@
 - `[x]` Execute one live Morrow AgentRun and frozen verifier.
 - `[x]` Classify terminal/tool/path evidence and decide the S7P-10 upgrade.
 - `[x]` Run focused and complete offline/static validation.
-- `[>]` Commit, integrate and retire Subplan 98.
+- `[x]` Commit, integrate and retire Subplan 98.
 
 ## Boundaries
 

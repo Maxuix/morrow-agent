@@ -2,16 +2,17 @@
 
 ## Current status
 
-The current-code EXTERNAL-003 proof, decision and validation are complete. The GO upgrade condition
-was not met; S7P-10 remains CONDITIONAL GO.
+Subplan 98 is complete and verified. The current-code EXTERNAL-003 proof did not meet the GO
+upgrade condition; S7P-10 remains CONDITIONAL GO.
 
 ## Active task
 
-Commit, integrate and retire Subplan 98.
+None.
 
 ## Next action
 
-Commit the verified evidence, fast-forward it into local `main` and retire the branch.
+Await explicit authorization to repair safe Provider/Adapter failure attribution, or perform Stage
+7 documentation/domain-model/isolated-Spike work allowed by CONDITIONAL GO.
 
 ## Blockers
 

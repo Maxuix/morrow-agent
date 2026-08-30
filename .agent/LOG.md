@@ -4103,3 +4103,5 @@
 - Evaluator and AgentRun observability focus passed 100 tests. The complete offline gate passed
   1,284 tests with two Live tests deselected; Ruff format/check, compileall, CLI help and
   `git diff --check` passed.
+- Committed the acceptance evidence as `90d6f96`; Subplan 98 is retired after fast-forward
+  integration into local `main`.
