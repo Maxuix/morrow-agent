@@ -2,7 +2,7 @@
 
 > Status: completed; CONDITIONAL GO
 > Active subplan: none
-> Activation base: `main@4371b5d`
+> Activation base: `main@c22647b`
 > Source authority: current user request, immutable r19/r20 evidence and current code/tests
 
 ## Objective

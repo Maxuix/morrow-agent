@@ -4067,7 +4067,7 @@
 - The user explicitly accepted the existing combined 14-run DeepSeek r19/r20 campaign as sufficient
   and declined another repetition. The protected bundles remain immutable; their measured Morrow
   distribution remains 3 PASS, 1 FAIL_MODEL, 2 FAIL_RUNTIME and 4 BUDGET_EXHAUSTED.
-- Activated Subplan 97 from local `main@4371b5d` to perform the separate Stage 7 entry review. The
+- Activated Subplan 97 from local `main@c22647b` to perform the separate Stage 7 entry review. The
   user decision removes the second-repetition requirement only; it does not infer unavailable
   metrics, relabel failures or waive leaf-executor readiness evidence.
 - The hard-gate audit yields CONDITIONAL GO. Stage 7 documentation, domain modelling and isolated

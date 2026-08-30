@@ -2,7 +2,7 @@
 
 > Status: completed and verified; CONDITIONAL GO
 > Branch: `docs/s7p10-entry-review`
-> Activation base: local `main@4371b5d`
+> Activation base: local `main@c22647b`
 > Dependency: S7P-00 through S7P-08 complete; S7P-09 accepted by the user on the existing 14-run
 > reduced campaign without another repetition
 
