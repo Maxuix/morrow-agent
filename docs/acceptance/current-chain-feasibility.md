@@ -68,20 +68,23 @@
 
 ## Findings
 
-### F-01 — 控制面错误信息过于概括
+### F-01 — 控制面错误信息过于概括（已修复）
 
-- 状态：**FAIL**（低严重度诊断问题，不阻塞正式链路）
-- 复现：对 Preference 使用过期 revision 时只输出 `application command failed`；MCP Server ID 不满足 `mcp_...` 约束时只输出泛化的 ValidationError 文案。
+- 状态：**PASS**（2026-08-30 修复并回归）
+- 修复前复现：对 Preference 使用过期 revision 时只输出 `application command failed`；MCP Server ID 不满足 `mcp_...` 约束时只输出泛化的 ValidationError 文案。
 - 原因：CLI 通用异常翻译没有把已知冲突详情或 Pydantic 字段约束映射为安全、具体的用户诊断。
-- 影响：状态仍 fail closed，数据没有被覆盖；但用户难以仅凭 CLI 判断应刷新 revision 或修正 Server ID。
+- 修复：Preference 写入口只翻译已有的类型化 `ToolExecutionError`；MCP 只输出移除 input/context 的首条字段校验详情，不回显原始参数。
+- 验证：旧 revision 现在返回 `preference_conflict: Preference document revision is stale`；非法 ID 返回 `invalid_configuration`、`server_id` 和当前格式约束。两者仍以退出码 2 fail closed。
 - 与本次清理关系：未发现因果关系；这是已有控制面可诊断性不足。
 
-### F-02 — 同一 state root 上并发 MCP 查询可能返回 busy
+### F-02 — 同一 state root 上并发 MCP 查询可能返回 busy（已修复）
 
-- 状态：**INCONCLUSIVE**（低严重度并发边界，顺序正式链路通过）
-- 复现：同时发起 `mcp list/show/status` 时，`status` 一次返回 `busy`；随后按正常用户顺序执行 refresh、enable、status、inspect、disable、remove 全部成功。
-- 原因分析：MCP 查询组装会为 Catalog 打开可写 Operational Store handle；多进程同刻竞争 SQLite/迁移锁时可能 fail closed。
-- 影响：没有状态损坏，也未阻塞顺序控制面；是否需要读连接或有限 busy retry 应另立实现任务验证。
+- 状态：**PASS**（2026-08-30 修复并回归）
+- 修复前复现：5 个全新 state root 中，每次并发发起 `mcp list/show/status` 都至少有一个命令失败，错误包括 `busy`、`unavailable` 或 `needs_repair`；已完成初始化的同一 state root 连续 10 轮并发查询全部通过。
+- 原因分析：`mcp add` 过去只发布 YAML desired state；首次查询再用读写连接懒初始化 Catalog SQLite。多个进程可同时观察到缺失或初始化中的数据库，从而竞争维护锁或读取未完成状态。
+- 修复：`mcp add` 在发布定义前完成 Operational Store 初始化；查询使用只读连接；无 MCP 定义的空查询不再创建 SQLite。没有增加重试框架或长期持锁。
+- 验证：5 个全新 state root 上重复 `add → 并发 list/show/status`，15 个查询全部以 0 退出；MCP/CLI 聚焦回归通过。
+- 影响：没有观察到状态损坏；修复限定在 MCP 控制面初始化与查询模式。
 - 与本次清理关系：未发现因果关系；兼容代码移除后，AgentLoop、工具执行或持久化主链均未出现对应失败。
 
 ### Test-harness correction — 非产品缺陷
@@ -110,8 +113,9 @@
 |---|---|
 | 正式用户链路（隔离 workspace/state、loopback Provider、Fake stdio MCP） | PASS |
 | 真实 Provider 正式链路（连接、文本、续接、工具、自纠正） | PASS；9 次 completion，4 次工具全部成功，Doctor health ok |
+| CLI 诊断与 MCP 首次并发查询修复 | `52 passed in 3.95s`；5 个全新 state root 的 15 个并发查询全部通过 |
 | 聚焦 CLI/headless/AgentRun/MCP/Skill/Provider/Backup/Preference 回归 | `123 passed in 11.00s` |
-| `uv run pytest -m 'not live'` | `1280 passed, 2 deselected in 103.15s` |
+| `uv run pytest -m 'not live'` | `1284 passed, 2 deselected in 103.07s` |
 | `uv run ruff format --check .` | `483 files already formatted` |
 | `uv run ruff check .` | `All checks passed!` |
 | `uv run python -m compileall -q src tests` | PASS |
@@ -121,6 +125,5 @@
 
 ## Recommended actions
 
-1. 将已知 revision conflict 与 MCP schema/ID 校验翻译成安全、明确的 CLI 错误；保持退出码 2 与 fail-closed 语义。
-2. 为并发 MCP 查询建立独立回归，确认只读查询是否应使用只读 handle，或对可恢复 SQLite busy 采用有界策略。
-3. 若要从“本次真实样本可行”提升为生产质量声明，继续执行多次长回合、限流、断网/中断恢复及其他已配置模型的统计评测，并单独记录成本与失败率。
+1. 保留 Preference 冲突、MCP 字段校验和 add-before-parallel-query 回归，避免重新落回泛化错误或读写查询。
+2. 若要从“本次真实样本可行”提升为生产质量声明，继续执行多次长回合、限流、断网/中断恢复及其他已配置模型的统计评测，并单独记录成本与失败率。

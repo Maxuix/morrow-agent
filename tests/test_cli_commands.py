@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import json
 import sys
+from pathlib import Path
 from types import SimpleNamespace
 
 from typer.testing import CliRunner
 
+from morrow.adapters.state.operational import OperationalStore
 from morrow.application.preferences.queries import (
     PreferenceContextStatusView,
     PreferenceScopeStatus,
@@ -20,8 +22,11 @@ from morrow.core.models import (
     ProviderConfig,
     ProviderModelConfig,
 )
+from morrow.core.store import StoreOpenMode
 from morrow.interfaces import cli as cli_module
 from morrow.interfaces.cli import app
+
+FAKE_MCP_SERVER = Path(__file__).parent / "spikes" / "fake_mcp_stdio_server.py"
 
 
 def test_preferences_status_keeps_injection_and_memory_selection_separate(monkeypatch):
@@ -62,6 +67,125 @@ def test_preferences_status_keeps_injection_and_memory_selection_separate(monkey
     assert payload["omitted_count"] == 1
     assert payload["memory_selection_id"] == "msel_1"
     assert payload["memory_selection_item_count"] == 0
+
+
+def test_preferences_stale_revision_reports_actionable_conflict(tmp_path):
+    runner = CliRunner()
+    state_root = tmp_path / "state"
+    common = [
+        "--scope",
+        "global",
+        "--workspace-id",
+        "ws_test",
+        "--state-root",
+        str(state_root),
+        "--json",
+    ]
+    first = runner.invoke(
+        app,
+        ["preferences", "add", "first", "--expected-revision", "0", *common],
+    )
+    stale = runner.invoke(
+        app,
+        ["preferences", "add", "second", "--expected-revision", "0", *common],
+    )
+
+    assert first.exit_code == 0, first.output
+    assert stale.exit_code == 2
+    assert "preference_conflict: Preference document revision is stale" in stale.output
+    assert "application command failed" not in stale.output
+
+
+def test_mcp_invalid_server_id_reports_validation_detail(tmp_path):
+    result = CliRunner().invoke(
+        app,
+        [
+            "mcp",
+            "add",
+            "invalid-id",
+            "--executable",
+            sys.executable,
+            "--state-root",
+            str(tmp_path / "state"),
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert "invalid_configuration" in result.output
+    assert "server_id" in result.output
+    assert "must match mcp_" in result.output
+    assert "MCP operation failed" not in result.output
+
+
+def test_mcp_add_initializes_operational_store_before_publishing_definition(tmp_path):
+    state_root = tmp_path / "state"
+    result = CliRunner().invoke(
+        app,
+        [
+            "mcp",
+            "add",
+            "mcp_test",
+            "--executable",
+            sys.executable,
+            "--arg",
+            str(FAKE_MCP_SERVER),
+            "--cwd-policy",
+            "managed",
+            "--visibility",
+            "read_write",
+            "--allow-tool",
+            "echo",
+            "--tool-effect",
+            "echo=none",
+            "--state-root",
+            str(state_root),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    with OperationalStore(state_root).open(StoreOpenMode.READ_ONLY) as handle:
+        assert handle.schema_version > 0
+
+
+def test_mcp_queries_open_initialized_store_read_only(tmp_path, monkeypatch):
+    state_root = tmp_path / "state"
+    runner = CliRunner()
+    added = runner.invoke(
+        app,
+        [
+            "mcp",
+            "add",
+            "mcp_test",
+            "--executable",
+            sys.executable,
+            "--arg",
+            str(FAKE_MCP_SERVER),
+            "--cwd-policy",
+            "managed",
+            "--visibility",
+            "read_write",
+            "--allow-tool",
+            "echo",
+            "--tool-effect",
+            "echo=none",
+            "--state-root",
+            str(state_root),
+        ],
+    )
+    assert added.exit_code == 0, added.output
+
+    modes = []
+    real_open = OperationalStore.open
+
+    def recording_open(store, mode):
+        modes.append(mode)
+        return real_open(store, mode)
+
+    monkeypatch.setattr(OperationalStore, "open", recording_open)
+    listed = runner.invoke(app, ["mcp", "list", "--state-root", str(state_root)])
+
+    assert listed.exit_code == 0, listed.output
+    assert modes == [StoreOpenMode.READ_ONLY]
 
 
 def test_local_provider_and_model_commands_are_offline(tmp_path):

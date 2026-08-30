@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 
 import typer
+from pydantic import ValidationError
 
 from morrow.adapters.state.extension_yaml import ExtensionYamlStore
 from morrow.adapters.state.journal import SqliteOperationalJournal
@@ -84,6 +85,11 @@ def _emit(value, *, as_json: bool) -> None:
 
 
 def _error(exc: Exception) -> None:
+    if isinstance(exc, ValidationError):
+        issue = exc.errors(include_url=False, include_context=False, include_input=False)[0]
+        location = ".".join(str(item) for item in issue["loc"]) or "configuration"
+        typer.echo(f"MCP 操作失败（invalid_configuration）：{location}: {issue['msg']}", err=True)
+        return
     code = getattr(exc, "code", type(exc).__name__)
     message = getattr(exc, "message", "MCP operation failed")
     typer.echo(f"MCP 操作失败（{code}）：{message}", err=True)
@@ -140,6 +146,8 @@ def mcp_add(
             scope_id=scope_id,
             enabled=False,
         )
+        handle, _journal = _open_journal(application)
+        handle.close()
         _definition_service(application, workspace).add(definition, scope=scope, scope_id=scope_id)
         typer.echo(f"已添加 MCP Server：{server_id}；enabled: false")
     except (McpDefinitionError, StorageError, ValueError, typer.BadParameter) as exc:
@@ -152,8 +160,19 @@ def _query(
     workspace: str | None,
 ):
     scope, scope_id = _scope(workspace)
-    handle, journal = _open_journal(application)
     definitions = _definition_service(application, workspace)
+    if not definitions.list(scope, scope_id=scope_id):
+        return None, McpQueries(definitions, catalogs={}), scope, scope_id
+    store = OperationalStore(application.data_root.root)
+    try:
+        handle = store.open(StoreOpenMode.READ_ONLY)
+    except StorageError as exc:
+        if exc.code is not StorageErrorCode.NOT_FOUND:
+            raise
+        initialized, _journal = _open_journal(application)
+        initialized.close()
+        handle = store.open(StoreOpenMode.READ_ONLY)
+    journal = SqliteOperationalJournal(handle)
     catalogs = _catalogs(journal, definitions, scope, scope_id)
     return handle, McpQueries(definitions, catalogs=catalogs), scope, scope_id
 

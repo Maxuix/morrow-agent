@@ -58,6 +58,7 @@ from morrow.interfaces.preferences_cli import preference_inbox_app
 from morrow.interfaces.skills_cli import skill_app
 from morrow.interfaces.terminal import Terminal, TerminalApprovalPort, run_repl
 from morrow.runtime.durable_log import restore_conversation_log
+from morrow.runtime.tools import ToolExecutionError
 from morrow.services.workspace import WorkspaceError, WorkspaceWriterLock
 
 app = typer.Typer(help="Morrow（承序）工作空间终端 Agent。")
@@ -1097,6 +1098,9 @@ def _preference_write_command(
             typer.echo(
                 f"Preference 已{operation}：scope={value['scope']}；revision={value['revision']}。"
             )
+    except ToolExecutionError as exc:
+        typer.echo(f"preference_{exc.code.value}: {exc}", err=True)
+        raise typer.Exit(code=2) from None
     except Exception as exc:
         _cli_error(exc)
         raise typer.Exit(code=2) from None
