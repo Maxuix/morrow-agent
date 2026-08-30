@@ -2,7 +2,7 @@
 
 ## Current task
 
-`[>]` Commit, integrate and retire the verified CONDITIONAL GO review.
+None. Subplan 97 is complete and verified with CONDITIONAL GO.
 
 ## Tasks
 
@@ -10,7 +10,7 @@
 - `[x]` Audit all S7P-10 hard gates against immutable and current evidence.
 - `[x]` Publish the verdict and residual-risk boundary.
 - `[x]` Run focused and complete offline/static validation.
-- `[>]` Commit, integrate and retire Subplan 97.
+- `[x]` Commit, integrate and retire Subplan 97.
 
 ## Boundaries
 

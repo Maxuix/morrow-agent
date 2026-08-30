@@ -1,6 +1,6 @@
 # Subplan 97 — S7P-10 Stage 7 Entry Review
 
-> Status: active; decision and validation complete, pending integration
+> Status: completed and verified; CONDITIONAL GO
 > Branch: `docs/s7p10-entry-review`
 > Activation base: local `main@4371b5d`
 > Dependency: S7P-00 through S7P-08 complete; S7P-09 accepted by the user on the existing 14-run
@@ -46,3 +46,5 @@ git diff --check
 - The verdict and permitted next action are unambiguous.
 - Documentation and offline/static validation pass and verified work is integrated into local
   `main`.
+
+Decision and evidence committed in `7167636`; all declared validation passed without a Live run.

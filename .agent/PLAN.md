@@ -1,7 +1,7 @@
 # Stage 7 Entry Review
 
-> Status: active; CONDITIONAL GO decision verified
-> Active subplan: 97 — S7P-10 Stage 7 Entry Review
+> Status: completed; CONDITIONAL GO
+> Active subplan: none
 > Activation base: `main@4371b5d`
 > Source authority: current user request, immutable r19/r20 evidence and current code/tests
 
@@ -34,3 +34,7 @@ immutable evidence.
 - Every S7P-10 gate has a traceable result and the verdict does not exceed its evidence.
 - The complete offline suite, Ruff, compileall, CLI help and diff checks pass.
 - Verified documentation is fast-forward integrated into local `main`; no Live request is run.
+
+Completed by Subplan 97. The next permitted task is Stage 7 documentation/domain modelling or an
+isolated non-production Spike; production Workflow execution remains gated by the targeted current
+complex-run proof in the acceptance decision.

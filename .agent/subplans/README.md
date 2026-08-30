@@ -59,7 +59,7 @@ current-format migration instead of permanent legacy readers.
 | 94 | `94-remove-repository-compat.md` | completed, verified and integrated locally |
 | 95 | `95-current-preferences.md` | completed, verified and integrated locally |
 | 96 | `96-current-chain-feasibility.md` | completed, verified and integrated locally |
-| 97 | `97-s7p-10-stage7-entry-review.md` | decision and validation complete; pending integration |
+| 97 | `97-s7p-10-stage7-entry-review.md` | completed and verified; CONDITIONAL GO |
 
 ## Stage 7 pre-baseline
 

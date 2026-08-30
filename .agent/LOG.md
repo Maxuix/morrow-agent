@@ -4077,3 +4077,5 @@
   focus passed 44 tests. The complete offline gate passed 1,284 tests with two Live tests
   deselected; Ruff format/check, compileall, CLI help and `git diff --check` passed. No Live request
   was run.
+- Committed the decision and acceptance evidence as `7167636`; Subplan 97 is retired after
+  fast-forward integration into local `main`.
