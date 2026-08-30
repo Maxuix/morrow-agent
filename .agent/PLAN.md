@@ -28,5 +28,7 @@ origin evidence; do not repeat the accepted 14-run campaign.
 - S7P-10 acceptance evidence and execution state reflect the mechanical result.
 - Relevant offline/static validation passes and verified evidence is integrated locally.
 
-Completed by Subplan 100. The scenario is truthfully retained as `FAIL_MODEL`; its normal AgentRun
-terminal and complete tool accounting satisfy the separately defined S7P-10 GO upgrade condition.
+Completed by archived Subplan 100. The scenario is truthfully retained as `FAIL_MODEL`; its normal
+AgentRun terminal and complete tool accounting satisfy the separately defined S7P-10 GO upgrade
+condition. Its child-plan record is retained under
+`.agent/archive/subplans/legacy-sequence-36-100/`.

@@ -106,8 +106,8 @@ failures, producing an attributable `FAIL_MODEL` result. The upgrade condition i
 - `docs/acceptance/s7p-09-repeated-direct-pi-baseline.md`
 - `docs/acceptance/s7p-08-single-agent-function-matrix.md`
 - `docs/acceptance/current-chain-feasibility.md`
-- `.agent/subplans/90-s7p-09-repeated-direct-pi-baseline.md`
-- `.agent/subplans/97-s7p-10-stage7-entry-review.md`
+- `.agent/archive/subplans/legacy-sequence-36-100/90-s7p-09-repeated-direct-pi-baseline.md`
+- `.agent/archive/subplans/legacy-sequence-36-100/97-s7p-10-stage7-entry-review.md`
 
 ## Validation
 

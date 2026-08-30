@@ -22,7 +22,8 @@
 
 ## 2. Methodology
 
-1. Read `.agent/subplans/37-*.md` and `38-*.md` completion gates, then traced each task box to its owning file(s).
+1. Read archived `.agent/archive/subplans/legacy-sequence-36-100/37-*.md` and `38-*.md`
+   completion gates, then traced each task box to its owning file(s).
 2. Read the three ADRs that own the contracts (`stage-4-operational-store.md`, `stage-4-domain-and-conversation.md`, `stage-4-durable-execution-and-recovery.md`) and checked every “Locked route” / “Rejected alternative” against `src/…`.
 3. `read` on `src/morrow/core/domain.py` (387 L), `store.py` (169 L), `execution.py` (830 L), `faults.py` (79 L), `journal.py` (100 L), `adapters/state/operational.py` (993 L), `migrations.py` (321 L), `journal.py` adapter (922 L), `application/turns.py` (569 L), `prepared.py` (233 L), `runtime/agent.py` (881 L), `conversation.py` (375 L), `durable_log.py` (145 L), `session.py` (106 L), `bootstrap.py` (353 L), plus `tests/test_stage4_*.py`.
 4. `grep` for every fault point, approval transition, and sequence namespace.
@@ -252,4 +253,3 @@ The persist-before-effect test checks `listed[0].intent.effect_class is UNCONFIN
 Subplans 37 and 38 **meet their completion gates**: a bounded scripted `User → Assistant → Turn close` conversation, and a tool intent that is committed, approval-gated, and reconciled only by explicit user choice, survive a clean restart. The code is ready to ship **after the 6 MUST fixes**, which are small, local, and covered by existing tests once adjusted. No architectural rework is needed.
 
 > Reviewed without modifying production code. Re-verify after the MUST fixes with `uv run pytest -m 'not live' -q tests/test_stage4_durable_log.py tests/test_stage4_session_conversation.py tests/test_stage4_tool_journal.py tests/test_stage4_tool_persist.py tests/test_stage4_execution.py` and `uv run ruff check . && uv run ruff format --check .`.
-

@@ -2,8 +2,8 @@
 
 ## Current status
 
-Subplan 100 is complete and verified. EXTERNAL-003 is `FAIL_MODEL`, while its normal terminal and
-complete accounting satisfy the targeted proof; S7P-10 is now GO.
+Subplan 100 is complete, verified and archived. EXTERNAL-003 is `FAIL_MODEL`, while its normal
+terminal and complete accounting satisfy the targeted proof; S7P-10 is now GO.
 
 ## Active task
 

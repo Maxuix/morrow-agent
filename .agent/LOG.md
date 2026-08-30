@@ -4139,3 +4139,12 @@
 - Evaluator/AgentRun observability focus passed 101 tests. The complete offline gate passed 1,285
   tests with two Live tests deselected in 102.39 seconds. Ruff format/check, compileall, CLI help and
   `git diff --check` passed.
+
+## 2026-08-30 — Subplan storage reset and archived
+
+- Archived the retained legacy Subplan 36–100 files under
+  `.agent/archive/subplans/legacy-sequence-36-100/` without renumbering them.
+- Reset `.agent/subplans/` to current-master-plan scope. It now contains only its lifecycle
+  `README.md` because no child plan is active.
+- Made plan rollover explicit in `AGENTS.md`: archive the outgoing plan's children before replacing
+  the master plan, keep only current-plan children active, and restart every new plan at Subplan 1.

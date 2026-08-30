@@ -109,7 +109,8 @@ Layering and ownership: `docs/ARCHITECTURE.md`.
 | `.agent/TODO.md` | Tasks for the active subplan only | Task status changes |
 | `.agent/TRACKER.md` | Progress, active task, next action | Progress, blockers, or next action change |
 | `.agent/LOG.md` | Material history | Decisions, failures, validation results, blockers |
-| `.agent/subplans/` | Ordered child plans | Splitting or completing a large plan |
+| `.agent/subplans/` | Current master plan's ordered child plans only | Splitting or completing a large plan |
+| `.agent/archive/subplans/` | Child plans from retired master plans | Before replacing the master plan |
 
 Also update `docs/ROADMAP.md` / `docs/ARCHITECTURE.md` only when direction or actual structure changes.
 
@@ -122,7 +123,12 @@ Status: `[ ]` pending · `[>]` in progress · `[x]` completed · `[!]` blocked.
 
 When an implementation plan is active: one logical task at a time; mark `[>]` while in progress; mark `[x]` only after validation succeeds. Do not log routine reads or searches.
 
-Split, activate, and retire subplans in `.agent/subplans/README.md`. Do not keep obsolete plan versions in the active `PLAN.md`.
+Split, activate, and retire subplans in `.agent/subplans/README.md`. The directory may contain only
+`README.md` and child plans belonging to the current `.agent/PLAN.md`. Before replacing the master
+plan, move all of its child-plan files into a plan-specific directory under
+`.agent/archive/subplans/`; do not carry their sequence into the next plan. Number every master
+plan's child plans independently from `1-...`. Do not renumber archived files or keep obsolete plan
+versions in the active `PLAN.md`.
 
 ## Read when needed
 

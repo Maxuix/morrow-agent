@@ -2,7 +2,7 @@
 
 ## Current task
 
-None. Subplan 100 is complete and verified.
+None. Subplan 100 is complete, verified and archived.
 
 ## Tasks
 

@@ -1,6 +1,6 @@
 # Stage 4 计划可行性 Review
 
-> 对象：[`.agent/PLAN.md`](../../.agent/PLAN.md)、[`.agent/subplans/35-stage4-contract-activation.md`](../../.agent/subplans/35-stage4-contract-activation.md) 至 [`45-stage4-acceptance.md`](../../.agent/subplans/45-stage4-acceptance.md)、[`docs/roadmap/stage-4-task-session-and-persistence.md`](../roadmap/stage-4-task-session-and-persistence.md)、[`docs/decisions/stage-4-operational-store.md`](../decisions/stage-4-operational-store.md)
+> 对象：[`.agent/PLAN.md`](../../.agent/PLAN.md)、历史 `.agent/subplans/35-stage4-contract-activation.md` 至归档的 [`45-stage4-acceptance.md`](../../.agent/archive/subplans/legacy-sequence-36-100/45-stage4-acceptance.md)、[`docs/roadmap/stage-4-task-session-and-persistence.md`](../roadmap/stage-4-task-session-and-persistence.md)、[`docs/decisions/stage-4-operational-store.md`](../decisions/stage-4-operational-store.md)
 > 对照：当前代码、[`docs/ARCHITECTURE.md`](../ARCHITECTURE.md)、[`docs/ROADMAP.md`](../ROADMAP.md)、三份 `docs/research/morrow-stage4-*.md`、spike `tests/test_stage4_operational_store_spike.py`
 > 日期：2026-08-19
 > 代码基线声明：`003dbdaab652520ca5cadf451ebca7a13bcba36d`（生产适配器尚未开始）
