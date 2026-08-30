@@ -41,6 +41,8 @@ from morrow.core.models import (
     FunctionToolCall,
     ModelErrorCode,
     ModelEvent,
+    ModelFailure,
+    ModelFailureOrigin,
     ModelFinishReason,
     ModelProviderError,
     ModelRef,
@@ -204,16 +206,20 @@ async def test_v2_host_stop_hook_is_optional_and_keeps_cancelled_history_legal()
 class RetryProvider:
     def __init__(self) -> None:
         self.stream_calls = 0
-        self.retry_after = (10.0, None, 100.0)
+        self.retry_after = (10.0, None, 60.0)
 
     async def stream(self, model, messages, tools=()):
         del model, messages, tools
         self.stream_calls += 1
         if self.stream_calls <= 3:
             raise ModelProviderError(
-                ModelErrorCode.RATE_LIMIT,
-                "provider-internal-detail",
-                retry_after_seconds=self.retry_after[self.stream_calls - 1],
+                ModelFailure(
+                    code=ModelErrorCode.RATE_LIMIT,
+                    origin=ModelFailureOrigin.PROVIDER,
+                    retryable=True,
+                    message="provider-internal-detail",
+                    retry_after_seconds=self.retry_after[self.stream_calls - 1],
+                )
             )
         yield ModelEvent(
             kind="completed",
@@ -265,7 +271,13 @@ class OverflowProvider:
         del model, messages, tools
         self.stream_calls += 1
         if self.stream_calls == 1:
-            raise ModelProviderError(ModelErrorCode.CONTEXT_OVERFLOW, "context detail")
+            raise ModelProviderError(
+                ModelFailure(
+                    code=ModelErrorCode.CONTEXT_OVERFLOW,
+                    origin=ModelFailureOrigin.PROVIDER,
+                    message="context detail",
+                )
+            )
         yield ModelEvent(
             kind="completed",
             finish_reason=ModelFinishReason.STOP,
@@ -296,20 +308,23 @@ class CompactionRetryProvider(OverflowProvider):
         self,
         code: ModelErrorCode = ModelErrorCode.RATE_LIMIT,
         *,
-        transient_internal: bool = False,
+        retryable: bool = False,
     ) -> None:
         super().__init__()
         self.code = code
-        self.transient_internal = transient_internal
+        self.retryable = retryable
 
     async def complete(self, model, messages):
         del model, messages
         self.complete_calls += 1
         if self.complete_calls <= 2:
             raise ModelProviderError(
-                self.code,
-                "summary retry",
-                transient_internal=self.transient_internal,
+                ModelFailure(
+                    code=self.code,
+                    origin=ModelFailureOrigin.PROVIDER,
+                    retryable=self.retryable,
+                    message="summary retry",
+                )
             )
         return json.dumps(
             {
@@ -410,15 +425,15 @@ async def test_v2_compaction_rechecks_threshold_before_model_admission():
 
 
 @pytest.mark.parametrize(
-    ("code", "transient_internal"),
+    ("code", "retryable"),
     [
-        (ModelErrorCode.RATE_LIMIT, False),
+        (ModelErrorCode.RATE_LIMIT, True),
         (ModelErrorCode.INTERNAL, True),
     ],
 )
 @pytest.mark.asyncio
-async def test_compaction_summary_uses_bounded_transient_retries(code, transient_internal):
-    provider = CompactionRetryProvider(code, transient_internal=transient_internal)
+async def test_compaction_summary_uses_bounded_transient_retries(code, retryable):
+    provider = CompactionRetryProvider(code, retryable=retryable)
     delays: list[float] = []
     policy = _v2_policy(context_window_tokens=1_024, reserve_tokens=64, keep_recent_tokens=40)
     session = Session(session_id="s")

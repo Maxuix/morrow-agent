@@ -13,6 +13,8 @@ from morrow.core.agent_runs import ProviderCapabilities, exact_model_capabilitie
 from morrow.core.models import (
     ModelCapabilityOverrides,
     ModelErrorCode,
+    ModelFailure,
+    ModelFailureOrigin,
     ModelProviderError,
     ModelRef,
     StateWriteResult,
@@ -158,7 +160,13 @@ def test_model_sync_is_explicit_projection_and_preserves_active_model(tmp_path):
 def test_model_sync_failure_is_typed_and_sanitized(tmp_path):
     async def discover(config, credential):
         del config, credential
-        raise ModelProviderError(ModelErrorCode.AUTH, "raw-key-and-response")
+        raise ModelProviderError(
+            ModelFailure(
+                code=ModelErrorCode.AUTH,
+                origin=ModelFailureOrigin.PROVIDER,
+                message="raw-key-and-response",
+            )
+        )
 
     app = _app(tmp_path, discovery=discover)
     app.provider_service.add_provider(

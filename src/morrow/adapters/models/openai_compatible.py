@@ -14,6 +14,8 @@ from morrow.core.models import (
     ModelCost,
     ModelErrorCode,
     ModelEvent,
+    ModelFailure,
+    ModelFailureOrigin,
     ModelFinishReason,
     ModelProviderError,
     ModelRef,
@@ -343,7 +345,7 @@ def _is_transient_provider_internal(error: BaseException) -> bool:
     )
 
 
-def classify_error(error: BaseException) -> ModelErrorCode:
+def _classify_error_code(error: BaseException) -> ModelErrorCode:
     errors = _error_chain(error)
     for item in errors:
         if isinstance(item, ModelProviderError):
@@ -403,6 +405,37 @@ def classify_error(error: BaseException) -> ModelErrorCode:
     return ModelErrorCode.INTERNAL
 
 
+def classify_failure(error: BaseException, *, phase: str | None = None) -> ModelFailure:
+    """Collapse an SDK/transport exception chain into one safe failure fact."""
+
+    errors = _error_chain(error)
+    for item in errors:
+        if isinstance(item, ModelProviderError):
+            return item.failure
+    code = _classify_error_code(error)
+    has_provider_signal = _has_terminal_provider_limit(errors) or any(
+        _provider_status(item) is not None
+        or isinstance(item, (TimeoutError, ConnectionError, OSError, _ProviderStreamEndedEarly))
+        or any(
+            marker in type(item).__name__.casefold()
+            for marker in ("auth", "connect", "network", "proxy", "rate", "timeout", "transport")
+        )
+        for item in errors
+    )
+    retryable = code in {
+        ModelErrorCode.NETWORK,
+        ModelErrorCode.RATE_LIMIT,
+        ModelErrorCode.TIMEOUT,
+    } or (code is ModelErrorCode.INTERNAL and _is_transient_provider_internal(error))
+    return ModelFailure(
+        code=code,
+        origin=ModelFailureOrigin.PROVIDER if has_provider_signal else ModelFailureOrigin.ADAPTER,
+        retryable=retryable,
+        message=provider_error_message(code, phase=phase),
+        retry_after_seconds=_retry_after_seconds(error),
+    )
+
+
 async def _close_response(response) -> None:
     for name in ("aclose", "close"):
         closer = getattr(response, name, None)
@@ -455,15 +488,7 @@ async def discover_openai_compatible_models(config, credential: str) -> tuple[Di
     except asyncio.CancelledError:
         raise
     except Exception as exc:
-        code = classify_error(exc)
-        raise ModelProviderError(
-            code,
-            provider_error_message(code),
-            retry_after_seconds=_retry_after_seconds(exc),
-            transient_internal=(
-                code is ModelErrorCode.INTERNAL and _is_transient_provider_internal(exc)
-            ),
-        ) from None
+        raise ModelProviderError(classify_failure(exc)) from None
     finally:
         await _close_client(client)
 
@@ -534,8 +559,12 @@ class OpenAICompatibleProvider:
             except TimeoutError:
                 yield ModelEvent(
                     kind="error",
-                    error_code=ModelErrorCode.NETWORK,
-                    error_message=provider_error_message(ModelErrorCode.NETWORK, phase="connect"),
+                    failure=ModelFailure(
+                        code=ModelErrorCode.NETWORK,
+                        origin=ModelFailureOrigin.PROVIDER,
+                        retryable=True,
+                        message=provider_error_message(ModelErrorCode.NETWORK, phase="connect"),
+                    ),
                 )
                 return
             iterator = aiter(response)
@@ -552,9 +581,13 @@ class OpenAICompatibleProvider:
                 except TimeoutError:
                     yield ModelEvent(
                         kind="error",
-                        error_code=ModelErrorCode.TIMEOUT,
-                        error_message=provider_error_message(
-                            ModelErrorCode.TIMEOUT, phase="first_token"
+                        failure=ModelFailure(
+                            code=ModelErrorCode.TIMEOUT,
+                            origin=ModelFailureOrigin.PROVIDER,
+                            retryable=True,
+                            message=provider_error_message(
+                                ModelErrorCode.TIMEOUT, phase="first_token"
+                            ),
                         ),
                         made_progress=accumulator.made_progress,
                         usage=usage,
@@ -618,19 +651,9 @@ class OpenAICompatibleProvider:
         except asyncio.CancelledError:
             raise
         except Exception as exc:
-            code = classify_error(exc)
-            if code is ModelErrorCode.INTERNAL and _is_transient_provider_internal(exc):
-                raise ModelProviderError(
-                    code,
-                    provider_error_message(code),
-                    retry_after_seconds=_retry_after_seconds(exc),
-                    transient_internal=True,
-                ) from None
             yield ModelEvent(
                 kind="error",
-                error_code=code,
-                error_message=provider_error_message(code),
-                retry_after_seconds=_retry_after_seconds(exc),
+                failure=classify_failure(exc),
                 made_progress=accumulator.made_progress,
                 usage=usage,
             )
@@ -657,15 +680,7 @@ class OpenAICompatibleProvider:
         except asyncio.CancelledError:
             raise
         except Exception as exc:
-            code = classify_error(exc)
-            raise ModelProviderError(
-                code,
-                provider_error_message(code),
-                retry_after_seconds=_retry_after_seconds(exc),
-                transient_internal=(
-                    code is ModelErrorCode.INTERNAL and _is_transient_provider_internal(exc)
-                ),
-            ) from None
+            raise ModelProviderError(classify_failure(exc)) from None
 
 
 def make_openai_compatible(config, credential: str) -> OpenAICompatibleProvider:

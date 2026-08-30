@@ -302,6 +302,29 @@ class ModelErrorCode(StrEnum):
     INTERNAL = "internal"
 
 
+class ModelFailureOrigin(StrEnum):
+    """Boundary that produced a safe model failure fact."""
+
+    PROVIDER = "provider"
+    ADAPTER = "adapter"
+    RUNTIME = "runtime"
+
+
+class ModelFailure(ProtocolModel):
+    """One sanitized failure value shared by model events and exceptions."""
+
+    code: ModelErrorCode
+    origin: ModelFailureOrigin
+    retryable: bool = False
+    message: str
+    retry_after_seconds: float | None = Field(default=None, ge=0, le=60)
+
+    @field_validator("message")
+    @classmethod
+    def non_empty_message(cls, value: str) -> str:
+        return _require_non_empty(value)
+
+
 class UsageAvailability(StrEnum):
     """Whether a Provider reported a trustworthy usage or cost fact."""
 
@@ -388,20 +411,19 @@ class ModelCost(ProtocolModel):
 
 
 class ModelProviderError(RuntimeError):
-    def __init__(
-        self,
-        code: ModelErrorCode,
-        message: str,
-        *,
-        retry_after_seconds: float | None = None,
-        transient_internal: bool = False,
-    ) -> None:
-        if transient_internal and code is not ModelErrorCode.INTERNAL:
-            raise ValueError("transient_internal requires the internal Provider error code")
-        super().__init__(message)
-        self.code = code
-        self.retry_after_seconds = retry_after_seconds
-        self.transient_internal = transient_internal
+    """Exception transport for model APIs that cannot return a `ModelEvent`."""
+
+    def __init__(self, failure: ModelFailure) -> None:
+        super().__init__(failure.message)
+        self.failure = failure
+
+    @property
+    def code(self) -> ModelErrorCode:
+        return self.failure.code
+
+    @property
+    def retry_after_seconds(self) -> float | None:
+        return self.failure.retry_after_seconds
 
 
 def provider_error_message(code: ModelErrorCode, *, phase: str | None = None) -> str:
@@ -468,9 +490,7 @@ class ModelEvent(MorrowModel):
     text: str | None = None
     finish_reason: ModelFinishReason | None = None
     message: AssistantMessage | None = None
-    error_code: ModelErrorCode | None = None
-    error_message: str | None = None
-    retry_after_seconds: float | None = Field(default=None, ge=0, le=60)
+    failure: ModelFailure | None = None
     made_progress: bool = False
     usage: ModelUsage = Field(default_factory=ModelUsage.unavailable)
     cost: ModelCost = Field(default_factory=ModelCost.unavailable)

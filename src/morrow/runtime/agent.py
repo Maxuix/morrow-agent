@@ -32,6 +32,8 @@ from morrow.core.models import (
     ModelCost,
     ModelErrorCode,
     ModelEvent,
+    ModelFailure,
+    ModelFailureOrigin,
     ModelFinishReason,
     ModelProviderError,
     ModelRef,
@@ -39,7 +41,6 @@ from morrow.core.models import (
     ProtocolModel,
     ToolDefinition,
     UserMessage,
-    provider_error_message,
     sanitize_text,
     utc_now,
 )
@@ -58,7 +59,7 @@ from morrow.runtime.tools import (
 if TYPE_CHECKING:
     from morrow.application.agent_runs.preparation import PreparedAgentRunRuntime
 
-TRANSIENT_MODEL_ERRORS = frozenset(
+LEGACY_TRANSIENT_MODEL_ERRORS = frozenset(
     {ModelErrorCode.NETWORK, ModelErrorCode.RATE_LIMIT, ModelErrorCode.TIMEOUT}
 )
 MODEL_ERROR_STOPS = {
@@ -77,10 +78,7 @@ class ModelCallOutcome(ProtocolModel):
 
     message: AssistantMessage | None = None
     finish_reason: ModelFinishReason | None = None
-    error_code: ModelErrorCode | None = None
-    error_message: str | None = None
-    retry_after_seconds: float | None = None
-    transient_provider_internal: bool = False
+    failure: ModelFailure | None = None
     usage: ModelUsage = ModelUsage.unavailable()
     cost: ModelCost = ModelCost.unavailable()
 
@@ -104,37 +102,40 @@ class ModelCallRunner:
                 if model_event.kind == "completed":
                     self._outcome = self._classify_completion(model_event)
                 elif model_event.kind == "error":
-                    error_code = model_event.error_code or ModelErrorCode.INTERNAL
                     self._outcome = ModelCallOutcome(
-                        error_code=error_code,
-                        error_message=provider_error_message(error_code),
-                        retry_after_seconds=_bounded_retry_after(model_event.retry_after_seconds),
+                        failure=model_event.failure
+                        or ModelFailure(
+                            code=ModelErrorCode.INTERNAL,
+                            origin=ModelFailureOrigin.ADAPTER,
+                            message="模型服务发生未预期错误",
+                        ),
                         usage=model_event.usage,
                         cost=model_event.cost,
                     )
                 yield model_event
-            if self._outcome.message is None and self._outcome.error_code is None:
+            if self._outcome.message is None and self._outcome.failure is None:
                 self._outcome = ModelCallOutcome(
-                    error_code=ModelErrorCode.INVALID_RESPONSE,
-                    error_message="模型响应未正常结束",
+                    failure=ModelFailure(
+                        code=ModelErrorCode.INVALID_RESPONSE,
+                        origin=ModelFailureOrigin.PROVIDER,
+                        message="模型响应未正常结束",
+                    ),
                     usage=self._outcome.usage,
                     cost=self._outcome.cost,
                 )
         except asyncio.CancelledError:
             raise
-        except ModelProviderError as exc:
+        except Exception as exc:
             self._outcome = ModelCallOutcome(
-                error_code=exc.code,
-                error_message=provider_error_message(exc.code),
-                retry_after_seconds=_bounded_retry_after(exc.retry_after_seconds),
-                transient_provider_internal=exc.transient_internal,
-                usage=self._outcome.usage,
-                cost=self._outcome.cost,
-            )
-        except Exception:
-            self._outcome = ModelCallOutcome(
-                error_code=ModelErrorCode.INTERNAL,
-                error_message="模型服务发生未预期错误",
+                failure=(
+                    exc.failure
+                    if isinstance(exc, ModelProviderError)
+                    else ModelFailure(
+                        code=ModelErrorCode.INTERNAL,
+                        origin=ModelFailureOrigin.ADAPTER,
+                        message="模型服务发生未预期错误",
+                    )
+                ),
                 usage=self._outcome.usage,
                 cost=self._outcome.cost,
             )
@@ -150,8 +151,11 @@ class ModelCallRunner:
         if reason not in (ModelFinishReason.STOP, ModelFinishReason.TOOL_CALLS):
             return ModelCallOutcome(
                 finish_reason=reason,
-                error_code=ModelErrorCode.INVALID_RESPONSE,
-                error_message="模型响应未正常结束",
+                failure=ModelFailure(
+                    code=ModelErrorCode.INVALID_RESPONSE,
+                    origin=ModelFailureOrigin.PROVIDER,
+                    message="模型响应未正常结束",
+                ),
                 usage=model_event.usage,
                 cost=model_event.cost,
             )
@@ -159,16 +163,22 @@ class ModelCallRunner:
             if message is None or not (message.content or "").strip() or bool(message.tool_calls):
                 return ModelCallOutcome(
                     finish_reason=reason,
-                    error_code=ModelErrorCode.INVALID_RESPONSE,
-                    error_message="模型没有返回可见文本",
+                    failure=ModelFailure(
+                        code=ModelErrorCode.INVALID_RESPONSE,
+                        origin=ModelFailureOrigin.PROVIDER,
+                        message="模型没有返回可见文本",
+                    ),
                     usage=model_event.usage,
                     cost=model_event.cost,
                 )
         elif message is None or not message.tool_calls:
             return ModelCallOutcome(
                 finish_reason=reason,
-                error_code=ModelErrorCode.INVALID_RESPONSE,
-                error_message="模型没有返回工具调用",
+                failure=ModelFailure(
+                    code=ModelErrorCode.INVALID_RESPONSE,
+                    origin=ModelFailureOrigin.PROVIDER,
+                    message="模型没有返回工具调用",
+                ),
                 usage=model_event.usage,
                 cost=model_event.cost,
             )
@@ -191,20 +201,6 @@ def _bounded_retry_after(value: float | None) -> float | None:
         return min(value, 60.0)
     except (TypeError, ValueError):
         return None
-
-
-def _retryable_provider_outcome(outcome: ModelCallOutcome) -> bool:
-    """Retry typed transient failures, plus only explicitly attributed Provider internals."""
-
-    return outcome.error_code in TRANSIENT_MODEL_ERRORS or (
-        outcome.error_code is ModelErrorCode.INTERNAL and outcome.transient_provider_internal
-    )
-
-
-def _retryable_provider_exception(error: ModelProviderError) -> bool:
-    return error.code in TRANSIENT_MODEL_ERRORS or (
-        error.code is ModelErrorCode.INTERNAL and error.transient_internal
-    )
 
 
 def _pending_cancellation() -> bool:
@@ -554,7 +550,7 @@ class AgentLoop:
                     raise ContextBudgetError("上下文压缩请求超过模型上下文限制") from None
                 if (
                     not policy.retry_enabled
-                    or not _retryable_provider_exception(exc)
+                    or not exc.failure.retryable
                     or retry_count >= policy.max_retries
                 ):
                     raise
@@ -728,7 +724,7 @@ class AgentLoop:
 
             # Older stores have no explicit retry-progress row.  Recover only transient failures;
             # an arbitrary non-retryable or overflow failure must never consume the v2 budget.
-            transient_codes = TRANSIENT_MODEL_ERRORS
+            transient_codes = LEGACY_TRANSIENT_MODEL_ERRORS
             state.total_retry_count = sum(
                 item.state.value == "failed" and item.error_code in transient_codes
                 for item in settled_before_latest
@@ -1144,7 +1140,7 @@ class AgentLoop:
                                 )
                             else:
                                 attempt_outcome = runner.outcome
-                                if attempt_outcome.error_code is not None:
+                                if attempt_outcome.failure is not None:
                                     settled_state = "failed"
                                 else:
                                     settled_state = "completed"
@@ -1152,7 +1148,11 @@ class AgentLoop:
                                     admission,
                                     state_name=settled_state,
                                     finish_reason=attempt_outcome.finish_reason,
-                                    error_code=attempt_outcome.error_code,
+                                    error_code=(
+                                        attempt_outcome.failure.code
+                                        if attempt_outcome.failure is not None
+                                        else None
+                                    ),
                                     usage=attempt_outcome.usage,
                                     cost=attempt_outcome.cost,
                                 )
@@ -1167,8 +1167,9 @@ class AgentLoop:
                     if callable(context_digest)
                     else None
                 )
-                if outcome.error_code is not None:
-                    if outcome.error_code is ModelErrorCode.CONTEXT_OVERFLOW:
+                if outcome.failure is not None:
+                    failure = outcome.failure
+                    if failure.code is ModelErrorCode.CONTEXT_OVERFLOW:
                         if policy.compaction_enabled and state.overflow_recovery_count == 0:
                             state.overflow_recovery_count += 1
                             yield event("status.changed", {"status": "compacting"})
@@ -1190,9 +1191,7 @@ class AgentLoop:
                                 yield event("status.changed", {"status": "compacted"})
                                 continue
                     retry_limit = policy.max_retries if policy.retry_enabled else 0
-                    can_retry = state.retry_count < retry_limit and _retryable_provider_outcome(
-                        outcome
-                    )
+                    can_retry = state.retry_count < retry_limit and failure.retryable
                     if can_retry:
                         state.retry_count += 1
                         state.total_retry_count += 1
@@ -1200,7 +1199,7 @@ class AgentLoop:
                         exponential = policy.retry_base_delay_seconds * (
                             2 ** (state.retry_count - 1)
                         )
-                        provider_delay = outcome.retry_after_seconds or 0.0
+                        provider_delay = failure.retry_after_seconds or 0.0
                         payload = {
                             "status": "retrying",
                             "retry_delay_seconds": min(
@@ -1216,10 +1215,12 @@ class AgentLoop:
                     elif outcome.finish_reason == ModelFinishReason.CONTENT_FILTER:
                         stop_code = AgentStopCode.CONTENT_FILTERED
                     else:
-                        stop_code = MODEL_ERROR_STOPS[outcome.error_code]
+                        stop_code = MODEL_ERROR_STOPS[failure.code]
+                    if failure.code is ModelErrorCode.INTERNAL:
+                        state.stop_detail = f"{failure.origin.value}_internal"
                     state.retry_count = 0
                     persist_retry_progress()
-                    for item in terminal_error(outcome.error_message or "模型调用失败", stop_code):
+                    for item in terminal_error(failure.message, stop_code):
                         yield item
                     return
                 state.retry_count = 0

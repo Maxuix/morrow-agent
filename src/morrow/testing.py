@@ -14,6 +14,8 @@ from morrow.core.models import (
     Message,
     ModelErrorCode,
     ModelEvent,
+    ModelFailure,
+    ModelFailureOrigin,
     ModelFinishReason,
     ModelRef,
     ToolDefinition,
@@ -181,7 +183,13 @@ class ScriptedModelProvider:
         response = self._next()
         if isinstance(response, BaseException):
             yield ModelEvent(
-                kind="error", error_code=ModelErrorCode.NETWORK, error_message="scripted failure"
+                kind="error",
+                failure=ModelFailure(
+                    code=ModelErrorCode.NETWORK,
+                    origin=ModelFailureOrigin.PROVIDER,
+                    retryable=True,
+                    message="scripted failure",
+                ),
             )
             return
         if response == "cancel":

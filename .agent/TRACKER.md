@@ -2,8 +2,8 @@
 
 ## Current status
 
-Subplan 98 is complete and verified. The current-code EXTERNAL-003 proof did not meet the GO
-upgrade condition; S7P-10 remains CONDITIONAL GO.
+Subplan 99 is complete and verified. Streaming model failures now follow one typed chain; S7P-10
+remains CONDITIONAL GO until a separately authorized proof rerun.
 
 ## Active task
 
@@ -11,10 +11,9 @@ None.
 
 ## Next action
 
-Await explicit authorization to repair safe Provider/Adapter failure attribution, or perform Stage
-7 documentation/domain-model/isolated-Spike work allowed by CONDITIONAL GO.
+Await explicit authorization for one fresh EXTERNAL-003 proof rerun, without repeating the 14-run
+campaign.
 
 ## Blockers
 
-Production Workflow remains blocked. Safe evidence cannot distinguish Provider-origin internal
-failure from an unattributed Adapter exception at the model-call boundary.
+Production Workflow remains blocked pending a separately authorized current-code proof rerun.

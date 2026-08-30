@@ -18,7 +18,7 @@ from morrow.adapters.credentials.keyring import (
 from morrow.adapters.models.openai_compatible import (
     OpenAICompatibleProvider,
     StreamAccumulator,
-    classify_error,
+    classify_failure,
     normalize_tool_schema,
     provider_error_message,
     serialize_message,
@@ -30,6 +30,8 @@ from morrow.core.models import (
     FunctionToolCall,
     ModelErrorCode,
     ModelEvent,
+    ModelFailure,
+    ModelFailureOrigin,
     ModelFinishReason,
     ModelProviderError,
     ModelRef,
@@ -417,7 +419,7 @@ def test_provider_error_messages_distinguish_network_auth_rate_limit_and_timeout
         provider_error_message(ModelErrorCode.TIMEOUT, phase="first_token")
         == "等待模型首个响应超时"
     )
-    assert classify_error(TimeoutError()) is ModelErrorCode.TIMEOUT
+    assert classify_failure(TimeoutError()).code is ModelErrorCode.TIMEOUT
 
 
 def test_sdk_transport_errors_and_wrapped_causes_are_network_without_io():
@@ -428,10 +430,10 @@ def test_sdk_transport_errors_and_wrapped_causes_are_network_without_io():
     wrapped = RuntimeError("provider request failed")
     wrapped.__cause__ = httpx.ConnectError("connection refused", request=request)
 
-    assert classify_error(connection) is ModelErrorCode.NETWORK
-    assert classify_error(timeout) is ModelErrorCode.TIMEOUT
-    assert classify_error(proxy) is ModelErrorCode.NETWORK
-    assert classify_error(wrapped) is ModelErrorCode.NETWORK
+    assert classify_failure(connection).code is ModelErrorCode.NETWORK
+    assert classify_failure(timeout).code is ModelErrorCode.TIMEOUT
+    assert classify_failure(proxy).code is ModelErrorCode.NETWORK
+    assert classify_failure(wrapped).code is ModelErrorCode.NETWORK
 
 
 @pytest.mark.asyncio
@@ -451,8 +453,9 @@ async def test_adapter_connect_timeout_is_network_without_waiting_for_token():
     events = await collect_stream(provider)
 
     assert [event.kind for event in events] == ["error"]
-    assert events[0].error_code == ModelErrorCode.NETWORK
-    assert events[0].error_message == "连接模型服务超时"
+    assert events[0].failure.code == ModelErrorCode.NETWORK
+    assert events[0].failure.message == "连接模型服务超时"
+    assert events[0].failure.retryable is True
 
 
 @pytest.mark.asyncio
@@ -477,8 +480,9 @@ async def test_adapter_first_token_timeout_is_distinct_from_connect_timeout():
     events = await collect_stream(provider)
 
     assert [event.kind for event in events] == ["error"]
-    assert events[0].error_code == ModelErrorCode.TIMEOUT
-    assert events[0].error_message == "等待模型首个响应超时"
+    assert events[0].failure.code == ModelErrorCode.TIMEOUT
+    assert events[0].failure.message == "等待模型首个响应超时"
+    assert events[0].failure.retryable is True
 
 
 def test_provider_test_persists_typed_failure_code(tmp_path):
@@ -487,7 +491,13 @@ def test_provider_test_persists_typed_failure_code(tmp_path):
 
     class FailingProvider(FakeProvider):
         async def complete(self, model, messages):
-            raise ModelProviderError(ModelErrorCode.AUTH, "sanitized failure")
+            raise ModelProviderError(
+                ModelFailure(
+                    code=ModelErrorCode.AUTH,
+                    origin=ModelFailureOrigin.PROVIDER,
+                    message="sanitized failure",
+                )
+            )
 
     app.registry.register("openai-compatible", lambda config, credential: FakeProvider())
     app.provider_service.add("opencode-go", "stored-secret")
@@ -566,7 +576,7 @@ async def test_adapter_rejects_non_normal_finish_as_invalid_response(finish):
     events = await collect_stream(provider)
 
     assert [event.kind for event in events] == ["text_delta", "error"]
-    assert events[-1].error_code == ModelErrorCode.INVALID_RESPONSE
+    assert events[-1].failure.code == ModelErrorCode.INVALID_RESPONSE
 
 
 @pytest.mark.asyncio
@@ -578,13 +588,12 @@ async def test_adapter_rejects_missing_finish_signal():
         [UserMessage(content="hello")],
         (),
     )
-    first = await anext(stream)
-    with pytest.raises(ModelProviderError) as exc_info:
-        await anext(stream)
+    events = [event async for event in stream]
 
-    assert first.kind == "text_delta"
-    assert exc_info.value.code is ModelErrorCode.INTERNAL
-    assert exc_info.value.transient_internal is True
+    assert events[0].kind == "text_delta"
+    assert events[-1].failure.code is ModelErrorCode.INTERNAL
+    assert events[-1].failure.origin is ModelFailureOrigin.PROVIDER
+    assert events[-1].failure.retryable is True
 
 
 @pytest.mark.asyncio
@@ -594,7 +603,7 @@ async def test_adapter_classifies_malformed_stream_as_invalid_response():
     events = await collect_stream(provider)
 
     assert [event.kind for event in events] == ["error"]
-    assert events[-1].error_code == ModelErrorCode.INVALID_RESPONSE
+    assert events[-1].failure.code == ModelErrorCode.INVALID_RESPONSE
 
 
 @pytest.mark.live
@@ -834,7 +843,7 @@ async def test_adapter_still_rejects_semantic_content_after_finish():
     )
 
     assert events[-1].kind == "error"
-    assert events[-1].error_code == ModelErrorCode.INVALID_RESPONSE
+    assert events[-1].failure.code == ModelErrorCode.INVALID_RESPONSE
     assert events[-1].usage.availability.value == "unavailable"
 
 
@@ -853,7 +862,7 @@ async def test_adapter_preserves_valid_usage_when_later_semantic_chunk_is_invali
     )
 
     assert events[-1].kind == "error"
-    assert events[-1].error_code == ModelErrorCode.INVALID_RESPONSE
+    assert events[-1].failure.code == ModelErrorCode.INVALID_RESPONSE
     assert events[-1].usage.total_tokens == 3
 
 
@@ -995,7 +1004,7 @@ async def test_adapter_rejects_malformed_tool_streams(chunks):
     provider = provider_with_stream(chunks)
     events = await collect_stream_with_tools(provider, (demo_tool(),))
     assert events[-1].kind == "error"
-    assert events[-1].error_code == ModelErrorCode.INVALID_RESPONSE
+    assert events[-1].failure.code == ModelErrorCode.INVALID_RESPONSE
 
 
 @pytest.mark.asyncio
@@ -1019,7 +1028,7 @@ async def test_adapter_rejects_non_string_fragment_arguments():
     )
     events = await collect_stream_with_tools(provider, (demo_tool("calculate"),))
     assert events[-1].kind == "error"
-    assert events[-1].error_code == ModelErrorCode.INVALID_RESPONSE
+    assert events[-1].failure.code == ModelErrorCode.INVALID_RESPONSE
 
 
 def test_accumulator_rejects_conflicting_finish_and_reports_progress():
@@ -1080,7 +1089,7 @@ def test_adapter_classifies_provider_request_rejections_as_invalid_response(stat
     error = RuntimeError("provider rejected request")
     error.status_code = status_code
 
-    assert classify_error(error) is ModelErrorCode.INVALID_RESPONSE
+    assert classify_failure(error).code is ModelErrorCode.INVALID_RESPONSE
 
 
 @pytest.mark.parametrize(
@@ -1100,7 +1109,7 @@ def test_adapter_classifies_pi_transient_provider_statuses(status_code, expected
     error = RuntimeError("provider request failed")
     error.status_code = status_code
 
-    assert classify_error(error) is expected
+    assert classify_failure(error).code is expected
 
 
 @pytest.mark.asyncio
@@ -1115,11 +1124,11 @@ async def test_adapter_marks_server_internal_as_confirmed_provider_transient():
     provider = OpenAICompatibleProvider("https://example.test", "credential-sentinel")
     provider._client = SimpleNamespace(chat=SimpleNamespace(completions=FailingCompletions()))
 
-    with pytest.raises(ModelProviderError) as exc_info:
-        await collect_stream(provider)
+    events = await collect_stream(provider)
 
-    assert exc_info.value.code is ModelErrorCode.INTERNAL
-    assert exc_info.value.transient_internal is True
+    assert events[-1].failure.code is ModelErrorCode.INTERNAL
+    assert events[-1].failure.origin is ModelFailureOrigin.PROVIDER
+    assert events[-1].failure.retryable is True
 
 
 @pytest.mark.parametrize(
@@ -1138,14 +1147,14 @@ def test_adapter_does_not_classify_terminal_provider_limits_as_retryable(message
     error = RuntimeError(message)
     error.status_code = 429
 
-    assert classify_error(error) is ModelErrorCode.INVALID_RESPONSE
+    assert classify_failure(error).code is ModelErrorCode.INVALID_RESPONSE
 
 
 def test_adapter_classifies_nested_value_errors_as_invalid_response():
     error = RuntimeError("provider request failed")
     error.__cause__ = ValueError("malformed provider chunk")
 
-    assert classify_error(error) is ModelErrorCode.INVALID_RESPONSE
+    assert classify_failure(error).code is ModelErrorCode.INVALID_RESPONSE
     assert serialize_tool(demo_tool()) == {
         "type": "function",
         "function": {

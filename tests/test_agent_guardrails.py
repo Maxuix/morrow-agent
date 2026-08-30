@@ -14,6 +14,8 @@ from morrow.core.models import (
     FunctionToolCall,
     ModelErrorCode,
     ModelEvent,
+    ModelFailure,
+    ModelFailureOrigin,
     ModelFinishReason,
     ModelProviderError,
     ModelRef,
@@ -25,6 +27,19 @@ from morrow.runtime.tools import ToolExecutor, ToolRegistry, make_tool
 from morrow.testing import ScriptedModelProvider, make_context_builder
 
 MODEL = ModelRef(provider_id="p", model_id="m")
+
+
+def _model_error(code: ModelErrorCode, *, retryable: bool = False, made_progress: bool = False):
+    return ModelEvent(
+        kind="error",
+        failure=ModelFailure(
+            code=code,
+            origin=ModelFailureOrigin.PROVIDER,
+            retryable=retryable,
+            message="sanitized",
+        ),
+        made_progress=made_progress,
+    )
 
 
 class _Args(BaseModel):
@@ -78,7 +93,7 @@ class _EventProvider:
 async def test_provider_transient_retries_after_partial_stream_progress():
     provider = _EventProvider(
         [
-            [ModelEvent(kind="error", error_code=ModelErrorCode.NETWORK, made_progress=True)],
+            [_model_error(ModelErrorCode.NETWORK, retryable=True, made_progress=True)],
             [
                 ModelEvent(
                     kind="completed",
@@ -116,9 +131,12 @@ async def test_only_explicit_transient_provider_internal_retries():
 
     attributed = Provider(
         ModelProviderError(
-            ModelErrorCode.INTERNAL,
-            "sanitized",
-            transient_internal=True,
+            ModelFailure(
+                code=ModelErrorCode.INTERNAL,
+                origin=ModelFailureOrigin.PROVIDER,
+                retryable=True,
+                message="sanitized",
+            )
         )
     )
     attributed_events = await _collect(
@@ -138,7 +156,7 @@ async def test_only_explicit_transient_provider_internal_retries():
     assert untyped.stream_calls == 1
     assert untyped_events[-2].payload["stop_code"] == "internal"
 
-    unattributed = _EventProvider([[ModelEvent(kind="error", error_code=ModelErrorCode.INTERNAL)]])
+    unattributed = _EventProvider([[_model_error(ModelErrorCode.INTERNAL)]])
     unattributed_events = await _collect(
         AgentLoop(unattributed, MODEL, make_context_builder()).run_task(
             Session(session_id="unattributed"), "go"
@@ -152,10 +170,10 @@ async def test_only_explicit_transient_provider_internal_retries():
 async def test_zero_progress_transient_retries_but_auth_never_retries():
     transient = _EventProvider(
         [
-            [ModelEvent(kind="error", error_code=ModelErrorCode.TIMEOUT)],
-            [ModelEvent(kind="error", error_code=ModelErrorCode.TIMEOUT)],
-            [ModelEvent(kind="error", error_code=ModelErrorCode.TIMEOUT)],
-            [ModelEvent(kind="error", error_code=ModelErrorCode.TIMEOUT)],
+            [_model_error(ModelErrorCode.TIMEOUT, retryable=True)],
+            [_model_error(ModelErrorCode.TIMEOUT, retryable=True)],
+            [_model_error(ModelErrorCode.TIMEOUT, retryable=True)],
+            [_model_error(ModelErrorCode.TIMEOUT, retryable=True)],
         ]
     )
     transient_events = await _collect(
@@ -167,12 +185,21 @@ async def test_zero_progress_transient_retries_but_auth_never_retries():
     assert [event.type for event in transient_events].count("status.changed") == 3
     assert transient_events[-2].payload["stop_code"] == "provider_timeout"
 
-    auth = _EventProvider([[ModelEvent(kind="error", error_code=ModelErrorCode.AUTH)]])
+    auth = _EventProvider([[_model_error(ModelErrorCode.AUTH)]])
     auth_events = await _collect(
         AgentLoop(auth, MODEL, make_context_builder()).run_task(Session(session_id="auth"), "go")
     )
     assert len(auth.stream_calls) == 1
     assert auth_events[-2].payload["stop_code"] == "provider_auth"
+
+    explicitly_terminal = _EventProvider([[_model_error(ModelErrorCode.RATE_LIMIT)]])
+    terminal_events = await _collect(
+        AgentLoop(explicitly_terminal, MODEL, make_context_builder()).run_task(
+            Session(session_id="terminal"), "go"
+        )
+    )
+    assert len(explicitly_terminal.stream_calls) == 1
+    assert terminal_events[-2].payload["stop_code"] == "provider_rate_limit"
 
 
 @pytest.mark.parametrize(
@@ -246,7 +273,7 @@ async def test_repeated_tool_events_are_secret_safe():
 
 
 def test_fatal_public_event_contract_is_exact_and_matches_completion():
-    provider = _EventProvider([[ModelEvent(kind="error", error_code=ModelErrorCode.AUTH)]])
+    provider = _EventProvider([[_model_error(ModelErrorCode.AUTH)]])
     events = asyncio.run(
         _collect(
             AgentLoop(provider, MODEL, make_context_builder()).run_task(

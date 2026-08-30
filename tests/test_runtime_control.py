@@ -24,6 +24,8 @@ from morrow.core.models import (
     FunctionToolCall,
     ModelErrorCode,
     ModelEvent,
+    ModelFailure,
+    ModelFailureOrigin,
     ModelFinishReason,
     ModelProviderError,
     ModelRef,
@@ -112,7 +114,14 @@ class _TransientThenStopProvider:
         del model, messages, tools
         self.stream_calls += 1
         if self.stream_calls == 1:
-            raise ModelProviderError(ModelErrorCode.RATE_LIMIT, "transient")
+            raise ModelProviderError(
+                ModelFailure(
+                    code=ModelErrorCode.RATE_LIMIT,
+                    origin=ModelFailureOrigin.PROVIDER,
+                    retryable=True,
+                    message="transient",
+                )
+            )
         yield ModelEvent(
             kind="completed",
             finish_reason=ModelFinishReason.STOP,
@@ -125,8 +134,11 @@ class _TerminalErrorProvider:
         del model, messages, tools
         yield ModelEvent(
             kind="error",
-            error_code=ModelErrorCode.AUTH,
-            error_message="authentication failed",
+            failure=ModelFailure(
+                code=ModelErrorCode.AUTH,
+                origin=ModelFailureOrigin.PROVIDER,
+                message="authentication failed",
+            ),
         )
 
 

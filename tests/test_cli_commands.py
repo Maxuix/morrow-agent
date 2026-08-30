@@ -17,6 +17,8 @@ from morrow.core.models import (
     CredentialRef,
     LastTestResult,
     ModelErrorCode,
+    ModelFailure,
+    ModelFailureOrigin,
     ModelProviderError,
     ModelRef,
     ProviderConfig,
@@ -354,7 +356,14 @@ def test_provider_add_reports_typed_sanitized_connection_failure(monkeypatch):
     class ProviderServiceStub:
         def add(self, preset, secret, **kwargs):
             del preset, secret, kwargs
-            raise ModelProviderError(ModelErrorCode.NETWORK, "raw transport detail")
+            raise ModelProviderError(
+                ModelFailure(
+                    code=ModelErrorCode.NETWORK,
+                    origin=ModelFailureOrigin.PROVIDER,
+                    retryable=True,
+                    message="raw transport detail",
+                )
+            )
 
     monkeypatch.setattr(
         cli_module,

@@ -30,6 +30,8 @@ from morrow.core.models import (
     ModelCost,
     ModelErrorCode,
     ModelEvent,
+    ModelFailure,
+    ModelFailureOrigin,
     ModelFinishReason,
     ModelRef,
     ModelUsage,
@@ -936,6 +938,41 @@ async def test_unexpected_context_failure_records_internal_source_without_public
         observation = persistence.get_agent_run_observation()
         assert observation is not None and observation.terminal_metrics is not None
         assert observation.terminal_metrics.stop_detail == "context_build"
+    finally:
+        handle.close()
+
+
+@pytest.mark.asyncio
+async def test_model_internal_failure_origin_reaches_safe_terminal_evidence(tmp_path):
+    class Provider:
+        async def stream(self, _model, _messages, _tools=()):
+            yield ModelEvent(
+                kind="error",
+                failure=ModelFailure(
+                    code=ModelErrorCode.INTERNAL,
+                    origin=ModelFailureOrigin.PROVIDER,
+                    message="模型服务暂时不可用",
+                ),
+            )
+
+    handle, _journal, session, persistence = _open(tmp_path)
+    try:
+        loop = AgentLoop(
+            Provider(),
+            ModelRef(provider_id="p", model_id="m"),
+            make_context_builder(),
+            id_source=FixedIdSource(),
+            clock=FixedClock(),
+        )
+
+        events = [event async for event in loop.run_task(session, "question")]
+
+        assert events[-1].payload["stop_code"] == AgentStopCode.INTERNAL.value
+        assert "stop_detail" not in events[-1].payload
+        observation = persistence.get_agent_run_observation()
+        assert observation is not None and observation.terminal_metrics is not None
+        assert observation.requests[0].error_code is ModelErrorCode.INTERNAL
+        assert observation.terminal_metrics.stop_detail == "provider_internal"
     finally:
         handle.close()
 

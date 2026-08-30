@@ -184,6 +184,9 @@ class AgentRunTerminalMetrics(ProtocolModel):
             "model_call",
             "conversation_commit",
             "tool_cycle",
+            "provider_internal",
+            "adapter_internal",
+            "runtime_internal",
         ]
         | None
     ) = None

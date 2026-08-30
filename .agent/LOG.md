@@ -4105,3 +4105,18 @@
   `git diff --check` passed.
 - Committed the acceptance evidence as `90d6f96`; Subplan 98 is retired after fast-forward
   integration into local `main`.
+
+## 2026-08-30 — Unified model failure chain completed
+
+- Activated Subplan 99 from clean local `main@21d707f` after the user authorized collapsing model
+  failures into one chain. No new Provider probe, admission gate, content validator or dependency
+  was added.
+- Added one immutable `ModelFailure` fact carrying safe code, origin, retryability, message and
+  bounded retry hint. Stream events and non-stream exception transport now share that same value;
+  legacy parallel event fields and `transient_internal` retry inference were removed.
+- OpenAI-compatible streaming emits all expected failures as typed events. AgentLoop is the only
+  owner of current-run retry policy and records safe `provider_internal`, `adapter_internal` or
+  `runtime_internal` terminal detail when the public stop code alone would be ambiguous.
+- Focused suites passed 155 tests with one explicit Live test skipped. The complete offline gate
+  passed 1,285 tests with two Live tests deselected in 104.26 seconds. Ruff format/check,
+  compileall, CLI help and `git diff --check` passed. No Live Provider/network request was run.

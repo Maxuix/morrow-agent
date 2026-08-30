@@ -2,20 +2,18 @@
 
 ## Current task
 
-None. Subplan 98 is complete and verified; the GO upgrade was not granted.
+None. Subplan 99 is complete and verified.
 
 ## Tasks
 
-- `[x]` Select the difficult task and isolate a fresh baseline workspace.
-- `[x]` Freeze current source and isolated Provider/Model state.
-- `[x]` Execute one live Morrow AgentRun and frozen verifier.
-- `[x]` Classify terminal/tool/path evidence and decide the S7P-10 upgrade.
-- `[x]` Run focused and complete offline/static validation.
-- `[x]` Commit, integrate and retire Subplan 98.
+- `[x]` Add the shared typed failure contract and migrate Adapter output.
+- `[x]` Reduce ModelCallRunner and AgentLoop to one failure/retry path.
+- `[x]` Update fixtures, consumers and focused tests.
+- `[x]` Run complete offline/static validation.
+- `[x]` Commit, integrate and retire Subplan 99.
 
 ## Boundaries
 
-- Exactly one proof run unless a diagnosed leaf-runtime repair requires rerunning that proof.
-- No Pi or 14-run campaign repetition.
-- No credentials, raw model stream, reasoning or complete tool arguments/results in Git or output.
-- No Workflow implementation.
+- No new Provider probes, admission gates, content validators or dependencies.
+- No live Provider/network run.
+- No raw exception, SDK object, credential or traceback in events or durable state.

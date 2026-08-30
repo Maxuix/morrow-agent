@@ -9,7 +9,7 @@ from collections.abc import Callable
 
 from pydantic import ValidationError
 
-from morrow.adapters.models.openai_compatible import classify_error, estimate_request_chars
+from morrow.adapters.models.openai_compatible import classify_failure, estimate_request_chars
 from morrow.core.models import (
     ModelErrorCode,
     ModelRef,
@@ -141,10 +141,10 @@ def _compact_json(value: object) -> str:
 
 
 def _provider_failure(error: BaseException) -> PreferenceReviewerError:
-    code = classify_error(error)
+    failure = classify_failure(error)
     return PreferenceReviewerError(
-        code,
-        provider_error_message(code),
+        failure.code,
+        failure.message,
         category="provider_error",
     )
 

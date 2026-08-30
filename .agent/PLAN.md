@@ -1,39 +1,42 @@
-# S7P-10 GO Upgrade Proof
+# Unified Model Failure Chain
 
-> Status: completed; GO upgrade condition not met
+> Status: completed
 > Active subplan: none
-> Activation base: `main@59789bc`
-> Source authority: current user request, S7P-10 upgrade condition and current code/evidence
+> Activation base: `main@21d707f`
+> Source authority: current user request and current runtime implementation
 
 ## Objective
 
-Execute the one bounded current-main complex-run proof required by the S7P-10 CONDITIONAL GO
-decision. Do not repeat the accepted 14-run campaign.
+Collapse model-call error handling into one typed failure chain. The Adapter produces one safe,
+attributed failure fact; AgentLoop alone decides retry and terminal behavior; durable observations
+consume that same fact without adding a new probe, gate, or content validator.
 
 ## Decisions
 
-- Use difficult task EXTERNAL-003 because it exercises implementation, multiple tool rounds and
-  validation and has an older passing reference point.
-- Use the current configured DeepSeek Provider through an isolated state containing no credential
-  value, with ordinary AgentLoop and capability policy composition.
-- A task may fail for model quality and still prove the leaf runtime boundary only if its terminal
-  source and all tool states are complete. An unexplained runtime failure cannot upgrade the gate.
-- Workflow implementation remains out of scope until this proof closes.
+- Replace parallel `ModelEvent` error fields and `ModelProviderError` retry flags with one immutable
+  `ModelFailure` value shared by streaming and non-streaming Provider boundaries.
+- OpenAI-compatible streaming reports all expected failures as an error event; AgentLoop keeps one
+  defensive exception normalizer for contract violations and unexpected implementations.
+- Retryability is an Adapter classification fact, while retry execution and limits remain owned by
+  AgentLoop and RunPolicy.
+- Persist safe origin detail only where `internal` would otherwise be ambiguous; do not expand the
+  database schema or expose SDK exceptions.
+- Do not run another live proof as part of this refactor.
 
 ## Execution order
 
-1. Freeze source, workspace, config projection and evidence boundary.
-2. Execute one externally bounded AgentRun and frozen verifier.
-3. Repair and rerun only if evidence identifies a leaf runtime defect.
-4. Publish the updated S7P-10 verdict and run offline/static validation.
+1. Introduce the unified failure value and migrate the Provider boundary.
+2. Simplify ModelCallRunner and AgentLoop to consume that value once.
+3. Update fake providers, reviewers and tests; remove obsolete retry helpers and split fields.
+4. Run focused and full offline/static validation.
 5. Commit, fast-forward into local `main` and retire the branch.
 
 ## Completion
 
-- Current-code complex-run evidence satisfies or rejects the explicit GO upgrade condition.
-- The decision preserves single-sample and unavailable-metric limitations.
-- All relevant validation passes and no secret/raw model evidence enters Git.
+- A streaming failure has one typed representation from Adapter through AgentLoop.
+- AgentLoop contains the only retry-policy decision for AgentRun and compaction requests.
+- Provider-versus-Adapter internal origin survives into safe terminal evidence.
+- Relevant and full offline/static validation passes.
 
-Completed by Subplan 98. S7P-10 remains CONDITIONAL GO. The next blocking repair is safe
-Provider-versus-Adapter internal-failure attribution at the model-request boundary; after repair,
-rerun only EXTERNAL-003 once with fresh source/evidence pins.
+Completed by Subplan 99. A separately authorized current-code proof rerun is still required before
+the S7P-10 gate can change from CONDITIONAL GO.
