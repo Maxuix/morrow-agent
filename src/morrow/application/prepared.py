@@ -36,6 +36,10 @@ from morrow.runtime.tools import (
 from morrow.services.files import LocalFileError, MutationPlan
 
 
+class PreparedIntentError(ValueError):
+    """A model tool intent could not be represented by the durable contract."""
+
+
 def file_evidence_from_plan(plan: MutationPlan) -> tuple[FileMutationEvidence, ...]:
     """Convert an in-memory plan to ordered, body-free recovery evidence."""
 
@@ -184,18 +188,23 @@ def prepare_cycle_executions(
     executions: list[DurableToolExecution] = []
     total = len(message.tool_calls)
     for ordinal, call in enumerate(message.tool_calls, start=1):
-        intent = _prepare_one(
-            call,
-            ordinal=ordinal,
-            total=total,
-            session=session,
-            tool_executor=tool_executor,
-            run_context=run_context,
-            permission_digest=permission_digest,
-            mutation=mutation,
-            isolation=isolation,
-            grant_id=grant_id,
-        )
+        try:
+            intent = _prepare_one(
+                call,
+                ordinal=ordinal,
+                total=total,
+                session=session,
+                tool_executor=tool_executor,
+                run_context=run_context,
+                permission_digest=permission_digest,
+                mutation=mutation,
+                isolation=isolation,
+                grant_id=grant_id,
+            )
+        except (TypeError, ValueError, ValidationError) as exc:
+            raise PreparedIntentError(
+                "tool intent cannot be represented by the durable contract"
+            ) from exc
         elevated = (
             grant_id is not None
             and call.name in {"run_command", "bash"}

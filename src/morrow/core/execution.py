@@ -23,6 +23,7 @@ from morrow.core.domain import (
     DIGEST_PATTERN,
     ERROR_DETAIL_MAX_BYTES,
     PERMISSION_SNAPSHOT_ID_PREFIX,
+    SECRET_TOKEN_PATTERN,
     SESSION_ID_PREFIX,
     TASK_RUN_ID_PREFIX,
     TURN_ID_PREFIX,
@@ -37,7 +38,6 @@ from morrow.core.domain import (
 from morrow.core.models import TOOL_NAME_PATTERN, ProtocolModel, utc_now
 from morrow.core.permissions import (
     CAPABILITY_GRANT_ID_PREFIX,
-    UNCONFINED_HOST_WARNING,
     CapabilityGrant,
     IsolationLabel,
     PermissionEvidenceError,
@@ -77,6 +77,21 @@ _PREVIEW_LINE_COUNT = 40
 _CALL_ID_LIMIT = 128
 _VALIDATION_PATH_PATTERN = re.compile(r"^[A-Za-z0-9_$.-]+(?:\[[0-9]+\])*$")
 _VALIDATION_TYPE_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]{0,63}$")
+_PREVIEW_SECRET_VALUE_PATTERN = re.compile(
+    r"""(?ix)
+    (?:
+        ["']?(?:api[_-]?key|authorization|password|credential(?:s)?)["']?
+        \s*[:=]\s*["']?
+        (?!redacted\b|missing\b|unavailable\b|none\b|null\b|\*{3,})
+        [^\s"',;}]{4,}
+      |
+        --(?:api[-_]?key|authorization|password|credential(?:s)?)
+        (?:=|\s+)
+        (?!redacted\b|missing\b|unavailable\b|none\b|null\b|\*{3,})
+        \S{4,}
+    )
+    """
+)
 
 
 class EffectClass(StrEnum):
@@ -234,12 +249,18 @@ def _budget_and_redact(payload: dict[str, Any] | object, maximum: int, *, label:
     require_payload_budget(encoded, maximum, label=label)
     secret_scan = dumped
     if isinstance(dumped, dict) and isinstance(dumped.get("preview"), list):
+        preview_text = "\n".join(str(line) for line in dumped["preview"])
+        if SECRET_TOKEN_PATTERN.search(preview_text) or _PREVIEW_SECRET_VALUE_PATTERN.search(
+            preview_text
+        ):
+            raise ValueError(f"{label} cannot contain secret material")
         # This fixed safety warning intentionally mentions credentials.  It is
-        # policy metadata, not user-supplied secret material; scan all other
-        # preview lines and all other fields normally.
+        # policy metadata, not user-supplied secret material. Preview text is
+        # checked for value-shaped secrets above so code identifiers such as
+        # ``credential`` and ``api_key`` remain searchable by ordinary tools.
         secret_scan = {
             **dumped,
-            "preview": [line for line in dumped["preview"] if line != UNCONFINED_HOST_WARNING],
+            "preview": [],
         }
     refuse_secret_material(canonical_json_bytes(secret_scan), label=label)
 

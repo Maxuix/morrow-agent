@@ -7,7 +7,8 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from pydantic import ValidationError
 
-from morrow.core.capabilities import ProcessIsolation
+from morrow.application.prepared import PreparedIntentError, prepare_cycle_executions
+from morrow.core.capabilities import ProcessIsolation, ToolRunContext
 from morrow.core.domain import (
     AGENT_RUN_SNAPSHOT_MAX_BYTES,
     CONVERSATION_RECORD_MAX_BYTES,
@@ -58,7 +59,10 @@ from morrow.core.faults import (
     NoOpFaultInjector,
     OnceFaultInjector,
 )
-from morrow.core.models import ToolEffect
+from morrow.core.models import AssistantMessage, FunctionToolCall, ProtocolModel, ToolEffect
+from morrow.runtime.session import Session
+from morrow.runtime.tools import ToolExecutor, ToolRegistry, make_tool
+from morrow.testing import FixedIdSource, make_run_policy
 
 
 def _digest(label: str = "x") -> str:
@@ -195,6 +199,78 @@ def test_prepared_intent_enforces_budget_and_redaction():
         _intent(redacted_arguments={"token": "api_key=secret"})
     with pytest.raises(ValueError, match="budget"):
         require_tool_call_arguments_budget("x" * (TOOL_CALL_ARGUMENTS_MAX_BYTES + 1))
+
+
+def test_prepared_intent_allows_secret_field_names_without_values_in_preview():
+    intent = _intent(
+        preview=(
+            "命令：rg credential src",
+            "命令：rg api_key tests",
+            "读取 credentials.py",
+        )
+    )
+
+    assert intent.preview[0] == "命令：rg credential src"
+
+
+@pytest.mark.parametrize(
+    "preview",
+    (
+        "命令：API_KEY=must-not-escape tool",
+        '命令：curl -H "Authorization: Bearer must-not-escape" endpoint',
+        "命令：tool --password must-not-escape",
+        "命令：tool sk-abcdefghijklmnopqrstuvwxyz",
+    ),
+)
+def test_prepared_intent_rejects_secret_values_in_preview(preview: str):
+    with pytest.raises(ValidationError, match="secret material"):
+        _intent(preview=(preview,))
+
+
+def test_prepare_cycle_distinguishes_search_terms_from_secret_values():
+    class Arguments(ProtocolModel):
+        command: str
+
+    async def handler(_arguments):
+        return {"ok": True}
+
+    def prepare(preview: str):
+        registry = ToolRegistry()
+        registry.register(
+            make_tool(
+                name="bash",
+                description="diagnostic command",
+                arguments_model=Arguments,
+                handler=handler,
+                context_approval_preview=lambda _arguments, _context: (preview,),
+            )
+        )
+        executor = ToolExecutor(registry.snapshot(), make_run_policy())
+        return prepare_cycle_executions(
+            AssistantMessage(
+                tool_calls=(
+                    FunctionToolCall(
+                        id="call_preview",
+                        name="bash",
+                        arguments='{"command":"probe"}',
+                    ),
+                )
+            ),
+            session=Session(session_id="ses_preview"),
+            tool_executor=executor,
+            run_context=ToolRunContext(run_id="turn_preview", session_id="ses_preview"),
+            id_source=FixedIdSource(),
+            workspace_id="ws_preview",
+            task_run_id="task_preview",
+            turn_id="turn_preview",
+            agent_run_id="arun_preview",
+        )
+
+    prepared = prepare("命令：rg credential src")
+    assert prepared[0].intent.preview == ("命令：rg credential src",)
+
+    with pytest.raises(PreparedIntentError):
+        prepare("命令：API_KEY=must-not-escape tool")
 
 
 def test_facts_and_result_envelope_are_bounded():

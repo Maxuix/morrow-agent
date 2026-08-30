@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from morrow.application.context import ContextBudgetError
+from morrow.application.prepared import PreparedIntentError
 from morrow.core.application import ApplicationError
 from morrow.core.capabilities import ToolRunContext
 from morrow.core.compaction import CompactionSummary, TokenAccountingBasis
@@ -1313,7 +1314,7 @@ class AgentLoop:
                             raise ConversationLogError("committed tool intent is not observable")
                     else:
                         session.commit_append(planned)
-                except ConversationLogError:
+                except (ConversationLogError, PreparedIntentError):
                     for item in terminal_error(
                         "模型响应未正常结束", AgentStopCode.INVALID_RESPONSE
                     ):
