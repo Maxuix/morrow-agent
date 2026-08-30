@@ -2,12 +2,16 @@
 
 > 日期：2026-08-30
 > 结论：**PASS**（当前正式本地链路未因旧版兼容清理而阻塞）
+> 已执行场景：15 PASS、0 FAIL、0 BLOCKED、0 NOT RUN、0 INCONCLUSIVE；未具备目标状态的能力缺口另列于 inventory。
 
 ## Test basis
 
+- 离线阶段从 `main@a740a3e` 开始；真实 Provider 阶段从文档收口后的 `main@b28f088` 开始。两个阶段运行时共有的四个既有 runtime/test 改动随后形成 `6a65b68`，因此本轮最终被测工作树内容与 `6a65b68` 一致；报告改动不参与被测行为。
+- 平台为 Darwin 25.6.0 arm64，Python 3.13.0；测试时间为 2026-08-30（Asia/Shanghai）。
 - 从 README、`morrow --help` 及各命令组 help 建立公开能力清单，再以用户可调用入口执行。
-- 使用一次性目录 `/tmp/morrow-chain-audit.0FaQt8/`，隔离 workspace、state root、Provider 配置、Skill 与 MCP 定义；未读取或修改用户正式数据。
-- Provider 使用本机 loopback 的确定性 OpenAI-compatible 测试服务，覆盖非流式连接检查、SSE 文本流和 function calling；没有外部网络或真实凭据。
+- 第一阶段使用一次性目录 `/tmp/morrow-chain-audit.0FaQt8/`，隔离 workspace、state root、Provider 配置、Skill 与 MCP 定义；Provider 使用本机 loopback 的确定性 OpenAI-compatible 测试服务。
+- 用户在第二阶段明确授权 Provider 测试。先通过正式 `provider test` 验证当前配置，再把不含秘密的 Provider/Model 配置复制到一次性 state root `/tmp/morrow-live-provider.E04JGK/state`；真实凭据仍只由系统 CredentialStore 解析，不进入文件或输出。
+- 真实 Provider 阶段使用当前配置 `opencode-go/deepseek-v4-flash`，覆盖连接检查、SSE 文本流、跨进程 Session 续接、function calling、工具结果回送和多轮工具自纠正。一次默认 state 的连接检查只更新公开的 `last_test` 状态；会话和文件操作均发生在隔离 state/workspace。
 - MCP 使用仓库公开测试夹具 `tests/spikes/fake_mcp_stdio_server.py`；Skill 使用一次性最小 `SKILL.md` 包。
 - 内部 API 只用于解释失败原因，不作为通过证据。
 
@@ -17,7 +21,7 @@
 |---|---|---|---|
 | 工作区与交互对话 | 主命令、`workspace relink` | PASS | 新目录确认登记、目标输入、REPL 对话、保存退出；relink help 可达 |
 | 无头正式运行 | `run` | PASS | 新 Session JSONL、续接 Session、稳定终态与 AgentRun metrics |
-| Provider | `provider list/show/presets/add/remove/test/configure` | PASS | add/list/show/presets/test；configure/remove 未对已验证配置做破坏性操作 |
+| Provider | `provider list/show/presets/add/remove/test/configure` | PASS | 离线 add/list/show/presets/test；真实 `opencode-go` 连接检查连续通过；configure/remove 未对已验证配置做破坏性操作 |
 | Model | `model list/show/add/sync/use/remove/current` | PASS | add/list/show/sync/use/current；remove 未对当前唯一模型执行 |
 | Session | `session list/create/status/resume/archive/fork` | PASS | list/status、跨回合恢复、闭合 Turn fork、archive；create 由正式运行创建 |
 | Task | `task show/list/new/accept/cancel/resume` | PASS | 自动创建、show/list、accept 与 Learning Review 入队；无故障 Task，cancel/resume 未执行 |
@@ -31,7 +35,8 @@
 | Memory | `memory list/show/disable/enable/dispute/delete`、`memory selection list/show` | NOT RUN | 空列表可达；无已晋升 Memory 或 Selection 可操作 |
 | Skill | `skill list/show/validate/install/enable/disable/pin/rollback/remove/draft-*/usage` | PASS | validate/install/list/show/enable/pin/disable/remove；仅一个版本，无合法 rollback 目标；Draft/Usage 无候选 |
 | MCP | `mcp add/list/show/inspect/status/enable/disable/remove/refresh` | PASS | Fake stdio discovery、4 工具 Catalog、2 工具映射、enable/status/inspect/disable/remove |
-| Live Provider / 网络 MCP | 显式 live lane | BLOCKED | 用户未授权真实网络/凭据；未运行，也不以 fake 结果替代 |
+| Live Provider | `provider test`、`run` | PASS | `opencode-go/deepseek-v4-flash` 完成文本、续接和 4 轮工具调用；真实凭据未进入证据 |
+| 网络 MCP | 当前无公开远程 transport | NOT RUN | MCP 当前只实现 stdio；没有把本次 Provider 网络授权扩展为不存在的远程 MCP 测试 |
 
 ## Scenario results
 
@@ -48,6 +53,10 @@
 | Skill 生命周期 | PASS | 包校验、安装后 disabled、显式 enable、pin、disable、remove 均成功 |
 | MCP 生命周期 | PASS | refresh 得到 ready Catalog；allowlist 工具 ready、未映射工具保持 unmapped；启停和移除成功 |
 | 未登记 workspace 的 headless 请求 | PASS | 以退出码 2 fail closed，明确要求先交互确认，没有隐式登记 |
+| 真实 Provider 连接检查 | PASS | 当前与隔离 state 的 `provider test opencode-go` 均以 0 退出并显示“连接成功” |
+| 真实 Provider 普通流式回答 | PASS | 完整 JSONL 返回 `LIVE_OK`；AgentRun 为 1 次模型请求、0 工具、`finish_reason=stop` |
+| 真实 Provider Session 续接 | PASS | 恢复相同 Session 后正确回忆上一轮标记 `LIVE_OK`，Session/Task 身份保持不变 |
+| 真实 Provider 工具自纠正 | PASS | 模型调用 `write → read → bash → read`，4 次工具全部成功，最终仅回复 `TOOL_OK`；文件精确为 17 字节 `provider-live-ok\n`，Doctor health ok |
 
 ## Complex journeys
 
@@ -55,6 +64,7 @@
 2. **模型工具调用到可审查任务闭合**：模型生成 `write` function call → 权限与工具执行 → 文件落盘 → 第二次模型请求 → JSONL 终态 → Task accept → Learning Review 入队。
 3. **持久状态治理**：Preference CRUD 与乐观并发拒绝 → Doctor → 当前完整 Backup → verify-backup → cleanup dry-run。
 4. **扩展控制面**：Skill validate/install/enable/pin/disable/remove；Fake stdio MCP add/refresh/Catalog mapping/enable/status/inspect/disable/remove。
+5. **真实 Provider 连续性与工具自纠正**：连接检查 → 隔离工作区登记 → 普通流式回答 → 跨进程恢复同一 Session 并回忆先前标记 → 新 Session 中真实 function calling → 读取验证 → 发现缺少尾换行 → 使用 Host 命令修正 → 再读确认 → AgentRun/Doctor 查询。最终用户文件目标达成，且状态保持健康。
 
 ## Findings
 
@@ -80,14 +90,17 @@
 
 ## Coverage and gaps
 
-- 本轮证明当前 macOS 本地正式链路在隔离状态下可行，不证明真实 Provider 的回答质量、限流、计费或长时网络稳定性。
+- 本轮证明当前 macOS 本地正式链路和一个当前配置的真实 Provider 样本可行；它不证明跨模型质量、限流、计费、长时网络稳定性或高并发行为。
 - 没有合成 interrupted execution、corrupt Artifact、Learning Candidate、Memory 或多版本 Skill，因此相应 resolve/decision/rollback 分支为 NOT RUN，而不是 PASS。
 - Linux 原生沙箱、远程 MCP、后台 Worker/调度和 Stage 7+ Workflow 不在当前已交付正式链路范围。
 - 历史 acceptance 文档仍是决策/执行记录；当前行为以 README、ARCHITECTURE、ROADMAP、当前阶段文档和本报告为准。
 
 ## Provider evidence
 
-- 真实 Provider：**BLOCKED**（无显式授权与凭据）。
+- 真实 Provider：**PASS**。Adapter/Model 为 `openai-compatible` / `opencode-go/deepseek-v4-flash`。
+- 共发生 9 次最小必要 Provider completion：2 次连接检查、1 次普通回答、1 次 Session 续接回答、5 次工具任务模型请求。三个 headless AgentRun 可见 token usage 合计 35,499；Provider 未提供可用成本数据。
+- 普通回答和续接分别得到 `LIVE_OK`；工具任务完成 4 次工具调用并得到 `TOOL_OK`，最终文件字节为 `70 72 6f 76 69 64 65 72 2d 6c 69 76 65 2d 6f 6b 0a`。
+- 工具任务首次 `write` 后模型从 `read` 结果发现缺少尾换行，并自行用 `bash` 修正再读取。现有证据指向模型首次工具参数未满足精确格式，而非 Morrow 丢失工具调用或状态；结果正确，但该样本的工具效率为 5 次模型请求、4 轮工具。
 - 本地 loopback Provider：**PASS**，覆盖连接检查、普通流式回答、工具调用、工具结果回送、Session 续接与指标持久化。
 - 没有把 scripted/fake Provider 结果表述为真实模型质量证据。
 
@@ -96,6 +109,7 @@
 | 门禁 | 结果 |
 |---|---|
 | 正式用户链路（隔离 workspace/state、loopback Provider、Fake stdio MCP） | PASS |
+| 真实 Provider 正式链路（连接、文本、续接、工具、自纠正） | PASS；9 次 completion，4 次工具全部成功，Doctor health ok |
 | 聚焦 CLI/headless/AgentRun/MCP/Skill/Provider/Backup/Preference 回归 | `123 passed in 11.00s` |
 | `uv run pytest -m 'not live'` | `1280 passed, 2 deselected in 103.15s` |
 | `uv run ruff format --check .` | `483 files already formatted` |
@@ -109,4 +123,4 @@
 
 1. 将已知 revision conflict 与 MCP schema/ID 校验翻译成安全、明确的 CLI 错误；保持退出码 2 与 fail-closed 语义。
 2. 为并发 MCP 查询建立独立回归，确认只读查询是否应使用只读 handle，或对可恢复 SQLite busy 采用有界策略。
-3. 若要宣告真实 Provider 生产可用性，另行授权 Live lane，并使用兼容凭据执行长回合、function calling、限流和中断恢复场景。
+3. 若要从“本次真实样本可行”提升为生产质量声明，继续执行多次长回合、限流、断网/中断恢复及其他已配置模型的统计评测，并单独记录成本与失败率。
