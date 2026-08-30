@@ -26,8 +26,10 @@ S7P-08. The user then explicitly opened S7P-08. Subplan 89 completed the 18-cell
 single-Agent matrix, published Stage 1–6 regression, real current-platform Seatbelt gate and
 current acceptance evidence, and was integrated locally. The user then explicitly opened S7P-09.
 Subplan 90 built the Morrow/Pi campaign. On 2026-08-30 the user accepted its combined 14-run r19/r20
-evidence and declined another repetition; measured failures remain unchanged. Subplan 97 performs
-the separate S7P-10 entry review. Subplans 91 and 92 completed the
+evidence and declined another repetition; measured failures remain unchanged. Subplan 97 completed
+the separate S7P-10 entry review as CONDITIONAL GO. Subplan 99 repaired the failure chain and the
+single Subplan 100 proof then met the targeted GO condition without relabeling its `FAIL_MODEL`
+task result. Subplans 91 and 92 completed the
 seven-tool interface and legacy-adapter cleanup. Their verified branch histories were consolidated
 with the later core/Learning repair on local `main`. Any future evaluation admission must use a new
 source/profile/evidence contract; the accepted bundles are not resumed. On 2026-08-30 the user
@@ -62,7 +64,7 @@ current-format migration instead of permanent legacy readers.
 | 97 | `97-s7p-10-stage7-entry-review.md` | completed and verified; CONDITIONAL GO |
 | 98 | `98-s7p10-go-upgrade-proof.md` | completed; GO upgrade not met, CONDITIONAL GO retained |
 | 99 | `99-unified-model-failure-chain.md` | completed and verified locally |
-| 100 | `100-s7p10-external003-rerun.md` | active |
+| 100 | `100-s7p10-external003-rerun.md` | completed; FAIL_MODEL sample met GO proof condition |
 
 ## Stage 7 pre-baseline
 

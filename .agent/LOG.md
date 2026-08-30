@@ -4120,3 +4120,22 @@
 - Focused suites passed 155 tests with one explicit Live test skipped. The complete offline gate
   passed 1,285 tests with two Live tests deselected in 104.26 seconds. Ruff format/check,
   compileall, CLI help and `git diff --check` passed. No Live Provider/network request was run.
+
+## 2026-08-30 — S7P-10 attributed EXTERNAL-003 rerun completed
+
+- The user explicitly authorized one EXTERNAL-003 rerun after the unified failure-chain repair.
+  Activated Subplan 100 from `main@519d4d7`, committed the execution plan as `6a088ce`, and prepared
+  a fresh mode-0700 workspace/state with only the frozen DeepSeek Provider/Model and CredentialRef.
+- The baseline verifier exited 1 as expected. Exactly one Live Morrow run then returned normally in
+  65.385 seconds: nine completed model requests, 78,947 total tokens, no retries and unavailable
+  cost. No probe, Pi run, second sample or 14-run repetition occurred.
+- All nine tools reached durable terminal states: eight succeeded and one model-issued
+  `invalid_command` failed then recovered. Safe diagnostics recorded zero invalid arguments,
+  unaccounted calls or basic-tool blockers. Only `react.py` changed.
+- The frozen verifier reported four failures. The task is truthfully classified `FAIL_MODEL`, but
+  its normal AgentRun terminal and complete accounting satisfy the predeclared attributable
+  non-runtime branch. S7P-10 upgrades from CONDITIONAL GO to GO; this is not a task PASS or a
+  statistical quality claim.
+- Evaluator/AgentRun observability focus passed 101 tests. The complete offline gate passed 1,285
+  tests with two Live tests deselected in 102.39 seconds. Ruff format/check, compileall, CLI help and
+  `git diff --check` passed.

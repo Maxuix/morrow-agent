@@ -2,15 +2,15 @@
 
 ## Current task
 
-Subplan 100 — execute the one authorized EXTERNAL-003 proof rerun.
+None. Subplan 100 is complete and verified.
 
 ## Tasks
 
-- `[>]` Freeze current source and prepare fresh isolated task/state roots.
-- `[ ]` Execute exactly one bounded Live Morrow run.
-- `[ ]` Run the frozen verifier and classify safe terminal/tool evidence.
-- `[ ]` Update S7P-10 verdict and run offline/static validation.
-- `[ ]` Commit, integrate and retire Subplan 100.
+- `[x]` Freeze current source and prepare fresh isolated task/state roots.
+- `[x]` Execute exactly one bounded Live Morrow run.
+- `[x]` Run the frozen verifier and classify safe terminal/tool evidence.
+- `[x]` Update S7P-10 verdict and run offline/static validation.
+- `[x]` Commit, integrate and retire Subplan 100.
 
 ## Boundaries
 

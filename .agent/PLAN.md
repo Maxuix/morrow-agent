@@ -1,7 +1,7 @@
 # S7P-10 Attributed Proof Rerun
 
-> Status: active
-> Active subplan: 100
+> Status: completed; GO upgrade condition met
+> Active subplan: none
 > Activation base: `main@519d4d7`
 > Source authority: current user authorization, Subplans 98–99 and current evaluator code
 
@@ -27,3 +27,6 @@ origin evidence; do not repeat the accepted 14-run campaign.
 - Internal failure, if any, is attributable as Provider, Adapter or Runtime without raw payloads.
 - S7P-10 acceptance evidence and execution state reflect the mechanical result.
 - Relevant offline/static validation passes and verified evidence is integrated locally.
+
+Completed by Subplan 100. The scenario is truthfully retained as `FAIL_MODEL`; its normal AgentRun
+terminal and complete tool accounting satisfy the separately defined S7P-10 GO upgrade condition.
