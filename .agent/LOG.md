@@ -4089,3 +4089,17 @@
   the 14-run campaign.
 - Prepared a fresh baseline in a mode-0700 temporary evidence root. No model request or credential
   access occurred during preparation.
+- Projected only the frozen DeepSeek Provider/Model configuration and CredentialRef into the
+  isolated state using the existing evaluator helper. The first dynamic module load failed before
+  configuration access because the temporary module was not registered for dataclass resolution;
+  the corrected standard import succeeded. No model request was consumed by either step.
+- Ran one EXTERNAL-003 proof. The process returned normally after 98.603 seconds with 21,696 tokens.
+  Four read-only tools succeeded with zero invalid, unaccounted or blocked calls. The third model
+  request failed `internal`; AgentRun `stop_detail` was null, the workspace remained clean and the
+  frozen verifier exited 1.
+- The evidence cannot distinguish explicit Provider-origin internal failure from an unattributed
+  Adapter exception. The GO condition is not met and S7P-10 remains CONDITIONAL GO. No retry was
+  scheduled because rerunning until success would cherry-pick a sample rather than close the source.
+- Evaluator and AgentRun observability focus passed 100 tests. The complete offline gate passed
+  1,284 tests with two Live tests deselected; Ruff format/check, compileall, CLI help and
+  `git diff --check` passed.

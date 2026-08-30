@@ -2,16 +2,16 @@
 
 ## Current task
 
-`[>]` Execute the bounded current-code EXTERNAL-003 proof.
+`[>]` Commit, integrate and retire the verified failed GO-upgrade proof.
 
 ## Tasks
 
 - `[x]` Select the difficult task and isolate a fresh baseline workspace.
-- `[>]` Freeze current source and isolated Provider/Model state.
-- `[ ]` Execute one live Morrow AgentRun and frozen verifier.
-- `[ ]` Classify terminal/tool/path evidence and decide the S7P-10 upgrade.
-- `[ ]` Run focused and complete offline/static validation.
-- `[ ]` Commit, integrate and retire Subplan 98.
+- `[x]` Freeze current source and isolated Provider/Model state.
+- `[x]` Execute one live Morrow AgentRun and frozen verifier.
+- `[x]` Classify terminal/tool/path evidence and decide the S7P-10 upgrade.
+- `[x]` Run focused and complete offline/static validation.
+- `[>]` Commit, integrate and retire Subplan 98.
 
 ## Boundaries
 

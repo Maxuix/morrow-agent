@@ -2,19 +2,18 @@
 
 ## Current status
 
-Subplan 98 is active on `chore/s7p10-go-proof` from local `main@59789bc`. A fresh EXTERNAL-003
-baseline workspace exists in a mode-0700 temporary evidence root.
+The current-code EXTERNAL-003 proof, decision and validation are complete. The GO upgrade condition
+was not met; S7P-10 remains CONDITIONAL GO.
 
 ## Active task
 
-Freeze the isolated current Provider/Model state, then execute one bounded AgentRun.
+Commit, integrate and retire Subplan 98.
 
 ## Next action
 
-Project the current safe Provider configuration into the isolated state without exposing a
-credential value, then invoke the evaluator's ordinary Morrow runner.
+Commit the verified evidence, fast-forward it into local `main` and retire the branch.
 
 ## Blockers
 
-None. The existing CredentialRef must resolve at execution; failure will be recorded without
-inspecting the credential.
+Production Workflow remains blocked. Safe evidence cannot distinguish Provider-origin internal
+failure from an unattributed Adapter exception at the model-call boundary.

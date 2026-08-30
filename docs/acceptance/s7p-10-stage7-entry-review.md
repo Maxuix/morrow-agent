@@ -78,6 +78,14 @@ runs. If it exposes a leaf runtime defect, repair that defect and rerun only the
 Unavailable Provider cost may remain explicit provided Workflow budgets aggregate tokens and mark
 cost unavailable rather than treating it as zero.
 
+### Upgrade attempt
+
+The authorized current-code EXTERNAL-003 proof did not meet this condition. Four tool calls were
+fully accounted and succeeded, but the third model request ended with an internal model-call error,
+no workspace change and verifier exit 1. Safe evidence cannot distinguish Provider-origin internal
+failure from an unattributed Adapter exception. The verdict therefore remains CONDITIONAL GO; see
+[`s7p-10-go-upgrade-proof.md`](s7p-10-go-upgrade-proof.md).
+
 ## Evidence references
 
 - `docs/acceptance/s7p-09-repeated-direct-pi-baseline.md`
