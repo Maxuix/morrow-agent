@@ -4149,6 +4149,22 @@
 - Made plan rollover explicit in `AGENTS.md`: archive the outgoing plan's children before replacing
   the master plan, keep only current-plan children active, and restart every new plan at Subplan 1.
 
+## 2026-08-31 — Workspace cleanup and guarded publication
+
+- Preserved the two existing acceptance-report changes and the interrupted security refactor;
+  committed them as `fix(security): centralize secret detection rules` and
+  `docs(acceptance): record extended regression evidence`.
+- Centralized the shared secret needles and token pattern without storing or printing any secret
+  value. The staged patch had zero high-confidence private-key or credential-token matches.
+  Outgoing-history matches were benign `stage-4-task...` path fragments and a test phrase, not
+  credential material.
+- `ruff format --check`, `ruff check`, `compileall`, `git diff --check`, and 85 focused tests
+  passed. The full offline gate ran 1,302 selected tests: 1,299 passed, 2 skipped, and one
+  stable existing failure in configuration cancellation where the second call commits before the
+  cancellation boundary. No live tests were run.
+- User explicitly authorized publication of the configured `main` branch. Final push verification
+  remains the next action.
+
 ## 2026-08-30 — Stage 7 production plan opened
 
 - Corrected the stale Stage 7 entry state to GO and replaced the completed S7P-10 testing plan with
