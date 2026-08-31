@@ -46,7 +46,6 @@ from morrow.core.models import ProtocolModel, utc_now
 
 RECOVERY_REPORT_ID_PREFIX = "rrp"
 RECOVERY_ITEM_ID_PREFIX = "rit"
-RECOVERY_DECISION_ID_PREFIX = "rdc"
 
 
 class RecoveryReportStatus(StrEnum):
@@ -185,43 +184,6 @@ class RecoveryReport(ProtocolModel):
     @property
     def blocking_open(self) -> tuple[RecoveryItem, ...]:
         return tuple(item for item in self.items if item.blocking and item.resolution is None)
-
-
-class RecoveryDecision(ProtocolModel):
-    decision_id: str
-    report_id: str
-    item_id: str | None = None
-    resolution: RecoveryResolution
-    command_id: str
-    request_digest: str
-    created_at: datetime = Field(default_factory=utc_now)
-
-    @field_validator("decision_id")
-    @classmethod
-    def valid_decision_id(cls, value: str) -> str:
-        return validate_prefixed_id(value, RECOVERY_DECISION_ID_PREFIX)
-
-    @field_validator("report_id")
-    @classmethod
-    def valid_report_id(cls, value: str) -> str:
-        return validate_prefixed_id(value, RECOVERY_REPORT_ID_PREFIX)
-
-    @field_validator("item_id")
-    @classmethod
-    def valid_item_id(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        return validate_prefixed_id(value, RECOVERY_ITEM_ID_PREFIX)
-
-    @field_validator("command_id")
-    @classmethod
-    def valid_command_id(cls, value: str) -> str:
-        return validate_prefixed_id(value, COMMAND_ID_PREFIX)
-
-    @field_validator("request_digest")
-    @classmethod
-    def valid_digest(cls, value: str) -> str:
-        return _valid_digest(value)
 
 
 class RecoveryReceipt(ProtocolModel):

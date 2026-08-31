@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from morrow.adapters.state.operational import OperationalStoreSession
-from morrow.adapters.state.preference_journal_codec import PreferenceJournalFailure
 from morrow.adapters.state.preference_proposal_journal import PreferenceProposalJournalMixin
 from morrow.adapters.state.preference_review_journal import PreferenceReviewJournalMixin
 from morrow.adapters.state.preference_write_batch_journal import PreferenceWriteBatchJournalMixin
@@ -28,4 +27,4 @@ class SqlitePreferenceJournal(
         )
 
 
-__all__ = ["PreferenceJournalFailure", "SqlitePreferenceJournal"]
+__all__ = ["SqlitePreferenceJournal"]

@@ -5,14 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from typing import Protocol, Self, TypeVar
 
-from morrow.core.application import ApplicationCommandReceipt, ApplicationEvent
 from morrow.core.artifacts import ArtifactMetadata
-from morrow.core.configuration_promotion import (
-    ConfigurationActivation,
-    ConfigurationActivationStatus,
-    PromotionOperation,
-    PromotionOperationState,
-)
 from morrow.core.context import ContextCheckpoint, SessionLineage
 from morrow.core.domain import (
     ArtifactReference,
@@ -144,90 +137,6 @@ class ConversationJournalPort(Protocol):
     def list_context_checkpoints(
         self, workspace_id: str, session_id: str, *, task_run_id: str | None = None
     ) -> tuple[ContextCheckpoint, ...]: ...
-
-
-class ApplicationEventPort(Protocol):
-    def get_application_event(
-        self, workspace_id: str, event_id: str
-    ) -> ApplicationEvent | None: ...
-
-    def list_application_events(
-        self, workspace_id: str, *, after_cursor: int = 0, limit: int = 100
-    ) -> tuple[ApplicationEvent, ...]: ...
-
-    def put_application_event(
-        self, workspace_id: str, event: ApplicationEvent
-    ) -> ApplicationEvent: ...
-
-    def put_application_event_in_txn(
-        self, workspace_id: str, event: ApplicationEvent
-    ) -> ApplicationEvent: ...
-
-    def get_application_command_receipt(
-        self, workspace_id: str, command_id: str
-    ) -> ApplicationCommandReceipt | None: ...
-
-    def put_application_command_receipt(
-        self, workspace_id: str, receipt: ApplicationCommandReceipt
-    ) -> ApplicationCommandReceipt: ...
-
-    def put_application_command_receipt_in_txn(
-        self, workspace_id: str, receipt: ApplicationCommandReceipt
-    ) -> ApplicationCommandReceipt: ...
-
-
-class ConfigurationPromotionJournalPort(Protocol):
-    """SQLite-side Saga and activation provenance surface."""
-
-    def get_promotion_operation(
-        self, workspace_id: str, operation_id: str
-    ) -> PromotionOperation | None: ...
-
-    def get_promotion_operation_by_command(
-        self, workspace_id: str, command_id: str
-    ) -> PromotionOperation | None: ...
-
-    def list_promotion_operations(
-        self,
-        workspace_id: str,
-        *,
-        state: PromotionOperationState | None = None,
-        limit: int = 100,
-    ) -> tuple[PromotionOperation, ...]: ...
-
-    def put_promotion_operation(
-        self, workspace_id: str, operation: PromotionOperation
-    ) -> PromotionOperation: ...
-
-    def save_promotion_operation(
-        self,
-        workspace_id: str,
-        operation: PromotionOperation,
-        *,
-        expected_row_version: int,
-    ) -> PromotionOperation: ...
-
-    def get_configuration_activation(
-        self, workspace_id: str, activation_id: str
-    ) -> ConfigurationActivation | None: ...
-
-    def list_configuration_activations(
-        self,
-        workspace_id: str,
-        *,
-        target: str | None = None,
-        path: str | None = None,
-        status: ConfigurationActivationStatus | None = None,
-        limit: int = 100,
-    ) -> tuple[ConfigurationActivation, ...]: ...
-
-    def put_configuration_activation(
-        self, workspace_id: str, activation: ConfigurationActivation
-    ) -> ConfigurationActivation: ...
-
-    def save_configuration_activation(
-        self, workspace_id: str, activation: ConfigurationActivation
-    ) -> ConfigurationActivation: ...
 
 
 class AgentRunPort(Protocol):

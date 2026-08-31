@@ -16,7 +16,6 @@ from morrow.core.models import (
     Profile,
     UserMessage,
 )
-from morrow.interfaces.spike import consume_stream, eof_to_action
 from morrow.runtime.agent import AgentRuntime
 from morrow.runtime.session import Session
 from morrow.testing import (
@@ -356,25 +355,3 @@ def test_oversized_current_input_is_rejected_before_model_call():
 
 async def _collect(iterator):
     return [event async for event in iterator]
-
-
-@pytest.mark.asyncio
-async def test_terminal_spike_first_cancel_closes_producer_and_eof_has_one_exit_path():
-    cancelled = False
-
-    async def producer():
-        nonlocal cancelled
-        try:
-            await asyncio.sleep(10)
-            return "late"
-        except asyncio.CancelledError:
-            cancelled = True
-            raise
-
-    event = asyncio.Event()
-    task = asyncio.create_task(consume_stream(producer(), lambda text: None, cancel_event=event))
-    event.set()
-    result = await task
-    assert result.cancelled is True
-    assert cancelled is True
-    assert eof_to_action(None) == "exit"

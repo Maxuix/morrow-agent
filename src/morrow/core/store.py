@@ -6,12 +6,11 @@ error codes are the public boundary later subplans share.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
-from typing import Protocol, TypeVar
+from typing import Protocol
 
 STORE_DIRNAME = "store"
 DATABASE_NAME = "operational.sqlite"
@@ -30,8 +29,6 @@ BUSY_TIMEOUT_MS = 250
 WRITE_RETRY_ATTEMPTS = 8
 DIRECTORY_MODE = 0o700
 FILE_MODE = 0o600
-
-T = TypeVar("T")
 
 
 class StoreOpenMode(StrEnum):
@@ -131,42 +128,6 @@ class BackupReport:
     schema_version: int
     destination_name: str
     integrity_ok: bool
-
-
-class StoreExecutor(Protocol):
-    def execute(
-        self, sql: str, parameters: Sequence[object] = ()
-    ) -> tuple[tuple[object, ...], ...]: ...
-
-
-class OperationalStoreSessionPort(Protocol):
-    health: StoreHealth
-    mode: StoreOpenMode
-    schema_version: int
-
-    def run_read(self, work: Callable[[StoreExecutor], T]) -> T: ...
-
-    def run_write(self, work: Callable[[StoreExecutor], T]) -> T: ...
-
-    def run_write_once(self, work: Callable[[StoreExecutor], T]) -> T: ...
-
-    def now(self) -> datetime: ...
-
-    def close(self) -> None: ...
-
-
-class OperationalStorePort(Protocol):
-    def classify(self) -> StoreClassification: ...
-
-    def open(self, mode: StoreOpenMode) -> OperationalStoreSessionPort: ...
-
-
-class OperationalMaintenancePort(Protocol):
-    def initialize(self) -> OperationalStoreSessionPort: ...
-
-    def migrate(self) -> MigrationReport: ...
-
-    def backup(self, destination_name: str | None = None) -> BackupReport: ...
 
 
 class StoreClock(Protocol):

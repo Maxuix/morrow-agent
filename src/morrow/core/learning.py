@@ -61,15 +61,6 @@ _LOCAL_CODE_PATTERN = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 _SOURCE_POINTER_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_.:/-]{0,127}$")
 
 
-class LearningDomainError(ValueError):
-    """Stable, sanitized domain validation error."""
-
-    def __init__(self, code: str, message: str) -> None:
-        super().__init__(message)
-        self.code = code
-        self.message = message
-
-
 class LearningMode(StrEnum):
     OFF = "off"
     REVIEW_ONLY = "review_only"
@@ -690,7 +681,6 @@ __all__ = [
     "LearningCandidateStatus",
     "LearningCandidateType",
     "LearningConfidenceBand",
-    "LearningDomainError",
     "LearningEvidence",
     "LearningEvidenceActor",
     "LearningEvidenceAuthority",

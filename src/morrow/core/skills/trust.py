@@ -81,20 +81,6 @@ def effective_trust(evidence: TrustEvidence) -> TrustLevel:
     return TrustLevel.UNKNOWN
 
 
-def role_label(level: TrustLevel) -> str:
-    return {
-        TrustLevel.BUILTIN: "随 Morrow 发布",
-        TrustLevel.USER: "用户本地来源",
-        TrustLevel.GENERATED: "受控 Draft 生成",
-        TrustLevel.IMPORTED: "已导入且本地审核",
-        TrustLevel.UNKNOWN: "来源未知",
-    }[level]
-
-
 def scope_key(scope_id: str | None) -> str:
     """Deterministic composite-scope key; None means global."""
     return "global" if scope_id is None else scope_id
-
-
-def composite_identity(scope_id: str | None, source_kind: SourceKind, skill_id: str) -> tuple:
-    return (scope_key(scope_id), source_kind.value, skill_id)

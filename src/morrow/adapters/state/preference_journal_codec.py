@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 import json
 from datetime import UTC, datetime
-from enum import StrEnum
 from typing import Any
 
 from morrow.core.domain import canonical_json_bytes
@@ -45,13 +44,6 @@ _BATCH_COLUMNS = (
     "recovery_code, row_version, created_at_unix, prepared_at_unix, applied_at_unix, "
     "finalized_at_unix"
 )
-
-
-class PreferenceJournalFailure(StrEnum):
-    INVALID_JSON = "invalid_json"
-    WORKSPACE_MISMATCH = "workspace_mismatch"
-    MISSING_REFERENCE = "missing_reference"
-    STALE_ROW = "stale_row"
 
 
 def _unix(value: datetime) -> int:
@@ -293,7 +285,6 @@ def _batch_from_row(row: tuple[object, ...]) -> PreferenceWriteBatch:
 
 
 __all__ = [
-    "PreferenceJournalFailure",
     "_BATCH_COLUMNS",
     "_EVIDENCE_COLUMNS",
     "_JOB_COLUMNS",

@@ -473,19 +473,6 @@ class ConversationPosition(ProtocolModel):
         return validate_prefixed_id(value, SESSION_ID_PREFIX)
 
 
-class RuntimeEventSequence(ProtocolModel):
-    namespace: Literal[SequenceNamespace.RUNTIME_EVENT_SEQUENCE] = (
-        SequenceNamespace.RUNTIME_EVENT_SEQUENCE
-    )
-    turn_id: str
-    value: int = Field(ge=1)
-
-    @field_validator("turn_id")
-    @classmethod
-    def valid_turn_id(cls, value: str) -> str:
-        return validate_prefixed_id(value, TURN_ID_PREFIX)
-
-
 class ApplicationEventCursor(ProtocolModel):
     namespace: Literal[SequenceNamespace.APPLICATION_EVENT_CURSOR] = (
         SequenceNamespace.APPLICATION_EVENT_CURSOR

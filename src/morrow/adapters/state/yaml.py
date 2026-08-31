@@ -41,10 +41,6 @@ T = TypeVar("T", bound=BaseModel)
 R = TypeVar("R")
 
 
-class StateUnavailableError(RuntimeError):
-    """The Morrow data root cannot be created or written."""
-
-
 def _fsync_directory(path: Path) -> None:
     flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
     descriptor = os.open(path, flags)

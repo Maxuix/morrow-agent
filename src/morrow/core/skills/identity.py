@@ -10,9 +10,6 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from datetime import datetime
-
-from morrow.core.models import ProtocolModel, utc_now
 
 SKILL_ID_PREFIX = "skl"
 SKV_ID_PREFIX = "skv"
@@ -73,15 +70,3 @@ def validate_display_version(value: str | None) -> str | None:
 def collides(a: str, b: str) -> bool:
     """Case/Unicode-normalized collision used for path and name safety."""
     return unicodedata.normalize("NFC", a).casefold() == unicodedata.normalize("NFC", b).casefold()
-
-
-def new_skv_id(id_source) -> str:
-    return id_source.new_id(SKV_ID_PREFIX)
-
-
-class SkillVersionStamp(ProtocolModel):
-    """Immutable provenance stamp frozen with a managed version."""
-
-    version_id: str
-    display_version: str | None = None
-    installed_at: datetime = utc_now()

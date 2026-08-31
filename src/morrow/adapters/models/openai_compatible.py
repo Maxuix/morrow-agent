@@ -115,10 +115,6 @@ def estimate_request_chars(
     return len(json.dumps(payload, ensure_ascii=False, separators=(",", ":")))
 
 
-def estimate_message_chars(message: Message) -> int:
-    return len(json.dumps(serialize_message(message), ensure_ascii=False, separators=(",", ":")))
-
-
 _FINISH_REASONS: dict[str, ModelFinishReason] = {
     "stop": ModelFinishReason.STOP,
     "tool_calls": ModelFinishReason.TOOL_CALLS,

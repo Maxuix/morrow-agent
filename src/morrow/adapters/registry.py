@@ -7,7 +7,7 @@ from inspect import isawaitable
 from typing import Any
 
 from morrow.core.agent_runs import ProviderCapabilities
-from morrow.core.models import ModelRef, ProviderConfig
+from morrow.core.models import ProviderConfig
 from morrow.core.ports import ModelProvider
 from morrow.core.providers import DiscoveredModel, ModelDiscovery
 from morrow.runtime.policy import ProviderToolSupport
@@ -138,9 +138,3 @@ OPENCODE_GO_MIMO_PRESET: dict[str, Any] = {
 PRESETS: dict[str, dict[str, Any]] = {
     preset["preset_id"]: preset for preset in (OPENCODE_GO_PRESET, OPENCODE_GO_MIMO_PRESET)
 }
-
-
-def provider_model_ref(provider_id: str, config: ProviderConfig, model_id: str) -> ModelRef:
-    if model_id not in config.models:
-        raise ValueError(f"模型不属于 Provider: {model_id}")
-    return ModelRef(provider_id=provider_id, model_id=model_id)
