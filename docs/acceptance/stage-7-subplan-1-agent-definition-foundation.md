@@ -9,6 +9,8 @@ versioned AgentDefinitions and composes them through the existing AgentRun prepa
 AgentLoop path. It does not add Workflow revisions, a compiler, scheduler, Workflow CLI, or a
 second conversation-history writer.
 
+The verified implementation was fast-forward integrated into local `main` on 2026-08-31.
+
 ## Implemented evidence
 
 - Operational Store v23 persists immutable AgentDefinition versions, OCC-protected heads,

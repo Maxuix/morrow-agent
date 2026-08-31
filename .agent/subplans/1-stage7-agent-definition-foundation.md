@@ -1,6 +1,6 @@
 # Subplan 1 — Stage 7 Agent Definition Foundation
 
-> Status: verified; local integration pending (authorized 2026-08-31)
+> Status: completed and integrated (2026-08-31)
 > Branch: `feat/stage7-agent-definitions`
 > Activation base: `main@cb8fcc8` (clean tree; 1301 offline tests passed)
 > Prerequisite: Stage 7 entry GO and this master plan approved

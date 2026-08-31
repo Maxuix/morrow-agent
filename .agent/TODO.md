@@ -6,6 +6,7 @@
 - [x] Prove isolated Session/Task scope and exact Skill/tool/model restrictions.
 - [x] Extend current backup/restore/doctor and immutable references.
 - [x] Complete focused/full offline and static validation.
-- [>] Commit and fast-forward integrate the verified Subplan 1 changes.
+- [x] Commit and fast-forward integrate the verified Subplan 1 changes.
 
-No later Workflow domain, compiler, scheduler, CLI or default-path switch is active.
+Subplan 1 is complete. No later Workflow domain, compiler, scheduler, CLI or default-path switch is
+active; Subplan 2 is ready but has not been activated.

@@ -1,7 +1,7 @@
 # Morrow 架构基线
 
 > 状态：阶段 2–6 已完成；S7P-10 已把 Stage 7 准入升级为 **GO**。Stage 7 静态 Workflow
-> Runtime 的 Subplan 1 已实现并通过本地验证，正在集成；Workflow 编译/执行尚未开始（macOS；Linux 原生运行仍 unsupported）。
+> Runtime 的 Subplan 1 已完成并集成；Workflow 编译/执行尚未开始（macOS；Linux 原生运行仍 unsupported）。
 
 本文锁定当前依赖方向、数据所有权和安全边界。阶段 3 的能力策略、配置工具、工作空间读搜、冲突安全文件变更、直接 Host 命令、只读 Git 和当前 macOS 原生沙箱
 已经交付；Linux 原生运行尚未声明支持。Stage 4 已落地数据根 SQLite Operational Store 的

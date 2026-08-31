@@ -2,8 +2,8 @@
 
 > 状态：进行中；生产总计划已激活并于 2026-08-31 按条件通过的计划评审完成修订（九个子计划
 > 已重排，只读并行移至 Stage 8，validate/publish、工具需求声明、disable/revoke、结构化结果
-> 提交协议与 needs_revision 语义已闭合）；Subplan 1 的 AgentDefinition 基础层已实现并通过
-> 离线验证，正在本地集成；Subplan 2 尚未激活
+> 提交协议与 needs_revision 语义已闭合）；Subplan 1 的 AgentDefinition 基础层已完成并集成，
+> Subplan 2 已就绪但尚未激活
 > 阶段结果：Morrow 可以把多个可配置 Agent 作为模块，按经过编译、版本化和可恢复的静态 Workflow 协作执行任务
 > 上级文档：[开发路线总览](../ROADMAP.md)
 > 上一阶段：[Stage 6：Skills 与扩展生命周期](stage-6-skills-and-extensions.md)

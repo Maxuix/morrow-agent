@@ -2,19 +2,18 @@
 
 ## Current status
 
-Stage 7 Subplan 1 is verified and in closeout on
-`feat/stage7-agent-definitions`, based on verified `main@cb8fcc8`.
+Stage 7 Subplan 1 is completed and fast-forward integrated into local `main`.
 The configuration preflight prerequisite fix passed 1301 offline tests and is integrated.
 
 ## Active task
 
-Commit and fast-forward integration of the verified Subplan 1 implementation.
+None. Subplan 2 is not active.
 
 ## Next action
 
-Commit and fast-forward Subplan 1 without activating Subplan 2.
+Await explicit continuation before activating Subplan 2 from the latest verified `main`.
 
 ## Blockers
 
-No local implementation blocker. Remote publication remains blocked pending explicit authorization
-for the configured GitHub remote; no Live tests were run.
+No local implementation blocker. Local `main` is ahead of `origin/main`; remote publication remains
+blocked pending explicit authorization for the configured GitHub remote. No Live tests were run.

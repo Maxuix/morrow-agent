@@ -1,8 +1,8 @@
 # Stage 7 Static Workflow Runtime Implementation Plan
 
-> Status: Subplan 1 verified; local integration pending
-> Active subplan: 1 — Agent Definition Foundation (closeout)
-> Next subplan: 2 — Workflow Revision and Artifact Contracts (ready after Subplan 1 integration)
+> Status: Subplan 1 completed and integrated; Stage 7 remains in progress
+> Active subplan: none
+> Next subplan: 2 — Workflow Revision and Artifact Contracts (ready; not active)
 > Planning base: local `main@4d8b408` (tree clean, full offline gate green; later `.agent`-only
 > commits such as the plan-repair commit do not invalidate this verified code base)
 > Roadmap authority: `docs/roadmap/stage-7-workflow-runtime.md`
@@ -824,9 +824,9 @@ next phase starts.
 | 8 | 7D | Workflow Management and Templates | application commands/queries, CLI, four built-in static templates, doctor completion and separately authorized additive events if approved |
 | 9 | — | Stage 7 Acceptance and Closeout | deterministic integrated acceptance, Direct comparison, truthful promotion evidence and documentation sync |
 
-Child contracts are in `.agent/subplans/1-*.md` through `9-*.md`. Subplan 1 is verified and awaiting
-local integration; Subplan 2 is next but not active. Later children remain pending and may be
-corrected by verified earlier implementation facts. Bounded
+Child contracts are in `.agent/subplans/1-*.md` through `9-*.md`. Subplan 1 is completed and
+integrated; Subplan 2 is next but not active. Later children remain pending and may be corrected by
+verified earlier implementation facts. Bounded
 read-only parallelism is no longer a Stage 7 child; its design (per-request budget claim, entry
 conditions) lives in the Stage 8 roadmap.
 

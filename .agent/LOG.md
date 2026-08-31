@@ -4327,3 +4327,7 @@
   Seatbelt skips and 2 Live deselected. Ruff format/check, compileall, CLI help and diff-check form
   the remaining static closeout gate. The first v23 whole-tree run exposed only stale schema-22
   migration assertions, which were updated alongside migration expectations.
+- Subplan 1 closeout: `06e0c45` contains the implementation and tests; `1ed14f6` records acceptance
+  and verified state. Both were fast-forward integrated into local `main`. Subplan 2 was not
+  activated. Remote publication remains pending explicit authorization for the configured GitHub
+  remote.
