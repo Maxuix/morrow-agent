@@ -17,6 +17,8 @@ from pydantic import Field, field_validator, model_validator
 
 from morrow.core.agent_runs import ProviderRuntimeSnapshot
 from morrow.core.models import (
+    SECRET_NEEDLES,
+    SECRET_TOKEN_PATTERN,
     ModelRef,
     Profile,
     ProtocolModel,
@@ -55,8 +57,9 @@ AGENT_RUN_PREFERENCE_MAX_ENTRIES = 64
 AGENT_RUN_PREFERENCE_MAX_BYTES = 8 * 1024
 ERROR_DETAIL_MAX_BYTES = 4 * 1024
 TASK_OUTCOME_MAX_BYTES = 64 * 1024
-SECRET_NEEDLES = ("api_key", "authorization", "password", "credential")
-SECRET_TOKEN_PATTERN = re.compile(r"(?<![A-Za-z0-9])sk-[A-Za-z0-9_-]{20,}")
+_PROVIDER_RUNTIME_SECRET_NEEDLES = tuple(
+    needle for needle in SECRET_NEEDLES if needle != "credential"
+)
 
 
 class SessionLifecycle(StrEnum):
@@ -441,7 +444,7 @@ def _refuse_provider_runtime_secrets(payload: bytes, *, label: str) -> None:
     text = payload.decode("utf-8")
     serialized = text.casefold()
     if any(
-        needle in serialized for needle in ("api_key", "authorization", "password")
+        needle in serialized for needle in _PROVIDER_RUNTIME_SECRET_NEEDLES
     ) or SECRET_TOKEN_PATTERN.search(serialized):
         raise ValueError(f"{label} cannot contain secret material")
 
