@@ -4154,6 +4154,9 @@
 - Preserved the two existing acceptance-report changes and the interrupted security refactor;
   committed them as `fix(security): centralize secret detection rules` and
   `docs(acceptance): record extended regression evidence`.
+- Retained the complete untracked `docs/notes/` project Wiki (README plus 14 module notes) after
+  checking its scope and scanning it for credential patterns; it is documentation, not a runtime
+  cache or secret store.
 - Centralized the shared secret needles and token pattern without storing or printing any secret
   value. The staged patch had zero high-confidence private-key or credential-token matches.
   Outgoing-history matches were benign `stage-4-task...` path fragments and a test phrase, not

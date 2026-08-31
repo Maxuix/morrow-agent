@@ -4,8 +4,8 @@
 
 Stage 7 entry is GO. The production master plan and nine sequential child contracts are prepared;
 production implementation has not started. The retired sequence 36–100 is archived. The requested
-workspace cleanup is committed locally; the configured default branch push is authorized by the
-current user request and is pending final publication.
+workspace cleanup, including the project Wiki notes, is committed locally; the configured default
+branch push is authorized by the current user request and is pending final publication.
 
 ## Active task
 
