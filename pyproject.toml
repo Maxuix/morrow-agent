@@ -1,7 +1,7 @@
 [project]
 name = "morrow-agent"
 version = "0.1.0"
-description = "Morrow — a workspace-aware conversational continuity prototype"
+description = "Morrow — a workspace-scoped terminal code agent"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [

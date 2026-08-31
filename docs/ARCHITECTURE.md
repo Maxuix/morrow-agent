@@ -414,8 +414,8 @@ Session/Task/Artifact 列表的 Application page 合同在 CLI 中不被丢弃�
 下一页时输出 `next_cursor`，`--json` 输出 `{items, next_cursor}`。Doctor 的报告生成与
 健康结果是两件事：报告保留可读输出，但只有 health OK 时 CLI exit 0，其他状态 exit 2。
 
-- 当前工具只读取冻结工作空间，或通过冲突安全的 mutation 服务更新项目文件，或经审批调用非隔离 Host 命令；Auto Sandboxed 只在原生临时快照内执行；Skill 脚本只在冻结包的原生沙箱内执行并通过 Artifact 输出；Git 只读检查不修改仓库；配置服务更新既有状态；不联网。
-- 当前系统边界按冻结 ToolSet 动态渲染；未提供的能力、工作空间外访问、网络/loopback、Git 写入和权限提升始终被禁止。
+- 核心本地工具只读取冻结工作空间，或通过冲突安全的 mutation 服务更新项目文件，或经审批调用非隔离 Host 命令；Auto Sandboxed 只在原生临时快照内执行；Skill 脚本只在冻结包的原生沙箱内执行并通过 Artifact 输出；Git 只读检查不修改仓库；配置服务更新既有状态。这些本地能力不联网；受治理 MCP 只能凭与 AgentRun、Server、配置、Catalog 和工具精确绑定的审核证据，将 network、loopback、credential 或 external-effect 风险提升为逐调用审批，不会直接获得授权。
+- 当前系统边界按冻结 ToolSet 动态渲染；未提供、未冻结或未通过审批的能力，以及工作空间外访问、Git 写入和权限提升继续被禁止。
 - 默认测试不联网、不使用真实钥匙串、不依赖用户主目录。
 - Provider 和结构化响应失败必须分类；不静默切换 Provider 或模型。
 - 无工具 Session 对话可持久化并在重启后恢复；Artifact 的 missing/corrupt/staging/orphan 状态保持可见，

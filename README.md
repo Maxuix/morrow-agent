@@ -195,8 +195,9 @@ reference 为权威。`--apply` 不销毁字节：它只会把经目录、类型
 状态写入经过校验、revision 检查、同目录临时文件、文件/目录 `fsync` 和原子替换，并保留 `.bak`。
 Profile 损坏或版本较新时，工作空间持久状态进入只读模式；workspace Preferences 损坏时只隔离该层。
 
-当前生产工具只通过冻结工作空间服务读取、搜索和修改项目文件；Git 状态/Diff 与项目校验统一通过经过策略检查的 `bash` 执行；
-网络能力始终不提供；配置工具只通过应用服务更新既有的 Profile/Preferences 状态。阶段 3 已交付
+当前核心本地工具只通过冻结工作空间服务读取、搜索和修改项目文件；Git 状态/Diff 与项目校验统一通过经过策略检查的 `bash` 执行；
+它们本身不提供网络能力。受治理的 MCP 只能在审核证据与 AgentRun、Server、配置、Catalog 及工具完全匹配时，
+将 network、loopback、credential 或 external-effect 风险提升为逐调用审批；未提供或未审批的能力继续拒绝。配置工具只通过应用服务更新既有的 Profile/Preferences 状态。阶段 3 已交付
 三轴权限模型、工作空间能力冻结、能力策略、动态系统边界、通用本地审批端口、终端审批 UI，以及有界目录/文件读取、
 搜索、SHA-256 冲突安全编辑、原子文件创建、当前运行 ChangeSet/Diff、有界 Host 命令和当前 macOS 的原生
 Auto Sandboxed 快照执行；支持后端时还提供始终需审批的当前运行沙箱变更推广。Stage 3 的当前 macOS 验收已完成，

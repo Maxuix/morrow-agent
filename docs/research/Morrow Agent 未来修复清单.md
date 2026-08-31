@@ -4,7 +4,7 @@
 >
 > 日期：2026-08-26
 >
-> 启动条件：[Stage 7 前 Direct Agent 可靠性修复清单](<Stage 7 前 Direct Agent 可靠性修复清单.md>)通过 GO 审查
+> 启动条件：已满足——[Stage 7 前 Direct Agent 可靠性修复清单](<Stage 7 前 Direct Agent 可靠性修复清单.md>)已通过 GO 审查
 >
 > 输入：[Morrow Agent 深度审计与可执行修复清单](<Morrow Agent 深度审计与可执行修复清单.md>)、Pi 基本能力对照、Aider/Cline/OpenHands 等成熟 Code Agent 能力面、当前代码事实
 
