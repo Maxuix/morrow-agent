@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 from morrow.core.application import ApplicationError, ApplicationErrorCode
 from morrow.core.domain import (
     TaskOutcome,
+    TaskRunPurpose,
     TaskRunStatus,
     canonical_json_bytes,
     sha256_digest,
@@ -158,6 +159,11 @@ class LearningReviewRequestService:
         review_version: int,
         supersedes_review_id: str | None = None,
     ) -> LearningReview:
+        task = txn.get_task_run(self.workspace_id, outcome.task_run_id)
+        if task is not None and task.purpose != TaskRunPurpose.USER:
+            raise ApplicationError(
+                ApplicationErrorCode.INVALID, "Only user TaskOutcomes can enter learning"
+            )
         snapshot = canonical_json_bytes(policy.model_dump(mode="json")).decode("utf-8")
         review = LearningReview(
             review_id=self.id_source.new_id(LEARNING_REVIEW_ID_PREFIX),

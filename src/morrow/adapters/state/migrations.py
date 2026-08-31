@@ -38,6 +38,7 @@ from morrow.adapters.state.migrations_v20_long_horizon_observability import (
 from morrow.adapters.state.migrations_v21_retry_progress import V21_NAME, V21_STATEMENTS
 from morrow.adapters.state.migrations_v22_runtime_control import V22_NAME, V22_STATEMENTS
 from morrow.adapters.state.migrations_v23_agent_definitions import V23_NAME, V23_STATEMENTS
+from morrow.adapters.state.migrations_v24_workflows import V24_NAME, V24_STATEMENTS
 from morrow.core.store import (
     APPLICATION_NAME,
     RESERVED_SCHEMA_VERSIONS,
@@ -1430,6 +1431,7 @@ V20 = SchemaMigration(version=20, name=V20_NAME, statements=V20_STATEMENTS)
 V21 = SchemaMigration(version=21, name=V21_NAME, statements=V21_STATEMENTS)
 V22 = SchemaMigration(version=22, name=V22_NAME, statements=V22_STATEMENTS)
 V23 = SchemaMigration(version=23, name=V23_NAME, statements=V23_STATEMENTS)
+V24 = SchemaMigration(version=24, name=V24_NAME, statements=V24_STATEMENTS)
 
 
 class MigrationRegistry:
@@ -1508,6 +1510,7 @@ def production_registry() -> MigrationRegistry:
     registry.add(V21)
     registry.add(V22)
     registry.add(V23)
+    registry.add(V24)
     return registry
 
 

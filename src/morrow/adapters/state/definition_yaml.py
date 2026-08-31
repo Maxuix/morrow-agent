@@ -13,11 +13,12 @@ from morrow.adapters.state.extension_yaml import (
     _read_bytes,
 )
 from morrow.core.agent_definitions import AgentDefinitionDocument, AgentDefinitionSource
+from morrow.core.workflows.definitions import WorkflowDefinitionDocument, WorkflowDefinitionSource
 
 
 @dataclass(frozen=True)
 class LoadedAgentDefinition:
-    source: AgentDefinitionSource
+    source: AgentDefinitionSource | WorkflowDefinitionSource
     source_revision: int
 
     @property
@@ -28,29 +29,33 @@ class LoadedAgentDefinition:
 class AgentDefinitionYamlStore(ExtensionYamlStore):
     """No initialization or writes during load/validate; failures stay definition-local."""
 
+    document_type = AgentDefinitionDocument
+    filename = "agent-definitions.yaml"
+    identity_field = "definition_id"
+
     def __init__(self, root):
         super().__init__(root, create=False)
 
     def workspace_path(self, workspace_id):
-        return super().workspace_path(workspace_id).with_name("agent-definitions.yaml")
+        return super().workspace_path(workspace_id).with_name(self.filename)
 
     def load(self, workspace_id) -> AgentDefinitionDocument:
         path = self.workspace_path(workspace_id)
         try:
             raw = _read_bytes(path)
         except FileNotFoundError:
-            return AgentDefinitionDocument()
+            return self.document_type()
         try:
-            return AgentDefinitionDocument.model_validate(yaml.safe_load(raw.decode("utf-8")))
+            return self.document_type.model_validate(yaml.safe_load(raw.decode("utf-8")))
         except (ValueError, UnicodeError, yaml.YAMLError):
             raise ExtensionYamlError(
-                "invalid_definition_source", "Agent definitions are invalid"
+                "invalid_definition_source", "Desired definitions are invalid"
             ) from None
 
     def load_definition(self, workspace_id, definition_id) -> LoadedAgentDefinition:
         document = self.load(workspace_id)
         for source in document.definitions:
-            if source.definition_id == definition_id:
+            if getattr(source, self.identity_field) == definition_id:
                 return LoadedAgentDefinition(source, document.revision)
         raise ExtensionYamlError("definition_missing", "Agent definition is missing")
 
@@ -61,7 +66,7 @@ class AgentDefinitionYamlStore(ExtensionYamlStore):
             current = self.load(workspace_id)
             if current.revision != expected_revision:
                 raise ExtensionYamlConflict()
-            candidate = AgentDefinitionDocument(
+            candidate = self.document_type(
                 revision=current.revision + 1,
                 definitions=document.definitions,
             )
@@ -71,3 +76,9 @@ class AgentDefinitionYamlStore(ExtensionYamlStore):
                 self._backup(path)
             self._publish(path, raw)
             return candidate
+
+
+class WorkflowDefinitionYamlStore(AgentDefinitionYamlStore):
+    document_type = WorkflowDefinitionDocument
+    filename = "workflow-definitions.yaml"
+    identity_field = "workflow_definition_id"

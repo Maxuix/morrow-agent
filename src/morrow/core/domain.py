@@ -15,7 +15,7 @@ from typing import Any, Literal
 
 from pydantic import Field, field_validator, model_validator
 
-from morrow.core.agent_runs import AgentDefinitionRef, ProviderRuntimeSnapshot
+from morrow.core.agent_runs import AgentDefinitionRef, ProviderRuntimeSnapshot, WorkflowAgentRunRef
 from morrow.core.models import (
     SECRET_NEEDLES,
     SECRET_TOKEN_PATTERN,
@@ -57,6 +57,7 @@ AGENT_RUN_PREFERENCE_MAX_ENTRIES = 64
 AGENT_RUN_PREFERENCE_MAX_BYTES = 8 * 1024
 ERROR_DETAIL_MAX_BYTES = 4 * 1024
 TASK_OUTCOME_MAX_BYTES = 64 * 1024
+TASK_OUTCOME_ARTIFACT_MAX_REFS = 64
 _PROVIDER_RUNTIME_SECRET_NEEDLES = tuple(
     needle for needle in SECRET_NEEDLES if needle != "credential"
 )
@@ -82,6 +83,16 @@ def session_can_start_work(
     """Return whether a Session may start or resume foreground Turn/TaskRun work."""
 
     return lifecycle is SessionLifecycle.ACTIVE and health is SessionHealth.OK
+
+
+class TextSafetyProfile(StrEnum):
+    LEGACY_STRICT = "legacy_strict"
+    WORKFLOW_VALUE_SENSITIVE = "workflow_value_sensitive"
+
+
+class TaskRunPurpose(StrEnum):
+    USER = "user"
+    WORKFLOW_NODE = "workflow_node"
 
 
 class TaskRunStatus(StrEnum):
@@ -147,6 +158,7 @@ class TaskOutcomeTrigger(StrEnum):
 
 
 class TaskOutcomeEvidenceKind(StrEnum):
+    WORKFLOW_RUN = "workflow_run"
     TURN = "turn"
     CONVERSATION_RECORD = "conversation_record"
     AGENT_RUN = "agent_run"
@@ -157,6 +169,7 @@ class TaskOutcomeEvidenceKind(StrEnum):
 
 
 _OUTCOME_REFERENCE_PREFIXES = {
+    TaskOutcomeEvidenceKind.WORKFLOW_RUN: "wrun",
     TaskOutcomeEvidenceKind.TURN: TURN_ID_PREFIX,
     TaskOutcomeEvidenceKind.CONVERSATION_RECORD: CONVERSATION_RECORD_ID_PREFIX,
     TaskOutcomeEvidenceKind.AGENT_RUN: AGENT_RUN_ID_PREFIX,
@@ -185,6 +198,12 @@ class TaskOutcomeEvidenceRef(ProtocolModel):
     def matches_kind(self) -> TaskOutcomeEvidenceRef:
         expected = _OUTCOME_REFERENCE_PREFIXES[self.kind]
         validate_prefixed_id(self.reference_id, expected)
+        reserved = {
+            "workflow_result_snapshot": TaskOutcomeEvidenceKind.WORKFLOW_RUN,
+            "workflow_ready_transition": TaskOutcomeEvidenceKind.TASK_TRANSITION,
+        }
+        if self.role in reserved and self.kind != reserved[self.role]:
+            raise ValueError("Workflow evidence role has the wrong reference kind")
         return self
 
     @property
@@ -231,6 +250,7 @@ class TaskOutcome(ProtocolModel):
     """Immutable, deterministic evidence emitted at an explicit milestone."""
 
     outcome_id: str
+    text_safety_profile: TextSafetyProfile = TextSafetyProfile.LEGACY_STRICT
     workspace_id: str
     session_id: str
     task_run_id: str
@@ -309,7 +329,7 @@ class TaskOutcome(ProtocolModel):
     def bounded_artifact_refs(
         cls, values: tuple[ArtifactReference, ...]
     ) -> tuple[ArtifactReference, ...]:
-        if len(values) > 64:
+        if len(values) > TASK_OUTCOME_ARTIFACT_MAX_REFS:
             raise ValueError("outcome contains too many artifact references")
         seen: set[tuple[str, str]] = set()
         for value in values:
@@ -323,7 +343,7 @@ class TaskOutcome(ProtocolModel):
     def enforce_budget_and_redaction(self) -> TaskOutcome:
         payload = canonical_json_bytes(self.model_dump(mode="json"))
         require_payload_budget(payload, TASK_OUTCOME_MAX_BYTES, label="TaskOutcome")
-        refuse_secret_material(payload, label="TaskOutcome")
+        refuse_secret_material(payload, label="TaskOutcome", profile=self.text_safety_profile)
         return self
 
 
@@ -434,12 +454,12 @@ VALUE_SENSITIVE_SECRET_PATTERN = re.compile(
         ["']?(?:api[_-]?key|authorization|password|credential(?:s)?)["']?
         \s*[:=]\s*["']?
         (?!redacted\b|missing\b|unavailable\b|none\b|null\b|\*{3,})
-        [^\s"',;}]{4,}
+        (?P<assignment_value>[^\s"',;}]{4,})
       |
         --(?:api[-_]?key|authorization|password|credential(?:s)?)
         (?:=|\s+)
         (?!redacted\b|missing\b|unavailable\b|none\b|null\b|\*{3,})
-        \S{4,}
+        (?P<option_value>\S{4,})
     )
     """
 )
@@ -453,15 +473,7 @@ def refuse_secret_material(
 ) -> None:
     text = payload if isinstance(payload, str) else payload.decode("utf-8")
     if profile == "workflow_value_sensitive":
-        assignments = VALUE_SENSITIVE_SECRET_PATTERN.finditer(text)
-        placeholders = {"placeholder", "example", "your_api_key", "your_password", "changeme"}
-        unsafe_assignment = any(
-            (value := re.split(r"[:=]\s*|\s+", match.group(0))[-1].strip("\"' ").casefold())
-            not in placeholders
-            and not value.startswith(("$", "<", "{{"))
-            for match in assignments
-        )
-        if unsafe_assignment or CREDENTIAL_LITERAL_PATTERN.search(text):
+        if workflow_secret_spans(text):
             raise ValueError(f"{label} cannot contain secret material")
         return
     if profile != "legacy_strict":
@@ -471,6 +483,39 @@ def refuse_secret_material(
         serialized
     ):
         raise ValueError(f"{label} cannot contain secret material")
+
+
+def workflow_secret_spans(text: str) -> tuple[tuple[int, int], ...]:
+    """Shared detection for refusal and redaction; never return the unsafe values."""
+    placeholders = {"placeholder", "example", "your_api_key", "your_password", "changeme"}
+    spans = [(m.start(), m.end()) for m in CREDENTIAL_LITERAL_PATTERN.finditer(text)]
+    for match in VALUE_SENSITIVE_SECRET_PATTERN.finditer(text):
+        group = (
+            "assignment_value" if match.group("assignment_value") is not None else "option_value"
+        )
+        value = match.group(group).strip("\"' ").casefold()
+        if value not in placeholders and not value.startswith(("$", "<", "{{")):
+            spans.append(match.span(group))
+    return tuple(sorted(spans))
+
+
+def refuse_preview_secret_material(text: str, *, label: str) -> None:
+    """Historical preview profile, centralized without changing legacy classification."""
+    if SECRET_TOKEN_PATTERN.search(text) or VALUE_SENSITIVE_SECRET_PATTERN.search(text):
+        raise ValueError(f"{label} cannot contain secret material")
+
+
+def redact_workflow_text(text: str) -> tuple[str, bool]:
+    """Redact only detected spans, retaining benign security vocabulary."""
+    spans = workflow_secret_spans(text)
+    result, cursor = [], 0
+    for start, end in spans:
+        if end <= cursor:
+            continue
+        result.extend((text[cursor : max(cursor, start)], "<redacted>"))
+        cursor = end
+    result.append(text[cursor:])
+    return "".join(result), bool(spans)
 
 
 def _refuse_provider_runtime_secrets(payload: bytes, *, label: str) -> None:
@@ -938,6 +983,7 @@ class DurableTaskRun(ProtocolModel):
     task_run_id: str
     session_id: str
     workspace_id: str
+    purpose: TaskRunPurpose = TaskRunPurpose.USER
     status: TaskRunStatus = TaskRunStatus.OPEN
     row_version: int = Field(default=1, ge=1)
     attempt: int = Field(default=1, ge=1)
@@ -1078,6 +1124,7 @@ class DurableConversationRecord(ProtocolModel):
 
 
 class DurableAgentRun(ProtocolModel):
+    workflow_ref: WorkflowAgentRunRef | None = None
     agent_run_id: str
     turn_id: str
     session_id: str

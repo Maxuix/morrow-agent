@@ -22,7 +22,8 @@ from morrow.core.store import StorageError, StorageErrorCode
 
 _ARTIFACT_COLUMNS = (
     "artifact_id, workspace_id, session_id, task_run_id, kind, sensitivity, state, retention, "
-    "sha256, byte_size, excerpt, provenance_json, row_version, created_at_unix, updated_at_unix"
+    "sha256, byte_size, excerpt, provenance_json, row_version, created_at_unix, updated_at_unix, "
+    "text_safety_profile, contract_json, producer_node_run_id, output_slot"
 )
 _REFERENCE_COLUMNS = "artifact_id, workspace_id, owner_kind, owner_id, role, created_at_unix"
 
@@ -67,7 +68,7 @@ class SqliteArtifactJournal:
                     raise ArtifactBudgetError("TaskRun artifact byte budget exceeded")
             self.backend.executor().execute(
                 f"INSERT INTO artifacts({_ARTIFACT_COLUMNS}) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     metadata.artifact_id,
                     metadata.workspace_id,
@@ -84,6 +85,10 @@ class SqliteArtifactJournal:
                     metadata.row_version,
                     _unix(metadata.created_at),
                     _unix(metadata.updated_at),
+                    metadata.text_safety_profile.value,
+                    metadata.contract.model_dump_json() if metadata.contract else None,
+                    metadata.producer_node_run_id,
+                    metadata.output_slot,
                 ),
             )
             loaded = self.get(workspace_id, metadata.artifact_id)
@@ -147,6 +152,10 @@ class SqliteArtifactJournal:
                     StorageErrorCode.UNAVAILABLE, "operational artifact row version is stale"
                 )
             immutable_fields = (
+                "text_safety_profile",
+                "contract",
+                "producer_node_run_id",
+                "output_slot",
                 "workspace_id",
                 "session_id",
                 "task_run_id",
@@ -220,6 +229,19 @@ class SqliteArtifactJournal:
         references.extend(
             (str(row[0]), "context_checkpoint", str(row[2]), str(row[3])) for row in checkpoint_rows
         )
+        if self.backend.schema_version() >= 24:
+            workflow_sql = (
+                "SELECT b.artifact_id, b.workflow_run_id, b.node_run_id, b.name FROM workflow_artifact_bindings b "
+                "JOIN workflow_runs r USING(workflow_run_id) WHERE r.workspace_id=?"
+            )
+            workflow_args = [workspace_id]
+            if artifact_id is not None:
+                workflow_sql += " AND b.artifact_id=?"
+                workflow_args.append(artifact_id)
+            references.extend(
+                (row[0], "workflow", row[2] or row[1], row[3])
+                for row in self.backend.read_all(workflow_sql, tuple(workflow_args))
+            )
         return tuple(sorted(references, key=lambda item: (item[0], item[1], item[2], item[3])))
 
     def replace_references(
@@ -251,6 +273,16 @@ class SqliteArtifactJournal:
             )
 
     def validate_scope(self, workspace_id: str, metadata: ArtifactMetadata) -> None:
+        if metadata.producer_node_run_id is not None:
+            owner = self.backend.read_one(
+                "SELECT n.workspace_id, o.session_id, o.task_run_id FROM workflow_node_runs n "
+                "JOIN workflow_leaf_ownership o USING(node_run_id) WHERE n.node_run_id=?",
+                (metadata.producer_node_run_id,),
+            )
+            if owner != (workspace_id, metadata.session_id, metadata.task_run_id):
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE, "Workflow Artifact producer scope mismatch"
+                )
         if metadata.session_id is None:
             if metadata.task_run_id is not None:
                 raise StorageError(
@@ -325,6 +357,10 @@ def _artifact_from_row(row: tuple[object, ...]) -> ArtifactMetadata:
             row_version=int(row[12]),
             created_at=_from_unix(row[13]),
             updated_at=_from_unix(row[14]),
+            text_safety_profile=str(row[15]),
+            contract=json.loads(row[16]) if row[16] else None,
+            producer_node_run_id=row[17],
+            output_slot=row[18],
         )
     except (TypeError, ValueError, json.JSONDecodeError) as exc:
         raise StorageError(

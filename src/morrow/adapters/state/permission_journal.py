@@ -7,6 +7,7 @@ from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 
 from morrow.adapters.state.transaction import SqliteJournalBackend
+from morrow.core.agent_runs import WorkflowAgentRunRef
 from morrow.core.capabilities import AccessScope, ApprovalMode, ProcessIsolation
 from morrow.core.domain import (
     AgentRunSnapshot,
@@ -144,7 +145,27 @@ class SqliteRunPermissionJournal:
             "WHERE r.agent_run_id = ? AND s.workspace_id = ?",
             (agent_run_id, workspace_id),
         )
-        return _agent_from_row(row) if row is not None else None
+        return self._with_workflow_ref(_agent_from_row(row)) if row is not None else None
+
+    def _with_workflow_ref(self, run):
+        if self.backend.schema_version() < 24:
+            return run
+        row = self.backend.read_one(
+            "SELECT r.workflow_revision_id, n.workflow_run_id, n.node_run_id, n.node_id, n.attempt "
+            "FROM workflow_agent_run_refs a JOIN workflow_node_runs n USING(node_run_id) "
+            "JOIN workflow_runs r USING(workflow_run_id) WHERE a.agent_run_id=?",
+            (run.agent_run_id,),
+        )
+        if row is None:
+            return run
+        ref = WorkflowAgentRunRef(
+            workflow_revision_id=row[0],
+            workflow_run_id=row[1],
+            node_run_id=row[2],
+            node_id=row[3],
+            attempt=row[4],
+        )
+        return run.model_copy(update={"workflow_ref": ref})
 
     def list_session_agent_runs(
         self, workspace_id: str, session_id: str
@@ -157,7 +178,7 @@ class SqliteRunPermissionJournal:
             "ORDER BY r.created_at_unix ASC, r.agent_run_id ASC",
             (session_id, workspace_id),
         )
-        return tuple(_agent_from_row(row) for row in rows)
+        return tuple(self._with_workflow_ref(_agent_from_row(row)) for row in rows)
 
     def get_permission_snapshot(
         self, workspace_id: str, permission_snapshot_id: str
@@ -391,6 +412,10 @@ class SqliteRunPermissionJournal:
             )
 
     def _insert_agent_run(self, workspace_id: str, run: DurableAgentRun) -> None:
+        if run.workflow_ref is not None:
+            raise StorageError(
+                StorageErrorCode.UNAVAILABLE, "Workflow attribution is bound at node admission"
+            )
         turn = self.get_turn(workspace_id, run.turn_id)
         if turn is None or turn.session_id != run.session_id:
             raise StorageError(

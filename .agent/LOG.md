@@ -4331,3 +4331,19 @@
   and verified state. Both were fast-forward integrated into local `main`. Subplan 2 was not
   activated. Remote publication remains pending explicit authorization for the configured GitHub
   remote.
+
+## 2026-09-01 — Stage 7 Subplan 2 implementation
+
+- User explicitly authorized the next Stage 7 subplan. Activated Subplan 2 on
+  `feat/stage7-workflow-domain` from verified local `main@fbfb197`.
+- Added static Workflow source/revision/run contracts, shared canonical digest, typed TaskContract/
+  TextResult Artifact seams, value-sensitive Outcome projection and internal Task ownership.
+  No compiler, Scheduler, model request, public event or bundled policy default was introduced.
+- Added v24 Workflow persistence, immutable revision/revocation/Artifact links, root uniqueness and
+  the narrow queued-leaf ownership link required before nullable NodeRun admission references bind.
+- Focused domain/store gate reached 27 passing tests, including internal leaf exclusion, exact
+  AgentRun attribution, output completion, Outcome/learning, raw malformed-source backup/restore,
+  head tamper and previous-current migration. Final expanded regression and static gates follow.
+- The first full offline run found only stale migration-name expectations and three already-fixed
+  new-test integration failures (SQL executor row access, fixture timestamp precision and doctor
+  fixture construction). The next full gate must run against the final tree before closeout.

@@ -76,6 +76,7 @@ def test_v14_to_v15_creates_draft_validation_and_usage_tables(tmp_path) -> None:
         "agent_run_retry_progress",
         "durable_runtime_control_queue",
         "agent_definition_foundation",
+        "workflow_revision_artifact_contracts",
     )
     with OperationalStore(root, maintenance_timeout=0).open(StoreOpenMode.READ_ONLY) as handle:
         names = handle.run_read(
@@ -107,6 +108,7 @@ def test_v16_to_v17_creates_agent_run_observation_tables(tmp_path) -> None:
         "agent_run_retry_progress",
         "durable_runtime_control_queue",
         "agent_definition_foundation",
+        "workflow_revision_artifact_contracts",
     )
     with OperationalStore(root, maintenance_timeout=0).open(StoreOpenMode.READ_ONLY) as handle:
         objects = handle.run_read(
@@ -137,6 +139,7 @@ def test_v21_and_v22_add_retry_progress_and_runtime_control_tables(tmp_path) -> 
         "agent_run_retry_progress",
         "durable_runtime_control_queue",
         "agent_definition_foundation",
+        "workflow_revision_artifact_contracts",
     )
     with OperationalStore(root, maintenance_timeout=0).open(StoreOpenMode.READ_ONLY) as handle:
         objects = handle.run_read(

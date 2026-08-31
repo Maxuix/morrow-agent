@@ -201,6 +201,14 @@ class AgentDefinitionRef(ProtocolModel):
     content_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
 
 
+class WorkflowAgentRunRef(ProtocolModel):
+    workflow_revision_id: str = Field(pattern=r"^wrev_[A-Za-z0-9_-]+$")
+    workflow_run_id: str = Field(pattern=r"^wrun_[A-Za-z0-9_-]+$")
+    node_run_id: str = Field(pattern=r"^nrun_[A-Za-z0-9_-]+$")
+    node_id: str = Field(pattern=r"^[a-z][a-z0-9_-]{0,63}$")
+    attempt: int = Field(ge=1, le=1, strict=True)
+
+
 class PreparedAgentRunSpec(ProtocolModel):
     """Immutable evidence describing one prepared AgentRun.
 

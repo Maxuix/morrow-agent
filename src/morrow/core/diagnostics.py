@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from morrow.core.domain import refuse_secret_material
+from morrow.core.domain import TextSafetyProfile, refuse_secret_material
 
 PUBLIC_DIAGNOSTIC_MAX_CHARS = 600
 _DIAGNOSTIC_CODE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
@@ -17,7 +17,13 @@ class PublicDiagnosticError(RuntimeError):
     exceptions intentionally do not implement this contract and remain generic at the Agent edge.
     """
 
-    def __init__(self, code: str, message: str) -> None:
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        *,
+        text_safety_profile: TextSafetyProfile = TextSafetyProfile.LEGACY_STRICT,
+    ) -> None:
         if _DIAGNOSTIC_CODE.fullmatch(code) is None:
             raise ValueError("public diagnostic code is invalid")
         if (
@@ -27,10 +33,11 @@ class PublicDiagnosticError(RuntimeError):
             or any(char in message for char in "\x00\r\n")
         ):
             raise ValueError("public diagnostic message is invalid")
-        refuse_secret_material(message, label="public diagnostic")
+        refuse_secret_material(message, label="public diagnostic", profile=text_safety_profile)
         super().__init__(message)
         self.code = code
         self.message = message
+        self.text_safety_profile = text_safety_profile
 
     @property
     def public_message(self) -> str:

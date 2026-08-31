@@ -2,16 +2,16 @@
 
 ## Current status
 
-Stage 7 Subplan 1 is completed and fast-forward integrated into local `main`.
-The configuration preflight prerequisite fix passed 1301 offline tests and is integrated.
+Stage 7 Subplan 2 is active on `feat/stage7-workflow-domain` from verified local `main@fbfb197`.
 
 ## Active task
 
-None. Subplan 2 is not active.
+Final offline/static validation and Subplan 2 acceptance recording.
 
 ## Next action
 
-Await explicit continuation before activating Subplan 2 from the latest verified `main`.
+Complete the final-tree gate, commit verified implementation and acceptance, then fast-forward
+integrate into local `main` and retire the clean topic branch. Subplan 3 remains inactive.
 
 ## Blockers
 

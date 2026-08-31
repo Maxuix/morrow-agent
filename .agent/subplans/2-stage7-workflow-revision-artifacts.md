@@ -1,6 +1,6 @@
 # Subplan 2 — Stage 7 Workflow Revision and Artifact Contracts
 
-> Status: pending
+> Status: active
 > Branch: `feat/stage7-workflow-domain`
 > Prerequisite: Subplan 1 completed, verified and integrated
 > Revised 2026-08-31 per the conditional-GO plan review: output necessity is split into
@@ -271,6 +271,60 @@ An invalid Workflow record must not make unrelated definitions or existing Direc
 unreadable. Each persisted constraint gets a valid round-trip case, not an exhaustive field matrix.
 
 ## Validation
+
+### Text-safety call-site audit (2026-09-01)
+
+- `core/domain.py`: Artifact/Outcome envelopes dispatch through the existing refusal owner;
+  Workflow projections use its shared detected spans to redact values. AgentDefinition refs use
+  the same value-sensitive profile. Provider-runtime and ordinary AgentRun snapshot subtrees keep
+  their existing structural/legacy rules because they contain frozen configuration, not node output.
+- `core/execution.py`: preview detection moved behind the existing domain owner without changing
+  legacy matching. HandlerResultEnvelope, DurableToolExecution and DurableApproval now carry
+  internal profile-aware error/cancel/revoke validation. Approval/cancel transition helpers preserve
+  the envelope's profile. Workflow selection and SQL-column wiring remain Subplans 4–5 work.
+  PreparedIntent and DurableToolFacts keep their current serialized shape/hash: they need the
+  Workflow execution consumer to select and migrate any profile-bearing format, not an unused
+  speculative hash migration here. ValidationDiagnostic remains value-free structural metadata.
+- `core/diagnostics.py` and `core/recovery.py`: profile-aware PublicDiagnosticError and RecoveryReport
+  contracts are available; Workflow execution composition selects the profile only in Subplans 4–5.
+- `application/artifacts.py`: generic byte publication remains legacy-strict. Only the bounded
+  TaskContract/TextResult typed method selects Workflow mode. Existing command-output/MCP/Skill
+  producers retain their current redaction/omission behavior until the Workflow capture consumer.
+- `core/compaction.py`, `core/context.py`, `application/context.py`: current summary/checkpoint and
+  instruction checks stay legacy; existing rejected-summary fallback remains authoritative. Any
+  Workflow summary/checkpoint projection is a Subplans 4–5 integration check, not a new summary path.
+- `core/mcp/{results,review}.py`, `application/mcp/results.py`: current bounded normalization may
+  redact/omit unsafe structured/text content and keeps legacy classification. Workflow wiring must
+  retain that availability fallback; these are not definition-publication gates.
+- `core/{permissions,configuration_promotion}.py`, `application/configuration.py`: configuration,
+  grant and PermissionSnapshot evidence are existing permission/configuration owners. Their generic
+  mutation contracts remain unchanged; Workflow error translation uses the new diagnostic envelope.
+- `core/{application,doctor,backup}.py`: public events and reports carry stable codes and identity/
+  count/hash facts, not Workflow excerpts. Backup definition sources are raw exact-path bytes with
+  the existing high-confidence literal check; Artifact/Outcome text never enters the manifest.
+- `core/{learning_memory,learning_views,memory_selection}.py`: learning previews, terms and selection
+  retain their existing safety classifier. Accepted Workflow-profile Outcomes rehydrate and enqueue
+  ordinary LearningReview without a Workflow-specific learning branch; candidate skip/redaction
+  stays with learning. Session fork reasons in `core/{domain,context}.py` remain legacy.
+
+The focused calibration table is in `tests/test_stage7_workflow_domain.py`; later consumers extend
+that table rather than adding an independent detector. The authority remains
+`core/domain.py::refuse_secret_material` and its shared Workflow span/redaction helpers.
+
+### Representation decisions
+
+- A narrow immutable `workflow_leaf_ownership` link binds the fresh Session/Task to its queued
+  NodeRun before AgentRun admission. This prevents a different queued node from claiming the pair
+  while preserving the required nullable-until-admission NodeRun fields. It owns no chat history.
+- Compiled representation validation owns exact reference/slot/edge consistency; Subplan 3 still
+  owns source compilation, cycle/topology calculation, catalog/model resolution and publication.
+  There is no Workflow application publisher in this subplan; the repository only stores an already
+  compiled immutable value and its OCC head inside the shared transaction.
+- `TaskOutcome` carries the typed ready-epoch marker, but ordinary acceptance carry-forward assembly
+  remains with the later Workflow execution consumer as the master plan specifies. This subplan
+  verifies durable Workflow-profile Outcome persistence and unchanged LearningReview creation.
+
+## Required validation commands
 
 ```bash
 uv run pytest -q tests/test_stage7_workflow_domain.py

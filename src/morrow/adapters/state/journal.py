@@ -27,6 +27,8 @@ from morrow.adapters.state.skill_journal import SqliteSkillJournal
 from morrow.adapters.state.task_journal import SqliteTaskJournal
 from morrow.adapters.state.tool_journal import SqliteToolJournal
 from morrow.adapters.state.transaction import SqliteJournalBackend
+from morrow.adapters.state.workflow_journal import SqliteWorkflowJournal
+from morrow.adapters.state.workflow_ownership import require_user_task
 from morrow.core.application import (
     ApplicationCommandReceipt,
     ApplicationEvent,
@@ -207,6 +209,13 @@ class SqliteOperationalJournal:
         self._skill_journal = SqliteSkillJournal(self._backend)
         self._mcp_journal = SqliteMcpJournal(self._backend)
         self.agent_definitions = SqliteAgentDefinitionJournal(self._backend)
+        self.workflows = SqliteWorkflowJournal(
+            self._backend,
+            get_task=self.get_task_run,
+            get_artifact=self.get_artifact,
+            get_agent_version=self.agent_definitions.get_version,
+            get_agent_run=self.get_agent_run,
+        )
         self._runtime_control_journal = SqliteRuntimeControlJournal(self._backend)
 
     def now(self) -> datetime:
@@ -1011,6 +1020,7 @@ class SqliteOperationalJournal:
                 "inactive session cannot retain a current task",
             )
         if task is not None:
+            require_user_task(self._backend, task)
             if not session_can_start_work(session.lifecycle, session.health):
                 raise StorageError(
                     StorageErrorCode.UNAVAILABLE,
@@ -1081,6 +1091,11 @@ class SqliteOperationalJournal:
 
     def has_global_artifact_authority(self, artifact_id: str) -> bool:
         """Check root-wide metadata/reference authority for one cleanup candidate."""
+
+        if self.schema_version() >= 24 and self._read_one(
+            "SELECT 1 FROM workflow_artifact_bindings WHERE artifact_id=? LIMIT 1", (artifact_id,)
+        ):
+            return True
 
         row = self._read_one(
             """
@@ -1187,6 +1202,72 @@ class SqliteOperationalJournal:
 
     def get_task_run(self, workspace_id: str, task_run_id: str) -> DurableTaskRun | None:
         return self._task_journal.get(workspace_id, task_run_id)
+
+    def require_user_task(self, workspace_id, task_run_id):
+        task = self.get_task_run(workspace_id, task_run_id)
+        if task is not None:
+            require_user_task(self._backend, task)
+
+    def create_workflow_leaf(self, workspace_id, node_run_id, session, task):
+        """Internal lifecycle seam; not exposed through ordinary Task commands."""
+
+        def work(_):
+            node = self.workflows.get_node(workspace_id, node_run_id)
+            if node is None or node.status.value != "queued":
+                raise ValueError("Workflow leaf requires a queued NodeRun")
+            run = self.workflows.get_run(workspace_id, node.workflow_run_id)
+            if run is None or run.status.terminal:
+                raise ValueError("terminal Workflow cannot create leaves")
+            if (
+                task.purpose.value != "workflow_node"
+                or task.session_id != session.session_id
+                or session.workspace_id != workspace_id
+            ):
+                raise ValueError("Workflow leaf Session/Task scope mismatch")
+            if session.parent_session_id is not None or session.current_task_run_id is not None:
+                raise ValueError("Workflow leaf requires a fresh standalone Session")
+            self.create_session(session)
+            result = self._task_journal._create(workspace_id, task, make_current=True)
+            self._backend.executor().execute(
+                "INSERT INTO workflow_leaf_ownership VALUES(?,?,?)",
+                (
+                    node_run_id,
+                    session.session_id,
+                    task.task_run_id,
+                ),
+            )
+            return result
+
+        return self.transact(work)
+
+    def create_workflow_turn(self, workspace_id, node_run_id, turn):
+        node = self.workflows.get_node(workspace_id, node_run_id)
+        task = self.get_task_run(workspace_id, turn.task_run_id)
+        if (
+            node is None
+            or node.status.value != "queued"
+            or task is None
+            or task.purpose.value != "workflow_node"
+        ):
+            raise ValueError("Workflow Turn requires a queued node and internal Task")
+        owner = self._backend.read_one(
+            "SELECT session_id, task_run_id FROM workflow_leaf_ownership WHERE node_run_id=?",
+            (node_run_id,),
+        )
+        if owner != (turn.session_id, turn.task_run_id):
+            raise ValueError("Workflow Turn does not match its owned leaf")
+        return self._conversation_journal._create_turn(workspace_id, turn)
+
+    def transition_workflow_task(self, workspace_id, workflow_run_id, task_run_id, **kwargs):
+        run = self.workflows.get_run(workspace_id, workflow_run_id)
+        nodes = self.workflows.list_nodes(workspace_id, workflow_run_id)
+        if (
+            run is None
+            or run.status.terminal
+            or task_run_id not in {run.root_task_run_id, *(n.leaf_task_run_id for n in nodes)}
+        ):
+            raise ValueError("Task is not owned by this Workflow")
+        return self._task_journal._transition(workspace_id, task_run_id, **kwargs)
 
     def _task_belongs_to_session(
         self, workspace_id: str, task_run_id: str, session_id: str

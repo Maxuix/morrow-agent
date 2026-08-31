@@ -7,6 +7,7 @@ from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 
 from morrow.adapters.state.transaction import SqliteJournalBackend
+from morrow.adapters.state.workflow_ownership import require_user_task
 from morrow.core.domain import (
     DurableConversationRecord,
     DurableSession,
@@ -49,6 +50,15 @@ class SqliteConversationJournal:
         self.session_mutation_time = session_mutation_time
 
     def create_turn(self, workspace_id: str, turn: DurableTurn) -> DurableTurn:
+        def work():
+            task = self.get_task(workspace_id, turn.task_run_id)
+            if task is not None:
+                require_user_task(self.backend, task)
+            return self._create_turn(workspace_id, turn)
+
+        return self.backend.transact(work)
+
+    def _create_turn(self, workspace_id: str, turn: DurableTurn) -> DurableTurn:
         def work() -> DurableTurn:
             task = self.get_task(workspace_id, turn.task_run_id)
             if task is None or task.session_id != turn.session_id:

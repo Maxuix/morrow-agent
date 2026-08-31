@@ -30,6 +30,8 @@ from morrow.core.artifacts import (
 from morrow.core.domain import (
     ARTIFACT_ID_PREFIX,
     ArtifactReference,
+    TextSafetyProfile,
+    canonical_json_bytes,
     refuse_secret_material,
     sha256_digest,
     utc_now,
@@ -37,6 +39,12 @@ from morrow.core.domain import (
 from morrow.core.journal import ArtifactJournalPort
 from morrow.core.ports import IdSource
 from morrow.core.store import StorageError, StorageErrorCode
+from morrow.core.workflows.contracts import (
+    ContractRef,
+    TaskContract,
+    TextResult,
+    node_output_artifact_id,
+)
 
 _REDACTED_SECRET_ASSIGNMENT = re.compile(
     r"(?i)\b(?:api[_-]?key|authorization|credential|password|passwd|secret|token)\b"
@@ -90,6 +98,103 @@ class ArtifactService:
         artifact_id: str | None = None,
         already_redacted: bool = False,
     ) -> ArtifactMetadata:
+        return self._publish_bytes(
+            content,
+            kind=kind,
+            session_id=session_id,
+            task_run_id=task_run_id,
+            sensitivity=sensitivity,
+            retention=retention,
+            provenance_refs=provenance_refs,
+            excerpt=excerpt,
+            artifact_id=artifact_id,
+            already_redacted=already_redacted,
+        )
+
+    def publish_workflow_payload(
+        self,
+        payload: TaskContract | TextResult,
+        *,
+        session_id: str,
+        task_run_id: str,
+        artifact_id: str | None = None,
+        producer_node_run_id: str | None = None,
+        output_slot: str | None = None,
+    ) -> ArtifactMetadata:
+        if type(payload) not in {TaskContract, TextResult}:
+            raise ValueError("Workflow publication requires a typed payload")
+        if isinstance(payload, TaskContract) and producer_node_run_id is not None:
+            raise ValueError("TaskContract is Workflow input, not node output")
+        if isinstance(payload, TextResult) and producer_node_run_id is None:
+            raise ValueError("TextResult requires a NodeRun producer")
+        content = canonical_json_bytes(payload.model_dump(mode="json"))
+        if isinstance(payload, TextResult):
+            if output_slot is None:
+                raise ValueError("TextResult requires a declared output slot")
+            deterministic_id = node_output_artifact_id(producer_node_run_id, output_slot)
+            if artifact_id not in {None, deterministic_id}:
+                raise ValueError("Workflow output identity is fixed by NodeRun and slot")
+            artifact_id = deterministic_id
+        if artifact_id is not None:
+            prior = self.journal.get_artifact(self.workspace_id, artifact_id)
+            if prior is not None:
+                if (
+                    prior.sha256,
+                    prior.session_id,
+                    prior.task_run_id,
+                    prior.producer_node_run_id,
+                    prior.output_slot,
+                    prior.text_safety_profile,
+                    prior.contract,
+                ) != (
+                    sha256_digest(content),
+                    session_id,
+                    task_run_id,
+                    producer_node_run_id,
+                    output_slot,
+                    TextSafetyProfile.WORKFLOW_VALUE_SENSITIVE,
+                    ContractRef(kind=type(payload).__name__),
+                ):
+                    raise ArtifactError(
+                        ArtifactErrorCode.CONFLICT, "Workflow output already has different content"
+                    )
+                if prior.state == ArtifactState.AVAILABLE:
+                    self.filesystem.read(prior, max_bytes=prior.byte_size)
+                    return prior
+                raise ArtifactError(
+                    ArtifactErrorCode.UNAVAILABLE, "Workflow Artifact requires staging recovery"
+                )
+        return self._publish_bytes(
+            content,
+            kind=ArtifactKind.TASK_SUMMARY,
+            session_id=session_id,
+            task_run_id=task_run_id,
+            artifact_id=artifact_id,
+            excerpt=payload.objective if isinstance(payload, TaskContract) else payload.excerpt,
+            text_safety_profile=TextSafetyProfile.WORKFLOW_VALUE_SENSITIVE,
+            contract=ContractRef(kind=type(payload).__name__),
+            producer_node_run_id=producer_node_run_id,
+            output_slot=output_slot,
+        )
+
+    def _publish_bytes(
+        self,
+        content: bytes,
+        *,
+        kind: ArtifactKind,
+        session_id: str | None = None,
+        task_run_id: str | None = None,
+        sensitivity: ArtifactSensitivity = ArtifactSensitivity.REDACTED,
+        retention: ArtifactRetention = ArtifactRetention.STANDARD,
+        provenance_refs: tuple[ArtifactProvenanceRef, ...] = (),
+        excerpt: str | None = None,
+        artifact_id: str | None = None,
+        already_redacted: bool = False,
+        text_safety_profile: TextSafetyProfile = TextSafetyProfile.LEGACY_STRICT,
+        contract: ContractRef | None = None,
+        producer_node_run_id: str | None = None,
+        output_slot: str | None = None,
+    ) -> ArtifactMetadata:
         if not isinstance(content, bytes):
             raise ArtifactError(ArtifactErrorCode.INVALID, "artifact content must be bytes")
         if len(content) > ARTIFACT_MAX_BYTES:
@@ -104,7 +209,9 @@ class ArtifactService:
         if len(selected_excerpt.encode("utf-8")) > ARTIFACT_EXCERPT_MAX_BYTES:
             raise ArtifactBudgetError("artifact excerpt budget exceeded")
         try:
-            if already_redacted:
+            if text_safety_profile == TextSafetyProfile.WORKFLOW_VALUE_SENSITIVE:
+                refuse_secret_material(content, label="Artifact", profile=text_safety_profile)
+            elif already_redacted:
                 self._refuse_unredacted_secrets(content)
             else:
                 self._refuse_secrets(content)
@@ -115,6 +222,10 @@ class ArtifactService:
         try:
             metadata = ArtifactMetadata(
                 artifact_id=artifact_id or self.id_source.new_id(ARTIFACT_ID_PREFIX),
+                text_safety_profile=text_safety_profile,
+                contract=contract,
+                producer_node_run_id=producer_node_run_id,
+                output_slot=output_slot,
                 workspace_id=self.workspace_id,
                 session_id=session_id,
                 task_run_id=task_run_id,

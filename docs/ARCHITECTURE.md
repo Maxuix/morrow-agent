@@ -1,7 +1,8 @@
 # Morrow 架构基线
 
 > 状态：阶段 2–6 已完成；S7P-10 已把 Stage 7 准入升级为 **GO**。Stage 7 静态 Workflow
-> Runtime 的 Subplan 1 已完成并集成；Workflow 编译/执行尚未开始（macOS；Linux 原生运行仍 unsupported）。
+> Runtime 的 Subplan 1 已完成并集成；Subplan 2 的 Workflow 领域/持久化契约已实现，正在验收。
+> Workflow 编译/执行尚未开始（macOS；Linux 原生运行仍 unsupported）。
 
 本文锁定当前依赖方向、数据所有权和安全边界。阶段 3 的能力策略、配置工具、工作空间读搜、冲突安全文件变更、直接 Host 命令、只读 Git 和当前 macOS 原生沙箱
 已经交付；Linux 原生运行尚未声明支持。Stage 4 已落地数据根 SQLite Operational Store 的
@@ -28,6 +29,18 @@ Stage 7 Subplan 1 的实际结构：`core/agent_definitions.py` 持有最小 Sou
 `application/agent_definitions/publication.py` 是唯一发布/enable/revoke 应用入口；validate 只做静态检查。
 Built-in Direct/Explorer 是只读源 fixture，必须显式 publish，启动和 validate 都不发布。
 
+Stage 7 Subplan 2 增加 `core/workflows/` 的 source、compiled Revision、NodeRun/WorkflowRun 与
+TaskContract/TextResult 契约；`workflow_journal.py` 在共享事务 backend 上持有 v24 immutable
+Revision/Head/source-hash、单向撤销、根任务非终态唯一性、queued leaf ownership 和 Artifact binding。
+Repository 只接受已编译的不可变对象，不生成 Revision/hash，也没有 Workflow 应用发布入口；Compiler
+与 Scheduler 留在后续子计划。workspace `workflow-definitions.yaml` 复用 definition YAML/OCC owner。
+TaskRun 的 `user|workflow_node` purpose 把内部叶子排除在普通 Task/Turn mutation 与 LearningReview 之外；
+`application/workflows/tasks.py` 是明确的内部生命周期边界。Artifact bytes 仍归同一 ArtifactService/store，
+TaskContract/TextResult 只新增 typed contract、确定性 NodeRun/slot 产物身份与引用，不复制聊天历史。
+Artifact/TaskOutcome 保存内部 TextSafetyProfile；Workflow typed projection 复用现有 refusal/redaction owner，
+普通 API 保持 legacy-strict。Backup/doctor 复用现有 bundle/integrity seams，保留 malformed desired source
+原始字节；published reference/hash 损坏是 error，未发布源问题是局部 warning。
+
 `AgentFactory` 绑定调用者提供的独立空 Session/current TaskRun 对，限制既有 preparation 的工具集合并选择精确模型。
 role prompt 经原 PromptAssembler 注入，精确 Skill 版本仍经过 enabled binding、pin 和依赖检查；Preference、Memory、
 Permission 与 Context 仍归原 owner。AgentRun 只新增 Definition ID/version/hash、conversation_session_id 和单一
@@ -39,8 +52,8 @@ primary-generation-request cap；计入每次 `purpose=agent` 的调用（含工
 普通 disable 只阻止新 admission，Factory recovery 只检查不可变版本及其撤销记录，不再检查 enabled head。
 普通 Direct 不使用 AgentFactory，默认路径、公开事件和 bundled runtime-policy 未改变。
 
-当前没有 Workflow 类型、Compiler、Scheduler、root/internal-leaf Task purpose 或 Agent/Workflow 管理 CLI。
-Workflow 将继续在 `AgentLoop` 之外组合叶子，typed TaskContract/Artifact binding 属于后续子计划；当前隔离叶子仍从
+当前没有 Workflow Compiler、Scheduler 或 Agent/Workflow 管理 CLI；只有领域、持久化与内部生命周期契约。
+Workflow 将继续在 `AgentLoop` 之外组合叶子，typed TaskContract/Artifact binding 已有表示但尚未接入执行；当前独立隔离叶子仍从
 普通 `run_task` 输入与既有 Artifact reader 接收显式上下文。只读 ceiling 要求可证明的静态只读工具契约，未知副作用
 工具仍可用于 write ceiling 的串行 Agent，不能因角色提示变成只读。
 

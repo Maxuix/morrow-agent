@@ -32,9 +32,9 @@ class OperationalBackupService:
         name = bundle_name or f"operational-{int(self.store.clock.now().timestamp())}"
         try:
             bundle, manifest, manifest_digest = self.backend.create(name)
-        except DefinitionSourceBackupError:
+        except DefinitionSourceBackupError as exc:
             raise BackupBundleError(
-                "agent-definitions.yaml contains detected secret material; remove the value before backup"
+                f"{exc.filename} contains detected secret material; remove the value before backup"
             ) from None
         except BackupError as exc:
             raise BackupBundleError("backup bundle could not be completed") from exc

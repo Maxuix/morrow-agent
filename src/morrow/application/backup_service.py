@@ -32,6 +32,7 @@ from morrow.application.skills.backup import (
     referenced_version_ids,
     verify_skill_capture,
 )
+from morrow.application.workflows.integrity import verify_workflow_rows
 from morrow.core.artifacts import ArtifactIntegrityError, ArtifactState
 from morrow.core.backup import (
     BackupArtifactEntry,
@@ -66,6 +67,14 @@ class BackupError(RuntimeError):
 
 class DefinitionSourceBackupError(BackupError):
     """A raw desired-source draft needs local secret removal before copying."""
+
+    def __init__(self, filename):
+        self.filename = (
+            filename
+            if filename in {"agent-definitions.yaml", "workflow-definitions.yaml"}
+            else "definition source"
+        )
+        super().__init__("Definition source cannot be copied safely")
 
 
 class BackupService:
@@ -419,8 +428,12 @@ class BackupService:
     def _capture_definition_sources(self, staging):
         captured = []
         root = self.store.layout.data_root
-        for workspace_id in self._workspace_ids_from_paths():
-            relative = f"workspaces/{workspace_id}/agent-definitions.yaml"
+        for workspace_id, filename in (
+            (ws, filename)
+            for ws in self._workspace_ids_from_paths()
+            for filename in ("agent-definitions.yaml", "workflow-definitions.yaml")
+        ):
+            relative = f"workspaces/{workspace_id}/{filename}"
             source = root / relative
             if not os.path.lexists(source):
                 continue
@@ -429,9 +442,7 @@ class BackupService:
             try:
                 _reject_secret_text(raw)
             except ValueError:
-                raise DefinitionSourceBackupError(
-                    "Agent definition source cannot be copied safely"
-                ) from None
+                raise DefinitionSourceBackupError(filename) from None
             entry = BackupFileEntry(
                 path=relative,
                 kind=BackupFileKind.DEFINITION_SOURCE,
@@ -727,10 +738,13 @@ class BackupService:
                 issues.extend(mcp_issues)
                 definitions_ok, definition_issues = verify_definition_rows(connection)
                 issues.extend(definition_issues)
+                workflows_ok, workflow_issues = verify_workflow_rows(connection)
+                issues.extend(workflow_issues)
                 references = all(
                     (
                         memory_ok,
                         definitions_ok,
+                        workflows_ok,
                         learning_ok,
                         preference_ok,
                         mcp_ok,

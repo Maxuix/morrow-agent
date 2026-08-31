@@ -23,14 +23,14 @@ from morrow.core.domain import (
     DIGEST_PATTERN,
     ERROR_DETAIL_MAX_BYTES,
     PERMISSION_SNAPSHOT_ID_PREFIX,
-    SECRET_TOKEN_PATTERN,
     SESSION_ID_PREFIX,
     TASK_RUN_ID_PREFIX,
     TURN_ID_PREFIX,
-    VALUE_SENSITIVE_SECRET_PATTERN,
     WORKSPACE_ID_PREFIX,
     ArtifactReference,
+    TextSafetyProfile,
     canonical_json_bytes,
+    refuse_preview_secret_material,
     refuse_secret_material,
     require_payload_budget,
     sha256_digest,
@@ -236,10 +236,10 @@ def _budget_and_redact(payload: dict[str, Any] | object, maximum: int, *, label:
     secret_scan = dumped
     if isinstance(dumped, dict) and isinstance(dumped.get("preview"), list):
         preview_text = "\n".join(str(line) for line in dumped["preview"])
-        if SECRET_TOKEN_PATTERN.search(preview_text) or VALUE_SENSITIVE_SECRET_PATTERN.search(
-            preview_text
-        ):
-            raise ValueError(f"{label} cannot contain secret material")
+        if getattr(payload, "text_safety_profile", "legacy_strict") == "workflow_value_sensitive":
+            refuse_secret_material(preview_text, label=label, profile="workflow_value_sensitive")
+        else:
+            refuse_preview_secret_material(preview_text, label=label)
         # This fixed safety warning intentionally mentions credentials.  It is
         # policy metadata, not user-supplied secret material. Preview text is
         # checked for value-shaped secrets above so code identifiers such as
@@ -248,7 +248,11 @@ def _budget_and_redact(payload: dict[str, Any] | object, maximum: int, *, label:
             **dumped,
             "preview": [],
         }
-    refuse_secret_material(canonical_json_bytes(secret_scan), label=label)
+    refuse_secret_material(
+        canonical_json_bytes(secret_scan),
+        label=label,
+        profile=getattr(payload, "text_safety_profile", "legacy_strict"),
+    )
 
 
 def intent_hash(intent: PreparedIntent) -> str:
@@ -465,6 +469,7 @@ class ValidationDiagnostic(ProtocolModel):
 
 
 class HandlerResultEnvelope(ProtocolModel):
+    text_safety_profile: TextSafetyProfile = TextSafetyProfile.LEGACY_STRICT
     ok: bool
     truncated: bool = False
     summary: dict[str, Any] = Field(default_factory=dict)
@@ -474,11 +479,15 @@ class HandlerResultEnvelope(ProtocolModel):
 
     @field_validator("error_message")
     @classmethod
-    def valid_error_message(cls, value: str | None) -> str | None:
+    def valid_error_message(cls, value: str | None, info) -> str | None:
         if value is None:
             return None
         require_payload_budget(value.encode("utf-8"), ERROR_DETAIL_MAX_BYTES, label="error detail")
-        refuse_secret_material(value, label="error detail")
+        refuse_secret_material(
+            value,
+            label="error detail",
+            profile=info.data.get("text_safety_profile", "legacy_strict"),
+        )
         return value
 
     @model_validator(mode="after")
@@ -490,6 +499,7 @@ class HandlerResultEnvelope(ProtocolModel):
 
 
 class DurableToolExecution(ProtocolModel):
+    text_safety_profile: TextSafetyProfile = TextSafetyProfile.LEGACY_STRICT
     tool_execution_id: str
     workspace_id: str
     session_id: str
@@ -598,22 +608,30 @@ class DurableToolExecution(ProtocolModel):
 
     @field_validator("error_detail")
     @classmethod
-    def valid_error_detail(cls, value: str | None) -> str | None:
+    def valid_error_detail(cls, value: str | None, info) -> str | None:
         if value is None:
             return None
         require_payload_budget(value.encode("utf-8"), ERROR_DETAIL_MAX_BYTES, label="error detail")
-        refuse_secret_material(value, label="error detail")
+        refuse_secret_material(
+            value,
+            label="error detail",
+            profile=info.data.get("text_safety_profile", "legacy_strict"),
+        )
         return value
 
     @field_validator("cancel_request_reason")
     @classmethod
-    def valid_cancel_request_reason(cls, value: str | None) -> str | None:
+    def valid_cancel_request_reason(cls, value: str | None, info) -> str | None:
         if value is None:
             return None
         require_payload_budget(
             value.encode("utf-8"), ERROR_DETAIL_MAX_BYTES, label="cancellation reason"
         )
-        refuse_secret_material(value, label="cancellation reason")
+        refuse_secret_material(
+            value,
+            label="cancellation reason",
+            profile=info.data.get("text_safety_profile", "legacy_strict"),
+        )
         return " ".join(value.split()) or None
 
     @field_validator("artifact_refs")
@@ -656,6 +674,7 @@ class DurableToolExecution(ProtocolModel):
 
 
 class DurableApproval(ProtocolModel):
+    text_safety_profile: TextSafetyProfile = TextSafetyProfile.LEGACY_STRICT
     approval_id: str
     tool_execution_id: str
     intent_hash: str
@@ -726,13 +745,17 @@ class DurableApproval(ProtocolModel):
 
     @field_validator("revocation_reason")
     @classmethod
-    def valid_revocation_reason(cls, value: str | None) -> str | None:
+    def valid_revocation_reason(cls, value: str | None, info) -> str | None:
         if value is None:
             return None
         require_payload_budget(
             value.encode("utf-8"), ERROR_DETAIL_MAX_BYTES, label="approval revocation reason"
         )
-        refuse_secret_material(value, label="approval revocation reason")
+        refuse_secret_material(
+            value,
+            label="approval revocation reason",
+            profile=info.data.get("text_safety_profile", "legacy_strict"),
+        )
         return " ".join(value.split()) or None
 
     @model_validator(mode="after")
@@ -1016,7 +1039,9 @@ def revoke_approval(
             "resolved_at": now,
             "row_version": approval.row_version + 1,
             "revoked_at": now,
-            "revocation_reason": _clean_transition_reason(reason, label="approval revocation"),
+            "revocation_reason": _clean_transition_reason(
+                reason, label="approval revocation", profile=approval.text_safety_profile
+            ),
         }
     )
     return DurableApproval.model_validate(updated.model_dump(), strict=True)
@@ -1038,18 +1063,22 @@ def request_execution_cancellation(
         update={
             "row_version": execution.row_version + 1,
             "cancel_requested_at": now,
-            "cancel_request_reason": _clean_transition_reason(reason, label="cancellation"),
+            "cancel_request_reason": _clean_transition_reason(
+                reason, label="cancellation", profile=execution.text_safety_profile
+            ),
         }
     )
     return DurableToolExecution.model_validate(updated.model_dump(), strict=True)
 
 
-def _clean_transition_reason(value: str, *, label: str) -> str:
+def _clean_transition_reason(
+    value: str, *, label: str, profile: TextSafetyProfile = TextSafetyProfile.LEGACY_STRICT
+) -> str:
     cleaned = " ".join(value.split())
     if not cleaned:
         raise ApprovalDecisionError(f"{label} reason is empty")
     require_payload_budget(cleaned.encode("utf-8"), ERROR_DETAIL_MAX_BYTES, label=f"{label} reason")
-    refuse_secret_material(cleaned, label=f"{label} reason")
+    refuse_secret_material(cleaned, label=f"{label} reason", profile=profile)
     return cleaned
 
 

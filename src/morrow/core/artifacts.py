@@ -23,12 +23,14 @@ from morrow.core.domain import (
     TASK_RUN_ID_PREFIX,
     TURN_ID_PREFIX,
     WORKSPACE_ID_PREFIX,
+    TextSafetyProfile,
     canonical_json_bytes,
     refuse_secret_material,
     require_payload_budget,
     validate_prefixed_id,
 )
 from morrow.core.models import ProtocolModel, utc_now
+from morrow.core.workflows.contracts import ContractRef, SlotName
 
 ARTIFACT_METADATA_MAX_BYTES = 32 * 1024
 ARTIFACT_EXCERPT_MAX_BYTES = 8 * 1024
@@ -164,6 +166,10 @@ class ArtifactMetadata(ProtocolModel):
     """SQLite authority for one immutable, ID-addressed Artifact payload."""
 
     artifact_id: str
+    text_safety_profile: TextSafetyProfile = TextSafetyProfile.LEGACY_STRICT
+    contract: ContractRef | None = None
+    producer_node_run_id: str | None = None
+    output_slot: SlotName | None = None
     workspace_id: str
     session_id: str | None = None
     task_run_id: str | None = None
@@ -216,7 +222,6 @@ class ArtifactMetadata(ProtocolModel):
         require_payload_budget(
             value.encode("utf-8"), ARTIFACT_EXCERPT_MAX_BYTES, label="artifact excerpt"
         )
-        refuse_secret_material(value, label="artifact excerpt")
         return value
 
     @field_validator("provenance_refs")
@@ -232,11 +237,23 @@ class ArtifactMetadata(ProtocolModel):
 
     @model_validator(mode="after")
     def validate_scope_and_budget(self) -> ArtifactMetadata:
+        if (self.producer_node_run_id is None) != (self.output_slot is None):
+            raise ValueError("Artifact producer and output slot must be supplied together")
+        if self.producer_node_run_id is not None:
+            validate_prefixed_id(self.producer_node_run_id, "nrun")
+        if (
+            self.text_safety_profile == TextSafetyProfile.WORKFLOW_VALUE_SENSITIVE
+            and self.contract is None
+        ):
+            raise ValueError("Workflow Artifact profile requires a typed contract")
+        refuse_secret_material(
+            self.excerpt, label="artifact excerpt", profile=self.text_safety_profile
+        )
         if self.task_run_id is not None and self.session_id is None:
             raise ValueError("task-scoped artifact requires a session")
         payload = canonical_json_bytes(self.model_dump(mode="json"))
         require_payload_budget(payload, ARTIFACT_METADATA_MAX_BYTES, label="artifact metadata")
-        refuse_secret_material(payload, label="artifact metadata")
+        refuse_secret_material(payload, label="artifact metadata", profile=self.text_safety_profile)
         return self
 
     @property

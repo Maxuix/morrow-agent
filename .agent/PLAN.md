@@ -1,8 +1,8 @@
 # Stage 7 Static Workflow Runtime Implementation Plan
 
-> Status: Subplan 1 completed and integrated; Stage 7 remains in progress
-> Active subplan: none
-> Next subplan: 2 — Workflow Revision and Artifact Contracts (ready; not active)
+> Status: Subplan 2 active; Stage 7 remains in progress
+> Active subplan: 2 — Workflow Revision and Artifact Contracts
+> Next subplan: 3 — Workflow Compiler (pending Subplan 2)
 > Planning base: local `main@4d8b408` (tree clean, full offline gate green; later `.agent`-only
 > commits such as the plan-repair commit do not invalidate this verified code base)
 > Roadmap authority: `docs/roadmap/stage-7-workflow-runtime.md`

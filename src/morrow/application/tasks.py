@@ -29,6 +29,7 @@ from morrow.core.domain import (
     TaskOutcomeEvidenceKind,
     TaskOutcomeEvidenceRef,
     TaskOutcomeTrigger,
+    TaskRunPurpose,
     TaskRunStatus,
     canonical_json_bytes,
     session_can_start_work,
@@ -248,7 +249,11 @@ class TaskService:
         return self.journal.get_task_run(self.workspace_id, task_run_id)
 
     def list(self, session_id: str) -> tuple[DurableTaskRun, ...]:
-        return self.journal.list_task_runs(self.workspace_id, session_id)
+        return tuple(
+            t
+            for t in self.journal.list_task_runs(self.workspace_id, session_id)
+            if t.purpose == TaskRunPurpose.USER
+        )
 
     @staticmethod
     def _require_session_can_start_work(session, *, action: str) -> None:
@@ -273,6 +278,7 @@ class TaskService:
         turn_id: str | None = None,
         reason: str = "ordinary_follow_up",
     ) -> DurableTaskRun:
+        self.journal.require_user_task(self.workspace_id, task.task_run_id)
         if task.status is not TaskRunStatus.READY_FOR_ACCEPTANCE:
             if task.status is TaskRunStatus.OPEN:
                 return task
@@ -317,6 +323,8 @@ class TaskService:
                 else None
             )
             old_outcome = None
+            if old_task is not None:
+                txn.require_user_task(self.workspace_id, old_task.task_run_id)
             if (
                 old_task is not None
                 and expected_row_version is not None
@@ -683,6 +691,7 @@ class TaskService:
         task = txn.get_task_run(self.workspace_id, task_run_id)
         if task is None:
             raise TaskCommandError("TaskRun is missing")
+        txn.require_user_task(self.workspace_id, task_run_id)
         return task
 
     @staticmethod

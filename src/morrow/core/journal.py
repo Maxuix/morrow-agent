@@ -54,6 +54,8 @@ class TransactionalJournalPort(Protocol):
 
 
 class SessionLifecyclePort(Protocol):
+    def require_user_task(self, workspace_id: str, task_run_id: str) -> None: ...
+
     def create_session(
         self, session: DurableSession, *, task: DurableTaskRun | None = None
     ) -> DurableSession: ...

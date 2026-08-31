@@ -303,6 +303,7 @@ def test_v3_store_migrates_to_v4_recovery(tmp_path):
         "agent_run_retry_progress",
         "durable_runtime_control_queue",
         "agent_definition_foundation",
+        "workflow_revision_artifact_contracts",
     )
 
 
@@ -357,6 +358,7 @@ def test_v4_task_children_survive_task_run_rebuild_to_v5(tmp_path):
         "agent_run_retry_progress",
         "durable_runtime_control_queue",
         "agent_definition_foundation",
+        "workflow_revision_artifact_contracts",
     )
     with upgraded.open(StoreOpenMode.READ_WRITE) as opened:
         journal = SqliteOperationalJournal(opened)

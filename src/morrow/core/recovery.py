@@ -25,6 +25,7 @@ from morrow.core.domain import (
     SESSION_ID_PREFIX,
     TURN_ID_PREFIX,
     WORKSPACE_ID_PREFIX,
+    TextSafetyProfile,
     canonical_json_bytes,
     refuse_secret_material,
     require_payload_budget,
@@ -135,6 +136,7 @@ class RecoveryItem(ProtocolModel):
 
 
 class RecoveryReport(ProtocolModel):
+    text_safety_profile: TextSafetyProfile = TextSafetyProfile.LEGACY_STRICT
     report_id: str
     workspace_id: str
     session_id: str
@@ -178,7 +180,7 @@ class RecoveryReport(ProtocolModel):
     def enforce_budget(self) -> RecoveryReport:
         payload = canonical_json_bytes(self.model_dump(mode="json"))
         require_payload_budget(payload, RECOVERY_REPORT_MAX_BYTES, label="RecoveryReport")
-        refuse_secret_material(payload, label="RecoveryReport")
+        refuse_secret_material(payload, label="RecoveryReport", profile=self.text_safety_profile)
         return self
 
     @property

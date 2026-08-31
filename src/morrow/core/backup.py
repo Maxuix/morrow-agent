@@ -115,7 +115,11 @@ class BackupFileEntry(ProtocolModel):
     def definition_source_path(self):
         if self.kind is BackupFileKind.DEFINITION_SOURCE:
             parts = self.path.split("/")
-            if len(parts) != 3 or parts[0] != "workspaces" or parts[2] != "agent-definitions.yaml":
+            if (
+                len(parts) != 3
+                or parts[0] != "workspaces"
+                or parts[2] not in {"agent-definitions.yaml", "workflow-definitions.yaml"}
+            ):
                 raise ValueError("definition source path is not whitelisted")
             validate_prefixed_id(parts[1], WORKSPACE_ID_PREFIX)
             if self.byte_size > 2 * 1024 * 1024:

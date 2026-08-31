@@ -7,6 +7,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 
 from morrow.adapters.state.transaction import SqliteJournalBackend
+from morrow.adapters.state.workflow_ownership import require_user_task
 from morrow.core.domain import (
     ArtifactReference,
     DurableSession,
@@ -15,6 +16,8 @@ from morrow.core.domain import (
     TaskCommandDisposition,
     TaskCommandReceipt,
     TaskOutcome,
+    TaskOutcomeEvidenceKind,
+    TaskRunPurpose,
     TaskRunStatus,
     canonical_json_bytes,
     session_can_start_work,
@@ -24,11 +27,11 @@ from morrow.core.store import StorageError, StorageErrorCode
 
 _TASK_INSERT_COLUMNS = (
     "task_run_id, session_id, workspace_id, status, row_version, attempt, "
-    "created_at_unix, updated_at_unix, accepted_at_unix, closed_at_unix"
+    "created_at_unix, updated_at_unix, accepted_at_unix, closed_at_unix, purpose"
 )
 _TASK_SELECT = (
     "t.task_run_id, t.session_id, t.workspace_id, t.status, t.row_version, t.attempt, "
-    "t.created_at_unix, t.updated_at_unix, t.accepted_at_unix, t.closed_at_unix"
+    "t.created_at_unix, t.updated_at_unix, t.accepted_at_unix, t.closed_at_unix, t.purpose"
 )
 _TRANSITION_COLUMNS = (
     "transition_id, workspace_id, session_id, task_run_id, from_status, to_status, "
@@ -94,6 +97,15 @@ class SqliteTaskJournal:
     def create(
         self, workspace_id: str, task: DurableTaskRun, *, make_current: bool = False
     ) -> DurableTaskRun:
+        def work():
+            require_user_task(self.backend, task)
+            return self._create(workspace_id, task, make_current=make_current)
+
+        return self.backend.transact(work)
+
+    def _create(
+        self, workspace_id: str, task: DurableTaskRun, *, make_current: bool = False
+    ) -> DurableTaskRun:
         if task.workspace_id != workspace_id:
             raise StorageError(
                 StorageErrorCode.UNAVAILABLE, "operational task is outside the workspace"
@@ -110,8 +122,14 @@ class SqliteTaskJournal:
                     StorageErrorCode.UNAVAILABLE,
                     "only an active healthy session can start a task",
                 )
+            if session.current_task_run_id is not None:
+                current = self.get(workspace_id, session.current_task_run_id)
+                if current is not None:
+                    require_user_task(self.backend, current)
             if make_current and session.current_task_run_id not in {None, task.task_run_id}:
                 current = self.get(workspace_id, session.current_task_run_id)
+                if current is not None:
+                    require_user_task(self.backend, current)
                 if current is not None and current.status in {
                     TaskRunStatus.OPEN,
                     TaskRunStatus.READY_FOR_ACCEPTANCE,
@@ -157,6 +175,23 @@ class SqliteTaskJournal:
         target: TaskRunStatus,
         transition: DurableTaskRunTransition,
         expected_row_version: int,
+    ) -> DurableTaskRun:
+        def work():
+            task = self.get(workspace_id, task_run_id)
+            if task is not None:
+                require_user_task(self.backend, task)
+            return self._transition(
+                workspace_id,
+                task_run_id,
+                target=target,
+                transition=transition,
+                expected_row_version=expected_row_version,
+            )
+
+        return self.backend.transact(work)
+
+    def _transition(
+        self, workspace_id, task_run_id, *, target, transition, expected_row_version
     ) -> DurableTaskRun:
         if transition.workspace_id != workspace_id or transition.task_run_id != task_run_id:
             raise StorageError(
@@ -315,6 +350,10 @@ class SqliteTaskJournal:
             task = self.get(workspace_id, outcome.task_run_id)
             if task is None or task.session_id != outcome.session_id:
                 raise StorageError(StorageErrorCode.NOT_FOUND, "operational task is missing")
+            if task.purpose == TaskRunPurpose.WORKFLOW_NODE:
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE, "Workflow leaf cannot own TaskOutcome"
+                )
             if task.status is not outcome.task_status:
                 raise StorageError(
                     StorageErrorCode.UNAVAILABLE, "operational outcome status is stale"
@@ -328,9 +367,14 @@ class SqliteTaskJournal:
                 raise StorageError(
                     StorageErrorCode.UNAVAILABLE, "operational outcome version is stale"
                 )
+            workflow_artifacts = self._validate_workflow_evidence(outcome)
             self.validate_artifact_refs(
                 workspace_id,
-                outcome.artifact_refs,
+                tuple(
+                    ref
+                    for ref in outcome.artifact_refs
+                    if ref.artifact_id not in workflow_artifacts
+                ),
                 session_id=outcome.session_id,
                 task_run_id=outcome.task_run_id,
             )
@@ -356,7 +400,21 @@ class SqliteTaskJournal:
                 workspace_id,
                 owner_kind="task_outcome",
                 owner_id=outcome.outcome_id,
-                references=outcome.artifact_refs,
+                references=(
+                    *outcome.artifact_refs,
+                    *(
+                        (
+                            ArtifactReference(
+                                artifact_id=outcome.goal_reference.reference_id,
+                                role="workflow_goal",
+                            ),
+                        )
+                        if workflow_artifacts
+                        and outcome.goal_reference is not None
+                        and outcome.goal_reference.kind == TaskOutcomeEvidenceKind.ARTIFACT
+                        else ()
+                    ),
+                ),
                 created_at=outcome.created_at,
             )
             loaded = self.get_outcome(workspace_id, outcome.outcome_id)
@@ -367,6 +425,64 @@ class SqliteTaskJournal:
             return loaded
 
         return self.backend.transact(work)
+
+    def _validate_workflow_evidence(self, outcome):
+        workflow_refs = [
+            ref for ref in outcome.evidence_refs if ref.kind == TaskOutcomeEvidenceKind.WORKFLOW_RUN
+        ]
+        artifact_ids = set()
+        for ref in workflow_refs:
+            row = self.backend.read_one(
+                "SELECT workspace_id, root_task_run_id FROM workflow_runs WHERE workflow_run_id=?",
+                (ref.reference_id,),
+            )
+            if row != (outcome.workspace_id, outcome.task_run_id):
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE, "Outcome Workflow reference scope mismatch"
+                )
+            artifact_ids.update(
+                row[0]
+                for row in self.backend.read_all(
+                    "SELECT artifact_id FROM workflow_artifact_bindings WHERE workflow_run_id=?",
+                    (ref.reference_id,),
+                )
+            )
+        markers = [ref for ref in workflow_refs if ref.role == "workflow_result_snapshot"]
+        ready = [ref for ref in outcome.evidence_refs if ref.role == "workflow_ready_transition"]
+        if markers or ready:
+            if len(markers) != 1 or len(ready) != 1:
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE,
+                    "Workflow snapshot requires its exact ready transition",
+                )
+            transition = self.backend.read_one(
+                "SELECT workspace_id, task_run_id, to_status FROM task_run_transitions WHERE transition_id=?",
+                (ready[0].reference_id,),
+            )
+            if transition != (outcome.workspace_id, outcome.task_run_id, "ready_for_acceptance"):
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE, "Workflow ready transition mismatch"
+                )
+        if (
+            outcome.goal_reference is not None
+            and outcome.goal_reference.kind == TaskOutcomeEvidenceKind.ARTIFACT
+            and workflow_refs
+        ):
+            if outcome.goal_reference.reference_id not in artifact_ids:
+                raise StorageError(
+                    StorageErrorCode.UNAVAILABLE, "Workflow input goal reference mismatch"
+                )
+        for reference in outcome.artifact_refs:
+            if reference.artifact_id in artifact_ids:
+                row = self.backend.read_one(
+                    "SELECT workspace_id, state FROM artifacts WHERE artifact_id=?",
+                    (reference.artifact_id,),
+                )
+                if row != (outcome.workspace_id, "available"):
+                    raise StorageError(
+                        StorageErrorCode.UNAVAILABLE, "Workflow Outcome Artifact is unavailable"
+                    )
+        return artifact_ids
 
     def get_outcome(self, workspace_id: str, outcome_id: str) -> TaskOutcome | None:
         row = self.backend.read_one(
@@ -467,7 +583,7 @@ class SqliteTaskJournal:
 
     def insert(self, task: DurableTaskRun) -> None:
         self.backend.executor().execute(
-            f"INSERT INTO task_runs({_TASK_INSERT_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            f"INSERT INTO task_runs({_TASK_INSERT_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 task.task_run_id,
                 task.session_id,
@@ -479,6 +595,7 @@ class SqliteTaskJournal:
                 _unix(task.updated_at),
                 _optional_unix(task.accepted_at),
                 _optional_unix(task.closed_at),
+                task.purpose.value,
             ),
         )
 
@@ -518,6 +635,7 @@ def _task_from_row(row: tuple[object, ...]) -> DurableTaskRun:
         updated_at=_from_unix(row[7]),
         accepted_at=_from_unix(row[8]) if row[8] is not None else None,
         closed_at=_from_unix(row[9]) if row[9] is not None else None,
+        purpose=str(row[10]),
     )
 
 

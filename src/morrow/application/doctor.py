@@ -8,7 +8,10 @@ from collections import Counter
 from pathlib import Path
 
 from morrow.adapters.state.artifacts import FilesystemArtifactStore
-from morrow.adapters.state.definition_yaml import AgentDefinitionYamlStore
+from morrow.adapters.state.definition_yaml import (
+    AgentDefinitionYamlStore,
+    WorkflowDefinitionYamlStore,
+)
 from morrow.adapters.state.extension_yaml import ExtensionYamlError
 from morrow.adapters.state.journal import SqliteOperationalJournal
 from morrow.adapters.state.operational import OperationalStore
@@ -21,6 +24,7 @@ from morrow.application.preferences.backup import verify_preference_references
 from morrow.application.preferences.run_projection import render_frozen_run_preferences
 from morrow.application.preferences.writer import PreferenceWriter
 from morrow.application.skills.doctor import inspect_skills
+from morrow.application.workflows.integrity import verify_workflow_rows
 from morrow.core.artifacts import (
     ARTIFACT_FILE_SUFFIX,
     ARTIFACT_TEMP_SUFFIX,
@@ -199,6 +203,36 @@ class OperationalDoctor:
                             "agent_definition_source_invalid",
                             DoctorSeverity.WARNING,
                             "Desired Agent source is invalid; published versions remain usable",
+                        )
+                    )
+            if (classification.schema_version or 0) >= 24:
+                checks.append("workflow_contracts")
+                workflow_ok, codes = handle.run_read(verify_workflow_rows)
+                if not workflow_ok:
+                    issues.extend(
+                        self._issue(code, DoctorSeverity.ERROR, "Workflow integrity failed")
+                        for code in codes
+                    )
+                try:
+                    desired = WorkflowDefinitionYamlStore(self.data_root).load(workspace_id)
+                    for source in desired.definitions:
+                        head = journal.workflows.get_head(
+                            workspace_id, source.workflow_definition_id
+                        )
+                        if head is not None and head.source_hash != source.content_hash:
+                            issues.append(
+                                self._issue(
+                                    "workflow_desired_ahead",
+                                    DoctorSeverity.WARNING,
+                                    "Desired Workflow source differs from its published revision",
+                                )
+                            )
+                except (ValueError, OSError, ExtensionYamlError):
+                    issues.append(
+                        self._issue(
+                            "workflow_definition_source_invalid",
+                            DoctorSeverity.WARNING,
+                            "Desired Workflow source is invalid; published revisions remain usable",
                         )
                     )
             checks.extend(("learning_reviews_and_candidates", "learning_promotions"))
