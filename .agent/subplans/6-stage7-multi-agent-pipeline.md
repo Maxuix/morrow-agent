@@ -86,6 +86,11 @@ shared conversation or an automatic review loop.
    create a hidden Reviewer -> Coder loop or mutate the graph. A user correction is a new full
    WorkflowRun in Stage 7. If multiple required ReviewReport refs exist, any blocking verdict drives
    `needs_revision`; a ReviewReport not in required outputs is evidence only. Do not choose “latest”.
+   Record the state-semantics distinction explicitly: `needs_revision` is a successful graph
+   execution whose root TaskRun shares the `FAILED` state with ordinary node failure — the two are
+   distinguished only by the root TaskOutcome's ReviewReport reference and the WorkflowRun
+   `result_status`, and no downstream consumer (learning, statistics, doctor) may treat them as the
+   same event.
    Now that the real contract exists, extend Compiler to reject an `invoking_session` graph that
    lists a ReviewReport slot in Workflow `required_outputs`: Direct TurnLifecycle owns STOP→READY and
    cannot reinterpret it as needs-revision→FAILED. Keep non-result-driving ReviewReport evidence

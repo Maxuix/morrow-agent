@@ -67,7 +67,13 @@ definitions without GUI/server/background behavior or template-specific runtime 
    Explorer -> Planner -> Coder -> Reviewer. Keep one Writer and no automatic repair loop.
 7. Expose and verify the Workflow backup/doctor coverage established in Subplan 2; add only the
    inventory needed for records introduced after Subplan 2 plus human docs for revision/run
-   inspection, current-format restore and common validation/blocking errors.
+   inspection, current-format restore and common validation/blocking errors. The usage docs also
+   carry the operational guidance implied by the fixed semantics: how to estimate the four mandatory
+   budget fields (an under-sized cap/deadline fails the run and a rerun re-executes every node), why
+   a run-level budget override is deliberately deferred, and the cross-platform declaration strategy
+   for built-in templates — a complete ImplementationPatch output contract is declared only where
+   the native sandbox backend is available, otherwise the template declares the truthful structural
+   result instead of failing whole graphs on unsupported platforms.
 8. Add CLI/application parity, OCC conflict, safe projection, old-revision inspection, built-in edit/
    publish refusal with user-source create positive case, bad-definition isolation and template
    compile/run tests, including running/current-process-live-handle abandon rejection and blocked/

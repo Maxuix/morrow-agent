@@ -33,6 +33,10 @@ same durable NodeRun/Artifact model.
    proof/capacity that does not widen the frozen contract.
 3. Keep Writer admission serialized within this WorkflowRun/frontier. Stage 7 does not claim a
    workspace-global lease and does not create worktrees, path predictions or distributed locks.
+   MCP/integration friction stays actionable: when a tool is removed from a read contract (or fails
+   node preparation) for lacking an authoritative read-only effect declaration, the diagnostic names
+   the missing declaration and how the tool/definition can provide it, so a legitimate read-only MCP
+   tool is a metadata fix away rather than an opaque rejection.
 4. Reserve concurrency slots and each concurrently admitted leaf's full finite agent-generation-
    request maximum, persisting that value as its NodeRun
    `effective_node_generation_request_cap`.
@@ -53,6 +57,10 @@ same durable NodeRun/Artifact model.
 7. Add a read-only Synthesizer Agent and SynthesisReport used by the Parallel Research template.
    Compile the real fixed fan-out/fan-in definition now that these refs/contracts exist, then run it;
    do not invent a generic deterministic Merge node/runtime or rely on a Subplan 3 placeholder.
+   Keep the template within the existing TaskOutcome `artifact_refs` capacity by construction:
+   fan-out leaves publish their facts as `required=false` observation outputs (or as inputs consumed
+   by the Synthesizer), and only the single aggregate SynthesisReport is a Workflow required output —
+   a large fan-out must not approach the 64-ref compile bound.
 8. Cancel the frontier deterministically, settle every admitted NodeRun once and recover from
    partial completion without rerunning completed nodes.
 9. Prove concurrency with injected barriers/events and Scripted Providers rather than wall-clock

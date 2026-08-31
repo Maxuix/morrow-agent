@@ -146,6 +146,18 @@ typed contract metadata on the existing Artifact authority. This subplan creates
    learning keeps its own legacy safety classifier and may truthfully skip or redact a candidate,
    but benign Workflow vocabulary must not raise NEEDS_REPAIR, crash review creation or block
    acceptance. Learning gains no Workflow-specific branch.
+   Consolidate rather than multiply detection rules: the current owner already carries the generic
+   needle scan, the reduced-needle provider-runtime variant and the value-shaped preview detection
+   in `core/execution.py`. Implement the Workflow profile by unifying the existing value-shaped
+   detection behind one shared owner entry point dispatched by profile — not by writing a fourth
+   independent rule. Define the profile-aware envelope types here for Workflow-reachable tool error
+   details, cancellation/approval reasons, public diagnostics and RecoveryReport text (a Workflow
+   node's command legitimately returns text such as `401 authorization failed`); the execution-seam
+   wiring that selects the profile on Workflow paths arrives with Subplans 4–5. Audit every
+   remaining `refuse_secret_material` call site reachable from Workflow execution and record each
+   decision in the subplan; boundaries that never carry Workflow-controlled text (learning preview,
+   backup manifest, provider-runtime subtree, Session fork reason) keep legacy behavior and need no
+   wiring.
 7. Add repository/journal operations for immutable WorkflowRevisions, SQLite published heads,
    WorkflowRuns, root nonterminal uniqueness, NodeRun attempts and Artifact bindings with legal
    transitions and idempotent

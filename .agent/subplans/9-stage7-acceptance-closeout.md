@@ -36,7 +36,9 @@ Do not create another broad reliability campaign or turn model-quality variance 
 3. Run a minimal paired Direct versus Explore-Implement-Verify comparison on representative tasks.
    Record task/verifier outcome, user-visible rework, Reviewer findings, primary agent-generation
    request admissions, compaction count/exclusion, usage/cost availability and elapsed facts without
-   inventing missing values.
+   inventing missing values. Also record the observed cost of the fixed whole-graph failure mapping:
+   when a Workflow fails late, a user rerun re-executes every node from attempt 1, and that rerun
+   cost is reported alongside the comparison rather than hidden.
 4. Keep Live/real-Provider evaluation separate. Run it only if the user explicitly authorizes the
    exact campaign and compatible credentials exist. No Live authorization is not an offline
    engineering failure.
@@ -47,7 +49,9 @@ Do not create another broad reliability campaign or turn model-quality variance 
    blocking, raw data leaks, state/recovery gaps and documentation claiming planned behavior as
    implemented. Repair confirmed findings only.
 7. Run the final full offline/static/CLI gate, publish exact evidence and update architecture/
-   roadmap/Stage 8 entry conditions to implemented truth.
+   roadmap/Stage 8 entry conditions to implemented truth. The Stage 8 entry conditions keep
+   child-run continuation (rerun-from-failure without re-executing completed work) as the
+   highest-priority orchestration follow-up, backed by the rerun-cost evidence from task 3.
 8. Commit and fast-forward integrate verified closeout; verify every Stage 7 topic commit is in
    `main`, retire clean branches/worktrees and record any remote-publication blocker.
 

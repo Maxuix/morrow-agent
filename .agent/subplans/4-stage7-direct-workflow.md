@@ -91,6 +91,10 @@ In this plan, Direct means exactly the one-node/no-edge `invoking_session` shape
    secret or otherwise unsafe complete content becomes a bounded redacted manifest/reference with
    `content_complete=false` unless the declared schema genuinely requires exact bytes. Raw secret
    material is never stored, but a conservative word match cannot fail a legal terminal.
+   Wire the Subplan 2 profile dispatch into the Workflow execution path: tool error details,
+   cancellation/approval reasons and public diagnostics produced for a Workflow leaf select the
+   value-shaped detection, so a command returning text such as `401 authorization failed` cannot
+   corrupt Workflow error persistence, while ordinary Direct envelopes remain legacy-strict.
    Required-output work runs only for proposed STOP. Error/cancel terminals bypass it; known parse/
    Artifact failure is translated to one bounded application error so the existing AgentLoop error
    path can close the Turn/root as failed rather than recursively invoking the output committer.
@@ -167,7 +171,10 @@ recovery. This subplan must not add:
 
 A Workflow-specific failure affects only the opt-in run. If the wrapper prevents a legal task that
 ordinary Direct can complete with identical inputs/evidence, parity has failed and the wrapper must
-be repaired rather than defended as safer.
+be repaired rather than defended as safer. One deliberate, documented exception: a task whose text
+legitimately contains secret-shaped material (for example, verifying that an API rejects a token)
+is rejected at Start because the TaskContract Artifact is durable; the actionable error directs the
+user to ordinary Direct for that case, and this input-side divergence is not a parity failure.
 
 ## Validation
 

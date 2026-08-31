@@ -87,12 +87,17 @@ Additional proportionality constraints:
 - Workflow errors remain isolated to the relevant definition/run; existing Direct chat remains
   operable;
 - Provider health is a runtime fact, not a compile-time network probe;
-- Stage 7 text adds one value-sensitive detection rule inside the existing redaction/refusal owner:
-  benign vocabulary (for example, “password validation”) is data; high-confidence
-  credential tokens or explicit non-placeholder secret values are unsafe. This is acknowledged as
-  new detection logic — the current owner has only the fixed legacy keyword scan — but it lives in
-  the same owner, is selected per envelope by the persisted profile below, and is not a separate
-  scanning subsystem, policy engine or second refusal authority. Its detection accuracy is a
+- Stage 7 text adds one value-sensitive detection profile inside the existing redaction/refusal
+  owner: benign vocabulary (for example, “password validation”) is data; high-confidence
+  credential tokens or explicit non-placeholder secret values are unsafe. The current owner in fact
+  already carries three detection variants — the generic needle substring scan
+  (`refuse_secret_material`), the reduced-needle provider-runtime variant (which already exempts
+  `credential_ref`), and the value-shaped preview detection in `core/execution.py` (which already
+  keeps code identifiers such as `credential`/`api_key` legal and flags only value-shaped secrets).
+  The new profile therefore consolidates the existing value-shaped detection into one shared
+  implementation dispatched by profile, rather than adding a fourth independent rule; Subplan 2 owns
+  that consolidation so Stage 7 does not create a separate scanning subsystem, policy engine or
+  second refusal authority. Its detection accuracy is a
   Stage 7-critical component: a false positive can block a legal terminal, a false negative can
   persist a secret, so §8 requires a dedicated calibration test set beyond the per-subplan cases.
   Input/definition values
@@ -396,9 +401,9 @@ ordinary-failure or unknown-side-effect mapping. Non-Workflow tools retain their
 and are not made dependent on this capture. This is an injected persistence seam, not a generic
 schema registry, new byte store, Workflow branch in ToolExecutor or second Agent loop.
 
-All Stage 7 text boundaries use the value-sensitive mode of the existing Artifact/redaction owner;
-they do not add a keyword scanner. This includes Definition prose, TaskContract, TextResult,
-change/test outputs and metadata/excerpts. Ordinary prose containing words such as `password`,
+Stage 7 durable Workflow payloads use the value-sensitive profile of the existing redaction owner:
+Definition prose, TaskContract, TextResult, change/test outputs and metadata/excerpts. Ordinary
+prose containing words such as `password`,
 `credential` or `authorization` remains publishable. A high-confidence credential in Definition or
 TaskContract input is rejected before immutable publication/Workflow creation. In outputs, actual
 secret material or content that cannot safely be stored completely becomes a bounded redacted
@@ -406,6 +411,26 @@ manifest/reference with `content_complete=false` (or fails only when the declare
 requires the exact unsafe bytes); raw secret bytes are never persisted. A conservative vocabulary
 match must not turn legal work into a Workflow-wide availability failure. Existing non-Workflow
 Artifact callers keep their current behavior.
+
+Profile coverage is stated precisely, because "every text boundary" is wider than the two durable
+envelopes that carry the persisted discriminator: tool error details, cancellation/approval reasons
+and public diagnostics produced on a Workflow execution path, plus Workflow-path RecoveryReport
+text, apply the same value-shaped detection (a Workflow node's command legitimately returns text
+such as `401 authorization failed`, and a legacy hard refusal there must not corrupt error
+persistence). Subplan 2 audits every remaining `refuse_secret_material` call site reachable from
+Workflow execution and documents each decision; boundaries that never carry Workflow-controlled
+text (learning preview, backup manifest, provider-runtime subtree, Session fork reason) keep their
+current legacy behavior unchanged.
+
+The Direct/Workflow divergence is recorded rather than hidden: ordinary Direct does not scan user
+messages before ConversationLog persists them, so secret-shaped task text can run in Direct while
+Workflow Start rejects it before the durable TaskContract Artifact exists; and where legacy Direct
+hard-refuses an outcome containing benign vocabulary, the Workflow output path degrades to a
+redacted incomplete projection instead. The Workflow rules are stricter on input and more tolerant
+on output, deliberately: input rejection prevents durable secret storage, output degradation
+preserves terminal truth. A task that legitimately must contain secret-shaped text (for example,
+verifying that an API rejects a token) uses ordinary Direct, not a Workflow. Whether
+ConversationLog itself gains a secret policy is out of Stage 7 scope and recorded as future work.
 
 TestReport does not depend on command-output Artifact availability. When that optional Artifact is
 available it is referenced; when the existing best-effort command-output publication is absent, the
@@ -665,6 +690,13 @@ children remain pending and may be corrected by verified earlier implementation 
 - After Subplan 6, the serial Explorer -> Coder -> Reviewer path must be reliable before concurrency
   begins.
 - After Subplan 7, freeze the application projection needed by CLI; Stage 8 GUI must later reuse it.
+- The fixed whole-graph failure mapping combined with full-rerun semantics is a deliberate but real
+  cost: any declared-node failure fails the Workflow, and a user rerun creates a new WorkflowRun
+  that re-executes every node from attempt 1 — a failure at node 9 of 10 discards the Provider cost
+  of the 8 completed nodes. Templates therefore keep graphs small and upstream nodes cheap, Subplan
+  9 records observed rerun cost in the comparison evidence, and the Stage 8 entry conditions keep
+  child-run continuation (rerun-from-failure without re-executing completed work) as the
+  highest-priority orchestration follow-up.
 - A malformed Workflow never disables the application or existing Direct path.
 - Lack of model/provider quality benefit prevents a template from becoming recommended/default; it
   does not invalidate a correctly functioning static Runtime.
