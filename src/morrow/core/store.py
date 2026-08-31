@@ -46,6 +46,7 @@ class StoreHealth(StrEnum):
 
 
 class StorageErrorCode(StrEnum):
+    BUDGET_EXHAUSTED = "budget_exhausted"
     BUSY = "busy"
     FUTURE_SCHEMA = "future_schema"
     IDENTITY_MISMATCH = "identity_mismatch"

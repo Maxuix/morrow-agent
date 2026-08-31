@@ -31,7 +31,12 @@ class AgentDefinitionSource(ProtocolModel):
     skill_version_ids: tuple[OpaqueId, ...] = Field(default=(), max_length=64)
     tool_requirements: tuple[ToolRequirement, ...] = Field(default=(), max_length=128)
     access_mode_ceiling: Literal["read", "write"] = "read"
-    max_agent_generation_requests: int | None = Field(default=None, gt=0, strict=True)
+    max_agent_generation_requests: int | None = Field(
+        default=None,
+        gt=0,
+        strict=True,
+        description="Maximum admitted agent model calls, including tool follow-ups and retries.",
+    )
     model_selection: ModelRef | Literal["invoking_active"] = "invoking_active"
 
     @field_validator("name", "description", "role_prompt")
@@ -73,7 +78,7 @@ class AgentDefinitionSource(ProtocolModel):
     def ordered_tools(cls, value):
         names = [item.name for item in value]
         if len(names) != len(set(names)):
-            raise ValueError("conflicting or duplicate tool declarations; forbidden wins")
+            raise ValueError("conflicting or duplicate tool declarations are rejected")
         return tuple(sorted(value, key=lambda item: item.name))
 
     @property

@@ -5,6 +5,10 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 
+from morrow.application.agent_definitions.errors import (
+    AgentDefinitionAdmissionError,
+    DefinitionFailure,
+)
 from morrow.core.agent_definitions import (
     AgentDefinitionHead,
     AgentDefinitionRevocation,
@@ -68,7 +72,6 @@ class AgentDefinitionPublicationService:
         self.id_source = id_source
 
     def validate(self, source):
-        # No ID allocation, timestamp, transaction, provider call or store write.
         return validate_definition(source, self.catalog)
 
     def publish(
@@ -206,9 +209,9 @@ class AgentDefinitionPublicationService:
 
     def require_unrevoked(self, version):
         if version is None or version.workspace_id != self.workspace_id:
-            raise ValueError("published Agent version is missing")
+            raise AgentDefinitionAdmissionError(DefinitionFailure.MISSING)
         if self.journal.agent_definitions.get_revocation(self.workspace_id, version.version_id):
-            raise ValueError("policy_revoked: publish a changed Agent definition to supersede")
+            raise AgentDefinitionAdmissionError(DefinitionFailure.REVOKED)
         return version
 
     def admit(self, version_id):
@@ -219,5 +222,5 @@ class AgentDefinitionPublicationService:
             self.workspace_id, version.source.definition_id
         )
         if head is None or not head.enabled:
-            raise ValueError("Agent definition is disabled for new admissions")
+            raise AgentDefinitionAdmissionError(DefinitionFailure.DISABLED)
         return version

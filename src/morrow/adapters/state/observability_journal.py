@@ -212,10 +212,8 @@ class SqliteObservabilityJournal:
                     (agent_run_id,),
                 )[0]
                 if count >= cap:
-                    from morrow.core.application import ApplicationError, ApplicationErrorCode
-
-                    raise ApplicationError(
-                        ApplicationErrorCode.INVALID,
+                    raise StorageError(
+                        StorageErrorCode.BUDGET_EXHAUSTED,
                         "budget_exhausted: Agent generation request limit reached",
                     )
             self.backend.executor().execute(

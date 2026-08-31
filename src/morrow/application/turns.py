@@ -6,9 +6,14 @@ from datetime import datetime
 
 from morrow.adapters.state.journal import SqliteOperationalJournal
 from morrow.adapters.state.operational import OperationalStoreSession
+from morrow.application.agent_definitions.errors import (
+    AgentDefinitionAdmissionError,
+    DefinitionFailure,
+)
 from morrow.application.compaction_persistence import checkpoint_for_compaction
 from morrow.application.preferences.jobs import PreferenceReviewJobEnqueuer
 from morrow.application.recovery import RecoveryService
+from morrow.application.skills.selection import SkillSelectionError
 from morrow.application.skills.usage import SkillUsageServiceError
 from morrow.application.tasks import TaskService
 from morrow.application.tool_persistence import (
@@ -22,6 +27,7 @@ from morrow.application.turn_lifecycle import (
     TurnSubmitResult,
 )
 from morrow.application.turn_permissions import RunPermissionCoordinator
+from morrow.core.application import ApplicationError, ApplicationErrorCode
 from morrow.core.compaction import CompactionEntry
 from morrow.core.domain import AgentRunSnapshot
 from morrow.core.execution import (
@@ -36,6 +42,7 @@ from morrow.core.observability import MODEL_REQUEST_ID_PREFIX
 from morrow.core.permissions import PermissionSnapshot
 from morrow.core.ports import Clock, IdSource
 from morrow.core.recovery import RecoveryReport
+from morrow.core.store import StorageError, StorageErrorCode
 from morrow.runtime.conversation import ConversationAppend
 from morrow.runtime.durable_log import DurableConversationWriter
 from morrow.runtime.session import Session
@@ -254,18 +261,38 @@ class SessionPersistence:
     ) -> TurnSubmitResult:
         if self.writer is None:
             raise RuntimeError("session persistence is not attached")
-        return self.turn_submission.submit_user(
-            session,
-            user_input,
-            client_message_id,
-            turn_id=turn_id,
-            agent_run_id=agent_run_id,
-            tools=tools,
-            prepared_spec=prepared_spec,
-            prepared_mcp_run=prepared_mcp_run,
-            prompt_projection=prompt_projection,
-            writer=self.writer,
-        )
+        try:
+            return self.turn_submission.submit_user(
+                session,
+                user_input,
+                client_message_id,
+                turn_id=turn_id,
+                agent_run_id=agent_run_id,
+                tools=tools,
+                prepared_spec=prepared_spec,
+                prepared_mcp_run=prepared_mcp_run,
+                prompt_projection=prompt_projection,
+                writer=self.writer,
+            )
+        except SkillSelectionError:
+            if prepared_spec is not None and prepared_spec.definition_ref is not None:
+                raise AgentDefinitionAdmissionError(DefinitionFailure.SKILLS) from None
+            raise
+
+    def preflight_definition_skills(self, version_ids, *, available_tools) -> None:
+        """Check exact Skills without persisting; submission rechecks current bindings."""
+        selector = self.turn_submission.skill_selection
+        if selector is None:
+            raise AgentDefinitionAdmissionError(DefinitionFailure.SKILLS)
+        try:
+            selector.select(
+                agent_run_id="arun_preflight",
+                workspace_id=self.workspace_id,
+                exact_version_ids=version_ids,
+                available_tools=available_tools,
+            )
+        except SkillSelectionError:
+            raise AgentDefinitionAdmissionError(DefinitionFailure.SKILLS) from None
 
     def bind_prompt_assembler(self, assembler) -> None:
         """Bind a caller-composed prompt owner to this Session's admission and restore."""
@@ -286,7 +313,15 @@ class SessionPersistence:
         if kwargs["agent_run_id"] is None:
             raise RuntimeError("model request admission requires an open AgentRun")
         kwargs.setdefault("model_request_id", self.id_source.new_id(MODEL_REQUEST_ID_PREFIX))
-        return self.journal.admit_model_request(self.workspace_id, **kwargs)
+        try:
+            return self.journal.admit_model_request(self.workspace_id, **kwargs)
+        except StorageError as exc:
+            if exc.code is StorageErrorCode.BUDGET_EXHAUSTED:
+                raise ApplicationError(
+                    ApplicationErrorCode.INVALID,
+                    "budget_exhausted: Agent generation request limit reached",
+                ) from None
+            raise
 
     def settle_model_request(self, model_request_id: str, **kwargs):
         """Settle one admitted Provider request exactly once."""

@@ -1,5 +1,9 @@
 """Atomic new-run checks; ordinary disable is never a recovery check."""
 
+from morrow.application.agent_definitions.errors import (
+    AgentDefinitionAdmissionError,
+    DefinitionFailure,
+)
 from morrow.core.domain import session_can_start_work, sha256_digest
 
 
@@ -15,12 +19,12 @@ def require_definition_admission(journal, workspace_id, spec, session_id):
         or spec.role_prompt_digest != sha256_digest(version.source.role_prompt)
         or spec.max_agent_generation_requests != version.source.max_agent_generation_requests
     ):
-        raise ValueError("Agent definition admission evidence mismatch")
+        raise AgentDefinitionAdmissionError(DefinitionFailure.EVIDENCE)
     head = repo.get_head(workspace_id, ref.definition_id)
     if head is None or not head.enabled:
-        raise ValueError("Agent definition is disabled")
+        raise AgentDefinitionAdmissionError(DefinitionFailure.DISABLED)
     if repo.get_revocation(workspace_id, ref.version_id) is not None:
-        raise ValueError("policy_revoked")
+        raise AgentDefinitionAdmissionError(DefinitionFailure.REVOKED)
     session = journal.get_session(workspace_id, session_id)
     if (
         session is None
@@ -28,5 +32,5 @@ def require_definition_admission(journal, workspace_id, spec, session_id):
         or session.conversation_position != 0
         or not session_can_start_work(session.lifecycle, session.health)
     ):
-        raise ValueError("isolated Agent admission requires an empty standalone Session")
+        raise AgentDefinitionAdmissionError(DefinitionFailure.NONEMPTY)
     return version

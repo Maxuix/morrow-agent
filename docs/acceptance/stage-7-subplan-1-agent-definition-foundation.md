@@ -18,7 +18,9 @@ The verified implementation was fast-forward integrated into local `main` on 202
 - Workspace `agent-definitions.yaml` remains desired source. Validation is pure; explicit publish
   is the only path that allocates a version or advances a head.
 - AgentFactory freezes the exact definition, model, Skill/tool ceiling, conversation identity and
-  one-primary-generation-request cap into the ordinary prepared AgentRun path.
+  a primary-generation-request cap into the ordinary prepared AgentRun path. Every admitted
+  `purpose=agent` call counts, including tool follow-ups and retries; `cap=1` allows one model call,
+  not a complete tool round with a subsequent model answer.
 - New leaf admission requires a distinct empty standalone Session and matching current Task. The
   Session-owned ConversationLog remains the only transcript writer.
 - Head disable gates new admission only. Exact-version revocation blocks admission and recovery;

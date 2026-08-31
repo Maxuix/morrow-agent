@@ -587,7 +587,7 @@ class AgentLoop:
         client_message_id: str | None = None,
         resume_current_turn: bool = False,
         prepared: PreparedAgentRunRuntime | None = None,
-        startup_error: str | None = None,
+        startup_error: str | ApplicationError | None = None,
         agent_run_id: str | None = None,
     ) -> AsyncIterator[AgentEvent]:
         client_message_id = client_message_id or self._id("cmsg")
@@ -883,6 +883,8 @@ class AgentLoop:
                                 run_id=state.turn_id,
                                 session_id=session.session_id,
                             )
+                if isinstance(startup_error, ApplicationError):
+                    raise startup_error
                 state.started = True
                 yield event("turn.started", {})
                 if session.log.has_active_turn:
@@ -1637,7 +1639,7 @@ class AgentRuntime:
         *,
         client_message_id: str | None = None,
         prepared: PreparedAgentRunRuntime | None = None,
-        startup_error: str | None = None,
+        startup_error: str | ApplicationError | None = None,
         agent_run_id: str | None = None,
     ) -> AsyncIterator[AgentEvent]:
         return self._loop.run_task(

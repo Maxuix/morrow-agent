@@ -11,6 +11,7 @@ from morrow.adapters.state.definition_yaml import AgentDefinitionYamlStore
 from morrow.adapters.state.extension_yaml import ExtensionYamlConflict, ExtensionYamlError
 from morrow.adapters.state.journal import SqliteOperationalJournal
 from morrow.adapters.state.operational import OperationalStore
+from morrow.application.agent_definitions.errors import AgentDefinitionAdmissionError
 from morrow.application.agent_definitions.publication import (
     AgentDefinitionPublicationService,
     DefinitionCatalog,
@@ -25,7 +26,7 @@ from morrow.core.agent_definitions import (
 )
 from morrow.core.domain import DurableSession
 from morrow.core.models import ModelRef
-from morrow.core.store import StorageError, StoreOpenMode
+from morrow.core.store import StorageError, StorageErrorCode, StoreOpenMode
 from morrow.testing import FixedClock, FixedIdSource
 
 MODEL = ModelRef(provider_id="fake-provider", model_id="m1")
@@ -179,7 +180,7 @@ def test_publication_occ_immutability_gate_and_revocation(state):
     assert len(journal.agent_definitions.list_versions("ws_one")) == 1
     with pytest.raises(ValueError, match="revision conflict"):
         publish(service, head=1, command="cmd_stale")
-    with pytest.raises(ValueError, match="disabled"):
+    with pytest.raises(AgentDefinitionAdmissionError, match="disabled"):
         service.admit(first.version_id)
     assert service.require_unrevoked(first) == first
     edited = source().model_copy(update={"role_prompt": "Inspect a new task."})
@@ -196,9 +197,9 @@ def test_publication_occ_immutability_gate_and_revocation(state):
     )
     with pytest.raises(ValueError, match="one-way"):
         service.revoke(first.version_id, reason="undo", command_id="cmd_replace")
-    with pytest.raises(ValueError, match="policy_revoked"):
+    with pytest.raises(AgentDefinitionAdmissionError, match="policy_revoked"):
         service.admit(first.version_id)
-    with pytest.raises(ValueError, match="policy_revoked"):
+    with pytest.raises(AgentDefinitionAdmissionError, match="policy_revoked"):
         publish(service)
     assert service.admit(second.version_id) == second
     with pytest.raises(StorageError):
@@ -381,45 +382,41 @@ def test_factory_exact_model_tools_role_and_frozen_recovery(tmp_path, state, exa
     restored = factory.rehydrate(snapshot, agent_run_id="arun_leaf")
     assert restored.model == runtime.model
     assert restored.spec.definition_ref == runtime.spec.definition_ref
-    with pytest.raises(ValueError, match="disabled"):
+    with pytest.raises(AgentDefinitionAdmissionError, match="disabled"):
         factory.prepare_new(agent_run_id="arun_again")
     service.revoke(version.version_id, reason="policy changed", command_id="cmd_revoke")
-    with pytest.raises(ValueError, match="policy_revoked"):
+    with pytest.raises(AgentDefinitionAdmissionError, match="policy_revoked"):
         factory.rehydrate(snapshot, agent_run_id="arun_leaf")
     assert journal.agent_definitions.get_version("ws_one", version.version_id) == version
 
 
 def test_factory_required_backend_unavailable_is_preparation_local(tmp_path, state):
-    from morrow.application.agent_runs.preparation import AgentRunPreparationError
-
     _, _, service, version, factory = prepared_fixture(tmp_path, state, tools=False)
     assert service.validate(version.source).tool_names == ("read",)
-    with pytest.raises(AgentRunPreparationError, match="required tool backend"):
+    with pytest.raises(AgentDefinitionAdmissionError, match="required tool backend"):
         factory.prepare_new(agent_run_id="arun_leaf")
     assert service.admit(version.version_id) == version
 
 
 def test_factory_requires_distinct_empty_standalone_scope(tmp_path, state):
-    from morrow.application.agent_runs.preparation import AgentRunPreparationError
-
     _, _, _, _, factory = prepared_fixture(tmp_path, state)
     factory.invoking_session_id = "ses_leaf"
-    with pytest.raises(AgentRunPreparationError, match="distinct"):
+    with pytest.raises(AgentDefinitionAdmissionError, match="distinct"):
         factory.prepare_new(agent_run_id="arun_leaf")
     factory.invoking_session_id = "ses_invoking"
     factory.task_run_id = "task_wrong"
-    with pytest.raises(AgentRunPreparationError, match="pair"):
+    with pytest.raises(AgentDefinitionAdmissionError, match="pair"):
         factory.prepare_new(agent_run_id="arun_leaf")
     factory.task_run_id = "task_leaf"
     from morrow.core.models import UserMessage
 
     factory.session.begin_user_turn(UserMessage(content="parent content"))
-    with pytest.raises(AgentRunPreparationError, match="empty"):
+    with pytest.raises(AgentDefinitionAdmissionError, match="empty"):
         factory.prepare_new(agent_run_id="arun_leaf")
 
 
-def test_primary_request_cap_is_durable_and_replay_is_free(tmp_path, state):
-    from morrow.core.application import ApplicationError
+@pytest.mark.parametrize("failed_request", [False, True])
+def test_primary_request_cap_is_durable_and_replay_is_free(tmp_path, state, failed_request):
     from morrow.core.domain import DurableAgentRun, DurableTurn
 
     _, journal, _, _, factory = prepared_fixture(tmp_path, state, cap=1)
@@ -451,10 +448,15 @@ def test_primary_request_cap_is_durable_and_replay_is_free(tmp_path, state):
     )
     first = journal.admit_model_request("ws_one", **args)
     assert journal.admit_model_request("ws_one", **args) == first
-    with pytest.raises(ApplicationError, match="budget_exhausted"):
+    if failed_request:
+        journal.settle_model_request(
+            "ws_one", first.model_request_id, state="failed", error_code="network"
+        )
+    with pytest.raises(StorageError, match="budget_exhausted") as error:
         journal.admit_model_request(
             "ws_one", **{**args, "attempt_ordinal": 2, "model_request_id": "mreq_next"}
         )
+    assert error.value.code is StorageErrorCode.BUDGET_EXHAUSTED
 
 
 def test_builtin_sources_are_visible_but_never_implicitly_published(state):
@@ -700,7 +702,6 @@ def test_value_sensitive_placeholders_and_safe_identity_do_not_weaken_legacy(tmp
 
 
 def test_factory_reuses_current_policy_and_never_admits_a_denied_required_tool(tmp_path, state):
-    from morrow.application.agent_runs.preparation import AgentRunPreparationError
     from morrow.core.capabilities import PermissionProfile, WorkspaceCapability
     from morrow.runtime.capabilities import CapabilityPolicy
 
@@ -715,12 +716,10 @@ def test_factory_reuses_current_policy_and_never_admits_a_denied_required_tool(t
 
     def restricted(policy):
         executor = original(policy)
-        # Restriction is evaluated by the existing CapabilityPolicy owner.
         capability = CapabilityPolicy(
             PermissionProfile(),
             WorkspaceCapability(workspace_id="ws_one", root=tmp_path, read_only=True),
         )
-        # Use the audited static contract from the ordinary factory.
         return executor, capability
 
     # The test's fake tools have no resolver; avoid invoking ToolExecutor's
@@ -731,7 +730,7 @@ def test_factory_reuses_current_policy_and_never_admits_a_denied_required_tool(t
         return executor
 
     factory.preparation.tool_factory = factory_with_policy
-    with pytest.raises(AgentRunPreparationError, match="denied"):
+    with pytest.raises(AgentDefinitionAdmissionError, match="denied"):
         factory.prepare_new(agent_run_id="arun_denied")
     factory.preparation.tool_factory = original
     assert [
@@ -755,3 +754,218 @@ def test_definition_only_workspace_is_in_backup_inventory(state):
     manifest = json.loads((bundle / "manifest.json").read_text())
     assert "ws_no_session" in manifest["workspace_ids"]
     assert backup.verify(bundle).ok
+
+
+@pytest.mark.parametrize("corruption", ["json", "schema", "workspace", "version"])
+def test_corrupt_revocation_uses_storage_repair_error(state, corruption):
+    store, handle, journal, service = state
+    version = publish(service)
+    revoked = service.revoke(version.version_id, reason="policy changed", command_id="cmd_revoke")
+    assert journal.agent_definitions.get_revocation("ws_one", version.version_id) == revoked
+    body = {"json": "{", "schema": "{}"}.get(corruption)
+    if body is None:
+        field = "workspace_id" if corruption == "workspace" else "version_id"
+        body = revoked.model_copy(
+            update={field: "ws_other" if field == "workspace_id" else "adev_other"}
+        ).model_dump_json()
+
+    def corrupt(executor):
+        executor.execute("DROP TRIGGER agent_definition_revocations_update_immutable")
+        executor.execute("UPDATE agent_definition_revocations SET body_json=?", (body,))
+
+    handle.run_write(corrupt)
+    with pytest.raises(StorageError, match="^Agent revocation is corrupt$") as error:
+        service.admit(version.version_id)
+    assert error.value.code is StorageErrorCode.NEEDS_REPAIR
+    assert error.value.__cause__ is None
+    assert OperationalDoctor(store).inspect("ws_one").health.value == "needs_repair"
+
+
+def definition_application(tmp_path, *, value=None, with_skill=False):
+    from morrow.application.agent_definitions.factory import AgentFactory
+    from morrow.bootstrap import build_session_application, build_skill_services
+    from morrow.core.agent_runs import ProviderCapabilities
+    from morrow.core.domain import DurableTaskRun
+    from morrow.core.skills.bindings import SkillSelectionMode
+    from morrow.testing import ScriptedModelProvider
+    from test_agent_run_preparation import _app, _configure_active
+    from test_skill_selection import _source
+
+    app = _app(tmp_path)
+    provider = ScriptedModelProvider([["done"]])
+    app.registry.register(
+        "fake-adapter",
+        lambda config, credential: provider,
+        capabilities=ProviderCapabilities(
+            tool_protocol="openai_function", multiple_tool_calls=True
+        ),
+    )
+    _configure_active(app)
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "note.txt").write_text("fixture")
+    identity = app.workspace_service.confirm(app.workspace_service.resolve(project))
+    child = build_session_application(app, identity)
+    journal = child.persistence.journal
+    ws = identity.workspace_id
+    journal.create_task_run(
+        ws,
+        DurableTaskRun(
+            task_run_id="task_leaf", session_id=child.session.session_id, workspace_id=ws
+        ),
+        make_current=True,
+    )
+    skills = None
+    catalog = CATALOG
+    if with_skill:
+        skills = build_skill_services(app, journal=journal, workspace_id=ws)
+        installed = skills.lifecycle.install(_source(tmp_path), scope_id=ws, confirmed=True)
+        skills.lifecycle.enable(
+            "writer-skill", scope_id=ws, selection_mode=SkillSelectionMode.EXPLICIT
+        )
+        value = source(skill_version_ids=(installed.version_id,))
+        catalog = replace(CATALOG, skill_version_ids=frozenset({installed.version_id}))
+    publication = AgentDefinitionPublicationService(
+        journal, workspace_id=ws, catalog=catalog, id_source=app.id_source
+    )
+    version = publish(publication, value)
+    factory = AgentFactory(
+        child.orchestrator.preparation,
+        publication,
+        version_id=version.version_id,
+        session=child.session,
+        task_run_id="task_leaf",
+        invoking_session_id="ses_invoking",
+    )
+    child.orchestrator.preparation = factory
+    return child, factory, provider, skills
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("failure", "diagnostic"),
+    [
+        ("disabled", "disabled"),
+        ("revoked", "policy_revoked"),
+        ("scope", "distinct standalone"),
+        ("nonempty", "empty ConversationLog"),
+        ("tools", "required tool backend"),
+        ("skills", "exact Skill version"),
+    ],
+)
+async def test_definition_preparation_failures_are_known_and_local(tmp_path, failure, diagnostic):
+    from morrow.core.models import UserMessage
+
+    child, factory, provider, skills = definition_application(
+        tmp_path,
+        with_skill=failure == "skills",
+        value=source(tool_requirements=(ToolRequirement(name="read", requirement="required"),)),
+    )
+    publication = factory.publication
+    ws = publication.workspace_id
+    if failure == "disabled":
+        publication.set_enabled("helper", enabled=False, expected_head_revision=1)
+    elif failure == "revoked":
+        publication.revoke(factory.version_id, reason="policy changed", command_id="cmd_revoke")
+    elif failure == "scope":
+        factory.invoking_session_id = child.session.session_id
+    elif failure == "nonempty":
+        child.session.begin_user_turn(UserMessage(content="existing input"))
+    elif failure == "tools":
+        factory.preparation.tool_factory = lambda policy: None
+    else:
+        skills.lifecycle.disable("writer-skill", scope_id=ws)
+    result = await child.orchestrator.dispatch("explicit leaf task")
+    assert result.events[-1].payload["finish_reason"] == "error"
+    errors = [event.payload for event in result.events if event.type == "error"]
+    assert len(errors) == 1
+    assert diagnostic in errors[0]["message"]
+    assert errors[0]["stop_code"] == "known_failure"
+    assert "凭据" not in errors[0]["message"]
+    assert not provider.stream_calls
+    assert not publication.journal.list_session_agent_runs(ws, child.session.session_id)
+    assert not publication.journal.list_session_turns(ws, child.session.session_id)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("disable_after_prepare", [False, True])
+async def test_exact_skill_preflight_and_atomic_submission(tmp_path, disable_after_prepare):
+    child, factory, provider, skills = definition_application(tmp_path, with_skill=True)
+    ws = factory.publication.workspace_id
+    runtime = factory.prepare_new(agent_run_id="arun_leaf")
+    assert not factory.publication.journal.list_session_agent_runs(ws, child.session.session_id)
+    if disable_after_prepare:
+        skills.lifecycle.disable("writer-skill", scope_id=ws)
+    events = [
+        event
+        async for event in child.orchestrator.runtime.loop.run_task(
+            child.session, "explicit leaf task", prepared=runtime, agent_run_id="arun_leaf"
+        )
+    ]
+    runs = factory.publication.journal.list_session_agent_runs(ws, child.session.session_id)
+    if disable_after_prepare:
+        assert not provider.stream_calls
+        assert not runs
+        assert not factory.publication.journal.list_session_turns(ws, child.session.session_id)
+        error = next(event for event in events if event.type == "error")
+        assert error.payload["stop_code"] == "known_failure"
+        assert "exact Skill version" in error.payload["message"]
+    else:
+        assert events[-1].payload["finish_reason"] == "stop"
+        assert runs[0].snapshot.skill_selected_count == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("cap", [1, 2])
+async def test_generation_cap_through_tool_using_leaf(tmp_path, cap):
+    from morrow.core.models import AssistantMessage, FunctionToolCall
+
+    child, factory, provider, _ = definition_application(
+        tmp_path,
+        value=source(
+            max_agent_generation_requests=cap,
+            tool_requirements=(ToolRequirement(name="read", requirement="required"),),
+        ),
+    )
+    provider.responses = [
+        AssistantMessage(
+            tool_calls=(
+                FunctionToolCall(id="call_read", name="read", arguments='{"path":"note.txt"}'),
+            )
+        ),
+        AssistantMessage(content="done"),
+    ]
+    result = await child.orchestrator.dispatch("Read note.txt and report")
+    assert len(provider.stream_calls) == cap
+    observation = child.persistence.get_agent_run_observation()
+    assert len(observation.requests) == cap
+    assert observation.terminal_metrics.tool_terminal_counts.succeeded == 1
+    if cap == 1:
+        error = next(event for event in result.events if event.type == "error")
+        assert error.payload["stop_code"] == "known_failure"
+        assert "budget_exhausted" in error.payload["message"]
+        assert result.events[-1].payload["finish_reason"] == "error"
+    else:
+        assert result.events[-1].payload["finish_reason"] == "stop"
+
+
+@pytest.mark.asyncio
+async def test_admitted_skill_leaf_rehydrates_after_binding_and_head_disable(tmp_path):
+    child, factory, _, skills = definition_application(tmp_path, with_skill=True)
+    runtime = factory.prepare_new(agent_run_id="arun_leaf")
+    stream = child.orchestrator.runtime.loop.run_task(
+        child.session, "explicit leaf task", prepared=runtime, agent_run_id="arun_leaf"
+    )
+    try:
+        assert (await anext(stream)).type == "turn.started"
+        snapshot = child.persistence.get_open_run_snapshot()
+        assert snapshot.skill_selected_count == 1
+        skills.lifecycle.disable("writer-skill", scope_id=factory.publication.workspace_id)
+        factory.publication.set_enabled("helper", enabled=False, expected_head_revision=1)
+        restored = factory.rehydrate(snapshot, agent_run_id="arun_leaf")
+        assert restored.spec.definition_ref == runtime.spec.definition_ref
+        await restored.aclose()
+        events = [event async for event in stream]
+        assert events[-1].payload["finish_reason"] == "stop"
+    finally:
+        await stream.aclose()

@@ -176,7 +176,7 @@ class SessionOrchestrator:
         if client_message_id is None and self.id_source is not None:
             client_message_id = self.id_source.new_id("cmsg")
         prepared: PreparedAgentRunRuntime | None = None
-        startup_error: str | None = None
+        startup_error: str | ApplicationError | None = None
         prepared_agent_run_id: str | None = None
         try:
             if self.preparation is not None:
@@ -201,8 +201,8 @@ class SessionOrchestrator:
                                 prepared = prepare_new(agent_run_id=prepared_agent_run_id)
                             else:
                                 prepared = prepare_new()
-                        except (AgentRunPreparationError, ValueError) as exc:
-                            startup_error = _preparation_error_message(exc)
+                        except (ApplicationError, AgentRunPreparationError, ValueError) as exc:
+                            startup_error = _preparation_error(exc)
             async for event in self.runtime.run_turn(
                 self.session,
                 text,
@@ -244,7 +244,7 @@ class SessionOrchestrator:
         self._run_active = True
         terminal_reason: FinishReason | None = None
         prepared = None
-        startup_error: str | None = None
+        startup_error: str | ApplicationError | None = None
         resume_completed = False
         try:
             if self.preparation is not None and self.session.durable_runtime is not None:
@@ -257,8 +257,8 @@ class SessionOrchestrator:
                             prepared = rehydrate(snapshot, agent_run_id=agent_run_id)
                         else:
                             prepared = rehydrate(snapshot)
-                    except (AgentRunPreparationError, ValueError) as exc:
-                        startup_error = _preparation_error_message(exc)
+                    except (ApplicationError, AgentRunPreparationError, ValueError) as exc:
+                        startup_error = _preparation_error(exc)
             async for event in self.runtime.loop.run_task(
                 self.session,
                 "",
@@ -309,8 +309,10 @@ class SessionOrchestrator:
             self._run_active = False
 
 
-def _preparation_error_message(error: Exception) -> str:
+def _preparation_error(error: Exception) -> str | ApplicationError:
     """Map preparation failures to bounded, non-secret public event text."""
+    if isinstance(error, ApplicationError):
+        return error
     if isinstance(error, AgentRunPreparationError):
         return "当前 AgentRun 无法从冻结的 Provider 证据恢复，请检查凭据或运行状态。"
     return "当前 Provider 配置不可用，请检查 active_model、模型和凭据配置。"

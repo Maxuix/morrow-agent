@@ -389,7 +389,12 @@ class TurnSubmissionCoordinator:
                 )
                 definition_skills = definition.source.skill_version_ids
                 if definition_skills and self.skill_selection is None:
-                    raise ValueError("exact Skill preparation is unavailable")
+                    from morrow.application.agent_definitions.errors import (
+                        AgentDefinitionAdmissionError,
+                        DefinitionFailure,
+                    )
+
+                    raise AgentDefinitionAdmissionError(DefinitionFailure.SKILLS)
             skill_plan = (
                 self.skill_selection.select(
                     agent_run_id=stored_agent_run_id,

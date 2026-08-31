@@ -69,10 +69,15 @@ class SqliteAgentDefinitionJournal:
         )
         if row is None:
             return None
-        value = AgentDefinitionRevocation.model_validate_json(row[0])
-        if value.workspace_id != workspace_id or value.version_id != version_id:
-            raise StorageError(StorageErrorCode.NEEDS_REPAIR, "Agent revocation is corrupt")
-        return value
+        try:
+            value = AgentDefinitionRevocation.model_validate_json(row[0])
+            if value.workspace_id != workspace_id or value.version_id != version_id:
+                raise ValueError("identity mismatch")
+            return value
+        except ValueError:
+            raise StorageError(
+                StorageErrorCode.NEEDS_REPAIR, "Agent revocation is corrupt"
+            ) from None
 
     def publication(self, workspace_id, command_id):
         return self.backend.read_one(

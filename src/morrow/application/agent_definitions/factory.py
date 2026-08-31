@@ -4,8 +4,11 @@ from __future__ import annotations
 
 from dataclasses import replace
 
+from morrow.application.agent_definitions.errors import (
+    AgentDefinitionAdmissionError,
+    DefinitionFailure,
+)
 from morrow.application.agent_definitions.publication import resolve_definition_tools
-from morrow.application.agent_runs.preparation import AgentRunPreparationError
 from morrow.application.prompt import DirectCodingPromptAssembler
 from morrow.core.agent_runs import AgentDefinitionRef
 from morrow.core.capabilities import OperationIntent, OperationKind, PolicyVerdict
@@ -55,11 +58,9 @@ class AgentFactory:
             or not session_can_start_work(stored.lifecycle, stored.health)
             or task.status is not TaskRunStatus.OPEN
         ):
-            raise AgentRunPreparationError(
-                "isolated scope requires a distinct standalone Session/Task pair"
-            )
+            raise AgentDefinitionAdmissionError(DefinitionFailure.SCOPE)
         if fresh and (stored.conversation_position != 0 or self.session.log.snapshot().records):
-            raise AgentRunPreparationError("isolated admission requires an empty ConversationLog")
+            raise AgentDefinitionAdmissionError(DefinitionFailure.NONEMPTY)
         return stored
 
     def _assembler(self, version):
@@ -73,8 +74,11 @@ class AgentFactory:
             self.session.durable_runtime.bind_prompt_assembler(assembler)
         return assembler
 
-    def _tools(self, version):
-        validation = resolve_definition_tools(version.source, self.publication.catalog)
+    def _tools(self, version, *, preflight_skills=False):
+        try:
+            validation = resolve_definition_tools(version.source, self.publication.catalog)
+        except ValueError:
+            raise AgentDefinitionAdmissionError(DefinitionFailure.TOOLS) from None
         selected = set(validation.tool_names)
         required = {
             item.name for item in version.source.tool_requirements if item.requirement == "required"
@@ -119,13 +123,17 @@ class AgentFactory:
                     safe = decision.verdict is not PolicyVerdict.DENY
                 if not safe:
                     if name in required:
-                        raise AgentRunPreparationError(
-                            "required tool backend is unavailable or denied by the capability ceiling"
-                        )
+                        raise AgentDefinitionAdmissionError(DefinitionFailure.TOOLS)
                     diagnostics.append(f"optional_removed:{name}")
                     continue
                 chosen[name] = tool
             self.diagnostics = tuple(sorted(set(diagnostics)))
+            if preflight_skills and version.source.skill_version_ids:
+                if self.session.durable_runtime is None:
+                    raise AgentDefinitionAdmissionError(DefinitionFailure.SKILLS)
+                self.session.durable_runtime.preflight_definition_skills(
+                    version.source.skill_version_ids, available_tools=tuple(chosen)
+                )
             if executor is None:
                 return None
             registry = ToolRegistry()
@@ -153,7 +161,7 @@ class AgentFactory:
             agent_run_id=agent_run_id,
             model=model,
             prompt_assembler=self._assembler(version),
-            tool_transform=self._tools(version),
+            tool_transform=self._tools(version, preflight_skills=True),
         )
         spec = runtime.spec.model_copy(
             update={
@@ -184,8 +192,8 @@ class AgentFactory:
             or ref.content_hash != version.content_hash
             or snapshot.conversation_session_id != self.session.session_id
         ):
-            raise AgentRunPreparationError("Agent definition frozen evidence mismatch")
-        # No enabled-head check: recovery belongs to the already admitted run.
+            raise AgentDefinitionAdmissionError(DefinitionFailure.EVIDENCE)
+        # Ordinary disable must not block recovery of an admitted run.
         return self.preparation.rehydrate(
             snapshot,
             agent_run_id=agent_run_id,

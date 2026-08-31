@@ -31,7 +31,10 @@ Built-in Direct/Explorer 是只读源 fixture，必须显式 publish，启动和
 `AgentFactory` 绑定调用者提供的独立空 Session/current TaskRun 对，限制既有 preparation 的工具集合并选择精确模型。
 role prompt 经原 PromptAssembler 注入，精确 Skill 版本仍经过 enabled binding、pin 和依赖检查；Preference、Memory、
 Permission 与 Context 仍归原 owner。AgentRun 只新增 Definition ID/version/hash、conversation_session_id 和单一
-primary-generation-request cap；cap 在既有 durable request admission 事务中执行。Session-local prompt owner binding
+primary-generation-request cap；计入每次 `purpose=agent` 的调用（含工具后的继续生成与重试），
+在既有 durable request admission 事务中执行。预算耗尽以存储错误返回，由 SessionPersistence
+转换为现有 known-failure 诊断。Definition 准备与提交失败也沿用这一诊断路径；精确 Skill 在准备时
+预检，提交事务仍重新检查绑定并冻结选择，恢复不读取当前绑定。Session-local prompt owner binding
 供 admission/recovery 验证同一组装器，只有 Session-owned ConversationLog 和 AgentLoop 写聊天历史；禁止 transcript fork。
 普通 disable 只阻止新 admission，Factory recovery 只检查不可变版本及其撤销记录，不再检查 enabled head。
 普通 Direct 不使用 AgentFactory，默认路径、公开事件和 bundled runtime-policy 未改变。
