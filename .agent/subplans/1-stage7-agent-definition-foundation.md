@@ -2,7 +2,7 @@
 
 > Status: ready, not started
 > Branch: `feat/stage7-agent-definitions`
-> Activation base: latest verified `main` after the Stage 7 planning branch is integrated
+> Activation base: latest verified `main` (clean tree, full offline gate green)
 > Prerequisite: Stage 7 entry GO and this master plan approved
 
 ## Objective
@@ -74,9 +74,11 @@ subplan does not own Workflow domain types, a scheduler or user-facing Workflow 
    backup subsystem. Backup/verify/restore copy the bounded
    source as exact raw bytes with path/hash and do not require it to parse; a malformed desired draft
    remains backup/restore-able, while validate/doctor reports it and the last valid published head
-   plus ordinary Direct remain usable. Reuse only the existing high-confidence raw credential-
-   literal refusal without parsing: generic sensitive words/keys remain legal backup content, while
-   an actual detected credential fails the backup without disabling runtime.
+   plus ordinary Direct remain usable. For these raw-byte entries, reuse the existing raw-text
+   credential refusal exactly as implemented today (high-confidence token literals and explicit
+   secret assignments, no parsing); the parse-dependent recursive key-name scan does not apply to
+   unparsed bytes, so generic sensitive vocabulary or key names alone are not backup gates, while an
+   actual detected credential still fails that backup without disabling runtime.
    Doctor classifies malformed unpublished desired source as a definition-local warning while the
    published head/database is intact; it must not set overall store health to needs-repair.
 5. Add an AgentFactory/application composer that resolves a published Version into the existing

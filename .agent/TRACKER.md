@@ -12,7 +12,9 @@ None.
 ## Next action
 
 Await explicit authorization to start Subplan 1 — Agent Definition Foundation from the latest
-verified `main`; planning integration itself does not activate production work.
+verified `main`; planning integration itself does not activate production work. Activation
+precondition: the working tree must be clean and the full offline gate green at the branch point
+(satisfied at `main@4d8b408`; re-verify if `main` or the tree changes before activation).
 
 ## Blockers
 

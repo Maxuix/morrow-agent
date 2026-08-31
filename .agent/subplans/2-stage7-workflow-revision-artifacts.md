@@ -141,6 +141,11 @@ typed contract metadata on the existing Artifact authority. This subplan creates
    focused typed Workflow Artifact/Outcome application seams may select `workflow_value_sensitive`.
    Definition YAML, prompts and public commands cannot select the profile. Both paths call the same
    existing redaction/refusal owner.
+   State the downstream legacy-consumer rule for records carrying the Workflow profile: an accepted
+   root TaskOutcome produced by a Workflow still enters the existing LearningReview path, where
+   learning keeps its own legacy safety classifier and may truthfully skip or redact a candidate,
+   but benign Workflow vocabulary must not raise NEEDS_REPAIR, crash review creation or block
+   acceptance. Learning gains no Workflow-specific branch.
 7. Add repository/journal operations for immutable WorkflowRevisions, SQLite published heads,
    WorkflowRuns, root nonterminal uniqueness, NodeRun attempts and Artifact bindings with legal
    transitions and idempotent
@@ -164,6 +169,11 @@ typed contract metadata on the existing Artifact authority. This subplan creates
    yields a scoped backup error without affecting runtime.
    Preserve the Subplan 1 doctor severity rule: malformed unpublished desired source is warning/
    overall-OK when authoritative rows are intact; published reference/hash corruption is an error.
+   Keep the backup manifest's legacy raw-text refusal safe against Workflow-profile content: the
+   manifest projection of Artifact/Outcome records carries identity/path/hash facts only and never
+   embeds Workflow-profile excerpt or payload text. Prove a benign security word stored under the
+   Workflow profile cannot fail backup, and that a genuinely unsafe value is already absent from
+   durable content before backup runs.
 9. Add canonical representation/digest utility, immutable repository round-trip, state-transition,
    root/leaf Session-Task ownership and read-only visibility, root active-Workflow concurrency,
    rejection at every user mutation/Turn entry, exact Direct admission, internal lifecycle
@@ -177,6 +187,10 @@ typed contract metadata on the existing Artifact authority. This subplan creates
    `workflow_evidence_redacted=true` that still reaches the intended terminal state.
    Prove profile round-trip/rehydration, unchanged legacy rejection and inability for source fields or
    generic publish APIs to opt into the Workflow profile.
+   Own the dedicated value-sensitive calibration set required by the master plan §8: benign security
+   vocabulary positives and actual credential negatives across input rejection, output redaction/
+   `content_complete=false`, rehydration and profile round-trip, kept in one focused place so later
+   consumers extend rather than rediscover it.
    Cover exactly-at-capacity and one-over-capacity required-ref fixtures without duplicating the
    numeric bound in another validation owner.
    Do not add a non-Compiler API that publishes a runnable Revision.

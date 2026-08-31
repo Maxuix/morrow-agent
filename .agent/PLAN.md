@@ -3,7 +3,8 @@
 > Status: final design and executable plan complete; production implementation not started
 > Active subplan: none
 > Next subplan: 1 — Agent Definition Foundation (ready, not started)
-> Planning base: local `main@1a9df43`
+> Planning base: local `main@4d8b408` (tree clean, full offline gate green; later `.agent`-only
+> commits such as the plan-repair commit do not invalidate this verified code base)
 > Roadmap authority: `docs/roadmap/stage-7-workflow-runtime.md`
 > Entry evidence: `docs/acceptance/s7p-10-stage7-entry-review.md` — GO
 
@@ -86,12 +87,18 @@ Additional proportionality constraints:
 - Workflow errors remain isolated to the relevant definition/run; existing Direct chat remains
   operable;
 - Provider health is a runtime fact, not a compile-time network probe;
-- Stage 7 text uses one value-sensitive mode in the existing redaction/refusal owner rather than a
-  second scanner: benign vocabulary (for example, “password validation”) is data; high-confidence
-  credential tokens or explicit non-placeholder secret values are unsafe. Input/definition values
+- Stage 7 text adds one value-sensitive detection rule inside the existing redaction/refusal owner:
+  benign vocabulary (for example, “password validation”) is data; high-confidence
+  credential tokens or explicit non-placeholder secret values are unsafe. This is acknowledged as
+  new detection logic — the current owner has only the fixed legacy keyword scan — but it lives in
+  the same owner, is selected per envelope by the persisted profile below, and is not a separate
+  scanning subsystem, policy engine or second refusal authority. Its detection accuracy is a
+  Stage 7-critical component: a false positive can block a legal terminal, a false negative can
+  persist a secret, so §8 requires a dedicated calibration test set beyond the per-subplan cases.
+  Input/definition values
   are rejected locally before publish/Start, while output projections redact only the unsafe value
   and truthfully mark incomplete instead of preventing terminal closure. Legacy non-Workflow
-  callers keep their current policy. The same mode covers Workflow-produced root `TaskOutcome`
+  callers keep their byte-identical current rule. The same mode covers Workflow-produced root `TaskOutcome`
   projections: benign paths/facts such as `password_validation.py` or `authorization test passed`
   cannot block terminal closure, while an actual credential value is omitted/redacted and marked
   by the fixed existing `completion_basis` fact `workflow_evidence_redacted=true` before the Outcome
@@ -101,8 +108,8 @@ Additional proportionality constraints:
   (`legacy_strict|workflow_value_sensitive`) to those two durable envelopes. Existing rows and every
   ordinary caller default to `legacy_strict`; only typed Workflow Artifact/Outcome application seams
   select `workflow_value_sensitive`. YAML, prompts and public CLI cannot choose it. Both profiles are
-  implemented by the existing redaction/refusal owner, so this is not a second scanner or policy
-  engine;
+  dispatched inside the existing redaction/refusal owner through one shared entry point, so no
+  caller gains a way to bypass refusal and no second policy authority appears;
 - missing usage or cost is `unavailable`, not zero and not a failed Node. Stage 7 hard aggregate
   limits are intentionally restricted to facts Morrow can authoritatively admit: primary
   `agent_generation_request_count` (the existing durable request rows with `purpose=agent`), a
@@ -153,7 +160,12 @@ Additional proportionality constraints:
   operational enable switch. Built-ins are packaged
   read-only source objects projected through the same typed contract, not workspace YAML entries that
   `edit` may overwrite; Stage 7 tells users to create a new-ID user definition instead of adding a
-  copy command.
+  copy command. A packaged built-in becomes runnable in a workspace only through the same
+  publication path as a user definition: the first explicit `validate`/`compile`/`run` command
+  targeting it compiles and publishes its immutable Version/Revision and head, idempotently (the
+  canonical content-hash no-op makes repeats free). No startup migration or background step
+  publishes built-ins silently, and an unpublished built-in is visible-but-not-runnable rather than
+  an error.
 - full immutable `AgentDefinitionVersion` rows, `WorkflowRevision` rows and their published-head
   pointers live in the Operational Store. Each head records the exact source revision/hash it was
   published from and an OCC-protected `enabled` admission flag, so a newer YAML edit is simply
@@ -223,7 +235,9 @@ Two explicit conversation-scope modes are sufficient:
   Workflow `required_outputs`: existing TurnLifecycle owns STOP→READY and cannot atomically reinterpret
   that same Direct terminal as `needs_revision`→FAILED. Result-driving ReviewReport is limited to an
   all-isolated Scheduler-owned Workflow, including one isolated node; Direct TextResult remains the
-  adjacent legal case.
+  adjacent legal case. This compile gate is enforced only when the real ReviewReport contract and
+  producer arrive in Subplan 6; Subplans 2–3 record the rule but deliberately create no placeholder
+  schema or fixture for it.
 - Multi-Agent nodes use a newly created empty standalone `isolated` Session plus an internal leaf
   TaskRun whose purpose is `workflow_node`, linked through NodeRun to the WorkflowRun's root
   TaskRun. This preserves the existing invariant that a Turn and its TaskRun share one Session.
@@ -550,8 +564,11 @@ finish that finalizer from the durable root/Agent terminal without rerunning the
 validation before any Workflow row is created leaves the root OPEN; preparation/admission failure
 after creation but before the Direct Turn exists uses the Workflow lifecycle transaction above.
 
-The existing acceptance path is extended only enough to find the root's exact latest transition into
-`READY_FOR_ACCEPTANCE`, then select a prior SNAPSHOT containing both the typed
+Acceptance gains one new, narrow evidence carry-forward input; this is new assembly logic, not a
+tweak of an existing lookup. Today's acceptance assembler rebuilds solely from durable turns, tool
+executions and transitions and never consults prior snapshots. The added input finds the root's
+exact latest transition into
+`READY_FOR_ACCEPTANCE`, then selects a prior SNAPSHOT containing both the typed
 `WORKFLOW_RUN/workflow_result_snapshot` marker and a matching
 `TASK_TRANSITION/workflow_ready_transition` ref. Only that snapshot's Artifact refs are merged into
 the new accepted TaskOutcome. An intervening ordinary snapshot is ignored; if Workflow success is
@@ -611,6 +628,19 @@ When database/published-head integrity is intact, malformed unpublished desired 
 definition-local doctor warning and overall health remains OK; only authoritative published
 reference/hash/integrity damage is an error/needs-repair condition.
 
+Two legacy consumers sit downstream of records that may now legally carry `workflow_value_sensitive`
+content, and both keep their existing policy without gaining Workflow knowledge:
+
+- the backup manifest's legacy raw-text refusal runs over the canonical manifest JSON. Manifest
+  projections of Artifact/Outcome records carry identity/path/hash facts only and never embed
+  Workflow-profile excerpt or payload text, so a benign security word stored under the Workflow
+  profile cannot fail a backup, and a genuinely unsafe value is already absent from durable
+  content before backup runs;
+- an accepted root TaskOutcome produced by a Workflow still enters the existing LearningReview
+  path. Learning keeps its own legacy safety classifier: it may truthfully skip or redact a
+  candidate, but benign Workflow vocabulary in an accepted outcome must not raise NEEDS_REPAIR,
+  crash review creation, or block acceptance.
+
 ## 6. Sequential subplans
 
 | Order | Subplan | Result |
@@ -659,6 +689,14 @@ iteration loop to touched tests but cannot claim completion without its declared
 Use Scripted/Fake Providers, deterministic cancellation and barriers/events. Do not assert
 parallelism or recovery with wall-clock sleeps. Live evaluation, if separately authorized, is
 reported independently from offline correctness.
+
+The value-sensitive detection rule (§3) is calibrated by one dedicated focused test set owned by
+Subplan 2 and extended by later consumers: benign security vocabulary positives (for example
+`password_validation.py`, `authorization test passed`, credential-free prose) and actual credential
+negatives (recognized token literals and explicit non-placeholder secret assignments) across input
+rejection, output redaction/`content_complete=false`, rehydration and profile round-trip. Per-subplan
+positive/negative cases remain required; this set exists so detection regressions are caught in one
+place rather than inferred from scattered Workflow tests.
 
 Final engineering gate:
 

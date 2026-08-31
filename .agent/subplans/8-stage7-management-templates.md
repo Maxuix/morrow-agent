@@ -58,7 +58,11 @@ definitions without GUI/server/background behavior or template-specific runtime 
    cancel is deferred with background execution to Stage 9. All commands call application services
    and never read/write SQLite or YAML directly.
 5. Publish versioned built-in Direct, Explore-Implement-Verify and Parallel Research definitions
-   using the already proven generic runtime.
+   using the already proven generic runtime. Publication is lazy and idempotent: the first explicit
+   `validate`/`compile`/`run` command targeting a packaged built-in compiles and publishes its
+   immutable Revision and head through the ordinary compilation service, and the canonical
+   content-hash no-op makes repeats free. No startup migration or background step publishes
+   built-ins silently; an unpublished built-in is visible but not runnable.
 6. Add Planner and PlanArtifact only now, then publish Planned Refactor as
    Explorer -> Planner -> Coder -> Reviewer. Keep one Writer and no automatic repair loop.
 7. Expose and verify the Workflow backup/doctor coverage established in Subplan 2; add only the
@@ -90,6 +94,7 @@ definitions remain available.
 ```bash
 uv run pytest -q tests/test_stage7_workflow_management.py tests/test_stage7_workflow_cli.py
 uv run pytest -q tests/test_stage7_readonly_parallelism.py
+uv run pytest -m 'not live'
 uv run ruff format --check .
 uv run ruff check .
 uv run python -m compileall -q src tests

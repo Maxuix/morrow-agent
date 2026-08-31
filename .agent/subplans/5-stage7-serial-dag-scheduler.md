@@ -117,7 +117,7 @@ fixed and avoid automatic retry or a general worker/lease framework.
 8. Add deterministic three-node Scripted Provider tests for order, dependency binding, duplicate
    wake, atomic all-node Start precreation/replay and fault rollback, positive-remainder shrunken
    budget, zero/deadline terminal mapping before admission and
-   expiry between a settled Tool and the next agent-generation request, a Direct leaf that performs
+   expiry between a settled Tool and the next agent-generation request, a leaf that performs
    automatic compaction without misreporting it as counted, Provider/preparation/output failure
    propagation, safe same-process cancel versus cancel-unknown mapping, cancellation at each
    boundary, atomic root/Workflow terminal visibility, success-snapshot/accepted-Outcome evidence

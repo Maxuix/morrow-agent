@@ -110,8 +110,10 @@ In this plan, Direct means exactly the one-node/no-edge `invoking_session` shape
    node. For the exact Workflow-bound Direct Turn only, the internal lifecycle selects
    `TextSafetyProfile.WORKFLOW_VALUE_SENSITIVE` for every TaskOutcome it already produces, including
    STOP snapshot, ERROR/CANCEL and output-committer failure; ordinary Direct stays legacy-strict.
-   Narrowly extend accepted TaskOutcome assembly to find the exact latest root transition into
-   READY and merge refs only from a marked Workflow snapshot carrying that transition ref, while
+   Add one new evidence carry-forward input to accepted TaskOutcome assembly — this is new assembly
+   logic, since the current assembler rebuilds solely from durable turns/tool executions/transitions
+   and never consults prior snapshots. The input finds the exact latest root transition into
+   READY and merges refs only from a marked Workflow snapshot carrying that transition ref, while
    preserving the existing Turn goal. It must ignore an intervening ordinary Task snapshot and must
    not reuse an older Workflow snapshot after resume + ordinary Direct produces a newer READY
    transition. Only a matching typed Workflow marker makes the existing acceptance assembler choose
