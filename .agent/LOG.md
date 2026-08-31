@@ -4225,3 +4225,40 @@
 - A push of the existing local `main` to `https://github.com/Maxuix/morrow-agent.git` was rejected
   because authorization for that exact default-branch remote mutation was not explicit. Local
   planning continues; remote publication remains recorded as requiring explicit user approval.
+
+## 2026-08-31 — Stage 7 plan revised per conditional-GO review
+
+- Analyzed the full Stage 7 plan review
+  (`docs/acceptance/stage-7-plan-review-revision-2026-08-31.md` records the verdicts) against the
+  master plan, nine subplans, roadmap and code. All four P0 blockers and most high-priority findings
+  were confirmed in the documents and repaired in place.
+- P0-1: `validate` is now provably write-free; only explicit `publish` (or `run
+  --ensure-published`) creates a Version/Revision or advances a head. The built-in lazy-publish on
+  `validate`/`run` contradiction is removed.
+- P0-2: tool necessity is declared via `tool_requirements[]` (required/optional/forbidden) on the
+  AgentDefinition with a restriction-only node overlay and fixed Compiler precedence; Skills declare
+  no tool requirements because the existing Skill model has no such field.
+- P0-3: ordinary head disable now gates only new admissions and never reaches an admitted
+  WorkflowRun; emergency revocation is a separate additive, audited, one-way record per exact
+  immutable Version/Revision that blocks Start, not-yet-started node admission and resume, closing
+  affected runs as `cancelled(reason=policy_revoked)`.
+- P0-4: structured node results are authoritative only through the internal `submit_node_result`
+  mechanism tool with schema validation, single-submission idempotency and deterministic
+  `(node_run_id, output_slot)` Artifact identity; the final Assistant message is transcript, and
+  TextResult keeps the message-wrap form because the whole message is the payload.
+- High-priority fixes: `needs_revision` closes the root as `READY_FOR_ACCEPTANCE` (never `FAILED`)
+  with a fixed `workflow_result=needs_revision` completion-basis fact; output necessity split into
+  per-slot `required_for_node_completion` plus the separate exported `required_outputs[]` list with
+  no `on_missing` semantics; a disconnected component is now a compile error while
+  connected-but-unconsumed stays a warning; `invoking_active` has an explicit freeze-boundary
+  resolution contract; a sole-writer ownership matrix was added to the master plan.
+- Structure: the first execution slice is a one-node isolated graph on the single unified
+  Scheduler/transition/committer/finalizer path; the Direct `invoking_session` adapter moved after
+  the multi-Agent pipeline (Subplan 7); bounded read-only parallelism left Stage 7 for the Stage 8
+  roadmap with per-request budget claim as its design direction and explicit entry conditions, behind
+  child-run continuation in priority. The review's TextSafety consolidation was already present and
+  required no change; its after-the-fact workspace-diff capture suggestion was rejected as unsound
+  without a workspace-global lease.
+- The superseded nine-subplan revision is archived under
+  `.agent/archive/subplans/stage7-workflow-runtime-v1/`; the revised nine children are prepared and
+  Subplan 1 remains ready. Production implementation is still not authorized or started.

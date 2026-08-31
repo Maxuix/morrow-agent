@@ -2,10 +2,14 @@
 
 ## Current status
 
-Stage 7 entry is GO. The production master plan and nine sequential child contracts are prepared;
-production implementation has not started. The retired sequence 36–100 is archived. The requested
-workspace cleanup, including the project Wiki notes, is committed locally; the configured default
-branch push is authorized by the current user request and is pending final publication.
+Stage 7 entry is GO. The production master plan was revised on 2026-08-31 per the conditional-GO
+plan review (`docs/acceptance/stage-7-plan-review-revision-2026-08-31.md`): validate is write-free,
+tool requirements are declared, disable and emergency revocation are separate mechanisms, structured
+results use the `submit_node_result` protocol, `needs_revision` is no longer an execution failure,
+the runtime is one unified serial Scheduler with an all-isolated first slice and a later Direct
+adapter, and bounded read-only parallelism moved to Stage 8. Nine revised sequential child contracts
+are prepared; the superseded revision is archived under
+`.agent/archive/subplans/stage7-workflow-runtime-v1/`. Production implementation has not started.
 
 ## Active task
 
@@ -22,4 +26,5 @@ precondition: the working tree must be clean and the full offline gate green at 
 
 No local Stage 7 implementation blocker is known. The full offline gate still has one unrelated,
 stable configuration-cancellation test failure; see `.agent/LOG.md` and the acceptance evidence.
-Remote publication is authorized and is the next action for this maintenance turn.
+Remote publication of the configured `main` branch is explicitly authorized and remains the pending
+final-publication action.

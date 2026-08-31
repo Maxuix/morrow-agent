@@ -63,14 +63,18 @@ Morrow Core Process
 ## 三、进入条件
 
 - Stage 7 已支持手写静态 Workflow、AgentDefinition、Artifact 和运行观察。
+- Stage 7 的串行 DAG 已经历真实 crash/restart 考验，取消、恢复、blocked/unknown outcome 语义稳定。
+  Pause/Drain 与运行中 future-only
+  编辑是 Stage 8 自己的首要运行控制前置，不假定 Stage 7 已实现。
+- Stage 7 只交付串行执行；只读并行是本阶段的独立运行时切片（8H），其开工另有前置：ToolEffect
+  分类稳定、provider rate-limit ownership 已明确、按请求原子预算 claim 已实现、process/cwd/env 隔离
+  经过压力测试、并行结果可见性屏障已验证。
 - Command/Query/Approval 接口能够表达完整运行状态；若 Stage 7 未获授权扩展
   ApplicationEvent，则 Stage 8A 在建立 Event Stream 前先取得该 public contract 授权。
 - Stage 5 的候选、Active Preference 和 Knowledge 可被查询和编辑。
 - Stage 6 的 Skill 生命周期、来源、权限和版本可被查询。
 - Stage 7 已有最小离线 Direct/Multi 成对证据。缺少真实 Provider 对照不阻止 GUI、手工 Draft
   编辑或 suggestion-only GraphPlanner；它只阻止自动执行/自动 Replan 的产品推广。
-- Stage 7 的取消、恢复、blocked/unknown outcome 语义稳定。Pause/Drain 与运行中 future-only
-  编辑是 Stage 8 自己的首要运行控制前置，不假定 Stage 7 已实现。
 
 ## 四、自适应编排策略
 
@@ -93,7 +97,7 @@ Morrow Core Process
 
 - Direct。
 - Explore–Implement–Verify。
-- Parallel Research。
+- Parallel Research（Stage 7 为串行 fan-in；并发 fan-out 形态由 8H 解锁）。
 - Planned Refactor。
 
 `NodeCatalog + ArtifactCatalog + CapabilityCatalog` 是现有 AgentDefinition、Artifact contract 和
@@ -772,6 +776,26 @@ draining；等待审批不是 `blocked`。只有取消/崩溃留下 unknown outc
 
 门禁：系统不会因为一次用户编辑就自动永久改路由；有收益的 task class 才能升级自动运行/自动
 Replan，无收益不阻止 suggestion-only 和手工能力的工程验收。
+
+### 8H：有界只读并行
+
+Stage 7 的全部 Workflow 都是串行的；本切片把并发准入限制在编译期可证明只读的固定 fan-out
+frontier（典型消费者是 Parallel Research 模板的并发形态），不引入通用执行器平台。
+
+交付：
+
+- 固定 ready frontier 的只读证明：以冻结 effective ToolSet、ToolEffect 与 PermissionSnapshot 为准，
+  角色名不是证据；unknown/opaque effect 不得进入并行准入，read-contract drift 直接失败目标节点。
+- 按请求原子预算 claim：每次 Provider 请求前以幂等键（run/node/request 序号）在 Workflow 剩余额度
+  与节点 frozen cap 下原子申领，响应后按实际结算；不预留整节点最坏额度，不新增内存态账本或第二
+  request counter。
+- 并发 slot 上限、确定性 gather（持久化与下游可见顺序按稳定 node 序，与完成顺序无关）、单 Writer
+  串行不变量。
+- frontier 的确定性取消、每个已准入 NodeRun 恰好结算一次、部分完成恢复不重跑已完成节点。
+- 并发证明/容量不可用时的稳定串行 fallback；drift 永不 fallback。
+
+门禁：用 barrier/event 而非 sleep 证明并发；权威预算/concurrency 不被超准入；取消/恢复语义与串行
+路径一致。本切片不早于 8C（continuation 优先于并行），也不阻塞 8A/8B 的 GUI 核心链路。
 
 ## 十六、测试与验收
 

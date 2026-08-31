@@ -4,24 +4,21 @@
 > Branch: `feat/stage7-agent-definitions`
 > Activation base: latest verified `main` (clean tree, full offline gate green)
 > Prerequisite: Stage 7 entry GO and this master plan approved
-> Revised 2026-08-31 per the conditional-GO plan review: declared tool requirements and
-> disable-versus-revoke semantics are now part of the foundation contract.
 
 ## Objective
 
 Add the minimum versioned AgentDefinition and AgentFactory composition needed to create distinct
-leaf Agents through the existing prepared AgentRun path. Lock the declared tool-requirement model
-and the disable-versus-revoke operational contract without creating a second chat-history writer or
-modifying AgentLoop into an orchestrator; durable Workflow/root-versus-leaf Task ownership arrives
-in Subplan 2.
+leaf Agents through the existing prepared AgentRun path. Lock the executable two-mode conversation
+scope contract without creating a second chat-history writer or modifying AgentLoop into an
+orchestrator; durable Workflow/root-versus-leaf Task ownership arrives in Subplan 2.
 
 ## Ownership
 
 - focused AgentDefinition contracts under `src/morrow/core/`;
 - a typed, revision-checked adapter for workspace `agent-definitions.yaml` under
   `src/morrow/adapters/state/`, using existing YAML patterns for editable source only;
-- immutable full AgentDefinitionVersion/head repository rows, additive revocation records, the next
-  sequential Operational Store migration, and current backup/doctor coverage;
+- immutable full AgentDefinitionVersion/head repository rows, the next sequential Operational Store
+  migration, and current backup/doctor coverage;
 - focused composition under `src/morrow/application/agent_definitions/` or
   `src/morrow/application/agent_runs/`;
 - the smallest caller-supplied Session/TaskRun conversation-scope seam needed by a later isolated
@@ -40,24 +37,13 @@ subplan does not own Workflow domain types, a scheduler or user-facing Workflow 
    `SessionForkService` imports parent transcript and is not an isolation mechanism.
 2. Define a strict minimal editable `AgentDefinitionSource` and immutable full
    `AgentDefinitionVersion` containing only fields consumed in Stage 7: ID, name/description,
-   bounded role prompt, exact `skill_version_ids[]`, `tool_requirements[]`,
-   `access_mode_ceiling: read|write`, optional positive `max_agent_generation_requests` and a
-   two-case `model_selection`: existing exact `ModelRef`, or literal `invoking_active`. There is no
+   bounded role prompt, exact `skill_version_ids[]`, tool allow/deny names,
+   `access_mode_ceiling: read|write`, optional positive `max_agent_generation_requests` and a two-case
+   `model_selection`: existing exact `ModelRef`, or literal `invoking_active`. There is no
    ModelPolicy/CapabilityPolicy/ContextPolicy reference, registry, model fallback, context-selection
-   DSL or AgentDefinition token/tool/deadline budget. `invoking_active` has one explicit
-   resolution-point contract: it is resolved exactly once at the consuming artifact's own freeze
-   boundary — at Workflow publication for a Revision node (publish-time freeze, frozen as
-   `resolved_model_ref`), at its own run admission for a standalone AgentRun — and never
-   re-resolved afterwards.
-   `tool_requirements[]` entries carry `name` plus `requirement: required | optional | forbidden`.
-   The required/optional names form the definition's desired tool set (an allow-list), and
-   `forbidden` is an explicit deny that always wins over any other declaration. The composer and
-   later the Workflow Compiler apply the master plan's fixed precedence: forbidden conflicts are
-   errors; required denied by policy or absent from catalogs is a compile/publication error;
-   optional denied/absent/unavailable is removed with a diagnostic; required whose backend is
-   unavailable at runtime fails only that node's preparation. SkillVersions declare no tool
-   requirements in Stage 7 — the existing Skill model has no such field — so skill-delivered tools
-   remain subject to the definition's declared set and task policy.
+   DSL or AgentDefinition token/tool/deadline budget. `invoking_active` is resolved to an exact
+   ModelRef by AgentFactory for a standalone proof and by WorkflowCompilationService for Workflow
+   use; the latter freezes `resolved_model_ref` in the Revision node before execution.
 3. Reuse the current typed YAML/OCC adapter pattern for editable desired source. The source has no
    operational `enabled` field. Store complete
    normalized immutable Versions plus an `AgentDefinitionHead` in the Operational Store through one
@@ -74,20 +60,12 @@ subplan does not own Workflow domain types, a scheduler or user-facing Workflow 
    cannot replace the prior published Version or prevent Direct.
    This subplan provides the OCC application/repository operation for the gate; Subplan 8 only adds
    the user-facing CLI command.
-   Add the separate emergency-revocation contract: an additive, audited, one-way
-   `AgentDefinitionRevocation` record keyed by exact immutable version ID, carrying reason,
-   timestamp and command provenance. The immutable Version row itself is never mutated and a
-   revocation is never reversed — supersede by publishing a new version. The publication service
-   owns revocation writes; revocation never republishes or rehashes anything.
    At validate/publish, reuse one value-sensitive mode in the existing redaction/refusal owner:
    benign words such as `password`/`authorization` in role prose remain legal, while recognized
    high-confidence credential tokens or explicit non-placeholder secret values reject only that
-   Definition publication. `validate` is pure and write-free: it parses and checks the desired
-   source and returns diagnostics without creating a Version, moving a head or touching any
-   Operational Store row. Do not add a prompt scanner or change legacy non-Workflow callers.
-4. Extend current backup/doctor owners for both immutable Version/head rows, revocation records and
-   the explicit workspace `agent-definitions.yaml` bundle inventory. Prove create/verify/restore
-   and doctor for a
+   Definition publication. Do not add a prompt scanner or change legacy non-Workflow callers.
+4. Extend current backup/doctor owners for both immutable Version/head rows and the explicit
+   workspace `agent-definitions.yaml` bundle inventory. Prove create/verify/restore and doctor for a
    desired-ahead-of-published source; old Versions remain loadable after desired-source edits and
    must not be reconstructed from the current YAML body. Add the minimum current-manifest extension
    needed because parsed `BackupYamlEntry` cannot own malformed source: one additive
@@ -102,38 +80,29 @@ subplan does not own Workflow domain types, a scheduler or user-facing Workflow 
    unparsed bytes, so generic sensitive vocabulary or key names alone are not backup gates, while an
    actual detected credential still fails that backup without disabling runtime.
    Doctor classifies malformed unpublished desired source as a definition-local warning while the
-   published head/database is intact; it must not set overall store health to needs-repair. Richer
-   repair workflows and doctor UX polish are deferred to Subplan 8's management surface.
+   published head/database is intact; it must not set overall store health to needs-repair.
 5. Add an AgentFactory/application composer that resolves a published Version into the existing
-   preparation request and `PreparedAgentRunSpec`. New standalone admission requires the
-   Definition head enabled and the exact Version free of any revocation record. An admitted run is
-   frozen: a later ordinary disable never blocks a running AgentRun, a not-yet-started node of an
-   already-admitted WorkflowRun, or recovery from the frozen snapshot — only revocation does, and
-   only at defined admission/resume boundaries. The composer may restrict current task policy but
-   can never grant a Provider, Skill, Tool or permission that the current preparation path would
-   deny.
+   preparation request and `PreparedAgentRunSpec`. New leaf admission requires its Definition head
+   to be enabled; a later disable does not rewrite a running AgentRun or prevent recovery from its
+   frozen snapshot. The composer may restrict current task policy but can never grant a Provider,
+   Skill, Tool or permission that the current preparation path would deny.
    It reuses the current PromptAssembler/ContextBuilder and current Preference/Knowledge selection;
    role prompt, exact Skill versions and explicit bound Artifacts are the only Definition/node
    context inputs added here. Actual prompt/context/permission evidence remains frozen on AgentRun.
 6. Freeze the exact Definition ID/version/hash in AgentRun evidence without duplicating the existing
    model, Skill, ToolSet, Preference, context, permission or run-policy snapshots.
-7. Define and prove the factory seam for one caller-supplied conversation scope without a
-   second writer: `isolated` requires a distinct empty standalone Session and matching TaskRun pair,
-   then passes context only through Task Contract and bound Artifacts. The AgentRun stores
+7. Define and prove the factory seam for two explicit caller-supplied conversation scopes without a
+   second writer: `invoking_session` preserves one Session/TaskRun pair for a Direct leaf;
+   `isolated` requires a distinct empty standalone Session and matching TaskRun pair, then passes
+   context only through Task Contract and bound Artifacts. The AgentRun stores
    `conversation_session_id`; only that Session-owned ConversationLog and leaf AgentLoop may append.
-   Do not use transcript fork or make WorkflowStore/AgentRun a writer. The `invoking_session` value
-   is deliberately not created here: it arrives with its first consumer, the Subplan 7 Direct
-   adapter. This subplan does not yet add the durable `workflow_node` TaskRun purpose or create
-   Workflow/Node associations.
+   Do not use transcript fork or make WorkflowStore/AgentRun a writer. This subplan does not yet add
+   the durable `workflow_node` TaskRun purpose or create Workflow/Node associations.
 8. Publish minimal built-in Direct and Explorer Versions sufficient to prove exact-ModelRef and
-   `invoking_active` resolution both freeze an exact model with two distinct configurations, and to
-   exercise required/optional/forbidden tool declarations. Defer Coder, Reviewer, Planner and
-   Synthesizer behavior until their consuming subplans.
-9. Add focused source parsing/OCC/per-definition hash (including unrelated-entry edit), publication
-   idempotency, validate-write-free proof, enable/disable admission and recovery, revocation
-   admission/resume blocking plus audit fields and one-way refusal,
-   required-denied/required-absent/optional-removed/forbidden-precedence declaration tests,
-   immutable old-Version rehydration, desired-source plus database migration/backup/
+   `invoking_active` resolution both freeze an exact model with two distinct configurations. Defer
+   Coder, Reviewer, Planner and Synthesizer behavior until their consuming subplans.
+9. Add focused source parsing/OCC/per-definition hash (including unrelated-entry edit), publication idempotency, enable/disable admission and
+   recovery, immutable old-Version rehydration, desired-source plus database migration/backup/
    restore/doctor (including malformed desired raw-byte round trip with a valid published head,
    generic sensitive vocabulary and actual-token refusal),
    benign-sensitive-vocabulary versus actual-token publication, factory freeze/no-escalation and
@@ -146,10 +115,6 @@ Required now:
 - immutable Definition version evidence because later edits must not drift an AgentRun;
 - complete old-Version storage because WorkflowRevision references must remain executable after
   desired-source edits;
-- declared tool requirements because the compiler and read-ceiling enforcement already distinguish
-  required from optional and need a single declaration owner;
-- disable/revoke separation because an admitted WorkflowRun must stay frozen while a genuine
-  emergency brake still exists;
 - capability intersection because a Definition is lower authority than task/runtime policy;
 - an explicit isolation seam because multi-Agent nodes must not share hidden chat state; its durable
   root/internal-leaf ownership is intentionally left to the Workflow domain subplan.
@@ -158,8 +123,7 @@ Explicitly deferred:
 
 - generic role/plugin inheritance, learned routing, model fallback, policy DSL, prompt scanning,
   per-field privacy DSL, Agent marketplace/import signing and a new log storage system;
-- full Agent management CLI, revoke CLI and Workflow references;
-- the `invoking_session` conversation scope and its TurnLifecycle integration (Subplan 7);
+- full Agent management CLI and Workflow references;
 - any guard already enforced by AgentRun preparation, CapabilityPolicy or ToolExecutor.
 
 Every new rejection must include the closest valid acceptance case. Definition errors affect only
@@ -189,17 +153,13 @@ credential test is permitted.
   and doctor checks; unpublished or malformed desired edits also survive raw-byte backup/restore
   without blocking the valid published head, and AgentFactory never reconstructs an old Version
   from current YAML.
-- Head enable/disable has one meaning — it gates new admissions — while historical inspection,
-  admitted WorkflowRuns and already-running AgentRun recovery continue from frozen evidence;
-  revocation is additive, audited, one-way and blocks new admission and resume of the exact version.
-- `tool_requirements` precedence is deterministic: forbidden always wins, required violations are
-  publication/compile errors, optional removal is a diagnostic, and no declaration path can expand
-  task/permission capability.
+- Head enable/disable has one meaning: it gates new leaf admission, while historical inspection and
+  already-running AgentRun recovery continue from frozen evidence.
 - Editing current desired state does not change an already prepared or rehydrated AgentRun.
-- `validate` performs no write of any kind.
-- The factory accepts a distinct empty standalone Session/matching TaskRun pair that receives no
-  parent transcript. Session-owned ConversationLog remains the sole writer authority, and no
-  Workflow persistence is claimed yet.
+- Definition constraints cannot expand task/permission capability.
+- The factory accepts an invoking Session/TaskRun pair or a distinct empty standalone Session/
+  matching TaskRun pair; the latter receives no parent transcript. Session-owned ConversationLog
+  remains the sole writer authority, and no Workflow persistence is claimed yet.
 - Existing ordinary Direct chat and AgentLoop semantics are unchanged.
 - All declared focused, full-offline and static validation passes, and coherent progress is
   committed before root integration.

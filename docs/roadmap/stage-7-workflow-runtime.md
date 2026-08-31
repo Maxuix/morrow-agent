@@ -1,7 +1,9 @@
 # Stage 7：Agent Definition 与静态 Workflow Runtime
 
-> 状态：进行中；生产总计划已激活，九个子计划已准备；当前无生产子计划 active，Subplan 1
-> ready，生产代码尚未开始
+> 状态：进行中；生产总计划已激活并于 2026-08-31 按条件通过的计划评审完成修订（九个子计划
+> 已重排，只读并行移至 Stage 8，validate/publish、工具需求声明、disable/revoke、结构化结果
+> 提交协议与 needs_revision 语义已闭合）；当前无生产子计划 active，Subplan 1 ready，生产代码
+> 尚未开始
 > 阶段结果：Morrow 可以把多个可配置 Agent 作为模块，按经过编译、版本化和可恢复的静态 Workflow 协作执行任务
 > 上级文档：[开发路线总览](../ROADMAP.md)
 > 上一阶段：[Stage 6：Skills 与扩展生命周期](stage-6-skills-and-extensions.md)
@@ -73,7 +75,9 @@ ConversationLog 混写所有 Agent 对话
 
 单 Agent 基线可以显式表示为一个单节点 Direct Workflow，用于统一比较
 WorkflowRun/NodeRun/Artifact 概念。Stage 7 只提供 opt-in Direct Workflow，不迁移所有普通任务；
-现有 ordinary Direct 仍是默认路径，其 Task/Turn 语义保持不变。
+现有 ordinary Direct 仍是默认路径，其 Task/Turn 语义保持不变。Direct 的 `invoking_session`
+形状是同一套 Scheduler 上的一种 Session 绑定策略，在串行路径稳定之后（子计划 7）才接入；
+Stage 7 不存在独立的 Direct runner 或第二套状态机，首个执行闭环全部使用 isolated Session。
 
 ### 2.5 安全、校验与可运行性的比例原则
 
@@ -119,10 +123,23 @@ AgentDefinitionSource（editable YAML）
 - model_selection: exact ModelRef | invoking_active
 - skill_version_ids[]
 - access_mode_ceiling: read | write
-- tool_allowlist / denylist
+- tool_requirements[]
+  - name
+  - requirement: required | optional | forbidden
 - max_agent_generation_requests（可空正数；Definition 的唯一 Stage 7 run-budget ceiling）
 - origin: builtin | user
+```
 
+`tool_requirements` 是工具必选性的唯一声明方：required/optional 名字构成期望工具集
+（allow-list 语义），`forbidden` 是显式拒绝且优先级最高。合并规则固定：forbidden 与
+required 冲突、required 被 task policy/permission/access ceiling 拒绝、required 在 catalog 中
+不存在，都是 compile/publication error；optional 被拒/缺失/运行时不可用则从冻结证据中移除并
+产生 diagnostic；required 的运行时 backend 不可用只失败目标 Node preparation。WorkflowNode 只能
+叠加 restriction-only 的 `tool_requirements`（进一步拒绝或声明本节点机制必需），不得引入
+Definition 集合之外的工具。Stage 7 的 SkillVersion 没有工具声明字段，Skill 带入的工具仍受
+Definition 声明集合与 task policy 约束。
+
+```text
 AgentDefinitionSourceLoadMetadata（adapter/document envelope，不是 body 字段）
 - source_revision（OCC document revision）
 - source_hash（按 definition ID 从该 canonical normalized body 计算）
@@ -140,20 +157,33 @@ AgentDefinitionHead（Operational Store row）
 - current_agent_definition_version_id
 - published_source_revision / published_source_hash
 - enabled（operational admission gate）
+
+AgentDefinitionRevocation（additive Operational Store row）
+- agent_definition_version_id（exact immutable 目标）
+- reason / revoked_at / command 证据（单向，不可撤销；用新 Version 取代）
 ```
 
 用户编辑的是 source 中的 `role_prompt`，不是完整系统提示。Stage 7 不新增 ModelPolicy、
 CapabilityPolicy 或 ContextPolicy registry/DSL：`model_selection` 只能是现有 exact `ModelRef` 或字面量
-`invoking_active`。独立 AgentFactory proof 在 admission 时把后者解析成 exact ModelRef；Workflow 发布则
-由 WorkflowCompilationService 解析并把 exact `resolved_model_ref` 冻结进 Revision node，配置随后变化
-不能漂移旧 Revision。发布服务把有效 source 固化为完整不可变
+`invoking_active`。`invoking_active` 有唯一的解析时点契约：它在消费方制品自己的冻结边界上解析一次
+并永久冻结——Workflow 在 publish 时解析并冻结为 Revision node 的 exact `resolved_model_ref`
+（publish-time freeze；之后切换 active model 必须显式重新 publish 才生效），standalone AgentRun
+在自己的 admission boundary 解析。同一 Revision 不做 per-run 重新解析，否则同一 Revision 的多次
+运行不可重放。
+发布服务把有效 source 固化为完整不可变
 Version，并在同一个 SQLite transaction 中推进 Head。YAML source 不保存 published pointer 或
 enabled gate；编辑后若尚未发布，只表现为 desired ahead of published。publish 新 Version 保留已有
 Head 的 enabled 值；首次 publish 默认 enabled，除非该 publish command 明确要求 disabled。
 desired-ahead 比较使用该 definition 的 body hash，document revision 只用于 OCC/audit；编辑同一文件中的
 无关 definition 不会让所有 Head 假性 stale。
-enable/disable 只 OCC 更新 Head，不生成新 Version。AgentFactory 只读取 published Version；Head
-disabled 阻止新 leaf admission，但不改写历史 AgentRun，也不阻止已运行 AgentRun 依据冻结快照恢复。
+普通 disable 与紧急 revoke 是两种机制。enable/disable 只 OCC 更新 Head，不生成新 Version，只门禁
+新准入：Head disabled 阻止新 standalone AgentRun 与新 WorkflowRun Start（Start 校验所有引用的
+Agent Head enabled），但绝不阻止已被准入 WorkflowRun 的未启动节点、运行中 AgentRun 或基于冻结证据
+的恢复。紧急 revoke 以 exact immutable Version 为目标写入 additive、带审计（reason/时间/命令证据）、
+单向的 revocation 记录；它在 Start、每个未启动节点准入和 recovery resume 处检查，被撤销版本的
+受影响 Run 以 `cancelled(reason=policy_revoked)` 收口并记录证据，不被记为普通执行失败。
+`validate` 永远纯只读：不创建 Version、不推进 Head、不对内置定义 lazy publish；只有显式
+`publish`（或 `run --ensure-published`）写库。
 固定安全边界由 Morrow 组装并始终具有更高优先级。
 Definition 文本 validate/publish 使用上述 value-sensitive owner；安全相关普通词不构成拒绝理由，实际
 识别到的 credential 只拒绝该 Definition publication。
@@ -280,7 +310,7 @@ WorkflowRevision
 NodeDefinition
 - node_id
 - agent_definition_ref（exact immutable AgentDefinitionVersion，不是 mutable Head selector）
-- resolved_model_ref（Compiler 从 Definition selector 解析并冻结的 exact ModelRef）
+- resolved_model_ref（Compiler 在 publish 时从 Definition selector 解析并冻结的 exact ModelRef）
 - task_contract
 - input_bindings[]
   - input_name（node 内唯一）
@@ -291,9 +321,10 @@ NodeDefinition
 - output_contracts[]
   - slot（node 内唯一稳定名）
   - kind / version
-  - required
+  - required_for_node_completion
 - access_mode: read | write
-- conversation_scope: invoking_session | isolated
+- conversation_scope: isolated（invoking_session 随子计划 7 的 Direct adapter 引入）
+- tool_requirements[]（可空；只能收窄/禁止 Definition 已声明集合，或声明节点机制必需）
 - budget_override.max_agent_generation_requests（可空）
 - declared_node_max_agent_generation_requests（Compiler 冻结，正数）
 ```
@@ -303,18 +334,22 @@ Stage 7 v1 只实现 Agent 节点。并行 fan-in 由 Synthesizer Agent 消费�
 policy 和 concurrency-group DSL 在出现真实消费者前延期。
 
 每个 binding 的 exact `accepts` 必须等于其 source contract。唯一 Workflow input source 是 literal
-`task: TaskContract@1`；binding 不能同时携带两种 source 字段。跨节点输入绑定和 Workflow required
-output 都引用 exact `node_id.slot`，且只允许引用声明
-`required=true` 的 output slot；`required=false` slot 只是非必需观察产物，不能参与 readiness 或最终
-required result。Stage 7 不增加 optional input、fallback 或 skip 语义。Artifact identity 固定为
+`task: TaskContract@1`；binding 不能同时携带两种 source 字段。输出必要性是两个独立事实而不是一个
+重载字段：slot 的 `required_for_node_completion` 决定成功节点是否必须物化它，Revision 的
+`required_outputs[]` 是独立的导出清单（投影进 root Outcome 的 exact `node_id.slot` 引用）。跨节点输入
+绑定与导出 output 都只允许引用 `required_for_node_completion=true` 的 slot，因此任何被下游非可空
+binding 消费的输出在生产者完成时必然存在；被绑定但不导出是正常 fan-in 形态。
+`required_for_node_completion=false` slot 只是可检查的观察产物：产生时被物化，缺失不失败节点，
+不参与 readiness 也不可导出。Stage 7 不增加 binding 级 `on_missing`、optional input、fallback 或
+skip 语义——生产者的完成门禁是唯一保障机制，等真实消费者出现再扩展。Artifact identity 固定为
 `(node_run_id, output_slot)`。因此 Coder 的 ImplementationPatch 与 TestReport 是两个明确输出，不塞进
-一个无类型 composite blob。所有 success/needs-revision root Outcome 必带的 required result refs 必须适配现有 TaskOutcome
+一个无类型 composite blob。所有 success/needs-revision root Outcome 必带的导出 result refs 必须适配现有 TaskOutcome
 `artifact_refs` 上限（当前 64）；TaskContract 使用单独的 `goal_reference`，不重复占用该 tuple。Compiler
-在上限处接受、超一条拒绝。可选叶子明细可带确定性 omission fact 做 bounded projection，但 required ref
+在上限处接受、超一条拒绝。可选叶子明细可带确定性 omission fact 做 bounded projection，但导出 ref
 不能静默截断或塞入无类型 manifest。
 
-Workflow 结果只由当前 Revision `required_outputs` 中 exact 指向、contract kind 为 `ReviewReport` 的
-slots 驱动：全部 declared nodes completed 后，其中任一 blocking verdict 得到
+Workflow 结果只由当前 Revision `required_outputs` 导出清单中 exact 指向、contract kind 为
+`ReviewReport` 的 slots 驱动：全部 declared nodes completed 后，其中任一 blocking verdict 得到
 `completed/needs_revision`，否则得到 `completed/succeeded`。其他 ReviewReport 只保留为 evidence；不按
 “最新报告”猜测，也不新增 result-role schema。
 
@@ -392,12 +427,12 @@ desired/published evidence，不能因相等而跳过 `invoking_active` 的重�
 现有 Turn 持久化要求 Turn 和 TaskRun 属于同一个 Session，因此隔离叶子不能把新 Session 直接挂到
 根 TaskRun。Stage 7 增加最小 `TaskRunPurpose: user | workflow_node`：
 
-- 只有恰好一个节点且无 edge 的 Direct Workflow 可以使用 `invoking_session`，复用用户 root
-  Session/root TaskRun。多节点图若包含它，Compiler 必须拒绝，避免首个 STOP 提前把 root 置 ready。
-  该图也不能把 ReviewReport slot 列入 Workflow required outputs：既有 TurnLifecycle 独占
-  STOP→READY，不能再把同一终态解释为 needs-revision→FAILED。Direct TextResult 合法；result-driving
-  ReviewReport 只用于全 `isolated` Scheduler-owned Workflow（含单节点）。
-- `isolated` 节点创建新的 standalone Session 和与之匹配的内部 `workflow_node` TaskRun。
+- Stage 7 首版所有 Workflow 节点都使用 `isolated`：创建新的 standalone Session 和匹配的内部
+  `workflow_node` TaskRun。`invoking_session` 由子计划 7 的 Direct adapter 引入，只用于恰好一个
+  节点且无 edge 的图，复用用户 root Session/root TaskRun；多节点图若包含它，Compiler 必须拒绝，
+  避免首个 STOP 提前把 root 置 ready。由于 `needs_revision` 同样把 root 收口为
+  `READY_FOR_ACCEPTANCE`（见 8.2），不再需要"invoking-session 图不得导出 result-driving
+  ReviewReport"的特殊门禁——adapter 子计划直接用真实合同证明该形态。
 - WorkflowRun 保存 `root_task_run_id`；NodeRun 保存 leaf Session/TaskRun 引用。
 - 内部 leaf TaskRun 可把现有 `ready_for_acceptance` 作为叶子成功证据，但不会出现在普通用户 Task
   列表，也不能触发 LearningReview。所有普通用户 Task mutation（accept/snapshot/resume/cancel/
@@ -407,9 +442,10 @@ desired/published evidence，不能因相等而跳过 `invoking_active` 的重�
 - 不增加 SessionPurpose；`Session.current_task_run_id -> TaskRunPurpose` 足以完成最小门禁。
 - 只有 root TaskRun 产生用户可接受的权威 TaskOutcome；叶子结果通过 NodeRun 和 Artifact 汇入它。
 
-后文的 root lifecycle owner 按 conversation scope 判定，而不是按 node count：只有上述唯一
-`invoking_session` shape 称为 Direct 并由 root TurnLifecycle 收口；所有全 `isolated` 图（包括单节点）
-都由 Scheduler 使用 Workflow/root 原子终态路径。Multi-Agent 只是产品/拓扑描述，不是代码分支条件。
+后文的 root lifecycle owner 按 conversation scope 判定，而不是按 node count：所有全 `isolated` 图
+（包括单节点）都由 Scheduler 使用 Workflow/root 原子终态路径；子计划 7 接入的唯一
+`invoking_session` shape 称为 Direct 并由 root TurnLifecycle 收口。Multi-Agent 只是产品/拓扑描述，
+不是代码分支条件。
 - Workflow 启动时把提交任务固化为一个 bounded `TaskContract` Artifact；所有叶子都从显式绑定读取，
   恢复不依赖进程内 prompt，也不复制 root transcript。
 - 一个 `purpose=user` root Task 同时最多关联一个非终态 WorkflowRun。关联期间，ordinary Task
@@ -526,13 +562,38 @@ ReviewReport
 
 Workflow leaf 使用一个可选、role-neutral 的 `NodeResultCommitter`，组合在现有 TurnLifecycle terminal
 transaction，而不修改 AgentLoop。同一次模型调用的 final Assistant 先由 owning Session 的
-ConversationLog 持久化；在 Turn terminal/root Task 转移前，committer 按
+ConversationLog 持久化；在 Turn terminal/root Task 转移前，committer 校验每个
+`required_for_node_completion` slot 都已由 durable 事实满足，按
 `(node_run_id, output_slot)` 派生可重放 Artifact identity，通过现有 ArtifactService publish/finalize，
 再把 available Artifact binding 加入该 terminal transaction。所有必需 binding 成功后才能提交 Turn
 terminal；NodeRun completed 仍以实际 AgentRun terminal 为依据。普通 Direct 不注入该 committer。
 
-committer 只为 proposed successful STOP 强制 required outputs；error/cancel terminal 不要求输出，避免
-失败闭合被自身阻塞。确定性 parse 或已知 Artifact failure 映射为 bounded application error，随后复用
+slot 满足只有两种形态，按 contract kind 区分。自由文本 `TextResult` 直接包装已提交的 final
+Assistant 消息本身（整条消息即负载：reference/digest + bounded redacted excerpt），天然免疫 fence
+解析、多候选、字段缺失等失败模式。所有结构化合同（EvidenceBundle、ReviewReport、PlanArtifact、
+SynthesisReport 及以后的结构化负载）只允许通过一个权威提交：由 leaf composition 注入的内部
+`submit_node_result` 机制工具。它不由 definition/prompt/Skill/Artifact 授予，不接受 definition 工具
+声明或审批提示，从不出现在 ordinary Direct；唯一效应是经现有 ArtifactService 校验并
+staging/publish 声明的输出负载，并在自己的 durable ToolExecution 行上记录 submission fact。规则：
+
+```text
+submit_node_result(schema_version, outputs{slot: payload}, summary, evidence_refs[])
+1. final message 只是 transcript，绝不从中解析结构化数据；
+2. 按冻结 Revision 的 output contract 校验每个 slot 负载；未声明 slot、kind/version 不符、schema
+   违反都以 in-loop tool error 返回，模型可修正；
+3. 每个 NodeRun 只有一次有效提交：相同重放 no-op 复用，冲突的第二次提交被拒绝且不覆盖；
+4. Artifact 以 deterministic (node_run_id, output_slot) identity staging/publish，崩溃可重放；
+5. evidence_refs 只能引用本节点作用域内已 durable 的 Artifact/ToolExecution；
+6. 提交是普通 in-loop tool round，不引入第二次 structured-completion 或 repair Provider 请求。
+```
+
+proposed successful STOP 缺少必需结构化提交时，映射为一个 bounded application error，由既有
+AgentLoop error 路径把节点关闭为 `failed(reason=output_contract_unsatisfied)`；error/cancel terminal
+不要求输出，避免失败闭合被自身阻塞。崩溃恢复从 durable submission fact 与确定性 identity 完成
+commit，不重跑节点、不重解析消息。
+
+committer 只为 proposed successful STOP 强制 required outputs；确定性 parse 或已知 Artifact failure
+映射为 bounded application error，随后复用
 AgentLoop 既有 error terminal 路径，不能递归再次执行 output commit。
 
 Definition、TaskContract、TextResult、change/test output、metadata/excerpt 与 Workflow 生成的 root
@@ -599,12 +660,14 @@ Compiler 在运行前执行确定性检查。
 - 每个跨节点 input binding 都有同方向显式 edge；edge 可无 binding 作为纯控制依赖。
 - 图无非法循环；第一版只支持 DAG。
 - 至少一个入口和终点。
-- `invoking_session` 只允许在恰好一个节点且无 edge 的 Direct 图；multi-node 全部 isolated。
-- `invoking_session` 图的 Workflow required outputs 不得包含 ReviewReport；相邻合法案例是 Direct
-  TextResult 与全 `isolated` Scheduler-owned result-driving ReviewReport（含单节点）。
-- 声明的必需输出无可达生产路径时报错；不影响必需输出的孤立、未消费组件给出 warning，不为“图
+- `conversation_scope` 首版只有 `isolated`；`invoking_session` 随子计划 7 的 Direct adapter 引入，
+  只允许在恰好一个节点且无 edge 的图，其余 multi-node 全部 isolated。
+- 声明的导出输出无可达生产路径时报错。多节点 Revision 必须是单一弱连通分量：disconnected
+  component 是 compile error，报错指名未接入节点并给出两种修法（显式 control edge 或删除）——
+  静默执行一个拼写错误遗留的节点会消耗模型预算，甚至可能持有写能力。连通但输出无人消费的节点是
+  可操作 warning，不为”图
   不够漂亮”阻止合法执行。但进入 Revision 的每个 node 都是 execution-required：即使它不贡献最终
-  required output，也仍会被调度，任何 node failure 都按固定全图 failure 收口。optional node、skip/
+  导出 output，也仍会被调度，任何 node failure 都按固定全图 failure 收口。optional node、skip/
   continue policy 延后。
 
 ### 7.2 合同
@@ -612,8 +675,9 @@ Compiler 在运行前执行确定性检查。
 - Workflow input contract 必须是 exact `TaskContract@1`；其他 kind/version 拒绝，不做隐式转换。
 - input binding 的 `input_name` 在节点内唯一，source discriminator 严格；Workflow source 只能是
   literal `task`，且 `accepts` 与 source exact kind/version 相等。
-- 上游输出满足下游输入；任何 node-output input binding 和 Workflow required output 只能引用
-  `required=true` slot。Workflow-input binding 走上面的 exact `task:TaskContract@1` 规则。optional slot
+- 上游输出满足下游输入；任何 node-output input binding 和 Workflow 导出 output 只能引用
+  `required_for_node_completion=true` slot。Workflow-input binding 走上面的 exact `task:TaskContract@1`
+  规则。`required_for_node_completion=false` slot
   只能作为观察产物，避免缺失后让下游永久无法 ready。
 - 不从 input binding 推断/补写 edge；缺少显式同向 edge 是可操作 compile error。
 - 必需 Artifact 有生产者。
@@ -638,7 +702,8 @@ Compiler 在运行前执行确定性检查。
   和 undeclared MCP effects。只有 preparation 冻结为现有 native sandbox、没有 promotion、既有
   policy 禁止 external effect 且 snapshot mutation 丢弃时，才允许 bash 用于 read/test；不增加
   command parser 或 path predictor。Compiler 只检查声明/config evidence，不探测 backend；native
-  backend 在 leaf preparation 时不可用则移除 optional bash，required bash 只失败目标 Node，不能靠
+  backend 在 leaf preparation 时不可用时，`tool_requirements` 声明为 optional 的 bash 被移除、声明为
+  required 的只失败目标 Node，不能靠
   串行运行掩盖 read 合同违规，也不让 runtime availability 使 Revision invalid。内置 Explorer/Reviewer 定义为
   只读，Writer 显式标记。
 - Runtime ToolSet/effect 与 compile evidence drift 时只失败目标 Node preparation，不静默扩大权限。
@@ -662,10 +727,12 @@ Compiler 在运行前执行确定性检查。
   `effective_node_generation_request_cap = min(declared_node_max_agent_generation_requests,
   workflow_remaining_agent_generation_requests)`；只要大于 0 就允许运行，并通过现有 durable
   agent-request admission seam 执行。只有 remaining=0 才停止。
-- 并行 batch 只为能完整容纳 declared request cap 的叶子预留容量；不够的先排队。若没有完整并行
-  reservation 能放入但 remaining>0，则按稳定顺序串行，并使用上面的缩减 cap。admission 把 cap 冻结
-  到 NodeRun；恢复时每个 running leaf 的 outstanding reservation 由 frozen cap 减去该 leaf 已 durable
-  admitted 的 `purpose=agent` request rows 推导，不增加只存在内存里的 ledger 或第二个 request counter。
+- Stage 7 串行 admission 每次只准入一个节点；评审已否决"并行 batch 为每个叶子预留完整最大额度"
+  的设计（过度保守、恢复账本复杂）。Stage 8 的只读并行条目改为按请求原子 claim：在 frozen
+  node-local cap 与 Workflow remaining 之下，每次 Provider 请求前以幂等键原子申领、响应后按实际
+  结算，不再预留整节点最坏额度。admission 把串行 cap 冻结到 NodeRun；恢复时由 frozen cap 减去该
+  leaf 已 durable admitted 的 `purpose=agent` request rows 推导剩余额度，不增加只存在内存里的
+  ledger 或第二个 request counter。
 - 当前 automatic compaction Provider summary/retry 不经过上述 durable admission seam，因此 Stage 7
   不把该字段称为 total model/Provider requests。Compaction 继续受现有 AgentRun context/retry 上限，
   Workflow aggregate 明确显示 excluded/unavailable；本阶段不为此改造通用 AgentLoop observation。
@@ -683,10 +750,9 @@ Compiler 在运行前执行确定性检查。
 
 第一版默认规则：
 
-- 每个 Scheduler 管理的 WorkflowRun/frontier 同一时刻最多一个写入 NodeRun。
-- Stage 7 并行 admission 仅支持冻结 effective ToolSet/effect 证明只读的节点。合法 `write` 节点稳定
-  串行；只有不违反 frozen contract 的并发证明/容量不足才 fallback，read-contract drift 直接失败
-  目标 preparation。
+- 每个 Scheduler 管理的 WorkflowRun 同一时刻最多一个运行中的 NodeRun；Writer 因此天然串行。
+- Stage 7 不实现任何并发准入；只读并行 fan-out 连同其准入证明、预算申领和可见性屏障整体移至
+  Stage 8，并有自己的进入条件。合法 `write` 节点稳定串行。
 - 无依赖的多个 Writer 是合法静态图，Scheduler 仍稳定串行它们并发出可解释 warning；本阶段不实现
   并行 Writer、Git worktree 或分布式锁。其他 WorkflowRun、普通 Direct 或外部进程仍由现有文件
   revision/conflict 检查处理，本阶段不宣称 workspace-global lease。
@@ -699,8 +765,9 @@ Compiler 在运行前执行确定性检查。
 
 `StartWorkflowCommand` 的最小实参固定为：workspace/Workflow Definition ID、command ID、exact
 immutable Revision ID、active/healthy Session ID、该 Session 当前 exact `purpose=user` root TaskRun
-ID 与 expected row version、bounded TaskContract，以及图使用 `invoking_session` 时独立的
-client-message ID。Revision 必须属于 Definition，Workflow Head 必须 enabled，且
+ID 与 expected row version、bounded TaskContract，以及图使用 `invoking_session`（子计划 7 起）时独立的
+client-message ID。Revision 必须属于 Definition，Workflow Head 必须 enabled，所有引用的
+AgentDefinition Head 必须 enabled，且 Revision 与引用的 exact Version 都不存在 revocation 记录，且
 `session.current_task_run_id == root_task_run_id`、root 为 OPEN。命令不隐式选择 current Task，不创建、
 abandon 或 resume Task；调用方需要时先显式调用现有 TaskService。
 
@@ -718,8 +785,9 @@ STAGING 比较已知 deterministic bytes/hash/provenance：final bytes 匹配则
 现有 Artifact filesystem owner 安全重写已知 expected bytes 后 finalize，metadata/bytes 冲突则报告
 corrupt/conflict 且不覆盖。same command/different content 冲突。然后单个 Operational Store transaction 再次检查
 receipt digest 与全部可变 Start 事实：Session health/current root、root purpose/status/expected row
-version、不存在 open Turn/nonterminal AgentRun/nonterminal WorkflowRun、Revision 属于 Definition，以及
-Workflow Head 此刻仍 enabled。通过后才记录 command receipt、冻结 Revision/budget、以 injected clock 得到的 `started_at` 与
+version、不存在 open Turn/nonterminal AgentRun/nonterminal WorkflowRun、Revision 属于 Definition，
+Workflow Head 此刻仍 enabled、所有引用 Agent Head enabled，以及 exact Revision/Version 无 revocation。
+通过后才记录 command receipt、冻结 Revision/budget、以 injected clock 得到的 `started_at` 与
 `admission_deadline_at`、`WorkflowRun(status=running)`/input binding，以及冻结图每个节点唯一的 attempt-1 queued
 NodeRun。Artifact 失败至多留下不可运行的 staging/unbound Artifact；事务失败不留下 partial runnable
 Workflow。queued NodeRun 的 Session/leaf Task/AgentRun refs 可空，admission 只绑定并转换这条既有 row，
@@ -735,8 +803,7 @@ Node 在以下条件满足后进入 ready：
 
 - 所有前置节点 completed；Stage 7 的每个 declared node 都是 execution-required。
 - 输入 Artifact 已绑定并校验。
-- 预算和能力可用。
-- 只读并发上限或单 Writer admission 允许。
+- 预算和能力可用；同一时刻只有一个运行中的 NodeRun（串行准入）。
 
 `ready` 是查询/调度派生结果，不写入 NodeRun durable status。
 
@@ -745,22 +812,28 @@ Node 在以下条件满足后进入 ready：
 Stage 7 v1 只有固定语义：任何 declared Node 失败都使 root TaskRun 与 WorkflowRun 失败，后续节点不再启动；
 所有未启动 queued NodeRun 被标记 cancelled，依赖失败节点的 reason 为 `upstream_failed`，其余为
 `workflow_failed`。已经完成的 Artifact/副作用仍可检查。Reviewer 的阻塞 verdict 不是 Reviewer
-执行失败：只有该 report 的 exact slot 位于当前 Revision required outputs 时，它才驱动结果；图正常
-完成后，任一 result-driving report blocking 才使 WorkflowRun 为 completed 且
-`result_status=needs_revision`，root TaskRun 转为 failed，并生成引用 ReviewReport 的 TaskOutcome。其他
+执行失败，也不是系统失败：只有该 report 的 exact slot 位于当前 Revision 导出 required outputs 时，它才
+驱动结果；图正常完成后，任一 result-driving report blocking 才使 WorkflowRun 为 completed 且
+`result_status=needs_revision`，root TaskRun 进入现有 `READY_FOR_ACCEPTANCE`（与 succeeded 相同），结果
+快照引用 ReviewReport 并带固定 `completion_basis` 事实 `workflow_result=needs_revision`。监控、SLO、
+学习与 UI 都不得把它当作执行失败；不新增 TaskRun 状态或 TaskOutcome 字段。用户随后接受该结果，或
+经现有 `READY_FOR_ACCEPTANCE -> OPEN` resume 后显式创建新的完整 WorkflowRun。其他
 ReviewReport 只是 evidence。多种 failure policy、条件分支和自动 review loop 延期。
-`output_contract.required` 只决定成功时是否必须物化/bind 该 slot，不把 node 变成 optional；没有
+`output_contracts[].required_for_node_completion` 只决定成功时是否必须物化/bind 该 slot，不把 node 变成
+optional；没有
 skip/continue/fallback 语义。
 blocking verdict 也不会提前跳过其他 execution-required node：Reviewer 自身 completed，其他 ready/queued
 节点继续按正常依赖执行，只有每个 declared node completed 后才依据 exact result-driving reports 收口为
 `completed/needs_revision`。
 
-全 `isolated` Scheduler-owned Workflow `completed/succeeded` 时，root TaskRun 进入现有
-`ready_for_acceptance`；failure、
+全 `isolated` Scheduler-owned Workflow `completed/succeeded` 或 `completed/needs_revision` 时，root
+TaskRun 都进入现有 `ready_for_acceptance`（后者由快照中的 ReviewReport 引用与
+`workflow_result=needs_revision` 事实区分）；failure、
 cancel、abandon 分别委托现有 TaskService command；blocked 时 root TaskRun 保持 open。Direct 节点的
-root Task 转移仍由现有 TurnLifecycle 完成，Scheduler 只观察，不重复写入。每个成功 Workflow 还写
+root Task 转移仍由现有 TurnLifecycle 完成（子计划 7 起），Scheduler 只观察，不重复写入。每个完成
+Workflow 还写
 一个 versioned root `TaskOutcome(trigger=SNAPSHOT)`：以 bound TaskContract Artifact 作为 goal evidence，
-并引用 required result Artifacts；typed `WORKFLOW_RUN` evidence ref + reserved
+并引用导出 result Artifacts；typed `WORKFLOW_RUN` evidence ref + reserved
 `workflow_result_snapshot` role 是不可通过普通 snapshot 伪造的标记，并配对现有 typed
 `TASK_TRANSITION` evidence ref + reserved `workflow_ready_transition` role，指向本次同事务提交、使 root
 进入 `READY_FOR_ACCEPTANCE` 的精确 transition。它不是用户 acceptance，也不触发 LearningReview。
@@ -799,11 +872,12 @@ evidence；TaskService 不扫描 Workflow tables，也不增加 LLM 或第二个
 
 | 触发 | 当前 NodeRun | 其他 queued NodeRun | WorkflowRun | root TaskRun |
 |---|---|---|---|---|
-| 当前节点 required outputs 有效 | completed | 继续/无 | 每个 declared node 都 completed 后才 completed/succeeded + Workflow result snapshot | 全 isolated：READY_FOR_ACCEPTANCE；invoking-session Direct：既有 TurnLifecycle 结果 |
-| result-driving required ReviewReport blocking | Reviewer completed | 按正常依赖继续 | 每个 declared node completed 后才 completed/needs_revision | 随后 FAILED + 引用 ReviewReport 的 TaskOutcome |
+| 当前节点 required outputs 有效 | completed | 继续/无 | 每个 declared node 都 completed 后才 completed/succeeded + Workflow result snapshot | 全 isolated：READY_FOR_ACCEPTANCE；invoking-session Direct（子计划 7 起）：既有 TurnLifecycle 结果 |
+| result-driving required ReviewReport blocking | Reviewer completed | 按正常依赖继续 | 每个 declared node completed 后才 completed/needs_revision | READY_FOR_ACCEPTANCE + 引用 ReviewReport 并带 `workflow_result=needs_revision` 事实的结果快照 |
 | model/Provider/preparation/output failure，且无 unknown side effect | failed | cancelled + 明确原因 | failed | FAILED + partial evidence |
 | agent-generation capacity=0 或 deadline 在 Node admission 前过期 | 未启动节点 cancelled + budget/deadline reason | 全部 cancelled | failed | FAILED + partial evidence |
 | Node 启动后、下一 generation request 前 capacity/deadline 耗尽 | active Node 在 Tool 安全 settle 后 failed + budget/deadline reason | 全部 cancelled | failed | FAILED + partial evidence |
+| 冻结 Revision 或引用的 exact Version 在节点准入前被 revoke | 未启动节点 cancelled + policy_revoked | 全部 cancelled | cancelled/policy_revoked | CANCELLED + 撤销审计证据 |
 | unresolved Tool outcome | blocked | 保持 queued | blocked | 保持 OPEN |
 | cancel 后 active Tool 安全 settle | cancelled | 全部 cancelled | cancelled/user_cancelled | CANCELLED |
 | cancel 后仍有 unknown Tool outcome | blocked | 保持 queued | blocked | 保持 OPEN |
@@ -818,7 +892,8 @@ unknown side effect 使用 blocked。
 - Scheduler 默认不自动 retry；模型请求层继续使用现有 AgentLoop retry 所有权。
 - Stage 7 不提供节点级 rerun。用户显式重跑创建新的 WorkflowRun；新 Run 的 NodeRun attempt 仍从
   1 开始，旧 Run/NodeRun 不可覆盖。若复用 failed root Task，用户必须先通过现有命令完成
-  `FAILED -> OPEN`。Workflow `resume` 只恢复同一个非终态 Run，不等于 rerun。attempt >1 留给
+  `FAILED -> OPEN`；`needs_revision` 的 root 处于 `READY_FOR_ACCEPTANCE`，用户接受或经现有
+  `READY_FOR_ACCEPTANCE -> OPEN` resume 后再开新 Run。Workflow `resume` 只恢复同一个非终态 Run，不等于 rerun。attempt >1 留给
   后续真实需求；当前 Stage 8 方向也统一创建 child/new WorkflowRun，不向 terminal parent 追加 attempt。
 - 已发生或可能发生写入/外部副作用时不透明重跑。
 - Stage 7 一个 NodeRun 固定对应一个 AgentRun/Turn，不接 ordinary steering/follow-up queue；节点内部
@@ -851,7 +926,9 @@ execution 一并实现。
 - queued 节点可重新派生 readiness 并调度。
 - running 但崩溃的节点先执行恢复分类。
 - outcome_unknown 的副作用只阻塞受影响 Workflow。`resume` 必须先由现有 RecoveryService 对账或
-  解析 Tool outcome，不能自行把 blocked 清空。
+  解析 Tool outcome，不能自行把 blocked 清空。resume 还会复核冻结 Revision 与每个未准入节点的
+  exact AgentDefinitionVersion 的 revocation 记录；被撤销版本以 `policy_revoked` 收口该 Run，不再
+  准入新工作。普通 head disable 不影响已准入 Run 的恢复。
 - 没有 pending terminal intent 的普通 crash-block 在 resolve 后才可继续 queued 节点；带
   `pending_terminal_intent=user_cancel` 的 run 在 resolve 后绝不 resume/准入 queued 节点，而是按 durable
   fact 闭合 active Node（否则 cancelled）、取消 queued，并以同一幂等事务把 Workflow/root 完成
@@ -920,10 +997,11 @@ Direct Coder
 Explorer → Coder → Reviewer
 ```
 
-该模板把 Reviewer 的 exact ReviewReport slot 列入 Workflow required outputs；若它给出 blocking verdict，
-本阶段按上面的 `completed + result_status=needs_revision` 结束图并将 root TaskRun 标为 failed。用户需要
-时显式创建新的完整 WorkflowRun；自动循环不在 Stage 7，completed-node partial rerun 也不进入 Stage 8
-v1（Stage 8 只保留 failed retry 与 full rerun）。
+该模板把 Reviewer 的 exact ReviewReport slot 列入 Workflow 导出 required outputs；若它给出 blocking
+verdict，本阶段按上面的 `completed + result_status=needs_revision` 结束图，root TaskRun 进入
+`READY_FOR_ACCEPTANCE`，结果快照引用该报告并带 `workflow_result=needs_revision` 事实。用户需要时接受
+或 resume 后显式创建新的完整 WorkflowRun；自动循环不在 Stage 7，completed-node partial rerun 也不进入
+Stage 8 v1（Stage 8 只保留 failed retry 与 full rerun）。
 
 ### 10.3 Parallel Research
 
@@ -933,7 +1011,10 @@ Explorer B ─┼→ Synthesizer
 Explorer C ─┘
 ```
 
-全部只读，适合架构研究和方案比较。
+全部只读，适合架构研究和方案比较。Stage 7 以串行方式执行该 fan-out/fan-in 图（Scheduler 按稳定
+顺序每次准入一个节点）；各 Explorer 的 EvidenceBundle 声明为 `required_for_node_completion=true` 供
+Synthesizer 绑定消费但不导出，只有聚合的 SynthesisReport 进入导出 required outputs，大 fan-out 不会
+逼近 64-ref 编译上限。真正的并发 fan-out 执行是 Stage 8 条目。
 
 ### 10.4 Planned Refactor
 
@@ -987,7 +1068,7 @@ nodes:
       - slot: evidence_bundle
         kind: EvidenceBundle
         version: 1
-        required: true
+        required_for_node_completion: true
     access_mode: read
     conversation_scope: isolated
   - node_id: coder
@@ -1007,11 +1088,11 @@ nodes:
       - slot: implementation_patch
         kind: ImplementationPatch
         version: 1
-        required: true
+        required_for_node_completion: true
       - slot: test_report
         kind: TestReport
         version: 1
-        required: true
+        required_for_node_completion: true
     access_mode: write
     conversation_scope: isolated
   - node_id: reviewer
@@ -1036,7 +1117,7 @@ nodes:
       - slot: review_report
         kind: ReviewReport
         version: 1
-        required: true
+        required_for_node_completion: true
     access_mode: read
     conversation_scope: isolated
 edges:
@@ -1059,17 +1140,19 @@ morrow agent validate <definition-id>
 morrow agent publish <definition-id> [--disabled]
 morrow agent enable <definition-id> --expected-head-version <n>
 morrow agent disable <definition-id> --expected-head-version <n>
+morrow agent revoke <definition-id> --version <exact-version-id> --reason <text>
 morrow workflow list
 morrow workflow show <definition-id> [--revision <workflow-revision-id>]
 morrow workflow create <definition-id>
 morrow workflow edit <definition-id>
 morrow workflow validate <definition-id>
-morrow workflow compile <definition-id> [--disabled]
+morrow workflow publish <definition-id> [--disabled]
 morrow workflow enable <definition-id> --expected-head-version <n>
 morrow workflow disable <definition-id> --expected-head-version <n>
+morrow workflow revoke <definition-id> --revision <workflow-revision-id> --reason <text>
 morrow workflow run <definition-id> --revision <workflow-revision-id> \
   --session <session-id> --root-task <task-run-id> --expected-task-version <n> \
-  (--task <text> | --stdin) [--command-id <command-id>] \
+  (--task <text> | --stdin) [--command-id <command-id>] [--ensure-published] \
   [--client-message-id <client-message-id>]
 morrow workflow status <workflow-run-id>
 morrow workflow node show <node-run-id>
@@ -1077,8 +1160,13 @@ morrow workflow resume <workflow-run-id>
 morrow workflow abandon <workflow-run-id>
 ```
 
-`validate` 只返回 pure Compiler diagnostics；`publish/compile` 才发布 Version/Revision 并推进 Head。
-`create/edit/publish/compile` 的 desired-source 写入只面向 workspace `origin=user` definitions；对 packaged
+`validate` 只返回 pure Compiler diagnostics，且永远零写入：不创建 Version/Revision、不推进 Head、
+不对内置定义 lazy publish，CI 与只读环境可安全反复调用。只有显式 `publish` 才发布 Version/Revision
+并推进 Head。`run` 必须显式选择 exact 已发布 Revision；唯一例外 `--ensure-published` 会先发布当前
+desired source、回显所选 Revision 并明确提示发生了写入，缺省时对未发布定义直接失败并给出 publish
+指引。`revoke` 只接受 exact immutable Version/Revision ID（拒绝 head selector），写入 additive、带
+审计、单向的 revocation 记录；普通 disable 只门禁新准入，revoke 才是紧急制动。
+`create/edit/publish` 的 desired-source 写入只面向 workspace `origin=user` definitions；对 packaged
 `origin=builtin` 的 edit/publish 请求拒绝并提示使用新 ID 创建 user definition。builtin 仍可
 list/show/validate/run，且其 Head 可 enable/disable；Stage 7 不提供 copy/fork 命令。
 enable/disable 只 OCC 修改 Head gate，不生成新 Version/Revision。`run` 必须显式选择 Session/root
@@ -1166,88 +1254,107 @@ Workflow 成功必须基于 TaskOutcome 和验证，而不是 DAG 全绿。
 
 ## 十四、实施切片
 
-生产计划按依赖拆为九个顺序子计划；每次只激活一个：
+生产计划按依赖拆为九个顺序子计划，分为四个阶段门禁：7A 合同（1–3）、7B 可靠串行执行（4–5）、
+7C Multi-Agent 语义（6）、7D 产品化（7–8）；每次只激活一个：
 
 ### 子计划 1：Agent Definition Foundation
 
-- 最小 AgentDefinitionSource、immutable Version/Head store、typed desired-state adapter 与 AgentFactory，
-  Head operational enabled gate，并把 workspace source YAML 与数据库记录接入现有
-  backup/restore/doctor。
-- 锁定 invoking Session/TaskRun 与 isolated standalone Session/TaskRun 两种 conversation scope
-  factory contract，不增加日志 writer；持久化用途字段留给子计划 2。
-- 门禁：两个 Definition 产生准确且互不漂移的冻结 run evidence；普通 Direct 不变，不虚构已完成
-  Workflow leaf ownership。
+- 最小 AgentDefinitionSource（含 `tool_requirements` 声明模型）、immutable Version/Head store、
+  additive revocation 记录、typed desired-state adapter 与 AgentFactory，Head operational enabled gate
+  （只门禁新准入），并把 workspace source YAML 与数据库记录接入现有 backup/restore/doctor。
+- 锁定 isolated standalone Session/TaskRun conversation scope factory contract，不增加日志 writer；
+  `invoking_session` 留给子计划 7 的真实消费者；持久化用途字段留给子计划 2。
+- 门禁：两个 Definition 产生准确且互不漂移的冻结 run evidence；`validate` 零写入；普通 Direct 不变。
 
 ### 子计划 2：Workflow Revision 与 Artifact Contract
 
 - 最小 WorkflowDefinitionSource/Head、Workflow/Node/Run/attempt 领域、opaque Revision ID/hash、
-  Head enabled gate、root/internal leaf Task ownership、相对 admission duration → Run 绝对 deadline、
-  stable multi-output slots、TaskContract/TextResult、Artifact producer/binding 与 typed WorkflowRun
-  TaskOutcome evidence marker。
+  Head enabled gate、revocation 记录、root/internal leaf Task ownership、相对 admission duration →
+  Run 绝对 deadline、稳定多输出 slot（`required_for_node_completion` 与导出清单分离）、
+  TaskContract/TextResult、Artifact producer/binding 与 typed WorkflowRun TaskOutcome evidence marker。
 - 加法持久化迁移以及现有 backup/doctor 引用覆盖，不接执行路径。
 - 门禁：旧 Revision/Run 不漂移，持久化/迁移/恢复引用可验证。
 
 ### 子计划 3：确定性 WorkflowCompiler
 
-- 只实现 DAG、必需合同、不可变引用、capability intersection、access/capability 一致性和 Writer
-  串行 warning；pure Compiler 是唯一 normalize/validate/hash 路径，CompilationService 是唯一
-  Revision/Head publication 路径。
+- 只实现 DAG、必需合同、不可变引用、tool-requirement 合并优先级、capability intersection、
+  access/capability 一致性、单弱连通分量（disconnected 即编译错误）和 Writer 串行 warning；pure
+  Compiler 是唯一 normalize/validate/hash 路径，CompilationService 是唯一 Revision/Head publication
+  路径；`validate` 纯只读，`publish` 显式写入。
 - 门禁：每个 hard error 同时有最接近的合法接受案例；不做网络探活或通用 DSL。
 
-### 子计划 4：Direct 单节点垂直闭环
+### 子计划 4：isolated 单节点垂直闭环
 
-- opt-in Direct Revision → WorkflowRun → NodeRun → 现有 AgentLoop → Artifact/TaskOutcome。
-- 门禁：与普通 Direct 等价、无额外模型请求、required output 在 Turn terminal/root ready 前 durable
-  publish/bind；STOP success 的 marked result snapshot 可被 acceptance 继承，ERROR/CANCEL 不伪造；
-  取消/崩溃恢复不重跑 completed Node。
+- opt-in 单节点 isolated Revision → WorkflowRun → NodeRun → 现有 AgentLoop → Artifact/TaskOutcome，
+  全部走在唯一统一的 WorkflowScheduler/transition/committer/finalizer 路径上；Scheduler-owned root
+  原子终态与无 root Turn 的 evidence projection。
+- 门禁：required output 在 root ready 前 durable publish/bind；取消/崩溃恢复不重跑 completed Node；
+  revoked 版本按 `policy_revoked` 收口而普通 disable 不影响已准入 Run。
 
 ### 子计划 5：串行 DAG Scheduler
 
-- 稳定依赖顺序、共享 agent-generation admission budget、固定 failure、cancel/resume/recovery，以及
-  isolated leaf → root Outcome evidence projection。
-- 门禁：三节点图在节点/工具崩溃后可恢复且 root Outcome 不隐藏叶子副作用；不做自动 retry。
+- 稳定依赖顺序、共享 agent-generation admission budget、固定 failure、cancel/resume/recovery/abandon，
+  以及 isolated leaf → root Outcome evidence projection；与单节点切片同一套 Scheduler。
+- 门禁：三节点图在节点/工具崩溃后可恢复且 root Outcome 不隐藏叶子副作用；不做自动 retry，无并发。
 
 ### 子计划 6：串行 Multi-Agent Artifact Pipeline
 
-- Explorer → Coder → Reviewer，以及实际需要的 Evidence/Patch/Test/Review contracts。
+- 先独立验收 ChangeArtifactCapture（gate），再实现 `submit_node_result` 提交协议与
+  Explorer → Coder → Reviewer，以及实际需要的 Evidence/Patch/Test/Review contracts；
+  `needs_revision` 收口为 `READY_FOR_ACCEPTANCE` 而非 FAILED。
 - 门禁：叶子 Session/上下文隔离、Reviewer 只读、Writer 实际 change evidence 在 durable tool close
-  前捕获、Review blocker 不自动回环。
+  前捕获、结构化结果只来自 durable 校验提交、Review blocker 不自动回环。
 
-### 子计划 7：有界只读并行
+### 子计划 7：Direct invoking-session Adapter
 
-- 固定只读 fan-out、Synthesizer Agent fan-in、权威 request/concurrency reservation、由唯一 NodeRun
-  rows 限制 admission、单 Writer。
-- 门禁：用 barrier/event 而非 sleep 证明并发，取消/恢复一致；只有 frozen read contract 仍成立而并发
-  slot/无害 proof capacity 不足时可串行 fallback，capability/effect/isolation drift 必须失败目标节点。
+- 在已稳定的串行 Scheduler 上接入单节点 `invoking_session` 形状：Session 绑定策略、Direct Turn
+  admission、TurnLifecycle root 收口委托与 ordinary-Direct parity 证据。
+- 门禁：不产生第二套 runner/状态机；与普通 Direct 等价、无额外模型请求。
 
 ### 子计划 8：管理、模板与观察面
 
-- Application Command/Query、CLI 与四个内置静态 Workflow；ApplicationEvent 只有获明确授权才增加。
+- Application Command/Query、CLI（validate/publish/revoke/run --ensure-published）与四个内置静态
+  Workflow（Direct、Explore-Implement-Verify、串行 Parallel Research、Planned Refactor）；
+  ApplicationEvent 只有获明确授权才增加。
 - 门禁：接口只经 application service，旧 Revision 可观察，一个坏 Definition 不影响其他运行。
 
 ### 子计划 9：验收与收尾
 
-- 完整离线工程验收、最小 Direct 对照、文档与内置版本冻结。
+- 完整离线工程验收（按 7A/7B/7C/7D 阶段门禁汇总）、最小 Direct 对照、文档与内置版本冻结；
+  只读并行作为 Stage 8 进入项核验，不属于 Stage 7 交付。
 - 门禁：Runtime 正确性与模板效果推广分开；无收益只禁止默认推广，不把 Runtime 判为不安全。
 
 详细 ownership、任务、比例性决策和验证命令见 `.agent/subplans/1-*.md` 至 `9-*.md`。
 
 ## 十五、测试与故障注入
 
-- 无效 DAG、循环、必需输出不可达，以及合法未消费组件的 warning 正向案例；证明该 warning node 仍被
+- 无效 DAG、循环、必需输出不可达；disconnected component 的编译拒绝案例（报错指名节点并给出
+  control-edge/删除修法）；合法连通但未消费组件的 warning 正向案例，证明该 warning node 仍被
   调度且失败时按固定全图 failure 收口。
-- 显式 input binding/Workflow required output 引用 `required=false` slot 的拒绝案例，以及 unbound
-  optional observation slot 的合法案例。
+- 显式 input binding/Workflow 导出 output 引用 `required_for_node_completion=false` slot 的拒绝案例，
+  unbound observation slot 的合法案例，以及绑定但不导出（fan-in）的正向案例。
 - 跨节点 binding 缺少同向 edge 的拒绝案例，以及无 binding 的纯控制 edge 合法且确实排序的案例。
-- invoking-session 单节点 Direct TextResult 正向案例、单节点 isolated result-driving ReviewReport 正向
-  案例（证明 Scheduler root owner），以及含 invoking-session 的两节点图与 Direct result-driving
-  ReviewReport 拒绝案例。
+- 单节点 isolated TextResult 正向案例；invoking-session 单节点 Direct TextResult 与 result-driving
+  ReviewReport 正向案例（子计划 7），以及含 invoking-session 的两节点图拒绝案例。
+- `tool_requirements` 优先级矩阵：forbidden 覆盖 required 冲突、required 被 policy 拒绝、required
+  在 catalog 缺失均为编译错误；optional 被移除并产生 diagnostic；节点叠加 Definition 集合外工具
+  被拒绝。
+- `validate` 零写入证明（含 CI 式反复调用后 Operational Store 无差异）；只有显式 `publish` 或
+  `run --ensure-published` 产生 Revision/Head 写入。
+- 结构化结果提交协议：schema 违例的 in-loop 修正、重复/冲突提交拒绝与重放 no-op、提交后崩溃由
+  durable submission fact 完成 commit 而不重跑节点、必需结构化提交缺失时节点关闭为
+  `output_contract_unsatisfied`；final message 从不被解析为结构化数据。
+- result-driving ReviewReport blocking verdict：WorkflowRun `completed/needs_revision`，root
+  `READY_FOR_ACCEPTANCE`，快照带 `workflow_result=needs_revision`，无任何消费者把它呈现为执行失败。
+- Agent/Workflow Head disable 只阻止新准入；已准入 WorkflowRun 的未启动节点与恢复不受普通 disable
+  影响。revoke exact Version/Revision 后：Start 拒绝、未启动节点准入拒绝、resume 以
+  `policy_revoked` 收口，审计证据完整且撤销单向不可逆。
 - Artifact schema 不兼容。
 - exact `TaskContract@1` Workflow input 正向案例，以及其他 input kind/version 的拒绝案例。
 - InputBinding accepted contract 不匹配、重复 input name、非法 Workflow input literal/source union 的
   拒绝案例，以及 exact match 正向案例。
 - Agent/Skill/Provider 版本缺失。
-- 同一 source 在 active model A 编译后切到 B，新 command 产生冻结 B 的新 Revision、旧 Revision 仍
+- 同一 source 在 active model A 发布后切到 B，新 publish 产生冻结 B 的新 Revision、旧 Revision 仍
   冻结 A；随后相同 B candidate no-op，same-command replay 不受配置漂移影响。
 - mutable AgentDefinition Head 移动不改变 source 中 exact Version ref；只有显式改 ref 才改变 candidate。
 - Workflow name/description/tag 修改产生保存该 metadata 的新 Revision；重复相同 candidate 才 no-op。
@@ -1269,7 +1376,6 @@ Workflow 成功必须基于 TaskOutcome 和验证，而不是 DAG 全绿。
 - 下游读取上游完整 Session-owned ConversationLog 的隔离测试。
 - MCP/Provider 在某节点临时不可用时只影响目标 Run，不污染编译器/应用启动。
 - Definition 修改后旧 Run 快照保持不变。
-- Agent/Workflow Head disable 只阻止新准入，历史检查与已运行 AgentRun recovery 不漂移。
 - 两个 Definition source YAML 与 SQLite published state 的 backup/restore，包含
   desired-ahead-of-published，以及 malformed desired raw bytes 在有效 published head 旁可 backup/verify/
   restore、只由 validate/doctor 报告。
@@ -1290,36 +1396,40 @@ Workflow 成功必须基于 TaskOutcome 和验证，而不是 DAG 全绿。
   从 exact leaf links 准确报告 change/test/side-effect/recovery/Artifact 证据。
 - 每条新增拒绝规则都有一个最接近的合法正向案例。
 
-日常门禁使用 focused deterministic tests；持久化、Direct 垂直闭环、串行恢复、并行和最终收尾
-再运行完整 offline suite。并发用 barrier/event，不能用 wall-clock sleep。Live Provider 与费用证据
+日常门禁使用 focused deterministic tests；持久化、isolated 垂直闭环、串行恢复、Direct adapter 和最终
+收尾再运行完整 offline suite。不使用 wall-clock sleep。Live Provider 与费用证据
 需要单独授权，不是结构实现门禁。
 
 ## 十六、阶段交付物
 
-- AgentDefinitionSource、immutable Version/Head、Factory 与 AgentRun 快照。
+- AgentDefinitionSource（含 `tool_requirements`）、immutable Version/Head、revocation 记录、Factory
+  与 AgentRun 快照。
 - 最小分层 Prompt/Context 组合与 Session-owned 叶子 conversation scope。
 - WorkflowDefinitionSource/Head、Revision、Run、NodeRun。
-- 类型化 Artifact Contract。
-- WorkflowCompiler 与 Scheduler。
-- 首批内置 Agent 和 Workflow Templates。
+- 类型化 Artifact Contract 与 `submit_node_result` 结构化提交协议。
+- WorkflowCompiler（纯 validate + 显式 publish）与单一套串行 Scheduler。
+- 首批内置 Agent 和 Workflow Templates（含串行 fan-in 的 Parallel Research）。
 - CLI、Query 与运行观察；获单独授权时才包含 additive ApplicationEvent。
 - 最小 Direct/Multi 成对离线评估；单独授权且凭据可用时补充真实 Provider 证据。
 
 ## 十七、完成标准
 
 1. `AgentLoop` 保持单 Agent、领域无关的叶子执行器。
-2. 用户能定义不同 Provider、Role Prompt、Skill、工具和预算的 AgentDefinition。
+2. 用户能定义不同 Provider、Role Prompt、Skill、工具和预算的 AgentDefinition，工具必选性由声明
+   模型显式表达。
 3. 每个 AgentRun 冻结 Definition、Model、Skill、ToolSet、Preference 和 Policy 快照。
-4. Workflow 使用不可变 Revision，Run 不受后续编辑漂移。
-5. Compiler 能在运行前阻止非法图、合同不匹配和权限越界；多个 Writer 由 Scheduler 稳定串行，
-   而不是用过度保守的编译拒绝阻止合法图。
-6. 节点通过类型化 Artifact 协作，不默认共享完整聊天历史。
-7. Direct 单节点 Workflow 保持现有单 Agent 能力与完成语义、不增加模型请求；编排开销如实测量，
-   required output 在 root ready 前 durable，且不用未经定义的性能阈值阻塞合法运行。
-8. Explore → Coder → Reviewer 能完成、取消、失败和恢复。
-9. 并行只读节点受 agent-generation-request/request-admission-deadline/concurrency 权威预算约束；静态图不重复
+4. Workflow 使用不可变 Revision，Run 不受后续编辑漂移；普通 disable 不影响已准入 Run，紧急
+   revoke 有独立审计路径。
+5. Compiler 能在运行前阻止非法图（含 disconnected component）、合同不匹配和权限越界；多个 Writer
+   由 Scheduler 稳定串行，而不是用过度保守的编译拒绝阻止合法图。
+6. 节点通过类型化 Artifact 协作，不默认共享完整聊天历史；结构化结果只来自 durable 校验提交。
+7. Direct 单节点 Workflow（子计划 7 adapter）保持现有单 Agent 能力与完成语义、不增加模型请求；
+   编排开销如实测量，required output 在 root ready 前 durable，且不用未经定义的性能阈值阻塞合法运行。
+8. Explore → Coder → Reviewer 能完成、取消、失败和恢复；blocking review 是
+   `completed/needs_revision` 而非执行失败。
+9. 串行节点受 agent-generation-request/request-admission-deadline 权威预算约束；静态图不重复
    计数 Node，token/cost 缺失如实显示。
-10. 每个 Scheduler 管理的 WorkflowRun/frontier 同时只有一个 Writer；Reviewer 默认只读。
+10. 每个 Scheduler 管理的 WorkflowRun 同时只有一个运行节点；Reviewer 默认只读。
 11. Workflow 可通过 CLI 完整观察和诊断。
 12. 至少完成一种代表性任务的 Direct/Multi-Agent 成对评估并如实记录；只有观察到明确收益的
     模板才可成为对应任务类型的推荐或默认。无收益不阻止正确 Runtime 的工程验收。
@@ -1334,7 +1444,8 @@ Workflow 成功必须基于 TaskOutcome 和验证，而不是 DAG 全绿。
 - condition/loop DSL、approval/Converter node、通用 failure/retry policy。
 - 后台/定时 Workflow Worker。
 - 无限递归子 Agent 和自复制团队。
-- 并行多个 Writer、Git worktree 编排和分布式锁。
+- 任何并发节点执行，包括只读并行 fan-out（Stage 8）、并行多个 Writer、Git worktree 编排和
+  分布式锁。
 - 通用 Policy/Schema/Plugin/Tracing 框架。
 - A2A 或跨 Morrow 实例的 Agent 网络。
 
@@ -1351,3 +1462,7 @@ Workflow 成功必须基于 TaskOutcome 和验证，而不是 DAG 全绿。
 - 用户编辑与 Agent Replan 如何共用 future-only Patch、base Revision/CAS 和唯一协调者；Past/
   Active 节点继续不可篡改。
 - 用户对 Preferences、Skills 和 Workflow 的统一可视化信息架构。
+- Stage 8 编排能力的优先级顺序：child-run continuation（失败处续跑而不重执行已完成节点）优先，
+  只读并行其次。只读并行的进入条件：串行 DAG 已经历真实 crash/restart 考验、ToolEffect 分类稳定、
+  provider rate-limit ownership 已明确、按请求原子预算 claim 已实现、process/cwd/env 隔离经过
+  压力测试、并行结果可见性屏障已验证。

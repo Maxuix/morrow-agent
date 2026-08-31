@@ -1,12 +1,18 @@
 # Stage 7 Static Workflow Runtime Implementation Plan
 
-> Status: final design and executable plan complete; production implementation not started
+> Status: revised design and executable plan complete; production implementation not started
 > Active subplan: none
 > Next subplan: 1 — Agent Definition Foundation (ready, not started)
 > Planning base: local `main@4d8b408` (tree clean, full offline gate green; later `.agent`-only
 > commits such as the plan-repair commit do not invalidate this verified code base)
 > Roadmap authority: `docs/roadmap/stage-7-workflow-runtime.md`
 > Entry evidence: `docs/acceptance/s7p-10-stage7-entry-review.md` — GO
+> Revision: 2026-08-31 conditional-GO plan review applied
+> (`docs/acceptance/stage-7-plan-review-revision-2026-08-31.md`): validate/publish purity,
+> declared tool requirements, disable-versus-revoke separation, a typed result-submission
+> protocol, truthful `needs_revision` semantics, one unified Scheduler with an all-isolated
+> first slice, and bounded read-only parallelism deferred to Stage 8. The superseded nine-way
+> plan is archived under `.agent/archive/subplans/stage7-workflow-runtime-v1/`.
 
 ## 1. Objective
 
@@ -16,18 +22,22 @@ without moving graph logic, role logic, or a second chat-history writer into `Ag
 ```text
 versioned AgentDefinition
 + immutable WorkflowRevision
-+ typed Artifact handoff
-+ Direct one-node vertical slice
++ typed Artifact handoff with an explicit result-submission protocol
++ one-node isolated vertical slice on a single unified Scheduler
 + deterministic serial DAG scheduling
 + recoverable Explorer -> Coder -> Reviewer
-+ bounded read-only fan-out and synthesis
-+ CLI/query observation, optionally approved additive events, and Direct comparison
++ CLI/query observation, built-in templates, optionally approved additive events
++ an opt-in Direct invoking-session adapter added only after serial stability is proven
 ```
 
-Stage 7 prepares only the low-cost facts that Stage 8 will need: stable node identity, immutable
-revision lineage, NodeRun attempts, Artifact producer provenance and a run frozen to one revision.
-It does not implement GraphPatch, runtime graph mutation, task-generated DAGs, GUI editing or a
-Replanner.
+Stage 7 executes every Workflow serially; all leaves use isolated Sessions until Subplan 7 adds
+the Direct invoking-session adapter. Bounded read-only parallelism is Stage 8 work with its own
+entry conditions (see `docs/roadmap/stage-8-adaptive-orchestration-and-gui.md`); the read-only
+`access_mode` capability ceiling remains enforced serially in Stage 7. Stage 7 prepares only the
+low-cost facts that Stage 8 will need: stable node identity, immutable revision lineage, NodeRun
+attempts, Artifact producer provenance and a run frozen to one revision. It does not implement
+GraphPatch, runtime graph mutation, task-generated DAGs, GUI editing, a Replanner or any
+concurrent frontier.
 
 ## 2. Authority and execution rules
 
@@ -43,7 +53,7 @@ Implementation follows these rules:
 - later subplan schemas, APIs and runtime behavior are not implemented early;
 - existing AgentRun preparation, permissions, ToolExecutor, Artifact storage, recovery and
   ConversationLog boundaries are reused rather than wrapped in equivalent Workflow-owned systems;
-- ordinary chat stays on the current Direct path until Subplan 4 proves opt-in Direct Workflow
+- ordinary chat stays on the current Direct path until Subplan 7 proves opt-in Direct Workflow
   parity; switching a default requires separate evidence;
 - no third-party dependency is added without explicit user approval;
 - no Live Provider/MCP/network/credential test runs without separate authorization and compatible
@@ -131,12 +141,11 @@ Additional proportionality constraints:
   Stage 7. If any required Provider usage is unavailable, the aggregate is `unavailable`; no guessed
   worst-case token charge may block later legal nodes. Existing per-AgentRun context, retry and tool
   timeout policy remains authoritative and is not mislabeled as a total-token budget;
-- a parallel batch reserves each admitted leaf's full declared request maximum; leaves that do not
-  fit stay queued. If no full reservation fits but remaining capacity is positive, stable serial
-  admission uses the shrunken effective cap above. The admitted NodeRun persists that cap; after a
-  crash, outstanding reservation is derived as frozen cap minus the leaf's durable admitted
-  `purpose=agent` request rows. No in-memory-only ledger or second request counter is authoritative.
-  Exhaustion never reclassifies a completed Node or invalidates the graph;
+- Stage 7 admits one node at a time, so no reservation ledger exists. The reviewed whole-node
+  maximum reservation design for parallel batches was rejected as over-conservative; the Stage 8
+  read-only-parallelism entry instead adopts per-request atomic claim against the Workflow
+  remaining budget under each leaf's frozen node-local cap, settling actual cost after each
+  response. Exhaustion never reclassifies a completed Node or invalidates the graph;
 - automatic compaction Provider summaries are not currently admitted through that durable seam.
   Stage 7 therefore does not relabel this counter as total Provider/model requests: compaction stays
   under existing per-AgentRun context/retry bounds and its count/usage gap is reported as excluded or
@@ -165,12 +174,17 @@ Additional proportionality constraints:
   operational enable switch. Built-ins are packaged
   read-only source objects projected through the same typed contract, not workspace YAML entries that
   `edit` may overwrite; Stage 7 tells users to create a new-ID user definition instead of adding a
-  copy command. A packaged built-in becomes runnable in a workspace only through the same
-  publication path as a user definition: the first explicit `validate`/`compile`/`run` command
-  targeting it compiles and publishes its immutable Version/Revision and head, idempotently (the
-  canonical content-hash no-op makes repeats free). No startup migration or background step
-  publishes built-ins silently, and an unpublished built-in is visible-but-not-runnable rather than
-  an error.
+  copy command. `validate` is pure and read-only for every definition kind: it parses, resolves
+  references, runs static checks and returns candidate diagnostics, and it never creates a
+  Version/Revision, never advances a head and never lazy-publishes, so CI validation and read-only
+  inspection stay write-free. Only an explicit `publish` command creates an immutable
+  Version/Revision and advances the head. `run` requires an exact already-published Revision and
+  offers one explicit opt-in `--ensure-published` escape that publishes the current desired source
+  first and echoes the chosen Revision; without it, `run` against an unpublished definition fails
+  with an actionable publish instruction. A packaged built-in therefore becomes runnable only
+  through the same explicit publication path as a user definition, idempotently (the canonical
+  content-hash no-op makes repeats free). No startup migration or background step publishes
+  built-ins silently, and an unpublished built-in is visible-but-not-runnable rather than an error.
 - full immutable `AgentDefinitionVersion` rows, `WorkflowRevision` rows and their published-head
   pointers live in the Operational Store. Each head records the exact source revision/hash it was
   published from and an OCC-protected `enabled` admission flag, so a newer YAML edit is simply
@@ -192,10 +206,15 @@ Additional proportionality constraints:
   `resolved_model_ref` and compiler version. IDs/timestamps/parent lineage/source OCC metadata and
   operational Head state are excluded. Source body hash is only desired/published evidence;
   it cannot short-circuit compilation when `invoking_active` may resolve differently.
-- `model_selection=invoking_active` is resolved during Workflow compilation, and each Revision node
-  stores the resulting exact `resolved_model_ref`. Workflow leaf preparation must consume that
-  frozen ref and must not read the then-current active model; only standalone non-Workflow factory
-  use resolves `invoking_active` at its own admission boundary.
+- `model_selection=invoking_active` has one explicit resolution-point contract: it is resolved
+  exactly once at the consuming artifact's own freeze boundary and never re-resolved afterwards.
+  For a Workflow that boundary is publication: Workflow compilation resolves it from the then-active
+  model and freezes the exact `resolved_model_ref` into each Revision node, so a later active-model
+  change leaves every published Revision untouched and takes effect only through an explicit new
+  publication. For a standalone non-Workflow AgentRun that boundary is its own run admission. Per-run
+  re-resolution under one already published Revision is rejected because it would make executions of
+  the same Revision non-reproducible. Workflow leaf preparation must consume the frozen ref and must
+  not read the then-current active model.
 - a `WorkflowRevision` has an opaque `workflow_revision_id`, a monotonic display revision within
   its Definition, full normalized source metadata (name/description/tags/origin), an optional
   `parent_workflow_revision_id`, frozen normalized `input_contract` and exact `required_outputs[]`.
@@ -209,10 +228,20 @@ Additional proportionality constraints:
   the editable YAML source is never part of this SQLite transaction. A later publication preserves
   the current head enable flag; the first publication creates an enabled head unless its publish
   command explicitly requests disabled state.
-- disabling a Workflow head rejects only new Workflow starts. Disabling an Agent head rejects new
-  leaf admission, including a not-yet-started leaf of an existing WorkflowRun; already-running
-  AgentRuns and recovery continue from their frozen evidence. Historical definitions, Revisions,
-  Runs and Artifacts remain inspectable.
+- ordinary disable and emergency revocation are different mechanisms. Disabling a Workflow head
+  rejects only new Workflow starts; disabling an Agent head rejects only new admissions — new
+  standalone AgentRuns and new WorkflowRun Starts (Start verifies every referenced Agent head is
+  enabled). An already-admitted WorkflowRun is frozen: ordinary disable never blocks its
+  not-yet-started nodes, its running AgentRuns or its recovery, all of which continue from frozen
+  exact-version evidence. Historical definitions, Revisions, Runs and Artifacts remain inspectable.
+  Emergency revocation is the separate safety brake: an additive, audited, one-way revocation record
+  per exact immutable AgentDefinitionVersion or WorkflowRevision (reason, timestamp and command
+  provenance; never a mutation of the immutable row, and never reversible — publish a new version to
+  supersede). Revocation is checked at Start, at every not-yet-started node admission and at
+  recovery resume; a revoked exact version blocks all three, and an affected WorkflowRun closes as
+  `cancelled(reason=policy_revoked)` with the root TaskRun delegated to the existing cancel command
+  and the revocation evidence recorded. An ordinary `enabled=false` therefore never doubles as a
+  security brake, and a revoked version can never silently re-enter through publication replay.
 - stable `node_id` identifies a semantic node inside a Revision. Every execution record has a
   unique `node_run_id`, and `(workflow_run_id, node_id, attempt)` is unique. Stage 7 creates attempt
   1 only; a full explicit rerun creates a new WorkflowRun. Node-level attempt >1 remains deferred;
@@ -231,22 +260,25 @@ nodes only. Parallel fan-in uses a Synthesizer Agent rather than inventing a gen
 Session-owned `ConversationLog` remains the sole chat-history authority and writer boundary. Every
 leaf AgentRun stores `conversation_session_id`; only that Session's AgentLoop appends.
 
-Two explicit conversation-scope modes are sufficient:
+Two conversation-scope modes exist, but they arrive in order and share one execution engine:
 
-- only a Workflow with exactly one node and no edges may use `invoking_session`, preserving the
-  ordinary root Session, root TaskRun and Direct chat parity. A multi-node Revision containing any
-  `invoking_session` node is a compile error because its first STOP would transition the root before
-  downstream nodes can run. An `invoking_session` graph also cannot list a `ReviewReport` slot in
-  Workflow `required_outputs`: existing TurnLifecycle owns STOP→READY and cannot atomically reinterpret
-  that same Direct terminal as `needs_revision`→FAILED. Result-driving ReviewReport is limited to an
-  all-isolated Scheduler-owned Workflow, including one isolated node; Direct TextResult remains the
-  adjacent legal case. This compile gate is enforced only when the real ReviewReport contract and
-  producer arrive in Subplan 6; Subplans 2–3 record the rule but deliberately create no placeholder
-  schema or fixture for it.
-- Multi-Agent nodes use a newly created empty standalone `isolated` Session plus an internal leaf
-  TaskRun whose purpose is `workflow_node`, linked through NodeRun to the WorkflowRun's root
-  TaskRun. This preserves the existing invariant that a Turn and its TaskRun share one Session.
-  They receive only the root Task Contract and explicitly bound Artifacts.
+- `isolated` is the only mode Stage 7 implements first. Every Workflow node — including a one-node
+  graph — uses a newly created empty standalone Session plus an internal leaf TaskRun whose purpose
+  is `workflow_node`, linked through NodeRun to the WorkflowRun's root TaskRun. This preserves the
+  existing invariant that a Turn and its TaskRun share one Session. Leaves receive only the root
+  Task Contract and explicitly bound Artifacts. All isolated graphs are Scheduler-owned and use the
+  atomic Workflow/root terminal path.
+- `invoking_session` is added only by Subplan 7's Direct adapter, after the serial Scheduler is
+  stable. It is legal only for a graph with exactly one node and no edges, preserving the ordinary
+  root Session, root TaskRun and Direct chat parity; any multi-node Revision containing it is a
+  compile error because its first STOP would transition the root before downstream nodes can run.
+  It runs through the same Scheduler/committer/finalizer with a different Session-binding strategy
+  — there is no separate Direct runner or second state machine. Subplans 1–3 do not create the
+  `invoking_session` schema value, fixtures or placeholder gates before that consumer exists.
+
+Because `needs_revision` closes the root TaskRun as `READY_FOR_ACCEPTANCE` (§4.6), no scope-specific
+result-driving ReviewReport restriction is needed: the invoking-session shape may list a
+result-driving ReviewReport slot, and Subplan 7 proves it beside ordinary Direct parity.
 
 Current Session fork restores a parent transcript prefix and therefore is not the isolation
 mechanism. Internal leaf TaskRuns may reach the existing `ready_for_acceptance` state as leaf-run
@@ -255,9 +287,10 @@ TaskRun owns the user-visible TaskOutcome. Workflow/Task services store associat
 bindings; they never append, concatenate or copy another Agent's chat history.
 
 Lifecycle ownership is selected by conversation scope, never by node count: “Direct” below means
-the one-node/no-edge `invoking_session` graph and its root TurnLifecycle; every all-`isolated` graph,
-including a single isolated node, is Scheduler-owned and uses the atomic Workflow/root terminal
-path. “Multi-Agent” is a product/topology description, not a root-terminal branch condition.
+the one-node/no-edge `invoking_session` graph added by Subplan 7 and its root TurnLifecycle; every
+all-`isolated` graph, including a single isolated node, is Scheduler-owned and uses the atomic
+Workflow/root terminal path. “Multi-Agent” is a product/topology description, not a root-terminal
+branch condition.
 
 `workflow_node` is also rejected by every ordinary user Task mutation (`accept`, `snapshot`,
 `resume`, `cancel`, `fail`, `abandon`, `new`) and by ordinary Turn admission. Scheduler/Recovery use
@@ -292,27 +325,53 @@ input_bindings[]:
   input_name (node-local unique)
   accepts: exact kind/version
   source: workflow_input literal `task` | node_output exact `node_id.slot`
-output_contracts[]: stable slot + kind/version + required
+output_contracts[]: stable slot + kind/version + required_for_node_completion
 access_mode: read | write
-conversation_scope: invoking_session | isolated
+conversation_scope: isolated (invoking_session arrives with the Subplan 7 Direct adapter)
+optional node tool_requirements[] (restriction-only overlay on the Definition set)
 optional node max-agent-generation-request override
 declared_node_max_agent_generation_requests (compiled, positive)
 ```
 
+Tool requirements are declared, never inferred. An AgentDefinition declares its desired tool set as
+`tool_requirements[]` entries of `name` + `requirement: required | optional | forbidden`; the
+required/optional names form the desired set and `forbidden` is an explicit deny that always wins.
+A WorkflowNode may only narrow that set further or mark an additional tool forbidden/required for
+its own mechanism (for example, the Coder's capturable-sandbox bash); it can never name a tool
+outside the Definition's declared set. SkillVersions declare no tool requirements in Stage 7 — the
+existing Skill model has no such field, and skill-delivered tools remain subject to the Definition's
+declared set and task policy. The Compiler merges Definition + node declarations and freezes the
+result with diagnostics under fixed precedence:
+
+```text
+forbidden                                > required | optional (conflict is a compile error)
+required + denied by policy/access_mode  => compile error (the definition contradicts itself)
+required + absent from catalogs          => compile error (static fact)
+required + runtime backend unavailable   => that node's preparation failure only (runtime fact)
+optional + denied/absent/unavailable     => removed from the frozen evidence + diagnostic
+unknown/opaque effect                    => legal serially; never admissible to a read-only ceiling
+```
+
 An output slot is unique within its node and is the stable name used by input bindings and the
 deterministic `(node_run_id, output_slot)` Artifact identity. Multiple outputs are first-class; Stage
-7 does not hide Patch + TestReport inside an untyped composite blob. Workflow-level required outputs
-and every node-output input binding bind only to exact `node_id.slot` values declared
-`required=true`; the Workflow-input form follows the separate `task:TaskContract@1` rule.
+7 does not hide Patch + TestReport inside an untyped composite blob. Output necessity is exactly two
+independent facts, not one overloaded flag: a slot's `required_for_node_completion` controls whether
+a successful node must materialize it, and the Revision's `required_outputs[]` is the separate export
+list of exact `node_id.slot` refs projected into the root Outcome. Every node-output input binding
+and every exported output may reference only slots declared `required_for_node_completion=true`,
+so anything a downstream non-nullable binding consumes is guaranteed to exist when the producer
+completes; an exported-but-unbound or bound-but-unexported slot is legal and the two are distinct. Stage 7
+adds no `on_missing` fallback/skip/default semantics to bindings — the producer's completion gate is
+the only guarantee mechanism, and optional input behavior waits for a real consumer. A
+`required_for_node_completion=false` slot is an inspectable-only observation: it is materialized when
+produced, its absence never fails the node, and it can neither be bound downstream nor exported.
 A binding's exact `accepts` ContractRef must equal its source contract. The sole Workflow input
 source is the literal `task` carrying `TaskContract@1`; input names are unique within a node and a
-binding has exactly one discriminated source form.
-A `required=false` slot is an unbound observation output only; Stage 7 has no optional input,
-fallback or skip semantics. Every required result Artifact reference projected into a root
-success/needs-revision Outcome's `artifact_refs` must fit that existing TaskOutcome bound (currently 64);
+binding has exactly one discriminated source form. Every exported result Artifact reference
+projected into a root Outcome's `artifact_refs` must fit that existing TaskOutcome bound (currently 64);
 Compiler rejects one over the limit. TaskContract uses the separate `goal_reference` and is not
 duplicated into `artifact_refs`. Optional leaf evidence may be bounded with an explicit omission
-fact, but a required result ref is never silently dropped.
+fact, but an exported result ref is never silently dropped.
 
 Result semantics reuse those exact Workflow `required_outputs`: only required output refs whose
 contract kind is `ReviewReport` are result-driving. After every declared node completes, any bound
@@ -324,7 +383,11 @@ Every cross-node input binding must have a declared edge in the same producer→
 the Compiler rejects a missing edge and never infers or inserts one. An edge with no Artifact binding
 is legal as a pure control dependency. Cycle/topological checks and Scheduler readiness use the
 declared edge graph, while bindings add the required Artifact condition, so the visible DAG and
-runtime dependency graph cannot diverge.
+runtime dependency graph cannot diverge. A multi-node Revision must form a single weakly connected
+component: a disconnected component is a compile error naming the unattached nodes, because silently
+executing a typo-orphaned node spends model budget and may perform unintended writes; the fix is an
+explicit control edge or removal, not a warning. A connected node whose outputs nobody consumes is
+legal, stays execution-required and earns an actionable warning.
 
 `WorkflowRun` stores `root_task_run_id`. `NodeRun` stores its `conversation_session_id` and
 `leaf_task_run_id`; for Direct these equal the root Session/TaskRun, while isolated nodes reference
@@ -340,8 +403,9 @@ proof that a controllable local handler is still live.
 WorkflowRun has only one narrow pending terminal intent, nullable `user_cancel`, so a cancellation
 that encounters an unknown Tool outcome cannot later be mistaken for an ordinary crash/resume.
 Every node retained in the frozen Revision is execution-required even when it does not contribute to
-a Workflow required output: it is still scheduled and any failure applies the fixed whole-graph
-failure mapping. The output-level `required` flag controls materialization/binding only. There is no
+a Workflow exported output: it is still scheduled and any failure applies the fixed whole-graph
+failure mapping. The output-level `required_for_node_completion` flag controls
+materialization/binding only. There is no
 optional-node, skip/continue or fallback policy. There is also no conditional-expression language,
 approval node, converter, recursive subgraph,
 concurrency-group DSL, scheduler retry policy or configurable failure-policy matrix.
@@ -368,23 +432,61 @@ and consumer. No arbitrary schema registry or automatic version converter is int
 Output materialization never makes a second Provider/repair request. One optional, role-neutral
 `NodeResultCommitter` is composed at the existing TurnLifecycle terminal transaction only for a
 Workflow leaf; AgentLoop remains unchanged. After the final Assistant message has been durably
-committed but before the Turn terminal/root Task transition, it deterministically publishes required
-output bytes under IDs derived from `(node_run_id, output_slot)`, finalizes or reuses an existing
+committed but before the Turn terminal/root Task transition, it verifies that every
+`required_for_node_completion` slot is satisfied from durable facts, publishes or reuses output
+Artifacts under IDs derived from `(node_run_id, output_slot)`, finalizes or reuses an existing
 staging Artifact on replay, and contributes the available Artifact binding to that terminal
 transaction. Only after every required binding exists may the leaf commit its Turn terminal;
 NodeRun completion still waits for that actual AgentRun terminal. Ordinary Direct receives no
-committer and keeps its current path. Artifact publication/binding failure therefore cannot leave a
-Direct Workflow root falsely `READY_FOR_ACCEPTANCE`; a crash/staging ambiguity uses existing
+committer and keeps its current path.
+
+Slot satisfaction has exactly two forms, chosen by contract kind. A free-text `TextResult` slot is
+satisfied by wrapping the already committed final Assistant message itself: the whole message is the
+payload (reference/digest plus bounded redacted excerpt), so it is immune to fence-parsing,
+duplicate-candidate and missing-field failure modes by construction. Every structured contract
+(EvidenceBundle, ReviewReport, PlanArtifact, SynthesisReport and any later structured payload) is
+satisfied only through one authoritative submission: an internal `submit_node_result` mechanism tool
+composed into the Workflow leaf's ToolSet by leaf composition. It is never granted by definitions,
+prompts, Skills or Artifacts, never subject to definition allow/deny or approval prompts, and never
+present in ordinary Direct; its only effect is validating and staging/publishing declared output
+payloads through the existing ArtifactService and recording a durable submission fact on its own
+ToolExecution row. Its contract:
+
+```text
+submit_node_result(schema_version, outputs{slot: payload}, summary, evidence_refs[])
+1. the natural-language final message remains transcript; it is never parsed for structured data;
+2. the tool validates each submitted slot payload against the frozen Revision output contract and
+   rejects undeclared slots, wrong kind/version and schema violations with an in-loop error the
+   model can correct;
+3. exactly one valid submission exists per NodeRun: an identical replay is a no-op reuse and a
+   conflicting second submission is refused without overwrite;
+4. Artifact bytes are staged/published under deterministic `(node_run_id, output_slot)` identity
+   through the existing four-case helper, so a crash between submission and terminal commit is
+   replay-safe;
+5. evidence_refs must name Artifacts/ToolExecutions already durable inside this node's own scope;
+6. the submission call is an ordinary in-loop tool round — it adds no separate structured-completion
+   or repair Provider request.
+```
+
+A proposed successful STOP with a missing or invalid required structured submission is one bounded
+application error, and the existing AgentLoop error path closes the node as
+`failed(reason=output_contract_unsatisfied)`; error/cancel terminals bypass output requirements so
+failure closure cannot deadlock. Recovery completes the committer from the durable submission fact
+and deterministic Artifact identity without re-executing the node or re-parsing any message. The
+committer reads durable submission facts; it never calls the model and never modifies NodeRun state
+outside the WorkflowTransitionService. Artifact publication/binding failure therefore can never
+leave a Workflow root falsely `READY_FOR_ACCEPTANCE`; a crash/staging ambiguity uses existing
 Artifact/Agent recovery and affects only that Workflow.
 
-The committer enforces required outputs only for a proposed successful `STOP` terminal. Cancel/error
-terminals bypass output requirements so failure closure cannot deadlock. A deterministic parse or
-known Artifact failure becomes one bounded application error; AgentLoop's existing error path can
-then commit the non-success terminal without invoking the committer again.
+The committer enforces required outputs only for a proposed successful `STOP` terminal, and a known
+Artifact failure becomes one bounded application error; AgentLoop's existing error path can then
+commit the non-success terminal without invoking the committer again.
 
-Direct wraps the already committed visible final Assistant message as its text result. Built-in
-Multi-Agent contracts use small explicit versioned parsers over that message plus durable Tool/
-Artifact facts. Writer leaves also enable one narrow `ChangeArtifactCapture` at the existing durable
+Direct and one-node isolated text leaves wrap the already committed visible final Assistant message
+as their text result. Structured Multi-Agent contracts are validated submissions from
+`submit_node_result` over durable Tool/Artifact facts; the final message may add rationale but is
+never parsed for structured data. Writer leaves also enable one narrow `ChangeArtifactCapture` at
+the existing durable
 tool handler-completion boundary: while the authoritative mutation result/preflight data still
 exists, it publishes an immutable complete unified diff when representable, otherwise an exact
 structural manifest with before/after hashes, sizes and an explicit `content_complete=false`, and
@@ -452,8 +554,9 @@ legal Host behavior.
 ### 4.6 Execution and recovery
 
 - the compiler performs deterministic structural/reference/contract/capability checks only;
-- the compiler enforces the conversation-scope shape above: one-node Direct may invoke the root
-  Session; every node in a multi-node graph is isolated;
+- the compiler enforces the conversation-scope shape above: every Stage 7 graph is all-`isolated`;
+  the one-node `invoking_session` Direct shape is added by the Subplan 7 adapter and is never legal
+  in a multi-node graph;
 - the scheduler admits nodes in stable order and calls the existing Agent preparation/loop path;
 - one Stage 7 NodeRun owns one AgentRun/Turn. Workflow leaf composition does not attach the ordinary
   steering/follow-up queue; external control is cancel/recovery/abandon. AgentLoop may still replan
@@ -470,23 +573,28 @@ legal Host behavior.
   claim success while a Tool still runs. Durable remote/background cancel requests are Stage 9;
 - any declared-node failure marks the root TaskRun failed, fails the WorkflowRun and cancels every
   not-started NodeRun with an explicit `upstream_failed` or `workflow_failed` reason;
-- a blocking verdict from a result-driving required ReviewReport is a successful graph execution with Workflow result
-  `needs_revision`: the WorkflowRun is completed, the root TaskRun is failed with a TaskOutcome that
-  references the ReviewReport, and a user may explicitly start a new full WorkflowRun. It is not an
+- a blocking verdict from a result-driving required ReviewReport is a successful graph execution
+  with Workflow result `needs_revision`, not a failure: the WorkflowRun is completed, the root
+  TaskRun reaches `READY_FOR_ACCEPTANCE` exactly like a succeeded run, and the Workflow result
+  snapshot carries the ReviewReport reference plus the fixed `completion_basis` fact
+  `workflow_result=needs_revision` so monitoring, SLO accounting and learning never read a negative
+  business verdict as an execution failure. The user then either accepts the outcome or resumes the
+  root `READY_FOR_ACCEPTANCE -> OPEN` and explicitly starts a new full WorkflowRun. It is not an
   exception route or a hidden repair loop;
-- for an all-isolated Scheduler-owned Workflow, `completed/succeeded` moves the root TaskRun to the existing
-  `READY_FOR_ACCEPTANCE`; cancel/failure/abandon delegate to the corresponding existing root Task
-  command. A blocked Workflow leaves the root Task open. Direct continues to let its existing
-  TurnLifecycle perform that root transition, so the Scheduler never writes it twice. Every
-  successful Workflow finalization also writes one versioned root
-  `TaskOutcome(trigger=SNAPSHOT)` carrying the bound TaskContract as goal evidence and the required
-  result Artifact refs. A typed `WORKFLOW_RUN` evidence ref with reserved role
+- for an all-isolated Scheduler-owned Workflow, `completed/succeeded` and `completed/needs_revision`
+  both move the root TaskRun to the existing `READY_FOR_ACCEPTANCE`; cancel/failure/abandon delegate
+  to the corresponding existing root Task command. A blocked Workflow leaves the root Task open. The
+  Subplan 7 Direct adapter lets the existing TurnLifecycle perform that root transition, so the
+  Scheduler never writes it twice. Every completed Workflow finalization also writes one versioned
+  root `TaskOutcome(trigger=SNAPSHOT)` carrying the bound TaskContract as goal evidence and the
+  exported result Artifact refs. A typed `WORKFLOW_RUN` evidence ref with reserved role
   `workflow_result_snapshot` marks it, and an existing typed `TASK_TRANSITION` ref with reserved role
   `workflow_ready_transition` binds it to the exact transition that produced the current
   `READY_FOR_ACCEPTANCE`; this snapshot is not acceptance and cannot enqueue LearningReview;
-- after a failed or `needs_revision` result, reusing the same root Task requires the existing
-  explicit `FAILED -> OPEN` root Task resume before a new WorkflowRun can be created. Workflow
-  `resume` never means rerun of a terminal failed WorkflowRun;
+- for a failed run, reusing the same root Task requires the existing explicit `FAILED -> OPEN` root
+  Task resume before a new WorkflowRun can be created; a `needs_revision` run instead leaves the
+  root READY, where the existing accept-or-resume choice applies. Workflow `resume` never means
+  rerun of a terminal failed WorkflowRun;
 - recovery never reruns completed nodes. `resume` may proceed only after the existing Recovery
   service has reconciled or resolved an unknown Tool outcome; it cannot clear `blocked` by itself. A
   blocked run with no pending terminal intent is the ordinary crash path and may then continue. A
@@ -503,24 +611,27 @@ legal Host behavior.
 - within one Scheduler-managed WorkflowRun/frontier, Writer nodes are always serialized. Other
   processes, ordinary Direct Sessions and separate WorkflowRuns remain protected by existing file
   revision/conflict checks; Stage 7 does not claim a global workspace lease;
-- Subplan 7 adds only bounded read-only parallelism. `access_mode=read` is an enforceable contract,
-  not a role label: capability resolution removes Host `bash`, write/edit/config/promotion tools and
+- `access_mode=read` is an enforceable capability ceiling, not a role label, and Stage 7 enforces it
+  entirely serially: capability resolution removes Host `bash`, write/edit/config/promotion tools and
   unknown/opaque or undeclared MCP effects. A read leaf may retain `bash` only when preparation
   freezes the existing native sandbox, omits promotion, denies external effects through existing
   policy and discards snapshot mutations; this supports read/test commands without granting a
-  workspace write. If that backend is unavailable, optional bash is removed and required bash fails
-  only that node. Runtime ToolSet/effect/isolation drift is a target-node preparation failure, never silent serial
-  execution with wider authority. `access_mode=write` nodes remain legal and stable-serial. Serial
-  fallback applies only when concurrency proof/slots are unavailable without violating the frozen
-  node contract. Writer worktrees and distributed leases are not Stage 7 work.
+  workspace write. If that backend is unavailable, an optional bash declaration is removed and a
+  required one fails only that node. Runtime ToolSet/effect/isolation drift is a target-node
+  preparation failure, never silent execution with wider authority. Bounded read-only parallel
+  admission, concurrency slots and the per-request budget-claim ledger are Stage 8 work with their
+  own entry conditions; Stage 7 admits one node at a time in stable order and never runs a Writer
+  concurrently. Writer worktrees and distributed leases are not Stage 7 work.
 
 ### 4.7 Start command and fixed terminal mapping
 
 `StartWorkflowCommand` requires workspace ID, command ID, Workflow Definition ID, exact immutable
 Revision ID, invoking active/healthy Session ID, the exact current `purpose=user` root TaskRun ID in
-`OPEN` state with expected row version, one bounded TaskContract payload, and—when the graph uses
-`invoking_session`—a distinct client-message ID. The Revision must belong to the Definition and the
-Workflow head must be enabled. It never chooses an implicit current task, creates a Task, abandons a
+`OPEN` state with expected row version, one bounded TaskContract payload, and—once the Subplan 7
+adapter exists and the graph uses `invoking_session`—a distinct client-message ID. The Revision must
+belong to the Definition, the Workflow head must be enabled, every referenced AgentDefinition head
+must be enabled, and neither the Revision nor any referenced exact AgentDefinitionVersion may carry
+a revocation record. It never chooses an implicit current task, creates a Task, abandons a
 different OPEN/READY task or resumes a failed Task. Callers use the existing explicit TaskService
 command first; Start then verifies `session.current_task_run_id == root_task_run_id`. Direct passes
 the same TaskContract text exactly once to existing TurnLifecycle under the supplied client-message
@@ -544,24 +655,30 @@ rewritten through the existing Artifact filesystem owner and then finalized; con
 or bytes report corruption/conflict without overwrite. The same command ID with different content
 conflicts. One Operational Store transaction rechecks the receipt digest and every mutable Start
 admission fact: Session health/current root; root purpose/status/expected row version; absence of an
-open Turn, nonterminal AgentRun and nonterminal WorkflowRun; Revision-to-Definition membership; and
-the Workflow Head's current enabled gate. It then freezes `started_at` and
+open Turn, nonterminal AgentRun and nonterminal WorkflowRun; Revision-to-Definition membership; the
+Workflow Head's current enabled gate; the enabled gate of every referenced AgentDefinition head; and
+the absence of revocation records for the exact Revision and referenced Versions. It then freezes
+`started_at` and
 `admission_deadline_at` from the injected clock/Revision duration and records the receipt,
 `WorkflowRun(status=running)`/input binding and one attempt-1 `queued` NodeRun for every frozen graph
 node. A
 publication failure can leave only an unbound immutable Artifact, never a runnable partial Workflow.
 `conversation_session_id`, `leaf_task_run_id` and
 `agent_run_id` are nullable while queued and are bound atomically when that existing NodeRun moves
-to running; admission never creates a second NodeRun. New leaf admission also requires its
-AgentDefinition head enabled; disabling after an AgentRun started does not block frozen recovery.
+to running; admission never creates a second NodeRun. Ordinary head disable never reaches an
+admitted Run; node admission and recovery resume instead check the frozen exact
+AgentDefinitionVersion and Revision against revocation records, and a revoked version closes the
+Run through the fixed `policy_revoked` mapping rather than failing it as an ordinary execution
+error.
 
 | Trigger | Active/current NodeRun | Other queued NodeRuns | WorkflowRun | root TaskRun |
 |---|---|---|---|---|
-| current node required outputs valid | `completed` | continue/none | `completed/succeeded` only after every declared node completes + Workflow result snapshot | all-isolated: `READY_FOR_ACCEPTANCE`; invoking-session Direct: existing TurnLifecycle result |
-| result-driving required ReviewReport has blocking verdict | Reviewer `completed` | continue under normal dependencies | `completed/needs_revision` only after every declared node completes | then `FAILED` + root TaskOutcome/ReviewReport ref |
+| current node required outputs valid | `completed` | continue/none | `completed/succeeded` only after every declared node completes + Workflow result snapshot | all-isolated: `READY_FOR_ACCEPTANCE`; invoking-session Direct (Subplan 7): existing TurnLifecycle result |
+| result-driving required ReviewReport has blocking verdict | Reviewer `completed` | continue under normal dependencies | `completed/needs_revision` only after every declared node completes | `READY_FOR_ACCEPTANCE` + result snapshot referencing the ReviewReport with `workflow_result=needs_revision` |
 | model/Provider/preparation/output-contract failure with no unknown side effect | `failed` | `cancelled` with explicit cause | `failed` | `FAILED` + partial evidence |
-| zero agent-generation capacity or deadline exceeded before Node admission | not-started node `cancelled(reason=budget_exhausted|deadline_exceeded)` | all `cancelled` | `failed` | `FAILED` + partial evidence |
-| agent-generation capacity/deadline expires after Node start, before its next generation request | active node `failed(reason=budget_exhausted|deadline_exceeded)` after any active Tool safely settles | all `cancelled` | `failed` | `FAILED` + partial evidence |
+| zero agent-generation capacity or deadline exceeded before Node admission | not-started node `cancelled(reason=budget_exhausted\|deadline_exceeded)` | all `cancelled` | `failed` | `FAILED` + partial evidence |
+| agent-generation capacity/deadline expires after Node start, before its next generation request | active node `failed(reason=budget_exhausted\|deadline_exceeded)` after any active Tool safely settles | all `cancelled` | `failed` | `FAILED` + partial evidence |
+| revocation of the frozen Revision or a referenced exact Version before a node's admission | not-started node `cancelled(reason=policy_revoked)` | all `cancelled` | `cancelled(reason=policy_revoked)` | `CANCELLED` + revocation evidence |
 | unresolved Tool outcome | `blocked` | remain `queued` | `blocked` | remain `OPEN` |
 | explicit cancel, active Tool settles safely | active node `cancelled` | all `cancelled` | `cancelled(reason=user_cancelled)` | `CANCELLED` |
 | cancel leaves unresolved Tool outcome | `blocked` | remain `queued` | `blocked` | remain `OPEN` |
@@ -632,6 +749,28 @@ preventing root terminal closure.
 | Interfaces | focused Workflow CLI/query modules | call application services; never read SQL/YAML directly |
 | Verification | focused `tests/test_stage7_*` plus existing regressions | scripted Providers and injected synchronization only |
 
+Every durable datum has exactly one writer; components observe through read models and commands,
+never by writing a peer's state:
+
+| Data / state | Sole writer |
+|---|---|
+| AgentDefinitionVersion / Head | AgentDefinitionPublicationService |
+| WorkflowRevision / Head | WorkflowCompilationService |
+| Revocation records | the same publication services, as additive audited rows |
+| WorkflowRun / NodeRun state | WorkflowTransitionService |
+| Node typed results and result refs | NodeResultCommitter, acting on durable submission facts |
+| Artifact bytes and digests | ArtifactService |
+| AgentRun lifecycle | the existing AgentRun/AgentLoop chain |
+| root TaskOutcome | WorkflowOutcomeFinalizer delegating to the existing TaskOutcome owner |
+| Workspace change manifests | ChangeArtifactCapture at the tool handler-completion boundary |
+| Budget admission/settlement | the Workflow budget admission seam over durable `purpose=agent` rows |
+| CLI/query modules | call application services only; no repository or YAML access |
+
+Cross-owner rules that keep the matrix honest: NodeResultCommitter never bypasses
+WorkflowTransitionService to mutate NodeRun state; AgentLoop never learns about WorkflowRun;
+WorkflowScheduler never writes Artifacts directly; ChangeArtifactCapture and `submit_node_result`
+publish only through ArtifactService; CLI contains no business state machine.
+
 Human-editable sources use existing versioned typed document patterns. Their two workspace YAML
 documents are explicit current-backup bundle inventory and restore/doctor inputs, including
 desired-ahead-of-published content. Full immutable Agent versions, Workflow revisions/published
@@ -668,35 +807,50 @@ content, and both keep their existing policy without gaining Workflow knowledge:
 
 ## 6. Sequential subplans
 
-| Order | Subplan | Result |
-|---|---|---|
-| 1 | Agent Definition Foundation | minimal versioned definitions, AgentFactory composition and an executable two-mode conversation-scope contract |
-| 2 | Workflow Revision and Artifact Contracts | immutable Workflow/Node/Run domain, root/internal-leaf Task ownership, typed Artifact contracts, persistence, backup/doctor integrity |
-| 3 | Deterministic Workflow Compiler | canonical compile path and only the structural/contract/capability checks required by supported graphs |
-| 4 | Direct Workflow Vertical Slice | opt-in one-node Workflow through the existing AgentLoop with parity, cancellation and recovery evidence |
-| 5 | Serial DAG Scheduler | stable multi-node dependency execution, aggregate budget, failure/cancel/resume/recovery semantics |
-| 6 | Serial Multi-Agent Artifact Pipeline | Explorer -> Coder -> Reviewer with isolated leaf context and typed handoff |
-| 7 | Bounded Read-only Parallelism | fixed read-only fan-out, Synthesizer fan-in, bounded concurrency/budget and one serialized Writer |
-| 8 | Workflow Management and Templates | application commands/queries, CLI, four built-in static templates and separately authorized additive events if approved |
-| 9 | Stage 7 Acceptance and Closeout | deterministic integrated acceptance, Direct comparison, truthful promotion evidence and documentation sync |
+The nine children form four gated phases: 7A contracts (1–3), 7B reliable serial execution (4–5),
+7C Multi-Agent semantics (6), and 7D productization (7–8), each closing with its own gate before the
+next phase starts.
+
+| Order | Phase | Subplan | Result |
+|---|---|---|---|
+| 1 | 7A | Agent Definition Foundation | minimal versioned definitions with declared tool requirements, enable/disable plus emergency revocation semantics, AgentFactory composition and the isolated conversation-scope seam |
+| 2 | 7A | Workflow Revision and Artifact Contracts | immutable Workflow/Node/Run domain, root/internal-leaf Task ownership, split output-necessity semantics, typed Artifact contracts, persistence, backup/doctor integrity |
+| 3 | 7A | Deterministic Workflow Compiler | canonical pure compile path; pure validate versus explicit publish; tool-requirement merge; single-component and capability checks |
+| 4 | 7B | Isolated Workflow Vertical Slice | one-node isolated WorkflowRun end to end through the single WorkflowScheduler/transition/committer/finalizer path, with cancellation and recovery evidence |
+| 5 | 7B | Serial DAG Scheduler | stable multi-node dependency execution on the same Scheduler, aggregate budget, failure/cancel/resume/recovery/abandon semantics |
+| 6 | 7C | Serial Multi-Agent Artifact Pipeline | ChangeArtifactCapture gate first, then the typed submission protocol and Explorer -> Coder -> Reviewer with truthful `needs_revision` |
+| 7 | 7D | Direct Invoking-Session Adapter | opt-in one-node `invoking_session` shape on the same Scheduler with ordinary-Direct parity evidence |
+| 8 | 7D | Workflow Management and Templates | application commands/queries, CLI, four built-in static templates, doctor completion and separately authorized additive events if approved |
+| 9 | — | Stage 7 Acceptance and Closeout | deterministic integrated acceptance, Direct comparison, truthful promotion evidence and documentation sync |
 
 Child contracts are in `.agent/subplans/1-*.md` through `9-*.md`. Only Subplan 1 is ready; later
-children remain pending and may be corrected by verified earlier implementation facts.
+children remain pending and may be corrected by verified earlier implementation facts. Bounded
+read-only parallelism is no longer a Stage 7 child; its design (per-request budget claim, entry
+conditions) lives in the Stage 8 roadmap.
 
 ## 7. Checkpoints and fallback policy
 
-- After Subplan 4, Direct Workflow must be behaviorally equivalent before any multi-node runtime is
-  implemented. If not, repair the vertical slice rather than adding compatibility layers.
-- After Subplan 6, the serial Explorer -> Coder -> Reviewer path must be reliable before concurrency
-  begins.
-- After Subplan 7, freeze the application projection needed by CLI; Stage 8 GUI must later reuse it.
+- After Subplan 3 (phase 7A gate), the contract layer must stand alone: identical input produces an
+  identical candidate digest, `validate` is provably write-free, publication is idempotent, an exact
+  Revision is independently recoverable, and a missing required tool fails at compile time. Do not
+  start execution work on an unproven contract base.
+- After Subplan 5 (phase 7B gate), the single Scheduler path must be reliable before any role
+  semantics: nodes are never re-executed, results are never double-committed, crash before/after
+  Artifact publication recovers, downstream nodes see only fully committed results, and one-node and
+  multi-node graphs share the same scheduler/committer/finalizer code path.
+- After Subplan 6 (phase 7C gate), the serial Explorer -> Coder -> Reviewer path must be reliable,
+  with a Coder's real workspace mutations matching its captured change evidence and a blocking
+  Reviewer verdict never recorded as an execution failure.
+- After Subplan 7, the Direct adapter must prove ordinary-Direct parity; if not, repair the adapter
+  rather than adding compatibility layers. After Subplan 8, freeze the application projection needed
+  by CLI; Stage 8 GUI must later reuse it.
 - The fixed whole-graph failure mapping combined with full-rerun semantics is a deliberate but real
   cost: any declared-node failure fails the Workflow, and a user rerun creates a new WorkflowRun
   that re-executes every node from attempt 1 — a failure at node 9 of 10 discards the Provider cost
   of the 8 completed nodes. Templates therefore keep graphs small and upstream nodes cheap, Subplan
   9 records observed rerun cost in the comparison evidence, and the Stage 8 entry conditions keep
   child-run continuation (rerun-from-failure without re-executing completed work) as the
-  highest-priority orchestration follow-up.
+  highest-priority orchestration follow-up, ahead of read-only parallelism.
 - A malformed Workflow never disables the application or existing Direct path.
 - Lack of model/provider quality benefit prevents a template from becoming recommended/default; it
   does not invalidate a correctly functioning static Runtime.
@@ -769,15 +923,24 @@ git diff --check
 7. Existing ToolExecutor approval, budget, cancellation, audit and recovery semantics remain the
    only tool-execution path.
 8. Completed NodeRuns and immutable Artifacts are never overwritten or silently relabelled.
-9. Writers are serialized within each Stage 7 Scheduler-managed WorkflowRun/frontier; existing file
-   revision/conflict handling remains responsible for external processes and other runs. Parallel
-   admission requires a provably read-only frozen effective ToolSet.
+9. Writers are serialized within each Stage 7 Scheduler-managed WorkflowRun; existing file
+   revision/conflict handling remains responsible for external processes and other runs. Stage 7 has
+   no concurrent admission at all; parallel admission is Stage 8 work requiring a provably read-only
+   frozen effective ToolSet.
 10. No secret, reasoning, complete tool arguments/results, raw SDK object or traceback enters
     definitions, revisions, events, logs, YAML or terminal diagnostics.
 11. Usage/cost unavailability and model-quality failure remain truthful outcome facts, not safety
-    failures.
+    failures. A blocking review verdict is a successful `needs_revision` result, never an execution
+    failure.
 12. Valid Direct and unrelated definitions remain runnable when one Workflow definition/run is
     invalid, unavailable or blocked.
+13. A structured node result is authoritative only as a durable `submit_node_result` submission
+    validated against the frozen Revision contract; the final Assistant message is transcript and is
+    never parsed for structured data.
+14. Ordinary head disable never mutates or blocks an already-admitted WorkflowRun; emergency
+    revocation is the only mid-run stop, and it is additive, audited and one-way.
+15. `validate` is always write-free; only explicit `publish` (or an explicit `--ensure-published`
+    run) creates a Version/Revision or advances a head.
 
 ## 11. Non-goals
 
@@ -790,8 +953,10 @@ git diff --check
   or scheduler-owned model reasoning.
 - Steering/follow-up turns inside one Workflow NodeRun; Stage 7 Workflow control is cancel,
   recovery, abandon or a new full Run.
-- Parallel Writers, Git worktree orchestration, distributed locks, compensation transactions or
-  transparent retry after side effects.
+- Any concurrent node admission. Bounded read-only parallelism (fan-out frontier, per-request budget
+  claim, visibility barriers) is deferred to Stage 8 with its own entry conditions; Stage 7
+  parallelism of any kind — including parallel Writers, Git worktree orchestration, distributed
+  locks, compensation transactions or transparent retry after side effects — is out.
 - Generic policy/schema/plugin/event/tracing platforms, dependency injection framework rewrites or
   a second chat-history store.
 - Default Multi-Agent routing before comparative evidence demonstrates value for a task class.
@@ -799,9 +964,11 @@ git diff --check
 ## 12. Completion condition
 
 Stage 7 engineering is complete only when Subplans 1–9 are verified and integrated, Direct remains
-available and behaviorally stable, static serial and bounded read-only-parallel Workflows survive
-cancel/recovery without rerunning completed work, CLI/query projections are complete, the full
-offline gate passes, and architecture/roadmap/acceptance documents describe only implemented facts.
+available and behaviorally stable, static serial Workflows survive cancel/recovery without rerunning
+completed work, the opt-in Direct invoking-session adapter proves parity, CLI/query projections are
+complete, the full offline gate passes, and architecture/roadmap/acceptance documents describe only
+implemented facts. Bounded read-only parallelism is a Stage 8 entry item and is not part of this
+completion condition.
 
 Comparative evaluation must be run and recorded with the evidence available. A Workflow template
 may become recommended/default only after it demonstrates clear value for its target task class.

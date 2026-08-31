@@ -3,9 +3,6 @@
 > Status: pending
 > Branch: `feat/stage7-workflow-domain`
 > Prerequisite: Subplan 1 completed, verified and integrated
-> Revised 2026-08-31 per the conditional-GO plan review: output necessity is split into
-> per-slot completion and a separate export list, revocation evidence is first-class, and the
-> `invoking_session` scope value is deferred to its Subplan 7 consumer.
 
 ## Objective
 
@@ -19,8 +16,7 @@ typed contract metadata on the existing Artifact authority. This subplan creates
   YAML/OCC patterns, with no published pointer or operational enable switch in YAML;
 - minimal Stage 7 Artifact contract payloads/extensions in `src/morrow/core/artifacts.py` or a focused
   adjacent module;
-- Workflow Revision/published-head repository ports, additive revocation records and one focused
-  SQLite journal;
+- Workflow Revision/published-head repository ports and one focused SQLite journal;
 - the minimal additive `TaskRunPurpose`/root-versus-internal-leaf ownership fields and acceptance
   filtering required by the existing Turn-to-Task Session invariant;
 - the next sequential Operational Store migration and thin registration;
@@ -31,22 +27,19 @@ typed contract metadata on the existing Artifact authority. This subplan creates
 
 1. Define editable `WorkflowDefinitionSource` identity separately from immutable
    `WorkflowRevision` and SQLite `WorkflowDefinitionHead`.
-   The typed Source owns the Stage 7 graph input: origin, input contract, exact exported
+   The typed Source owns the Stage 7 graph input: origin, input contract, exact required
    `node_id.slot` outputs, finite four-field default Workflow budget, source-form nodes and
    unconditional `from_node_id`/`to_node_id` edges. Entry/terminal sets, normalized budget and each
    node's declared generation cap are Compiler-derived Revision fields, not duplicated user inputs.
    The Revision model contains an opaque `workflow_revision_id`, a monotonic display revision within
    its Definition, full normalized source metadata (`name`, `description`, `tags`, `origin`), frozen
-   normalized `input_contract` and exact `required_outputs[]` (the export list), stable node IDs,
-   unconditional edges,
-   entry/terminal facts, canonical content hash, creator, optional `parent_workflow_revision_id`,
-   compiler version and one
+   normalized `input_contract` and exact `required_outputs[]`, stable node IDs, unconditional edges,
+   entry/terminal facts, canonical content hash, creator, optional `parent_workflow_revision_id`, compiler version and one
    normalized finite `WorkflowBudget` with positive `max_agent_generation_requests`,
    `default_node_max_agent_generation_requests`, relative `admission_timeout_seconds` and
-   `max_concurrency`. `max_concurrency` stays in the schema for Stage 8; Stage 7 execution admits
-   one node at a time regardless of its value.
-   This subplan defines representation/persistence only; Subplan 3's pure Compiler creates a
-   candidate and its `WorkflowCompilationService` is the sole publisher of runnable Revisions/heads.
+   `max_concurrency`. This
+   subplan defines representation/persistence only; Subplan 3's pure Compiler creates a candidate
+   and its `WorkflowCompilationService` is the sole publisher of runnable Revisions/heads.
    The v1 typed shape permits exactly one Workflow input ContractRef, `TaskContract@1`, matching the
    only Start-time input producer defined below. It does not model alternate/multiple Workflow input
    contracts before a consumer exists.
@@ -54,38 +47,31 @@ typed contract metadata on the existing Artifact authority. This subplan creates
    input bindings and `output_contracts[]`. `InputBinding` is a strict discriminated union with one
    node-local-unique `input_name`, exact accepted ContractRef kind/version and exactly one source:
    literal sole `workflow_input=task`, or exact node-output `node_id.slot`. Every output has a stable
-   node-local `slot`, exact kind/version and a `required_for_node_completion` flag. Output necessity
-   is two independent facts: that flag controls whether a successful node must materialize the slot,
-   while the Revision's `required_outputs[]` is the separate export list of refs projected into the
-   root Outcome. Node-output input bindings and exported outputs may reference only slots declared
-   `required_for_node_completion=true`, so anything a downstream non-nullable binding consumes is
-   guaranteed at producer completion; a bound-but-unexported slot is the normal fan-in case. A
-   `required_for_node_completion=false` slot is an inspectable-only observation: materialized when
-   produced, never binding-ready, never exported, and its absence never fails the node. Stage 7 adds
-   no `on_missing` fallback/skip/default semantics to bindings. `(node_run_id, output_slot)` is the
-   deterministic publication identity. Every node retained in a Stage 7 Revision is
-   execution-required even when it does not contribute to an exported output; any node failure uses
-   the fixed whole-graph failure mapping. The output flag controls materialization/binding, not
-   optional-node execution.
+   node-local `slot`, exact kind/version and required flag. Node-output input bindings and Workflow
+   required outputs reference exact `node_id.slot` values and may reference only slots declared
+   `required=true`; the Workflow-input form instead follows the sole `task:TaskContract@1` rule. `required=false`
+   slots are unbound observation outputs only. `(node_run_id, output_slot)` is the deterministic
+   publication identity. Every node retained in a Stage 7 Revision is execution-required even when
+   disconnected from final required outputs; any node failure uses the fixed whole-graph failure
+   mapping. The output flag controls materialization/binding, not optional-node execution.
    Represent the graph rule that every cross-node input binding requires a same-direction declared
    producer→consumer edge; an edge without a binding is a legal pure control dependency. Workflow
    input bindings are exempt. The Compiler rejects inconsistency rather than auto-inserting edges.
-   Also include `access_mode: read|write`, optional node-level `tool_requirements[]` (a
-   restriction-only overlay on the referenced Definition's declared set, per the master plan's
-   precedence rules), `conversation_scope` (single value `isolated` for now — the `invoking_session`
-   value arrives with its Subplan 7 consumer, so no placeholder enum case or fixture is created
-   here), an optional node
+   Also include `access_mode: read|write`,
+   `conversation_scope: invoking_session|isolated`, an optional node
    `max_agent_generation_requests` override and a compiled positive
    `declared_node_max_agent_generation_requests`. The latter is represented here and resolved only by
    Subplan 3 from the node override or Workflow node default intersected with the referenced
    AgentDefinition run ceiling; do not create a generic budget expression.
    A compiled Revision node also stores exact `resolved_model_ref`; source nodes do not. Subplan 3
-   resolves either the Definition's exact ModelRef or its literal `invoking_active` at publication
-   (publish-time freeze) so later active-model edits cannot drift an already published Revision.
-   Root terminal ownership is uniform in this slice: every Stage 7 graph is all-isolated and
-   Scheduler-owned; the Subplan 7 Direct adapter adds the invoking-session root path on the same
-   Scheduler, and because `needs_revision` closes the root as `READY_FOR_ACCEPTANCE`, no
-   scope-specific ReviewReport restriction is needed or created.
+   resolves either the Definition's exact ModelRef or its literal `invoking_active` selector during
+   compilation so later active-model edits cannot drift an already published Revision.
+   The domain states the shape invariant consumed by Compiler: `invoking_session` is legal only for
+   a graph with exactly one node and no edges. Every multi-node graph uses isolated leaves.
+   Root terminal ownership is scope-based: only the invoking-session shape is Direct/TurnLifecycle-
+   owned; every all-isolated graph, including one isolated node, is Scheduler-owned. The
+   ReviewReport-specific Direct terminal conflict cannot exist until that real contract arrives and
+   is therefore enforced/tested with its producer in Subplan 6, not with a placeholder here.
    Do not add optional input/fallback/skip semantics, conditions, approval/deterministic/merge kinds,
    retry/failure policy matrices, recursion or concurrency groups.
 3. Define `WorkflowRun` and `NodeRun`/attempt with only the persisted states needed now:
@@ -107,7 +93,7 @@ typed contract metadata on the existing Artifact authority. This subplan creates
    terminal NodeRun rows are immutable. Workflow start pre-creates one attempt-1 queued NodeRun per
    frozen node; admission binds the leaf references and transitions that same row to running.
 4. Add the smallest TaskRun discriminator `purpose: user|workflow_node`, migrating existing rows to
-   `user`. An isolated node owns a fresh standalone
+   `user`. A Direct node reuses the root Session/TaskRun. An isolated node owns a fresh standalone
    Session and matching internal `workflow_node` TaskRun, preserving the existing requirement that
    Turn.session_id equals TaskRun.session_id. Internal leaf TaskRuns are omitted from ordinary user
    task lists and cannot enqueue LearningReview. Every ordinary user Task mutation (`accept`,
@@ -118,8 +104,8 @@ typed contract metadata on the existing Artifact authority. This subplan creates
    authoritative TaskOutcome.
    Also define the root-ownership invariant: one `purpose=user` root Task may have at most one
    nonterminal WorkflowRun. While associated, ordinary Task mutation/replacement and ordinary Turn
-   admission reject; Workflow-owned root transitions and (from Subplan 7) the exact bound Direct Turn
-   use explicit application boundaries. Once the Workflow is terminal, ordinary behavior resumes.
+   admission reject; Workflow-owned root transitions and the exact bound Direct Turn use explicit
+   application boundaries. Once the Workflow is terminal, ordinary behavior resumes.
 5. Extend `DurableAgentRun` by reference with Definition/Workflow/Node/attempt evidence required for
    attribution. Preserve current snapshots and current-format migration policy; do not retain a
    permanent old/new dual runtime path.
@@ -128,19 +114,15 @@ typed contract metadata on the existing Artifact authority. This subplan creates
    Workflow result snapshot from an ordinary Task snapshot. Pair it with the existing typed
    `TASK_TRANSITION` evidence ref under reserved role `workflow_ready_transition`, pointing at the
    exact root transition that produced the relevant `READY_FOR_ACCEPTANCE` epoch. Do not parse
-   summary/completion-basis strings or add a parallel outcome type. A `needs_revision` snapshot is
-   distinguished by the fixed existing `completion_basis` fact `workflow_result=needs_revision` plus
-   its ReviewReport reference — no new TaskOutcome field or TaskRun status is added.
+   summary/completion-basis strings or add a parallel outcome type.
 6. Reuse the existing Artifact envelope and bytes store. Add contract kind/version and NodeRun
    producer/input-binding facts. Implement only two bounded payload contracts with immediate
    consumers: Workflow-input `TaskContract`, bound on WorkflowRun, and role-neutral `TextResult`,
-   used by the one-node slice and minimal compiler fixtures. `TextResult` records the durable final-
+   used by the Direct slice and minimal compiler fixtures. `TextResult` records the durable final-
    Assistant reference/digest, bounded redacted excerpt and `content_complete`; it never duplicates
    ConversationLog authority. This makes recovery independent of in-memory prompt text or a copied
-   root transcript. Structured contracts are defined only with their real producers (Subplan 6
-   onward) and are always satisfied through the `submit_node_result` submission protocol rather than
-   message parsing; this subplan records that contract split and creates no structured parser. These
-   typed payload validators use the existing value-sensitive text-
+   root transcript. Later templates add their own built-in payloads only when they gain a real
+   producer and consumer. These typed payload validators use the existing value-sensitive text-
    safety mode: generic security vocabulary is legal, while raw high-confidence credential values
    are never accepted as durable payload bytes.
    Extend that same explicit Workflow mode to root `TaskOutcome` construction/projection; do not add
@@ -149,9 +131,9 @@ typed contract metadata on the existing Artifact authority. This subplan creates
    and the existing `completion_basis` receives fixed fact `workflow_evidence_redacted=true` so legal
    terminal transitions still close. Do not invent a TaskOutcome `content_complete` field or type.
    Expose the existing TaskOutcome Artifact-reference capacity as a shared domain bound used by the
-   Compiler: all exported result refs stored in `artifact_refs` must fit (currently 64).
+   Compiler: all Workflow required result refs stored in `artifact_refs` must fit (currently 64).
    TaskContract occupies the separate `goal_reference` and is not duplicated into that tuple.
-   Optional projected leaf detail may be bounded with a deterministic omission fact; exported refs
+   Optional projected leaf detail may be bounded with a deterministic omission fact; required refs
    cannot be truncated or hidden in an untyped blob.
    Since current Artifact and TaskOutcome model validators run again on rehydration, add one minimal
    persisted internal `TextSafetyProfile: legacy_strict|workflow_value_sensitive` discriminator to
@@ -177,8 +159,6 @@ typed contract metadata on the existing Artifact authority. This subplan creates
    backup manifest, provider-runtime subtree, Session fork reason) keep legacy behavior and need no
    wiring.
 7. Add repository/journal operations for immutable WorkflowRevisions, SQLite published heads,
-   additive `WorkflowRevisionRevocation` records (keyed by exact revision ID; reason, timestamp,
-   command provenance; never reversed and never mutating the immutable Revision),
    WorkflowRuns, root nonterminal uniqueness, NodeRun attempts and Artifact bindings with legal
    transitions and idempotent
    terminal writes. A head records the exact YAML document revision plus that definition's canonical
@@ -188,14 +168,12 @@ typed contract metadata on the existing Artifact authority. This subplan creates
    Subplan 8 later exposes its application/CLI command. AgentDefinition remains owned by Subplan 1
    and is referenced by immutable stored ID/version only. The repository accepts a Compiler
    candidate but cannot normalize/hash or expose another publication path.
-8. Extend backup and doctor through their existing composition seams for both database records
-   (including revocation records) and the workspace `workflow-definitions.yaml` bundle inventory.
-   Missing references, hash drift,
+8. Extend backup and doctor through their existing composition seams for both database records and
+   the workspace `workflow-definitions.yaml` bundle inventory. Missing references, hash drift,
    future schema versions, unrelated-entry document revision changes and desired-ahead-of-published
    restore are diagnosed without a new
    Workflow backup format. Reuse Subplan 1's exact-path `DEFINITION_SOURCE` file kind/reference;
-   do not add another manifest type. Backup/verify/restore handle that bounded source as exact raw
-   bytes plus
+   do not add another manifest type. Backup/verify/restore handle that bounded source as exact raw bytes plus
    path/hash without parsing it first. A malformed desired draft remains faithfully backup/
    restore-able; validate/doctor reports it while valid published Revisions and ordinary Direct stay
    runnable. Reuse only the existing high-confidence raw credential-literal refusal: generic
@@ -207,15 +185,12 @@ typed contract metadata on the existing Artifact authority. This subplan creates
    manifest projection of Artifact/Outcome records carries identity/path/hash facts only and never
    embeds Workflow-profile excerpt or payload text. Prove a benign security word stored under the
    Workflow profile cannot fail backup, and that a genuinely unsafe value is already absent from
-   durable content before backup runs. Repair UX polish beyond this severity/inventory coverage is
-   deferred to Subplan 8.
+   durable content before backup runs.
 9. Add canonical representation/digest utility, immutable repository round-trip, state-transition,
    root/leaf Session-Task ownership and read-only visibility, root active-Workflow concurrency,
-   rejection at every user mutation/Turn entry, conversation-scope single-value examples,
-   learning exclusion, workspace/reference isolation,
-   multi-output slot uniqueness/binding, exported-versus-bound-versus-observation slot semantics,
-   revocation round-trip and one-way refusal, Workflow/Node budget repository and migration round
-   trips,
+   rejection at every user mutation/Turn entry, exact Direct admission, internal lifecycle
+   authority, conversation-scope shape examples, learning exclusion, workspace/reference isolation,
+   multi-output slot uniqueness/binding, Workflow/Node budget repository and migration round trips,
    post-terminal ordinary Task/Turn acceptance, migration,
    WorkflowRun outcome-evidence reference validation, database/source backup/restore (including
    a malformed desired raw-byte round trip beside a valid published head) and doctor tamper tests.
@@ -228,7 +203,7 @@ typed contract metadata on the existing Artifact authority. This subplan creates
    vocabulary positives and actual credential negatives across input rejection, output redaction/
    `content_complete=false`, rehydration and profile round-trip, kept in one focused place so later
    consumers extend rather than rediscover it.
-   Cover exactly-at-capacity and one-over-capacity exported-ref fixtures without duplicating the
+   Cover exactly-at-capacity and one-over-capacity required-ref fixtures without duplicating the
    numeric bound in another validation owner.
    Do not add a non-Compiler API that publishes a runnable Revision.
 
@@ -239,8 +214,6 @@ Required now:
 - immutable revision/hash and run reference, because definition drift would make recovery false;
 - a SQLite published head beside immutable Revisions, because pretending to atomically update a
   YAML pointer and SQLite rows would require an unnecessary cross-store saga;
-- additive revocation records, because ordinary disable must not reach admitted runs while a real
-  emergency brake still has to exist;
 - stable node/attempt identity and Artifact producer binding, because later scheduling/recovery need
   exact attribution;
 - a one-field TaskRun purpose and explicit root/leaf references, because reusing the root TaskRun
@@ -254,8 +227,6 @@ Explicitly deferred:
 - GraphPatch, revision diff, CAS runtime editing, continuation runs and Artifact invalidation;
 - arbitrary schema registry, automatic Converter/version negotiation, signature infrastructure,
   generic graph grammar and pre-created fields for unknown node kinds;
-- the `invoking_session` conversation-scope value and its gates (Subplan 7 consumer);
-- binding-level `on_missing` semantics (no optional-input consumer exists);
 - execution, compiler behavior and public events.
 
 An invalid Workflow record must not make unrelated definitions or existing Direct sessions
@@ -279,11 +250,7 @@ git diff --check
 - The repository accepts only immutable compiled WorkflowRevisions, preserves old Revision/Run
   content exactly and exposes no second creation path; AgentDefinition persistence is not
   reimplemented here.
-- Revocation records are additive, audited and one-way; revoking an exact Revision never mutates it
-  and never republishes a head.
-- Output necessity is unambiguous: completion-required, export and observation slots round-trip as
-  three distinct, separately enforced facts.
-- Isolated Session/internal-TaskRun ownership round-trips without changing
+- Direct root ownership and isolated Session/internal-TaskRun ownership round-trip without changing
   existing user TaskRun behavior; internal leaf tasks cannot enter ordinary Turn/Task mutations,
   user acceptance or learning, while the internal Scheduler/Recovery boundary remains executable.
 - Domain/state transitions reject only impossible or corrupt transitions and accept adjacent legal
