@@ -4283,3 +4283,47 @@
   focused configuration/tool-persistence/local-tool checks: 51 passed. Ruff format/check,
   compileall and diff check passed. The earlier broad DENY attempt changed ordinary diagnostic
   codes; it was narrowed to approval-required tools before this successful gate.
+
+## 2026-08-31 — Subplan 1 activation seam inventory
+
+- Activated on `feat/stage7-agent-definitions` from verified `main@cb8fcc8`.
+- `application/agent_runs/preparation.py`: `prepare_new` resolves active GlobalConfig model,
+  Provider credentials, exact capabilities, RunPolicy, ordinary ToolExecutor and lazy MCP.
+  `rehydrate` reads frozen Provider/Model/Tool evidence, never the current active model.
+- `application/turn_lifecycle.py`: probe precedes preparation; submit freezes Preference,
+  MemorySelection, SkillSelectionPlan and prompt evidence in `build_agent_run_snapshot`.
+  `turn_permissions.py` owns PermissionSnapshot; ToolExecutor remains the capability authority.
+- `application/prompt.py`: DirectCodingPromptAssembler owns authority-ordered bounded role text
+  and project instructions; ContextBuilder owns projections, not transcript writes.
+- `TurnSubmissionCoordinator.start_new_session` and journal `create_session` establish fresh
+  Sessions. Restoration installs durable records into the Session-owned ConversationLog.
+  `SessionForkService` imports the parent prefix and is explicitly unsuitable for isolation.
+- Current Skill manifests already declare required_tools and requested_permissions; exact-version
+  selection must retain existing binding/dependency checks and restrict tools, never grant them.
+
+## 2026-08-31 — Subplan 1 implementation and focused evidence
+
+- Added strict normalized AgentDefinitionSource, immutable Version, OCC Head, one-way Revocation
+  and explicit publication command receipts in Operational Store v23. Desired YAML uses the current
+  bounded reader/atomic publisher and shared maintenance lock; no startup or validate publication.
+- AgentFactory restricts the existing preparation ToolExecutor, freezes exact model/definition/
+  conversation identity and the single primary-request cap, and uses the existing prompt/context/
+  preference/memory/permission owners. Only a distinct empty standalone Session/current Task pair
+  can admit a leaf. An explicit Session-local prompt-owner binding lets the same assembler verify
+  admission and recovery; AgentLoop gains no role/DAG/history branch.
+- Exact Skill selection reuses enabled bindings, pin/dependency checks and existing Skill context
+  creation. The effective ToolSet is passed as the dependency ceiling; publication Skill links
+  preserve managed versions through existing removal checks and backup inventory.
+- Shared value-shaped and high-confidence literal patterns now live in the existing refusal owner.
+  Definition text/reference callers choose its value-sensitive mode; ordinary strict callers and
+  existing preview/raw-backup rules retain their original detection behavior. Artifact/TaskOutcome
+  durable profile envelopes and the larger calibration set remain Subplan 2 work.
+- Raw agent-definitions.yaml entries use the additive exact-path DEFINITION_SOURCE kind/reference.
+  Malformed drafts round-trip byte-for-byte; doctor warns without degrading healthy published
+  state. Published hash/reference corruption remains an error. Detected raw source secret material
+  fails backup with a fixed definition-local remediation message.
+- Focused regression gate: 147 passed before the final safety/identity additions; the declared
+  focused closeout gate passed 90 tests. Final whole-tree offline gate: 1327 passed, 2 nested-
+  Seatbelt skips and 2 Live deselected. Ruff format/check, compileall, CLI help and diff-check form
+  the remaining static closeout gate. The first v23 whole-tree run exposed only stale schema-22
+  migration assertions, which were updated alongside migration expectations.

@@ -7,6 +7,15 @@
 > per-slot completion and a separate export list, revocation evidence is first-class, and the
 > `invoking_session` scope value is deferred to its Subplan 7 consumer.
 
+## Implemented prerequisite from Subplan 1
+
+Operational Store v23 and the exact-path raw DEFINITION_SOURCE backup kind are available.
+The existing refusal owner now shares preview value-shape and raw-backup literal patterns for
+Definition text/reference validation. Reuse that implementation; this subplan still owns durable
+Artifact/TaskOutcome TextSafetyProfile envelopes, output redaction and the larger calibration set.
+The AgentFactory currently accepts only isolated standalone Session/Task pairs; no Workflow Task
+purpose, typed TaskContract binding or invoking-session adapter is implemented yet.
+
 ## Objective
 
 Add the minimal immutable Workflow/Node/Run domain and persistence needed by a static DAG, plus

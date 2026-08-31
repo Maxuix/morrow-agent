@@ -1,12 +1,12 @@
 # Morrow 架构基线
 
 > 状态：阶段 2–6 已完成；S7P-10 已把 Stage 7 准入升级为 **GO**。Stage 7 静态 Workflow
-> Runtime 生产总计划已经激活，但生产代码尚未开始（macOS；Linux 原生运行仍 unsupported）。
+> Runtime 的 Subplan 1 已实现并通过本地验证，正在集成；Workflow 编译/执行尚未开始（macOS；Linux 原生运行仍 unsupported）。
 
 本文锁定当前依赖方向、数据所有权和安全边界。阶段 3 的能力策略、配置工具、工作空间读搜、冲突安全文件变更、直接 Host 命令、只读 Git 和当前 macOS 原生沙箱
 已经交付；Linux 原生运行尚未声明支持。Stage 4 已落地数据根 SQLite Operational Store 的
 身份/迁移/备份基础、无工具 Session 历史、工具执行/审批日志、恢复分类与
-崩溃对账，以及 TaskRun 生命周期、转移审计、版本化 TaskOutcome、Artifact 元数据/引用与受控字节发布、确定性 ContextCheckpoint 与不可变 Session lineage、有界 application event/command receipt、按 AgentRun 冻结的权限证据与可撤销 grant。Stage 5 已增加 LearningPolicy、Review、Evidence、Candidate、Suppression 的有界领域与 SQLite 持久化；accepted TaskOutcome 的同事务 Review 请求、一次性 lease Runner、Evidence/Context 安全边界和候选去重/抑制；Inbox、Candidate 决策、Project Knowledge 生命周期；Profile Promotion Saga；确定性 MemorySelection、AgentRun 冻结注入、RunContextProjection；以及 no-tool production Reviewer、离线评估、只读 Learning doctor 和完整 backup 引用校验。Stage 6 的 Skills 包、生命周期、选择/上下文、Draft/Usage、受限脚本执行、Provider/Model 控制面以及 MCP desired state/Catalog 持久化已在本地完成；MCP Runtime/Security、当前完整 Backup 与 Stage 6 Doctor 也已完成；S7P-01 增加了不改变公开事件的 AgentRun request/terminal observability 与复用同一 SessionOrchestrator/AgentLoop 的 headless JSONL 入口。Stage 7 已激活生产计划但 Workflow 代码尚未开始；Stage 8–10 的 GUI、后台自动化和产品化也未开始。本文架构门禁以离线证据为主，S7P 验收中的单独 Live 证据不改变这些当前模块事实。
+崩溃对账，以及 TaskRun 生命周期、转移审计、版本化 TaskOutcome、Artifact 元数据/引用与受控字节发布、确定性 ContextCheckpoint 与不可变 Session lineage、有界 application event/command receipt、按 AgentRun 冻结的权限证据与可撤销 grant。Stage 5 已增加 LearningPolicy、Review、Evidence、Candidate、Suppression 的有界领域与 SQLite 持久化；accepted TaskOutcome 的同事务 Review 请求、一次性 lease Runner、Evidence/Context 安全边界和候选去重/抑制；Inbox、Candidate 决策、Project Knowledge 生命周期；Profile Promotion Saga；确定性 MemorySelection、AgentRun 冻结注入、RunContextProjection；以及 no-tool production Reviewer、离线评估、只读 Learning doctor 和完整 backup 引用校验。Stage 6 的 Skills 包、生命周期、选择/上下文、Draft/Usage、受限脚本执行、Provider/Model 控制面以及 MCP desired state/Catalog 持久化已在本地完成；MCP Runtime/Security、当前完整 Backup 与 Stage 6 Doctor 也已完成；S7P-01 增加了不改变公开事件的 AgentRun request/terminal observability 与复用同一 SessionOrchestrator/AgentLoop 的 headless JSONL 入口。Stage 7 已实现 AgentDefinition 基础层，Workflow 编译/执行尚未开始；Stage 8–10 的 GUI、后台自动化和产品化也未开始。本文架构门禁以离线证据为主，S7P 验收中的单独 Live 证据不改变这些当前模块事实。
 
 S56–S61 已冻结并接通 generic Preference 契约、加载前一次性旧 YAML 迁移、当前 workspace Preference、
 Operational Store v13 Review/Evidence/Proposal/Writer saga、异步 Worker、Inbox、Writer 和下一
@@ -15,16 +15,35 @@ AgentRun 注入。v13 DDL 与 checksum 保持不变。
 Stage 6 的当前所有权如下：`application/skills/` 负责 Catalog、生命周期、Selection/Context、Draft、Usage、脚本和
 Doctor；`application/mcp/` 负责 desired-state、Catalog、run-scoped runtime、策略桥接和结果归一化；Provider/Model
 控制面仍由 Provider service 与 Adapter Registry 持有。SkillBinding、MCP desired state、Provider/Model 非敏感配置和
-Workspace 扩展配置继续由 YAML 持有，CredentialStore 是唯一凭据权威。Operational Store v14–v22 持有 Skill/MCP
+Workspace 扩展配置继续由 YAML 持有，CredentialStore 是唯一凭据权威。Operational Store v14–v23 持有 Skill/MCP
 运行证据与 AgentRun 观测；request ledger、保留但不参与当前判定的历史 completion 列与 long-horizon accounting，
 以及 v21 的有界 retry progress、v22 的 durable runtime-control queue 独立于不可变
 AgentRun admission snapshot。
 `application/backup_service.py` 组合在线 SQLite、Artifact、脱敏 YAML 和被引用 managed Skill 版本，并以新目标
 目录执行原子、隔离 restore。Backup 只有当前完整格式，且不复制凭据。
 
-Stage 7 当前只有已批准的实施方向，不是已实现结构：Workflow 将在 `AgentLoop` 之外组合现有
-AgentRun 叶子；每个叶子保持 Session-owned `ConversationLog` 唯一写入权威，节点之间只通过显式
-Artifact 合同交接。实际模块、表和事件只有在对应子计划验证落地后才会加入本文。
+Stage 7 Subplan 1 的实际结构：`core/agent_definitions.py` 持有最小 Source/Version/Head/Revocation；
+`adapters/state/definition_yaml.py` 持有 workspace `agent-definitions.yaml` 的可编辑 desired state，
+`agent_definition_journal.py` 通过共享事务 backend 持有 v23 不可变版本、发布 head、单向撤销、命令回执与 Skill 引用。
+`application/agent_definitions/publication.py` 是唯一发布/enable/revoke 应用入口；validate 只做静态检查。
+Built-in Direct/Explorer 是只读源 fixture，必须显式 publish，启动和 validate 都不发布。
+
+`AgentFactory` 绑定调用者提供的独立空 Session/current TaskRun 对，限制既有 preparation 的工具集合并选择精确模型。
+role prompt 经原 PromptAssembler 注入，精确 Skill 版本仍经过 enabled binding、pin 和依赖检查；Preference、Memory、
+Permission 与 Context 仍归原 owner。AgentRun 只新增 Definition ID/version/hash、conversation_session_id 和单一
+primary-generation-request cap；cap 在既有 durable request admission 事务中执行。Session-local prompt owner binding
+供 admission/recovery 验证同一组装器，只有 Session-owned ConversationLog 和 AgentLoop 写聊天历史；禁止 transcript fork。
+普通 disable 只阻止新 admission，Factory recovery 只检查不可变版本及其撤销记录，不再检查 enabled head。
+普通 Direct 不使用 AgentFactory，默认路径、公开事件和 bundled runtime-policy 未改变。
+
+当前没有 Workflow 类型、Compiler、Scheduler、root/internal-leaf Task purpose 或 Agent/Workflow 管理 CLI。
+Workflow 将继续在 `AgentLoop` 之外组合叶子，typed TaskContract/Artifact binding 属于后续子计划；当前隔离叶子仍从
+普通 `run_task` 输入与既有 Artifact reader 接收显式上下文。只读 ceiling 要求可证明的静态只读工具契约，未知副作用
+工具仍可用于 write ceiling 的串行 Agent，不能因角色提示变成只读。
+
+现有 refusal owner 提供仅供 Definition 文本及引用使用的 value-sensitive 模式，并共享 preview/value-shaped 与高置信
+literal 检测规则。Artifact/TaskOutcome 的持久化 profile discriminator 尚未实现。现有 backup/doctor 增加 definition
+行完整性与精确路径的原始 desired-source inventory：损坏草稿可备份/恢复且只报局部 warning；发布引用/hash 损坏才报 error。
 
 ## 分层与依赖方向
 
@@ -299,7 +318,7 @@ workspace Preferences 损坏只隔离该层。旧 `handoff.yaml(.bak)` 不属于
 `config.yaml` 是聚合文档，Provider、全局 Preferences 与可选 runtime-policy 覆盖的写入必须在同一事务锁内保留对方字段。
 `workspace-index.yaml` 由独立 WorkspaceIndexStore 管理。
 
-### Operational Store 与 Artifact 布局（v22）
+### Operational Store 与 Artifact 布局（v23）
 
 数据根（`--state-root` 或 `~/.morrow`）下的保留路径：
 
@@ -313,7 +332,7 @@ workspace Preferences 损坏只隔离该层。旧 `handoff.yaml(.bak)` 不属于
 ```
 
 `DataRoot` 暴露 `store_path`、`artifacts_path`、`backups_path` 与 `operational_lock_path`。
-`build_session_application()` 会打开或创建当前 v22 Operational Store，并把对话经 ConversationLog
+`build_session_application()` 会打开或创建当前 v23 Operational Store，并把对话经 ConversationLog
 提交到 Session / TaskRun / Turn / AgentRun / conversation / receipt 表。v3 起有 tool_executions
 与 approvals；v4 增加 recovery_reports / recovery_receipts；v5 增加完整 TaskRun 状态、转移审计、
 TaskOutcome 版本和 Task 命令回执；v6 增加 Artifact 元数据、引用、pin 状态和 `artifact_refs_json`；v7 增加不可变
@@ -336,7 +355,10 @@ v18 在 terminal metrics 中增加了历史 validation/completion 字段，v19 �
 有界可变 retry-progress 行记录连续模型重试、累计重试与摘要重试计数；v22 增加每 Session 最多
 32 条、单条最多 4096 字符的 FIFO steering/follow-up queue，并让 `steered` AgentRun 终态可观测。
 队列消费与下一 Turn admission 同事务，消息仍只通过 ConversationLog 写入；这些投影都不改写
-immutable AgentRun snapshot，也不复制 ToolExecution payload。未迁移的 v20 只读观测仍可读取，
+immutable AgentRun snapshot，也不复制 ToolExecution payload。v23 增加 `agent_definition_versions`、`agent_definition_heads`、`agent_definition_revocations`、
+`agent_definition_publications` 与 `agent_definition_skills`；immutable row triggers、head OCC 和 AgentRun definition identity
+约束保留历史版本及精确 Skill 引用，不重建 YAML 草稿中的旧版本。
+未迁移的 v20 只读观测仍可读取，
 只是不提供 v21 retry-progress 或 v22 runtime-control 行。
 
 `SessionOrchestrator` 是 runtime control 的应用边界。AgentLoop 只在循环顶部、完整工具批次之后和

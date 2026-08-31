@@ -1,8 +1,8 @@
 # Subplan 1 — Stage 7 Agent Definition Foundation
 
-> Status: ready, not started
+> Status: verified; local integration pending (authorized 2026-08-31)
 > Branch: `feat/stage7-agent-definitions`
-> Activation base: latest verified `main` (clean tree, full offline gate green)
+> Activation base: `main@cb8fcc8` (clean tree; 1301 offline tests passed)
 > Prerequisite: Stage 7 entry GO and this master plan approved
 > Revised 2026-08-31 per the conditional-GO plan review: declared tool requirements and
 > disable-versus-revoke semantics are now part of the foundation contract.
@@ -55,9 +55,9 @@ subplan does not own Workflow domain types, a scheduler or user-facing Workflow 
    later the Workflow Compiler apply the master plan's fixed precedence: forbidden conflicts are
    errors; required denied by policy or absent from catalogs is a compile/publication error;
    optional denied/absent/unavailable is removed with a diagnostic; required whose backend is
-   unavailable at runtime fails only that node's preparation. SkillVersions declare no tool
-   requirements in Stage 7 — the existing Skill model has no such field — so skill-delivered tools
-   remain subject to the definition's declared set and task policy.
+   unavailable at runtime fails only that node's preparation. SkillVersion envelopes have no tool-requirement field, but current Skill manifests already
+   declare `required_tools`; reuse their dependency checks without treating them as grants.
+   Skill-delivered tools remain subject to the definition's declared set and task policy.
 3. Reuse the current typed YAML/OCC adapter pattern for editable desired source. The source has no
    operational `enabled` field. Store complete
    normalized immutable Versions plus an `AgentDefinitionHead` in the Operational Store through one

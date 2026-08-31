@@ -1,20 +1,11 @@
-# TODO
+# Subplan 1 — Agent Definition Foundation
 
-## Current task
+- [x] Record existing preparation, context, permission, Skill and Session seams.
+- [x] Define source/version/head/revocation contracts and YAML/OCC publication.
+- [x] Compose published Definitions through AgentRun preparation and freeze identity.
+- [x] Prove isolated Session/Task scope and exact Skill/tool/model restrictions.
+- [x] Extend current backup/restore/doctor and immutable references.
+- [x] Complete focused/full offline and static validation.
+- [>] Commit and fast-forward integrate the verified Subplan 1 changes.
 
-None. Production implementation has not been authorized or activated.
-
-## Activation note
-
-Subplan 1 is ready in `.agent/subplans/1-stage7-agent-definition-foundation.md`. When the user
-explicitly authorizes production implementation, activate it and copy only its current executable
-tasks into this file before making code changes.
-
-## Boundaries
-
-- No production task is in progress until the user explicitly starts Subplan 1.
-- No WorkflowDefinition, compiler, scheduler, multi-node execution or default-path switch.
-- No second chat-history store or AgentRun/Workflow-owned ConversationLog writer.
-- No new dependency, public AgentEvent lifecycle change, runtime-policy default change or Live test.
-- Every new rejection rule must include an adjacent legal acceptance test and satisfy the master
-  plan's proportionality criteria.
+No later Workflow domain, compiler, scheduler, CLI or default-path switch is active.

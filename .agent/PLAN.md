@@ -1,8 +1,8 @@
 # Stage 7 Static Workflow Runtime Implementation Plan
 
-> Status: revised design and executable plan complete; production implementation not started
-> Active subplan: none
-> Next subplan: 1 — Agent Definition Foundation (ready, not started)
+> Status: Subplan 1 verified; local integration pending
+> Active subplan: 1 — Agent Definition Foundation (closeout)
+> Next subplan: 2 — Workflow Revision and Artifact Contracts (ready after Subplan 1 integration)
 > Planning base: local `main@4d8b408` (tree clean, full offline gate green; later `.agent`-only
 > commits such as the plan-repair commit do not invalidate this verified code base)
 > Roadmap authority: `docs/roadmap/stage-7-workflow-runtime.md`
@@ -62,8 +62,8 @@ Implementation follows these rules:
   `ApplicationEvent` is also a client-facing cursor contract, so adding Workflow event types in
   Subplan 8 requires an explicit scope check and user authorization first. Query/CLI delivery must
   remain functional if that event addition is deferred;
-- planning completion does not authorize production implementation; Subplan 1 remains ready until
-  the user explicitly starts it.
+- planning alone does not authorize production implementation; the user explicitly started
+  Subplan 1 on 2026-08-31. Later child activation remains sequential.
 
 ## 3. Proportionality and availability rules
 
@@ -105,8 +105,9 @@ Additional proportionality constraints:
   `credential_ref`), and the value-shaped preview detection in `core/execution.py` (which already
   keeps code identifiers such as `credential`/`api_key` legal and flags only value-shaped secrets).
   The new profile therefore consolidates the existing value-shaped detection into one shared
-  implementation dispatched by profile, rather than adding a fourth independent rule; Subplan 2 owns
-  that consolidation so Stage 7 does not create a separate scanning subsystem, policy engine or
+  implementation dispatched by profile, rather than adding a fourth independent rule. Subplan 1
+  now shares the existing preview/literal patterns for Definition publication; Subplan 2 extends
+  the same owner with durable Artifact/Outcome profiles and calibration so Stage 7 does not create a separate scanning subsystem, policy engine or
   second refusal authority. Its detection accuracy is a
   Stage 7-critical component: a false positive can block a legal terminal, a false negative can
   persist a secret, so §8 requires a dedicated calibration test set beyond the per-subplan cases.
@@ -338,7 +339,7 @@ Tool requirements are declared, never inferred. An AgentDefinition declares its 
 required/optional names form the desired set and `forbidden` is an explicit deny that always wins.
 A WorkflowNode may only narrow that set further or mark an additional tool forbidden/required for
 its own mechanism (for example, the Coder's capturable-sandbox bash); it can never name a tool
-outside the Definition's declared set. SkillVersions declare no tool requirements in Stage 7 — the
+outside the Definition's declared set. SkillVersion envelopes declare no tool requirements in Stage 7 — the
 existing Skill model has no such field, and skill-delivered tools remain subject to the Definition's
 declared set and task policy. The Compiler merges Definition + node declarations and freezes the
 result with diagnostics under fixed precedence:
@@ -823,8 +824,9 @@ next phase starts.
 | 8 | 7D | Workflow Management and Templates | application commands/queries, CLI, four built-in static templates, doctor completion and separately authorized additive events if approved |
 | 9 | — | Stage 7 Acceptance and Closeout | deterministic integrated acceptance, Direct comparison, truthful promotion evidence and documentation sync |
 
-Child contracts are in `.agent/subplans/1-*.md` through `9-*.md`. Only Subplan 1 is ready; later
-children remain pending and may be corrected by verified earlier implementation facts. Bounded
+Child contracts are in `.agent/subplans/1-*.md` through `9-*.md`. Subplan 1 is verified and awaiting
+local integration; Subplan 2 is next but not active. Later children remain pending and may be
+corrected by verified earlier implementation facts. Bounded
 read-only parallelism is no longer a Stage 7 child; its design (per-request budget claim, entry
 conditions) lives in the Stage 8 roadmap.
 
