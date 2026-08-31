@@ -12,24 +12,29 @@ from pydantic import ValidationError
 
 from morrow.adapters.local.process import HostProcessAdapter
 from morrow.adapters.skills.managed_store import ManagedSkillPackageStore, prepare_local_skill
+from morrow.application.prepared import prepare_cycle_executions
 from morrow.application.skills.scripts import (
     SkillScriptExecutionError,
     SkillScriptExecutionService,
     make_skill_script_tool,
 )
 from morrow.core.capabilities import (
+    ApprovalMode,
     PermissionProfile,
     PolicyVerdict,
+    ProcessIsolation,
     ToolRunContext,
     WorkspaceCapability,
 )
-from morrow.core.models import FunctionToolCall
+from morrow.core.execution import ToolExecutionState
+from morrow.core.models import AssistantMessage, FunctionToolCall
 from morrow.core.skills.scripts import SkillScriptRequest, SkillScriptStatus
 from morrow.core.skills.selection import SkillSelection
 from morrow.core.skills.trust import SourceKind
-from morrow.runtime.capabilities import CapabilityPolicy
+from morrow.runtime.capabilities import CapabilityPolicy, CapabilityReason
+from morrow.runtime.session import Session
 from morrow.runtime.tools import ToolErrorCode, ToolExecutor, ToolRegistry
-from morrow.testing import make_run_policy
+from morrow.testing import FixedIdSource, make_run_policy
 
 
 class _Artifacts:
@@ -222,6 +227,117 @@ async def test_skill_script_tool_preserves_safe_preflight_diagnostic(tmp_path) -
     assert outcome.error_code is ToolErrorCode.NOT_FOUND
     error = json.loads(outcome.envelope)["error"]
     assert error["message"] == ("selection_missing: Skill selection evidence is unavailable")
+
+
+def _script_executor(service, tmp_path, *, isolation: ProcessIsolation) -> ToolExecutor:
+    profile = PermissionProfile(
+        approval_mode=(
+            ApprovalMode.AUTO
+            if isolation is ProcessIsolation.NATIVE_SANDBOX
+            else ApprovalMode.MANUAL
+        ),
+        process_isolation=isolation,
+    )
+    registry = ToolRegistry()
+    registry.register(make_skill_script_tool(service))
+    return ToolExecutor(
+        registry.snapshot(),
+        make_run_policy(),
+        capability_policy=CapabilityPolicy(
+            profile,
+            WorkspaceCapability(workspace_id="ws_script", root=tmp_path),
+            sandbox_available=isolation is ProcessIsolation.NATIVE_SANDBOX,
+        ),
+        expected_process_isolation=isolation,
+    )
+
+
+def test_skill_script_prepare_does_not_request_approval_without_sandbox(tmp_path) -> None:
+    store, version = _package(tmp_path)
+    package = store.read_frozen_package(
+        skill_id="script-skill",
+        version_id=version,
+        source_kind=SourceKind.GENERATED,
+        scope_id="ws_script",
+    )
+    request = _request(package, version)
+    service = SkillScriptExecutionService(
+        store,
+        workspace_id="ws_script",
+        journal=_selection_journal(request),
+        adapter_factory=lambda _root: HostProcessAdapter(),
+        sandbox_available=False,
+    )
+    executor = _script_executor(service, tmp_path, isolation=ProcessIsolation.HOST)
+    prepared = prepare_cycle_executions(
+        AssistantMessage(
+            tool_calls=(
+                FunctionToolCall(
+                    id="call_prepare_sandbox",
+                    name="run_skill_script",
+                    arguments=request.model_dump_json(),
+                ),
+            )
+        ),
+        session=Session(session_id="ses_script"),
+        tool_executor=executor,
+        run_context=ToolRunContext(run_id="arun_script12345678", session_id="ses_script"),
+        id_source=FixedIdSource(),
+        workspace_id="ws_script",
+        task_run_id="task_script",
+        turn_id="turn_script",
+        agent_run_id="arun_script12345678",
+    )
+
+    assert prepared[0].state is ToolExecutionState.PREPARED
+    assert prepared[0].intent.requires_approval is False
+    assert prepared[0].intent.preview == ()
+
+
+def test_skill_script_prepare_keeps_preview_and_approval_in_native_sandbox(tmp_path) -> None:
+    store, version = _package(tmp_path)
+    package = store.read_frozen_package(
+        skill_id="script-skill",
+        version_id=version,
+        source_kind=SourceKind.GENERATED,
+        scope_id="ws_script",
+    )
+    request = _request(package, version)
+    service = SkillScriptExecutionService(
+        store,
+        workspace_id="ws_script",
+        journal=_selection_journal(request),
+        adapter_factory=lambda _root: HostProcessAdapter(),
+        sandbox_available=True,
+    )
+    executor = _script_executor(service, tmp_path, isolation=ProcessIsolation.NATIVE_SANDBOX)
+    prepared = prepare_cycle_executions(
+        AssistantMessage(
+            tool_calls=(
+                FunctionToolCall(
+                    id="call_prepare_ok",
+                    name="run_skill_script",
+                    arguments=request.model_dump_json(),
+                ),
+            )
+        ),
+        session=Session(session_id="ses_script"),
+        tool_executor=executor,
+        run_context=ToolRunContext(run_id="arun_script12345678", session_id="ses_script"),
+        id_source=FixedIdSource(),
+        workspace_id="ws_script",
+        task_run_id="task_script",
+        turn_id="turn_script",
+        agent_run_id="arun_script12345678",
+    )
+
+    assert prepared[0].state is ToolExecutionState.AWAITING_APPROVAL
+    assert prepared[0].intent.requires_approval is True
+    assert prepared[0].intent.policy_reason_codes == (
+        CapabilityReason.SKILL_SCRIPT_APPROVAL_REQUIRED.value,
+    )
+    assert any("scripts/run.py" in line for line in prepared[0].intent.preview)
+    assert "未提供额外预览" not in prepared[0].intent.preview
 
 
 def test_skill_script_rejects_undeclared_output_and_package_drift(tmp_path) -> None:

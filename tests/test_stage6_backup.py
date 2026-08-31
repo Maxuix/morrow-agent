@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import random
+import stat
 
 from typer.testing import CliRunner
 
@@ -158,6 +159,65 @@ def test_stage6_current_copies_only_referenced_managed_skill_and_doctor_detects_
     envelope_path.write_text(json.dumps(envelope), encoding="utf-8")
     spoofed = OperationalDoctor(store).inspect("ws_1")
     assert any(issue.code == "skill_package_drift" for issue in spoofed.issues)
+    handle.close()
+
+
+def test_stage6_backup_and_restore_preserve_skill_executable_mode(tmp_path):
+    app = build_application(
+        state_root=tmp_path / "state",
+        credentials=MemoryCredentialStore(),
+        id_source=FixedIdSource(),
+    )
+    store = OperationalStore(app.data_root.root, maintenance_timeout=0)
+    handle = store.initialize()
+    journal = SqliteOperationalJournal(handle)
+    journal.create_session(DurableSession(session_id="ses_1", workspace_id="ws_1"))
+    services = build_skill_services(app, journal=journal, workspace_id="ws_1")
+    source = tmp_path / "executable-skill-source"
+    source.mkdir()
+    (source / "SKILL.md").write_text(
+        "---\nname: Executable Skill\nversion: 1.0.0\n---\n# executable\n", encoding="utf-8"
+    )
+    scripts = source / "scripts"
+    scripts.mkdir()
+    script = scripts / "report.sh"
+    script.write_text("#!/bin/sh\nprintf 'ok\\n'\n", encoding="utf-8")
+    script.chmod(0o755)
+    installed = services.lifecycle.install(source, confirmed=True)
+
+    backup = OperationalBackupService(store, journal=journal)
+    report = backup.create("executable-skill")
+    bundle = store.layout.backups_dir / report.bundle_name
+    copied = (
+        bundle
+        / "skills"
+        / "imported"
+        / "executable-skill"
+        / installed.version_id
+        / "package"
+        / "scripts"
+        / "report.sh"
+    )
+    assert report.integrity_ok
+    assert backup.verify(bundle).ok
+    assert copied.is_file()
+    assert copied.stat().st_mode & stat.S_IXUSR
+
+    restored_root = tmp_path / "restored"
+    restored = backup.restore(bundle, restored_root)
+    restored_script = (
+        restored_root
+        / "skills"
+        / "imported"
+        / "executable-skill"
+        / installed.version_id
+        / "package"
+        / "scripts"
+        / "report.sh"
+    )
+    assert restored.ok
+    assert restored_script.is_file()
+    assert restored_script.stat().st_mode & stat.S_IXUSR
     handle.close()
 
 

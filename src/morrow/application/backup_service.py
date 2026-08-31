@@ -225,7 +225,12 @@ class BackupService:
                 destination = temporary / relative
                 if item.kind is BackupFileKind.DATABASE:
                     destination = temporary / "store" / "operational.sqlite"
-                _copy_verified_file(source, destination, expected_digest=item.sha256)
+                _copy_verified_file(
+                    source,
+                    destination,
+                    expected_digest=item.sha256,
+                    preserve_exec=item.kind is BackupFileKind.SKILL_PACKAGE,
+                )
             _fsync_directory(temporary)
             if os.path.lexists(target):
                 raise BackupError("restore target appeared during publication")
@@ -849,6 +854,11 @@ def _reject_secret_text(raw: bytes) -> None:
 
 
 def _read_regular_file(path: Path) -> bytes:
+    raw, _mode = _read_regular_file_stat(path)
+    return raw
+
+
+def _read_regular_file_stat(path: Path) -> tuple[bytes, int]:
     try:
         descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
     except OSError as exc:
@@ -860,7 +870,7 @@ def _read_regular_file(path: Path) -> bytes:
         chunks: list[bytes] = []
         while chunk := os.read(descriptor, 1024 * 1024):
             chunks.append(chunk)
-        return b"".join(chunks)
+        return b"".join(chunks), info.st_mode
     except OSError as exc:
         raise ValueError("backup source could not be read safely") from exc
     finally:
@@ -905,9 +915,13 @@ def _copy_bytes(source: Path, destination: Path) -> None:
 
 
 def _copy_verified_file(
-    source: Path, destination: Path, *, expected_digest: str | None = None
+    source: Path,
+    destination: Path,
+    *,
+    expected_digest: str | None = None,
+    preserve_exec: bool = False,
 ) -> None:
-    raw = _read_regular_file(source)
+    raw, mode = _read_regular_file_stat(source)
     digest = hashlib.sha256(raw).hexdigest()
     if expected_digest is not None and digest != expected_digest:
         raise BackupError("source file changed during backup")
@@ -915,7 +929,7 @@ def _copy_verified_file(
     if destination.exists() and destination.is_symlink():
         raise BackupError("restore destination is a symlink")
     destination.write_bytes(raw)
-    os.chmod(destination, FILE_MODE)
+    os.chmod(destination, 0o700 if preserve_exec and mode & 0o111 else FILE_MODE)
 
 
 def _file_signature(path: Path) -> tuple[str, int]:

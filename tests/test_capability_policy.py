@@ -93,6 +93,26 @@ def test_registered_process_does_not_depend_on_semantic_sandbox_classification()
     assert decision.verdict is PolicyVerdict.ALLOW
 
 
+def test_skill_script_requires_native_sandbox_then_asks_for_approval():
+    intent = _intent(
+        OperationKind.PROCESS,
+        command_class="skill_script",
+        requires_sandbox=True,
+        preview_summary=("在冻结 Skill 包的原生沙箱副本中执行",),
+    )
+    host = _policy().evaluate(intent)
+    assert host.verdict is PolicyVerdict.DENY
+    assert host.reason_codes == (CapabilityReason.SANDBOX_UNAVAILABLE,)
+
+    sandboxed = _policy(
+        approval_mode=ApprovalMode.AUTO,
+        process_isolation=ProcessIsolation.NATIVE_SANDBOX,
+    ).evaluate(intent)
+    assert sandboxed.verdict is PolicyVerdict.REQUIRE_APPROVAL
+    assert sandboxed.reason_codes == (CapabilityReason.SKILL_SCRIPT_APPROVAL_REQUIRED,)
+    assert sandboxed.preview_summary == ("在冻结 Skill 包的原生沙箱副本中执行",)
+
+
 def test_forbidden_risks_are_denied_before_approval_for_all_workspace_modes():
     for policy in (
         _policy(),

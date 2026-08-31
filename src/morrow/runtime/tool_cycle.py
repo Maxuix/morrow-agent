@@ -367,6 +367,7 @@ class ToolCycleExecutor:
                     else ToolEffect.NONE
                 ),
                 preview=execution.intent.preview,
+                reason_codes=execution.intent.policy_reason_codes,
                 approval_id=approval.approval_id,
             )
             decision = await self.tool_executor.request_approval(request)

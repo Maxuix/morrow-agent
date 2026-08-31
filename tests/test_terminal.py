@@ -194,6 +194,103 @@ def test_terminal_renders_steered_as_distinct_from_cancelled():
 
 
 @pytest.mark.asyncio
+async def test_approval_waits_for_runtime_input_to_release_the_prompt_session():
+    class RecordingSession:
+        def __init__(self) -> None:
+            self.concurrent = 0
+            self.max_concurrent = 0
+            self.runtime_started = asyncio.Event()
+
+        async def prompt_async(self, message, key_bindings=None):
+            del key_bindings
+            self.concurrent += 1
+            self.max_concurrent = max(self.max_concurrent, self.concurrent)
+            try:
+                if "运行中" in message:
+                    self.runtime_started.set()
+                    await asyncio.sleep(3600)
+                return "y"
+            except asyncio.CancelledError:
+                await asyncio.sleep(0)
+                raise
+            finally:
+                self.concurrent -= 1
+
+    terminal = terminal_module.Terminal(console=ConsoleStub())
+    session = RecordingSession()
+    runtime_task = asyncio.create_task(terminal.prompt_runtime_control(session))
+    await session.runtime_started.wait()
+    port = terminal_module.TerminalApprovalPort(terminal, session)
+    decision = await port.request(
+        ToolApprovalRequest(call_id="c1", effect=ToolEffect.SESSION_WRITE, preview=("preview",))
+    )
+    await asyncio.gather(runtime_task, return_exceptions=True)
+
+    assert decision.approved is True
+    assert session.max_concurrent == 1
+
+
+@pytest.mark.asyncio
+async def test_runtime_input_loop_does_not_reopen_prompt_during_approval():
+    class RecordingSession:
+        def __init__(self) -> None:
+            self.concurrent = 0
+            self.max_concurrent = 0
+            self.prompts: list[str] = []
+            self.runtime_started = asyncio.Event()
+
+        async def prompt_async(self, message, key_bindings=None):
+            del key_bindings
+            self.concurrent += 1
+            self.max_concurrent = max(self.max_concurrent, self.concurrent)
+            self.prompts.append(message)
+            try:
+                if "运行中" in message:
+                    self.runtime_started.set()
+                    await asyncio.sleep(3600)
+                return "y"
+            except asyncio.CancelledError:
+                await asyncio.sleep(0)
+                raise
+            finally:
+                self.concurrent -= 1
+
+    class ApprovalOrchestrator:
+        def __init__(self, port, prompt_session) -> None:
+            self.port = port
+            self.prompt_session = prompt_session
+            self.session = None
+
+        async def stream(self, _text):
+            await self.prompt_session.runtime_started.wait()
+            await self.port.request(
+                ToolApprovalRequest(
+                    call_id="c1",
+                    effect=ToolEffect.SESSION_WRITE,
+                    preview=("执行预览",),
+                )
+            )
+            yield DispatchResult()
+
+        async def steer(self, _text) -> None:
+            return None
+
+        async def follow_up(self, _text) -> None:
+            return None
+
+    terminal = terminal_module.Terminal(console=ConsoleStub())
+    session = RecordingSession()
+    port = terminal_module.TerminalApprovalPort(terminal, session)
+    result = await terminal_module._consume_dispatch_with_runtime_input(
+        ApprovalOrchestrator(port, session), "start", terminal, session
+    )
+
+    assert result.degraded is False
+    assert session.max_concurrent == 1
+    assert any("确认执行" in prompt for prompt in session.prompts)
+
+
+@pytest.mark.asyncio
 async def test_runtime_input_enter_steers_and_alt_enter_queues_follow_up():
     class RuntimeInputTerminal:
         def __init__(self) -> None:

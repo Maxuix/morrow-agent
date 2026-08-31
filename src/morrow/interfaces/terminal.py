@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 from dataclasses import replace
 
 from prompt_toolkit import PromptSession
@@ -44,6 +45,7 @@ _APPROVAL_REASON_LABELS = {
     "git_write_approval_required": "Git 写入",
     "external_effect_approval_required": "外部副作用",
     "mcp_review_required": "已审查 MCP 风险",
+    "skill_script_approval_required": "Skill 脚本执行",
 }
 
 
@@ -171,12 +173,20 @@ class Terminal:
             if self._runtime_input_task is task:
                 self._runtime_input_task = None
 
-    def suspend_runtime_input(self) -> None:
+    async def suspend_runtime_input(self) -> None:
+        """Stop runtime input and wait until it has released the PromptSession."""
+
         self._runtime_input_allowed.clear()
-        self.cancel_runtime_input()
+        task = self._runtime_input_task
+        if task is not None and not task.done():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
 
     def resume_runtime_input(self) -> None:
         self._runtime_input_allowed.set()
+
+    async def wait_runtime_input_allowed(self) -> None:
+        await self._runtime_input_allowed.wait()
 
     def cancel_runtime_input(self) -> None:
         task = self._runtime_input_task
@@ -194,7 +204,9 @@ class TerminalApprovalPort:
     async def request(self, request: ToolApprovalRequest) -> ToolApprovalDecision:
         suspend = getattr(self.terminal, "suspend_runtime_input", None)
         if callable(suspend):
-            suspend()
+            result = suspend()
+            if inspect.isawaitable(result):
+                await result
         lines = request.preview or ("未提供额外预览。",)
         self.terminal.console.print("\n".join(lines))
         elevated = any(line.startswith("unconfined_host:") for line in lines)
@@ -582,9 +594,13 @@ async def _consume_dispatch_with_runtime_input(
             try:
                 mode, queued_text = input_task.result()
             except asyncio.CancelledError:
-                # Approval temporarily owns the same PromptSession. Resume listening after it
-                # releases the prompt unless the foreground run has already ended.
-                await asyncio.sleep(0)
+                # Approval temporarily owns the same PromptSession. Do not open another
+                # runtime prompt until the approval path has released it.
+                wait_allowed = getattr(terminal, "wait_runtime_input_allowed", None)
+                if callable(wait_allowed) and not dispatch_task.done():
+                    allowed = wait_allowed()
+                    if inspect.isawaitable(allowed):
+                        await allowed
                 continue
             except EOFError:
                 listen = False

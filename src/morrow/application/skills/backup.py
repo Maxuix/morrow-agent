@@ -149,7 +149,11 @@ def capture_referenced_skills(
         file_paths: list[str] = []
         for entry in tree.entries:
             relative = target / "package" / entry.relative_path
-            _write_bytes(relative, tree_contents[entry.relative_path])
+            _write_bytes(
+                relative,
+                tree_contents[entry.relative_path],
+                executable=entry.exec_mode,
+            )
             captures.append(_file_entry(target_root, relative, BackupFileKind.SKILL_PACKAGE))
             file_paths.append(_relative(target_root, relative))
         manifests.append(
@@ -245,12 +249,12 @@ def _relative_version_root(version: SkillVersion) -> Path:
     return base / version.source_kind.value / version.skill_id / version.version_id
 
 
-def _write_bytes(path: Path, content: bytes) -> None:
+def _write_bytes(path: Path, content: bytes, *, executable: bool = False) -> None:
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     if path.exists() and path.is_symlink():
         raise SkillBackupError("backup destination contains a symlink")
     path.write_bytes(content)
-    os.chmod(path, 0o600)
+    os.chmod(path, 0o700 if executable else 0o600)
 
 
 def _file_entry(root: Path, path: Path, kind: BackupFileKind) -> BackupFileEntry:

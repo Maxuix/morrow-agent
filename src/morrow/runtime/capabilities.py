@@ -40,6 +40,7 @@ class CapabilityReason(StrEnum):
     WORKSPACE_WRITE_APPROVAL_REQUIRED = "workspace_write_approval_required"
     CONFIGURATION_APPROVAL_REQUIRED = "configuration_approval_required"
     MUTATION_APPROVAL_REQUIRED = "mutation_approval_required"
+    SKILL_SCRIPT_APPROVAL_REQUIRED = "skill_script_approval_required"
 
 
 _DENIED_RISKS = {
@@ -110,6 +111,8 @@ class CapabilityPolicy:
             and self.profile.process_isolation is not ProcessIsolation.NATIVE_SANDBOX
         ):
             return self._deny(CapabilityReason.SANDBOX_UNAVAILABLE)
+        if intent.kind is OperationKind.PROCESS and intent.command_class == "skill_script":
+            return self._approval(CapabilityReason.SKILL_SCRIPT_APPROVAL_REQUIRED, intent)
 
         if intent.kind is OperationKind.CONFIGURATION_WRITE:
             return self._approval(CapabilityReason.CONFIGURATION_APPROVAL_REQUIRED, intent)

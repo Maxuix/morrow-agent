@@ -146,6 +146,16 @@ def config_evidence_from_arguments(
     )
 
 
+def _abandon_incomplete_preflight(
+    policy_verdict: PolicyVerdict | None,
+) -> tuple[tuple[str, ...], bool, PolicyVerdict | None]:
+    """Do not request approval or run a handler after a failed prepare preflight."""
+
+    if policy_verdict is PolicyVerdict.REQUIRE_APPROVAL:
+        return (), False, PolicyVerdict.DENY
+    return (), False, policy_verdict
+
+
 def _fallback_declaration(name: str) -> ToolRecoveryDeclaration:
     """Give an unrecognized call a conservative, evidence-carrying declaration."""
 
@@ -338,9 +348,13 @@ def _prepare_one(
             ValueError,
             TypeError,
         ):
-            preview = ()
+            preview, requires_approval, policy_verdict = _abandon_incomplete_preflight(
+                policy_verdict
+            )
         except Exception:
-            preview = ()
+            preview, requires_approval, policy_verdict = _abandon_incomplete_preflight(
+                policy_verdict
+            )
     return PreparedIntent(
         tool_name=call.name,
         call_id=call.id,
