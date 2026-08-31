@@ -26,5 +26,4 @@ precondition: the working tree must be clean and the full offline gate green at 
 
 No local Stage 7 implementation blocker is known. The full offline gate still has one unrelated,
 stable configuration-cancellation test failure; see `.agent/LOG.md` and the acceptance evidence.
-Remote publication of the configured `main` branch is explicitly authorized and remains the pending
-final-publication action.
+The revised plan is published: local `main` and `origin/main` are in sync at `6ec6528`.
