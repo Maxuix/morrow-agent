@@ -157,7 +157,14 @@ class AgentRunPreparationService:
         self.prompt_assembler = prompt_assembler
         self.long_horizon_settings = long_horizon_settings
 
-    def prepare_new(self, *, agent_run_id: str | None = None) -> PreparedAgentRunRuntime:
+    def prepare_new(
+        self,
+        *,
+        agent_run_id: str | None = None,
+        model: ModelRef | None = None,
+        prompt_assembler=None,
+        tool_transform=None,
+    ) -> PreparedAgentRunRuntime:
         """Prepare the next new AgentRun from the current configuration.
 
         Reads the active model and its ProviderConfig once per run. The
@@ -165,11 +172,17 @@ class AgentRunPreparationService:
         """
         loaded = self.global_store.load()
         config: GlobalConfig | None = loaded.value
-        if config is None or config.active_model is None:
-            if self.injected is not None:
+        if config is None or (model is None and config.active_model is None):
+            if (
+                self.injected is not None
+                and model is None
+                and prompt_assembler is None
+                and tool_transform is None
+            ):
                 return self.injected
             raise ValueError("尚未配置 active_model")
-        model = config.active_model
+        model = model or config.active_model
+        prompt_assembler = prompt_assembler or self.prompt_assembler
         provider_config = config.providers.get(model.provider_id)
         if provider_config is None:
             raise ValueError(f"未知 Provider: {model.provider_id}")
@@ -198,7 +211,7 @@ class AgentRunPreparationService:
         context_builder = ContextBuilder(
             run_policy=run_policy,
             estimate_request_chars=self.estimate_request_chars,
-            prompt_assembler=self.prompt_assembler,
+            prompt_assembler=prompt_assembler,
         )
         tool_executor = self.tool_factory(run_policy)
         mcp_run = None
@@ -212,6 +225,8 @@ class AgentRunPreparationService:
             except Exception as exc:
                 raise AgentRunPreparationError("MCP preparation failed") from exc
             tool_executor = self._merge_mcp_tools(tool_executor, mcp_run, agent_run_id=agent_run_id)
+        if tool_transform is not None:
+            tool_executor = tool_transform(tool_executor)
         tools = tool_executor.definitions if tool_executor is not None else ()
         spec = build_prepared_spec(
             provider_config=provider_config,
@@ -221,7 +236,7 @@ class AgentRunPreparationService:
             run_policy=run_policy,
             tools=tools,
             mcp_run_snapshot_ids=mcp_run.snapshot_ids if mcp_run is not None else (),
-            prompt_assembler=self.prompt_assembler,
+            prompt_assembler=prompt_assembler,
         )
         return PreparedAgentRunRuntime(
             spec=spec,
@@ -235,12 +250,23 @@ class AgentRunPreparationService:
         )
 
     def rehydrate(
-        self, snapshot: AgentRunSnapshot, *, agent_run_id: str | None = None
+        self,
+        snapshot: AgentRunSnapshot,
+        *,
+        agent_run_id: str | None = None,
+        prompt_assembler=None,
+        tool_transform=None,
     ) -> PreparedAgentRunRuntime:
         """Rebuild a runtime from stored AgentRun evidence only.
 
         An unresolvable frozen CredentialRef makes the run unavailable instead of falling back.
         """
+        if snapshot.definition_ref is not None and (
+            prompt_assembler is None or tool_transform is None
+        ):
+            raise AgentRunPreparationError(
+                "Agent definition recovery requires its published factory"
+            )
         frozen = snapshot.provider_runtime
         if frozen is None or snapshot.run_policy is None:
             raise AgentRunPreparationError("AgentRun frozen evidence is incomplete")
@@ -261,7 +287,7 @@ class AgentRunPreparationService:
         context_builder = ContextBuilder(
             run_policy=snapshot.run_policy,
             estimate_request_chars=self.estimate_request_chars,
-            prompt_assembler=self.prompt_assembler,
+            prompt_assembler=prompt_assembler or self.prompt_assembler,
         )
         tool_executor = self.tool_factory(snapshot.run_policy)
         mcp_run = None
@@ -279,10 +305,15 @@ class AgentRunPreparationService:
             if mcp_run is None or mcp_run.snapshot_ids != snapshot.mcp_run_snapshot_ids:
                 raise AgentRunPreparationError("AgentRun MCP snapshot evidence is inconsistent")
             tool_executor = self._merge_mcp_tools(tool_executor, mcp_run, agent_run_id=agent_run_id)
+        if tool_transform is not None:
+            tool_executor = tool_transform(tool_executor)
         tools = tool_executor.definitions if tool_executor is not None else ()
         if snapshot.tool_schema_digest != tool_schema_digest(tools):
             raise AgentRunPreparationError("AgentRun tool schema drifted from frozen evidence")
         spec = PreparedAgentRunSpec(
+            definition_ref=snapshot.definition_ref,
+            max_agent_generation_requests=snapshot.max_agent_generation_requests,
+            conversation_session_id=snapshot.conversation_session_id,
             provider_runtime=frozen,
             run_policy=snapshot.run_policy,
             run_policy_digest=snapshot.run_policy_digest,

@@ -333,6 +333,7 @@ class SqliteSkillJournal:
             ("agent_run_skill_contexts", "version_id"),
             ("skill_drafts", "accepted_version_id"),
             ("skill_usage", "version_id"),
+            ("agent_definition_skills", "skill_version_id"),
         )
         references: list[str] = []
         for table, column in tables:

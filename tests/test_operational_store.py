@@ -639,6 +639,7 @@ def test_ordered_checksummed_migration_rolls_back_a_failed_step(tmp_path):
         "agent_run_long_horizon_observability",
         "agent_run_retry_progress",
         "durable_runtime_control_queue",
+        "agent_definition_foundation",
     )
     assert report.backup_name
     assert (store.layout.backups_dir / report.backup_name).is_file()

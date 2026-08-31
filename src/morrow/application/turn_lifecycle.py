@@ -375,9 +375,32 @@ class TurnSubmissionCoordinator:
                     turn_id=turn_id,
                 )
             stored_agent_run_id = agent_run_id or self.id_source.new_id(AGENT_RUN_ID_PREFIX)
+            definition_skills = None
+            if prepared_spec is not None and prepared_spec.definition_ref is not None:
+                from morrow.application.agent_definitions.admission import (
+                    require_definition_admission,
+                )
+
+                definition = require_definition_admission(
+                    txn,
+                    self.workspace_id,
+                    prepared_spec,
+                    session.session_id,
+                )
+                definition_skills = definition.source.skill_version_ids
+                if definition_skills and self.skill_selection is None:
+                    raise ValueError("exact Skill preparation is unavailable")
             skill_plan = (
                 self.skill_selection.select(
                     agent_run_id=stored_agent_run_id,
+                    **(
+                        {
+                            "exact_version_ids": definition_skills,
+                            "available_tools": tuple(tool.function.name for tool in tools),
+                        }
+                        if definition_skills is not None
+                        else {}
+                    ),
                     user_input=user_input,
                     workspace_id=self.workspace_id,
                     now=stamp,
@@ -966,6 +989,11 @@ def build_agent_run_snapshot(
         ),
     }
     return AgentRunSnapshot(
+        definition_ref=prepared_spec.definition_ref if prepared_spec else None,
+        max_agent_generation_requests=(
+            prepared_spec.max_agent_generation_requests if prepared_spec else None
+        ),
+        conversation_session_id=(prepared_spec.conversation_session_id if prepared_spec else None),
         profile=session.profile,
         model=model,
         provider_id=model.provider_id,

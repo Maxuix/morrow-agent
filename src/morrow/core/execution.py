@@ -27,6 +27,7 @@ from morrow.core.domain import (
     SESSION_ID_PREFIX,
     TASK_RUN_ID_PREFIX,
     TURN_ID_PREFIX,
+    VALUE_SENSITIVE_SECRET_PATTERN,
     WORKSPACE_ID_PREFIX,
     ArtifactReference,
     canonical_json_bytes,
@@ -77,21 +78,6 @@ _PREVIEW_LINE_COUNT = 40
 _CALL_ID_LIMIT = 128
 _VALIDATION_PATH_PATTERN = re.compile(r"^[A-Za-z0-9_$.-]+(?:\[[0-9]+\])*$")
 _VALIDATION_TYPE_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]{0,63}$")
-_PREVIEW_SECRET_VALUE_PATTERN = re.compile(
-    r"""(?ix)
-    (?:
-        ["']?(?:api[_-]?key|authorization|password|credential(?:s)?)["']?
-        \s*[:=]\s*["']?
-        (?!redacted\b|missing\b|unavailable\b|none\b|null\b|\*{3,})
-        [^\s"',;}]{4,}
-      |
-        --(?:api[-_]?key|authorization|password|credential(?:s)?)
-        (?:=|\s+)
-        (?!redacted\b|missing\b|unavailable\b|none\b|null\b|\*{3,})
-        \S{4,}
-    )
-    """
-)
 
 
 class EffectClass(StrEnum):
@@ -250,7 +236,7 @@ def _budget_and_redact(payload: dict[str, Any] | object, maximum: int, *, label:
     secret_scan = dumped
     if isinstance(dumped, dict) and isinstance(dumped.get("preview"), list):
         preview_text = "\n".join(str(line) for line in dumped["preview"])
-        if SECRET_TOKEN_PATTERN.search(preview_text) or _PREVIEW_SECRET_VALUE_PATTERN.search(
+        if SECRET_TOKEN_PATTERN.search(preview_text) or VALUE_SENSITIVE_SECRET_PATTERN.search(
             preview_text
         ):
             raise ValueError(f"{label} cannot contain secret material")

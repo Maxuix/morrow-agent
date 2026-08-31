@@ -35,7 +35,12 @@ from morrow.core.memory_selection import (
     MemorySelectionItem,
     MemorySelectionReasonCode,
 )
-from morrow.core.store import StorageError, StorageErrorCode, StoreOpenMode
+from morrow.core.store import (
+    SUPPORTED_SCHEMA_VERSION,
+    StorageError,
+    StorageErrorCode,
+    StoreOpenMode,
+)
 from morrow.testing import FixedClock
 from test_stage5_learning_store import (
     _candidate,
@@ -182,7 +187,7 @@ def test_v11_store_upgrades_to_v13_without_rewriting_v11(tmp_path):
     report = upgraded.migrate()
 
     assert report.from_version == 11
-    assert report.to_version == 22
+    assert report.to_version == SUPPORTED_SCHEMA_VERSION
     assert report.applied == (
         V12_NAME,
         V13_NAME,
@@ -195,9 +200,10 @@ def test_v11_store_upgrades_to_v13_without_rewriting_v11(tmp_path):
         "agent_run_long_horizon_observability",
         "agent_run_retry_progress",
         "durable_runtime_control_queue",
+        "agent_definition_foundation",
     )
     with upgraded.open(StoreOpenMode.READ_WRITE) as session:
-        assert session.schema_version == 22
+        assert session.schema_version == SUPPORTED_SCHEMA_VERSION
         tables = session.run_read(
             lambda executor: executor.execute(
                 "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ("

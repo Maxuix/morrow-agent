@@ -15,7 +15,7 @@ from typing import Any, Literal
 
 from pydantic import Field, field_validator, model_validator
 
-from morrow.core.agent_runs import ProviderRuntimeSnapshot
+from morrow.core.agent_runs import AgentDefinitionRef, ProviderRuntimeSnapshot
 from morrow.core.models import (
     SECRET_NEEDLES,
     SECRET_TOKEN_PATTERN,
@@ -422,8 +422,50 @@ def require_payload_budget(payload: bytes, maximum: int, *, label: str) -> bytes
     return payload
 
 
-def refuse_secret_material(payload: str | bytes, *, label: str) -> None:
+CREDENTIAL_LITERAL_PATTERN = re.compile(
+    r"(?ix)(?:\b(?:gh[pousr]|github_pat|xox[baprs])-?[A-Za-z0-9_-]{12,}\b|"
+    r"\bAKIA[0-9A-Z]{16}\b|\bBearer\s+[A-Za-z0-9._~+/=-]{12,}\b|"
+    r"(?<![A-Za-z0-9])sk-[A-Za-z0-9_-]{20,})"
+)
+
+VALUE_SENSITIVE_SECRET_PATTERN = re.compile(
+    r"""(?ix)
+    (?:
+        ["']?(?:api[_-]?key|authorization|password|credential(?:s)?)["']?
+        \s*[:=]\s*["']?
+        (?!redacted\b|missing\b|unavailable\b|none\b|null\b|\*{3,})
+        [^\s"',;}]{4,}
+      |
+        --(?:api[-_]?key|authorization|password|credential(?:s)?)
+        (?:=|\s+)
+        (?!redacted\b|missing\b|unavailable\b|none\b|null\b|\*{3,})
+        \S{4,}
+    )
+    """
+)
+
+
+def refuse_secret_material(
+    payload: str | bytes,
+    *,
+    label: str,
+    profile: Literal["legacy_strict", "workflow_value_sensitive"] = "legacy_strict",
+) -> None:
     text = payload if isinstance(payload, str) else payload.decode("utf-8")
+    if profile == "workflow_value_sensitive":
+        assignments = VALUE_SENSITIVE_SECRET_PATTERN.finditer(text)
+        placeholders = {"placeholder", "example", "your_api_key", "your_password", "changeme"}
+        unsafe_assignment = any(
+            (value := re.split(r"[:=]\s*|\s+", match.group(0))[-1].strip("\"' ").casefold())
+            not in placeholders
+            and not value.startswith(("$", "<", "{{"))
+            for match in assignments
+        )
+        if unsafe_assignment or CREDENTIAL_LITERAL_PATTERN.search(text):
+            raise ValueError(f"{label} cannot contain secret material")
+        return
+    if profile != "legacy_strict":
+        raise ValueError("unknown text safety profile")
     serialized = text.casefold()
     if any(needle in serialized for needle in SECRET_NEEDLES) or SECRET_TOKEN_PATTERN.search(
         serialized
@@ -527,6 +569,9 @@ class FrozenRunPreference(ProtocolModel):
 class AgentRunSnapshot(ProtocolModel):
     """Immutable non-secret AgentRun evidence. Not a configuration authority."""
 
+    definition_ref: AgentDefinitionRef | None = None
+    max_agent_generation_requests: int | None = Field(default=None, gt=0, strict=True)
+    conversation_session_id: str | None = Field(default=None, pattern=r"^ses_[A-Za-z0-9_-]+$")
     profile: Profile | None = None
     model: ModelRef
     provider_id: str
@@ -696,6 +741,10 @@ class AgentRunSnapshot(ProtocolModel):
 
     @model_validator(mode="after")
     def enforce_budget_and_redaction(self) -> AgentRunSnapshot:
+        if (self.definition_ref is None) != (self.conversation_session_id is None):
+            raise ValueError("Agent definition conversation evidence is incomplete")
+        if self.definition_ref is None and self.max_agent_generation_requests is not None:
+            raise ValueError("Agent definition request ceiling has no definition")
         memory_fields = (
             self.memory_selection_id,
             self.memory_selection_digest,
@@ -775,6 +824,14 @@ class AgentRunSnapshot(ProtocolModel):
         dumped = self.model_dump(mode="json")
         payload = canonical_json_bytes(dumped)
         require_payload_budget(payload, AGENT_RUN_SNAPSHOT_MAX_BYTES, label="AgentRun snapshot")
+        if self.definition_ref is not None:
+            refuse_secret_material(
+                canonical_json_bytes(dumped["definition_ref"]),
+                label="Agent definition reference",
+                profile="workflow_value_sensitive",
+            )
+            dumped = {**dumped, "definition_ref": None}
+            payload = canonical_json_bytes(dumped)
         if self.provider_runtime is not None:
             # The typed CredentialRef NAME legitimately serializes under
             # "credential_ref"; the generic needle scan would reject that benign

@@ -34,7 +34,12 @@ from morrow.core.preference_persistence_models import (
     PreferenceWriteBatch,
     preference_operation_fingerprint,
 )
-from morrow.core.store import StorageError, StorageErrorCode, StoreOpenMode
+from morrow.core.store import (
+    SUPPORTED_SCHEMA_VERSION,
+    StorageError,
+    StorageErrorCode,
+    StoreOpenMode,
+)
 from morrow.testing import FixedClock
 from test_stage5_learning_store import _seed_subjects
 
@@ -111,7 +116,7 @@ def test_v13_schema_is_created_with_preference_tables(tmp_path):
         "preference_write_batch_proposals",
         "preference_write_batches",
     }
-    assert session.schema_version == 22
+    assert session.schema_version == SUPPORTED_SCHEMA_VERSION
     session.close()
 
 

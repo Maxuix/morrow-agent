@@ -6,7 +6,11 @@ from pathlib import Path
 
 from morrow.adapters.state.journal import SqliteOperationalJournal
 from morrow.adapters.state.operational import OperationalStore
-from morrow.application.backup_service import BackupError, BackupService
+from morrow.application.backup_service import (
+    BackupError,
+    BackupService,
+    DefinitionSourceBackupError,
+)
 from morrow.core.backup import BackupBundleReport, BackupRestoreReport, BackupVerificationReport
 
 
@@ -28,6 +32,10 @@ class OperationalBackupService:
         name = bundle_name or f"operational-{int(self.store.clock.now().timestamp())}"
         try:
             bundle, manifest, manifest_digest = self.backend.create(name)
+        except DefinitionSourceBackupError:
+            raise BackupBundleError(
+                "agent-definitions.yaml contains detected secret material; remove the value before backup"
+            ) from None
         except BackupError as exc:
             raise BackupBundleError("backup bundle could not be completed") from exc
         return BackupBundleReport(

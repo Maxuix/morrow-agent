@@ -27,7 +27,7 @@ from morrow.adapters.state.migrations import (
     MigrationRegistry,
 )
 from morrow.adapters.state.operational import OperationalStore
-from morrow.core.store import StoreOpenMode
+from morrow.core.store import SUPPORTED_SCHEMA_VERSION, StoreOpenMode
 
 
 def _registry(version: int) -> MigrationRegistry:
@@ -65,7 +65,7 @@ def test_v14_to_v15_creates_draft_validation_and_usage_tables(tmp_path) -> None:
     OperationalStore(root, registry=_registry(14), maintenance_timeout=0).initialize().close()
     report = OperationalStore(root, maintenance_timeout=0).migrate()
     assert report.from_version == 14
-    assert report.to_version == 22
+    assert report.to_version == SUPPORTED_SCHEMA_VERSION
     assert report.applied == (
         "skill_drafts_and_usage",
         "mcp_control_catalog_and_snapshots",
@@ -75,6 +75,7 @@ def test_v14_to_v15_creates_draft_validation_and_usage_tables(tmp_path) -> None:
         "agent_run_long_horizon_observability",
         "agent_run_retry_progress",
         "durable_runtime_control_queue",
+        "agent_definition_foundation",
     )
     with OperationalStore(root, maintenance_timeout=0).open(StoreOpenMode.READ_ONLY) as handle:
         names = handle.run_read(
@@ -97,7 +98,7 @@ def test_v16_to_v17_creates_agent_run_observation_tables(tmp_path) -> None:
     report = OperationalStore(root, maintenance_timeout=0).migrate()
 
     assert report.from_version == 16
-    assert report.to_version == 22
+    assert report.to_version == SUPPORTED_SCHEMA_VERSION
     assert report.applied == (
         "agent_run_observability",
         "agent_run_completion_truth",
@@ -105,6 +106,7 @@ def test_v16_to_v17_creates_agent_run_observation_tables(tmp_path) -> None:
         "agent_run_long_horizon_observability",
         "agent_run_retry_progress",
         "durable_runtime_control_queue",
+        "agent_definition_foundation",
     )
     with OperationalStore(root, maintenance_timeout=0).open(StoreOpenMode.READ_ONLY) as handle:
         objects = handle.run_read(
@@ -130,8 +132,12 @@ def test_v21_and_v22_add_retry_progress_and_runtime_control_tables(tmp_path) -> 
     report = OperationalStore(root, maintenance_timeout=0).migrate()
 
     assert report.from_version == 20
-    assert report.to_version == 22
-    assert report.applied == ("agent_run_retry_progress", "durable_runtime_control_queue")
+    assert report.to_version == SUPPORTED_SCHEMA_VERSION
+    assert report.applied == (
+        "agent_run_retry_progress",
+        "durable_runtime_control_queue",
+        "agent_definition_foundation",
+    )
     with OperationalStore(root, maintenance_timeout=0).open(StoreOpenMode.READ_ONLY) as handle:
         objects = handle.run_read(
             lambda executor: executor.execute(

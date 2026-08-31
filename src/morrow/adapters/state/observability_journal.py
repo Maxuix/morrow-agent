@@ -187,7 +187,6 @@ class SqliteObservabilityJournal:
             accounting_basis=accounting_basis,
             compaction_required=compaction_required,
         )
-        del run
 
         def work() -> ModelRequestObservation:
             existing = self._request_by_ordinal(workspace_id, agent_run_id, attempt_ordinal)
@@ -206,6 +205,19 @@ class SqliteObservabilityJournal:
                     StorageErrorCode.UNAVAILABLE,
                     "AgentRun model request identifier is already in use",
                 )
+            cap = run.snapshot.max_agent_generation_requests
+            if cap is not None and candidate.purpose is ModelRequestPurpose.AGENT:
+                count = self.backend.read_one(
+                    "SELECT COUNT(*) FROM agent_run_model_requests WHERE agent_run_id=? AND purpose='agent'",
+                    (agent_run_id,),
+                )[0]
+                if count >= cap:
+                    from morrow.core.application import ApplicationError, ApplicationErrorCode
+
+                    raise ApplicationError(
+                        ApplicationErrorCode.INVALID,
+                        "budget_exhausted: Agent generation request limit reached",
+                    )
             self.backend.executor().execute(
                 f"INSERT INTO agent_run_model_requests({_REQUEST_COLUMNS}) VALUES ({', '.join('?' for _ in range(_REQUEST_VALUE_COUNT))})",
                 self._request_values(candidate),

@@ -75,6 +75,8 @@ class DurableRunCoordinator(SessionCommitter, Protocol):
     current_task_run_id: str | None
     current_agent_run_id: str | None
 
+    def bind_prompt_assembler(self, assembler) -> None: ...
+
     def now(self) -> datetime: ...
 
     def probe(

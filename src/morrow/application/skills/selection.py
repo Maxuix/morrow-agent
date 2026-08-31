@@ -80,6 +80,8 @@ class SkillSelectionService:
         user_input: str = "",
         workspace_id: str | None = None,
         explicit_skill_ids: Iterable[str] = (),
+        exact_version_ids: tuple[str, ...] | None = None,
+        available_tools: Iterable[str] | None = None,
         now: datetime | None = None,
     ) -> SkillSelectionPlan:
         workspace_id = workspace_id if workspace_id is not None else self.workspace_id
@@ -117,6 +119,12 @@ class SkillSelectionService:
             view = self.catalog.scan_scope(scope_id)
             catalog_digests.append({"scope": scope, "scope_id": scope_id, "entries": view.entries})
             by_id = {entry.definition.skill_id: entry for entry in view.entries}
+            if exact_version_ids is not None:
+                explicit.update(
+                    entry.definition.skill_id
+                    for entry in view.entries
+                    if any(v.version_id in exact_version_ids for v in entry.versions)
+                )
             for binding in sorted(load.value.bindings, key=lambda item: item.skill_id):
                 seen_binding_ids.add(binding.skill_id)
                 if not binding.enabled:
@@ -138,6 +146,26 @@ class SkillSelectionService:
                 if entry is None:
                     omissions.append(self._omission(binding, "skill_unavailable"))
                     continue
+                if exact_version_ids is not None:
+                    matches = [v for v in entry.versions if v.version_id in exact_version_ids]
+                    if not matches:
+                        continue
+                    if len(matches) != 1 or (
+                        binding.pinned_version_id is not None
+                        and binding.pinned_version_id != matches[0].version_id
+                    ):
+                        raise SkillSelectionError("exact Skill request conflicts with binding")
+                    binding = binding.model_copy(
+                        update={"pinned_version_id": matches[0].version_id}
+                    )
+                    resolved = self._resolve(
+                        binding, entry, scope_id, available_tools=available_tools
+                    )
+                    if isinstance(resolved, SkillOmission):
+                        omissions.append(resolved)
+                    else:
+                        candidates.append((*resolved, "explicit"))
+                    continue
                 if binding.selection_mode is SkillSelectionMode.DESCRIPTION_MATCH:
                     score = _description_score(user_input, entry.definition.description)
                     if not self.description_fallback_enabled:
@@ -148,7 +176,7 @@ class SkillSelectionService:
                         continue
                     description_candidates.append((score, binding, entry))
                     continue
-                resolved = self._resolve(binding, entry, scope_id)
+                resolved = self._resolve(binding, entry, scope_id, available_tools=available_tools)
                 if isinstance(resolved, SkillOmission):
                     omissions.append(resolved)
                 else:
@@ -162,7 +190,9 @@ class SkillSelectionService:
             )
         )
         for _, binding, entry in description_candidates[: self.max_description_matches]:
-            resolved = self._resolve(binding, entry, binding.scope_id)
+            resolved = self._resolve(
+                binding, entry, binding.scope_id, available_tools=available_tools
+            )
             if isinstance(resolved, SkillOmission):
                 omissions.append(resolved)
             else:
@@ -255,6 +285,10 @@ class SkillSelectionService:
             if catalog_digests
             else None
         )
+        if exact_version_ids is not None and {s.version_id for s in selected} != set(
+            exact_version_ids
+        ):
+            raise SkillSelectionError("exact Skill version is disabled or unavailable")
         return SkillSelectionPlan(
             selections=tuple(selected),
             omissions=tuple(omissions),
@@ -294,6 +328,8 @@ class SkillSelectionService:
         binding: SkillBinding,
         entry: SkillCatalogEntry,
         scope_id: str | None,
+        *,
+        available_tools: Iterable[str] | None = None,
     ) -> tuple[SkillBinding, SkillCatalogEntry, SkillVersion] | SkillOmission:
         if entry.definition.availability is not SkillAvailability.AVAILABLE:
             return self._omission(binding, f"catalog_{entry.definition.availability.value}")
@@ -332,11 +368,12 @@ class SkillSelectionService:
         if manifest.platform_constraints and self.platform not in manifest.platform_constraints:
             return self._omission(binding, "platform_unavailable", version.version_id)
         missing: list[str] = []
-        if self.available_tools is not None:
+        effective_tools = (
+            self.available_tools if available_tools is None else frozenset(available_tools)
+        )
+        if effective_tools is not None:
             missing.extend(
-                f"tool:{item}"
-                for item in manifest.required_tools
-                if item not in self.available_tools
+                f"tool:{item}" for item in manifest.required_tools if item not in effective_tools
             )
         if self.available_mcp_servers is not None:
             missing.extend(

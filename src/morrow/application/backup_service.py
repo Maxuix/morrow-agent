@@ -20,6 +20,7 @@ from morrow.adapters.state.artifacts import FilesystemArtifactStore
 from morrow.adapters.state.extension_yaml import ExtensionYamlLoadStatus, ExtensionYamlStore
 from morrow.adapters.state.journal import SqliteOperationalJournal
 from morrow.adapters.state.operational import OperationalStore
+from morrow.application.agent_definitions.integrity import verify_definition_rows
 from morrow.application.learning.learning_backup import verify_learning_references
 from morrow.application.learning.memory_backup import verify_memory_references
 from morrow.application.mcp.backup import verify_mcp_backup_references
@@ -43,6 +44,7 @@ from morrow.core.backup import (
     BackupVerificationReport,
     BackupYamlEntry,
 )
+from morrow.core.domain import CREDENTIAL_LITERAL_PATTERN as _SECRET_VALUE_PATTERN
 from morrow.core.preference_documents import GLOBAL_CONFIG_SCHEMA_VERSION
 from morrow.core.state_schema import (
     WORKSPACE_INDEX_SCHEMA_VERSION,
@@ -60,6 +62,10 @@ from morrow.core.store import (
 
 class BackupError(RuntimeError):
     """Sanitized backup/restore failure."""
+
+
+class DefinitionSourceBackupError(BackupError):
+    """A raw desired-source draft needs local secret removal before copying."""
 
 
 class BackupService:
@@ -83,6 +89,10 @@ class BackupService:
             with self._extension_maintenance_lock():
                 yaml_documents = self._capture_yaml_documents(staging)
                 yaml_signatures = self._signatures(yaml_documents)
+                definition_files = self._capture_definition_sources(staging)
+                yaml_signatures.update(
+                    {item.path: (item.sha256, item.byte_size) for item in definition_files}
+                )
                 source_handle = self.store.open(StoreOpenMode.DIAGNOSE)
                 source_journal = SqliteOperationalJournal(source_handle)
                 database, temporary_database = self._backup_database(bundle_name, staging)
@@ -115,6 +125,7 @@ class BackupService:
                         artifacts,
                         artifact_files,
                         schema_version,
+                        definition_files,
                     )
                 finally:
                     connection.close()
@@ -131,6 +142,8 @@ class BackupService:
                 _fsync_directory(final.parent)
                 staging = Path()
             return final, manifest, _manifest_digest(final / "manifest.json")
+        except DefinitionSourceBackupError:
+            raise
         except (BackupError, SkillBackupError, StorageError, Timeout) as exc:
             raise BackupError("backup could not be completed") from exc
         except (OSError, sqlite3.Error, TypeError, ValueError, yaml.YAMLError) as exc:
@@ -152,6 +165,13 @@ class BackupService:
         if manifest is not None:
             files_ok = self._verify_files(root, manifest, issues)
             yaml_ok = self._verify_yaml(root, manifest, issues)
+            for item in manifest.files:
+                if item.kind is BackupFileKind.DEFINITION_SOURCE:
+                    try:
+                        _reject_secret_text(_read_regular_file(root / item.path))
+                    except (ValueError, OSError):
+                        yaml_ok = False
+                        issues.append("definition_source_unsafe")
             skills_ok, skill_issues = verify_skill_capture(root, manifest.skill_versions)
             issues.extend(skill_issues)
             artifacts_ok = self._verify_artifacts(root, manifest, issues)
@@ -313,6 +333,7 @@ class BackupService:
         artifacts: tuple[BackupArtifactEntry, ...],
         artifact_files: tuple[BackupFileEntry, ...],
         schema_version: int,
+        definition_files: tuple[BackupFileEntry, ...] = (),
     ) -> BackupManifest:
         yaml_entries = tuple(item for item, _path in yaml_documents)
         yaml_files = tuple(
@@ -350,6 +371,10 @@ class BackupService:
             BackupReference(kind="yaml", identifier=item.path, target=item.path)
             for item in yaml_entries
         )
+        references.extend(
+            BackupReference(kind="definition_source", identifier=item.path, target=item.path)
+            for item in definition_files
+        )
         schema_versions = {"operational": schema_version, "extension_yaml": 1}
         return BackupManifest(
             schema_version=schema_version,
@@ -357,7 +382,7 @@ class BackupService:
             workspace_ids=tuple(sorted(set(workspace_ids))),
             files=tuple(
                 sorted(
-                    (database_file, *yaml_files, *artifact_files, *skills.files),
+                    (database_file, *yaml_files, *artifact_files, *skills.files, *definition_files),
                     key=lambda item: item.path,
                 )
             ),
@@ -390,6 +415,32 @@ class BackupService:
         os.chmod(digest, FILE_MODE)
         os.replace(digest, root / "manifest.sha256")
         _fsync_directory(root)
+
+    def _capture_definition_sources(self, staging):
+        captured = []
+        root = self.store.layout.data_root
+        for workspace_id in self._workspace_ids_from_paths():
+            relative = f"workspaces/{workspace_id}/agent-definitions.yaml"
+            source = root / relative
+            if not os.path.lexists(source):
+                continue
+            _assert_safe_chain(root, source)
+            raw = _read_regular_file(source)
+            try:
+                _reject_secret_text(raw)
+            except ValueError:
+                raise DefinitionSourceBackupError(
+                    "Agent definition source cannot be copied safely"
+                ) from None
+            entry = BackupFileEntry(
+                path=relative,
+                kind=BackupFileKind.DEFINITION_SOURCE,
+                sha256=hashlib.sha256(raw).hexdigest(),
+                byte_size=len(raw),
+            )
+            _copy_bytes(source, staging / relative)
+            captured.append(entry)
+        return tuple(captured)
 
     def _capture_yaml_documents(self, staging: Path) -> tuple[tuple[BackupYamlEntry, Path], ...]:
         source_root = self.store.layout.data_root
@@ -674,9 +725,12 @@ class BackupService:
                 issues.extend(memory_issues + learning_issues + preference_issues)
                 mcp_ok, mcp_issues = verify_mcp_backup_references(connection)
                 issues.extend(mcp_issues)
+                definitions_ok, definition_issues = verify_definition_rows(connection)
+                issues.extend(definition_issues)
                 references = all(
                     (
                         memory_ok,
+                        definitions_ok,
                         learning_ok,
                         preference_ok,
                         mcp_ok,
@@ -832,13 +886,6 @@ def _reject_secret_values(value: Any, *, key: str = "") -> None:
             _reject_secret_values(child, key=key)
     elif isinstance(value, str) and _SECRET_VALUE_PATTERN.search(value):
         raise ValueError("configuration contains secret material")
-
-
-_SECRET_VALUE_PATTERN = re.compile(
-    r"(?ix)(?:\b(?:gh[pousr]|github_pat|xox[baprs])-?[A-Za-z0-9_-]{12,}\b|"
-    r"\bAKIA[0-9A-Z]{16}\b|\bBearer\s+[A-Za-z0-9._~+/=-]{12,}\b|"
-    r"(?<![A-Za-z0-9])sk-[A-Za-z0-9_-]{20,})"
-)
 
 
 _SECRET_ASSIGNMENT_PATTERN = re.compile(

@@ -8,10 +8,13 @@ from collections import Counter
 from pathlib import Path
 
 from morrow.adapters.state.artifacts import FilesystemArtifactStore
+from morrow.adapters.state.definition_yaml import AgentDefinitionYamlStore
+from morrow.adapters.state.extension_yaml import ExtensionYamlError
 from morrow.adapters.state.journal import SqliteOperationalJournal
 from morrow.adapters.state.operational import OperationalStore
 from morrow.adapters.state.preference_yaml import PreferenceYamlStore
 from morrow.adapters.state.preference_yaml_types import PreferenceYamlLoadStatus
+from morrow.application.agent_definitions.integrity import verify_definition_rows
 from morrow.application.learning.learning_doctor import inspect_learning
 from morrow.application.learning.memory_doctor import inspect_memory
 from morrow.application.preferences.backup import verify_preference_references
@@ -176,6 +179,28 @@ class OperationalDoctor:
             if (classification.schema_version or 0) >= 17:
                 checks.append("agent_run_observations")
                 self._inspect_agent_run_observations(journal, workspace_id, counts, issues)
+            if (classification.schema_version or 0) >= 23:
+                checks.append("agent_definitions")
+                definitions_ok, codes = handle.run_read(verify_definition_rows)
+                if not definitions_ok:
+                    issues.extend(
+                        self._issue(
+                            code,
+                            DoctorSeverity.ERROR,
+                            "Published Agent definition integrity failed",
+                        )
+                        for code in codes
+                    )
+                try:
+                    AgentDefinitionYamlStore(self.data_root).load(workspace_id)
+                except (ValueError, OSError, ExtensionYamlError):
+                    issues.append(
+                        self._issue(
+                            "agent_definition_source_invalid",
+                            DoctorSeverity.WARNING,
+                            "Desired Agent source is invalid; published versions remain usable",
+                        )
+                    )
             checks.extend(("learning_reviews_and_candidates", "learning_promotions"))
             inspect_learning(
                 journal,

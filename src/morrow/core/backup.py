@@ -81,6 +81,7 @@ class BackupFileKind(StrEnum):
     EXTENSION_YAML = "extension_yaml"
     CONFIGURATION = "configuration"
     SKILL_PACKAGE = "skill_package"
+    DEFINITION_SOURCE = "definition_source"
 
 
 class BackupFileEntry(ProtocolModel):
@@ -109,6 +110,17 @@ class BackupFileEntry(ProtocolModel):
         if posixpath.normpath(value) != value:
             raise ValueError("backup path is not canonical")
         return value
+
+    @model_validator(mode="after")
+    def definition_source_path(self):
+        if self.kind is BackupFileKind.DEFINITION_SOURCE:
+            parts = self.path.split("/")
+            if len(parts) != 3 or parts[0] != "workspaces" or parts[2] != "agent-definitions.yaml":
+                raise ValueError("definition source path is not whitelisted")
+            validate_prefixed_id(parts[1], WORKSPACE_ID_PREFIX)
+            if self.byte_size > 2 * 1024 * 1024:
+                raise ValueError("definition source exceeds its byte budget")
+        return self
 
     @field_validator("sha256")
     @classmethod
@@ -293,6 +305,13 @@ class BackupManifest(ProtocolModel):
                 raise ValueError("backup YAML file is unowned")
             if item.kind is BackupFileKind.SKILL_PACKAGE and item.path not in skill_paths:
                 raise ValueError("backup Skill file is unowned")
+        definition_paths = {
+            item.path for item in self.files if item.kind is BackupFileKind.DEFINITION_SOURCE
+        }
+        if definition_paths != {
+            ref.target for ref in self.references if ref.kind == "definition_source"
+        }:
+            raise ValueError("backup definition source reference is missing")
         for reference in self.references:
             if reference.kind == "skill_version" and reference.identifier not in skill_ids:
                 raise ValueError("backup Skill reference is missing")

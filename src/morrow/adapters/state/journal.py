@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 
+from morrow.adapters.state.agent_definition_journal import SqliteAgentDefinitionJournal
 from morrow.adapters.state.application_journal import SqliteApplicationJournal
 from morrow.adapters.state.artifact_journal import SqliteArtifactJournal
 from morrow.adapters.state.configuration_promotion_journal import (
@@ -205,6 +206,7 @@ class SqliteOperationalJournal:
         self._preference_journal = SqlitePreferenceJournal(self._backend)
         self._skill_journal = SqliteSkillJournal(self._backend)
         self._mcp_journal = SqliteMcpJournal(self._backend)
+        self.agent_definitions = SqliteAgentDefinitionJournal(self._backend)
         self._runtime_control_journal = SqliteRuntimeControlJournal(self._backend)
 
     def now(self) -> datetime:
@@ -1061,13 +1063,19 @@ class SqliteOperationalJournal:
         return tuple(_session_from_row(row) for row in rows)
 
     def list_workspace_ids(self) -> tuple[str, ...]:
+        definitions = (
+            "UNION SELECT workspace_id FROM agent_definition_versions "
+            if self.schema_version() >= 23
+            else ""
+        )
         rows = self._read_all(
             "SELECT workspace_id FROM sessions "
             "UNION SELECT workspace_id FROM artifacts "
             "UNION SELECT workspace_id FROM artifact_references "
             "UNION SELECT workspace_id FROM checkpoint_artifact_references "
             "UNION SELECT workspace_id FROM application_events "
-            "ORDER BY workspace_id"
+            + definitions
+            + "ORDER BY workspace_id"
         )
         return tuple(str(row[0]) for row in rows)
 

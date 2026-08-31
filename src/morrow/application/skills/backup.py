@@ -43,6 +43,7 @@ def referenced_version_ids(executor, *, pinned_version_ids: tuple[str, ...] = ()
         ("agent_run_skill_contexts", "version_id"),
         ("skill_drafts", "accepted_version_id"),
         ("skill_usage", "version_id"),
+        ("agent_definition_skills", "skill_version_id"),
     )
     for table, column in references:
         if executor.execute(

@@ -267,6 +267,11 @@ class SessionPersistence:
             writer=self.writer,
         )
 
+    def bind_prompt_assembler(self, assembler) -> None:
+        """Bind a caller-composed prompt owner to this Session's admission and restore."""
+        self.turn_submission.prompt_assembler = assembler
+        self.session_restore.prompt_assembler = assembler
+
     def get_open_run_snapshot(self) -> AgentRunSnapshot | None:
         """Return the durable foreground AgentRun's frozen snapshot, if any."""
         if self.current_agent_run_id is None:

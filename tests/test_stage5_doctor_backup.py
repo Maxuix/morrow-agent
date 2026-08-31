@@ -16,6 +16,7 @@ from morrow.core.learning import (
     LearningSuppression,
     LearningSuppressionStatus,
 )
+from morrow.core.store import SUPPORTED_SCHEMA_VERSION
 from morrow.testing import FixedClock
 from test_stage5_project_knowledge import _accept_command, _project_candidate
 
@@ -92,7 +93,7 @@ async def test_stage5_sqlite_backup_preserves_learning_state_in_isolation(tmp_pa
         assert verified.references_ok
         manifest = json.loads((bundle / "manifest.json").read_text(encoding="utf-8"))
         assert candidate.candidate_id
-        assert manifest["schema_version"] == 22
+        assert manifest["schema_version"] == SUPPORTED_SCHEMA_VERSION
         assert not any(
             path.name in {"config.yaml", "workspace-index.yaml", "credentials", "keyring"}
             for path in bundle.rglob("*")

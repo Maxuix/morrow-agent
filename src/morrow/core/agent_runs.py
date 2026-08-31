@@ -195,6 +195,12 @@ class ProviderRuntimeSnapshot(ProtocolModel):
         return value
 
 
+class AgentDefinitionRef(ProtocolModel):
+    definition_id: str = Field(pattern=r"^[a-z][a-z0-9_-]{0,63}$")
+    version_id: str = Field(pattern=r"^adev_[A-Za-z0-9_-]+$")
+    content_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+
 class PreparedAgentRunSpec(ProtocolModel):
     """Immutable evidence describing one prepared AgentRun.
 
@@ -203,6 +209,9 @@ class PreparedAgentRunSpec(ProtocolModel):
     their reference fields in later subplans without changing this contract.
     """
 
+    definition_ref: AgentDefinitionRef | None = None
+    max_agent_generation_requests: int | None = Field(default=None, gt=0, strict=True)
+    conversation_session_id: str | None = Field(default=None, pattern=r"^ses_[A-Za-z0-9_-]+$")
     provider_runtime: ProviderRuntimeSnapshot
     run_policy: RunPolicy
     run_policy_digest: str
@@ -280,6 +289,10 @@ class PreparedAgentRunSpec(ProtocolModel):
 
     @model_validator(mode="after")
     def complete_prompt_evidence(self) -> PreparedAgentRunSpec:
+        if (self.definition_ref is None) != (self.conversation_session_id is None):
+            raise ValueError("prepared definition conversation evidence is incomplete")
+        if self.definition_ref is None and self.max_agent_generation_requests is not None:
+            raise ValueError("prepared definition request ceiling has no definition")
         profile_fields = (
             self.prompt_profile_id,
             self.prompt_profile_version,
