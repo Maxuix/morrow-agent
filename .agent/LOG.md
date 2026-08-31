@@ -4347,3 +4347,19 @@
 - The first full offline run found only stale migration-name expectations and three already-fixed
   new-test integration failures (SQL executor row access, fixture timestamp precision and doctor
   fixture construction). The next full gate must run against the final tree before closeout.
+
+## 2026-09-01 — Stage 7 Subplan 2 accepted and integrated
+
+- Final domain/store gate: 31 passed. Declared focused aggregate: 78 passed. Final implementation
+  whole-tree offline gate: 1376 passed, 2 Live deselected (131.55 seconds).
+- Ruff format/check (533 files), compileall, CLI help and `git diff --check` passed. No dependencies,
+  public events, policy defaults, real-network tests or Workflow execution were added.
+- Final audit preserved publish-time source revision/hash beside immutable Revision identity,
+  verified Artifact producer scope before reservation, and checked current input/output/AgentRun
+  links through the existing doctor/backup composition. Old Task/Artifact/Outcome migration defaults
+  remain user/legacy-strict; value-sensitive output redacts detected values without blocking closure.
+- Committed implementation as `f0a2385`, fast-forward merged it into local `main`, verified topic
+  ancestry and deleted `feat/stage7-workflow-domain`. No extra worktree was created or removed.
+- Acceptance is recorded in `docs/acceptance/stage-7-subplan-2-workflow-revision-artifacts.md`.
+  Subplan 3 is ready but not active. Remote publication remains pending explicit authorization;
+  the existing upstream divergence is recorded rather than silently claiming synchronization.

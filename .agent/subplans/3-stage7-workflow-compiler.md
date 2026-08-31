@@ -1,6 +1,6 @@
 # Subplan 3 — Stage 7 Deterministic Workflow Compiler
 
-> Status: pending
+> Status: ready; not active
 > Branch: `feat/stage7-workflow-compiler`
 > Prerequisite: Subplan 2 completed, verified and integrated
 > Revised 2026-08-31 per the conditional-GO plan review: validate is provably write-free, tool

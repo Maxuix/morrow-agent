@@ -2,16 +2,17 @@
 
 ## Current status
 
-Stage 7 Subplan 2 is active on `feat/stage7-workflow-domain` from verified local `main@fbfb197`.
+Stage 7 Subplan 2 is completed and fast-forward integrated into local `main`.
+Implementation commit: `f0a2385`. The topic branch was ancestry-verified and deleted; no extra
+worktree was created. Final offline gate: 1376 passed, 2 Live deselected.
 
 ## Active task
 
-Final offline/static validation and Subplan 2 acceptance recording.
+None. Subplan 3 is not active.
 
 ## Next action
 
-Complete the final-tree gate, commit verified implementation and acceptance, then fast-forward
-integrate into local `main` and retire the clean topic branch. Subplan 3 remains inactive.
+Await explicit continuation before activating Subplan 3 (Workflow Compiler) from verified `main`.
 
 ## Blockers
 

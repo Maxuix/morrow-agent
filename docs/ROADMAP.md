@@ -2,8 +2,8 @@
 
 > 状态：阶段 1–6 已完成；S7P-10 定向证明已把 Stage 7 从 **CONDITIONAL GO** 升级为 **GO**。
 > Stage 7 静态 Workflow Runtime 生产总计划已激活并于 2026-08-31 按计划评审修订，九个顺序
-> 子计划已准备（只读并行移至 Stage 8）；Subplan 1 的 AgentDefinition 基础层已完成并集成，
-> Subplan 2 已就绪但尚未激活。
+> 子计划已准备（只读并行移至 Stage 8）；Subplans 1–2 的 AgentDefinition 与 Workflow 领域/
+> 持久化契约已完成并集成；Subplan 3（Workflow Compiler）已就绪但尚未激活。
 > 基线日期：2026-08-30（Stage 7 计划修订：2026-08-31）
 > 用途：维护 Morrow 的长期产品方向、阶段顺序、稳定边界与详细阶段文档入口。
 > 执行约定：具体实现任务、活跃子计划、进度与验证结果继续维护在 `.agent/`；本文不承担实时 TODO 或开发日志职责。

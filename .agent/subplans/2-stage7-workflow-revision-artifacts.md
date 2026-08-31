@@ -1,6 +1,7 @@
 # Subplan 2 — Stage 7 Workflow Revision and Artifact Contracts
 
-> Status: active
+> Status: completed and integrated into local main
+> Implementation: `f0a2385`; acceptance: `docs/acceptance/stage-7-subplan-2-workflow-revision-artifacts.md`
 > Branch: `feat/stage7-workflow-domain`
 > Prerequisite: Subplan 1 completed, verified and integrated
 > Revised 2026-08-31 per the conditional-GO plan review: output necessity is split into
