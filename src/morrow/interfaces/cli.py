@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import getpass
 import json
+import sys
+import warnings
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Literal
@@ -95,7 +97,18 @@ def _secret(provider_id: str = "opencode-go") -> str:
     configured = environment_credential(provider_id)
     if configured:
         return configured
-    return getpass.getpass("OpenCode Go API Key（输入不回显）：")
+    recovery_message = (
+        "无法安全读取凭据；请在交互终端中重试，或通过对应 Provider 的环境变量提供凭据。"
+    )
+    if sys.stdin is None or not sys.stdin.isatty():
+        raise CredentialAccessError("secure_input_unavailable", recovery_message)
+    try:
+        with warnings.catch_warnings():
+            # Abort before getpass falls back to reading with echo enabled.
+            warnings.simplefilter("error", getpass.GetPassWarning)
+            return getpass.getpass("API Key（输入不回显）：")
+    except (getpass.GetPassWarning, EOFError, OSError):
+        raise CredentialAccessError("secure_input_unavailable", recovery_message) from None
 
 
 def _preset_option_help() -> str:

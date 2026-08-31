@@ -144,14 +144,21 @@ def skill_install(
             raise SkillLifecycleError(
                 "conflict", "Skill package conflicts with an existing identity"
             )
-        if not yes and not typer.confirm("确认安装（安装后仍保持 disabled）？"):
+        if not yes and not typer.confirm(
+            "确认安装（新 Skill 默认 disabled，不改变现有 Binding）？"
+        ):
             raise typer.Exit(code=2)
         result = services.lifecycle.install_prepared(
             prepared,
             report=report,
             confirmed=True,
         )
-        typer.echo(f"已安装 {result.skill_id}；Binding: disabled；version: {result.version_id}")
+        status = services.queries.show(result.skill_id, scope_id=workspace)
+        binding = "enabled" if status.enabled else "disabled"
+        typer.echo(
+            f"已安装 {result.skill_id}；Binding: {binding}；version: {result.version_id}；"
+            f"pinned_version: {status.pinned_version_id or 'none'}"
+        )
     except (SkillLifecycleError, ValueError, StorageError) as exc:
         _error(exc)
         raise typer.Exit(code=2) from exc
