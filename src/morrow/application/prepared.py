@@ -148,10 +148,12 @@ def config_evidence_from_arguments(
 
 def _abandon_incomplete_preflight(
     policy_verdict: PolicyVerdict | None,
+    *,
+    approval_required: bool = False,
 ) -> tuple[tuple[str, ...], bool, PolicyVerdict | None]:
     """Do not request approval or run a handler after a failed prepare preflight."""
 
-    if policy_verdict is PolicyVerdict.REQUIRE_APPROVAL:
+    if approval_required or policy_verdict is PolicyVerdict.REQUIRE_APPROVAL:
         return (), False, PolicyVerdict.DENY
     return (), False, policy_verdict
 
@@ -349,11 +351,13 @@ def _prepare_one(
             TypeError,
         ):
             preview, requires_approval, policy_verdict = _abandon_incomplete_preflight(
-                policy_verdict
+                policy_verdict,
+                approval_required=registered.execution_policy.approval is ToolApproval.REQUIRED,
             )
         except Exception:
             preview, requires_approval, policy_verdict = _abandon_incomplete_preflight(
-                policy_verdict
+                policy_verdict,
+                approval_required=registered.execution_policy.approval is ToolApproval.REQUIRED,
             )
     return PreparedIntent(
         tool_name=call.name,

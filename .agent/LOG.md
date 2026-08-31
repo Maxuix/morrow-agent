@@ -4262,3 +4262,24 @@
 - The superseded nine-subplan revision is archived under
   `.agent/archive/subplans/stage7-workflow-runtime-v1/`; the revised nine children are prepared and
   Subplan 1 remains ready. Production implementation is still not authorized or started.
+
+## 2026-08-31 — Subplan 1 authorization and baseline prerequisite repair
+
+- User explicitly authorized Stage 7 execution, starting with Subplan 1.
+- Baseline at `main@98a004a`: 1299 passed, 1 failed, 2 skipped, 2 deselected.
+  The known configuration cancellation failure is a real preflight fail-open: a later batch call
+  whose preflight fails before a Profile exists loses its approval requirement, then can execute
+  after an earlier call creates the Profile. The second approval observed by the test belongs to
+  a subsequent scripted batch, after the unintended mutation.
+- On `fix/configuration-cancellation-boundary`, incomplete durable preflight for approval-required tools now freezes
+  DENY even when failure precedes policy evaluation. Non-approval tools retain their existing
+  execution-time preflight diagnostics. The cancellation fixture starts with a valid Profile so both calls are admissible; a
+  separate regression proves an initially invalid append never executes after an earlier create.
+- Focused configuration/tool persistence suite: 41 passed before adding the regression. Ruff
+  check/format, compileall and diff check passed. Full offline re-verification is in progress.
+- Test commands use `UV_CACHE_DIR=/tmp/morrow-uv-cache` because the default uv cache is outside
+  writable roots. No Live tests or public lifecycle/default-policy changes are involved.
+- Final prerequisite validation: 1301 passed, 2 skipped (nested Seatbelt), 2 Live deselected;
+  focused configuration/tool-persistence/local-tool checks: 51 passed. Ruff format/check,
+  compileall and diff check passed. The earlier broad DENY attempt changed ordinary diagnostic
+  codes; it was narrowed to approval-required tools before this successful gate.

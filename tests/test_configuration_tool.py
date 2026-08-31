@@ -805,6 +805,9 @@ async def test_configuration_cancellation_after_first_call_closes_only_pending_c
     project = tmp_path / "project"
     project.mkdir()
     identity = app.workspace_service.confirm(app.workspace_service.resolve(project))
+    # Both calls must pass preflight before the batch starts. A missing Profile
+    # makes the append invalid at preparation time, independently of cancellation.
+    app.project_store.write_profile(identity.workspace_id, Profile(name="demo"))
     provider = ScriptedModelProvider(
         [
             AssistantMessage(
@@ -860,6 +863,50 @@ async def test_configuration_cancellation_after_first_call_closes_only_pending_c
     assert json.loads(tool_messages[0].content)["result"]["status"] == "applied"
     assert json.loads(tool_messages[1].content)["error"]["code"] == "cancelled"
     assert session_app.session.log.unresolved_call_ids == ()
+
+
+@pytest.mark.asyncio
+async def test_failed_batch_preflight_cannot_become_an_unapproved_write(tmp_path):
+    app = build_application(state_root=tmp_path / "state", credentials=MemoryCredentialStore())
+    project = tmp_path / "project"
+    project.mkdir()
+    identity = app.workspace_service.confirm(app.workspace_service.resolve(project))
+    approval = _Approval(approved=True)
+    provider = ScriptedModelProvider(
+        [
+            AssistantMessage(
+                tool_calls=tuple(
+                    _configuration_call(
+                        call_id,
+                        {
+                            "scope": "workspace",
+                            "target": "profile",
+                            "operation": operation,
+                            "path": path,
+                            "value": value,
+                        },
+                    )
+                    for call_id, operation, path, value in (
+                        ("c1", "set", "name", "created"),
+                        ("c2", "append", "goals", "must not commit"),
+                    )
+                )
+            ),
+            AssistantMessage(content="done"),
+        ]
+    )
+    session_app = build_session_application(
+        app,
+        identity,
+        provider=provider,
+        model=ModelRef(provider_id="p", model_id="m"),
+        approval_port=approval,
+    )
+    await session_app.orchestrator.dispatch("update profile")
+    assert session_app.session.profile.name == "created"
+    assert session_app.session.profile.goals == []
+    messages = [m for m in session_app.session.log.messages_view() if m.role == "tool"]
+    assert json.loads(messages[1].content)["error"]["code"] == "permission_denied"
 
 
 def test_service_error_types_are_stable():
