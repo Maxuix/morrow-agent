@@ -4406,3 +4406,26 @@
   ancestry and deleted `feat/stage7-workflow-compiler`. No extra worktree was created or removed.
 - Subplan 4 (Isolated Workflow Vertical Slice) is ready but not active. Remote publication remains
   pending explicit authorization; upstream divergence is recorded rather than silently claimed.
+
+## 2026-09-01 — Stage 7 Subplan 3 review follow-up
+
+- Confirmed all four post-merge review findings against `da489b0`: nondeterministic
+  disconnected-component naming, untested ghost-endpoint/self-loop and binding contract-mismatch
+  gates, dropped warnings on successful publish, and the compiled-hash no-op leaving
+  `head.source_hash` pinned so doctor's `workflow_desired_ahead` could never clear after a
+  cosmetic-only source edit.
+- Disconnected components are now grouped from sorted node IDs with a size-then-lexicographic
+  main-component rule, so the named unattached set is hash-seed independent.
+- `publish` now returns `WorkflowPublication(revision, diagnostics)`; same-command replay does not
+  recompile and returns empty diagnostics.
+- The compiled node preserves the source `tool_requirements` overlay verbatim and carries the
+  merged set in the new `AgentNode.resolved_tool_requirements`. Any source-body edit now changes
+  the canonical compiled hash, so publication advances the head's source evidence through the
+  normal new-Revision path; the head-equals-revision integrity invariant and the exact-match
+  no-op rule are both unchanged, and doctor's desired-ahead warning clears after publish.
+- Added rejection-plus-legal pairs for ghost endpoints, self-loops and binding contract mismatch,
+  a determinism case for equal-size components, publish-returned diagnostics, and an end-to-end
+  doctor check for the overlay-restatement path.
+- Focused compiler gate: 29 passed. Whole-tree offline gate: 1406 passed, 2 Live deselected
+  (119.95 seconds). Ruff format/check (536 files), compileall and `git diff --check` passed. No
+  Live tests, dependency changes, public events or policy-default changes were made.

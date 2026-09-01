@@ -82,7 +82,17 @@ class AgentNodeSource(ProtocolModel):
 
 class AgentNode(AgentNodeSource):
     resolved_model_ref: ModelRef
+    # Compiler-frozen merge of Definition and node declarations; the source
+    # overlay stays in tool_requirements so any source edit changes the hash.
+    resolved_tool_requirements: tuple[ToolRequirement, ...] = Field(default=(), max_length=128)
     declared_node_max_agent_generation_requests: int = Field(gt=0, strict=True)
+
+    @field_validator("resolved_tool_requirements")
+    @classmethod
+    def unique_resolved_tools(cls, values):
+        if len({item.name for item in values}) != len(values):
+            raise ValueError("node-local names must be unique")
+        return tuple(sorted(values, key=lambda item: item.name))
 
 
 class WorkflowMetadata(ProtocolModel):

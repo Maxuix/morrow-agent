@@ -330,6 +330,7 @@ output_contracts[]: stable slot + kind/version + required_for_node_completion
 access_mode: read | write
 conversation_scope: isolated (invoking_session arrives with the Subplan 7 Direct adapter)
 optional node tool_requirements[] (restriction-only overlay on the Definition set)
+resolved_tool_requirements[] (Compiler-frozen merged set; the source overlay remains hashed)
 optional node max-agent-generation-request override
 declared_node_max_agent_generation_requests (compiled, positive)
 ```

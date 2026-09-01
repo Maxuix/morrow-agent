@@ -105,6 +105,7 @@ def source(**changes):
                     **node().model_dump(
                         exclude={
                             "resolved_model_ref",
+                            "resolved_tool_requirements",
                             "declared_node_max_agent_generation_requests",
                         }
                     )

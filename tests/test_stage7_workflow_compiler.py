@@ -7,12 +7,14 @@ from dataclasses import replace
 import pytest
 from pydantic import ValidationError
 
+from morrow.adapters.state.definition_yaml import WorkflowDefinitionYamlStore
 from morrow.adapters.state.journal import SqliteOperationalJournal
 from morrow.adapters.state.operational import OperationalStore
 from morrow.application.agent_definitions.publication import (
     AgentDefinitionPublicationService,
     DefinitionCatalog,
 )
+from morrow.application.doctor import OperationalDoctor
 from morrow.application.workflows.compiler import (
     COMPILER_VERSION,
     DiagnosticSeverity,
@@ -32,6 +34,7 @@ from morrow.core.workflows.contracts import (
 from morrow.core.workflows.definitions import (
     AgentNodeSource,
     WorkflowBudget,
+    WorkflowDefinitionDocument,
     WorkflowDefinitionSource,
     WorkflowEdge,
 )
@@ -204,16 +207,22 @@ def test_active_model_freeze_noop_and_same_command_replay(state):
     _, _, journal, agents, service = state
     _, ref = publish_agent(agents)
     src = source(ref)
-    first = publish(service, src, active=MODEL)
+    first = publish(service, src, active=MODEL).revision
     assert first.nodes[0].resolved_model_ref == MODEL
-    assert publish(service, src, active=OTHER) == first  # replay survives moved configuration
-    assert publish(service, src, head=1, command="cmd_noop", active=MODEL, revision=1) == first
-    second = publish(service, src, head=1, command="cmd_b", active=OTHER, revision=1)
+    replayed = publish(service, src, active=OTHER)  # replay survives moved configuration
+    assert replayed.revision == first and replayed.diagnostics == ()
+    assert (
+        publish(service, src, head=1, command="cmd_noop", active=MODEL, revision=1).revision
+        == first
+    )
+    second = publish(service, src, head=1, command="cmd_b", active=OTHER, revision=1).revision
     assert second.revision == 2 and second.parent_workflow_revision_id == first.workflow_revision_id
     assert second.nodes[0].resolved_model_ref == OTHER
     assert second.content_hash != first.content_hash
     assert journal.workflows.get_revision("ws_one", first.workflow_revision_id) == first
-    assert publish(service, src, head=2, command="cmd_b2", active=OTHER, revision=1) == second
+    assert (
+        publish(service, src, head=2, command="cmd_b2", active=OTHER, revision=1).revision == second
+    )
     head = journal.workflows.get_head("ws_one", "pipeline")
     assert head.workflow_revision_id == second.workflow_revision_id and head.enabled
     with pytest.raises(ValueError, match="conflicts with prior receipt"):
@@ -224,19 +233,21 @@ def test_moving_agent_head_does_not_drift_an_exact_version_reference(state):
     _, _, journal, agents, service = state
     first_version, ref = publish_agent(agents)
     src = source(ref)
-    revision = publish(service, src)
+    revision = publish(service, src).revision
     edited = definition().model_copy(update={"role_prompt": "Inspect a new task."})
     moved = agents.publish(
         edited, source_revision=1, expected_head_revision=1, command_id="cmd_agent_v2"
     )
     assert moved.version_id != first_version.version_id
-    assert publish(service, src, head=1, command="cmd_noop", revision=1) == revision
+    assert publish(service, src, head=1, command="cmd_noop", revision=1).revision == revision
     moved_ref = AgentDefinitionRef(
         definition_id="helper",
         version_id=moved.version_id,
         content_hash=moved.content_hash,
     )
-    recompiled = publish(service, source(moved_ref), head=1, command="cmd_explicit", revision=2)
+    recompiled = publish(
+        service, source(moved_ref), head=1, command="cmd_explicit", revision=2
+    ).revision
     assert recompiled.revision == 2
     assert recompiled.nodes[0].agent_definition_ref == moved_ref
     assert journal.workflows.get_revision("ws_one", revision.workflow_revision_id) == revision
@@ -245,12 +256,12 @@ def test_moving_agent_head_does_not_drift_an_exact_version_reference(state):
 def test_metadata_edit_creates_a_new_revision_then_noop(state):
     _, _, journal, agents, service = state
     _, ref = publish_agent(agents)
-    first = publish(service, source(ref))
+    first = publish(service, source(ref)).revision
     edited = source(ref, description="Broader audit", tags=("security",))
-    second = publish(service, edited, head=1, command="cmd_meta", revision=1)
+    second = publish(service, edited, head=1, command="cmd_meta", revision=1).revision
     assert second.revision == 2 and second.description == "Broader audit"
     assert second.tags == ("security",) and second.content_hash != first.content_hash
-    assert publish(service, edited, head=2, command="cmd_meta2", revision=1) == second
+    assert publish(service, edited, head=2, command="cmd_meta2", revision=1).revision == second
     head = journal.workflows.get_head("ws_one", "pipeline")
     assert head.source_hash == edited.content_hash
 
@@ -268,7 +279,8 @@ def test_tool_merge_narrows_and_freezes_the_effective_set(state):
     # No overlay: the optional write tool falls to the read ceiling with a diagnostic.
     plain = service.validate(source(ref), active_model=MODEL)
     assert plain.candidate is not None
-    merged = {t.name: t.requirement for t in plain.candidate.nodes[0].tool_requirements}
+    assert plain.candidate.nodes[0].tool_requirements is None  # source overlay preserved
+    merged = {t.name: t.requirement for t in plain.candidate.nodes[0].resolved_tool_requirements}
     assert merged == {"read": "required", "shell": "forbidden"}
     assert [d.code for d in warnings_of(plain)] == ["optional_removed"]
     # The node may forbid a definition-optional tool; forbidden stays frozen.
@@ -283,7 +295,10 @@ def test_tool_merge_narrows_and_freezes_the_effective_set(state):
     )
     result = service.validate(narrowed, active_model=MODEL)
     assert result.candidate is not None and result.diagnostics == ()
-    merged = {t.name: t.requirement for t in result.candidate.nodes[0].tool_requirements}
+    assert result.candidate.nodes[0].tool_requirements == (
+        ToolRequirement(name="write", requirement="forbidden"),
+    )
+    merged = {t.name: t.requirement for t in result.candidate.nodes[0].resolved_tool_requirements}
     assert merged == {"read": "required", "shell": "forbidden", "write": "forbidden"}
 
 
@@ -340,7 +355,7 @@ def test_required_tool_denied_by_ceiling_beside_optional_removal(state):
     )
     removed = service.validate(source(optional_ref), active_model=MODEL)
     assert removed.candidate is not None
-    assert removed.candidate.nodes[0].tool_requirements == ()
+    assert removed.candidate.nodes[0].resolved_tool_requirements == ()
     assert [d.code for d in warnings_of(removed)] == ["optional_removed"]
 
 
@@ -389,7 +404,7 @@ def test_node_overlay_outside_definition_set_is_an_error(state):
     )
     compiled = service.validate(upgraded, active_model=MODEL)
     assert compiled.candidate is not None
-    merged = {t.name: t.requirement for t in compiled.candidate.nodes[0].tool_requirements}
+    merged = {t.name: t.requirement for t in compiled.candidate.nodes[0].resolved_tool_requirements}
     assert merged == {"read": "required"}
 
 
@@ -591,7 +606,7 @@ def test_missing_or_mismatched_agent_version_is_rejected(state):
     with pytest.raises(WorkflowCompilationError, match="agent_version_unresolved"):
         publish(service, source(missing))
     # The failure stays scoped: the valid definition still publishes.
-    assert publish(service, source(ref), command="cmd_valid") is not None
+    assert publish(service, source(ref), command="cmd_valid").revision is not None
 
 
 def test_missing_active_model_is_a_scoped_compile_error(state):
@@ -610,7 +625,7 @@ def test_occ_stale_and_invalid_metadata_store_nothing(state):
     _, _, journal, agents, service = state
     _, ref = publish_agent(agents)
     src = source(ref)
-    first = publish(service, src)
+    first = publish(service, src).revision
     with pytest.raises(ValueError, match="head revision conflict"):
         publish(service, src, head=0, command="cmd_stale")
     assert journal.workflows.list_revisions("ws_one") == (first,)
@@ -638,14 +653,14 @@ def test_publication_rolls_back_revision_when_the_store_write_fails(state, monke
     assert journal.workflows.get_head("ws_one", "pipeline") is None
     assert journal.workflows.publication("ws_one", "cmd_publish") is None
     monkeypatch.setattr(journal.workflows, "store_compiled_revision", original)
-    assert publish(service, source(ref)).revision == 1
+    assert publish(service, source(ref)).revision.revision == 1
 
 
 def test_revoked_references_and_revision_cannot_reenter(state):
     _, _, journal, agents, service = state
     version, ref = publish_agent(agents)
     src = source(ref)
-    revision = publish(service, src)
+    revision = publish(service, src).revision
     record = service.revoke(
         revision.workflow_revision_id, reason="policy changed", command_id="cmd_revoke_wf"
     )
@@ -663,7 +678,7 @@ def test_revoked_references_and_revision_cannot_reenter(state):
     with pytest.raises(ValueError, match="policy_revoked"):
         publish(service, src)
     edited = source(ref, description="superseding revision")
-    successor = publish(service, edited, head=1, command="cmd_supersede", revision=1)
+    successor = publish(service, edited, head=1, command="cmd_supersede", revision=1).revision
     assert successor.revision == 2
     assert journal.workflows.get_revision("ws_one", revision.workflow_revision_id) == revision
     # A revoked referenced Agent version rejects publication of its consumers.
@@ -676,7 +691,7 @@ def test_revoked_references_and_revision_cannot_reenter(state):
 def test_first_publication_disabled_and_enable_toggle_creates_no_revision(state):
     _, _, journal, agents, service = state
     _, ref = publish_agent(agents)
-    first = publish(service, source(ref), enabled=False)
+    first = publish(service, source(ref), enabled=False).revision
     head = journal.workflows.get_head("ws_one", "pipeline")
     assert head.workflow_revision_id == first.workflow_revision_id and not head.enabled
     toggled = service.set_enabled("pipeline", enabled=True, expected_head_revision=1)
@@ -715,3 +730,129 @@ def test_canonical_hash_is_stable_across_source_ordering(state):
     assert first.candidate is not None and second.candidate is not None
     assert first.content_hash == second.content_hash
     assert first.candidate == second.candidate
+
+
+def test_ghost_endpoint_and_self_loop_are_rejected(state):
+    _, _, _, agents, service = state
+    _, ref = publish_agent(agents)
+    ghost = source(ref, edges=(WorkflowEdge(from_node_id="ghost", to_node_id="worker"),))
+    result = service.validate(ghost, active_model=MODEL)
+    assert result.candidate is None
+    assert [d.code for d in errors_of(result)] == ["edge_endpoint_invalid"]
+    loop = source(ref, edges=(WorkflowEdge(from_node_id="worker", to_node_id="worker"),))
+    result = service.validate(loop, active_model=MODEL)
+    assert result.candidate is None
+    assert [d.code for d in errors_of(result)] == ["edge_endpoint_invalid"]
+    # The adjacent legal control-only edge still compiles.
+    legal = source(
+        ref,
+        nodes=(node_source(ref, "orphan"), node_source(ref)),
+        edges=(WorkflowEdge(from_node_id="orphan", to_node_id="worker"),),
+    )
+    assert service.validate(legal, active_model=MODEL).candidate is not None
+
+
+def test_binding_contract_mismatch_is_rejected_beside_legal_binding(state):
+    _, _, _, agents, service = state
+    _, ref = publish_agent(agents)
+    mismatched = NodeOutputBinding(
+        source="node_output",
+        input_name="context",
+        accepts={"kind": "TaskContract"},
+        node_output=NodeOutputRef(node_id="explore", output_slot="result"),
+    )
+    edge = WorkflowEdge(from_node_id="explore", to_node_id="worker")
+    bad = source(
+        ref,
+        nodes=(node_source(ref, "explore"), node_source(ref, input_bindings=(mismatched,))),
+        edges=(edge,),
+    )
+    result = service.validate(bad, active_model=MODEL)
+    assert result.candidate is None
+    assert [d.code for d in errors_of(result)] == ["structure_invalid"]
+    assert "contract mismatch" in errors_of(result)[0].message
+    legal = source(
+        ref,
+        nodes=(
+            node_source(ref, "explore"),
+            node_source(ref, input_bindings=(binding_to("explore"),)),
+        ),
+        edges=(edge,),
+    )
+    assert service.validate(legal, active_model=MODEL).candidate is not None
+
+
+def test_disconnected_naming_is_deterministic_for_equal_components(state):
+    _, _, _, agents, service = state
+    _, ref = publish_agent(agents)
+    pair_a = (
+        node_source(ref, "alpha_one"),
+        node_source(ref, "alpha_two", input_bindings=(binding_to("alpha_one"),)),
+    )
+    pair_b = (
+        node_source(ref, "beta_one"),
+        node_source(ref, "beta_two", input_bindings=(binding_to("beta_one"),)),
+    )
+    disconnected = source(
+        ref,
+        nodes=pair_a + pair_b,
+        edges=(
+            WorkflowEdge(from_node_id="alpha_one", to_node_id="alpha_two"),
+            WorkflowEdge(from_node_id="beta_one", to_node_id="beta_two"),
+        ),
+        required_outputs=(NodeOutputRef(node_id="alpha_two", output_slot="result"),),
+    )
+    first = service.validate(disconnected, active_model=MODEL)
+    second = service.validate(disconnected, active_model=MODEL)
+    assert first.candidate is None and second.candidate is None
+    assert first.diagnostics == second.diagnostics
+    message = errors_of(first)[0].message
+    assert "beta_one, beta_two" in message and "alpha" not in message.split("nodes")[1]
+
+
+def test_successful_publish_returns_compile_diagnostics(state):
+    _, _, _, agents, service = state
+    _, ref = publish_agent(agents)
+    fixed = source(
+        ref,
+        nodes=(node_source(ref, "orphan"), node_source(ref)),
+        edges=(WorkflowEdge(from_node_id="orphan", to_node_id="worker"),),
+    )
+    published = publish(service, fixed)
+    assert [d.code for d in warnings_of(published)] == ["unconsumed_outputs"]
+    validated = service.validate(fixed, active_model=MODEL)
+    assert published.diagnostics == validated.diagnostics
+    # A same-command replay does not recompile and returns empty diagnostics.
+    assert publish(service, fixed).diagnostics == ()
+
+
+def test_overlay_restatement_publishes_a_new_revision_and_clears_desired_ahead(state):
+    store, _, journal, agents, service = state
+    value = definition(tool_requirements=(ToolRequirement(name="read", requirement="required"),))
+    _, ref = publish_agent(agents, value)
+    plain = source(ref)
+    first = publish(service, plain).revision
+    # Restating a definition-level requirement in the overlay changes the source
+    # body; the frozen merge is identical, so the new Revision carries the same
+    # resolved evidence while the head's source evidence advances.
+    restated = source(
+        ref,
+        nodes=(
+            node_source(
+                ref, tool_requirements=(ToolRequirement(name="read", requirement="required"),)
+            ),
+        ),
+    )
+    yaml = WorkflowDefinitionYamlStore(store.layout.data_root)
+    yaml.write("ws_one", WorkflowDefinitionDocument(definitions=(restated,)), expected_revision=0)
+    second = publish(service, restated, head=1, command="cmd_restated", revision=1).revision
+    assert second.workflow_revision_id != first.workflow_revision_id
+    assert second.nodes[0].resolved_tool_requirements == first.nodes[0].resolved_tool_requirements
+    head = journal.workflows.get_head("ws_one", "pipeline")
+    assert head.source_hash == restated.content_hash and head.source_revision == 1
+    report = OperationalDoctor(store).inspect("ws_one")
+    assert report.health.value == "ok"
+    assert not any(i.code == "workflow_desired_ahead" for i in report.issues)
+    # Identical current content remains a no-op with no duplicate Revision identity.
+    assert publish(service, restated, head=2, command="cmd_again", revision=1).revision == second
+    assert len(journal.workflows.list_revisions("ws_one")) == 2

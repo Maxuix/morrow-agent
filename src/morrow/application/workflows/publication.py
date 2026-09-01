@@ -8,9 +8,12 @@ operational head/audit writes here, never a side effect of compilation.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from morrow.application.agent_definitions.publication import DefinitionCatalog
 from morrow.application.workflows.compiler import (
     CompilationResult,
+    CompileDiagnostic,
     WorkflowCompilationError,
     compile_workflow,
 )
@@ -22,6 +25,17 @@ from morrow.core.workflows.definitions import (
     WorkflowRevision,
     WorkflowRevisionRevocation,
 )
+
+
+@dataclass(frozen=True)
+class WorkflowPublication:
+    """One publish outcome: the chosen Revision plus that compile's diagnostics.
+
+    A same-command replay never recompiles, so its diagnostics are empty.
+    """
+
+    revision: WorkflowRevision
+    diagnostics: tuple[CompileDiagnostic, ...]
 
 
 class WorkflowCompilationService:
@@ -61,7 +75,7 @@ class WorkflowCompilationService:
         command_id,
         active_model: ModelRef | None,
         enabled=True,
-    ) -> WorkflowRevision:
+    ) -> WorkflowPublication:
         if (
             type(source_revision) is not int
             or source_revision < 0
@@ -92,7 +106,7 @@ class WorkflowCompilationService:
                 if revision is None:
                     raise ValueError("published Workflow revision is missing")
                 self._require_unrevoked(txn, revision)
-                return revision
+                return WorkflowPublication(revision, ())
             result = compile_workflow(
                 source,
                 agent_versions=self._resolve_versions(source),
@@ -146,7 +160,7 @@ class WorkflowCompilationService:
             repo.put_publication(
                 self.workspace_id, command_id, request_hash, revision.workflow_revision_id
             )
-            return revision
+            return WorkflowPublication(revision, result.diagnostics)
 
         return self.journal.transact(work)
 

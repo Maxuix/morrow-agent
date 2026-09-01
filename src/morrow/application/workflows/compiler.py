@@ -109,8 +109,8 @@ def compile_workflow(
         declared = min(requested, ceiling) if ceiling is not None else requested
         compiled.append(
             AgentNode(
-                **node.model_dump(exclude={"tool_requirements"}),
-                tool_requirements=tools,
+                **node.model_dump(),
+                resolved_tool_requirements=tools,
                 resolved_model_ref=model,
                 declared_node_max_agent_generation_requests=declared,
             )
@@ -192,12 +192,14 @@ def _check_graph(source: WorkflowDefinitionSource, diagnostics: list[CompileDiag
         for from_id, to_id in edges:
             if from_id in node_ids and to_id in node_ids:
                 parent[find(from_id)] = find(to_id)
-        components: dict[str, list[str]] = {}
-        for node_id in node_ids:
-            components.setdefault(find(node_id), []).append(node_id)
+        members: dict[str, list[str]] = {}
+        for node_id in sorted(node_ids):
+            members.setdefault(find(node_id), []).append(node_id)
+        # Largest component wins; ties break lexicographically so the named
+        # unattached set never depends on set iteration order.
+        components = sorted(members.values(), key=lambda group: (-len(group), group))
         if len(components) > 1:
-            main = max(components.values(), key=lambda members: (len(members), members[0]))
-            unattached = sorted(node_ids - set(main))
+            unattached = sorted(n for group in components[1:] for n in group)
             diagnostics.append(
                 CompileDiagnostic(
                     DiagnosticSeverity.ERROR,
