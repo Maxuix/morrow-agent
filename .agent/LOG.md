@@ -4379,3 +4379,30 @@
   passed. No Live tests, dependency changes, public events or policy-default changes were made.
 - Review-fix implementation commit: `45f993f`. Subplan 3 was not activated; remote publication
   remains pending explicit authorization.
+
+## 2026-09-01 — Stage 7 Subplan 3 (Workflow Compiler)
+
+- Activated `feat/stage7-workflow-compiler` from verified local `main@b6e7458` on explicit user
+  continuation.
+- Added the pure IO-free compiler in `src/morrow/application/workflows/compiler.py`: graph checks
+  (edge endpoints, Kahn acyclicity, single weakly-connected component, entry/terminal derivation),
+  unconsumed-output and multi-writer warnings, exact AgentDefinitionVersion identity resolution,
+  the two-case model selector with publish-time `invoking_active` freeze, the fixed-precedence
+  tool-requirement merge (forbidden wins; required+forbidden conflict, required denied/absent and
+  node-outside-definition-set are errors; optional removal is a warning), access-mode ceiling
+  intersection with escalation rejection, and per-node budget freeze (node override else Workflow
+  default, capped by the Definition run ceiling). All gates return typed error/warning
+  diagnostics; structural contract violations surface as one `structure_invalid` error.
+- Added `WorkflowCompilationService` in `src/morrow/application/workflows/publication.py` as the
+  sole writer of WorkflowRevision/head/revocation rows: write-free `validate`, receipt-probed
+  idempotent `publish` (compile-before-compare no-op, never source-hash short-circuit), revoked
+  referenced Versions rejected, revoked Revisions cannot re-enter through replay or no-op, head
+  enable flag preserved across publication, first-publication disabled honored, plus thin
+  `set_enabled`/`revoke` operational paths that create no Revision.
+- Focused compiler gate: 24 passed. Whole-tree offline gate: 1401 passed, 2 Live deselected
+  (119.83 seconds). Ruff format/check (536 files), compileall and `git diff --check` passed. No
+  Live tests, dependency changes, public events or policy-default changes were made.
+- Committed implementation as `da489b0`, fast-forward merged into local `main`, verified topic
+  ancestry and deleted `feat/stage7-workflow-compiler`. No extra worktree was created or removed.
+- Subplan 4 (Isolated Workflow Vertical Slice) is ready but not active. Remote publication remains
+  pending explicit authorization; upstream divergence is recorded rather than silently claimed.

@@ -1,6 +1,6 @@
 # Subplan 4 — Stage 7 Isolated Workflow Vertical Slice
 
-> Status: pending
+> Status: ready; not active
 > Branch: `feat/stage7-isolated-workflow-slice`
 > Prerequisite: Subplan 3 completed, verified and integrated
 > Revised 2026-08-31 per the conditional-GO plan review: the first execution slice is a one-node

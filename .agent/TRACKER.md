@@ -2,17 +2,18 @@
 
 ## Current status
 
-Stage 7 Subplan 2 and its requested post-merge review follow-up are completed and integrated into
-local `main`. Review-fix implementation commit: `45f993f`. Final offline gate: 1377 passed, 2 Live
-deselected. Subplan 3 remains inactive.
+Stage 7 Subplan 3 (Deterministic Workflow Compiler) is completed and integrated into local
+`main`. Implementation commit: `da489b0`. Final offline gate: 1401 passed, 2 Live deselected.
+Subplan 4 remains inactive.
 
 ## Active task
 
-None. Subplan 3 is not active.
+None. Subplan 4 is not active.
 
 ## Next action
 
-Await explicit continuation before activating Subplan 3 (Workflow Compiler) from verified `main`.
+Await explicit continuation before activating Subplan 4 (Isolated Workflow Vertical Slice) from
+verified `main`.
 
 ## Blockers
 
