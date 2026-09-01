@@ -1,8 +1,9 @@
 # Stage 7 Static Workflow Runtime Implementation Plan
 
-> Status: Subplan 3 completed and integrated; Stage 7 remains in progress
-> Active subplan: none
-> Next subplan: 4 — Isolated Workflow Vertical Slice (ready; not active)
+> Status: Subplan 3 completed and integrated; Subplan 4 active
+> Active subplan: 4 — Isolated Workflow Vertical Slice (branch
+> `feat/stage7-isolated-workflow-slice`)
+> Next subplan: 5 — Serial DAG Scheduler (not active)
 > Planning base: local `main@4d8b408` (tree clean, full offline gate green; later `.agent`-only
 > commits such as the plan-repair commit do not invalidate this verified code base)
 > Roadmap authority: `docs/roadmap/stage-7-workflow-runtime.md`

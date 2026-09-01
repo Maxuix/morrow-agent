@@ -2,18 +2,18 @@
 
 ## Current status
 
-Stage 7 Subplan 3 (Deterministic Workflow Compiler) is completed and integrated into local
-`main`. Implementation commit: `da489b0`; review-fix commit: `997866f`. Final offline gate: 1406
-passed, 2 Live deselected. Subplan 4 remains inactive.
+Stage 7 Subplan 4 (Isolated Workflow Vertical Slice) is active on branch
+`feat/stage7-isolated-workflow-slice`, based on verified local `main` (Subplan 3 integrated at
+`925d777`).
 
 ## Active task
 
-None. Subplan 4 is not active.
+Subplan 4 implementation: Start service, transition service, leaf composition, committer,
+finalizer, scheduler, recovery mapping, read projections and focused tests.
 
 ## Next action
 
-Await explicit continuation before activating Subplan 4 (Isolated Workflow Vertical Slice) from
-verified `main`.
+Implement the vertical slice per `.agent/subplans/4-stage7-isolated-workflow-slice.md`.
 
 ## Blockers
 

@@ -1,6 +1,12 @@
 """Safe projections into the existing Artifact and TaskOutcome authorities."""
 
-from morrow.core.domain import TaskOutcome, TextSafetyProfile, redact_workflow_text, sha256_digest
+from morrow.core.domain import (
+    TaskOutcome,
+    TaskRunStatus,
+    TextSafetyProfile,
+    redact_workflow_text,
+    sha256_digest,
+)
 from morrow.core.workflows.contracts import TextResult
 
 
@@ -44,3 +50,37 @@ def workflow_task_outcome(**fields) -> TaskOutcome:
         basis = fields.get("completion_basis", ())
         fields["completion_basis"] = (*basis[:63], "workflow_evidence_redacted=true")
     return TaskOutcome(**fields, text_safety_profile=TextSafetyProfile.WORKFLOW_VALUE_SENSITIVE)
+
+
+def select_workflow_snapshot_carry_forward(transitions, outcomes) -> TaskOutcome | None:
+    """The one marked Workflow snapshot bound to the root's latest READY transition.
+
+    An intervening ordinary snapshot carries no markers, and an older Workflow
+    snapshot never matches a newer READY transition after resume + Direct work.
+    """
+
+    latest_ready = None
+    for transition in transitions:
+        if transition.to_status is TaskRunStatus.READY_FOR_ACCEPTANCE:
+            latest_ready = transition
+    if latest_ready is None:
+        return None
+    selected = None
+    for outcome in outcomes:
+        if outcome.trigger.value != "snapshot":
+            continue
+        marker = next(
+            (ref for ref in outcome.evidence_refs if ref.role == "workflow_result_snapshot"),
+            None,
+        )
+        ready = next(
+            (ref for ref in outcome.evidence_refs if ref.role == "workflow_ready_transition"),
+            None,
+        )
+        if marker is None or ready is None:
+            continue
+        if ready.reference_id != latest_ready.transition_id:
+            continue
+        if selected is None or outcome.version > selected.version:
+            selected = outcome
+    return selected

@@ -144,6 +144,7 @@ class TurnSubmissionCoordinator:
         preference_loader: Callable[[], PreferenceRunSources] | None = None,
         skill_selection=None,
         prompt_assembler=None,
+        workflow_leaf=None,
     ) -> None:
         self.journal = journal
         self.workspace_id = workspace_id
@@ -158,6 +159,7 @@ class TurnSubmissionCoordinator:
         self.preference_loader = preference_loader
         self.skill_selection = skill_selection
         self.prompt_assembler = prompt_assembler
+        self.workflow_leaf = workflow_leaf
         self.memory_selector = MemorySelector(id_source=id_source, clock=clock)
 
     def commit(
@@ -178,6 +180,13 @@ class TurnSubmissionCoordinator:
                 snapshot=ConversationSnapshot(records=(*planned.snapshot.records[:-1], terminal)),
             )
 
+        # A Workflow leaf publishes/binds its declared outputs after the final
+        # Assistant commit and before this terminal transaction; a known output
+        # failure raises here so the ordinary error path closes the leaf.
+        leaf_bindings: tuple = ()
+        if self.workflow_leaf is not None and terminal.finish_reason is FinishReason.STOP:
+            leaf_bindings = self.workflow_leaf.prepare_terminal_outputs()
+
         def work(txn: TurnLifecycleJournalPort) -> bool:
             writer.persist_with_records(planned)
             if self.preference_reviews is not None:
@@ -188,7 +197,16 @@ class TurnSubmissionCoordinator:
                     conversation=planned.snapshot,
                     terminal=terminal,
                 )
-            clear_task = self._apply_task_terminal_in_txn(txn, session, terminal)
+            if self.workflow_leaf is not None:
+                clear_task = self.workflow_leaf.apply_terminal_in_txn(
+                    txn,
+                    session,
+                    terminal,
+                    leaf_bindings,
+                    turn_id=self.state.turn_id,
+                )
+            else:
+                clear_task = self._apply_task_terminal_in_txn(txn, session, terminal)
             self._close_open_receipt_in_txn(txn, session)
             return clear_task
 
@@ -307,6 +325,11 @@ class TurnSubmissionCoordinator:
                 return recheck
             row = txn.get_session(self.workspace_id, session.session_id)
             if row is None:
+                if self.workflow_leaf is not None:
+                    raise ApplicationError(
+                        ApplicationErrorCode.INVALID,
+                        "Workflow leaf Session must already exist before its Turn",
+                    )
                 stamp = self.clock()
                 row = txn.create_session(
                     DurableSession(
@@ -326,6 +349,14 @@ class TurnSubmissionCoordinator:
                     return TurnSubmitResult("recovery", self.state.turn_id, None)
                 raise _turn_health_error(row.health)
             task_id = row.current_task_run_id
+            if (
+                self.workflow_leaf is not None
+                and task_id != self.workflow_leaf.context.leaf_task_run_id
+            ):
+                raise ApplicationError(
+                    ApplicationErrorCode.INVALID,
+                    "Workflow leaf Session does not point at its owned Task",
+                )
             follow_up_task = None
             if task_id is not None:
                 current_task = txn.get_task_run(self.workspace_id, task_id)
@@ -356,16 +387,19 @@ class TurnSubmissionCoordinator:
                 )
                 task_id = task.task_run_id
             stamp = self.clock()
-            txn.create_turn(
-                self.workspace_id,
-                DurableTurn(
-                    turn_id=turn_id,
-                    session_id=session.session_id,
-                    task_run_id=task_id,
-                    client_message_id=client_message_id,
-                    created_at=stamp,
-                ),
+            durable_turn = DurableTurn(
+                turn_id=turn_id,
+                session_id=session.session_id,
+                task_run_id=task_id,
+                client_message_id=client_message_id,
+                created_at=stamp,
             )
+            if self.workflow_leaf is not None:
+                txn.create_workflow_turn(
+                    self.workspace_id, self.workflow_leaf.context.node_run_id, durable_turn
+                )
+            else:
+                txn.create_turn(self.workspace_id, durable_turn)
             if follow_up_task is not None:
                 self.tasks._transition_in_txn(
                     txn,
@@ -377,17 +411,25 @@ class TurnSubmissionCoordinator:
             stored_agent_run_id = agent_run_id or self.id_source.new_id(AGENT_RUN_ID_PREFIX)
             definition_skills = None
             if prepared_spec is not None and prepared_spec.definition_ref is not None:
-                from morrow.application.agent_definitions.admission import (
-                    require_definition_admission,
-                )
+                if self.workflow_leaf is not None:
+                    # Workflow leaf admission checks frozen evidence and revocation,
+                    # never the mutable head; ordinary disable cannot reach an
+                    # already-admitted Run.
+                    definition_skills = self.workflow_leaf.check_turn_admission_in_txn(
+                        txn, prepared_spec
+                    )
+                else:
+                    from morrow.application.agent_definitions.admission import (
+                        require_definition_admission,
+                    )
 
-                definition = require_definition_admission(
-                    txn,
-                    self.workspace_id,
-                    prepared_spec,
-                    session.session_id,
-                )
-                definition_skills = definition.source.skill_version_ids
+                    definition = require_definition_admission(
+                        txn,
+                        self.workspace_id,
+                        prepared_spec,
+                        session.session_id,
+                    )
+                    definition_skills = definition.source.skill_version_ids
                 if definition_skills and self.skill_selection is None:
                     from morrow.application.agent_definitions.errors import (
                         AgentDefinitionAdmissionError,
@@ -446,6 +488,8 @@ class TurnSubmissionCoordinator:
                     created_at=stamp,
                 ),
             )
+            if self.workflow_leaf is not None:
+                self.workflow_leaf.admit_node_in_txn(txn, agent_run_id=stored_agent_run_id)
             if prepared_mcp_run is not None:
                 expected_ids = (
                     prepared_spec.mcp_run_snapshot_ids if prepared_spec is not None else ()

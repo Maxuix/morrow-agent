@@ -344,6 +344,33 @@ class ArtifactService:
             self.workspace_id, updated, expected_row_version=metadata.row_version
         )
 
+    def restore_staging_bytes(self, content: bytes, *, artifact_id: str) -> ArtifactMetadata:
+        """Republish the already-known expected bytes for a staging row, then finalize.
+
+        Only the deterministic Workflow replay path knows the expected bytes for a
+        reserved identity; conflicting bytes or metadata are reported, never overwritten.
+        """
+
+        metadata = self.journal.get_artifact(self.workspace_id, artifact_id)
+        if metadata is None:
+            raise ArtifactError(ArtifactErrorCode.MISSING, "artifact metadata is missing")
+        if metadata.state is not ArtifactState.STAGING:
+            return metadata
+        if (
+            not isinstance(content, bytes)
+            or len(content) != metadata.byte_size
+            or sha256_digest(content) != metadata.sha256
+        ):
+            raise ArtifactError(
+                ArtifactErrorCode.CONFLICT, "staging recovery bytes do not match the reservation"
+            )
+        try:
+            self.filesystem.republish_staging(metadata, content)
+        except ArtifactIntegrityError:
+            self._try_mark(metadata, ArtifactState.CORRUPT)
+            raise
+        return self.finalize_staging(artifact_id)
+
     recover_staging = finalize_staging
 
     def pin(self, artifact_id: str) -> ArtifactMetadata:

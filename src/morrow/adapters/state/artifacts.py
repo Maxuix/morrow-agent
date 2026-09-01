@@ -135,6 +135,41 @@ class FilesystemArtifactStore:
             if descriptor is not None:
                 os.close(descriptor)
 
+    def republish_staging(
+        self,
+        metadata: ArtifactMetadata,
+        content: bytes,
+        *,
+        faults=None,
+    ) -> Path:
+        """Rewrite the known expected bytes for one staging row after a crash.
+
+        Existing final bytes are verified, never overwritten; only a leftover
+        managed temp file (incomplete by construction) may be replaced.
+        """
+
+        if len(content) > ARTIFACT_MAX_BYTES or len(content) != metadata.byte_size:
+            raise ArtifactIntegrityError(message="artifact byte size does not match metadata")
+        digest = hashlib.sha256(content).hexdigest()
+        if digest != metadata.sha256:
+            raise ArtifactIntegrityError(message="artifact hash does not match metadata")
+        final = self.final_path(metadata.artifact_id)
+        if final.exists() or final.is_symlink():
+            self._verify_path(final, metadata)
+            return final
+        temp = self.temp_path(metadata.artifact_id)
+        if temp.exists() or temp.is_symlink():
+            if temp.is_symlink():
+                raise ArtifactPathError()
+            try:
+                info = temp.stat()
+            except OSError as exc:
+                raise ArtifactPathError() from exc
+            if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+                raise ArtifactIntegrityError(message="artifact managed path collision is unsafe")
+            temp.unlink()
+        return self.publish(metadata, content, faults=faults)
+
     def verify(self, metadata: ArtifactMetadata) -> None:
         self._verify_path(self.existing_final_path(metadata.artifact_id), metadata)
 

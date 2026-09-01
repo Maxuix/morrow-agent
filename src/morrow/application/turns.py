@@ -70,6 +70,7 @@ class SessionPersistence:
         skill_selection=None,
         skill_usage=None,
         prompt_assembler=None,
+        workflow_leaf=None,
     ) -> None:
         self.workspace_id = workspace_id
         self.journal = journal
@@ -82,6 +83,7 @@ class SessionPersistence:
         self.artifacts = artifacts
         self.prompt_assembler = prompt_assembler
         self.skill_usage = skill_usage
+        self.workflow_leaf = workflow_leaf
         workspace_root = mutation.files.resolver.root if mutation is not None else None
         self.recovery = recovery or RecoveryService(
             journal,
@@ -113,10 +115,11 @@ class SessionPersistence:
             tasks=self.tasks,
             clock=self._now,
             state=self.turn_state,
-            preference_reviews=self.preference_reviews,
+            preference_reviews=(None if workflow_leaf is not None else self.preference_reviews),
             preference_loader=preference_loader,
             skill_selection=skill_selection,
             prompt_assembler=prompt_assembler,
+            workflow_leaf=workflow_leaf,
         )
         self.session_restore = SessionRestoreCoordinator(
             journal,
@@ -309,6 +312,8 @@ class SessionPersistence:
     def admit_model_request(self, **kwargs):
         """Record bounded Provider admission without exposing the SQLite journal to AgentLoop."""
 
+        if self.workflow_leaf is not None:
+            self.workflow_leaf.check_request_admission()
         kwargs.setdefault("agent_run_id", self.current_agent_run_id)
         if kwargs["agent_run_id"] is None:
             raise RuntimeError("model request admission requires an open AgentRun")

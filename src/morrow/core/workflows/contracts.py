@@ -113,3 +113,8 @@ class ArtifactBinding(ProtocolModel):
 def node_output_artifact_id(node_run_id: str, output_slot: str) -> str:
     """Stable byte-store identity for one NodeRun output slot."""
     return "art_" + sha256_digest(canonical_json_bytes([node_run_id, output_slot]))[:32]
+
+
+def workflow_input_artifact_id(command_id: str) -> str:
+    """Stable byte-store identity for the TaskContract one Start command publishes."""
+    return "art_" + sha256_digest(canonical_json_bytes([command_id, "workflow_input"]))[:32]

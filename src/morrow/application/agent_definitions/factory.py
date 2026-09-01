@@ -149,14 +149,40 @@ class AgentFactory:
 
         return restrict
 
-    def prepare_new(self, *, agent_run_id=None):
+    def prepare_new(
+        self,
+        *,
+        agent_run_id=None,
+        model: ModelRef | None = None,
+        max_agent_generation_requests=None,
+        require_enabled: bool = True,
+    ):
+        """Prepare one new AgentRun for this factory's caller-owned leaf.
+
+        ``require_enabled=False`` is the Workflow path: an admitted Run checks
+        only one-way revocation, never the mutable head. ``model`` pins the
+        Compiler-frozen ``resolved_model_ref``; without it the Definition's own
+        selector applies (the standalone admission-time ``invoking_active``
+        resolution). ``max_agent_generation_requests`` overrides the Definition
+        ceiling with the Workflow's frozen effective node cap.
+        """
+
         self._scope(fresh=True)
-        version = self.publication.admit(self.version_id)
-        model = (
-            version.source.model_selection
-            if isinstance(version.source.model_selection, ModelRef)
-            else None
-        )
+        if require_enabled:
+            version = self.publication.admit(self.version_id)
+        else:
+            version = self.publication.require_unrevoked(
+                self.publication.journal.agent_definitions.get_version(
+                    self.publication.workspace_id,
+                    self.version_id,
+                )
+            )
+        if model is None:
+            model = (
+                version.source.model_selection
+                if isinstance(version.source.model_selection, ModelRef)
+                else None
+            )
         runtime = self.preparation.prepare_new(
             agent_run_id=agent_run_id,
             model=model,
@@ -171,7 +197,11 @@ class AgentFactory:
                     content_hash=version.content_hash,
                 ),
                 "conversation_session_id": self.session.session_id,
-                "max_agent_generation_requests": version.source.max_agent_generation_requests,
+                "max_agent_generation_requests": (
+                    max_agent_generation_requests
+                    if max_agent_generation_requests is not None
+                    else version.source.max_agent_generation_requests
+                ),
             }
         )
         return replace(runtime, spec=spec)

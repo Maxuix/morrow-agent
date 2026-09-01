@@ -708,7 +708,10 @@ def test_previous_current_migration_defaults_and_future_refusal(tmp_path):
             )
         )
     store = OperationalStore(root)
-    assert store.migrate().applied == ("workflow_revision_artifact_contracts",)
+    assert store.migrate().applied == (
+        "workflow_revision_artifact_contracts",
+        "workflow_node_request_cap",
+    )
     with store.open(StoreOpenMode.READ_WRITE) as handle:
         assert (
             SqliteOperationalJournal(handle).get_task_run("ws_one", "task_old").purpose
@@ -723,8 +726,8 @@ def test_previous_current_migration_defaults_and_future_refusal(tmp_path):
             journal.get_artifact("ws_one", "art_old").text_safety_profile
             == TextSafetyProfile.LEGACY_STRICT
         )
-        handle.run_write(lambda ex: ex.execute("PRAGMA user_version=25"))
-        handle.run_write(lambda ex: ex.execute("UPDATE store_identity SET schema_version=25"))
+        handle.run_write(lambda ex: ex.execute("PRAGMA user_version=26"))
+        handle.run_write(lambda ex: ex.execute("UPDATE store_identity SET schema_version=26"))
     assert store.classify().health is StoreHealth.FUTURE_SCHEMA
 
 

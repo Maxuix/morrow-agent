@@ -1,14 +1,12 @@
-# Subplan 3 — Deterministic Workflow Compiler
+# Subplan 4 — Isolated Workflow Vertical Slice
 
-- [x] Make the pure Compiler the only normalization/validation/hash path (no IO).
-- [x] Make `WorkflowCompilationService` the only transactional publication path (receipt/OCC/no-op).
-- [x] Enforce graph validity: acyclicity, connectivity, binding edges, exported outputs.
-- [x] Merge tool requirements under fixed precedence with typed diagnostics.
-- [x] Freeze resolved models and per-node budgets from authoritative inputs.
-- [x] Add focused compiler/publication tests for every hard gate and adjacent legal case.
-- [x] Run focused and full offline validation.
-- [x] Commit, fast-forward integrate, verify ancestry, and retire the topic branch.
-
-Subplan 3 is complete and integrated into local `main`. Final offline gate: 1401 passed, 2 Live
-deselected. Subplan 4 (Isolated Workflow Vertical Slice) is ready but not active. Remote
-publication remains pending explicit authorization; no Live tests were run.
+- [ ] Task 1: idempotent `StartWorkflowCommand` with full Start admission transaction.
+- [ ] Task 2: NodeRun admission through AgentFactory/existing preparation with frozen model,
+  effective request cap and deadline enforcement.
+- [ ] Task 3: role-neutral NodeResultCommitter (TextResult wrap) + four-case Artifact helper.
+- [ ] Task 4: WorkflowTransitionService terminal mapping, result snapshot, evidence carry-forward.
+- [ ] Task 5: cancellation/recovery integration incl. `pending_terminal_intent=user_cancel`.
+- [ ] Task 6: minimum Workflow/Node read projections.
+- [ ] Task 7: opt-in composition entry; ordinary Direct unchanged and default.
+- [ ] Task 8: Scripted-Provider end-to-end tests for the declared matrix.
+- [ ] Full offline gate, commit, fast-forward integrate, retire branch.

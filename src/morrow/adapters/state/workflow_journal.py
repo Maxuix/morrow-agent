@@ -222,6 +222,21 @@ class SqliteWorkflowJournal:
             raise StorageError(StorageErrorCode.NEEDS_REPAIR, "Workflow run identity mismatch")
         return value
 
+    def list_runs(self, workspace_id):
+        rows = self.backend.read_all(
+            "SELECT workflow_run_id FROM workflow_runs WHERE workspace_id=? ORDER BY workflow_run_id",
+            (workspace_id,),
+        )
+        return tuple(self.get_run(workspace_id, row[0]) for row in rows)
+
+    def get_leaf_ownership(self, workspace_id, node_run_id):
+        del workspace_id
+        row = self.backend.read_one(
+            "SELECT session_id, task_run_id FROM workflow_leaf_ownership WHERE node_run_id=?",
+            (node_run_id,),
+        )
+        return (str(row[0]), str(row[1])) if row else None
+
     def active_for_root(self, workspace_id, task_run_id):
         row = self.backend.read_one(
             "SELECT workflow_run_id FROM workflow_runs WHERE workspace_id=? AND root_task_run_id=? "

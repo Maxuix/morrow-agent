@@ -1203,6 +1203,46 @@ class SqliteOperationalJournal:
     def get_task_run(self, workspace_id: str, task_run_id: str) -> DurableTaskRun | None:
         return self._task_journal.get(workspace_id, task_run_id)
 
+    def has_open_turn_submission(self, workspace_id: str, session_id: str) -> bool:
+        """Durable open-Turn fact: an accepted submission receipt was never closed."""
+
+        del workspace_id
+        return (
+            self._read_one(
+                "SELECT 1 FROM turn_submit_receipts "
+                "WHERE session_id=? AND disposition='accepted_open' LIMIT 1",
+                (session_id,),
+            )
+            is not None
+        )
+
+    def has_nonterminal_agent_run(self, workspace_id: str, session_id: str) -> bool:
+        """Durable in-flight AgentRun fact: no terminal metrics row exists yet."""
+
+        del workspace_id
+        return (
+            self._read_one(
+                "SELECT 1 FROM agent_runs r WHERE r.session_id=? AND NOT EXISTS "
+                "(SELECT 1 FROM agent_run_terminal_metrics m WHERE m.agent_run_id=r.agent_run_id) "
+                "LIMIT 1",
+                (session_id,),
+            )
+            is not None
+        )
+
+    def count_workflow_agent_requests(self, workspace_id: str, workflow_run_id: str) -> int:
+        """Durable purpose=agent admissions across every NodeRun of one WorkflowRun."""
+
+        del workspace_id
+        row = self._read_one(
+            "SELECT COUNT(*) FROM agent_run_model_requests r "
+            "JOIN workflow_agent_run_refs w ON r.agent_run_id = w.agent_run_id "
+            "JOIN workflow_node_runs n ON w.node_run_id = n.node_run_id "
+            "WHERE n.workflow_run_id=? AND r.purpose='agent'",
+            (workflow_run_id,),
+        )
+        return int(row[0]) if row else 0
+
     def require_user_task(self, workspace_id, task_run_id):
         task = self.get_task_run(workspace_id, task_run_id)
         if task is not None:

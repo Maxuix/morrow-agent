@@ -12,6 +12,10 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal
 
+from morrow.application.workflows.evidence import (
+    select_workflow_snapshot_carry_forward,
+    workflow_task_outcome,
+)
 from morrow.core.application import ApplicationErrorCode
 from morrow.core.domain import (
     COMMAND_ID_PREFIX,
@@ -184,43 +188,56 @@ class TaskOutcomeAssembler:
                 key=lambda reference: (reference.artifact_id, reference.role),
             )
         )
+        # Narrow Workflow evidence carry-forward: only the marked snapshot bound to
+        # this root's latest READY transition contributes, and only then does the
+        # accepted Outcome select the Workflow value-sensitive profile.
+        carry_forward = None
+        if trigger is TaskOutcomeTrigger.ACCEPTANCE:
+            carry_forward = select_workflow_snapshot_carry_forward(transitions, outcomes)
+        carried_refs = carry_forward.artifact_refs if carry_forward is not None else ()
         all_artifact_refs = tuple(
             sorted(
                 {
                     (reference.artifact_id, reference.role): reference
-                    for reference in (*linked_artifacts, *artifact_refs)
+                    for reference in (*linked_artifacts, *artifact_refs, *carried_refs)
                 }.values(),
                 key=lambda reference: (reference.artifact_id, reference.role),
             )
         )
-        return TaskOutcome(
-            outcome_id=self.id_source.new_id(TASK_OUTCOME_ID_PREFIX),
-            workspace_id=self.workspace_id,
-            session_id=task.session_id,
-            task_run_id=task.task_run_id,
-            version=len(outcomes) + 1,
-            trigger=trigger,
-            task_status=task.status,
-            summary=summary or f"TaskRun {task.task_run_id} is {task.status.value}.",
-            goal_reference=(
-                TaskOutcomeEvidenceRef(
-                    kind=TaskOutcomeEvidenceKind.TURN,
-                    reference_id=turns[0].turn_id,
-                    role="user_goal",
-                )
-                if turns
-                else None
-            ),
-            changed_paths=tuple(changed_paths),
-            validation_facts=tuple(validation_facts),
-            side_effects=tuple(side_effects),
-            unresolved_items=unresolved_items,
-            completion_basis=completion_basis,
-            feedback=feedback,
-            evidence_refs=evidence_refs,
-            artifact_refs=all_artifact_refs,
-            created_at=self.clock(),
+        goal_reference = (
+            TaskOutcomeEvidenceRef(
+                kind=TaskOutcomeEvidenceKind.TURN,
+                reference_id=turns[0].turn_id,
+                role="user_goal",
+            )
+            if turns
+            else None
         )
+        if goal_reference is None and carry_forward is not None:
+            goal_reference = carry_forward.goal_reference
+        fields = {
+            "outcome_id": self.id_source.new_id(TASK_OUTCOME_ID_PREFIX),
+            "workspace_id": self.workspace_id,
+            "session_id": task.session_id,
+            "task_run_id": task.task_run_id,
+            "version": len(outcomes) + 1,
+            "trigger": trigger,
+            "task_status": task.status,
+            "summary": summary or f"TaskRun {task.task_run_id} is {task.status.value}.",
+            "goal_reference": goal_reference,
+            "changed_paths": tuple(changed_paths),
+            "validation_facts": tuple(validation_facts),
+            "side_effects": tuple(side_effects),
+            "unresolved_items": unresolved_items,
+            "completion_basis": completion_basis,
+            "feedback": feedback,
+            "evidence_refs": evidence_refs,
+            "artifact_refs": all_artifact_refs,
+            "created_at": self.clock(),
+        }
+        if carry_forward is not None:
+            return workflow_task_outcome(**fields)
+        return TaskOutcome(**fields)
 
 
 class TaskService:

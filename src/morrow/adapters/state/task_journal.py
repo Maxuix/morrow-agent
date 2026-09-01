@@ -440,11 +440,19 @@ class SqliteTaskJournal:
                 raise StorageError(
                     StorageErrorCode.UNAVAILABLE, "Outcome Workflow reference scope mismatch"
                 )
+        # Bindings of any Run rooted at this Task are this Task's own Workflow
+        # evidence: acceptance carry-forward may reference them without the
+        # snapshot markers (an accepted Outcome is not a result snapshot).
+        rooted = self.backend.read_all(
+            "SELECT workflow_run_id FROM workflow_runs WHERE workspace_id=? AND root_task_run_id=?",
+            (outcome.workspace_id, outcome.task_run_id),
+        )
+        for run_row in (*((ref.reference_id,) for ref in workflow_refs), *rooted):
             artifact_ids.update(
                 row[0]
                 for row in self.backend.read_all(
                     "SELECT artifact_id FROM workflow_artifact_bindings WHERE workflow_run_id=?",
-                    (ref.reference_id,),
+                    (run_row[0],),
                 )
             )
         markers = [ref for ref in workflow_refs if ref.role == "workflow_result_snapshot"]
