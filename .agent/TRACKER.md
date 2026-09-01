@@ -2,18 +2,17 @@
 
 ## Current status
 
-Stage 7 Subplan 4 (Isolated Workflow Vertical Slice) is active on branch
-`feat/stage7-isolated-workflow-slice`, based on verified local `main` (Subplan 3 integrated at
-`925d777`).
+Stage 7 Subplan 4 (Isolated Workflow Vertical Slice) is completed and integrated into local
+`main`. Implementation commit: `d082b39`. Final offline gate: 1438 passed, 2 Live deselected.
 
 ## Active task
 
-Subplan 4 implementation: Start service, transition service, leaf composition, committer,
-finalizer, scheduler, recovery mapping, read projections and focused tests.
+None. Subplan 5 is not active.
 
 ## Next action
 
-Implement the vertical slice per `.agent/subplans/4-stage7-isolated-workflow-slice.md`.
+Await explicit continuation before activating Subplan 5 (Serial DAG Scheduler) from verified
+`main`.
 
 ## Blockers
 

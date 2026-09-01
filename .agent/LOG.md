@@ -4429,3 +4429,36 @@
 - Focused compiler gate: 29 passed. Whole-tree offline gate: 1406 passed, 2 Live deselected
   (119.95 seconds). Ruff format/check (536 files), compileall and `git diff --check` passed. No
   Live tests, dependency changes, public events or policy-default changes were made.
+
+## 2026-09-01 — Subplan 4: Isolated Workflow Vertical Slice
+
+- Built the unified execution path in `src/morrow/application/workflows/`: `start.py`
+  (receipt-bound idempotent Start with head/revocation/root/session admission gates),
+  `scheduler.py` (serial one-node drive through AgentFactory + existing AgentLoop),
+  `transitions.py` (sole WorkflowRun/NodeRun writer), `leaf.py` (the role-neutral
+  NodeResultCommitter seam on the existing TurnSubmissionCoordinator terminal path),
+  `finalizer.py` (atomic node/run/root terminal + marked result snapshot + Workflow-profile
+  evidence projection), `artifacts.py` (four-case deterministic publish/reuse helper),
+  `queries.py` and `composition.py` (opt-in `build_workflow_runtime`; Direct unchanged).
+- TurnSubmissionCoordinator/SessionPersistence gained one optional `workflow_leaf`
+  collaborator; AgentLoop is untouched and leaf runs carry no steering/follow-up queue.
+- AgentFactory.prepare_new gained exact frozen-model, effective-cap and revocation-only
+  admission parameters for the Workflow path; standalone admission is unchanged.
+- Migration v25 relaxes the v23 identity trigger so a leaf snapshot may freeze a strictly
+  narrower positive request cap under the same exact AgentDefinitionVersion; the standalone
+  exact-match rule is still enforced at the application admission seam.
+- `task_journal` workflow-artifact scope exemption now covers bindings of any Run rooted at
+  the outcome's Task, so acceptance carry-forward can reference exported results.
+- Leaf TaskRuns never own TaskOutcomes (journal guard confirmed); root outcomes carry the
+  `workflow_result_snapshot`/`workflow_ready_transition` markers, and the acceptance
+  assembler merges refs only from the marked snapshot bound to the latest READY transition.
+- Evidence: 32 new scripted-Provider tests in `tests/test_stage7_isolated_workflow_slice.py`
+  cover normal completion, replay, every Start rejection, disable immunity, policy_revoked
+  mapping, model failure, cap shrink/exhaustion, deadline before/after a settled Tool,
+  cancellation, crash recovery at Artifact reserve/mark boundaries (no second model
+  request), blocked+intent resolution, carry-forward selection and stale-ref rejection,
+  frozen model after active-model switch, and output redaction.
+- Full offline gate: 1438 passed, 2 Live deselected. Ruff format/check, compileall,
+  `morrow --help` and `git diff --check` passed. No Live tests, no dependency changes, no
+  public event lifecycle or policy-default changes. Remote publication of `main` remains
+  blocked pending explicit authorization.
