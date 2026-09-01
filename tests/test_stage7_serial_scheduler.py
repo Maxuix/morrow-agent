@@ -1237,3 +1237,141 @@ async def test_rerun_after_failure_requires_explicit_root_resume_and_creates_a_n
     assert second.status is WorkflowStatus.COMPLETED
     assert second.workflow_run_id != first.workflow_run_id
     assert root(fx).status is TaskRunStatus.READY_FOR_ACCEPTANCE
+
+
+# Settlement-order and serial-admission regressions ------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_cancel_after_middle_node_commit_keeps_the_committed_node_completed(fx):
+    """A late cancel must not undo a leaf that already committed READY."""
+
+    fx.bank.scripts.extend([[["one"]], [["unused"]]])
+    _, publication = publish(fx, pair_source)
+    started = start(fx, publication.revision)
+
+    real_drive = fx.runtime.scheduler._drive
+    calls = 0
+
+    async def drive_then_cancel(session, text, *, client_message_id, prepared, resume=False):
+        nonlocal calls
+        result = await real_drive(
+            session, text, client_message_id=client_message_id, prepared=prepared, resume=resume
+        )
+        calls += 1
+        if calls == 1:
+            # The cancel surfaces from drive cleanup after gamma's terminal commit.
+            raise asyncio.CancelledError
+        return result
+
+    fx.runtime.scheduler._drive = drive_then_cancel
+    try:
+        run = await fx.runtime.scheduler.run(started.run.workflow_run_id)
+    finally:
+        fx.runtime.scheduler._drive = real_drive
+
+    assert run.status is WorkflowStatus.CANCELLED
+    assert node_by_id(fx, run.workflow_run_id, "gamma").status is WorkflowStatus.COMPLETED
+    alpha = node_by_id(fx, run.workflow_run_id, "alpha")
+    assert alpha.status is WorkflowStatus.CANCELLED
+    assert alpha.agent_run_id is None
+    assert root(fx).status is TaskRunStatus.CANCELLED
+    assert "workflow_terminal=user_cancelled" in outcomes(fx)[-1].completion_basis
+
+
+@pytest.mark.asyncio
+async def test_cancel_after_last_node_commit_still_finalizes_success(fx):
+    """A cancel arriving after the final leaf committed cannot falsify success."""
+
+    fx.bank.scripts.extend([[["one"]], [["two"]]])
+    _, publication = publish(fx, pair_source)
+    started = start(fx, publication.revision)
+
+    real_drive = fx.runtime.scheduler._drive
+    calls = 0
+
+    async def drive_then_cancel(session, text, *, client_message_id, prepared, resume=False):
+        nonlocal calls
+        result = await real_drive(
+            session, text, client_message_id=client_message_id, prepared=prepared, resume=resume
+        )
+        calls += 1
+        if calls == 2:
+            raise asyncio.CancelledError
+        return result
+
+    fx.runtime.scheduler._drive = drive_then_cancel
+    try:
+        run = await fx.runtime.scheduler.run(started.run.workflow_run_id)
+    finally:
+        fx.runtime.scheduler._drive = real_drive
+
+    assert run.status is WorkflowStatus.COMPLETED
+    assert run.result_status == "succeeded"
+    for node_id in ("gamma", "alpha"):
+        assert node_by_id(fx, run.workflow_run_id, node_id).status is WorkflowStatus.COMPLETED
+    assert root(fx).status is TaskRunStatus.READY_FOR_ACCEPTANCE
+    snapshots = [o for o in outcomes(fx) if o.trigger is TaskOutcomeTrigger.SNAPSHOT]
+    assert len(snapshots) == 1
+
+
+def fork_source(ref, **changes):
+    """Legal fork: gamma -> alpha and gamma -> beta; alpha and beta are siblings."""
+
+    return WorkflowDefinitionSource(
+        **{
+            "workflow_definition_id": "pipeline",
+            "name": "Fork pipeline",
+            "default_budget": BUDGET,
+            "nodes": (
+                chain_node(ref, "gamma", "Phase one survey work"),
+                chain_node(ref, "alpha", "Branch alpha work"),
+                chain_node(ref, "beta", "Branch beta work"),
+            ),
+            "edges": (
+                WorkflowEdge(from_node_id="gamma", to_node_id="alpha"),
+                WorkflowEdge(from_node_id="gamma", to_node_id="beta"),
+            ),
+            "required_outputs": (
+                NodeOutputRef(node_id="alpha", output_slot="result"),
+                NodeOutputRef(node_id="beta", output_slot="result"),
+            ),
+            **changes,
+        }
+    )
+
+
+@pytest.mark.asyncio
+async def test_unsettled_node_never_allows_a_sibling_admission(fx):
+    """A drive returning without a terminal fact fails the run; no sibling is admitted."""
+
+    fx.bank.scripts.extend([[["root done"]]])
+    _, publication = publish(fx, fork_source)
+    started = start(fx, publication.revision)
+
+    real_drive_node = fx.runtime.scheduler._drive_node
+
+    async def stall_on_alpha(run, revision, node_def, node, cap):
+        if node_def.node_id == "alpha":
+            # Simulates a drive that returns with its node still nonterminal
+            # (for example an exhausted resume loop).
+            return
+        await real_drive_node(run, revision, node_def, node, cap)
+
+    fx.runtime.scheduler._drive_node = stall_on_alpha
+    try:
+        run = await fx.runtime.scheduler.run(started.run.workflow_run_id)
+    finally:
+        fx.runtime.scheduler._drive_node = real_drive_node
+
+    assert run.status is WorkflowStatus.FAILED
+    assert node_by_id(fx, run.workflow_run_id, "gamma").status is WorkflowStatus.COMPLETED
+    assert node_by_id(fx, run.workflow_run_id, "alpha").status is WorkflowStatus.CANCELLED
+    beta = node_by_id(fx, run.workflow_run_id, "beta")
+    assert beta.status is WorkflowStatus.CANCELLED
+    # The sibling was never admitted: no leaf, no AgentRun, no Provider.
+    assert beta.agent_run_id is None
+    assert beta.conversation_session_id is None
+    assert len(fx.bank.providers) == 1
+    assert "workflow_terminal=node_failed" in outcomes(fx)[-1].completion_basis
+    assert root(fx).status is TaskRunStatus.FAILED

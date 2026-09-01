@@ -265,9 +265,7 @@ class WorkflowOutcomeFinalizer:
     def _transition_record(
         self, task: DurableTaskRun, target: TaskRunStatus, *, reason: str
     ) -> DurableTaskRunTransition:
-        # Workflow-owned root/leaf transitions never reopen a failed Task, so the
-        # attempt counter always carries over unchanged (FAILED -> OPEN is the
-        # only attempt-incrementing transition and belongs to TaskService).
+        # The journal rejects a stale attempt stamp; the field defaults to 1.
         return DurableTaskRunTransition(
             transition_id=self.id_source.new_id(TASK_TRANSITION_ID_PREFIX),
             workspace_id=self.workspace_id,

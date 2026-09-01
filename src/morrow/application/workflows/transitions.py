@@ -77,22 +77,30 @@ class WorkflowTransitionService:
     def resume_blocked_node(self, node_run_id: str) -> NodeRun:
         return self._node_to(node_run_id, WorkflowStatus.RUNNING)
 
-    def bind_node_input(self, node_run_id: str, binding: ArtifactBinding) -> None:
-        """Durably bind one declared input Artifact to its consuming NodeRun.
+    def bind_node_inputs(self, node_run_id: str, bindings: tuple[ArtifactBinding, ...]) -> None:
+        """Durably bind one node's declared input Artifacts in one transaction.
 
-        The journal remains the authority: it verifies the declared binding,
+        The journal remains the authority: it verifies each declared binding,
         the exact producer output and the immutable-binding rule, so replay of
-        an identical binding is a no-op.
+        an identical set is a no-op and a fault can never leave a partial
+        input set behind.
         """
 
+        if not bindings:
+            return
         node = self._require_node(node_run_id)
-        self.journal.workflows.bind_artifact(
-            self.workspace_id,
-            node.workflow_run_id,
-            binding,
-            node_run_id=node_run_id,
-            direction="input",
-        )
+
+        def work(txn) -> None:
+            for binding in bindings:
+                txn.workflows.bind_artifact(
+                    self.workspace_id,
+                    node.workflow_run_id,
+                    binding,
+                    node_run_id=node_run_id,
+                    direction="input",
+                )
+
+        self.journal.transact(work)
 
     def _node_terminal(self, node_run_id: str, target: WorkflowStatus) -> NodeRun:
         return self._node_to(node_run_id, target, terminal=True)

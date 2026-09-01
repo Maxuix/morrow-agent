@@ -182,8 +182,6 @@ class WorkflowScheduler:
                     self.finalizer.finalize_failure(workflow_run_id, reason="deadline_exceeded")
                     break
                 nodes_by_id = self._nodes_by_id(run)
-                self._require_ready(run, revision, node_def, nodes_by_id)
-                self._bind_node_inputs(run, node_def, nodes_by_id)
             else:
                 remaining = None
             cap = (
@@ -192,8 +190,16 @@ class WorkflowScheduler:
                 else node.effective_node_generation_request_cap
             )
             try:
+                if node.status is WorkflowStatus.QUEUED:
+                    self._require_ready(run, revision, node_def, nodes_by_id)
+                    self._bind_node_inputs(run, node_def, nodes_by_id)
                 await self._drive_node(run, revision, node_def, node, cap)
+                self._require_settled(run, node)
             except ApplicationError as exc:
+                if exc.code is ApplicationErrorCode.NEEDS_RECOVERY:
+                    # Corrupt durable evidence is a recovery signal, never a
+                    # fabricated failure mapping.
+                    raise
                 reason = classify_terminal_reason(exc.message)
                 if reason == "policy_revoked":
                     self.finalizer.finalize_cancel(workflow_run_id, reason="policy_revoked")
@@ -209,6 +215,25 @@ class WorkflowScheduler:
             except Exception:
                 self.finalizer.finalize_failure(workflow_run_id, reason="node_failed")
                 break
+        return self._finalize_when_all_completed(workflow_run_id)
+
+    def _require_settled(self, run: WorkflowRun, node: NodeRun) -> None:
+        """A returned drive must leave its node terminal or the run blocked.
+
+        Without this guard an exhausted resume loop would let the serial order
+        advance while the node is still RUNNING, admitting a sibling whose
+        predecessors completed on a fork.
+        """
+
+        current_run = self._require_run(run.workflow_run_id)
+        if current_run.status.terminal or current_run.status is WorkflowStatus.BLOCKED:
+            return
+        current_node = self.transitions.get_node(node.node_run_id) or node
+        if current_node.status.terminal or current_node.status is WorkflowStatus.BLOCKED:
+            return
+        self.finalizer.finalize_failure(run.workflow_run_id, reason="node_failed")
+
+    def _finalize_when_all_completed(self, workflow_run_id: str) -> WorkflowRun:
         run = self._require_run(workflow_run_id)
         if not run.status.terminal and run.status is not WorkflowStatus.BLOCKED:
             nodes = self.journal.workflows.list_nodes(self.workspace_id, workflow_run_id)
@@ -469,12 +494,9 @@ class WorkflowScheduler:
         if blocking:
             self.finalizer.mark_blocked(workflow_run_id, user_cancel=user_cancel)
             return "blocked"
-        # A cancellation observed after a node committed but before later
-        # admissions still stops every not-yet-started node.
-        if user_cancel:
-            self.finalizer.finalize_cancel(workflow_run_id, reason="user_cancelled")
-            return "terminal"
         if leaf is not None and leaf.status is TaskRunStatus.READY_FOR_ACCEPTANCE:
+            # A committed leaf stays completed even when a cancellation arrives
+            # afterwards; the cancel still stops every not-yet-started node.
             self.transitions.complete_node(node.node_run_id)
             nodes = self.journal.workflows.list_nodes(self.workspace_id, workflow_run_id)
             if all(item.status is WorkflowStatus.COMPLETED for item in nodes):
@@ -482,7 +504,13 @@ class WorkflowScheduler:
                 # the exported-output producers.
                 self.finalizer.finalize_success(workflow_run_id)
                 return "terminal"
+            if user_cancel:
+                self.finalizer.finalize_cancel(workflow_run_id, reason="user_cancelled")
+                return "terminal"
             return "continue"
+        if user_cancel:
+            self.finalizer.finalize_cancel(workflow_run_id, reason="user_cancelled")
+            return "terminal"
         if leaf is not None and leaf.status is TaskRunStatus.FAILED:
             self.finalizer.finalize_failure(workflow_run_id, reason=reason or "node_failed")
             return "terminal"
@@ -622,6 +650,7 @@ class WorkflowScheduler:
         """Durably bind every declared input before admission; replay is a no-op."""
 
         node_run_id = nodes_by_id[node_def.node_id].node_run_id
+        bound_bindings: list[ArtifactBinding] = []
         for binding in node_def.input_bindings:
             if binding.source == "workflow_input":
                 source = run.input_artifacts[0]
@@ -649,7 +678,8 @@ class WorkflowScheduler:
                         kind=binding.accepts.kind, version=binding.accepts.version
                     ),
                 )
-            self.transitions.bind_node_input(node_run_id, bound)
+            bound_bindings.append(bound)
+        self.transitions.bind_node_inputs(node_run_id, tuple(bound_bindings))
 
     def _contract_text(self, run: WorkflowRun, node_def: AgentNode) -> str:
         """Leaf input: its Node Task Contract plus the explicitly bound Artifacts.
