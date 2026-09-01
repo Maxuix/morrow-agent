@@ -13,6 +13,6 @@
 - [x] Task 9: focused offline matrix in `tests/test_stage7_multi_agent_pipeline.py` plus declared
   regression files and full offline gate.
 
-Subplan 6 is complete. Implementation commit: `bfcf869` on `feat/stage7-multi-agent-pipeline`.
+Subplan 6 is complete. Implementation commit: `bfcf869`; closeout `48fb1a3` on local `main`.
 Offline gate: 1483 passed, 2 Live deselected; ruff format/check, compileall and `git diff --check`
 clean. Remote publication remains blocked pending explicit authorization; no Live tests were run.
