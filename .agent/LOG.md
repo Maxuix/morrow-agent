@@ -4515,3 +4515,22 @@
   `git diff --check` passed. No Live tests, no dependency changes, no public event lifecycle
   or policy-default changes. Remote publication of `main` remains blocked pending explicit
   authorization.
+
+## 2026-09-02 — Subplan 5 review fix: settlement ordering and serial admission
+
+- External review of `4acddc6` found two real `_settle`/`run()` control-flow bugs, both
+  confirmed against code and fixed on `fix/stage7-scheduler-settlement` (`1352f87`):
+  1. a cancellation surfacing after a leaf's terminal commit mapped the still-RUNNING node
+     through `finalize_cancel`, cancelling a succeeded leaf; `_settle` now completes a READY
+     leaf first (matching `recover()`), then cancels only the not-yet-started remainder, and
+     a cancel after the final node committed finalizes success rather than falsifying it;
+  2. `_drive_node` could return with its node still nonterminal (exhausted resume loop) while
+     `run()` advanced to the next node — on a fork a sibling whose predecessors completed
+     could be admitted while another node was live. A post-drive `_require_settled` guard now
+     fails the Workflow instead of ever admitting a successor; readiness/input binding moved
+     inside the mapped try (NEEDS_RECOVERY stays a propagate-out recovery signal) and input
+     bindings commit in one journal transaction, so a bind fault cannot leave a partial input
+     set beside a live run.
+- Regression evidence: 3 new tests (cancel after a middle node's commit, cancel after the last
+  node's commit, fork sibling never admitted behind an unsettled node); full offline gate
+  1469 passed, 2 Live deselected. No Live tests; remote publication still blocked.
