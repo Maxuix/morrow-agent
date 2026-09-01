@@ -24,6 +24,7 @@ from morrow.core.application import ApplicationError, ApplicationErrorCode
 from morrow.core.domain import DurableSession, DurableTaskRun, TaskRunPurpose, TaskRunStatus
 from morrow.core.faults import InjectedFault
 from morrow.core.models import FinishReason, utc_now
+from morrow.core.workflows.contracts import ArtifactBinding, ContractRef, TextResult
 from morrow.core.workflows.definitions import AgentNode, WorkflowRevision
 from morrow.core.workflows.runs import NodeRun, WorkflowRun, WorkflowStatus
 from morrow.runtime.agent import AgentLoop
@@ -62,6 +63,39 @@ def classify_terminal_reason(message: str | None) -> str | None:
         return None
     head = message.split(":", 1)[0].strip()
     return head if head in _REASON_PREFIXES else None
+
+
+def stable_execution_order(revision: WorkflowRevision) -> tuple[str, ...]:
+    """One deterministic topological order over the frozen Revision DAG.
+
+    Kahn's algorithm with a sorted ready set: among the currently admissible
+    nodes the lexicographically smallest ``node_id`` runs first, so execution
+    order depends only on frozen Revision data. The compiler already rejects
+    cycles; a remainder here means corrupt durable evidence.
+    """
+
+    node_ids = sorted(node.node_id for node in revision.nodes)
+    incoming = {node_id: 0 for node_id in node_ids}
+    consumers: dict[str, list[str]] = {node_id: [] for node_id in node_ids}
+    for edge in revision.edges:
+        incoming[edge.to_node_id] += 1
+        consumers[edge.from_node_id].append(edge.to_node_id)
+    ready = sorted(node_id for node_id in node_ids if incoming[node_id] == 0)
+    order: list[str] = []
+    while ready:
+        current = ready.pop(0)
+        order.append(current)
+        for target in sorted(consumers[current]):
+            incoming[target] -= 1
+            if incoming[target] == 0:
+                ready.append(target)
+        ready.sort()
+    if len(order) != len(node_ids):
+        raise ApplicationError(
+            ApplicationErrorCode.NEEDS_RECOVERY,
+            "Workflow revision edges no longer form a DAG; durable evidence is inconsistent",
+        )
+    return tuple(order)
 
 
 class WorkflowScheduler:
@@ -115,10 +149,13 @@ class WorkflowScheduler:
                 "Workflow is blocked; resolve its recovery items first",
             )
         revision = self.journal.workflows.get_revision(self.workspace_id, run.workflow_revision_id)
-        for node_def in revision.nodes:
+        node_defs = {node.node_id: node for node in revision.nodes}
+        for node_id in stable_execution_order(revision):
             run = self._require_run(workflow_run_id)
-            if run.status.terminal:
+            # BLOCKED is nonterminal but admits nothing until recovery resolves it.
+            if run.status.terminal or run.status is WorkflowStatus.BLOCKED:
                 break
+            node_def = node_defs[node_id]
             node = self._node_for(run, node_def)
             if node.status is WorkflowStatus.COMPLETED:
                 continue
@@ -144,6 +181,9 @@ class WorkflowScheduler:
                 if self.clock() > run.admission_deadline_at:
                     self.finalizer.finalize_failure(workflow_run_id, reason="deadline_exceeded")
                     break
+                nodes_by_id = self._nodes_by_id(run)
+                self._require_ready(run, revision, node_def, nodes_by_id)
+                self._bind_node_inputs(run, node_def, nodes_by_id)
             else:
                 remaining = None
             cap = (
@@ -169,7 +209,15 @@ class WorkflowScheduler:
             except Exception:
                 self.finalizer.finalize_failure(workflow_run_id, reason="node_failed")
                 break
-        return self._require_run(workflow_run_id)
+        run = self._require_run(workflow_run_id)
+        if not run.status.terminal and run.status is not WorkflowStatus.BLOCKED:
+            nodes = self.journal.workflows.list_nodes(self.workspace_id, workflow_run_id)
+            if nodes and all(node.status is WorkflowStatus.COMPLETED for node in nodes):
+                # Crash-safe: a run whose last node completed but whose success
+                # finalization was interrupted is finished here from durable facts.
+                self.finalizer.finalize_success(workflow_run_id)
+                run = self._require_run(workflow_run_id)
+        return run
 
     async def recover(self, workflow_run_id: str) -> WorkflowRun:
         """Finish cancel/recovery mappings from durable facts after reconciliation.
@@ -208,6 +256,35 @@ class WorkflowScheduler:
         if run.status is WorkflowStatus.BLOCKED:
             self.transitions.resume_blocked_run(run.workflow_run_id)
         return await self.run(workflow_run_id)
+
+    def abandon(self, workflow_run_id: str, *, expected_row_version: int) -> WorkflowRun:
+        """Recovery-only abandon of an OCC-current blocked run.
+
+        Running/queued work is rejected towards its owning foreground
+        cancellation, and an exact live handle still held by this process is
+        rejected outright; liveness is never inferred from missing terminal
+        facts or PID absence.
+        """
+
+        run = self._require_run(workflow_run_id)
+        if run.status.terminal:
+            return run
+        if run.status is not WorkflowStatus.BLOCKED:
+            raise ApplicationError(
+                ApplicationErrorCode.INVALID,
+                "only a blocked Workflow can be abandoned; active runs use their owning "
+                "foreground cancellation",
+            )
+        if run.row_version != expected_row_version:
+            raise ApplicationError(ApplicationErrorCode.STALE, "Workflow run row version is stale")
+        if self._live_node_run_id is not None:
+            live = self.transitions.get_node(self._live_node_run_id)
+            if live is not None and live.workflow_run_id == workflow_run_id:
+                raise ApplicationError(
+                    ApplicationErrorCode.CONFLICT,
+                    "this process still owns a live handle for the Workflow run",
+                )
+        return self.finalizer.finalize_abandon(workflow_run_id)
 
     async def _drive_node(
         self,
@@ -276,7 +353,7 @@ class WorkflowScheduler:
                         max_agent_generation_requests=cap,
                         require_enabled=False,
                     )
-                    text = self._contract_text(run)
+                    text = self._contract_text(run, node_def)
                     drive_error = await self._drive(
                         session,
                         text,
@@ -386,20 +463,28 @@ class WorkflowScheduler:
             if node.leaf_task_run_id is not None
             else None
         )
-        if leaf is not None and leaf.status is TaskRunStatus.READY_FOR_ACCEPTANCE:
-            self.finalizer.finalize_success(workflow_run_id)
-            return "terminal"
-        if leaf is not None and leaf.status is TaskRunStatus.FAILED:
-            self.finalizer.finalize_failure(workflow_run_id, reason=reason or "node_failed")
-            return "terminal"
         report = self._leaf_report(node) if node.conversation_session_id else None
         blocking = report is not None and any(item.blocking for item in report.items)
         user_cancel = cancelled or (leaf is not None and leaf.status is TaskRunStatus.CANCELLED)
         if blocking:
             self.finalizer.mark_blocked(workflow_run_id, user_cancel=user_cancel)
             return "blocked"
+        # A cancellation observed after a node committed but before later
+        # admissions still stops every not-yet-started node.
         if user_cancel:
             self.finalizer.finalize_cancel(workflow_run_id, reason="user_cancelled")
+            return "terminal"
+        if leaf is not None and leaf.status is TaskRunStatus.READY_FOR_ACCEPTANCE:
+            self.transitions.complete_node(node.node_run_id)
+            nodes = self.journal.workflows.list_nodes(self.workspace_id, workflow_run_id)
+            if all(item.status is WorkflowStatus.COMPLETED for item in nodes):
+                # Success finalization waits for every declared node, not only
+                # the exported-output producers.
+                self.finalizer.finalize_success(workflow_run_id)
+                return "terminal"
+            return "continue"
+        if leaf is not None and leaf.status is TaskRunStatus.FAILED:
+            self.finalizer.finalize_failure(workflow_run_id, reason=reason or "node_failed")
             return "terminal"
         if (
             leaf is not None
@@ -479,13 +564,136 @@ class WorkflowScheduler:
     def _leaf_ownership(self, node_run_id: str) -> tuple[str, str] | None:
         return self.journal.workflows.get_leaf_ownership(self.workspace_id, node_run_id)
 
-    def _contract_text(self, run: WorkflowRun) -> str:
+    def _nodes_by_id(self, run: WorkflowRun) -> dict[str, NodeRun]:
+        nodes = self.journal.workflows.list_nodes(self.workspace_id, run.workflow_run_id)
+        return {node.node_id: node for node in nodes}
+
+    def _require_ready(
+        self,
+        run: WorkflowRun,
+        revision: WorkflowRevision,
+        node_def: AgentNode,
+        nodes_by_id: dict[str, NodeRun],
+    ) -> None:
+        """Readiness is derived from the frozen graph and durable bindings.
+
+        Every incoming-edge predecessor must be completed and every declared
+        node-output input must already be bound to its producer's Artifact.
+        A control-only edge orders nodes without inventing an Artifact. The
+        serial order plus the fixed failure mapping make a violation here a
+        durable-state inconsistency, never an optional-node skip.
+        """
+
+        for edge in revision.edges:
+            if edge.to_node_id != node_def.node_id:
+                continue
+            predecessor = nodes_by_id[edge.from_node_id]
+            if predecessor.status is not WorkflowStatus.COMPLETED:
+                raise ApplicationError(
+                    ApplicationErrorCode.NEEDS_RECOVERY,
+                    f"node {node_def.node_id} is not ready: predecessor "
+                    f"{edge.from_node_id} is {predecessor.status.value}",
+                )
+        bound_outputs = {
+            (node_run_id, binding.name)
+            for node_run_id, direction, binding in self.journal.workflows.list_bindings(
+                self.workspace_id, run.workflow_run_id
+            )
+            if direction == "output"
+        }
+        for binding in node_def.input_bindings:
+            if binding.source == "workflow_input":
+                continue
+            ref = binding.node_output
+            producer = nodes_by_id[ref.node_id]
+            if (producer.node_run_id, ref.output_slot) not in bound_outputs:
+                raise ApplicationError(
+                    ApplicationErrorCode.NEEDS_RECOVERY,
+                    f"node {node_def.node_id} is not ready: input {binding.input_name} has "
+                    "no bound producer Artifact",
+                )
+
+    def _bind_node_inputs(
+        self,
+        run: WorkflowRun,
+        node_def: AgentNode,
+        nodes_by_id: dict[str, NodeRun],
+    ) -> None:
+        """Durably bind every declared input before admission; replay is a no-op."""
+
+        node_run_id = nodes_by_id[node_def.node_id].node_run_id
+        for binding in node_def.input_bindings:
+            if binding.source == "workflow_input":
+                source = run.input_artifacts[0]
+                bound = ArtifactBinding(
+                    name=binding.input_name,
+                    artifact_id=source.artifact_id,
+                    contract=source.contract,
+                )
+            else:
+                ref = binding.node_output
+                producer = nodes_by_id[ref.node_id]
+                produced = next(
+                    produced
+                    for nid, direction, produced in self.journal.workflows.list_bindings(
+                        self.workspace_id, run.workflow_run_id
+                    )
+                    if nid == producer.node_run_id
+                    and direction == "output"
+                    and produced.name == ref.output_slot
+                )
+                bound = ArtifactBinding(
+                    name=binding.input_name,
+                    artifact_id=produced.artifact_id,
+                    contract=ContractRef(
+                        kind=binding.accepts.kind, version=binding.accepts.version
+                    ),
+                )
+            self.transitions.bind_node_input(node_run_id, bound)
+
+    def _contract_text(self, run: WorkflowRun, node_def: AgentNode) -> str:
+        """Leaf input: its Node Task Contract plus the explicitly bound Artifacts.
+
+        No other leaf's ConversationLog and no unbound Artifact is ever read.
+        """
+
         from morrow.core.workflows.contracts import TaskContract
 
-        binding = run.input_artifacts[0]
-        stored = self.artifacts.get(binding.artifact_id)
-        read = self.artifacts.read(binding.artifact_id, max_bytes=stored.byte_size)
-        contract = TaskContract.model_validate_json(read.content)
+        nodes_by_id = self._nodes_by_id(run)
+        parts = [self._format_contract(node_def.task_contract)]
+        for binding in node_def.input_bindings:
+            if binding.source == "workflow_input":
+                source = run.input_artifacts[0]
+                stored = self.artifacts.get(source.artifact_id)
+                read = self.artifacts.read(source.artifact_id, max_bytes=stored.byte_size)
+                contract = TaskContract.model_validate_json(read.content)
+                parts.append(
+                    f"Bound Workflow input '{binding.input_name}':\n"
+                    + self._format_contract(contract)
+                )
+                continue
+            ref = binding.node_output
+            producer = nodes_by_id[ref.node_id]
+            produced = next(
+                item
+                for nid, direction, item in self.journal.workflows.list_bindings(
+                    self.workspace_id, run.workflow_run_id
+                )
+                if nid == producer.node_run_id
+                and direction == "output"
+                and item.name == ref.output_slot
+            )
+            stored = self.artifacts.get(produced.artifact_id)
+            read = self.artifacts.read(produced.artifact_id, max_bytes=stored.byte_size)
+            payload = TextResult.model_validate_json(read.content)
+            parts.append(
+                f"Bound input '{binding.input_name}' "
+                f"(node '{ref.node_id}' slot '{ref.output_slot}'):\n{payload.excerpt}"
+            )
+        return "\n\n".join(parts)
+
+    @staticmethod
+    def _format_contract(contract) -> str:
         parts = [contract.objective]
         if contract.scope:
             parts.append("Scope:\n" + "\n".join(f"- {item}" for item in contract.scope))

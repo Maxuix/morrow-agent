@@ -12,6 +12,7 @@ from collections.abc import Callable
 from datetime import datetime
 
 from morrow.core.models import utc_now
+from morrow.core.workflows.contracts import ArtifactBinding
 from morrow.core.workflows.runs import NodeRun, WorkflowRun, WorkflowStatus
 
 
@@ -75,6 +76,23 @@ class WorkflowTransitionService:
 
     def resume_blocked_node(self, node_run_id: str) -> NodeRun:
         return self._node_to(node_run_id, WorkflowStatus.RUNNING)
+
+    def bind_node_input(self, node_run_id: str, binding: ArtifactBinding) -> None:
+        """Durably bind one declared input Artifact to its consuming NodeRun.
+
+        The journal remains the authority: it verifies the declared binding,
+        the exact producer output and the immutable-binding rule, so replay of
+        an identical binding is a no-op.
+        """
+
+        node = self._require_node(node_run_id)
+        self.journal.workflows.bind_artifact(
+            self.workspace_id,
+            node.workflow_run_id,
+            binding,
+            node_run_id=node_run_id,
+            direction="input",
+        )
 
     def _node_terminal(self, node_run_id: str, target: WorkflowStatus) -> NodeRun:
         return self._node_to(node_run_id, target, terminal=True)

@@ -13,6 +13,7 @@ from datetime import datetime
 
 from morrow.application.workflows.evidence import workflow_task_outcome
 from morrow.application.workflows.transitions import WorkflowTransitionService
+from morrow.core.application import ApplicationError, ApplicationErrorCode
 from morrow.core.domain import (
     TASK_OUTCOME_ID_PREFIX,
     TASK_TRANSITION_ID_PREFIX,
@@ -130,6 +131,63 @@ class WorkflowOutcomeFinalizer:
             reason=reason,
         )
 
+    def finalize_abandon(self, workflow_run_id: str) -> WorkflowRun:
+        """Recovery-only abandon of a blocked run; unknown evidence is preserved.
+
+        The blocked NodeRun, its Artifacts and its side effects stay untouched;
+        only queued nodes are cancelled. The root delegates to the existing
+        ABANDONED transition and the Run closes as ``cancelled(reason=abandoned)``
+        in the same transaction.
+        """
+
+        current = self.transitions.get_run(workflow_run_id)
+        if current is not None and current.status.terminal:
+            return current
+
+        def work(txn) -> WorkflowRun:
+            run = txn.workflows.get_run(self.workspace_id, workflow_run_id)
+            if run.status.terminal:
+                return run
+            if run.status is not WorkflowStatus.BLOCKED:
+                raise ApplicationError(
+                    ApplicationErrorCode.INVALID,
+                    "recovery-only abandon requires a blocked Workflow; active runs use "
+                    "their owning foreground cancellation",
+                )
+            revision = txn.workflows.get_revision(self.workspace_id, run.workflow_revision_id)
+            nodes = txn.workflows.list_nodes(self.workspace_id, workflow_run_id)
+            for node in nodes:
+                if node.status is WorkflowStatus.QUEUED:
+                    self.transitions.cancel_node(node.node_run_id)
+            root = txn.get_task_run(self.workspace_id, run.root_task_run_id)
+            if not root.status.is_terminal:
+                transition = self._transition_record(
+                    root, TaskRunStatus.ABANDONED, reason="workflow_abandoned"
+                )
+                closed_root = txn.transition_workflow_task(
+                    self.workspace_id,
+                    workflow_run_id,
+                    root.task_run_id,
+                    target=TaskRunStatus.ABANDONED,
+                    transition=transition,
+                    expected_row_version=root.row_version,
+                )
+                outcome = self._build_outcome(
+                    txn,
+                    run,
+                    revision,
+                    nodes,
+                    closed_root,
+                    trigger=TaskOutcomeTrigger.TERMINAL_CLOSE,
+                    summary=f"Workflow '{revision.name}' was abandoned while blocked.",
+                    basis_extra=("workflow_terminal=abandoned",),
+                    markers=None,
+                )
+                txn.put_task_outcome(self.workspace_id, outcome)
+            return self.transitions.cancel_run(workflow_run_id)
+
+        return self.journal.transact(work)
+
     def _finalize_non_success(
         self,
         workflow_run_id: str,
@@ -207,6 +265,9 @@ class WorkflowOutcomeFinalizer:
     def _transition_record(
         self, task: DurableTaskRun, target: TaskRunStatus, *, reason: str
     ) -> DurableTaskRunTransition:
+        # Workflow-owned root/leaf transitions never reopen a failed Task, so the
+        # attempt counter always carries over unchanged (FAILED -> OPEN is the
+        # only attempt-incrementing transition and belongs to TaskService).
         return DurableTaskRunTransition(
             transition_id=self.id_source.new_id(TASK_TRANSITION_ID_PREFIX),
             workspace_id=self.workspace_id,
@@ -215,6 +276,7 @@ class WorkflowOutcomeFinalizer:
             from_status=task.status,
             to_status=target,
             reason=reason,
+            attempt=task.attempt,
             created_at=self.clock(),
         )
 

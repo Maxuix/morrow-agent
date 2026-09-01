@@ -265,6 +265,7 @@ class WorkflowLeafHooks:
                 to_status=target,
                 reason=reason,
                 turn_id=turn_id,
+                attempt=task.attempt,
                 created_at=self.clock(),
             ),
             expected_row_version=task.row_version,

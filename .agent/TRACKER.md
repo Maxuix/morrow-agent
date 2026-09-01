@@ -2,18 +2,18 @@
 
 ## Current status
 
-Stage 7 Subplan 4 (Isolated Workflow Vertical Slice) is completed and integrated into local
-`main`. Implementation commit: `d082b39`; review-fix commit: `1c05fbc` (recovery-gate findings).
-Final offline gate: 1442 passed, 2 Live deselected.
+Stage 7 Subplan 5 (Serial DAG Scheduler) is active on branch
+`feat/stage7-serial-scheduler`, based on verified `main` (Subplan 4 integrated at `1c05fbc`;
+full offline gate was green: 1442 passed, 2 Live deselected).
 
 ## Active task
 
-None. Subplan 5 is not active.
+Task 1–3: topological execution order, readiness derivation and per-node completion in
+`WorkflowScheduler`.
 
 ## Next action
 
-Await explicit continuation before activating Subplan 5 (Serial DAG Scheduler) from verified
-`main`.
+Implement scheduler multi-node changes, then the Subplan 5 test matrix.
 
 ## Blockers
 

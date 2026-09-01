@@ -848,7 +848,9 @@ async def test_crash_after_leaf_terminal_finalize_from_durable_facts(fx):
     fx.runtime.scheduler.finalizer = finalizer
 
     node = only_node(fx, started.run.workflow_run_id)
-    assert node.status is WorkflowStatus.RUNNING
+    # Per-node completion commits before run finalization; the crash interrupted
+    # only the root/snapshot close, which recovery replays from durable facts.
+    assert node.status is WorkflowStatus.COMPLETED
     leaf = fx.journal.get_task_run(WS, node.leaf_task_run_id)
     assert leaf.status is TaskRunStatus.READY_FOR_ACCEPTANCE
     assert root(fx).status is TaskRunStatus.OPEN
