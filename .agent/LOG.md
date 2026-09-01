@@ -4462,3 +4462,22 @@
   `morrow --help` and `git diff --check` passed. No Live tests, no dependency changes, no
   public event lifecycle or policy-default changes. Remote publication of `main` remains
   blocked pending explicit authorization.
+
+## 2026-09-02 — Subplan 4 review fix: scheduler recovery gates
+
+- External review of `d082b39` found three real bugs in `WorkflowScheduler.run()`/resume, all
+  confirmed against code and fixed on `fix/stage7-slice-recovery-gates` (`1c05fbc`):
+  1. remaining-budget/deadline gates ran on already-admitted RUNNING nodes, so crash recovery
+     could fail a leaf whose final answer only needed committer replay; the gates now apply to
+     QUEUED admission only, and admitted nodes keep the durable purpose=agent seam;
+  2. recovery resume never re-checked Workflow Revision revocation; resume (including the
+     committed-final STOP replay) now re-checks both frozen Revision and AgentDefinitionVersion
+     and closes through `cancelled(reason=policy_revoked)`;
+  3. `_cancel_unstarted` committed node cancellation in a separate transaction from the run/root
+     closure, so a crash window could remap policy/budget closures to `node_failed`; the
+     finalizer is again the single terminal transaction.
+- Follow-ups: leaf node admission now delegates to `WorkflowTransitionService.admit_node` /
+  `mark_run_running` (sole-writer seam with conflict checking); a focused test proves non-agent
+  admissions are excluded from the Workflow budget counter (the seam has no compaction purpose
+  at all — compaction summaries are never admitted, so they are excluded rather than counted).
+- Regression evidence: 36 slice tests pass; full offline gate 1442 passed, 2 Live deselected.

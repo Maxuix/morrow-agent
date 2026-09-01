@@ -3,7 +3,8 @@
 ## Current status
 
 Stage 7 Subplan 4 (Isolated Workflow Vertical Slice) is completed and integrated into local
-`main`. Implementation commit: `d082b39`. Final offline gate: 1438 passed, 2 Live deselected.
+`main`. Implementation commit: `d082b39`; review-fix commit: `1c05fbc` (recovery-gate findings).
+Final offline gate: 1442 passed, 2 Live deselected.
 
 ## Active task
 
