@@ -1,22 +1,18 @@
-# Subplan 5 — Serial DAG Scheduler
+# Subplan 6 — Serial Multi-Agent Artifact Pipeline
 
-- [x] Task 1: Start precreates one queued NodeRun per frozen node (stable order), replay-safe and
-  fault-atomic. (Was already built in Subplan 4; proven for multi-node graphs.)
-- [x] Task 2: admission binds the exact queued row; one fresh isolated Session + `workflow_node`
-  TaskRun per leaf; duplicate wake creates nothing new.
-- [x] Task 3: deterministic topological execution order (`stable_execution_order`); readiness
-  derived from terminal predecessors + bound input Artifacts; per-node completion with
-  whole-graph success only after every declared node completes; fixed failure mapping.
-- [x] Task 4: aggregate request/deadline budget across nodes (shrunken positive remainder cap,
-  zero/deadline mappings, compaction excluded from counting).
-- [x] Task 5: multi-node cancellation mappings + multi-node evidence projection into root
-  TaskOutcome.
-- [x] Task 6: restart recovery + resume revocation recheck + recovery-only `abandon` for an
-  OCC-current blocked run.
-- [x] Task 7: no retry; rerun = new WorkflowRun after explicit root resume (pinned by test).
-- [x] Task 8: `tests/test_stage7_serial_scheduler.py` deterministic Scripted Provider matrix
-  (24 tests).
-- [x] Full offline gate (1466 passed, 2 Live deselected), ruff, compileall, commit.
+- [x] Task 1: ChangeArtifactCapture gate at durable tool handler-completion (complete before
+  pipeline assembly).
+- [x] Task 2: internal `submit_node_result` mechanism tool + committer extension for structured
+  slots and capture-derived ImplementationPatch/TestReport.
+- [x] Task 3: published Coder and Reviewer Versions; Explorer reused; declared tool requirements.
+- [x] Task 4: isolated leaf Session/TaskRun + Artifact-only input rendering.
+- [x] Task 5: Explorer -> Coder -> Reviewer with Coder sandbox bash and Host-bash rejection.
+- [x] Task 6: truthful `needs_revision` from exported ReviewReport blocking verdicts.
+- [x] Task 7: materialization/submission failure mapping; known side effects preserved.
+- [x] Task 8: Artifact cannot expand ToolSet/permission; `submit_node_result` cannot be smuggled.
+- [x] Task 9: focused offline matrix in `tests/test_stage7_multi_agent_pipeline.py` plus declared
+  regression files and full offline gate.
 
-Subplan 5 is complete. Implementation commit: `4acddc6` on `feat/stage7-serial-scheduler`.
-Remote publication remains blocked pending explicit authorization; no Live tests were run.
+Subplan 6 is complete. Implementation commit: `bfcf869` on `feat/stage7-multi-agent-pipeline`.
+Offline gate: 1483 passed, 2 Live deselected; ruff format/check, compileall and `git diff --check`
+clean. Remote publication remains blocked pending explicit authorization; no Live tests were run.

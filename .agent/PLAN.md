@@ -1,10 +1,9 @@
 # Stage 7 Static Workflow Runtime Implementation Plan
 
-> Status: Subplan 5 completed and integrated; Stage 7 remains in progress
+> Status: Subplan 6 completed and integrated; Stage 7 remains in progress
 > Active subplan: none
-> Next subplan: 6 — Multi-Agent Pipeline (ready; not active)
-> Planning base: local `main@4d8b408` (tree clean, full offline gate green; later `.agent`-only
-> commits such as the plan-repair commit do not invalidate this verified code base)
+> Next subplan: 7 — Direct Invoking-Session Adapter (ready; not active)
+> Planning base: local `main` after Subplan 6 integration (tree clean, full offline gate green)
 > Roadmap authority: `docs/roadmap/stage-7-workflow-runtime.md`
 > Entry evidence: `docs/acceptance/s7p-10-stage7-entry-review.md` — GO
 > Revision: 2026-08-31 conditional-GO plan review applied
@@ -825,8 +824,8 @@ next phase starts.
 | 8 | 7D | Workflow Management and Templates | application commands/queries, CLI, four built-in static templates, doctor completion and separately authorized additive events if approved |
 | 9 | — | Stage 7 Acceptance and Closeout | deterministic integrated acceptance, Direct comparison, truthful promotion evidence and documentation sync |
 
-Child contracts are in `.agent/subplans/1-*.md` through `9-*.md`. Subplan 1 is completed and
-integrated; Subplan 2 is next but not active. Later children remain pending and may be corrected by
+Child contracts are in `.agent/subplans/1-*.md` through `9-*.md`. Subplans 1–6 are completed and
+integrated; Subplan 7 is next but not active. Later children remain pending and may be corrected by
 verified earlier implementation facts. Bounded
 read-only parallelism is no longer a Stage 7 child; its design (per-request budget claim, entry
 conditions) lives in the Stage 8 roadmap.

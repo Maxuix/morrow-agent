@@ -2,19 +2,18 @@
 
 ## Current status
 
-Stage 7 Subplan 5 (Serial DAG Scheduler) is completed and integrated into local `main`
-(implementation `4acddc6`, closeout `f24e5c8`; review-fix `1352f87` for the settlement-order
-and serial-admission findings). Final offline gate: 1469 passed, 2 Live
-deselected; ruff format/check, compileall and `git diff --check` clean.
+Stage 7 Subplan 6 (Serial Multi-Agent Artifact Pipeline) is completed on
+`feat/stage7-multi-agent-pipeline` (implementation `bfcf869`). Final offline gate: 1483 passed,
+2 Live deselected; ruff format/check, compileall and `git diff --check` clean.
 
 ## Active task
 
-None. Subplan 6 is not active.
+None. Subplan 7 is not active.
 
 ## Next action
 
-Await explicit continuation before activating Subplan 6 (Multi-Agent Pipeline) from verified
-`main`.
+Await explicit continuation before activating Subplan 7 (Direct Invoking-Session Adapter) from
+verified `main`.
 
 ## Blockers
 

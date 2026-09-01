@@ -1,5 +1,25 @@
 # Execution Log
 
+## 2026-09-02 — Subplan 6 completed
+
+- Implemented ChangeArtifactCapture at durable handler completion, `submit_node_result`, Coder and
+  Reviewer builtins, Explorer -> Coder -> Reviewer on the unified serial Scheduler, and truthful
+  `needs_revision` from exported ReviewReport verdicts.
+- Implementation commit: `bfcf869`. Focused matrix: 14 tests in
+  `tests/test_stage7_multi_agent_pipeline.py`. Full offline gate: 1483 passed, 2 Live deselected;
+  ruff format/check, compileall and `git diff --check` clean.
+- No Live Provider/MCP/network/credential tests. Remote publication of `main` remains blocked
+  pending explicit authorization.
+
+## 2026-09-02 — Subplan 6 activated
+
+- At explicit user direction, activated Stage 7 Subplan 6 (Serial Multi-Agent Artifact Pipeline)
+  on `feat/stage7-multi-agent-pipeline` from verified local `main@a27ad4b`.
+- Frozen scope: ChangeArtifactCapture gate first, then `submit_node_result`, Explorer -> Coder ->
+  Reviewer, and truthful `needs_revision`. No Direct adapter, CLI templates, or Stage 8 parallelism.
+- No Live Provider/MCP/network/credential test or dependency change is authorized. Remote
+  publication of `main` remains blocked pending explicit authorization.
+
 ## 2026-08-27 — Subplan 88 activated
 
 - Confirmed local `main` and `codex/feat/s7p-06-pi-parity` both resolve to `7b52f5f`; Subplan 85 is

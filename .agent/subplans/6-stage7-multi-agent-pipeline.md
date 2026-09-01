@@ -1,6 +1,6 @@
 # Subplan 6 — Stage 7 Serial Multi-Agent Artifact Pipeline
 
-> Status: pending
+> Status: completed (2026-09-02; implementation `bfcf869`, offline gate 1483 passed)
 > Branch: `feat/stage7-multi-agent-pipeline`
 > Prerequisite: Subplan 5 completed, verified and integrated
 > Revised 2026-08-31 per the conditional-GO plan review: ChangeArtifactCapture is a front-loaded
