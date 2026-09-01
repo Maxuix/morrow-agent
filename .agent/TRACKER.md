@@ -3,8 +3,8 @@
 ## Current status
 
 Stage 7 Subplan 3 (Deterministic Workflow Compiler) is completed and integrated into local
-`main`. Implementation commit: `da489b0`. Final offline gate: 1401 passed, 2 Live deselected.
-Subplan 4 remains inactive.
+`main`. Implementation commit: `da489b0`; review-fix commit: `997866f`. Final offline gate: 1406
+passed, 2 Live deselected. Subplan 4 remains inactive.
 
 ## Active task
 
