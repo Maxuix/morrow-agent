@@ -4481,3 +4481,37 @@
   admissions are excluded from the Workflow budget counter (the seam has no compaction purpose
   at all — compaction summaries are never admitted, so they are excluded rather than counted).
 - Regression evidence: 36 slice tests pass; full offline gate 1442 passed, 2 Live deselected.
+
+## 2026-09-02 — Subplan 5: serial DAG scheduler
+
+- Extended the Subplan 4 single-node slice to multi-node all-isolated DAGs on the same
+  Scheduler/transition/committer/finalizer owners (branch `feat/stage7-serial-scheduler`):
+  - `stable_execution_order` (deterministic Kahn over the frozen Revision, sorted ready set)
+    replaces lexical node iteration, so edges — not node_id sort — decide execution order;
+  - readiness is derived per admission: every incoming-edge predecessor completed plus every
+    declared node-output input already bound; violations are durable inconsistencies
+    (NEEDS_RECOVERY), never optional-node skips;
+  - declared inputs are durably bound to the consuming NodeRun before admission through the
+    WorkflowTransitionService sole-writer seam (journal verifies producer/contract identity);
+    leaf text is the node's own frozen TaskContract plus the explicitly bound root TaskContract
+    and bound producer TextResult excerpts — no other leaf's history, no unbound Artifact;
+  - per-node completion: a READY leaf completes only its own NodeRun; whole-graph success
+    finalizes once every declared node completed (also crash-safe after the loop);
+    cancellation observed after a node committed still stops every not-yet-started node;
+  - recovery-only `abandon` (Scheduler gate + `finalize_abandon`): OCC-current blocked runs
+    only, live-handle and stale-version rejection, blocked NodeRun/unknown evidence preserved,
+    queued nodes cancelled, root delegated to ABANDONED, run closed cancelled(reason=abandoned);
+  - bug fix: Workflow-owned root/leaf TaskRun transitions now carry `attempt=task.attempt`;
+    the default (1) broke the second Workflow run after an explicit FAILED -> OPEN root resume.
+- Evidence: 24 new scripted-Provider tests in `tests/test_stage7_serial_scheduler.py` cover
+  order/typed handoff, control-only edges, Start precreation/replay/fault rollback, duplicate
+  wake, shrunken/zero/deadline budgets (before admission and after a settled Tool), compaction
+  exclusion, Provider failure propagation, write-leaf evidence surviving downstream failure,
+  unconsumed-node execution/failure, success waiting for every declared node, cancel during a
+  later node and between nodes, cancel-unknown-then-resolved, crash between nodes and at a
+  Tool boundary with resume, revoke-before-admission versus ordinary disable immunity, abandon
+  rejection/idempotency, and rerun only after explicit root resume.
+- Full offline gate: 1466 passed, 2 Live deselected. Ruff format/check, compileall and
+  `git diff --check` passed. No Live tests, no dependency changes, no public event lifecycle
+  or policy-default changes. Remote publication of `main` remains blocked pending explicit
+  authorization.

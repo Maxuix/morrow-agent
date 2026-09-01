@@ -1,8 +1,8 @@
 # Stage 7 Static Workflow Runtime Implementation Plan
 
-> Status: Subplan 5 in progress; Stage 7 remains in progress
-> Active subplan: 5 — Serial DAG Scheduler (branch `feat/stage7-serial-scheduler`)
-> Next subplan: 6 — Multi-Agent Pipeline (not active)
+> Status: Subplan 5 completed and integrated; Stage 7 remains in progress
+> Active subplan: none
+> Next subplan: 6 — Multi-Agent Pipeline (ready; not active)
 > Planning base: local `main@4d8b408` (tree clean, full offline gate green; later `.agent`-only
 > commits such as the plan-repair commit do not invalidate this verified code base)
 > Roadmap authority: `docs/roadmap/stage-7-workflow-runtime.md`

@@ -1,6 +1,6 @@
 # Subplan 5 — Stage 7 Serial DAG Scheduler
 
-> Status: in progress (activated 2026-09-02)
+> Status: completed (2026-09-02; implementation `4acddc6`, offline gate 1466 passed)
 > Branch: `feat/stage7-serial-scheduler`
 > Prerequisite: Subplan 4 isolated-slice gate completed and integrated
 > Revised 2026-08-31 per the conditional-GO plan review: this subplan only extends the single
