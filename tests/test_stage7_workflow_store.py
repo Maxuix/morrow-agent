@@ -6,7 +6,7 @@ import pytest
 
 from morrow.adapters.state.artifacts import FilesystemArtifactStore
 from morrow.adapters.state.definition_yaml import WorkflowDefinitionYamlStore
-from morrow.adapters.state.extension_yaml import ExtensionYamlConflict
+from morrow.adapters.state.extension_yaml import ExtensionYamlConflict, ExtensionYamlError
 from morrow.adapters.state.journal import SqliteOperationalJournal
 from morrow.adapters.state.operational import OperationalStore
 from morrow.application.artifacts import ArtifactService
@@ -237,6 +237,59 @@ def test_internal_leaf_lifecycle_and_learning_exclusion(state):
         )
 
 
+def test_terminal_workflow_rejects_turns_and_can_drain_pre_admission_leaf(state):
+    from morrow.application.workflows.tasks import WorkflowTaskLifecycle
+    from morrow.core.domain import DurableTaskRunTransition
+
+    _, _, journal, _, _, run, _ = state
+    leaf = DurableTaskRun(
+        task_run_id="task_leaf",
+        session_id="ses_leaf",
+        workspace_id="ws_one",
+        purpose=TaskRunPurpose.WORKFLOW_NODE,
+        created_at=NOW,
+        updated_at=NOW,
+    )
+    journal.create_workflow_leaf(
+        "ws_one",
+        "nrun_one",
+        DurableSession(session_id="ses_leaf", workspace_id="ws_one"),
+        leaf,
+    )
+    closed = run.model_copy(
+        update={"status": WorkflowStatus.CANCELLED, "completed_at": NOW, "row_version": 2}
+    )
+    journal.workflows.save_run(closed, expected_row_version=1)
+
+    turn = DurableTurn(
+        turn_id="turn_leaf",
+        session_id="ses_leaf",
+        task_run_id="task_leaf",
+        client_message_id="input",
+        created_at=NOW,
+    )
+    with pytest.raises(ValueError, match="active Workflow"):
+        journal.create_workflow_turn("ws_one", "nrun_one", turn)
+
+    cancelled = WorkflowTaskLifecycle(journal, workspace_id="ws_one").transition(
+        "wrun_one",
+        "task_leaf",
+        target=TaskRunStatus.CANCELLED,
+        transition=DurableTaskRunTransition(
+            transition_id="ttr_cancel_leaf",
+            workspace_id="ws_one",
+            session_id="ses_leaf",
+            task_run_id="task_leaf",
+            from_status=TaskRunStatus.OPEN,
+            to_status=TaskRunStatus.CANCELLED,
+            reason="workflow_cancelled",
+            created_at=NOW,
+        ),
+        expected_row_version=1,
+    )
+    assert cancelled.status is TaskRunStatus.CANCELLED
+
+
 def test_profile_roundtrip_backup_malformed_source_and_doctor(state, tmp_path):
     store, handle, journal, artifacts, rev, run, _ = state
     metadata = artifacts.read(run.input_artifacts[0].artifact_id, max_bytes=16384).metadata
@@ -287,6 +340,8 @@ def test_yaml_occ_and_unrelated_body_hash(state):
     assert yaml.load_definition("ws_one", "pipeline").source_hash == digest
     with pytest.raises(ExtensionYamlConflict):
         yaml.write("ws_one", first, expected_revision=0)
+    with pytest.raises(ExtensionYamlError, match="Workflow definition is missing"):
+        yaml.load_definition("ws_one", "missing")
 
 
 def admitted_leaf(state):

@@ -32,6 +32,7 @@ class AgentDefinitionYamlStore(ExtensionYamlStore):
     document_type = AgentDefinitionDocument
     filename = "agent-definitions.yaml"
     identity_field = "definition_id"
+    missing_definition_message = "Agent definition is missing"
 
     def __init__(self, root):
         super().__init__(root, create=False)
@@ -57,7 +58,7 @@ class AgentDefinitionYamlStore(ExtensionYamlStore):
         for source in document.definitions:
             if getattr(source, self.identity_field) == definition_id:
                 return LoadedAgentDefinition(source, document.revision)
-        raise ExtensionYamlError("definition_missing", "Agent definition is missing")
+        raise ExtensionYamlError("definition_missing", self.missing_definition_message)
 
     def write(self, workspace_id, document: AgentDefinitionDocument, *, expected_revision: int):
         path = self.workspace_path(workspace_id)
@@ -82,3 +83,4 @@ class WorkflowDefinitionYamlStore(AgentDefinitionYamlStore):
     document_type = WorkflowDefinitionDocument
     filename = "workflow-definitions.yaml"
     identity_field = "workflow_definition_id"
+    missing_definition_message = "Workflow definition is missing"

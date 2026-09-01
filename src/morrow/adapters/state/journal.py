@@ -1242,14 +1242,19 @@ class SqliteOperationalJournal:
 
     def create_workflow_turn(self, workspace_id, node_run_id, turn):
         node = self.workflows.get_node(workspace_id, node_run_id)
+        run = (
+            self.workflows.get_run(workspace_id, node.workflow_run_id) if node is not None else None
+        )
         task = self.get_task_run(workspace_id, turn.task_run_id)
         if (
             node is None
             or node.status.value != "queued"
+            or run is None
+            or run.status.terminal
             or task is None
             or task.purpose.value != "workflow_node"
         ):
-            raise ValueError("Workflow Turn requires a queued node and internal Task")
+            raise ValueError("Workflow Turn requires an active Workflow and queued internal Task")
         owner = self._backend.read_one(
             "SELECT session_id, task_run_id FROM workflow_leaf_ownership WHERE node_run_id=?",
             (node_run_id,),
@@ -1260,13 +1265,21 @@ class SqliteOperationalJournal:
 
     def transition_workflow_task(self, workspace_id, workflow_run_id, task_run_id, **kwargs):
         run = self.workflows.get_run(workspace_id, workflow_run_id)
-        nodes = self.workflows.list_nodes(workspace_id, workflow_run_id)
-        if (
-            run is None
-            or run.status.terminal
-            or task_run_id not in {run.root_task_run_id, *(n.leaf_task_run_id for n in nodes)}
-        ):
+        owned_leaf = self._backend.read_one(
+            """
+            SELECT 1
+            FROM workflow_leaf_ownership AS ownership
+            JOIN workflow_node_runs AS node USING(node_run_id)
+            WHERE node.workspace_id=? AND node.workflow_run_id=? AND ownership.task_run_id=?
+            """,
+            (workspace_id, workflow_run_id, task_run_id),
+        )
+        is_owned_leaf = owned_leaf is not None
+        is_owned_task = run is not None and (task_run_id == run.root_task_run_id or is_owned_leaf)
+        if not is_owned_task:
             raise ValueError("Task is not owned by this Workflow")
+        if run.status.terminal and (not is_owned_leaf or not kwargs["target"].is_terminal):
+            raise ValueError("terminal Workflow only permits draining owned leaf Tasks")
         return self._task_journal._transition(workspace_id, task_run_id, **kwargs)
 
     def _task_belongs_to_session(
