@@ -8,6 +8,8 @@
 - [x] Add focused domain/store/migration/backup/doctor tests.
 - [x] Run focused and full offline validation.
 - [x] Commit, fast-forward integrate, verify ancestry, and retire the topic branch.
+- [x] Address the post-merge lifecycle and definition-message review findings.
 
-Subplan 2 is complete and integrated into local `main`. Subplan 3 is ready but not active.
-Remote publication remains pending explicit authorization; no Live tests were run.
+Subplan 2 and its post-merge review follow-up are complete and integrated into local `main`.
+Subplan 3 is ready but not active. Remote publication remains pending explicit authorization; no
+Live tests were run.

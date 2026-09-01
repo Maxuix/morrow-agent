@@ -4363,3 +4363,19 @@
 - Acceptance is recorded in `docs/acceptance/stage-7-subplan-2-workflow-revision-artifacts.md`.
   Subplan 3 is ready but not active. Remote publication remains pending explicit authorization;
   the existing upstream divergence is recorded rather than silently claiming synchronization.
+
+## 2026-09-01 — Stage 7 Subplan 2 review follow-up
+
+- Confirmed all three post-merge findings against `f0a2385`: pre-admission leaf Tasks were absent
+  from the internal transition allow-list, terminal WorkflowRuns did not gate leaf Turn creation,
+  and a missing Workflow definition reused the Agent-specific diagnostic.
+- Workflow Task ownership now uses the durable `workflow_leaf_ownership` relation before and after
+  Node admission. A terminal Workflow may only drain one of those leaf Tasks to a terminal Task
+  state; ordinary Task guards and terminal root/nonterminal transitions remain closed.
+- Workflow Turn creation now requires a nonterminal parent WorkflowRun. Workflow YAML lookup keeps
+  the shared loader but supplies a Workflow-specific missing-definition message.
+- Focused store regression: 12 passed. Final whole-tree offline gate: 1377 passed, 2 Live
+  deselected (118.33 seconds). Ruff format/check (533 files), compileall and `git diff --check`
+  passed. No Live tests, dependency changes, public events or policy-default changes were made.
+- Review-fix implementation commit: `45f993f`. Subplan 3 was not activated; remote publication
+  remains pending explicit authorization.
