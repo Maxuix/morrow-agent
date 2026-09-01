@@ -2,18 +2,18 @@
 
 ## Current status
 
-Stage 7 Subplan 5 (Serial DAG Scheduler) is completed on branch
-`feat/stage7-serial-scheduler` (implementation commit `4acddc6`). Final offline gate:
-1466 passed, 2 Live deselected; ruff format/check, compileall and `git diff --check` clean.
+Stage 7 Subplan 5 (Serial DAG Scheduler) is completed and integrated into local `main`
+(implementation `4acddc6`, closeout `f24e5c8`). Final offline gate: 1466 passed, 2 Live
+deselected; ruff format/check, compileall and `git diff --check` clean.
 
 ## Active task
 
-None. Subplan 5 is complete; integration into `main` is next.
+None. Subplan 6 is not active.
 
 ## Next action
 
-Fast-forward merge `feat/stage7-serial-scheduler` into `main`, delete the topic branch, then
-await explicit continuation before activating Subplan 6 (Multi-Agent Pipeline).
+Await explicit continuation before activating Subplan 6 (Multi-Agent Pipeline) from verified
+`main`.
 
 ## Blockers
 
