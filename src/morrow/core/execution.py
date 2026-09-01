@@ -810,6 +810,11 @@ PRODUCTION_TOOL_DECLARATIONS: tuple[ToolRecoveryDeclaration, ...] = (
     _declaration("grep", EffectClass.BOUNDED_READ, MissingCompletionPolicy.SAFE_TO_RETRY),
     _declaration("read_artifact", EffectClass.BOUNDED_READ, MissingCompletionPolicy.SAFE_TO_RETRY),
     _declaration(
+        "submit_node_result",
+        EffectClass.BOUNDED_READ,
+        MissingCompletionPolicy.SAFE_TO_RETRY,
+    ),
+    _declaration(
         "update_configuration",
         EffectClass.RECONCILEABLE_STRUCTURED_STATE_WRITE,
         MissingCompletionPolicy.REQUIRES_RECONCILIATION,

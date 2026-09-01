@@ -243,6 +243,7 @@ _STATIC_TOOL_CONTRACTS: Mapping[str, ToolContractExpectation] = MappingProxyType
         "find": _static_contract(OperationKind.WORKSPACE_READ),
         "grep": _static_contract(OperationKind.WORKSPACE_READ),
         "read_artifact": _static_contract(OperationKind.INTERNAL_READ),
+        "submit_node_result": _static_contract(OperationKind.INTERNAL_READ),
         "update_configuration": _static_contract(
             OperationKind.CONFIGURATION_WRITE,
             ToolEffect.PERSISTENT_WRITE,

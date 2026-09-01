@@ -16,12 +16,12 @@ from morrow.core.artifacts import (
     ArtifactState,
 )
 from morrow.core.domain import canonical_json_bytes
-from morrow.core.workflows.contracts import TaskContract, TextResult
+from morrow.core.workflows.contracts import WorkflowPayload
 
 
 def ensure_workflow_payload(
     artifacts: ArtifactService,
-    payload: TaskContract | TextResult,
+    payload: WorkflowPayload,
     *,
     session_id: str,
     task_run_id: str,

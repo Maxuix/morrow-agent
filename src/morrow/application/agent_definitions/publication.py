@@ -17,6 +17,7 @@ from morrow.core.agent_definitions import (
 )
 from morrow.core.domain import canonical_json_bytes, sha256_digest, validate_prefixed_id
 from morrow.core.models import ModelRef
+from morrow.core.workflows.contracts import MECHANISM_TOOL_NAMES
 
 
 @dataclass(frozen=True)
@@ -50,6 +51,8 @@ def validate_definition(source: AgentDefinitionSource, catalog: DefinitionCatalo
 def resolve_definition_tools(source, catalog):
     tools, diagnostics = [], []
     for item in source.tool_requirements:
+        if item.name in MECHANISM_TOOL_NAMES:
+            raise ValueError("mechanism tools cannot be granted by definitions")
         if item.requirement == "forbidden":
             continue
         access = catalog.tool_access.get(item.name)

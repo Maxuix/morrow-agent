@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 
 from morrow.application.agent_definitions.factory import AgentFactory
@@ -18,18 +18,27 @@ from morrow.application.recovery import RecoveryService
 from morrow.application.turns import SessionPersistence
 from morrow.application.workflows.finalizer import WorkflowOutcomeFinalizer
 from morrow.application.workflows.leaf import WorkflowLeafContext, WorkflowLeafHooks
+from morrow.application.workflows.submit import make_submit_node_result_tool
 from morrow.application.workflows.tasks import WorkflowTaskLifecycle
 from morrow.application.workflows.transitions import WorkflowTransitionService
 from morrow.core.application import ApplicationError, ApplicationErrorCode
+from morrow.core.capabilities import ProcessIsolation
 from morrow.core.domain import DurableSession, DurableTaskRun, TaskRunPurpose, TaskRunStatus
 from morrow.core.faults import InjectedFault
 from morrow.core.models import FinishReason, utc_now
-from morrow.core.workflows.contracts import ArtifactBinding, ContractRef, TextResult
+from morrow.core.workflows.contracts import (
+    SUBMISSION_OUTPUT_KINDS,
+    ArtifactBinding,
+    ContractRef,
+    parse_workflow_payload,
+    workflow_payload_excerpt,
+)
 from morrow.core.workflows.definitions import AgentNode, WorkflowRevision
 from morrow.core.workflows.runs import NodeRun, WorkflowRun, WorkflowStatus
 from morrow.runtime.agent import AgentLoop
 from morrow.runtime.durable_log import restore_conversation_log
 from morrow.runtime.session import Session
+from morrow.runtime.tools import ToolExecutor, ToolRegistry
 
 _REASON_PREFIXES = {
     "budget_exhausted",
@@ -116,6 +125,8 @@ class WorkflowScheduler:
         skill_selection=None,
         retry_sleep=None,
         faults=None,
+        mutation=None,
+        change_capture=None,
     ) -> None:
         self.journal = journal
         self.workspace_id = workspace_id
@@ -131,6 +142,8 @@ class WorkflowScheduler:
         self.skill_selection = skill_selection
         self.retry_sleep = retry_sleep
         self.faults = faults
+        self.mutation = mutation
+        self.change_capture = change_capture
         self.lifecycle = WorkflowTaskLifecycle(journal, workspace_id=workspace_id)
         self.recovery = RecoveryService(journal, workspace_id=workspace_id, id_source=id_source)
         self._live_node_run_id: str | None = None
@@ -351,6 +364,8 @@ class WorkflowScheduler:
             skill_selection=self.skill_selection,
             workflow_leaf=hooks,
             faults=self.faults,
+            mutation=self.mutation,
+            change_capture=self.change_capture,
         )
         root = self.journal.get_task_run(self.workspace_id, run.root_task_run_id)
         factory = AgentFactory(
@@ -378,6 +393,7 @@ class WorkflowScheduler:
                         max_agent_generation_requests=cap,
                         require_enabled=False,
                     )
+                    prepared = self._compose_leaf_runtime(prepared, hooks)
                     text = self._contract_text(run, node_def)
                     drive_error = await self._drive(
                         session,
@@ -401,6 +417,7 @@ class WorkflowScheduler:
                     persistence.attach(session)
                     agent_run = self.journal.get_agent_run(self.workspace_id, node.agent_run_id)
                     prepared = factory.rehydrate(agent_run.snapshot, agent_run_id=node.agent_run_id)
+                    prepared = self._compose_leaf_runtime(prepared, hooks)
                     persistence.restore_into(session)
                     if self._committed_final_assistant(leaf_session_id):
                         # The final Assistant message is durable; replay only the
@@ -681,6 +698,47 @@ class WorkflowScheduler:
             bound_bindings.append(bound)
         self.transitions.bind_node_inputs(node_run_id, tuple(bound_bindings))
 
+    def _compose_leaf_runtime(self, prepared, hooks: WorkflowLeafHooks):
+        """Inject mechanism tools and freeze Coder bash to the native sandbox."""
+
+        executor = prepared.tool_executor
+        if executor is None:
+            return prepared
+        extra = []
+        node = hooks.context.node
+        if any(contract.kind in SUBMISSION_OUTPUT_KINDS for contract in node.output_contracts):
+            extra.append(make_submit_node_result_tool(hooks))
+        isolation = executor.expected_process_isolation
+        patch_required = any(
+            contract.kind == "ImplementationPatch" and contract.required_for_node_completion
+            for contract in node.output_contracts
+        )
+        has_bash = "bash" in executor.tool_set.tools
+        if patch_required and has_bash and isolation is ProcessIsolation.HOST:
+            raise ApplicationError(
+                ApplicationErrorCode.INVALID,
+                "uncapturable_host_bash: complete ImplementationPatch cannot use Host-mode bash",
+            )
+        if patch_required and has_bash:
+            isolation = ProcessIsolation.NATIVE_SANDBOX
+        if not extra and isolation is executor.expected_process_isolation:
+            return prepared
+        registry = ToolRegistry()
+        for tool in executor.tool_set.tools.values():
+            registry.register(tool)
+        for tool in extra:
+            registry.register(tool)
+        return replace(
+            prepared,
+            tool_executor=ToolExecutor(
+                registry.snapshot(),
+                executor.run_policy,
+                approval_port=executor.approval_port,
+                capability_policy=executor.capability_policy,
+                expected_process_isolation=isolation,
+            ),
+        )
+
     def _contract_text(self, run: WorkflowRun, node_def: AgentNode) -> str:
         """Leaf input: its Node Task Contract plus the explicitly bound Artifacts.
 
@@ -715,10 +773,16 @@ class WorkflowScheduler:
             )
             stored = self.artifacts.get(produced.artifact_id)
             read = self.artifacts.read(produced.artifact_id, max_bytes=stored.byte_size)
-            payload = TextResult.model_validate_json(read.content)
+            kind = produced.contract.kind
+            if kind == "TaskContract":
+                payload = TaskContract.model_validate_json(read.content)
+                rendered = self._format_contract(payload)
+            else:
+                payload = parse_workflow_payload(kind, read.content)
+                rendered = workflow_payload_excerpt(payload)
             parts.append(
                 f"Bound input '{binding.input_name}' "
-                f"(node '{ref.node_id}' slot '{ref.output_slot}'):\n{payload.excerpt}"
+                f"(node '{ref.node_id}' slot '{ref.output_slot}'):\n{rendered}"
             )
         return "\n\n".join(parts)
 

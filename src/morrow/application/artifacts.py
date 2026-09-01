@@ -40,10 +40,12 @@ from morrow.core.journal import ArtifactJournalPort
 from morrow.core.ports import IdSource
 from morrow.core.store import StorageError, StorageErrorCode
 from morrow.core.workflows.contracts import (
+    NODE_OUTPUT_PAYLOAD_TYPES,
     ContractRef,
     TaskContract,
-    TextResult,
+    WorkflowPayload,
     node_output_artifact_id,
+    workflow_payload_excerpt,
 )
 
 _REDACTED_SECRET_ASSIGNMENT = re.compile(
@@ -113,7 +115,7 @@ class ArtifactService:
 
     def publish_workflow_payload(
         self,
-        payload: TaskContract | TextResult,
+        payload: WorkflowPayload,
         *,
         session_id: str,
         task_run_id: str,
@@ -121,16 +123,16 @@ class ArtifactService:
         producer_node_run_id: str | None = None,
         output_slot: str | None = None,
     ) -> ArtifactMetadata:
-        if type(payload) not in {TaskContract, TextResult}:
+        if type(payload) is not TaskContract and type(payload) not in NODE_OUTPUT_PAYLOAD_TYPES:
             raise ValueError("Workflow publication requires a typed payload")
         if isinstance(payload, TaskContract) and producer_node_run_id is not None:
             raise ValueError("TaskContract is Workflow input, not node output")
-        if isinstance(payload, TextResult) and producer_node_run_id is None:
-            raise ValueError("TextResult requires a NodeRun producer")
+        if type(payload) in NODE_OUTPUT_PAYLOAD_TYPES and producer_node_run_id is None:
+            raise ValueError(f"{type(payload).__name__} requires a NodeRun producer")
         content = canonical_json_bytes(payload.model_dump(mode="json"))
-        if isinstance(payload, TextResult):
+        if type(payload) in NODE_OUTPUT_PAYLOAD_TYPES:
             if output_slot is None:
-                raise ValueError("TextResult requires a declared output slot")
+                raise ValueError(f"{type(payload).__name__} requires a declared output slot")
             deterministic_id = node_output_artifact_id(producer_node_run_id, output_slot)
             if artifact_id not in {None, deterministic_id}:
                 raise ValueError("Workflow output identity is fixed by NodeRun and slot")
@@ -170,11 +172,37 @@ class ArtifactService:
             session_id=session_id,
             task_run_id=task_run_id,
             artifact_id=artifact_id,
-            excerpt=payload.objective if isinstance(payload, TaskContract) else payload.excerpt,
+            excerpt=workflow_payload_excerpt(payload),
             text_safety_profile=TextSafetyProfile.WORKFLOW_VALUE_SENSITIVE,
             contract=ContractRef(kind=type(payload).__name__),
             producer_node_run_id=producer_node_run_id,
             output_slot=output_slot,
+        )
+
+    def publish_workflow_capture(
+        self,
+        content: bytes,
+        *,
+        kind: ArtifactKind,
+        session_id: str,
+        task_run_id: str,
+        artifact_id: str,
+        excerpt: str,
+        contract: ContractRef,
+        provenance_refs: tuple[ArtifactProvenanceRef, ...] = (),
+    ) -> ArtifactMetadata:
+        """Typed Workflow capture seam; public publish_bytes cannot select this profile."""
+
+        return self._publish_bytes(
+            content,
+            kind=kind,
+            session_id=session_id,
+            task_run_id=task_run_id,
+            artifact_id=artifact_id,
+            excerpt=excerpt,
+            provenance_refs=provenance_refs,
+            text_safety_profile=TextSafetyProfile.WORKFLOW_VALUE_SENSITIVE,
+            contract=contract,
         )
 
     def _publish_bytes(

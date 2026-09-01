@@ -9,28 +9,41 @@ Ordinary Direct Sessions never receive this collaborator.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 
 from morrow.application.artifacts import ArtifactService
 from morrow.application.workflows.artifacts import ensure_workflow_payload
+from morrow.application.workflows.capture import CHANGE_CAPTURE_ROLE, VALIDATION_REPORT_ROLE
 from morrow.application.workflows.evidence import text_result_from_assistant
+from morrow.application.workflows.submit import parse_submitted_payload, submission_digest
 from morrow.core.application import ApplicationError, ApplicationErrorCode
+from morrow.core.artifacts import ArtifactKind, ArtifactState
 from morrow.core.domain import (
     TASK_TRANSITION_ID_PREFIX,
     DurableTaskRunTransition,
     TaskRunStatus,
+    canonical_json_bytes,
 )
 from morrow.core.faults import InjectedFault
 from morrow.core.models import FinishReason
 from morrow.core.workflows.contracts import (
+    CAPTURE_OUTPUT_KINDS,
+    SUBMISSION_OUTPUT_KINDS,
     ArtifactBinding,
+    ChangeCapture,
     ContractRef,
+    ImplementationPatch,
+    TestReport,
+    TestReportItem,
     node_output_artifact_id,
+    node_submission_artifact_id,
 )
 from morrow.core.workflows.definitions import AgentNode
 from morrow.runtime.conversation import TurnTerminalRecord
+from morrow.runtime.tools import ToolErrorCode, ToolExecutionError
 
 
 @dataclass(frozen=True)
@@ -164,7 +177,223 @@ class WorkflowLeafHooks:
                 f"output_contract_unsatisfied: {exc}",
             ) from None
 
+    def submit_node_result(self, arguments) -> dict[str, object]:
+        """Validate and publish one structured submission for this NodeRun."""
+
+        ctx = self.context
+        declared = {
+            contract.slot: contract
+            for contract in ctx.node.output_contracts
+            if contract.kind in SUBMISSION_OUTPUT_KINDS
+        }
+        if arguments.schema_version != 1:
+            raise ToolExecutionError(ToolErrorCode.INVALID_ARGUMENTS, "unsupported schema_version")
+        parsed: dict[str, object] = {}
+        for slot, raw in arguments.outputs.items():
+            contract = declared.get(slot)
+            if contract is None:
+                raise ToolExecutionError(
+                    ToolErrorCode.INVALID_ARGUMENTS,
+                    f"undeclared structured slot '{slot}'",
+                )
+            if not isinstance(raw, dict):
+                raise ToolExecutionError(
+                    ToolErrorCode.INVALID_ARGUMENTS,
+                    f"slot '{slot}' payload must be an object",
+                )
+            parsed[slot] = parse_submitted_payload(contract.kind, raw)
+        missing = sorted(
+            slot
+            for slot, contract in declared.items()
+            if contract.required_for_node_completion and slot not in parsed
+        )
+        if missing:
+            raise ToolExecutionError(
+                ToolErrorCode.INVALID_ARGUMENTS,
+                "required structured slots are missing: " + ",".join(missing),
+            )
+        self._require_in_scope_evidence(arguments.evidence_refs)
+        digest = submission_digest(parsed, arguments.summary, arguments.evidence_refs)
+        marker_id = node_submission_artifact_id(ctx.node_run_id)
+        prior = self.artifacts.get(marker_id)
+        if prior is not None and prior.state is ArtifactState.AVAILABLE:
+            read = self.artifacts.read(marker_id, max_bytes=prior.byte_size)
+            recorded = json.loads(read.content.decode("utf-8"))
+            if recorded.get("digest") == digest:
+                return {"submitted": True, "digest": digest, "reused": True}
+            raise ToolExecutionError(
+                ToolErrorCode.CONFLICT,
+                "a conflicting structured submission already exists for this node",
+            )
+        for slot, payload in parsed.items():
+            ensure_workflow_payload(
+                self.artifacts,
+                payload,
+                session_id=ctx.leaf_session_id,
+                task_run_id=ctx.leaf_task_run_id,
+                artifact_id=node_output_artifact_id(ctx.node_run_id, slot),
+                producer_node_run_id=ctx.node_run_id,
+                output_slot=slot,
+            )
+        self.artifacts.publish_bytes(
+            canonical_json_bytes({"digest": digest, "slots": sorted(parsed)}),
+            kind=ArtifactKind.TASK_SUMMARY,
+            session_id=ctx.leaf_session_id,
+            task_run_id=ctx.leaf_task_run_id,
+            artifact_id=marker_id,
+            excerpt="structured node result submission",
+        )
+        return {"submitted": True, "digest": digest, "reused": False}
+
+    def _require_in_scope_evidence(self, refs: tuple[str, ...]) -> None:
+        ctx = self.context
+        executions = {
+            item.tool_execution_id
+            for item in self.journal.list_task_executions(self.workspace_id, ctx.leaf_task_run_id)
+        }
+        for ref in refs:
+            if ref.startswith("tex_"):
+                if ref not in executions:
+                    raise ToolExecutionError(
+                        ToolErrorCode.INVALID_ARGUMENTS,
+                        "evidence_refs must name ToolExecutions from this node",
+                    )
+                continue
+            if ref.startswith("art_"):
+                stored = self.artifacts.get(ref)
+                if stored is None or stored.task_run_id != ctx.leaf_task_run_id:
+                    raise ToolExecutionError(
+                        ToolErrorCode.INVALID_ARGUMENTS,
+                        "evidence_refs must name Artifacts from this node",
+                    )
+                continue
+            raise ToolExecutionError(
+                ToolErrorCode.INVALID_ARGUMENTS,
+                "evidence_refs must be Artifact or ToolExecution identifiers",
+            )
+
     def _prepare_required_outputs(self) -> tuple[ArtifactBinding, ...]:
+        ctx = self.context
+        bindings = []
+        for contract in ctx.node.output_contracts:
+            if not contract.required_for_node_completion:
+                continue
+            if contract.kind == "TextResult":
+                bindings.append(self._commit_text_result(contract))
+            elif contract.kind in CAPTURE_OUTPUT_KINDS:
+                bindings.append(self._commit_capture_slot(contract))
+            elif contract.kind in SUBMISSION_OUTPUT_KINDS:
+                bindings.append(self._commit_submission_slot(contract))
+            else:
+                raise ApplicationError(
+                    ApplicationErrorCode.INVALID,
+                    f"output_contract_unsatisfied: unsupported kind {contract.kind}",
+                )
+        return tuple(bindings)
+
+    def _commit_text_result(self, contract) -> ArtifactBinding:
+        record_id, text = self._final_assistant()
+        result = text_result_from_assistant(record_id, text)
+        return self._bind_payload(contract, result)
+
+    def _commit_submission_slot(self, contract) -> ArtifactBinding:
+        ctx = self.context
+        marker = self.artifacts.get(node_submission_artifact_id(ctx.node_run_id))
+        artifact_id = node_output_artifact_id(ctx.node_run_id, contract.slot)
+        stored = self.artifacts.get(artifact_id)
+        if marker is None or marker.state is not ArtifactState.AVAILABLE or stored is None:
+            raise ApplicationError(
+                ApplicationErrorCode.INVALID,
+                "output_contract_unsatisfied: required structured submission is missing",
+            )
+        return ArtifactBinding(
+            name=contract.slot,
+            artifact_id=artifact_id,
+            contract=ContractRef(kind=contract.kind, version=contract.version),
+        )
+
+    def _commit_capture_slot(self, contract) -> ArtifactBinding:
+        ctx = self.context
+        executions = self.journal.list_task_executions(self.workspace_id, ctx.leaf_task_run_id)
+        if contract.kind == "ImplementationPatch":
+            payload = self._implementation_patch(executions)
+        else:
+            payload = self._aggregate_test_report(executions)
+        return self._bind_payload(contract, payload)
+
+    def _implementation_patch(self, executions) -> ImplementationPatch:
+        refs: list[str] = []
+        paths: list[str] = []
+        complete = True
+        omission = None
+        for execution in executions:
+            for reference in execution.artifact_refs:
+                if reference.role != CHANGE_CAPTURE_ROLE:
+                    continue
+                refs.append(reference.artifact_id)
+                stored = self.artifacts.get(reference.artifact_id)
+                if stored is None:
+                    complete = False
+                    omission = "change_capture_missing"
+                    continue
+                read = self.artifacts.read(reference.artifact_id, max_bytes=stored.byte_size)
+                capture = ChangeCapture.model_validate_json(read.content)
+                paths.append(capture.path)
+                if not capture.content_complete:
+                    complete = False
+                    omission = capture.omission_reason or "structural_manifest"
+        rationale = self._assistant_rationale()
+        return ImplementationPatch(
+            changed_paths=tuple(dict.fromkeys(paths)),
+            change_refs=tuple(dict.fromkeys(refs)),
+            content_complete=complete,
+            rationale=rationale,
+            omission_reason=None if complete else omission,
+        )
+
+    def _aggregate_test_report(self, executions) -> TestReport:
+        items: list[TestReportItem] = []
+        complete = True
+        omission = None
+        for execution in executions:
+            for reference in execution.artifact_refs:
+                if reference.role != VALIDATION_REPORT_ROLE:
+                    continue
+                stored = self.artifacts.get(reference.artifact_id)
+                if stored is None:
+                    complete = False
+                    omission = "validation_report_missing"
+                    continue
+                read = self.artifacts.read(reference.artifact_id, max_bytes=stored.byte_size)
+                report = TestReport.model_validate_json(read.content)
+                items.extend(report.items)
+                if not report.content_complete:
+                    complete = False
+                    omission = report.omission_reason or "command_output_unavailable"
+        return TestReport(
+            items=tuple(items),
+            content_complete=complete,
+            omission_reason=None if complete else omission,
+        )
+
+    def _bind_payload(self, contract, payload) -> ArtifactBinding:
+        ctx = self.context
+        metadata = ensure_workflow_payload(
+            self.artifacts,
+            payload,
+            session_id=ctx.leaf_session_id,
+            task_run_id=ctx.leaf_task_run_id,
+            artifact_id=node_output_artifact_id(ctx.node_run_id, contract.slot),
+            producer_node_run_id=ctx.node_run_id,
+            output_slot=contract.slot,
+        )
+        return ArtifactBinding(
+            name=contract.slot,
+            artifact_id=metadata.artifact_id,
+            contract=ContractRef(kind=contract.kind, version=contract.version),
+        )
+
+    def _final_assistant(self) -> tuple[str, str]:
         ctx = self.context
         records = self.journal.load_effective_records(self.workspace_id, ctx.leaf_session_id)
         final = None
@@ -180,29 +409,14 @@ class WorkflowLeafHooks:
                 ApplicationErrorCode.INVALID,
                 "output_contract_unsatisfied: no committed final Assistant message",
             )
-        text = str(final.payload.get("content") or "")
-        bindings = []
-        for contract in ctx.node.output_contracts:
-            if not contract.required_for_node_completion:
-                continue
-            result = text_result_from_assistant(final.record_id, text)
-            metadata = ensure_workflow_payload(
-                self.artifacts,
-                result,
-                session_id=ctx.leaf_session_id,
-                task_run_id=ctx.leaf_task_run_id,
-                artifact_id=node_output_artifact_id(ctx.node_run_id, contract.slot),
-                producer_node_run_id=ctx.node_run_id,
-                output_slot=contract.slot,
-            )
-            bindings.append(
-                ArtifactBinding(
-                    name=contract.slot,
-                    artifact_id=metadata.artifact_id,
-                    contract=ContractRef(kind=contract.kind, version=contract.version),
-                )
-            )
-        return tuple(bindings)
+        return final.record_id, str(final.payload.get("content") or "")
+
+    def _assistant_rationale(self) -> str:
+        try:
+            _record_id, text = self._final_assistant()
+        except ApplicationError:
+            return ""
+        return text[:4096]
 
     def apply_terminal_in_txn(
         self,

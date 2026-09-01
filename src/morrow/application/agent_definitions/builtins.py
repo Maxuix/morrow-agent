@@ -25,7 +25,53 @@ def builtin_definitions(exact_model):
             tool_requirements=(
                 ToolRequirement(name="read", requirement="required"),
                 ToolRequirement(name="grep", requirement="optional"),
+                ToolRequirement(name="ls", requirement="optional"),
+                ToolRequirement(name="find", requirement="optional"),
                 ToolRequirement(name="write", requirement="forbidden"),
+                ToolRequirement(name="edit", requirement="forbidden"),
+                ToolRequirement(name="bash", requirement="forbidden"),
+                ToolRequirement(name="promote_sandbox_changes", requirement="forbidden"),
+            ),
+        ),
+        AgentDefinitionSource(
+            definition_id="builtin_coder",
+            name="Coder",
+            role_prompt=(
+                "Implement the requested change using structured edit/write tools and native-sandbox"
+                " bash. Promote sandbox changes before finishing. Do not guess diffs from the"
+                " workspace after the fact."
+            ),
+            model_selection="invoking_active",
+            access_mode_ceiling="write",
+            tool_requirements=(
+                ToolRequirement(name="read", requirement="required"),
+                ToolRequirement(name="edit", requirement="required"),
+                ToolRequirement(name="write", requirement="required"),
+                ToolRequirement(name="bash", requirement="required"),
+                ToolRequirement(name="promote_sandbox_changes", requirement="required"),
+                ToolRequirement(name="grep", requirement="optional"),
+                ToolRequirement(name="ls", requirement="optional"),
+                ToolRequirement(name="find", requirement="optional"),
+            ),
+        ),
+        AgentDefinitionSource(
+            definition_id="builtin_reviewer",
+            name="Reviewer",
+            role_prompt=(
+                "Review the task, change evidence and tests. Submit a ReviewReport verdict."
+                " Do not modify the workspace."
+            ),
+            model_selection="invoking_active",
+            access_mode_ceiling="read",
+            tool_requirements=(
+                ToolRequirement(name="read", requirement="required"),
+                ToolRequirement(name="grep", requirement="optional"),
+                ToolRequirement(name="ls", requirement="optional"),
+                ToolRequirement(name="find", requirement="optional"),
+                ToolRequirement(name="write", requirement="forbidden"),
+                ToolRequirement(name="edit", requirement="forbidden"),
+                ToolRequirement(name="bash", requirement="forbidden"),
+                ToolRequirement(name="promote_sandbox_changes", requirement="forbidden"),
             ),
         ),
     )

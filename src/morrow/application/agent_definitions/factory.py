@@ -14,6 +14,7 @@ from morrow.core.agent_runs import AgentDefinitionRef
 from morrow.core.capabilities import OperationIntent, OperationKind, PolicyVerdict
 from morrow.core.domain import TaskRunStatus, session_can_start_work
 from morrow.core.models import ModelRef, ToolEffect
+from morrow.core.workflows.contracts import MECHANISM_TOOL_NAMES
 from morrow.runtime.tools import ToolExecutor, ToolRegistry
 
 
@@ -89,6 +90,11 @@ class AgentFactory:
             available = executor.tool_set.tools if executor else {}
             chosen = {}
             for name in sorted(selected):
+                if name in MECHANISM_TOOL_NAMES:
+                    if name in required:
+                        raise AgentDefinitionAdmissionError(DefinitionFailure.TOOLS)
+                    diagnostics.append(f"optional_removed:{name}")
+                    continue
                 tool = available.get(name)
                 safe = tool is not None
                 if safe and version.source.access_mode_ceiling == "read":

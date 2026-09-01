@@ -41,6 +41,8 @@ def build_workflow_runtime(
     skill_selection=None,
     retry_sleep=None,
     faults=None,
+    mutation=None,
+    change_capture=None,
 ) -> WorkflowRuntime:
     transitions = WorkflowTransitionService(journal, workspace_id=workspace_id, clock=clock)
     finalizer = WorkflowOutcomeFinalizer(
@@ -49,6 +51,7 @@ def build_workflow_runtime(
         transitions=transitions,
         id_source=id_source,
         clock=clock,
+        artifacts=artifacts,
     )
     start = WorkflowStartService(
         journal,
@@ -72,6 +75,8 @@ def build_workflow_runtime(
         skill_selection=skill_selection,
         retry_sleep=retry_sleep,
         faults=faults,
+        mutation=mutation,
+        change_capture=change_capture,
     )
     return WorkflowRuntime(
         start=start,

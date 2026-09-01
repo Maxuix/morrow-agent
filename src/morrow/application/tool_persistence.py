@@ -57,6 +57,7 @@ class DurableToolExecutionCoordinator:
         faults: FaultInjector,
         clock: Callable[[], datetime],
         artifacts: ArtifactService | None = None,
+        change_capture=None,
     ) -> None:
         self.journal = journal
         self.workspace_id = workspace_id
@@ -65,6 +66,7 @@ class DurableToolExecutionCoordinator:
         self.faults = faults
         self.clock = clock
         self.artifacts = artifacts
+        self.change_capture = change_capture
 
     def execution_is_visible(self, tool_execution_id: str) -> bool:
         return self.get_execution(tool_execution_id) is not None
@@ -279,6 +281,10 @@ class DurableToolExecutionCoordinator:
                     artifact_refs.append(reference)
             except (ArtifactError, StorageError):
                 pass
+        if self.change_capture is not None:
+            for reference in self.change_capture.capture(execution, result, artifact_refs):
+                if reference not in artifact_refs:
+                    artifact_refs.append(reference)
         durable_facts = None
         if execution.intent.file_evidence and any(
             isinstance(fact, ChangeToolFact) for fact in result.facts

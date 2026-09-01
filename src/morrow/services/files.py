@@ -43,6 +43,7 @@ MAX_DIRECTORY_DEPTH = 4
 MAX_FIND_RESULTS = 1_000
 MAX_SOURCE_FILE_BYTES = 8 * 1024 * 1024
 MAX_RESULT_BYTES = 16 * 1024
+COMPLETE_CHANGE_DIFF_BYTES = 1024 * 1024
 
 
 class LocalFileError(RuntimeError):
@@ -83,6 +84,22 @@ class SourceText:
     newline: NewlineStyle
     mode: int
     is_text: bool = True
+
+
+@dataclass(frozen=True)
+class ChangeCaptureDraft:
+    """Artifact-only mutation snapshot; never the model-facing 4-KiB diff."""
+
+    path: str
+    operation: str
+    status: str
+    before_sha256: str | None
+    after_sha256: str | None
+    before_size: int | None
+    after_size: int | None
+    unified_diff: str | None
+    content_complete: bool
+    omission_reason: str | None
 
 
 @dataclass(frozen=True)
@@ -706,9 +723,11 @@ class WorkspaceFileService:
 class WorkspaceMutationService:
     """Exact, revision-checked mutations over a WorkspaceFileService."""
 
-    def __init__(self, files: WorkspaceFileService) -> None:
+    def __init__(self, files: WorkspaceFileService, *, artifact_capture: bool = False) -> None:
         self.files = files
+        self.artifact_capture = artifact_capture
         self._previews: dict[tuple[str, str], tuple[MutationPlan, ...]] = {}
+        self._captures: dict[tuple[str, str], list[ChangeCaptureDraft]] = {}
 
     def preflight_patch(
         self,
@@ -947,6 +966,75 @@ class WorkspaceMutationService:
     def discard_previews(self, run_id: str, call_id: str) -> None:
         self._previews.pop((run_id, call_id), None)
 
+    def take_captures(self, run_id: str, call_id: str) -> tuple[ChangeCaptureDraft, ...]:
+        collected = list(self._captures.pop((run_id, call_id), ()))
+        if collected:
+            return tuple(collected)
+        leftover = [key for key in self._captures if key[0] == run_id]
+        for key in leftover:
+            collected.extend(self._captures.pop(key))
+        return tuple(collected)
+
+    def render_change_capture(
+        self, plan: MutationPlan, result: MutationResult
+    ) -> ChangeCaptureDraft:
+        """Render a complete unified diff when representable; otherwise a structural manifest."""
+
+        before_sha = plan.before.revision.sha256 if plan.before is not None else None
+        before_size = plan.before.revision.size if plan.before is not None else None
+        after_sha = result.after_revision.sha256 if result.after_revision is not None else None
+        after_size = result.after_revision.size if result.after_revision is not None else None
+        if plan.operation in {
+            MutationOperation.CREATE,
+            MutationOperation.PATCH,
+            MutationOperation.REPLACE,
+        } and (plan.before is None or plan.before.is_text):
+            before_text = plan.before.text if plan.before is not None else ""
+            diff = _complete_diff(before_text, plan.desired_text, plan.relative_path)
+            encoded = diff.encode("utf-8")
+            if len(encoded) <= COMPLETE_CHANGE_DIFF_BYTES:
+                return ChangeCaptureDraft(
+                    path=plan.relative_path,
+                    operation=plan.operation.value,
+                    status=result.status.value,
+                    before_sha256=before_sha,
+                    after_sha256=after_sha,
+                    before_size=before_size,
+                    after_size=after_size,
+                    unified_diff=diff,
+                    content_complete=True,
+                    omission_reason=None,
+                )
+            reason = "diff_exceeds_capture_budget"
+        elif plan.operation in {
+            MutationOperation.DELETE,
+            MutationOperation.MOVE,
+            MutationOperation.RENAME,
+        }:
+            reason = "structural_path_mutation"
+        else:
+            reason = "unrepresentable_content"
+        return ChangeCaptureDraft(
+            path=plan.relative_path,
+            operation=plan.operation.value,
+            status=result.status.value,
+            before_sha256=before_sha,
+            after_sha256=after_sha,
+            before_size=before_size,
+            after_size=after_size,
+            unified_diff=None,
+            content_complete=False,
+            omission_reason=reason,
+        )
+
+    def _retain_capture(
+        self, run, call_id: str, plan: MutationPlan, result: MutationResult
+    ) -> None:
+        if not self.artifact_capture or run is None:
+            return
+        draft = self.render_change_capture(plan, result)
+        self._captures.setdefault((run.run_id, call_id), []).append(draft)
+
     def clear_previews(self, run_id: str | None = None) -> None:
         if run_id is None:
             self._previews.clear()
@@ -1114,6 +1202,7 @@ class WorkspaceMutationService:
                 ordinal=ordinal,
                 approval_verdict=approval_verdict,
             )
+            self._retain_capture(run, call_id, plan, result)
             return result, fact
 
     def _resolve_target(self, path: str, *, allow_missing: bool) -> tuple[Path, tuple[str, ...]]:
@@ -1536,6 +1625,20 @@ def _change_stats(before: str, after: str) -> tuple[int, int]:
             changed_bytes += len(before[i1:i2].encode("utf-8"))
             changed_bytes += len(after[j1:j2].encode("utf-8"))
     return changed_lines, changed_bytes
+
+
+def _complete_diff(before: str, after: str, relative: str) -> str:
+    """Untruncated unified diff for Artifact capture; never the model-facing bound."""
+
+    return "".join(
+        difflib.unified_diff(
+            before.splitlines(keepends=True),
+            after.splitlines(keepends=True),
+            fromfile=f"a/{relative}",
+            tofile=f"b/{relative}",
+            lineterm="\n",
+        )
+    )
 
 
 def _bounded_diff(before: str, after: str, relative: str) -> tuple[str, bool]:

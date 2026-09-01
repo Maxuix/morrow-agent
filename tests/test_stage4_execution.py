@@ -162,6 +162,7 @@ def test_production_declarations_cover_only_the_current_inventory():
         "run_skill_script",
         "promote_sandbox_changes",
         "read_artifact",
+        "submit_node_result",
         "ls",
         "read",
         "find",

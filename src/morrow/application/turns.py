@@ -71,6 +71,7 @@ class SessionPersistence:
         skill_usage=None,
         prompt_assembler=None,
         workflow_leaf=None,
+        change_capture=None,
     ) -> None:
         self.workspace_id = workspace_id
         self.journal = journal
@@ -143,6 +144,7 @@ class SessionPersistence:
             faults=self.faults,
             clock=self._now,
             artifacts=artifacts,
+            change_capture=change_capture if workflow_leaf is not None else None,
         )
         self.tool_conversation = ToolConversationPersistence(
             journal,

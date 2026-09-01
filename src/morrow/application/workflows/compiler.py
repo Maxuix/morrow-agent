@@ -18,6 +18,7 @@ from pydantic import ValidationError
 
 from morrow.core.agent_definitions import AgentDefinitionVersion, ToolRequirement
 from morrow.core.models import ModelRef
+from morrow.core.workflows.contracts import MECHANISM_TOOL_NAMES
 from morrow.core.workflows.definitions import (
     AgentNode,
     CompiledWorkflow,
@@ -271,6 +272,31 @@ def _merge_tool_requirements(
     declared = {item.name: item.requirement for item in version.source.tool_requirements}
     overlay = {item.name: item.requirement for item in node.tool_requirements or ()}
     ok = True
+    for name in sorted(set(declared) | set(overlay)):
+        if name in MECHANISM_TOOL_NAMES:
+            diagnostics.append(
+                CompileDiagnostic(
+                    DiagnosticSeverity.ERROR,
+                    "tool_reserved",
+                    f"node {node.node_id}: {name} is an internal mechanism tool and cannot be"
+                    " granted by a definition, prompt, Skill or Artifact",
+                )
+            )
+            ok = False
+    patch_required = any(
+        slot.kind == "ImplementationPatch" and slot.required_for_node_completion
+        for slot in node.output_contracts
+    )
+    if patch_required and node.access_mode != "write":
+        diagnostics.append(
+            CompileDiagnostic(
+                DiagnosticSeverity.ERROR,
+                "complete_patch_requires_write",
+                f"node {node.node_id}: a required ImplementationPatch needs access_mode=write"
+                " so captures can record workspace mutations",
+            )
+        )
+        ok = False
     for name in sorted(set(overlay) - set(declared)):
         diagnostics.append(
             CompileDiagnostic(
@@ -359,4 +385,16 @@ def _merge_tool_requirements(
                     " removed from the frozen evidence",
                 )
             )
+    if patch_required and ok:
+        frozen_names = {item.name for item in frozen if item.requirement != "forbidden"}
+        if "bash" in frozen_names and catalog.tool_access.get("bash") != "write":
+            diagnostics.append(
+                CompileDiagnostic(
+                    DiagnosticSeverity.ERROR,
+                    "uncapturable_host_bash",
+                    f"node {node.node_id}: Host-mode bash cannot satisfy a complete"
+                    " ImplementationPatch; freeze bash to the native sandbox or omit it",
+                )
+            )
+            ok = False
     return tuple(frozen) if ok else None

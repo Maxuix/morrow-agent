@@ -463,9 +463,11 @@ def test_builtin_sources_are_visible_but_never_implicitly_published(state):
     from morrow.application.agent_definitions.builtins import builtin_definitions
 
     _, _, journal, service = state
-    direct, explorer = builtin_definitions(MODEL)
+    direct, explorer, coder, reviewer = builtin_definitions(MODEL)
     assert direct.model_selection == MODEL
     assert explorer.model_selection == "invoking_active"
+    assert coder.access_mode_ceiling == "write"
+    assert reviewer.access_mode_ceiling == "read"
     assert journal.agent_definitions.list_versions("ws_one") == ()
     service.validate(explorer)
     assert journal.agent_definitions.list_versions("ws_one") == ()
@@ -648,7 +650,7 @@ def test_builtins_freeze_two_models_and_toolsets_in_distinct_scopes(tmp_path, st
     from morrow.runtime.session import Session
 
     _, journal, service, _, base = prepared_fixture(tmp_path, state)
-    direct, explorer = builtin_definitions(MODEL)
+    direct, explorer, _coder, _reviewer = builtin_definitions(MODEL)
     first = publish(service, direct, command="cmd_direct", origin="builtin")
     second = publish(service, explorer, command="cmd_explorer", origin="builtin")
     journal.create_session(

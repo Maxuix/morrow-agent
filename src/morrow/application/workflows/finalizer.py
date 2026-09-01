@@ -28,6 +28,11 @@ from morrow.core.domain import (
 )
 from morrow.core.execution import ToolExecutionDisposition, ToolExecutionState
 from morrow.core.models import utc_now
+from morrow.core.workflows.contracts import (
+    RESULT_DRIVING_KIND,
+    ReviewReport,
+    parse_workflow_payload,
+)
 from morrow.core.workflows.definitions import WorkflowRevision
 from morrow.core.workflows.runs import NodeRun, WorkflowRun, WorkflowStatus
 
@@ -35,15 +40,47 @@ RESULT_SUCCEEDED = "succeeded"
 RESULT_NEEDS_REVISION = "needs_revision"
 
 
-def compute_workflow_result(revision: WorkflowRevision, bindings) -> str:
+def compute_workflow_result(
+    revision: WorkflowRevision,
+    nodes: tuple[NodeRun, ...],
+    bindings,
+    *,
+    artifacts=None,
+) -> str:
     """Result semantics over the exported required outputs.
 
-    Only required output refs whose contract kind is a result-driving
-    ReviewReport can yield ``needs_revision``; the v1 contract schema declares
-    no such kind, so every fully completed v1 graph succeeds. Subplan 6 extends
-    exactly this function with the blocking-verdict read.
+    Only required output refs whose contract kind is ReviewReport can yield
+    ``needs_revision``. Any blocking verdict among those exact exported refs
+    drives the result; a ReviewReport that is not exported is evidence only.
     """
 
+    outputs = {
+        (node.node_id, slot.slot): slot for node in revision.nodes for slot in node.output_contracts
+    }
+    nodes_by_id = {node.node_id: node for node in nodes}
+    bound = {
+        (node_run_id, binding.name): binding
+        for node_run_id, direction, binding in bindings
+        if direction == "output"
+    }
+    for ref in revision.required_outputs:
+        slot = outputs.get((ref.node_id, ref.output_slot))
+        if slot is None or slot.kind != RESULT_DRIVING_KIND:
+            continue
+        producer = nodes_by_id.get(ref.node_id)
+        binding = (
+            bound.get((producer.node_run_id, ref.output_slot)) if producer is not None else None
+        )
+        if binding is None or artifacts is None:
+            continue
+        stored = artifacts.get(binding.artifact_id)
+        if stored is None:
+            continue
+        payload = parse_workflow_payload(
+            slot.kind, artifacts.read(binding.artifact_id, max_bytes=stored.byte_size).content
+        )
+        if isinstance(payload, ReviewReport) and payload.blocking:
+            return RESULT_NEEDS_REVISION
     return RESULT_SUCCEEDED
 
 
@@ -56,12 +93,14 @@ class WorkflowOutcomeFinalizer:
         transitions: WorkflowTransitionService,
         id_source,
         clock: Callable[[], datetime] = utc_now,
+        artifacts=None,
     ) -> None:
         self.journal = journal
         self.workspace_id = workspace_id
         self.transitions = transitions
         self.id_source = id_source
         self.clock = clock
+        self.artifacts = artifacts
 
     # Terminal mappings ----------------------------------------------------------
 
@@ -79,7 +118,12 @@ class WorkflowOutcomeFinalizer:
             for node in nodes:
                 self.transitions.complete_node(node.node_run_id)
             bindings = txn.workflows.list_bindings(self.workspace_id, workflow_run_id)
-            result = compute_workflow_result(revision, bindings)
+            result = compute_workflow_result(
+                revision,
+                nodes,
+                bindings,
+                artifacts=self.artifacts,
+            )
             # The root transition lands while the Run is still nonterminal; the
             # Run closes after it, then the marked snapshot records both.
             root = txn.get_task_run(self.workspace_id, run.root_task_run_id)
