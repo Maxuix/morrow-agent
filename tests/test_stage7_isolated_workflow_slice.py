@@ -1209,3 +1209,109 @@ def test_ordinary_turn_admission_is_excluded_while_workflow_is_active(fx):
                 client_message_id="msg_race",
             ),
         )
+
+
+# Review-follow-up regressions (scheduler admission gates versus admitted work) ----------
+
+
+@pytest.mark.asyncio
+async def test_exhausted_workflow_budget_still_allows_committer_replay(fx):
+    """An admitted node whose cap consumed the budget recovers without a new request."""
+
+    fx.bank.scripts.append([["tight ", "answer"]])
+    tight = WorkflowBudget(
+        max_agent_generation_requests=1,
+        default_node_max_agent_generation_requests=3,
+        admission_timeout_seconds=300,
+        max_concurrency=1,
+    )
+    version = fx.agents.publish(
+        agent_source(), source_revision=0, expected_head_revision=0, command_id="cmd_agent"
+    )
+    ref = AgentDefinitionRef(
+        definition_id=version.source.definition_id,
+        version_id=version.version_id,
+        content_hash=version.content_hash,
+    )
+    publication = fx.compiler.publish(
+        workflow_source(ref, default_budget=tight),
+        source_revision=0,
+        expected_head_revision=0,
+        command_id="cmd_publish",
+        active_model=MODEL,
+    )
+    started = start(fx, publication.revision)
+    fx.artifacts.faults = OnceFaultInjector(FaultPoint.ARTIFACT_AFTER_RESERVE)
+    with pytest.raises(InjectedFault):
+        await fx.runtime.scheduler.run(started.run.workflow_run_id)
+    fx.artifacts.faults = None
+    # The single admitted request consumed the whole Workflow budget.
+    assert fx.journal.count_workflow_agent_requests(WS, started.run.workflow_run_id) == 1
+
+    run = await fx.runtime.scheduler.recover(started.run.workflow_run_id)
+    assert run.status is WorkflowStatus.COMPLETED
+    assert run.result_status == "succeeded"
+    assert root(fx).status is TaskRunStatus.READY_FOR_ACCEPTANCE
+    assert len(fx.bank.providers[0].stream_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_expired_deadline_still_allows_committer_replay(fx):
+    """The deadline gates admission, not the durable terminal replay."""
+
+    fx.bank.scripts.append([["late ", "answer"]])
+    _, revision = publish(fx)
+    started = start(fx, revision)
+    fx.artifacts.faults = OnceFaultInjector(FaultPoint.ARTIFACT_AFTER_RESERVE)
+    with pytest.raises(InjectedFault):
+        await fx.runtime.scheduler.run(started.run.workflow_run_id)
+    fx.artifacts.faults = None
+    fx.clock.advance(400)
+
+    run = await fx.runtime.scheduler.recover(started.run.workflow_run_id)
+    assert run.status is WorkflowStatus.COMPLETED
+    assert root(fx).status is TaskRunStatus.READY_FOR_ACCEPTANCE
+
+
+@pytest.mark.asyncio
+async def test_revocation_at_recovery_resume_uses_policy_revoked_mapping(fx):
+    fx.bank.scripts.append([["revoked ", "later"]])
+    _, revision = publish(fx)
+    started = start(fx, revision)
+    fx.artifacts.faults = OnceFaultInjector(FaultPoint.ARTIFACT_AFTER_RESERVE)
+    with pytest.raises(InjectedFault):
+        await fx.runtime.scheduler.run(started.run.workflow_run_id)
+    fx.artifacts.faults = None
+    fx.compiler.revoke(
+        revision.workflow_revision_id, reason="policy", command_id="cmd_revoke_resume"
+    )
+
+    run = await fx.runtime.scheduler.recover(started.run.workflow_run_id)
+    assert run.status is WorkflowStatus.CANCELLED
+    assert only_node(fx, run.workflow_run_id).status is WorkflowStatus.CANCELLED
+    assert root(fx).status is TaskRunStatus.CANCELLED
+    assert "workflow_terminal=policy_revoked" in outcomes(fx)[-1].completion_basis
+
+
+@pytest.mark.asyncio
+async def test_non_agent_requests_are_excluded_from_workflow_budget(fx):
+    """Only purpose=agent admissions charge the durable Workflow counter.
+
+    The seam has no compaction purpose at all: automatic compaction summaries
+    are never admitted here, so they are excluded rather than miscounted.
+    """
+
+    fx.bank.scripts.append([["counted ", "once"]])
+    _, revision = publish(fx)
+    run = await fx.runtime.scheduler.run(start(fx, revision).run.workflow_run_id)
+    node = only_node(fx, run.workflow_run_id)
+    assert fx.journal.count_workflow_agent_requests(WS, run.workflow_run_id) == 1
+    fx.journal.admit_model_request(
+        WS,
+        agent_run_id=node.agent_run_id,
+        attempt_ordinal=99,
+        estimated_request_chars=10,
+        request_char_budget=1000,
+        purpose="outcome_intent",
+    )
+    assert fx.journal.count_workflow_agent_requests(WS, run.workflow_run_id) == 1

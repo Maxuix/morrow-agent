@@ -128,28 +128,36 @@ class WorkflowScheduler:
             gate = self._pre_admission_gate(run, revision, node_def, node)
             if gate is not None:
                 break
-            remaining = (
-                run.budget_snapshot.max_agent_generation_requests
-                - self.journal.count_workflow_agent_requests(self.workspace_id, run.workflow_run_id)
+            if node.status is WorkflowStatus.QUEUED:
+                # Budget/deadline gate admission only. An admitted node's next
+                # request is enforced at the durable purpose=agent seam, and a
+                # crash replay needing no new request must still complete.
+                remaining = (
+                    run.budget_snapshot.max_agent_generation_requests
+                    - self.journal.count_workflow_agent_requests(
+                        self.workspace_id, run.workflow_run_id
+                    )
+                )
+                if remaining <= 0:
+                    self.finalizer.finalize_failure(workflow_run_id, reason="budget_exhausted")
+                    break
+                if self.clock() > run.admission_deadline_at:
+                    self.finalizer.finalize_failure(workflow_run_id, reason="deadline_exceeded")
+                    break
+            else:
+                remaining = None
+            cap = (
+                min(node_def.declared_node_max_agent_generation_requests, remaining)
+                if remaining is not None
+                else node.effective_node_generation_request_cap
             )
-            if remaining <= 0:
-                self._cancel_unstarted(node)
-                self.finalizer.finalize_failure(workflow_run_id, reason="budget_exhausted")
-                break
-            if self.clock() > run.admission_deadline_at:
-                self._cancel_unstarted(node)
-                self.finalizer.finalize_failure(workflow_run_id, reason="deadline_exceeded")
-                break
-            cap = min(node_def.declared_node_max_agent_generation_requests, remaining)
             try:
                 await self._drive_node(run, revision, node_def, node, cap)
             except ApplicationError as exc:
                 reason = classify_terminal_reason(exc.message)
                 if reason == "policy_revoked":
-                    self._cancel_unstarted(node)
                     self.finalizer.finalize_cancel(workflow_run_id, reason="policy_revoked")
                 else:
-                    self._cancel_unstarted(node)
                     self.finalizer.finalize_failure(
                         workflow_run_id, reason=reason or "preparation_failed"
                     )
@@ -159,7 +167,6 @@ class WorkflowScheduler:
                 # recovery, not a fabricated failure mapping, owns the next step.
                 raise
             except Exception:
-                self._cancel_unstarted(node)
                 self.finalizer.finalize_failure(workflow_run_id, reason="node_failed")
                 break
         return self._require_run(workflow_run_id)
@@ -224,6 +231,7 @@ class WorkflowScheduler:
                 effective_node_generation_request_cap=cap,
             ),
             artifacts=self.artifacts,
+            transitions=self.transitions,
             id_source=self.id_source,
             clock=self.clock,
         )
@@ -282,6 +290,9 @@ class WorkflowScheduler:
                     and self._leaf_report(node) is None
                 ):
                     # Ordinary crash path: resume the open Turn from frozen evidence.
+                    # Recovery resume re-checks one-way revocation of the frozen
+                    # Revision and AgentDefinitionVersion before any replay.
+                    self._require_unrevoked(revision, node_def)
                     # Bind the Definition's prompt assembler (via the factory)
                     # before restoring, so projection rebuilds never quarantine
                     # the leaf for lack of its prompt owner.
@@ -368,7 +379,6 @@ class WorkflowScheduler:
             return "terminal"
         node = self.transitions.get_node(node.node_run_id) or node
         if reason == "policy_revoked":
-            self._cancel_unstarted(node)
             self.finalizer.finalize_cancel(workflow_run_id, reason="policy_revoked")
             return "terminal"
         leaf = (
@@ -400,7 +410,6 @@ class WorkflowScheduler:
             )
         ):
             return "resume"
-        self._cancel_unstarted(node)
         self.finalizer.finalize_failure(workflow_run_id, reason=reason or "node_failed")
         return "terminal"
 
@@ -417,7 +426,15 @@ class WorkflowScheduler:
 
         if node.status is not WorkflowStatus.QUEUED:
             return None
-        revoked = (
+        if not self._is_revoked(revision, node_def):
+            return None
+        # The finalizer cancels the queued node in the same transaction as the
+        # run/root closure, so no cancellable intermediate state exists.
+        self.finalizer.finalize_cancel(run.workflow_run_id, reason="policy_revoked")
+        return "policy_revoked"
+
+    def _is_revoked(self, revision: WorkflowRevision, node_def: AgentNode) -> bool:
+        return (
             self.journal.workflows.get_revocation(self.workspace_id, revision.workflow_revision_id)
             is not None
             or self.journal.agent_definitions.get_revocation(
@@ -425,16 +442,13 @@ class WorkflowScheduler:
             )
             is not None
         )
-        if not revoked:
-            return None
-        self._cancel_unstarted(node)
-        self.finalizer.finalize_cancel(run.workflow_run_id, reason="policy_revoked")
-        return "policy_revoked"
 
-    def _cancel_unstarted(self, node: NodeRun) -> None:
-        current = self.transitions.get_node(node.node_run_id)
-        if current is not None and current.status is WorkflowStatus.QUEUED:
-            self.transitions.cancel_node(node.node_run_id)
+    def _require_unrevoked(self, revision: WorkflowRevision, node_def: AgentNode) -> None:
+        if self._is_revoked(revision, node_def):
+            raise ApplicationError(
+                ApplicationErrorCode.INVALID,
+                "policy_revoked: the frozen Revision or AgentDefinitionVersion was revoked",
+            )
 
     def _ensure_leaf(self, run: WorkflowRun, node: NodeRun) -> tuple[str, str]:
         owned = self._leaf_ownership(node.node_run_id)

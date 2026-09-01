@@ -30,7 +30,6 @@ from morrow.core.workflows.contracts import (
     node_output_artifact_id,
 )
 from morrow.core.workflows.definitions import AgentNode
-from morrow.core.workflows.runs import WorkflowStatus
 from morrow.runtime.conversation import TurnTerminalRecord
 
 
@@ -57,6 +56,7 @@ class WorkflowLeafHooks:
         workspace_id: str,
         context: WorkflowLeafContext,
         artifacts: ArtifactService,
+        transitions,
         id_source,
         clock: Callable[[], datetime],
     ) -> None:
@@ -64,6 +64,7 @@ class WorkflowLeafHooks:
         self.workspace_id = workspace_id
         self.context = context
         self.artifacts = artifacts
+        self.transitions = transitions
         self.id_source = id_source
         self.clock = clock
 
@@ -112,40 +113,21 @@ class WorkflowLeafHooks:
         return version.source.skill_version_ids
 
     def admit_node_in_txn(self, txn, *, agent_run_id: str) -> None:
-        """Atomically bind the queued NodeRun's leaf references inside Turn admission."""
+        """Atomically bind the queued NodeRun's leaf references inside Turn admission.
+
+        The WorkflowTransitionService remains the sole writer; nested
+        transactions join this Turn admission transaction.
+        """
 
         ctx = self.context
-        node = txn.workflows.get_node(self.workspace_id, ctx.node_run_id)
-        if node is None:
-            raise ApplicationError(ApplicationErrorCode.INVALID, "Workflow NodeRun is missing")
-        if node.status is WorkflowStatus.QUEUED:
-            txn.workflows.save_node(
-                node.model_copy(
-                    update={
-                        "status": WorkflowStatus.RUNNING,
-                        "started_at": self.clock(),
-                        "conversation_session_id": ctx.leaf_session_id,
-                        "leaf_task_run_id": ctx.leaf_task_run_id,
-                        "agent_run_id": agent_run_id,
-                        "effective_node_generation_request_cap": (
-                            ctx.effective_node_generation_request_cap
-                        ),
-                        "row_version": node.row_version + 1,
-                    }
-                ),
-                expected_row_version=node.row_version,
-            )
-        run = txn.workflows.get_run(self.workspace_id, ctx.workflow_run_id)
-        if run is not None and run.status is WorkflowStatus.QUEUED:
-            txn.workflows.save_run(
-                run.model_copy(
-                    update={
-                        "status": WorkflowStatus.RUNNING,
-                        "row_version": run.row_version + 1,
-                    }
-                ),
-                expected_row_version=run.row_version,
-            )
+        self.transitions.admit_node(
+            ctx.node_run_id,
+            conversation_session_id=ctx.leaf_session_id,
+            leaf_task_run_id=ctx.leaf_task_run_id,
+            agent_run_id=agent_run_id,
+            effective_node_generation_request_cap=ctx.effective_node_generation_request_cap,
+        )
+        self.transitions.mark_run_running(ctx.workflow_run_id)
 
     def check_request_admission(self) -> None:
         """Deadline gate at the durable purpose=agent request-admission seam."""
