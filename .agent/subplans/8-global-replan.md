@@ -1,0 +1,54 @@
+# Subplan 8 — Global Future-Only Replan
+
+> Status: pending activation
+> Branch: `feat/stage8-global-replan`
+> Activation base: latest verified `main` with Subplan 7 integrated
+> Prerequisite: Subplan 7 verified
+> Roadmap authority: stage-8 §6.5 (as revised 2026-09-03), §4.6, §8E, §16.4
+
+## Objective
+
+Let Node Agents and the Orchestrator request graph-level correction through
+ReplanSignal/ReplanProposal, with ReplanCoordinator as the sole automatic Patch proposer and the
+Subplan 2 `PatchApplicationService` as the only write path — gated by risk-tiered autonomy rather
+than blanket approval.
+
+## Deliverables
+
+- `ReplanSignal` (Node Agent → Orchestrator) and `ReplanProposal` types; Node Agents can never
+  modify a Revision directly.
+- `ReplanCoordinator`: the sole automatic Patch proposer (not required to be an LLM Agent); turns
+  signals into concrete `FutureGraphPatch` proposals against the exact current base Revision.
+- Deterministic patch risk classification per master-plan §3.2: low risk = no permission/budget/
+  role expansion, no unauthorized Provider/Model/Skill change, Future-node-only edits. The
+  classifier is data-derived from the patch diff, not model-declared.
+- Risk-tiered application: `auto_replan_mode=approval_only` (default) queues every proposed patch
+  for user approval; `allow_low_risk` auto-applies low-risk patches through the same
+  PatchApplicationService (Compiler + OCC/CAS), with every auto-application recorded and
+  afterwards visible/auditable in UI and CLI. Privilege- or budget-expanding patches are never
+  auto-applied under any policy; they surface as pending proposals with the escalation reason.
+- Replan UI/CLI: proposal diff, risk class, escalation rationale, approve/reject; auto-applied
+  history with the applied patch and its classification.
+- Stale-base handling: a concurrent user edit or another proposal invalidates the base; conflicts
+  regenerate or surface for user resolution, never silently replay.
+- Blocked/outcome-unknown parents produce proposals only, per Subplan 2 semantics.
+
+## Key semantics
+
+- User exact edits and Agent proposals converge on the single patch path; the autonomy tier decides
+  only which gate fires before application.
+- Auto-accept never bypasses Compiler/OCC; compile failure falls back per §4.5.
+- Task-class-level default automation stays closed until §4.6 paired evidence exists.
+
+## Validation
+
+- Deterministic tests per roadmap §16.4: low-risk auto-apply under `allow_low_risk` with audit
+  trail; same patch held under `approval_only`; escalation patches never auto-applied under any
+  policy; stale-base conflict; Node-Agent signal cannot touch the Revision; auto path never
+  bypasses Compiler/OCC.
+- Standard offline/static gates.
+
+## Out of scope
+
+Feedback-driven OrchestrationPolicy candidates and evaluation dashboards (Subplan 10); nested
+dynamic subgraphs or leaf-created DAGs (never).

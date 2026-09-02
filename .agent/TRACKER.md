@@ -2,28 +2,26 @@
 
 ## Current status
 
-Stage 7 is complete. Post-closeout real-user evaluation blockers are repaired: installed-ripgrep
-regex argv, node-specific typed submission schemas and diagnostics, truthful Workflow CLI
-serialization/exit codes, early durable Run ID output, and `workflow runs` discovery. The latest
-real coding simulation exposed a Direct invoking-session integrity mismatch: the verifier required
-its reused user root to have isolated-leaf purpose. Integrity now validates Direct against the exact
-WorkflowRun root and same Session while preserving the `workflow_node` requirement for isolated
-leaves. The original 67-request Provider history now passes Doctor, Backup and Verify. Stage 7
-matrix: 235 passed. Full offline validation passed: 1538 passed, 2 skipped and 2 Live deselected;
-Ruff format/check, compileall and diff checks passed.
+Stage 7 is complete and remediated (full offline gate: 1538 passed, 2 skipped, 2 Live deselected;
+Ruff format/check, compileall and diff checks passed). Stage 8 planning is done: the stage-8
+roadmap was revised on 2026-09-03 (risk-tiered Replan autonomy aligned with mainstream harness
+practice; runtime-kernel-first ordering), the Stage 7 subplans are archived under
+`.agent/archive/subplans/stage7-workflow-runtime/`, and the Stage 8 master plan plus eleven child
+plans are drafted under `.agent/`.
 
 ## Active task
 
-None. All nine Stage 7 subplans are completed and integrated.
+None. Stage 8 plan is pending user review; no subplan is activated.
 
 ## Next action
 
-Await Stage 8 direction. Provider invalid-response and recoverable submission diagnostics remain
-reliability/observability follow-ups.
+User review of the Stage 8 plan, then activate Subplan 1 (`1-pause-drain-runtime`). Subplan 3
+additionally needs explicit authorization for the additive `ApplicationEvent` lifecycle extension
+and the Python web-framework dependency; Subplan 4 needs frontend toolchain authorization.
 
 ## Blockers
 
-No local implementation blocker. Additive `ApplicationEvent` types remain deferred because the
-current request does not separately authorize a public event lifecycle change; Query/CLI polling is
-the required complete path. Local `main` is ahead of `origin/main`; remote
-publication remains blocked pending explicit authorization for the configured GitHub remote.
+No local implementation blocker. Additive `ApplicationEvent` types remain deferred pending
+explicit authorization (now scheduled as a Subplan 3 precondition; Query/CLI polling remains the
+complete path). Remote publication is authorized by the current user request and will be verified
+after push.

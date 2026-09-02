@@ -34,6 +34,9 @@ Stage 8 把 Stage 5–7 的能力组合成用户可直接掌控的个人 Agent �
 - 运行时可控编辑。
 - 可配置 Agent 模块。
 - Multi-Agent 相对单 Agent 的效果反馈闭环。
+- 风险分级的运行自治：叶子内自我纠错始终自由；图级低风险 Patch 可按用户策略自动接受；
+  越权/扩预算变更始终需用户批准（对齐 Codex approval policy、Claude Code permission mode、
+  OpenCode per-tool allow/ask/deny 的包络内自主、越界升级原则）。
 
 ## 二、GUI 产品定位
 
@@ -179,8 +182,12 @@ Draft compile failed
 
 - 手工编辑、Compiler、future-only Patch 和 suggestion-only Draft 属于工程能力，可用确定性离线
   证据验收。
-- 自动选择后直接运行、自动接受 FutureGraphPatch 属于产品推广，必须有对应任务类型的 Direct/Multi
-  对照收益和用户策略授权。
+- 自动选择后直接运行、以及 task class 级默认自动化（免批准的自动 Draft 运行或自动接受
+  Replan）属于产品推广，必须有对应任务类型的 Direct/Multi 对照收益和用户策略授权。
+- Replan 的自动接受按 Patch 风险分级，与 task class 推广是两个独立门槛：不扩大权限、不提高
+  cap/deadline、不引入新角色、仅修改 Future 节点的低风险结构修复 Patch，可在用户策略
+  （`auto_replan_mode`）允许时自动应用并事后可审计；任何越权或扩容 Patch 无论证据如何都
+  必须用户明确批准。
 - 证据不足时系统仍正常运行，只把 Draft/Patch 交给用户批准；不得以“为了安全”禁用 Direct、手工
   Workflow 或 GUI。
 
@@ -201,6 +208,7 @@ OrchestrationPolicy
 - review_requirement
 - parallelism_limit
 - auto_run_mode
+- auto_replan_mode（approval_only | allow_low_risk，默认 approval_only）
 - source / evidence / status / revision
 ```
 
@@ -389,8 +397,14 @@ Node Agent / Orchestrator                              │  → pure WorkflowCom
   Stage 7 full-Start 重建 Past 节点，也不把集合简化为 immediate frontier/descendants。
 - blocked/outcome-unknown parent 只能产出 Patch proposal，不能启动 child；先 Recovery resolve/reconcile，
   或 abandon 并结束该 root lineage。
-- 初版仅支持人工编辑与建议式 Replan（默认需用户批准）。有限自动接受只能在特定 task class 有
-  对照收益、操作不扩大权限且用户策略明确允许后启用。
+- 图级 Replan 的默认自治级别对齐主流 harness 的风险分级（Codex approval policy、Claude Code
+  permission mode、OpenCode per-tool allow/ask/deny 的“包络内自主、越界升级”原则）。低风险
+  Patch——不创建未注册权限、不提高 cap/deadline、不新增/替换角色、不更换为未授权
+  Provider/Model/Skill、仅修改 Future node 及其 target binding/edge——在
+  `auto_replan_mode=allow_low_risk` 时可由系统直接应用，并在 UI/CLI 事后可见可审计；默认
+  `approval_only` 下等待用户批准。任何越权或扩容 Patch 无论策略与证据如何都必须用户明确批准。
+  task class 级的默认自动化推广仍按 §4.6 需要对照收益证据；证据不足时回落建议/批准模式，且不
+  阻塞手工能力与工程验收。
 - Node 内部 Agent 仍可在固定 Node Contract、ToolSet 和预算内调整下一次模型/工具动作，这属于
   leaf-local replanning；第一版不让叶子创建嵌套 DAG，也不绕过 ReplanCoordinator 修改全局图。
 
@@ -687,8 +701,12 @@ Reviewer 有价值/无价值
 
 门禁：GUI 与 CLI 展示同一个 WorkflowRun 状态，重连后无丢失或重复状态。
 
-核心链路按 `8A → 8B → 8C → 8D → 8E` 实施。完整 Context/Learning/Skill 管理不是任务特化 DAG、
-编辑或 Replan 的技术前置，放到 8F；8B/8D 只实现 Editor/Planner 当下需要的只读 Catalog 与选择器。
+实施顺序（2026-09 计划决策）：先交付 8C 的运行时内核——Pause/Drain、durable
+`pause_requested`、PatchApplicationService、superseded handoff、continuation child 与 lineage
+budget，全部不经 GUI、用确定性离线证据验收；这是第三节“最高优先级运行时跟进”的落地方式。随后
+再按 `8A → 8B → 8C(GUI) → 8D → 8E` 走核心链路，其中 8C(GUI) 只剩运行控制与父子 Run 展示等
+界面工作。完整 Context/Learning/Skill 管理不是任务特化 DAG、编辑或 Replan 的技术前置，放到
+8F；8B/8D 只实现 Editor/Planner 当下需要的只读 Catalog 与选择器。
 
 ### 8B：Workflow Editor 与 Agent Module Inspector
 
@@ -751,10 +769,13 @@ draining；等待审批不是 `blocked`。只有取消/崩溃留下 unknown outc
 - ReplanSignal/ReplanProposal 与 sole automatic Patch proposer ReplanCoordinator。
 - 对 8C PatchApplicationService 的复用；不增加第二个 Revision writer。
 - Past/Active immutable enforcement、Artifact 复用/来源投影。
-- user-approval first 的 Replan UI；有限自动策略保持关闭，直到证据和用户策略同时满足。
+- 风险分级的 Replan UI 与 CLI：建议 Patch 展示 diff、风险类别与升级理由；`auto_replan_mode`
+  默认 `approval_only`，`allow_low_risk` 下仅低风险类别自动应用且事后可审计；task class 级
+  默认自动化在对照证据齐备前保持关闭。
 
 门禁：用户编辑与 Agent 建议走同一写路径；并发 stale Patch 不覆盖新 Revision；恢复和 Replan 都不
-重跑/改写已完成节点，也不把 unknown side effect 伪装为安全。
+重跑/改写已完成节点，也不把 unknown side effect 伪装为安全；低风险自动接受不绕过 Compiler/OCC，
+任何越权或扩容 Patch 都被拒绝自动应用并转为待批准建议。
 
 ### 8F：Context、Learning 与 Skill 管理
 
@@ -870,6 +891,11 @@ frontier（典型消费者是 Parallel Research 模板的并发形态），不�
 - 工作空间 OrchestrationPolicy 覆盖全局默认。
 - 相似但范围不同的任务生成有差异的 TaskGraphDraft，而不是机械复制同一模板。
 - Node Agent 只能发 ReplanSignal，不能直接修改 Revision。
+- 低风险 Patch 在 `auto_replan_mode=allow_low_risk` 下自动应用且事后可审计；同一 Patch 在
+  `approval_only` 下等待批准。
+- 扩大权限、提高 cap/deadline、引入新角色或引用未授权 Provider/Model/Skill 的 Patch 在任何
+  策略下都不得自动应用，必须转为待批准建议。
+- 低风险自动接受不绕过 Compiler/OCC：编译失败仍回退，stale base 仍冲突。
 - 无收益/无授权时保持建议式，不误阻塞 Direct 或手工 Workflow。
 
 ### 16.5 可用性
@@ -916,8 +942,10 @@ frontier（典型消费者是 Parallel Research 模板的并发形态），不�
 13. User exact edit 直接形成 FutureGraphPatch；Agent Replan 经 Coordinator 形成建议 Patch。两者只在
     同一个 PatchApplication/Compiler publication 路径汇合，Past/Active Node、旧 Revision 和历史
     Artifact provenance 不被改写。
-14. 自动运行或自动接受 Replan 只对已有明确对照收益且用户允许的 task class 推广；否则保持建议/
-    批准模式，不阻止 Stage 8 工程完成。
+14. 图级 Replan 按风险分级自治：不扩大权限/预算、仅修改 Future 节点的低风险 Patch 可经
+    `auto_replan_mode=allow_low_risk` 自动接受并事后可审计；任何越权或扩容 Patch 始终需用户
+    明确批准。task class 级默认自动化只对已有明确对照收益且用户允许的类别推广；证据不足时
+    保持建议/批准模式，不阻止 Stage 8 工程完成。
 15. GUI 安全测试确认 loopback、XSS、Credential 和权限边界可靠。
 
 ## 十九、明确不包含

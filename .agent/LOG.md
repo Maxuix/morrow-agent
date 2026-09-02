@@ -4765,3 +4765,44 @@
 - Direct/isolated focused gate: 18 passed; Stage 7 matrix: 235 passed; full offline gate: 1538
   passed, 2 skipped and 2 Live deselected in 182.90 seconds. Ruff format/check, compileall and
   `git diff --check` passed.
+
+## 2026-09-03 — Stage 8 roadmap revision and master plan drafted
+
+- Activation discussion settled two design questions. Running-edit keeps the Stage 7 frozen-Revision
+  invariant: continuation child runs with single-transaction supersession handoff instead of
+  in-place graph mutation, because evidence/audit anchoring, crash atomicity and the Past/Future
+  admission boundary all depend on a frozen base; in-place editing remains available on unfrozen
+  Drafts. Graph-level Replan adopts risk-tiered autonomy aligned with Codex/Claude Code/OpenCode
+  practice: leaf-local self-correction stays free, low-risk Future-only patches may auto-apply
+  under `auto_replan_mode=allow_low_risk` (default `approval_only`), and privilege/budget-expanding
+  patches always require explicit user approval; the single PatchApplicationService write path is
+  unchanged.
+- Roadmap `docs/roadmap/stage-8-adaptive-orchestration-and-gui.md` revised accordingly: §一 added
+  risk-tiered autonomy as a stage focus; §4.6 separates patch risk tiering from task-class
+  promotion; §5.1 added `auto_replan_mode`; §6.5 replaced the blanket approval-first rule with the
+  risk-tiered rule; §8E deliverables/gate updated; §15 records the runtime-kernel-first ordering
+  decision; §16.4 added graded-autonomy test cases; §18 criterion 14 updated.
+- Stage 7 subplans archived to `.agent/archive/subplans/stage7-workflow-runtime/`; Stage 8 master
+  plan and eleven subplans drafted (pause/drain runtime, patch/continuation, core API server, GUI
+  observer, editor, run-control GUI, graph planner, global replan, context/learning/skill GUI,
+  feedback/evaluation, gated read-only parallelism). No subplan activated; Subplan 3 awaits
+  ApplicationEvent + web-framework authorization, Subplan 4 awaits frontend toolchain
+  authorization.
+
+## 2026-09-03 — Stage 8 GUI design language decision
+
+- Visual direction settled: "Warm Paper", a Claude-inspired language (warm paper neutrals, single
+  restrained coral accent, serif for reading content). Confirmed choices: dual light/dark themes
+  following the system, bundled open-license fonts (Inter + Source Serif 4 or Newsreader +
+  JetBrains Mono), CSS variables + Tailwind with the React Flow theme derived from the same tokens.
+- Recorded in `docs/decisions/stage-8-gui-design-language.md`; Subplan 4 now references it as design
+  authority and carries the token foundation as a deliverable. Font/Tailwind inclusion remains part
+  of the Subplan 4 toolchain authorization.
+## 2026-09-03 — Workspace secret audit and GitHub publication authorization
+
+- The current user explicitly authorized organizing the workspace and pushing `main` to the
+  configured GitHub remote. The workspace contains the Stage 7 archive plus the drafted Stage 8
+  master/child plans and GUI design decision; these changes are in scope for this publication.
+- The pre-publication audit found no `.env` files, private-key files, or high-confidence provider
+  tokens in the current tree or unpublished commit paths. Test fixtures containing placeholder
+  secret-shaped strings remain non-credential examples and are not real secrets.
