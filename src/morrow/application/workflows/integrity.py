@@ -140,7 +140,20 @@ def verify_workflow_rows(executor):
                     "SELECT workspace_id, session_id, purpose FROM task_runs WHERE task_run_id=?",
                     (node.leaf_task_run_id,),
                 )
-                if leaf != (ws, node.conversation_session_id, "workflow_node"):
+                workflow_run = runs[run_id]
+                declared = next(
+                    candidate
+                    for candidate in revisions[workflow_run.workflow_revision_id].nodes
+                    if candidate.node_id == node.node_id
+                )
+                if declared.conversation_scope == "invoking_session":
+                    valid_leaf = (
+                        node.leaf_task_run_id == workflow_run.root_task_run_id
+                        and leaf == (ws, node.conversation_session_id, "user")
+                    )
+                else:
+                    valid_leaf = leaf == (ws, node.conversation_session_id, "workflow_node")
+                if not valid_leaf:
                     raise ValueError("leaf ownership mismatch")
             nodes[node_id] = node
         for run in runs.values():

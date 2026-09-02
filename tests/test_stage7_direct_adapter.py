@@ -8,6 +8,8 @@ import json
 import pytest
 
 from morrow.application.agent_definitions.builtins import builtin_definitions
+from morrow.application.backup import OperationalBackupService
+from morrow.application.doctor import OperationalDoctor
 from morrow.application.workflows.builtins import builtin_direct_workflow
 from morrow.application.workflows.capture import VALIDATION_REPORT_ROLE
 from morrow.application.workflows.start import StartWorkflowCommand
@@ -223,6 +225,27 @@ async def test_direct_adapter_reuses_root_and_finalizes_after_turn(fx):
     assert accepted.outcome.text_safety_profile is TextSafetyProfile.WORKFLOW_VALUE_SENSITIVE
     assert accepted.outcome.goal_reference.kind is TaskOutcomeEvidenceKind.TURN
     assert artifact_id in {ref.artifact_id for ref in accepted.outcome.artifact_refs}
+
+
+@pytest.mark.asyncio
+async def test_direct_invoking_session_passes_doctor_and_backup(fx):
+    fx.bank.scripts.append([["direct answer"]])
+    _, revision = publish_direct(fx)
+
+    run = await fx.runtime.scheduler.run(start_direct(fx, revision).run.workflow_run_id)
+
+    assert run.status is WorkflowStatus.COMPLETED
+    node = only_node(fx, run.workflow_run_id)
+    assert node.leaf_task_run_id == run.root_task_run_id
+    assert root(fx).purpose.value == "user"
+    doctor = OperationalDoctor(fx.store).inspect(WS)
+    assert doctor.health.value == "ok"
+    assert "workflow_integrity" not in {issue.code for issue in doctor.issues}
+
+    backup = OperationalBackupService(fx.store)
+    created = backup.create("direct-invoking-session")
+    bundle = fx.store.layout.backups_dir / created.bundle_name
+    assert backup.verify(bundle).ok
 
 
 def test_direct_turn_repository_rechecks_bound_client_message(fx):

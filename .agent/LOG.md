@@ -4747,3 +4747,21 @@
   Provider reliability signal rather than a Doctor regression.
 - Final full offline gate passed: 1537 passed, 2 skipped and 2 Live deselected in 146.10 seconds.
   Ruff format/check, compileall and `git diff --check` passed.
+
+## 2026-09-03 — Direct invoking-session Doctor/Backup repair
+
+- A three-task real coding simulation completed Direct, Explore–Implement–Verify and Planned
+  Refactor successfully, with 33 visible and 11 post-run hidden tests passing. The final Doctor
+  check nevertheless reported `workflow_integrity`, and Backup refused the otherwise valid state.
+- Diagnosis showed the integrity verifier treated every non-empty NodeRun leaf as an isolated
+  `workflow_node`. Direct intentionally reuses its invoking Session's exact user root, so the legal
+  `purpose=user` binding was rejected.
+- Integrity now branches on the frozen node `conversation_scope`: invoking-session nodes must bind
+  the exact WorkflowRun root and same Session with `purpose=user`; isolated nodes retain the strict
+  `purpose=workflow_node` requirement.
+- Added an end-to-end Direct regression proving Workflow completion, Doctor health, Backup creation
+  and bundle verification. The original 67-request Provider state changed from `needs_repair` to
+  `ok` without data rewriting; `coding-eval-fixed.bundle` passed complete verification.
+- Direct/isolated focused gate: 18 passed; Stage 7 matrix: 235 passed; full offline gate: 1538
+  passed, 2 skipped and 2 Live deselected in 182.90 seconds. Ruff format/check, compileall and
+  `git diff --check` passed.
