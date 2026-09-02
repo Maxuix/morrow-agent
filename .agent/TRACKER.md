@@ -19,6 +19,6 @@ Await explicit user direction before planning or starting Stage 8.
 
 No local implementation blocker. Additive `ApplicationEvent` types remain deferred because the
 current request does not separately authorize a public event lifecycle change; Query/CLI polling is
-the required complete path. Local `main` is ahead of `origin/main` (37 commits); remote
+the required complete path. Local `main` is ahead of `origin/main`; remote
 publication remains blocked pending explicit authorization for the configured GitHub remote. No
 Live tests were run.
