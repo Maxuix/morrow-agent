@@ -82,6 +82,12 @@ def test_management_create_update_validate_is_write_free_and_publish_is_explicit
         "pipeline", expected_head_revision=0, command_id="cmd_manage_workflow"
     )
     assert publication.revision.workflow_definition_id == "pipeline"
+    assert publication.created is True
+    repeated = service.publish_workflow(
+        "pipeline", expected_head_revision=1, command_id="cmd_manage_workflow_repeat"
+    )
+    assert repeated.revision.workflow_revision_id == publication.revision.workflow_revision_id
+    assert repeated.created is False
 
 
 def test_management_occ_readonly_builtin_and_exact_revocation_controls(fx):
@@ -160,6 +166,40 @@ async def test_management_plain_unpublished_run_fails_and_foreground_uses_exact_
     assert run_view.run == result.run
     assert run_view.terminal_outcome is not None
     assert queries.get_node_view(run_view.nodes[0].node.node_run_id) == run_view.nodes[0]
+
+
+def test_definition_get_queries_are_not_limited_by_list_page_size(fx):
+    agents = tuple(
+        agent_source().model_copy(update={"definition_id": f"builtin_agent_{index:03d}"})
+        for index in range(101)
+    )
+    target_agent = agent_source().model_copy(update={"definition_id": "zz_target_agent"})
+    workflow = workflow_source(
+        AgentDefinitionRef(
+            definition_id="helper",
+            version_id="adev_unpublished_helper",
+            content_hash="0" * 64,
+        )
+    )
+    workflows = tuple(
+        workflow.model_copy(update={"workflow_definition_id": f"builtin_workflow_{index:03d}"})
+        for index in range(101)
+    )
+    target_workflow = workflow.model_copy(update={"workflow_definition_id": "zz_target_workflow"})
+    queries = WorkflowQueryService(
+        fx.journal,
+        workspace_id=WS,
+        agent_builtins=(*agents, target_agent),
+        workflow_builtins=(*workflows, target_workflow),
+    )
+
+    assert len(queries.list_agent_definitions()) == 100
+    assert queries.get_agent_definition("zz_target_agent").definition_id == "zz_target_agent"
+    assert len(queries.list_workflow_definitions()) == 100
+    assert (
+        queries.get_workflow_definition("zz_target_workflow").workflow_definition_id
+        == "zz_target_workflow"
+    )
 
 
 def test_four_builtin_templates_publish_through_generic_compiler(fx):

@@ -36,6 +36,7 @@ class WorkflowPublication:
 
     revision: WorkflowRevision
     diagnostics: tuple[CompileDiagnostic, ...]
+    created: bool
 
 
 class WorkflowCompilationService:
@@ -106,7 +107,7 @@ class WorkflowCompilationService:
                 if revision is None:
                     raise ValueError("published Workflow revision is missing")
                 self._require_unrevoked(txn, revision)
-                return WorkflowPublication(revision, ())
+                return WorkflowPublication(revision, (), False)
             result = compile_workflow(
                 source,
                 agent_versions=self._resolve_versions(source),
@@ -129,6 +130,7 @@ class WorkflowCompilationService:
             if old is not None and old.content_hash == result.content_hash:
                 self._require_unrevoked(txn, old)
                 revision = old
+                created = False
             else:
                 revision = WorkflowRevision(
                     **candidate.model_dump(),
@@ -157,10 +159,11 @@ class WorkflowCompilationService:
                     ),
                     expected_row_version=expected_head_revision,
                 )
+                created = True
             repo.put_publication(
                 self.workspace_id, command_id, request_hash, revision.workflow_revision_id
             )
-            return WorkflowPublication(revision, result.diagnostics)
+            return WorkflowPublication(revision, result.diagnostics, created)
 
         return self.journal.transact(work)
 

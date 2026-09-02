@@ -30,6 +30,14 @@ class WorkflowRunView:
 
 
 @dataclass(frozen=True)
+class WorkflowRunRecoveryView:
+    """Minimum authoritative context needed to compose run recovery."""
+
+    workflow_run_id: str
+    session_id: str
+
+
+@dataclass(frozen=True)
 class AgentDefinitionView:
     definition_id: str
     source: object | None
@@ -127,6 +135,41 @@ class WorkflowQueryService:
             tuple(views), key=lambda item: item.definition_id, limit=limit, after=after
         )
 
+    def get_agent_definition(self, definition_id: str) -> AgentDefinitionView | None:
+        desired, source_revision = self._desired_agents()
+        source = self.agent_builtins.get(definition_id) or desired.get(definition_id)
+        head = self.journal.agent_definitions.get_head(self.workspace_id, definition_id)
+        version = (
+            self.journal.agent_definitions.get_version(self.workspace_id, head.version_id)
+            if head is not None
+            else None
+        )
+        if source is None and head is None:
+            versions = self.journal.agent_definitions.list_versions(self.workspace_id)
+            version = next(
+                (item for item in versions if item.source.definition_id == definition_id), None
+            )
+            if version is None:
+                return None
+        origin = "builtin" if definition_id in self.agent_builtins else "user"
+        return AgentDefinitionView(
+            definition_id=definition_id,
+            source=source,
+            source_revision=0 if origin == "builtin" else source_revision,
+            origin=origin,
+            head=head,
+            published_version=version,
+            revoked=bool(
+                version
+                and self.journal.agent_definitions.get_revocation(
+                    self.workspace_id, version.version_id
+                )
+            ),
+            desired_ahead_of_published=bool(
+                source is not None and (head is None or head.source_hash != source.content_hash)
+            ),
+        )
+
     def list_workflow_definitions(
         self, *, limit: int = 100, after: str | None = None
     ) -> tuple[WorkflowDefinitionView, ...]:
@@ -172,6 +215,41 @@ class WorkflowQueryService:
             key=lambda item: item.workflow_definition_id,
             limit=limit,
             after=after,
+        )
+
+    def get_workflow_definition(self, definition_id: str) -> WorkflowDefinitionView | None:
+        desired, source_revision = self._desired_workflows()
+        source = self.workflow_builtins.get(definition_id) or desired.get(definition_id)
+        head = self.journal.workflows.get_head(self.workspace_id, definition_id)
+        revision = (
+            self.journal.workflows.get_revision(self.workspace_id, head.workflow_revision_id)
+            if head is not None
+            else None
+        )
+        if source is None and head is None:
+            revisions = self.journal.workflows.list_revisions(self.workspace_id)
+            revision = next(
+                (item for item in revisions if item.workflow_definition_id == definition_id), None
+            )
+            if revision is None:
+                return None
+        origin = "builtin" if definition_id in self.workflow_builtins else "user"
+        return WorkflowDefinitionView(
+            workflow_definition_id=definition_id,
+            source=source,
+            source_revision=0 if origin == "builtin" else source_revision,
+            origin=origin,
+            head=head,
+            published_revision=revision,
+            revoked=bool(
+                revision
+                and self.journal.workflows.get_revocation(
+                    self.workspace_id, revision.workflow_revision_id
+                )
+            ),
+            desired_ahead_of_published=bool(
+                source is not None and (head is None or head.source_hash != source.content_hash)
+            ),
         )
 
     def list_workflow_revisions(
@@ -247,6 +325,15 @@ class WorkflowQueryService:
                 else None
             ),
         )
+
+    def get_run_recovery_view(self, workflow_run_id: str) -> WorkflowRunRecoveryView | None:
+        run = self.journal.workflows.get_run(self.workspace_id, workflow_run_id)
+        if run is None:
+            return None
+        root = self.journal.get_task_run(self.workspace_id, run.root_task_run_id)
+        if root is None:
+            raise ValueError("Workflow root TaskRun is missing")
+        return WorkflowRunRecoveryView(workflow_run_id=workflow_run_id, session_id=root.session_id)
 
     def get_node_view(self, node_run_id: str) -> WorkflowNodeView | None:
         node = self.journal.workflows.get_node(self.workspace_id, node_run_id)

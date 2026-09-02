@@ -18,6 +18,7 @@ from morrow.application.recovery import RecoveryService
 from morrow.application.turns import SessionPersistence
 from morrow.application.workflows.finalizer import WorkflowOutcomeFinalizer
 from morrow.application.workflows.leaf import WorkflowLeafContext, WorkflowLeafHooks
+from morrow.application.workflows.recovery import WorkflowAbandonService
 from morrow.application.workflows.submit import make_submit_node_result_tool
 from morrow.application.workflows.tasks import WorkflowTaskLifecycle
 from morrow.application.workflows.transitions import WorkflowTransitionService
@@ -304,25 +305,14 @@ class WorkflowScheduler:
         facts or PID absence.
         """
 
-        run = self._require_run(workflow_run_id)
-        if run.status.terminal:
-            return run
-        if run.status is not WorkflowStatus.BLOCKED:
-            raise ApplicationError(
-                ApplicationErrorCode.INVALID,
-                "only a blocked Workflow can be abandoned; active runs use their owning "
-                "foreground cancellation",
-            )
-        if run.row_version != expected_row_version:
-            raise ApplicationError(ApplicationErrorCode.STALE, "Workflow run row version is stale")
-        if self._live_node_run_id is not None:
-            live = self.transitions.get_node(self._live_node_run_id)
-            if live is not None and live.workflow_run_id == workflow_run_id:
-                raise ApplicationError(
-                    ApplicationErrorCode.CONFLICT,
-                    "this process still owns a live handle for the Workflow run",
-                )
-        return self.finalizer.finalize_abandon(workflow_run_id)
+        return WorkflowAbandonService(
+            transitions=self.transitions,
+            finalizer=self.finalizer,
+        ).abandon(
+            workflow_run_id,
+            expected_row_version=expected_row_version,
+            live_node_run_id=self._live_node_run_id,
+        )
 
     async def _drive_node(
         self,

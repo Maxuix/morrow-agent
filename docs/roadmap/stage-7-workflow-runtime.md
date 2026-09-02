@@ -1150,9 +1150,9 @@ morrow workflow publish <definition-id> [--disabled]
 morrow workflow enable <definition-id> --expected-head-version <n>
 morrow workflow disable <definition-id> --expected-head-version <n>
 morrow workflow revoke <definition-id> --revision <workflow-revision-id> --reason <text>
-morrow workflow run <definition-id> --revision <workflow-revision-id> \
+morrow workflow run <definition-id> [--revision <workflow-revision-id> | --ensure-published] \
   --session <session-id> --root-task <task-run-id> --expected-task-version <n> \
-  (--task <text> | --stdin) [--command-id <command-id>] [--ensure-published] \
+  (--task <text> | --stdin) [--command-id <command-id>] \
   [--client-message-id <client-message-id>]
 morrow workflow status <workflow-run-id>
 morrow workflow node show <node-run-id>
@@ -1162,8 +1162,9 @@ morrow workflow abandon <workflow-run-id>
 
 `validate` 只返回 pure Compiler diagnostics，且永远零写入：不创建 Version/Revision、不推进 Head、
 不对内置定义 lazy publish，CI 与只读环境可安全反复调用。只有显式 `publish` 才发布 Version/Revision
-并推进 Head。`run` 必须显式选择 exact 已发布 Revision；唯一例外 `--ensure-published` 会先发布当前
-desired source、回显所选 Revision 并明确提示发生了写入，缺省时对未发布定义直接失败并给出 publish
+并推进 Head。plain `run` 必须显式选择 exact 已发布 Revision；唯一例外 `--ensure-published` 与
+`--revision` 互斥，会先发布当前 desired source、回显所选 Revision，并区分新建与 content-hash 复用；
+缺省时对未发布定义直接失败并给出 publish
 指引。`revoke` 只接受 exact immutable Version/Revision ID（拒绝 head selector），写入 additive、带
 审计、单向的 revocation 记录；普通 disable 只门禁新准入，revoke 才是紧急制动。
 `create/edit/publish` 的 desired-source 写入只面向 workspace `origin=user` definitions；对 packaged

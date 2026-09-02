@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 
 import yaml
 from typer.testing import CliRunner
@@ -128,3 +129,68 @@ def test_agent_cli_builtin_is_visible_but_unpublished(tmp_path):
         "builtin_planned_refactor",
     }
     assert all(item["head"] is None for item in listed)
+
+
+def test_workflow_cli_permission_mode_selects_truthful_builtin_contract(tmp_path, monkeypatch):
+    state_root, project, _identity = configured_workspace(tmp_path)
+    monkeypatch.setattr(
+        "morrow.interfaces.workflow_cli.default_sandbox_backend",
+        lambda: SimpleNamespace(probe=lambda: SimpleNamespace(supported=True, reason="available")),
+    )
+    common = ["--dir", str(project), "--state-root", str(state_root)]
+    host = CliRunner().invoke(app, ["workflow", "list", *common])
+    sandboxed = CliRunner().invoke(
+        app,
+        ["workflow", "--permission-mode", "auto-sandboxed", "list", *common],
+    )
+    assert host.exit_code == sandboxed.exit_code == 0
+
+    def coder_contract(result):
+        values = json.loads(result.output)
+        template = next(
+            item
+            for item in values
+            if item["workflow_definition_id"] == "builtin_explore_implement_verify"
+        )
+        coder = next(item for item in template["source"]["nodes"] if item["node_id"] == "coder")
+        return coder["output_contracts"][0]["kind"]
+
+    assert coder_contract(host) == "TextResult"
+    assert coder_contract(sandboxed) == "ImplementationPatch"
+
+
+def test_workflow_run_revision_and_ensure_published_are_unambiguous(tmp_path):
+    state_root, project, _identity = configured_workspace(tmp_path)
+    common = [
+        "workflow",
+        "run",
+        "pipeline",
+        "--session",
+        "ses_missing",
+        "--root-task",
+        "task_missing",
+        "--expected-task-version",
+        "1",
+        "--task",
+        "inspect",
+        "--dir",
+        str(project),
+        "--state-root",
+        str(state_root),
+    ]
+    runner = CliRunner()
+    missing = runner.invoke(app, common)
+    ambiguous = runner.invoke(
+        app,
+        [
+            *common,
+            "--revision",
+            "wrev_old",
+            "--ensure-published",
+            "--expected-head-revision",
+            "0",
+        ],
+    )
+    assert missing.exit_code == ambiguous.exit_code == 2
+    assert "requires an exact --revision" in missing.output
+    assert "omit --revision" in ambiguous.output

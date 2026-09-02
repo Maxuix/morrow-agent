@@ -6,11 +6,14 @@ import asyncio
 import json
 import sys
 from contextlib import contextmanager
+from contextvars import ContextVar
+from dataclasses import replace
 from pathlib import Path
 
 import typer
 import yaml
 
+from morrow.adapters.local.sandbox import default_sandbox_backend
 from morrow.adapters.state.definition_yaml import (
     AgentDefinitionYamlStore,
     WorkflowDefinitionYamlStore,
@@ -23,14 +26,17 @@ from morrow.application.agent_definitions.publication import (
     DefinitionCatalog,
 )
 from morrow.application.workflows.builtins import visible_builtin_workflows
+from morrow.application.workflows.finalizer import WorkflowOutcomeFinalizer
 from morrow.application.workflows.management import WorkflowManagementService
 from morrow.application.workflows.publication import WorkflowCompilationService
 from morrow.application.workflows.queries import WorkflowQueryService
+from morrow.application.workflows.recovery import WorkflowAbandonService
 from morrow.application.workflows.start import StartWorkflowCommand
+from morrow.application.workflows.transitions import WorkflowTransitionService
 from morrow.bootstrap import build_application, build_session_application
 from morrow.core.agent_definitions import AgentDefinitionSource
 from morrow.core.agent_runs import AgentDefinitionRef
-from morrow.core.capabilities import PermissionProfile
+from morrow.core.capabilities import PermissionPreset, PermissionProfile, ProcessIsolation
 from morrow.core.models import ModelRef
 from morrow.core.store import StorageError, StorageErrorCode, StoreOpenMode
 from morrow.core.workflows.contracts import TaskContract
@@ -41,6 +47,26 @@ agent_app = typer.Typer(help="Agent definition desired state and immutable publi
 workflow_app = typer.Typer(help="Static Workflow definition, execution and recovery management.")
 node_app = typer.Typer(help="Workflow NodeRun inspection.")
 workflow_app.add_typer(node_app, name="node")
+_CLI_PERMISSION_PROFILE: ContextVar[PermissionProfile | None] = ContextVar(
+    "workflow_cli_permission_profile", default=None
+)
+
+
+@agent_app.callback()
+@workflow_app.callback()
+def definition_options(
+    ctx: typer.Context,
+    permission_mode: PermissionPreset = typer.Option(
+        PermissionPreset.MANUAL,
+        "--permission-mode",
+        "--mode",
+        help="权限预设：manual、auto-safe、auto-sandboxed 或 full-access-manual。",
+    ),
+) -> None:
+    """Freeze one permission profile for definition publication and Workflow execution."""
+
+    del ctx
+    _CLI_PERMISSION_PROFILE.set(PermissionProfile.from_preset(permission_mode))
 
 
 def _dump(value) -> None:
@@ -80,6 +106,21 @@ def _identity(application, workspace_id, directory):
     return resolution.identity
 
 
+def _permission_profile() -> PermissionProfile:
+    return _CLI_PERMISSION_PROFILE.get() or PermissionProfile()
+
+
+def _native_sandbox(profile: PermissionProfile) -> bool:
+    if profile.process_isolation is not ProcessIsolation.NATIVE_SANDBOX:
+        return False
+    capability = default_sandbox_backend().probe()
+    if not capability.supported:
+        raise ValueError(
+            f"Auto Sandboxed is unavailable ({capability.reason}); refusing Host fallback"
+        )
+    return True
+
+
 @contextmanager
 def _definition_services(*, state_root, workspace_id, directory, write):
     application = build_application(state_root=state_root)
@@ -101,6 +142,8 @@ def _definition_services(*, state_root, workspace_id, directory, write):
             for provider_id, provider in (config.providers.items() if config else ())
             for model_id in provider.models
         )
+        profile = _permission_profile()
+        native_sandbox = _native_sandbox(profile)
         tool_access = {
             "read": "read",
             "read_artifact": "read",
@@ -110,8 +153,9 @@ def _definition_services(*, state_root, workspace_id, directory, write):
             "edit": "write",
             "write": "write",
             "bash": "write",
-            "promote_sandbox_changes": "write",
         }
+        if native_sandbox:
+            tool_access["promote_sandbox_changes"] = "write"
         catalog = DefinitionCatalog(
             models=models,
             skill_version_ids=frozenset(
@@ -148,7 +192,7 @@ def _definition_services(*, state_root, workspace_id, directory, write):
                     version_id=version.version_id,
                     content_hash=version.content_hash,
                 )
-        packaged_workflows = visible_builtin_workflows(refs, native_sandbox=False)
+        packaged_workflows = visible_builtin_workflows(refs, native_sandbox=native_sandbox)
         agent_sources = AgentDefinitionYamlStore(application.data_root.root)
         workflow_sources = WorkflowDefinitionYamlStore(application.data_root.root)
         management = WorkflowManagementService(
@@ -210,14 +254,7 @@ def agent_show(
         with _definition_services(
             write=False, **_options(workspace_id, directory, state_root)
         ) as ctx:
-            value = next(
-                (
-                    item
-                    for item in ctx[4].list_agent_definitions()
-                    if item.definition_id == definition_id
-                ),
-                None,
-            )
+            value = ctx[4].get_agent_definition(definition_id)
             if value is None:
                 raise ValueError("Agent definition is missing")
             _dump(value)
@@ -405,10 +442,7 @@ def workflow_show(
         with _definition_services(
             write=False, **_options(workspace_id, directory, state_root)
         ) as ctx:
-            values = ctx[4].list_workflow_definitions()
-            value = next(
-                (item for item in values if item.workflow_definition_id == definition_id), None
-            )
+            value = ctx[4].get_workflow_definition(definition_id)
             if value is None:
                 raise ValueError("Workflow definition is missing")
             _dump(value)
@@ -575,7 +609,7 @@ def _session_management(state_root, workspace_id, directory, session_id):
         application,
         identity,
         resume_session_id=session_id,
-        permission_profile=PermissionProfile(),
+        permission_profile=_permission_profile(),
     )
     return products
 
@@ -583,7 +617,7 @@ def _session_management(state_root, workspace_id, directory, session_id):
 @workflow_app.command("run")
 def workflow_run(
     definition_id: str,
-    revision: str = typer.Option(..., "--revision"),
+    revision: str | None = typer.Option(None, "--revision"),
     session: str = typer.Option(..., "--session"),
     root_task: str = typer.Option(..., "--root-task"),
     expected_task_version: int = typer.Option(..., "--expected-task-version", min=1),
@@ -601,23 +635,36 @@ def workflow_run(
     try:
         if (task is None) == (not stdin):
             raise ValueError("choose exactly one bounded input source: --task TEXT or --stdin")
+        if ensure_published and revision is not None:
+            raise ValueError("omit --revision when using --ensure-published")
+        if not ensure_published and revision is None:
+            raise ValueError("plain workflow run requires an exact --revision")
+        if ensure_published and expected_head_revision is None:
+            raise ValueError("--ensure-published requires --expected-head-revision")
         text = sys.stdin.read() if stdin else task
         products = _session_management(state_root, workspace_id, directory, session)
         command_id = command_id or products.persistence.id_source.new_id("cmd")
         typer.echo(f"command_id: {command_id}")
+        publication = None
+        if ensure_published:
+            publish_command_id = products.persistence.id_source.new_id("cmd")
+            typer.echo(f"publish_command_id: {publish_command_id}")
+            publication = products.workflow_management.publish_workflow(
+                definition_id,
+                expected_head_revision=expected_head_revision,
+                command_id=publish_command_id,
+            )
+            revision = publication.revision.workflow_revision_id
+            label = "published_revision" if publication.created else "reused_revision"
+            typer.echo(f"{label}: {revision}")
         if (
             products.workflow_management.requires_client_message(
-                definition_id, revision_id=None if ensure_published else revision
+                definition_id, revision_id=revision
             )
             and client_message_id is None
         ):
             client_message_id = products.persistence.id_source.new_id("msg")
             typer.echo(f"client_message_id: {client_message_id}")
-        publish_command_id = (
-            products.persistence.id_source.new_id("cmd") if ensure_published else None
-        )
-        if publish_command_id is not None:
-            typer.echo(f"publish_command_id: {publish_command_id}")
         command = StartWorkflowCommand(
             workflow_definition_id=definition_id,
             workflow_revision_id=revision,
@@ -631,13 +678,10 @@ def workflow_run(
         result = asyncio.run(
             products.workflow_management.run_foreground(
                 command,
-                ensure_published=ensure_published,
-                expected_head_revision=expected_head_revision,
-                publish_command_id=publish_command_id,
             )
         )
-        if result.published:
-            typer.echo(f"published_revision: {result.workflow_revision_id}")
+        if publication is not None:
+            result = replace(result, published=publication.created)
         _dump(result)
     except Exception as exc:
         _fail(exc)
@@ -648,12 +692,39 @@ def workflow_run(
 
 def _runtime_for_run(state_root, workspace_id, directory, workflow_run_id):
     with _definition_services(write=False, **_options(workspace_id, directory, state_root)) as ctx:
-        run = ctx[2].workflows.get_run(ctx[1].workspace_id, workflow_run_id)
-        if run is None:
+        recovery = ctx[4].get_run_recovery_view(workflow_run_id)
+        if recovery is None:
             raise ValueError("Workflow run is missing")
-        root = ctx[2].get_task_run(ctx[1].workspace_id, run.root_task_run_id)
-        session_id = root.session_id
-    return _session_management(state_root, workspace_id, directory, session_id)
+    return _session_management(state_root, workspace_id, directory, recovery.session_id)
+
+
+@contextmanager
+def _abandon_service(*, state_root, workspace_id, directory):
+    application = build_application(state_root=state_root)
+    identity = _identity(application, workspace_id, directory)
+    store = OperationalStore(application.data_root.root)
+    try:
+        handle = store.open(StoreOpenMode.READ_WRITE)
+    except StorageError as exc:
+        if exc.code is StorageErrorCode.NOT_FOUND:
+            handle = store.initialize()
+        else:
+            raise
+    try:
+        journal = SqliteOperationalJournal(handle)
+        transitions = WorkflowTransitionService(
+            journal, workspace_id=identity.workspace_id, clock=journal.now
+        )
+        finalizer = WorkflowOutcomeFinalizer(
+            journal,
+            workspace_id=identity.workspace_id,
+            transitions=transitions,
+            id_source=application.id_source,
+            clock=journal.now,
+        )
+        yield WorkflowAbandonService(transitions=transitions, finalizer=finalizer)
+    finally:
+        handle.close()
 
 
 @workflow_app.command("status")
@@ -701,19 +772,16 @@ def workflow_abandon(
     directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
     state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
 ):
-    products = None
     try:
-        products = _runtime_for_run(state_root, workspace_id, directory, workflow_run_id)
-        _dump(
-            products.workflow_management.abandon(
-                workflow_run_id, expected_row_version=expected_row_version
+        with _abandon_service(**_options(workspace_id, directory, state_root)) as service:
+            _dump(
+                service.abandon(
+                    workflow_run_id,
+                    expected_row_version=expected_row_version,
+                )
             )
-        )
     except Exception as exc:
         _fail(exc)
-    finally:
-        if products is not None:
-            products.persistence.store_session.close()
 
 
 @node_app.command("show")

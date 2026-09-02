@@ -147,8 +147,9 @@ Session，不删除或归档旧会话；仅当对话仍只存在于进程内时�
 Stage 7 的 Workflow 是显式选择的前台串行运行；普通聊天仍默认走 Direct。`morrow agent` 管理
 Agent desired source、纯只读 validate、显式 publish、Head enable/disable 与精确不可变版本 revoke；
 `morrow workflow` 提供对应的定义管理，以及 `run/status/resume/abandon` 和 `node show`。`validate`
-不会创建 Version/Revision 或推进 Head；plain `run` 必须给出已经发布的精确 `--revision`，只有显式
-`--ensure-published` 会先写入并回显所选 Revision。`create/edit` 只接受 `origin=user` 的文件，内置源
+不会创建 Version/Revision 或推进 Head；plain `run` 必须给出已经发布的精确 `--revision`，而显式
+`--ensure-published` 与 `--revision` 互斥，会先发布并回显所选 Revision，同时区分新建与 content-hash
+复用。`create/edit` 只接受 `origin=user` 的文件，内置源
 只读；如需定制，请以新 ID 创建用户定义。
 
 内置模板包括 Direct、Explore Implement Verify、Parallel Research 和 Planned Refactor。Stage 7 的

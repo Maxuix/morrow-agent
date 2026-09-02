@@ -39,10 +39,10 @@ definitions without GUI/server/background behavior or template-specific runtime 
    it parses, resolves references and returns compiler diagnostics with zero writes — no
    Version/Revision row, no head movement, no built-in lazy publication — so CI and read-only
    contexts can call it freely. `publish` is the only command that creates an immutable
-   Version/Revision and advances a head. `run` requires an exact already-published Revision ID; its
-   single explicit `--ensure-published` opt-in publishes the current desired source first and echoes
-   the chosen Revision, and without it an unpublished definition fails with an actionable publish
-   instruction. Enable/disable mutates
+   Version/Revision and advances a head. Plain `run` requires an exact already-published Revision ID;
+   the mutually exclusive `--ensure-published` opt-in publishes the current desired source first,
+   echoes the chosen Revision and distinguishes a new Revision from content-hash reuse. Without it,
+   an unpublished definition fails with an actionable publish instruction. Enable/disable mutates
    only the relevant SQLite Head admission gate: Workflow disable rejects new Runs; Agent disable
    rejects new admissions (new standalone runs and new Workflow Starts); admitted WorkflowRuns,
    historical inspection and running AgentRun recovery remain unaffected.
@@ -63,18 +63,21 @@ definitions without GUI/server/background behavior or template-specific runtime 
 4. Add one unambiguous CLI surface with separate Agent
    `list/show/create/edit/validate/publish/enable/disable/revoke` and Workflow
    `list/show/create/edit/validate/publish/enable/disable/revoke/run/status/resume/abandon` commands
-   plus `workflow node show`. Workflow run requires exact `--revision`, `--session`, `--root-task`
-   and `--expected-task-version`, and exactly one bounded input source: `--task TEXT` or `--stdin`.
-   It accepts optional `--command-id` and `--ensure-published`; for a Direct graph it also accepts
+   plus `workflow node show`. Workflow run requires `--session`, `--root-task`,
+   `--expected-task-version`, and exactly one bounded input source: `--task TEXT` or `--stdin`.
+   Plain run requires exact `--revision`; `--ensure-published` is mutually exclusive with it. The
+   command accepts optional `--command-id`; for a Direct graph it also accepts
    optional `--client-message-id`. The CLI generates and echoes omitted IDs before dispatch, but
-   never chooses, creates, abandons or resumes a root Task, and `--ensure-published` output states
-   plainly that it wrote a new Revision. All commands call application services and never read/write
+   never chooses, creates, abandons or resumes a root Task. `--ensure-published` output states
+   whether it wrote a new Revision or reused the content-identical head. All commands call
+   application services and never read/write
    SQLite or YAML directly. Ctrl-C on the foreground `run` invokes its owning cancellation handle.
    Durable remote/background cancel is deferred with background execution to Stage 9.
 5. Publish versioned built-in definitions using the already proven generic runtime. Publication is
    explicit and idempotent: the first `publish` (or `run --ensure-published`) command targeting a
    packaged built-in compiles and publishes its immutable Revision and head through the ordinary
-   compilation service, and the canonical content-hash no-op makes repeats free. `validate` and
+   compilation service, and the canonical content-hash no-op reuses the immutable Revision on
+   repeats. `validate` and
    plain `run` never publish. No startup migration or background step publishes
    built-ins silently; an unpublished built-in is visible but not runnable.
 6. Add Planner/PlanArtifact and Synthesizer/SynthesisReport now, with their real template consumers:

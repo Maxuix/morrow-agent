@@ -242,34 +242,11 @@ class WorkflowManagementService:
     async def run_foreground(
         self,
         command,
-        *,
-        ensure_published: bool = False,
-        expected_head_revision: int | None = None,
-        publish_command_id: str | None = None,
     ) -> ForegroundWorkflowResult:
         if self.runtime is None:
             raise RuntimeError("foreground execution requires a composed Workflow runtime")
-        published = False
         revision_id = command.workflow_revision_id
-        if ensure_published:
-            if expected_head_revision is None or publish_command_id is None:
-                raise ValueError(
-                    "ensure_published requires head revision and a distinct publish command ID"
-                )
-            publication = self.publish_workflow(
-                command.workflow_definition_id,
-                expected_head_revision=expected_head_revision,
-                command_id=publish_command_id,
-            )
-            revision_id = publication.revision.workflow_revision_id
-            published = True
-            command = type(command)(
-                **{
-                    **command.__dict__,
-                    "workflow_revision_id": revision_id,
-                }
-            )
-        elif (
+        if (
             self.runtime.start.journal.workflows.get_revision(self.workspace_id, revision_id)
             is None
         ):
@@ -280,7 +257,7 @@ class WorkflowManagementService:
             )
         started = self.runtime.start.start(command)
         run = await self.runtime.scheduler.run(started.run.workflow_run_id)
-        return ForegroundWorkflowResult(revision_id, published, run)
+        return ForegroundWorkflowResult(revision_id, False, run)
 
     async def resume(self, workflow_run_id: str) -> WorkflowRun:
         if self.runtime is None:
