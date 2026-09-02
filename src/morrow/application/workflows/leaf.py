@@ -20,7 +20,7 @@ from morrow.application.workflows.capture import CHANGE_CAPTURE_ROLE, VALIDATION
 from morrow.application.workflows.evidence import text_result_from_assistant
 from morrow.application.workflows.submit import parse_submitted_payload, submission_digest
 from morrow.core.application import ApplicationError, ApplicationErrorCode
-from morrow.core.artifacts import ArtifactKind, ArtifactState
+from morrow.core.artifacts import ArtifactError, ArtifactErrorCode, ArtifactKind, ArtifactState
 from morrow.core.domain import (
     TASK_TRANSITION_ID_PREFIX,
     DurableTaskRunTransition,
@@ -31,6 +31,7 @@ from morrow.core.faults import InjectedFault
 from morrow.core.models import FinishReason
 from morrow.core.workflows.contracts import (
     CAPTURE_OUTPUT_KINDS,
+    CAPTURE_SCHEMA_VERSION,
     SUBMISSION_OUTPUT_KINDS,
     ArtifactBinding,
     ChangeCapture,
@@ -38,6 +39,7 @@ from morrow.core.workflows.contracts import (
     ImplementationPatch,
     TestReport,
     TestReportItem,
+    capture_artifact_id,
     node_output_artifact_id,
     node_submission_artifact_id,
 )
@@ -225,24 +227,32 @@ class WorkflowLeafHooks:
                 ToolErrorCode.CONFLICT,
                 "a conflicting structured submission already exists for this node",
             )
-        for slot, payload in parsed.items():
-            ensure_workflow_payload(
-                self.artifacts,
-                payload,
+        try:
+            for slot, payload in parsed.items():
+                ensure_workflow_payload(
+                    self.artifacts,
+                    payload,
+                    session_id=ctx.leaf_session_id,
+                    task_run_id=ctx.leaf_task_run_id,
+                    artifact_id=node_output_artifact_id(ctx.node_run_id, slot),
+                    producer_node_run_id=ctx.node_run_id,
+                    output_slot=slot,
+                )
+            self.artifacts.publish_bytes(
+                canonical_json_bytes({"digest": digest, "slots": sorted(parsed)}),
+                kind=ArtifactKind.TASK_SUMMARY,
                 session_id=ctx.leaf_session_id,
                 task_run_id=ctx.leaf_task_run_id,
-                artifact_id=node_output_artifact_id(ctx.node_run_id, slot),
-                producer_node_run_id=ctx.node_run_id,
-                output_slot=slot,
+                artifact_id=marker_id,
+                excerpt="structured node result submission",
             )
-        self.artifacts.publish_bytes(
-            canonical_json_bytes({"digest": digest, "slots": sorted(parsed)}),
-            kind=ArtifactKind.TASK_SUMMARY,
-            session_id=ctx.leaf_session_id,
-            task_run_id=ctx.leaf_task_run_id,
-            artifact_id=marker_id,
-            excerpt="structured node result submission",
-        )
+        except ArtifactError as exc:
+            if exc.code is ArtifactErrorCode.CONFLICT:
+                raise ToolExecutionError(
+                    ToolErrorCode.CONFLICT,
+                    "a conflicting structured submission already exists for this node",
+                ) from None
+            raise ToolExecutionError(ToolErrorCode.PUBLISH_FAILED, exc.message) from None
         return {"submitted": True, "digest": digest, "reused": False}
 
     def _require_in_scope_evidence(self, refs: tuple[str, ...]) -> None:
@@ -326,30 +336,72 @@ class WorkflowLeafHooks:
         paths: list[str] = []
         complete = True
         omission = None
+        writes_known = False
+        seen: set[str] = set()
+
+        def consume(artifact_id: str) -> None:
+            nonlocal complete, omission
+            if artifact_id in seen:
+                return
+            seen.add(artifact_id)
+            refs.append(artifact_id)
+            stored = self.artifacts.get(artifact_id)
+            if stored is None or stored.state is not ArtifactState.AVAILABLE:
+                complete = False
+                omission = "change_capture_missing"
+                return
+            read = self.artifacts.read(artifact_id, max_bytes=stored.byte_size)
+            capture = ChangeCapture.model_validate_json(read.content)
+            paths.append(capture.path)
+            if not capture.content_complete:
+                complete = False
+                omission = capture.omission_reason or "structural_manifest"
+
         for execution in executions:
+            fact_paths: list[str] = []
+            if execution.facts is not None:
+                fact_paths.extend(item.relative_path for item in execution.facts.files)
+            fact_paths.extend(item.relative_path for item in execution.intent.file_evidence)
+            if fact_paths:
+                writes_known = True
             for reference in execution.artifact_refs:
-                if reference.role != CHANGE_CAPTURE_ROLE:
-                    continue
-                refs.append(reference.artifact_id)
-                stored = self.artifacts.get(reference.artifact_id)
-                if stored is None:
+                if reference.role == CHANGE_CAPTURE_ROLE:
+                    consume(reference.artifact_id)
+            for path in dict.fromkeys(fact_paths):
+                expected = capture_artifact_id(
+                    execution.tool_execution_id,
+                    CHANGE_CAPTURE_ROLE,
+                    CAPTURE_SCHEMA_VERSION,
+                    path=path,
+                )
+                stored = self.artifacts.get(expected)
+                if stored is not None and stored.state is ArtifactState.AVAILABLE:
+                    consume(expected)
+                elif expected not in seen:
                     complete = False
                     omission = "change_capture_missing"
-                    continue
-                read = self.artifacts.read(reference.artifact_id, max_bytes=stored.byte_size)
-                capture = ChangeCapture.model_validate_json(read.content)
-                paths.append(capture.path)
-                if not capture.content_complete:
-                    complete = False
-                    omission = capture.omission_reason or "structural_manifest"
+        if writes_known and not refs:
+            complete = False
+            omission = "change_capture_missing"
+        changed_paths = tuple(dict.fromkeys(paths))
+        change_refs = tuple(dict.fromkeys(refs))
         rationale = self._assistant_rationale()
-        return ImplementationPatch(
-            changed_paths=tuple(dict.fromkeys(paths)),
-            change_refs=tuple(dict.fromkeys(refs)),
-            content_complete=complete,
-            rationale=rationale,
-            omission_reason=None if complete else omission,
-        )
+        try:
+            return ImplementationPatch(
+                changed_paths=changed_paths,
+                change_refs=change_refs,
+                content_complete=complete,
+                rationale=rationale,
+                omission_reason=None if complete else omission,
+            )
+        except ValueError:
+            return ImplementationPatch(
+                changed_paths=changed_paths,
+                change_refs=change_refs,
+                content_complete=complete,
+                rationale="",
+                omission_reason=None if complete else omission,
+            )
 
     def _aggregate_test_report(self, executions) -> TestReport:
         items: list[TestReportItem] = []

@@ -52,7 +52,9 @@ from morrow.core.domain import (
 )
 from morrow.core.execution import (
     DurableToolExecution,
+    DurableToolFacts,
     EffectClass,
+    FileMutationEvidence,
     PreparedIntent,
 )
 from morrow.core.faults import FaultPoint, InjectedFault, OnceFaultInjector
@@ -69,6 +71,7 @@ from morrow.core.models import (
 )
 from morrow.core.workflows.contracts import (
     SUBMIT_NODE_RESULT_NAME,
+    ArtifactBinding,
     ContractRef,
     EvidenceBundle,
     ImplementationPatch,
@@ -86,6 +89,7 @@ from morrow.core.workflows.contracts import (
     TestReport as WorkflowTestReport,
 )
 from morrow.core.workflows.definitions import (
+    AgentNode,
     AgentNodeSource,
     WorkflowBudget,
     WorkflowDefinitionSource,
@@ -247,6 +251,92 @@ def _execution(**overrides) -> DurableToolExecution:
     }
     values.update(overrides)
     return DurableToolExecution(**values)
+
+
+def _file_fact(path: str = "hello.py") -> FileMutationEvidence:
+    return FileMutationEvidence(
+        relative_path=path,
+        operation="create",
+        existed_before=False,
+        policy_version="files-v1",
+        conflict_input_digest=_digest("conflict"),
+    )
+
+
+def _coder_node(**changes) -> AgentNode:
+    return AgentNode(
+        **{
+            "node_id": "coder",
+            "agent_definition_ref": AgentDefinitionRef(
+                definition_id="coder", version_id="adev_one", content_hash="a" * 64
+            ),
+            "task_contract": TaskContract(objective="Apply the change"),
+            "output_contracts": (OutputContract(kind="ImplementationPatch", slot="patch"),),
+            "access_mode": "write",
+            "resolved_model_ref": MODEL,
+            "declared_node_max_agent_generation_requests": 6,
+            **changes,
+        }
+    )
+
+
+def _explorer_node() -> AgentNode:
+    return AgentNode(
+        node_id="explorer",
+        agent_definition_ref=AgentDefinitionRef(
+            definition_id="explorer", version_id="adev_one", content_hash="a" * 64
+        ),
+        task_contract=TaskContract(objective="Look"),
+        output_contracts=(OutputContract(kind="EvidenceBundle", slot="evidence"),),
+        access_mode="read",
+        resolved_model_ref=MODEL,
+        declared_node_max_agent_generation_requests=6,
+    )
+
+
+def _leaf_hooks(artifacts, *, node=None, executions=(), records=(), node_run_id="nrun_1"):
+    from types import SimpleNamespace
+
+    from morrow.application.workflows.leaf import WorkflowLeafContext, WorkflowLeafHooks
+
+    journal = SimpleNamespace(
+        list_task_executions=lambda _ws, _task: executions,
+        load_effective_records=lambda _ws, _ses: records,
+    )
+    return WorkflowLeafHooks(
+        journal,
+        workspace_id=WS,
+        context=WorkflowLeafContext(
+            workflow_run_id="wrun_1",
+            workflow_revision_id="wrev_1",
+            node_run_id=node_run_id,
+            node=node or _coder_node(),
+            leaf_session_id="ses_1",
+            leaf_task_run_id="task_1",
+            effective_node_generation_request_cap=6,
+        ),
+        artifacts=artifacts,
+        transitions=None,
+        id_source=None,
+        clock=lambda: datetime(2026, 9, 1, tzinfo=UTC),
+    )
+
+
+def _artifact_harness(tmp_path):
+    store = OperationalStore(tmp_path / "state")
+    handle = store.initialize()
+    journal = SqliteOperationalJournal(handle)
+    journal.create_session(
+        DurableSession(session_id="ses_1", workspace_id=WS),
+        task=DurableTaskRun(task_run_id="task_1", session_id="ses_1", workspace_id=WS),
+    )
+    artifacts = ArtifactService(
+        journal=journal,
+        filesystem=FilesystemArtifactStore(store.layout),
+        workspace_id=WS,
+        id_source=FixedIdSource(),
+    )
+    return handle, artifacts
 
 
 class PipelineFixture:
@@ -593,7 +683,7 @@ def test_write_capture_publishes_complete_diff_and_replays(tmp_path):
     )
     assert captured.content_complete is True
     assert "print('hi')" in (captured.unified_diff or "")
-    replay_id = capture_artifact_id("tex_1", CHANGE_CAPTURE_ROLE)
+    replay_id = capture_artifact_id("tex_1", CHANGE_CAPTURE_ROLE, path="hello.py")
     again = capture.capture(
         execution,
         ToolExecutionOutcome(call_id="call-1", name="write", ok=True, envelope="{}", facts=()),
@@ -689,6 +779,245 @@ def test_validation_capture_without_command_output_is_truthful(tmp_path):
     handle.close()
 
 
+def test_two_file_promote_publishes_distinct_capture_ids(tmp_path):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    files = WorkspaceFileService(WorkspacePathResolver(workspace))
+    mutation = WorkspaceMutationService(files, artifact_capture=True)
+    handle, artifacts = _artifact_harness(tmp_path)
+    capture = ChangeArtifactCapture(artifacts, mutation)
+    run = ToolRunContext(run_id="arun_1", session_id="ses_1")
+    for name, body in (("a.py", "a = 1\n"), ("b.py", "b = 2\n")):
+        plan = mutation.preflight_write(name, content=body, mode="create")
+        mutation.apply(
+            plan,
+            call_id="call-1",
+            tool_name="promote_sandbox_changes",
+            ordinal=1,
+            approval_verdict=PolicyVerdict.ALLOW,
+            run=run,
+        )
+    from morrow.runtime.tools import ToolExecutionOutcome
+
+    refs = capture.capture(
+        _execution(),
+        ToolExecutionOutcome(
+            call_id="call-1", name="promote_sandbox_changes", ok=True, envelope="{}", facts=()
+        ),
+        [],
+    )
+    assert {ref.artifact_id for ref in refs} == {
+        capture_artifact_id("tex_1", CHANGE_CAPTURE_ROLE, path="a.py"),
+        capture_artifact_id("tex_1", CHANGE_CAPTURE_ROLE, path="b.py"),
+    }
+    handle.close()
+
+
+def test_same_path_capture_conflict_when_bytes_differ(tmp_path):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    files = WorkspaceFileService(WorkspacePathResolver(workspace))
+    mutation = WorkspaceMutationService(files, artifact_capture=True)
+    handle, artifacts = _artifact_harness(tmp_path)
+    capture = ChangeArtifactCapture(artifacts, mutation)
+    run = ToolRunContext(run_id="arun_1", session_id="ses_1")
+    plan = mutation.preflight_write("hello.py", content="print('hi')\n", mode="create")
+    result, _fact = mutation.apply(
+        plan,
+        call_id="call-1",
+        tool_name="write",
+        ordinal=1,
+        approval_verdict=PolicyVerdict.ALLOW,
+        run=run,
+    )
+    from morrow.core.artifacts import ArtifactError, ArtifactErrorCode
+    from morrow.runtime.tools import ToolExecutionOutcome
+
+    outcome = ToolExecutionOutcome(call_id="call-1", name="write", ok=True, envelope="{}", facts=())
+    execution = _execution()
+    capture.capture(execution, outcome, [])
+    replacement = mutation.preflight_write(
+        "hello.py",
+        content="print('bye')\n",
+        mode="replace",
+        expected_sha256=result.after_revision.sha256,
+    )
+    mutation.apply(
+        replacement,
+        call_id="call-1",
+        tool_name="write",
+        ordinal=2,
+        approval_verdict=PolicyVerdict.ALLOW,
+        run=run,
+    )
+    with pytest.raises(ArtifactError) as exc:
+        capture.capture(execution, outcome, [])
+    assert exc.value.code is ArtifactErrorCode.CONFLICT
+    handle.close()
+
+
+def test_take_captures_matches_durable_call_id_without_leftover_sweep(tmp_path):
+    from morrow.core.domain import sha256_digest
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    files = WorkspaceFileService(WorkspacePathResolver(workspace))
+    mutation = WorkspaceMutationService(files, artifact_capture=True)
+    plan = mutation.preflight_write("hello.py", content="print('hi')\n", mode="create")
+    run = ToolRunContext(run_id="arun_1", session_id="ses_1")
+    mutation.apply(
+        plan,
+        call_id="call_w",
+        tool_name="write",
+        ordinal=1,
+        approval_verdict=PolicyVerdict.ALLOW,
+        run=run,
+    )
+    hashed = f"call_{sha256_digest('call_w')}"
+    assert mutation.take_captures("arun_1", "call_other") == ()
+    drafts = mutation.take_captures("arun_1", hashed)
+    assert len(drafts) == 1
+    assert drafts[0].path == "hello.py"
+    assert mutation.take_captures("arun_1", "call_w") == ()
+
+
+def test_implementation_patch_relinks_available_capture(tmp_path):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    files = WorkspaceFileService(WorkspacePathResolver(workspace))
+    mutation = WorkspaceMutationService(files, artifact_capture=True)
+    handle, artifacts = _artifact_harness(tmp_path)
+    capture = ChangeArtifactCapture(artifacts, mutation)
+    plan = mutation.preflight_write("hello.py", content="print('hi')\n", mode="create")
+    run = ToolRunContext(run_id="arun_1", session_id="ses_1")
+    mutation.apply(
+        plan,
+        call_id="call-1",
+        tool_name="write",
+        ordinal=1,
+        approval_verdict=PolicyVerdict.ALLOW,
+        run=run,
+    )
+    from morrow.runtime.tools import ToolExecutionOutcome
+
+    execution = _execution(facts=DurableToolFacts(files=(_file_fact(),)))
+    capture.capture(
+        execution,
+        ToolExecutionOutcome(call_id="call-1", name="write", ok=True, envelope="{}", facts=()),
+        [],
+    )
+    hooks = _leaf_hooks(artifacts, executions=(execution,))
+    patch = hooks._implementation_patch((execution,))
+    expected = capture_artifact_id("tex_1", CHANGE_CAPTURE_ROLE, path="hello.py")
+    assert patch.change_refs == (expected,)
+    assert patch.changed_paths == ("hello.py",)
+    assert patch.content_complete is True
+    handle.close()
+
+
+def test_known_write_without_capture_is_incomplete_empty_patch(tmp_path):
+    handle, artifacts = _artifact_harness(tmp_path)
+    execution = _execution(facts=DurableToolFacts(files=(_file_fact(),)))
+    hooks = _leaf_hooks(artifacts, executions=(execution,))
+    patch = hooks._implementation_patch((execution,))
+    assert patch.change_refs == ()
+    assert patch.content_complete is False
+    assert patch.omission_reason == "change_capture_missing"
+    handle.close()
+
+
+def test_stop_without_writes_is_complete_empty_patch(tmp_path):
+    handle, artifacts = _artifact_harness(tmp_path)
+    hooks = _leaf_hooks(artifacts)
+    patch = hooks._implementation_patch(())
+    assert patch.change_refs == ()
+    assert patch.changed_paths == ()
+    assert patch.content_complete is True
+    handle.close()
+
+
+def test_secret_assistant_rationale_is_omitted_from_patch(tmp_path):
+    from types import SimpleNamespace
+
+    handle, artifacts = _artifact_harness(tmp_path)
+    record = SimpleNamespace(
+        kind="message",
+        record_id="rec_1",
+        payload={
+            "role": "assistant",
+            "content": 'token = "sk-abcdefghijklmnopqrstuvwx"',
+            "tool_calls": None,
+        },
+    )
+    hooks = _leaf_hooks(artifacts, records=(record,))
+    patch = hooks._implementation_patch(())
+    assert patch.rationale == ""
+    assert patch.content_complete is True
+    handle.close()
+
+
+def test_submit_maps_slot_conflict_when_marker_is_missing():
+    from morrow.application.workflows.submit import SubmitNodeResultArguments
+    from morrow.core.artifacts import ArtifactError, ArtifactErrorCode
+    from morrow.runtime.tools import ToolErrorCode, ToolExecutionError
+
+    class _ConflictingArtifacts:
+        def get(self, _artifact_id):
+            return None
+
+        def publish_workflow_payload(self, *_args, **_kwargs):
+            raise ArtifactError(
+                ArtifactErrorCode.CONFLICT, "Workflow output already has different content"
+            )
+
+        def publish_bytes(self, *_args, **_kwargs):
+            raise AssertionError("marker must not publish after a slot conflict")
+
+    hooks = _leaf_hooks(_ConflictingArtifacts(), node=_explorer_node())
+    arguments = SubmitNodeResultArguments(
+        outputs={"evidence": {"findings": ["hello.py exists"]}},
+        summary="submitted",
+    )
+    with pytest.raises(ToolExecutionError) as exc:
+        hooks.submit_node_result(arguments)
+    assert exc.value.code is ToolErrorCode.CONFLICT
+
+
+def test_missing_exported_review_report_does_not_succeed():
+    from types import SimpleNamespace
+
+    from morrow.application.workflows.finalizer import compute_workflow_result
+
+    slot = OutputContract(kind="ReviewReport", slot="review")
+    revision = SimpleNamespace(
+        nodes=(SimpleNamespace(node_id="reviewer", output_contracts=(slot,)),),
+        required_outputs=(NodeOutputRef(node_id="reviewer", output_slot="review"),),
+    )
+    nodes = (SimpleNamespace(node_id="reviewer", node_run_id="nrun_reviewer1"),)
+    with pytest.raises(ApplicationError, match="ReviewReport"):
+        compute_workflow_result(revision, nodes, (), artifacts=None)
+    binding = ArtifactBinding(
+        name="review",
+        artifact_id="art_" + "a" * 32,
+        contract=ContractRef(kind="ReviewReport"),
+    )
+    artifacts = SimpleNamespace(get=lambda _id: None)
+    with pytest.raises(ApplicationError, match="ReviewReport"):
+        compute_workflow_result(
+            revision,
+            nodes,
+            (("nrun_reviewer1", "output", binding),),
+            artifacts=artifacts,
+        )
+    patch_slot = OutputContract(kind="ImplementationPatch", slot="patch")
+    patch_revision = SimpleNamespace(
+        nodes=(SimpleNamespace(node_id="coder", output_contracts=(patch_slot,)),),
+        required_outputs=(NodeOutputRef(node_id="coder", output_slot="patch"),),
+    )
+    patch_nodes = (SimpleNamespace(node_id="coder", node_run_id="nrun_coder1"),)
+    assert compute_workflow_result(patch_revision, patch_nodes, (), artifacts=None) == "succeeded"
+
+
 def test_complete_patch_sandbox_pairing_and_host_bash_rejection():
     explorer = AgentDefinitionSource(
         definition_id="explorer",
@@ -778,6 +1107,33 @@ def test_complete_patch_sandbox_pairing_and_host_bash_rejection():
     )
     assert host.candidate is None
     assert any(item.code == "uncapturable_host_bash" for item in host.errors)
+
+
+def test_compose_leaf_runtime_rejects_host_bash_for_complete_patch(fx):
+    from dataclasses import dataclass
+    from types import SimpleNamespace
+
+    from morrow.core.capabilities import ProcessIsolation
+
+    @dataclass(frozen=True)
+    class _Prepared:
+        tool_executor: object
+
+    prepared = _Prepared(
+        tool_executor=SimpleNamespace(
+            expected_process_isolation=ProcessIsolation.HOST,
+            tool_set=SimpleNamespace(tools={"bash": object(), "write": object()}),
+        )
+    )
+    hooks = SimpleNamespace(
+        context=SimpleNamespace(
+            node=SimpleNamespace(
+                output_contracts=(OutputContract(kind="ImplementationPatch", slot="patch"),)
+            )
+        )
+    )
+    with pytest.raises(ApplicationError, match="uncapturable_host_bash"):
+        fx.runtime.scheduler._compose_leaf_runtime(prepared, hooks)
 
 
 def test_mechanism_tool_cannot_be_granted_by_definition():

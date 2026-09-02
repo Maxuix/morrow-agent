@@ -14,6 +14,7 @@ from datetime import datetime
 from morrow.application.workflows.evidence import workflow_task_outcome
 from morrow.application.workflows.transitions import WorkflowTransitionService
 from morrow.core.application import ApplicationError, ApplicationErrorCode
+from morrow.core.artifacts import ArtifactError
 from morrow.core.domain import (
     TASK_OUTCOME_ID_PREFIX,
     TASK_TRANSITION_ID_PREFIX,
@@ -71,14 +72,26 @@ def compute_workflow_result(
         binding = (
             bound.get((producer.node_run_id, ref.output_slot)) if producer is not None else None
         )
-        if binding is None or artifacts is None:
-            continue
+        if producer is None or binding is None or artifacts is None:
+            raise ApplicationError(
+                ApplicationErrorCode.INVALID,
+                "output_contract_unsatisfied: required exported ReviewReport is missing",
+            )
         stored = artifacts.get(binding.artifact_id)
         if stored is None:
-            continue
-        payload = parse_workflow_payload(
-            slot.kind, artifacts.read(binding.artifact_id, max_bytes=stored.byte_size).content
-        )
+            raise ApplicationError(
+                ApplicationErrorCode.INVALID,
+                "output_contract_unsatisfied: required exported ReviewReport is unreadable",
+            )
+        try:
+            payload = parse_workflow_payload(
+                slot.kind, artifacts.read(binding.artifact_id, max_bytes=stored.byte_size).content
+            )
+        except (ValueError, ArtifactError):
+            raise ApplicationError(
+                ApplicationErrorCode.INVALID,
+                "output_contract_unsatisfied: required exported ReviewReport is unreadable",
+            ) from None
         if isinstance(payload, ReviewReport) and payload.blocking:
             return RESULT_NEEDS_REVISION
     return RESULT_SUCCEEDED

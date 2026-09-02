@@ -1,5 +1,17 @@
 # Execution Log
 
+## 2026-09-02 — Subplan 6 review findings repaired
+
+- On `fix/stage7-capture-review` from local `main@6ba0146`, repaired all seven Subplan 6 review
+  findings: per-path ChangeCapture identity, ImplementationPatch relink of AVAILABLE captures,
+  secret rationale omission, durable call-id retain/take without leftover sweep, runtime HOST-bash
+  rejection coverage, `submit_node_result` ArtifactError.CONFLICT mapping, and missing exported
+  ReviewReport failing finalization instead of `succeeded`.
+- Focused matrix: 24 tests in `tests/test_stage7_multi_agent_pipeline.py`. Full offline gate:
+  1493 passed, 2 Live deselected; ruff format/check, compileall and `git diff --check` clean.
+- No Live tests. Remote publication remains blocked. Ordinary Direct, ConversationLog ownership
+  and AgentLoop were not changed.
+
 ## 2026-09-02 — Subplan 6 completed
 
 - Implemented ChangeArtifactCapture at durable handler completion, `submit_node_result`, Coder and

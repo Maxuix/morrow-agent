@@ -305,11 +305,22 @@ def workflow_input_artifact_id(command_id: str) -> str:
     return "art_" + sha256_digest(canonical_json_bytes([command_id, "workflow_input"]))[:32]
 
 
-def capture_artifact_id(tool_execution_id: str, role: str, schema_version: int = 1) -> str:
-    """Stable byte-store identity for one ToolExecution capture role."""
-    return (
-        "art_" + sha256_digest(canonical_json_bytes([tool_execution_id, role, schema_version]))[:32]
-    )
+def capture_artifact_id(
+    tool_execution_id: str,
+    role: str,
+    schema_version: int = 1,
+    *,
+    path: str | None = None,
+) -> str:
+    """Stable byte-store identity for one ToolExecution capture role.
+
+    ChangeCapture is per-path under one ToolExecution; pass ``path`` so two
+    mutations do not collide. Validation reports omit path.
+    """
+    identity: list[object] = [tool_execution_id, role, schema_version]
+    if path is not None:
+        identity.append(path)
+    return "art_" + sha256_digest(canonical_json_bytes(identity))[:32]
 
 
 def node_submission_artifact_id(node_run_id: str) -> str:

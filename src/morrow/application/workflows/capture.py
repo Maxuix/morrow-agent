@@ -9,13 +9,20 @@ from __future__ import annotations
 
 from morrow.application.artifacts import ArtifactService
 from morrow.core.artifacts import (
+    ArtifactError,
+    ArtifactErrorCode,
     ArtifactKind,
     ArtifactProvenanceKind,
     ArtifactProvenanceRef,
     ArtifactState,
 )
 from morrow.core.capabilities import ValidationFact
-from morrow.core.domain import ArtifactReference, canonical_json_bytes, workflow_secret_spans
+from morrow.core.domain import (
+    ArtifactReference,
+    canonical_json_bytes,
+    sha256_digest,
+    workflow_secret_spans,
+)
 from morrow.core.execution import DurableToolExecution
 from morrow.core.workflows.contracts import (
     CAPTURE_SCHEMA_VERSION,
@@ -72,6 +79,7 @@ class ChangeArtifactCapture:
             payload,
             role=CHANGE_CAPTURE_ROLE,
             kind=ArtifactKind.DIFF if payload.content_complete else ArtifactKind.PATCH,
+            path=draft.path,
         )
 
     def _publish_validation(
@@ -112,11 +120,19 @@ class ChangeArtifactCapture:
         *,
         role: str,
         kind: ArtifactKind,
+        path: str | None = None,
     ) -> ArtifactReference:
-        artifact_id = capture_artifact_id(execution.tool_execution_id, role, CAPTURE_SCHEMA_VERSION)
+        artifact_id = capture_artifact_id(
+            execution.tool_execution_id, role, CAPTURE_SCHEMA_VERSION, path=path
+        )
         prior = self.artifacts.get(artifact_id)
         content = canonical_json_bytes(payload.model_dump(mode="json"))
         if prior is not None and prior.state is ArtifactState.AVAILABLE:
+            if prior.sha256 != sha256_digest(content):
+                raise ArtifactError(
+                    ArtifactErrorCode.CONFLICT,
+                    "capture Artifact already has different content",
+                )
             return ArtifactReference(artifact_id=artifact_id, role=role)
         contract_kind = "ChangeCapture" if isinstance(payload, ChangeCapture) else "TestReport"
         self.artifacts.publish_workflow_capture(

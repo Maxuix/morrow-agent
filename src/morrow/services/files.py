@@ -6,6 +6,7 @@ import difflib
 import hashlib
 import json
 import os
+import re
 import stat
 import uuid
 from dataclasses import dataclass
@@ -18,6 +19,7 @@ from morrow.adapters.local.filesystem import (
     FileSystemAdapter,
     FileSystemMutationError,
 )
+from morrow.core.domain import sha256_digest
 from morrow.core.local_tools import (
     WORKSPACE_RELATIVE_PATH_MAX_CHARS,
     DirectoryEntry,
@@ -35,6 +37,17 @@ from morrow.core.local_tools import (
 )
 
 MAX_RELATIVE_PATH_CHARS = WORKSPACE_RELATIVE_PATH_MAX_CHARS
+_DURABLE_CAPTURE_CALL_ID_PATTERN = re.compile(r"^call_[0-9a-f]{64}$")
+
+
+def _durable_capture_call_id(call_id: str) -> str:
+    """Hash provider call IDs the same way durable ToolExecution rows do."""
+
+    if _DURABLE_CAPTURE_CALL_ID_PATTERN.fullmatch(call_id):
+        return call_id
+    return f"call_{sha256_digest(call_id)}"
+
+
 DEFAULT_READ_LINES = 400
 MAX_READ_LINES = 2_000
 MAX_READ_TEXT_BYTES = 8 * 1024
@@ -967,13 +980,7 @@ class WorkspaceMutationService:
         self._previews.pop((run_id, call_id), None)
 
     def take_captures(self, run_id: str, call_id: str) -> tuple[ChangeCaptureDraft, ...]:
-        collected = list(self._captures.pop((run_id, call_id), ()))
-        if collected:
-            return tuple(collected)
-        leftover = [key for key in self._captures if key[0] == run_id]
-        for key in leftover:
-            collected.extend(self._captures.pop(key))
-        return tuple(collected)
+        return tuple(self._captures.pop((run_id, _durable_capture_call_id(call_id)), ()))
 
     def render_change_capture(
         self, plan: MutationPlan, result: MutationResult
@@ -1033,7 +1040,8 @@ class WorkspaceMutationService:
         if not self.artifact_capture or run is None:
             return
         draft = self.render_change_capture(plan, result)
-        self._captures.setdefault((run.run_id, call_id), []).append(draft)
+        key = (run.run_id, _durable_capture_call_id(call_id))
+        self._captures.setdefault(key, []).append(draft)
 
     def clear_previews(self, run_id: str | None = None) -> None:
         if run_id is None:
