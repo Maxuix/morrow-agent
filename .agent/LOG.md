@@ -4597,3 +4597,9 @@
   No dependency, public event lifecycle or bundled policy-default changes; no Live tests run.
 - Implementation commit: `cda0c0c`. Remote publication remains blocked pending explicit
   authorization for the configured GitHub remote.
+
+## 2026-09-02 — Subplan 7 integrated
+
+- Closeout `72767b1` and implementation `cda0c0c` were fast-forward merged into local `main`.
+- Subplan 8 is next and remains inactive pending explicit continuation. Remote publication remains
+  blocked pending explicit authorization; no Live tests were run.

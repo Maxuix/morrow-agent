@@ -10,6 +10,6 @@
 - [x] Task 7: add the focused Scripted Provider and regression matrix, then run the full offline
   validation gate.
 
-Subplan 7 implementation is complete and verified on `feat/stage7-direct-adapter` at `cda0c0c`;
-integration into local `main` is pending. Full offline gate: 1507 passed, 2 Live deselected; Ruff
+Subplan 7 is complete and integrated into local `main` (implementation `cda0c0c`, closeout
+`72767b1`). Full offline gate: 1507 passed, 2 Live deselected; Ruff
 format/check, compileall, `morrow --help` and `git diff --check` passed. No Live tests were run.

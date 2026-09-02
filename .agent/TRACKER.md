@@ -2,17 +2,18 @@
 
 ## Current status
 
-Stage 7 Subplan 7 (Direct Invoking-Session Adapter) is implemented and verified on
-`feat/stage7-direct-adapter` at `cda0c0c`; fast-forward integration into local `main` is pending.
+Stage 7 Subplan 7 (Direct Invoking-Session Adapter) is completed and integrated into local `main`
+(implementation `cda0c0c`, closeout `72767b1`). Full offline gate: 1507 passed, 2 Live deselected;
+Ruff format/check, compileall, `morrow --help` and `git diff --check` clean.
 
 ## Active task
 
-None. Subplan 7 implementation is complete and verified.
+None. Subplan 8 is not active.
 
 ## Next action
 
-Commit the Subplan 7 closeout, fast-forward merge it into local `main`, verify ancestry and retire
-the clean topic branch.
+Await explicit continuation before activating Subplan 8 (Management, Templates and Optional
+Events) from verified `main`.
 
 ## Blockers
 
