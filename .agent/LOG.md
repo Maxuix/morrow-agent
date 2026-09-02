@@ -9,8 +9,9 @@
   ReviewReport failing finalization instead of `succeeded`.
 - Focused matrix: 24 tests in `tests/test_stage7_multi_agent_pipeline.py`. Full offline gate:
   1493 passed, 2 Live deselected; ruff format/check, compileall and `git diff --check` clean.
-- No Live tests. Remote publication remains blocked. Ordinary Direct, ConversationLog ownership
-  and AgentLoop were not changed.
+- Fast-forwarded into local `main` at `ab02204`; topic branch deleted. No Live tests. Remote
+  publication remains blocked. Ordinary Direct, ConversationLog ownership and AgentLoop were not
+  changed.
 
 ## 2026-09-02 — Subplan 6 completed
 

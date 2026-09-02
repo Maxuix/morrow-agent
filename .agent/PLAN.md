@@ -3,7 +3,7 @@
 > Status: Subplan 6 completed and integrated; Stage 7 remains in progress
 > Active subplan: none
 > Next subplan: 7 — Direct Invoking-Session Adapter (ready; not active)
-> Planning base: local `main` after Subplan 6 integration (tree clean, full offline gate green)
+> Planning base: local `main` after Subplan 6 review-fix integration (tree clean, full offline gate green)
 > Roadmap authority: `docs/roadmap/stage-7-workflow-runtime.md`
 > Entry evidence: `docs/acceptance/s7p-10-stage7-entry-review.md` — GO
 > Revision: 2026-08-31 conditional-GO plan review applied
