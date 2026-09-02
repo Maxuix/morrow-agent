@@ -14,6 +14,6 @@
 - [x] Task 8: add the management/CLI/template regression matrix and run the declared validation
   gate.
 
-Subplan 8 is complete and verified on `feat/stage7-workflow-management` (implementation `ee68cb8`),
-pending fast-forward integration. Full offline gate: 1517 passed, 2 Live deselected; Ruff
+Subplan 8 is complete and integrated into local `main` (implementation `ee68cb8`, closeout
+`2054dde`). Full offline gate: 1517 passed, 2 Live deselected; Ruff
 format/check, compileall, root/Agent/Workflow CLI help and `git diff --check` passed.

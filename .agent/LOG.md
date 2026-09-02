@@ -4650,3 +4650,10 @@
   `morrow --help`, `morrow agent --help`, `morrow workflow --help` and `git diff --check` passed.
 - No public event lifecycle, bundled runtime-policy default, dependency or Live-test change was
   made. The verified branch is ready for fast-forward integration into local `main`.
+
+## 2026-09-02 — Subplan 8 integrated
+
+- Fast-forward merged implementation `ee68cb8` and closeout `2054dde` into local `main`.
+- Subplan 9 (Stage 7 Acceptance Closeout) is next and remains inactive pending explicit
+  continuation. Remote publication remains blocked pending explicit authorization; no Live tests
+  were run.
