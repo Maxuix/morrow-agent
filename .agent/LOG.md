@@ -4807,6 +4807,13 @@
   tokens in the current tree or unpublished commit paths. Test fixtures containing placeholder
   secret-shaped strings remain non-credential examples and are not real secrets.
 
+## 2026-09-03 — GitHub publication verified
+
+- Committed the latest Stage 8 plan-review repairs as `32d5964` and pushed the complete local
+  `main` history to `https://github.com/Maxuix/morrow-agent.git` on `main`.
+- Post-push verification: local `main` and `origin/main` resolve to the same commit, with zero
+  commits ahead/behind and a clean workspace.
+
 ## 2026-09-03 — Stage 8 plan review findings verified and repaired
 
 - An external plan review raised four P0 code-level conflicts and several P1/P2 gaps. All P0s were
