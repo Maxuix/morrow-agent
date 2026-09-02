@@ -4574,3 +4574,26 @@
   `main` after Subplan 6 review-fix integration.
 - First task is the domain/compiler scope value and one-node/no-edge legality rule; later admission,
   lifecycle/finalizer and parity work remains pending and will reuse the existing Scheduler path.
+
+## 2026-09-02 — Subplan 7: Direct invoking-session adapter
+
+- Added the opt-in `invoking_session` scope, legal only for a one-node/no-edge graph, plus the
+  explicit built-in Direct Workflow source fixture for the later management/template surface.
+- Extended Workflow Start/Run with a request-digest-bound client-message/root-version binding.
+  Direct Turn admission rechecks the exact WorkflowRun, current root, row version and message ID in
+  the shared transaction; it never falls back to a replaced current Task.
+- Reused the unified Scheduler, AgentFactory/preparation, AgentLoop, ToolExecutor,
+  NodeResultCommitter and recovery path while binding the NodeRun to the invoking root Session/Task.
+  Direct input is submitted once, frozen model/permission behavior is unchanged, and Workflow Turns
+  neither consume nor create ordinary steering/follow-up entries.
+- TurnLifecycle remains the sole root-terminal writer after Direct admission. STOP commits outputs
+  and READY first; the idempotent Workflow finalizer then records the exact ready transition and
+  closes `succeeded|needs_revision`. ERROR/CANCEL/committer failure preserve the existing terminal
+  Outcome under the Workflow value-sensitive profile. Pre-Turn preparation/admission failure closes
+  only Workflow facts and leaves the root OPEN.
+- Focused Direct matrix: 13 passed. Declared Scheduler/isolated regressions: 72 passed;
+  Agent-preparation/crash-recovery regressions: 33 passed. Final full offline gate: 1507 passed,
+  2 Live deselected; Ruff format/check, compileall, `morrow --help` and `git diff --check` passed.
+  No dependency, public event lifecycle or bundled policy-default changes; no Live tests run.
+- Implementation commit: `cda0c0c`. Remote publication remains blocked pending explicit
+  authorization for the configured GitHub remote.

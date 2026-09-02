@@ -2,17 +2,17 @@
 
 ## Current status
 
-Stage 7 Subplan 7 (Direct Invoking-Session Adapter) is active on
-`feat/stage7-direct-adapter`, based on verified local `main` after Subplan 6 review-fix integration.
+Stage 7 Subplan 7 (Direct Invoking-Session Adapter) is implemented and verified on
+`feat/stage7-direct-adapter` at `cda0c0c`; fast-forward integration into local `main` is pending.
 
 ## Active task
 
-Task 7: finish the declared focused/regression matrix and run the full offline validation gate.
+None. Subplan 7 implementation is complete and verified.
 
 ## Next action
 
-Run formatting/static checks, the agent-preparation and crash-recovery regressions, then the full
-non-Live suite; repair any regressions before closeout.
+Commit the Subplan 7 closeout, fast-forward merge it into local `main`, verify ancestry and retire
+the clean topic branch.
 
 ## Blockers
 
