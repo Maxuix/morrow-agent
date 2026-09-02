@@ -386,7 +386,11 @@ Node Agent / Orchestrator                              │  → pure WorkflowCom
   target 为 Future 的 binding/edge；其 source 可是 exact immutable Past output 或 Future producer，不能
   修改 Past producer/provenance、给 Past 增加 incoming work 或建立 Future → Past。
 - ReplanCoordinator 是唯一自动/Agent Patch proposer，不是 Revision writer，也不要求实现成另一个
-  LLM Agent。Node Agent 只能发出 ReplanSignal，不能直接改 Revision。
+  LLM Agent。Node Agent 只能发出 ReplanSignal，不能直接改 Revision。运行中的叶子 Agent 不为
+  全局 Replan 挂起自己，也不能通过取消伪装回 Pending：ReplanSignal 是随节点自身收口（typed
+  submission / 终态边界）落盘的 durable evidence，Scheduler/Orchestrator 在该节点 settle 后才
+  消费它并请求 Pause/Drain；handoff（无论用户批准还是低风险自动应用）只在完全 paused 且无
+  Active 节点的窗口执行。
 - `PatchApplicationService` 是手工和建议 Patch 的唯一 deterministic apply 入口，并复用 Stage 7 的
   pure Compiler + publication service。Patch 必须引用 base Revision 并经过 OCC/CAS、权限/合同/预算
   校验；stale patch 返回冲突供重新生成或用户处理，不静默重放。
@@ -568,7 +572,10 @@ Python Morrow Core
 React + TypeScript Client
 ```
 
-桌面打包留到 Stage 10，避免当前被安装器和跨平台 sidecar 问题拖慢。
+Core Server 是前台长运行进程，不是 daemon（后台守护在 Stage 9）：`morrow serve` 启动
+headless API 并打印 loopback 地址与一次性会话 token，`morrow gui` 在此基础上自动打开浏览器；
+两者都在 SIGINT 时优雅退出。GUI 静态资源以预构建产物嵌入 Python 包分发，终端用户无需安装
+Node.js；桌面打包留到 Stage 10，避免当前被安装器和跨平台 sidecar 问题拖慢。
 
 ### 11.2 API 要求
 
@@ -714,8 +721,9 @@ budget，全部不经 GUI、用确定性离线证据验收；这是第三节“�
 
 - 节点图、边、Inspector。
 - AgentDefinition 编辑。
-- Editor 所需的 Provider/Model/Skill/Tool/Artifact 只读 Catalog、选择器与 Budget 配置。
-- 编译错误可视化。
+- Editor 所需的 Provider/Model/Skill/Tool/Artifact 只读选择器与 Budget 配置（Catalog Query API
+  由 8A 的 Local Core server 一并提供，编辑器不承担后端扩展）。
+- 编译错误可视化（含结构化 node/edge 定位）。
 - Definition/Revision Diff。
 
 门禁：用户可创建一个合法 Workflow，非法图无法运行。

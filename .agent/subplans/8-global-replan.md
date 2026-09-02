@@ -16,7 +16,14 @@ than blanket approval.
 ## Deliverables
 
 - `ReplanSignal` (Node Agent → Orchestrator) and `ReplanProposal` types; Node Agents can never
-  modify a Revision directly.
+  modify a Revision directly. Signal lifecycle is fixed: a running leaf never suspends itself
+  waiting for a global Replan and never converts itself back to editable Pending (roadmap §6.3).
+  A signal is durable evidence attached to the node's own closure — carried on the typed
+  `submit_node_result` submission (e.g. ReviewReport findings) or a bounded signal record written
+  at the node's terminal/error boundary — and is consumed only after that node settles. The
+  Scheduler/Orchestrator then requests Pause/Drain, and only a fully `paused` run with no Active
+  nodes may enter the handoff transaction; auto-applied low-risk patches obey the same window, so
+  no patch ever lands on a mid-flight graph.
 - `ReplanCoordinator`: the sole automatic Patch proposer (not required to be an LLM Agent); turns
   signals into concrete `FutureGraphPatch` proposals against the exact current base Revision.
 - Deterministic patch risk classification per master-plan §3.2: low risk = no permission/budget/

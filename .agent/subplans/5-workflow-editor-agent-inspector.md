@@ -21,14 +21,19 @@ An illegal graph cannot be run.
   non-overridable boundaries enforced and §7.3 Node override resolution shown with its source.
   Definition copy/derivative flow per §7.4 (new ID/Version, parent/source recorded, diff view,
   built-in updates never silently overwrite user copies).
-- Read-only Catalogs and pickers the editor needs: Provider/Model/Skill/Tool/Artifact, plus Budget
-  configuration.
+- Read-only Catalogs and pickers the editor needs (Provider/Model/Skill/Tool/Artifact), plus Budget
+  configuration — consuming the Catalog Query APIs delivered by Subplan 3, not new backend work
+  here.
 - Draft lifecycle per §6.1: edit freely without creating Revisions; every edit re-validates through
   the pure Compiler; only explicit freeze/run publishes an immutable Revision through the sole
   publication service.
 - Compile errors surfaced as actionable GUI diagnostics (per §6.4: downstream dependency, removed
   required Artifact, broken approval/review gate, no termination path); the GUI never guesses
-  reconnections itself.
+  reconnections itself. To make canvas highlighting precise, the backend `CompileDiagnostic`
+  (currently `severity/code/message` only) gains additive optional structured locator fields
+  (`node_id` / `edge_id` where applicable), and the canvas highlights the exact node or edge.
+- Editor validation is debounced (300–500 ms) so React Flow dragging cannot generate a request per
+  pointer move; validation still always round-trips the Core API — no frontend compiler copy.
 - Definition/Revision diff views.
 - Editing-while-running protection at this layer: Running/Completed nodes render locked; edits to
   them are refused with the future-only explanation (runtime enforcement lives in Subplan 2).

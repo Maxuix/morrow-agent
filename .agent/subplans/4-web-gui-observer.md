@@ -19,6 +19,14 @@ Workflow/Node/Artifact state live, proving the GUI–CLI parity gate on the same
 
 - Vite/React/TypeScript client scaffold under a dedicated `gui/` directory (or as approved at
   activation), with API types generated from or checked against the Subplan 3 protocol.
+- CLI entry `morrow gui`: starts the same Core server as `morrow serve` and opens the default
+  browser at the loopback URL with the session token applied; foreground process model, Ctrl+C
+  shuts down gracefully.
+- Distribution strategy: development uses the Vite dev server; production GUI assets are
+  prebuilt static HTML/CSS/JS (including the bundled fonts) embedded in the Python package and
+  served directly by the Core server — an end user installing via `pip`/`uv tool install` never
+  needs Node.js. The wheel build includes the prebuilt assets; building them from source is a
+  maintainer-only step. (Desktop packaging/installers remain Stage 10.)
 - Design-token foundation per the Warm Paper decision: CSS-variable tokens for light/dark, Tailwind
   wired to the tokens, the three bundled font families with their assigned roles (serif for reading content,
   sans for UI chrome, mono for commands/diffs/previews), status-dot + label treatment for run

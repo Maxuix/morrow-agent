@@ -4806,3 +4806,25 @@
 - The pre-publication audit found no `.env` files, private-key files, or high-confidence provider
   tokens in the current tree or unpublished commit paths. Test fixtures containing placeholder
   secret-shaped strings remain non-credential examples and are not real secrets.
+
+## 2026-09-03 — Stage 8 plan review findings verified and repaired
+
+- An external plan review raised four P0 code-level conflicts and several P1/P2 gaps. All P0s were
+  verified against the tree: the v24 `workflow_runs` status CHECK and the `workflow_active_root`
+  partial index (plus the `active_for_root` query) exclude `draining`/`paused`/`superseded`;
+  `create_run` rigidly asserts initial-run-only facts (QUEUED, budget equality, deadline formula,
+  full node pre-creation); the Scheduler iterates the full Revision and would hit `StopIteration`
+  on inherited Past nodes; `_require_ready`/`_bind_node_inputs`/`compute_workflow_result` assume
+  every producer has a current-run NodeRun and run-scoped bindings.
+- Subplan repairs: SP1 now owns the v26 rebuild migration (CHECK + index + query in lockstep) and
+  the `runs.py` enum/terminal/transition/validator updates; SP2 owns the v27 rebuild adding
+  `superseded`, a dedicated `create_continuation_run` transaction, an explicit inherited-Past
+  projection (inherited bindings recorded on the child; scheduler filtered to
+  `execution_node_ids`), and regression tests for those exact failure modes; SP3 takes the
+  read-only Catalog Query APIs, `morrow serve`, and a default starlette+uvicorn proposal (already
+  transitive deps of `mcp`, still subject to activation approval); SP4 takes `morrow gui` and the
+  embedded-prebuilt-assets distribution strategy; SP5 takes debounced validation plus additive
+  structured `CompileDiagnostic` node/edge locators; SP8 fixes the ReplanSignal lifecycle (durable
+  evidence at node closure; handoff only from a fully paused run).
+- Roadmap synced: §6.5 records the signal lifecycle, §11.1 records `morrow serve`/`morrow gui` and
+  zero-Node distribution, §15 8B notes catalog APIs come from 8A.

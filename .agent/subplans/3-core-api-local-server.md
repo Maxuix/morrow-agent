@@ -4,8 +4,10 @@
 > Branch: `feat/stage8-core-api`
 > Activation base: latest verified `main` with Subplan 2 integrated
 > Prerequisite: Subplan 2 verified; explicit user authorization for (a) the additive public
-> `ApplicationEvent` lifecycle extension and (b) the chosen Python web-framework dependency;
-> transport selection confirmed at activation (default proposal: HTTP + WebSocket, loopback only)
+> `ApplicationEvent` lifecycle extension and (b) promoting `starlette` + `uvicorn` to direct
+> dependencies (both already ship in the locked environment as transitive deps of the direct
+> `mcp>=2.0.0` dependency, so no new framework weight is introduced; a different framework choice
+> requires re-approval)
 > Roadmap authority: stage-8 §二 (GUI positioning), §11.1–11.3, §8A, §16.1, §16.3
 
 ## Objective
@@ -21,9 +23,16 @@ stream that survives disconnects.
 - Local server owned by the Core process: loopback-only bind by default, per-session random auth
   token, CSRF and WebSocket origin checks, no exposure of credentials, full sensitive tool
   arguments, reasoning or tracebacks in any payload.
+- CLI entry `morrow serve`: starts the foreground headless API server, prints the loopback
+  address/port and the one-time session token, and shuts down gracefully on SIGINT (drain
+  in-flight requests; running foreground Workflows follow the existing owning-process rules —
+  Stage 8 has no background daemon).
 - Idempotent Command IDs end to end; command retry cannot double-apply.
 - Event delivery contract: initial query snapshot + ordered events with sequence numbers + client
   gap detection + resync query; the stream is never the permanent authority.
+- Read-only Catalog Query APIs (AgentDefinitions, Providers/Models, Skills, Tools, Artifact
+  contracts) shipped here, not in the editor subplan: the editor (Subplan 5) and planner
+  (Subplan 7) both consume them, so the backend surface lands once with the server.
 - A scripted in-process verification client (test fixture, not a product) that exercises the full
   contract: snapshot, stream, forced disconnect/reconnect, gap resync, command idempotency, stale
   snapshot handling.
