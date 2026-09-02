@@ -1,6 +1,6 @@
 # Subplan 7 — Stage 7 Direct Invoking-Session Adapter
 
-> Status: pending
+> Status: active
 > Branch: `feat/stage7-direct-adapter`
 > Prerequisite: Subplan 6 completed, verified and integrated; the serial Scheduler path is stable
 > Revised 2026-08-31 per the conditional-GO plan review: the Direct shape is an adapter on the

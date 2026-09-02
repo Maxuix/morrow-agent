@@ -4567,3 +4567,10 @@
 - Regression evidence: 3 new tests (cancel after a middle node's commit, cancel after the last
   node's commit, fork sibling never admitted behind an unsettled node); full offline gate
   1469 passed, 2 Live deselected. No Live tests; remote publication still blocked.
+
+## 2026-09-02 — Subplan 7 activated
+
+- Activated Direct Invoking-Session Adapter on `feat/stage7-direct-adapter` from verified local
+  `main` after Subplan 6 review-fix integration.
+- First task is the domain/compiler scope value and one-node/no-edge legality rule; later admission,
+  lifecycle/finalizer and parity work remains pending and will reuse the existing Scheduler path.

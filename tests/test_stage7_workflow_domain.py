@@ -149,8 +149,7 @@ def test_canonical_revision_separates_source_and_immutable_identity():
             source(**changes)
     with pytest.raises(ValidationError, match="hash"):
         WorkflowRevision.model_validate({**first.model_dump(), "content_hash": "f" * 64})
-    with pytest.raises(ValidationError):
-        node(conversation_scope="invoking_session")
+    assert node(conversation_scope="invoking_session").conversation_scope == "invoking_session"
     assert node(access_mode="write").access_mode == "write"
 
 

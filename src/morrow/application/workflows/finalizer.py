@@ -137,6 +137,40 @@ class WorkflowOutcomeFinalizer:
                 bindings,
                 artifacts=self.artifacts,
             )
+            if revision.nodes[0].conversation_scope == "invoking_session":
+                root = txn.get_task_run(self.workspace_id, run.root_task_run_id)
+                if root.status is not TaskRunStatus.READY_FOR_ACCEPTANCE:
+                    raise ApplicationError(
+                        ApplicationErrorCode.NEEDS_RECOVERY,
+                        "Direct Workflow root terminal is missing after its committed Turn",
+                    )
+                agent_run = txn.get_agent_run(self.workspace_id, nodes[0].agent_run_id)
+                transitions = tuple(
+                    item
+                    for item in txn.list_task_transitions(self.workspace_id, root.task_run_id)
+                    if item.to_status is TaskRunStatus.READY_FOR_ACCEPTANCE
+                    and agent_run is not None
+                    and item.turn_id == agent_run.turn_id
+                )
+                if not transitions:
+                    raise ApplicationError(
+                        ApplicationErrorCode.NEEDS_RECOVERY,
+                        "Direct Workflow ready transition is missing",
+                    )
+                run = self.transitions.complete_run(workflow_run_id, result_status=result)
+                outcome = self._build_outcome(
+                    txn,
+                    run,
+                    revision,
+                    nodes,
+                    root,
+                    trigger=TaskOutcomeTrigger.SNAPSHOT,
+                    summary=f"Workflow '{revision.name}' completed with result {result}.",
+                    basis_extra=(f"workflow_result={result}", f"node_count={len(nodes)}"),
+                    markers=(transitions[-1],),
+                )
+                txn.put_task_outcome(self.workspace_id, outcome)
+                return run
             # The root transition lands while the Run is still nonterminal; the
             # Run closes after it, then the marked snapshot records both.
             root = txn.get_task_run(self.workspace_id, run.root_task_run_id)
@@ -275,6 +309,24 @@ class WorkflowOutcomeFinalizer:
             # The root closes while the Run is still nonterminal; the Run's own
             # terminal fact lands in the same transaction afterwards.
             root = txn.get_task_run(self.workspace_id, run.root_task_run_id)
+            direct_admitted = revision.nodes[0].conversation_scope == "invoking_session" and any(
+                node.agent_run_id is not None for node in nodes
+            )
+            if (
+                revision.nodes[0].conversation_scope == "invoking_session"
+                and not direct_admitted
+                and reason in {"preparation_failed", "node_failed"}
+            ):
+                # No Direct Turn exists, so TurnLifecycle has not taken root
+                # ownership. Close only the Workflow facts and leave the user's
+                # still-open root available for ordinary Direct work.
+                if run_target is WorkflowStatus.FAILED:
+                    return self.transitions.fail_run(workflow_run_id)
+                return self.transitions.cancel_run(workflow_run_id)
+            if direct_admitted and root.status is root_target:
+                if run_target is WorkflowStatus.FAILED:
+                    return self.transitions.fail_run(workflow_run_id)
+                return self.transitions.cancel_run(workflow_run_id)
             if not root.status.is_terminal and root.status is not root_target:
                 transition = self._transition_record(root, root_target, reason=f"workflow_{reason}")
                 closed_root = txn.transition_workflow_task(

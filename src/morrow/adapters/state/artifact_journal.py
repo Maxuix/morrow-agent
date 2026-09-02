@@ -279,6 +279,26 @@ class SqliteArtifactJournal:
                 "JOIN workflow_leaf_ownership o USING(node_run_id) WHERE n.node_run_id=?",
                 (metadata.producer_node_run_id,),
             )
+            if owner is None:
+                # The Direct invoking-session adapter deliberately has no
+                # standalone leaf-ownership row: its admitted NodeRun points
+                # at the Workflow's exact root Session/Task pair.
+                direct = self.backend.read_one(
+                    "SELECT n.workspace_id, n.body_json, r.root_task_run_id, t.session_id "
+                    "FROM workflow_node_runs n JOIN workflow_runs r USING(workflow_run_id) "
+                    "JOIN task_runs t ON t.task_run_id=r.root_task_run_id "
+                    "WHERE n.node_run_id=?",
+                    (metadata.producer_node_run_id,),
+                )
+                if direct is not None:
+                    from morrow.core.workflows.runs import NodeRun
+
+                    node = NodeRun.model_validate_json(direct[1])
+                    if (node.leaf_task_run_id, node.conversation_session_id) == (
+                        direct[2],
+                        direct[3],
+                    ):
+                        owner = (direct[0], direct[3], direct[2])
             if owner != (workspace_id, metadata.session_id, metadata.task_run_id):
                 raise StorageError(
                     StorageErrorCode.UNAVAILABLE, "Workflow Artifact producer scope mismatch"

@@ -10,6 +10,7 @@ class DefinitionFailure(StrEnum):
     DISABLED = "Agent definition is disabled for new admissions"
     REVOKED = "policy_revoked: publish a changed Agent definition to supersede"
     SCOPE = "isolated scope requires a distinct standalone Session/Task pair"
+    DIRECT_SCOPE = "invoking-session scope requires the exact current user Session/Task pair"
     NONEMPTY = "isolated admission requires an empty ConversationLog"
     TOOLS = "required tool backend is unavailable or denied by the capability ceiling"
     SKILLS = "exact Skill version is disabled, unavailable or incompatible with the effective tools"

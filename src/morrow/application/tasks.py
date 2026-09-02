@@ -102,6 +102,7 @@ class TaskOutcomeAssembler:
         summary: str | None = None,
         feedback: tuple[str, ...] = (),
         artifact_refs: tuple[ArtifactReference, ...] = (),
+        workflow_profile: bool = False,
     ) -> TaskOutcome:
         turns = self.journal.list_task_turns(self.workspace_id, task.task_run_id)
         executions = self.journal.list_task_executions(self.workspace_id, task.task_run_id)
@@ -235,7 +236,7 @@ class TaskOutcomeAssembler:
             "artifact_refs": all_artifact_refs,
             "created_at": self.clock(),
         }
-        if carry_forward is not None:
+        if carry_forward is not None or workflow_profile:
             return workflow_task_outcome(**fields)
         return TaskOutcome(**fields)
 

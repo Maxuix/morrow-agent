@@ -112,7 +112,15 @@ class TaskContract(ProtocolModel):
         payload = canonical_json_bytes(self.model_dump(mode="json"))
         if len(payload) > 16384:
             raise ValueError("TaskContract exceeds its payload budget")
-        refuse_secret_material(payload, label="TaskContract", profile="workflow_value_sensitive")
+        try:
+            refuse_secret_material(
+                payload, label="TaskContract", profile="workflow_value_sensitive"
+            )
+        except ValueError:
+            raise ValueError(
+                "TaskContract contains secret-shaped material that cannot be stored as a durable "
+                "Workflow input; use ordinary Direct chat for this task"
+            ) from None
         return self
 
 

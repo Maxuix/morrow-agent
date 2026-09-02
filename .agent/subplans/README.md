@@ -15,7 +15,7 @@ under `.agent/archive/subplans/stage7-workflow-runtime-v1/`.
 | 4 | `4-stage7-isolated-workflow-slice.md` | completed and integrated |
 | 5 | `5-stage7-serial-dag-scheduler.md` | completed and integrated |
 | 6 | `6-stage7-multi-agent-pipeline.md` | completed and integrated |
-| 7 | `7-stage7-direct-adapter.md` | ready; not active |
+| 7 | `7-stage7-direct-adapter.md` | active |
 | 8 | `8-stage7-management-templates.md` | pending Subplan 7 |
 | 9 | `9-stage7-acceptance-closeout.md` | pending Subplan 8 |
 

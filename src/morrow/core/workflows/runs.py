@@ -9,6 +9,7 @@ from typing import Annotated, Literal
 from pydantic import Field, field_validator, model_validator
 
 from morrow.core.agent_definitions import WorkspaceId
+from morrow.core.domain import CLIENT_MESSAGE_ID_PATTERN
 from morrow.core.models import ProtocolModel
 from morrow.core.workflows.contracts import ArtifactBinding, SlotName
 from morrow.core.workflows.definitions import WorkflowBudget, WorkflowRevisionId
@@ -78,6 +79,15 @@ class WorkflowRun(RunState):
     input_artifacts: tuple[ArtifactBinding, ...] = Field(min_length=1, max_length=1)
     result_status: Literal["succeeded", "needs_revision"] | None = None
     pending_terminal_intent: Literal["user_cancel"] | None = None
+    invoking_client_message_id: str | None = None
+    invoking_root_row_version: int | None = Field(default=None, ge=1, strict=True)
+
+    @field_validator("invoking_client_message_id")
+    @classmethod
+    def valid_client_message_id(cls, value: str | None) -> str | None:
+        if value is not None and not CLIENT_MESSAGE_ID_PATTERN.match(value):
+            raise ValueError("client_message_id must be a bounded opaque command field")
+        return value
 
     @model_validator(mode="after")
     def workflow_facts(self):
@@ -86,6 +96,8 @@ class WorkflowRun(RunState):
         binding = self.input_artifacts[0]
         if binding.name != "task" or binding.contract.kind != "TaskContract":
             raise ValueError("Workflow input must bind TaskContract@1 as task")
+        if (self.invoking_client_message_id is None) != (self.invoking_root_row_version is None):
+            raise ValueError("Direct Workflow binding facts must be present together")
         return self
 
 

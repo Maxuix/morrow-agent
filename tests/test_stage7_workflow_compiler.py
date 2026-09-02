@@ -177,6 +177,30 @@ def test_one_node_and_multi_node_isolated_positives(state):
     assert result.candidate.terminal_nodes == ("report",)
 
 
+def test_invoking_session_one_node_positive_and_multi_node_rejection(state):
+    _, _, _, agents, service = state
+    _, ref = publish_agent(agents)
+    direct = source(ref, nodes=(node_source(ref, conversation_scope="invoking_session"),))
+    result = service.validate(direct, active_model=MODEL)
+    assert result.candidate is not None and result.diagnostics == ()
+    assert result.candidate.nodes[0].conversation_scope == "invoking_session"
+
+    multi = source(
+        ref,
+        nodes=(
+            node_source(ref, "direct", conversation_scope="invoking_session"),
+            node_source(ref, "report"),
+        ),
+        edges=(WorkflowEdge(from_node_id="direct", to_node_id="report"),),
+        required_outputs=(NodeOutputRef(node_id="report", output_slot="result"),),
+    )
+    rejected = service.validate(multi, active_model=MODEL)
+    assert rejected.candidate is None
+    assert [diagnostic.code for diagnostic in errors_of(rejected)] == [
+        "invoking_session_shape_invalid"
+    ]
+
+
 def test_validate_is_write_free_and_matches_publish_diagnostics(state, monkeypatch):
     _, _, journal, agents, service = state
     _, ref = publish_agent(agents)

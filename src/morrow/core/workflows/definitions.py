@@ -61,7 +61,7 @@ class AgentNodeSource(ProtocolModel):
     input_bindings: tuple[InputBinding, ...] = Field(default=(), max_length=64)
     output_contracts: tuple[OutputContract, ...] = Field(min_length=1, max_length=64)
     access_mode: Literal["read", "write"]
-    conversation_scope: Literal["isolated"] = "isolated"
+    conversation_scope: Literal["isolated", "invoking_session"] = "isolated"
     tool_requirements: tuple[ToolRequirement, ...] | None = Field(default=None, max_length=128)
     max_agent_generation_requests: int | None = Field(default=None, gt=0, strict=True)
 

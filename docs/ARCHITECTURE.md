@@ -1,8 +1,8 @@
 # Morrow 架构基线
 
 > 状态：阶段 2–6 已完成；S7P-10 已把 Stage 7 准入升级为 **GO**。Stage 7 静态 Workflow
-> Runtime 的 Subplan 1–2 已完成并集成，包含 AgentDefinition 与 Workflow 领域/持久化契约。
-> Workflow 编译/执行尚未开始（macOS；Linux 原生运行仍 unsupported）。
+> Runtime 的 Subplan 1–6 已集成，Subplan 7 Direct invoking-session adapter 已实现并通过离线门禁；
+> 管理 CLI/模板交付仍待 Subplan 8（macOS；Linux 原生运行仍 unsupported）。
 
 本文锁定当前依赖方向、数据所有权和安全边界。阶段 3 的能力策略、配置工具、工作空间读搜、冲突安全文件变更、直接 Host 命令、只读 Git 和当前 macOS 原生沙箱
 已经交付；Linux 原生运行尚未声明支持。Stage 4 已落地数据根 SQLite Operational Store 的
@@ -19,7 +19,9 @@ Doctor；`application/mcp/` 负责 desired-state、Catalog、run-scoped runtime�
 Workspace 扩展配置继续由 YAML 持有，CredentialStore 是唯一凭据权威。Operational Store v14–v23 持有 Skill/MCP
 运行证据与 AgentRun 观测；request ledger、保留但不参与当前判定的历史 completion 列与 long-horizon accounting，
 以及 v21 的有界 retry progress、v22 的 durable runtime-control queue 独立于不可变
-AgentRun admission snapshot。
+AgentRun admission snapshot。Stage 7 当前已交付纯 Workflow Compiler、不可变 Revision 发布、统一串行
+Scheduler、isolated 多节点 Artifact pipeline，以及复用同一 Scheduler/TurnLifecycle 的 opt-in 单节点
+`invoking_session` adapter；普通 Direct 仍是默认路径。
 `application/backup_service.py` 组合在线 SQLite、Artifact、脱敏 YAML 和被引用 managed Skill 版本，并以新目标
 目录执行原子、隔离 restore。Backup 只有当前完整格式，且不复制凭据。
 
@@ -32,8 +34,9 @@ Built-in Direct/Explorer 是只读源 fixture，必须显式 publish，启动和
 Stage 7 Subplan 2 增加 `core/workflows/` 的 source、compiled Revision、NodeRun/WorkflowRun 与
 TaskContract/TextResult 契约；`workflow_journal.py` 在共享事务 backend 上持有 v24 immutable
 Revision/Head/source-hash、单向撤销、根任务非终态唯一性、queued leaf ownership 和 Artifact binding。
-Repository 只接受已编译的不可变对象，不生成 Revision/hash，也没有 Workflow 应用发布入口；Compiler
-与 Scheduler 留在后续子计划。workspace `workflow-definitions.yaml` 复用 definition YAML/OCC owner。
+Repository 只接受已编译的不可变对象，不生成 Revision/hash；纯 Compiler 与唯一 publication service
+位于 `application/workflows/compiler.py`、`publication.py`。workspace `workflow-definitions.yaml` 复用
+definition YAML/OCC owner。
 TaskRun 的 `user|workflow_node` purpose 把内部叶子排除在普通 Task/Turn mutation 与 LearningReview 之外；
 `application/workflows/tasks.py` 是明确的内部生命周期边界。Artifact bytes 仍归同一 ArtifactService/store，
 TaskContract/TextResult 只新增 typed contract、确定性 NodeRun/slot 产物身份与引用，不复制聊天历史。
@@ -41,7 +44,9 @@ Artifact/TaskOutcome 保存内部 TextSafetyProfile；Workflow typed projection 
 普通 API 保持 legacy-strict。Backup/doctor 复用现有 bundle/integrity seams，保留 malformed desired source
 原始字节；published reference/hash 损坏是 error，未发布源问题是局部 warning。
 
-`AgentFactory` 绑定调用者提供的独立空 Session/current TaskRun 对，限制既有 preparation 的工具集合并选择精确模型。
+`AgentFactory` 默认绑定调用者提供的独立空 Session/current TaskRun 对；Direct adapter 仅在 Revision
+明确声明 `invoking_session` 时绑定 exact invoking user Session/root Task。两种 scope 都限制既有
+preparation 的工具集合并选择 Compiler 冻结的精确模型。
 role prompt 经原 PromptAssembler 注入，精确 Skill 版本仍经过 enabled binding、pin 和依赖检查；Preference、Memory、
 Permission 与 Context 仍归原 owner。AgentRun 只新增 Definition ID/version/hash、conversation_session_id 和单一
 primary-generation-request cap；计入每次 `purpose=agent` 的调用（含工具后的继续生成与重试），
@@ -52,13 +57,19 @@ primary-generation-request cap；计入每次 `purpose=agent` 的调用（含工
 普通 disable 只阻止新 admission，Factory recovery 只检查不可变版本及其撤销记录，不再检查 enabled head。
 普通 Direct 不使用 AgentFactory，默认路径、公开事件和 bundled runtime-policy 未改变。
 
-当前没有 Workflow Compiler、Scheduler 或 Agent/Workflow 管理 CLI；只有领域、持久化与内部生命周期契约。
-Workflow 将继续在 `AgentLoop` 之外组合叶子，typed TaskContract/Artifact binding 已有表示但尚未接入执行；当前独立隔离叶子仍从
-普通 `run_task` 输入与既有 Artifact reader 接收显式上下文。只读 ceiling 要求可证明的静态只读工具契约，未知副作用
-工具仍可用于 write ceiling 的串行 Agent，不能因角色提示变成只读。
+`application/workflows/scheduler.py` 是所有 Stage 7 图形的唯一串行执行器；它在 `AgentLoop` 之外组合
+叶子，但仍通过同一 `run_task`、ToolExecutor、权限、durable request admission 与 Session-owned
+ConversationLog。isolated 节点拥有独立 Session/`workflow_node` Task；单节点无边的
+`invoking_session` 节点改为绑定根 Session/user Task，并由 TurnLifecycle 独占根终态写入，Workflow
+finalizer 随后幂等关闭 Run 与结果 snapshot。NodeResultCommitter、Artifact binding、取消与恢复路径在
+两种 scope 间共享。多节点 DAG 使用 Artifact-only handoff，包含 Explorer→Coder→Reviewer 与 truthful
+`needs_revision` 结果。当前仍没有 Agent/Workflow 管理 CLI；Subplan 8 才接入命令和内置模板枚举。
+只读 ceiling 要求可证明的静态只读工具契约，未知副作用工具仍可用于 write ceiling 的串行 Agent，
+不能因角色提示变成只读。
 
-现有 refusal owner 提供仅供 Definition 文本及引用使用的 value-sensitive 模式，并共享 preview/value-shaped 与高置信
-literal 检测规则。Artifact/TaskOutcome 的持久化 profile discriminator 尚未实现。现有 backup/doctor 增加 definition
+现有 refusal owner 为 Workflow Definition、Artifact 与 TaskOutcome 提供共享的 value-sensitive 模式，
+并共享 preview/value-shaped 与高置信 literal 检测规则；持久化 profile discriminator 已落地，普通
+Direct 仍默认 legacy-strict。现有 backup/doctor 增加 definition
 行完整性与精确路径的原始 desired-source inventory：损坏草稿可备份/恢复且只报局部 warning；发布引用/hash 损坏才报 error。
 
 ## 分层与依赖方向

@@ -20,6 +20,7 @@ from morrow.core.application import (
     ApplicationErrorCode,
 )
 from morrow.core.domain import (
+    CLIENT_MESSAGE_ID_PATTERN,
     TaskRunPurpose,
     TaskRunStatus,
     canonical_json_bytes,
@@ -49,6 +50,7 @@ class StartWorkflowCommand:
     expected_root_row_version: int
     contract: TaskContract
     command_id: str
+    client_message_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -68,6 +70,7 @@ def start_request_digest(command: StartWorkflowCommand) -> str:
                 "session_id": command.session_id,
                 "root_task_run_id": command.root_task_run_id,
                 "expected_root_row_version": command.expected_root_row_version,
+                "client_message_id": command.client_message_id,
                 "contract": sha256_digest(
                     canonical_json_bytes(command.contract.model_dump(mode="json"))
                 ),
@@ -100,6 +103,7 @@ class WorkflowStartService:
             return replay
 
         revision = self._check_revision(command)
+        self._check_direct_binding(command, revision)
         root = self._check_root(command)
         artifact_id = workflow_input_artifact_id(command.command_id)
         # The value-sensitive input projection already ran at TaskContract
@@ -134,6 +138,12 @@ class WorkflowStartService:
                         artifact_id=artifact_id,
                         contract=ContractRef(kind="TaskContract"),
                     ),
+                ),
+                invoking_client_message_id=command.client_message_id,
+                invoking_root_row_version=(
+                    command.expected_root_row_version
+                    if command.client_message_id is not None
+                    else None
                 ),
             )
             nodes = tuple(
@@ -197,6 +207,26 @@ class WorkflowStartService:
             )
         self._check_gates(self.journal, revision)
         return revision
+
+    @staticmethod
+    def _check_direct_binding(command: StartWorkflowCommand, revision: WorkflowRevision) -> None:
+        direct = revision.nodes[0].conversation_scope == "invoking_session"
+        if direct:
+            if command.client_message_id is None:
+                raise ApplicationError(
+                    ApplicationErrorCode.INVALID,
+                    "invoking_session Workflow requires a distinct client-message ID",
+                )
+            if not CLIENT_MESSAGE_ID_PATTERN.match(command.client_message_id):
+                raise ApplicationError(
+                    ApplicationErrorCode.INVALID,
+                    "client-message ID must be a bounded opaque command field",
+                )
+        elif command.client_message_id is not None:
+            raise ApplicationError(
+                ApplicationErrorCode.INVALID,
+                "client-message ID is only valid for an invoking_session Workflow",
+            )
 
     def _check_gates(self, reader, revision: WorkflowRevision) -> None:
         """Head enable gates and revocation absence (rechecked in the final txn)."""

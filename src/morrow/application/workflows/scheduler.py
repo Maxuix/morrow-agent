@@ -332,7 +332,7 @@ class WorkflowScheduler:
         node: NodeRun,
         cap: int,
     ) -> None:
-        leaf_session_id, leaf_task_run_id = self._ensure_leaf(run, node)
+        leaf_session_id, leaf_task_run_id = self._ensure_leaf(run, node_def, node)
         hooks = WorkflowLeafHooks(
             self.journal,
             workspace_id=self.workspace_id,
@@ -375,6 +375,7 @@ class WorkflowScheduler:
             session=session,
             task_run_id=leaf_task_run_id,
             invoking_session_id=root.session_id,
+            conversation_scope=node_def.conversation_scope,
         )
         error_message: str | None = None
         cancelled = False
@@ -387,6 +388,8 @@ class WorkflowScheduler:
                 leaf = self.journal.get_task_run(self.workspace_id, leaf_task_run_id)
                 if node.status is WorkflowStatus.QUEUED:
                     persistence.attach(session)
+                    if node_def.conversation_scope == "invoking_session":
+                        persistence.restore_into(session)
                     prepared = factory.prepare_new(
                         agent_run_id=self.id_source.new_id("arun"),
                         model=node_def.resolved_model_ref,
@@ -398,7 +401,7 @@ class WorkflowScheduler:
                     drive_error = await self._drive(
                         session,
                         text,
-                        client_message_id=f"workflow:{node.node_run_id}",
+                        client_message_id=self._client_message_id(run, node_def, node),
                         prepared=prepared,
                     )
                 elif (
@@ -429,7 +432,7 @@ class WorkflowScheduler:
                         drive_error = await self._drive(
                             session,
                             "",
-                            client_message_id=f"workflow:{node.node_run_id}",
+                            client_message_id=self._client_message_id(run, node_def, node),
                             prepared=prepared,
                             resume=True,
                         )
@@ -580,7 +583,15 @@ class WorkflowScheduler:
                 "policy_revoked: the frozen Revision or AgentDefinitionVersion was revoked",
             )
 
-    def _ensure_leaf(self, run: WorkflowRun, node: NodeRun) -> tuple[str, str]:
+    def _ensure_leaf(self, run: WorkflowRun, node_def: AgentNode, node: NodeRun) -> tuple[str, str]:
+        if node_def.conversation_scope == "invoking_session":
+            root = self.journal.get_task_run(self.workspace_id, run.root_task_run_id)
+            if root is None:
+                raise ApplicationError(
+                    ApplicationErrorCode.NEEDS_RECOVERY,
+                    "Workflow invoking root TaskRun is missing",
+                )
+            return root.session_id, root.task_run_id
         owned = self._leaf_ownership(node.node_run_id)
         if owned is not None:
             return owned
@@ -605,6 +616,17 @@ class WorkflowScheduler:
             ),
         )
         return session_id, task_run_id
+
+    @staticmethod
+    def _client_message_id(run: WorkflowRun, node_def: AgentNode, node: NodeRun) -> str:
+        if node_def.conversation_scope == "invoking_session":
+            if run.invoking_client_message_id is None:
+                raise ApplicationError(
+                    ApplicationErrorCode.NEEDS_RECOVERY,
+                    "Direct Workflow client-message binding is missing",
+                )
+            return run.invoking_client_message_id
+        return f"workflow:{node.node_run_id}"
 
     def _leaf_ownership(self, node_run_id: str) -> tuple[str, str] | None:
         return self.journal.workflows.get_leaf_ownership(self.workspace_id, node_run_id)
@@ -746,6 +768,12 @@ class WorkflowScheduler:
         """
 
         from morrow.core.workflows.contracts import TaskContract
+
+        if node_def.conversation_scope == "invoking_session":
+            source = run.input_artifacts[0]
+            stored = self.artifacts.get(source.artifact_id)
+            read = self.artifacts.read(source.artifact_id, max_bytes=stored.byte_size)
+            return self._format_contract(TaskContract.model_validate_json(read.content))
 
         nodes_by_id = self._nodes_by_id(run)
         parts = [self._format_contract(node_def.task_contract)]

@@ -521,8 +521,10 @@ class TurnSubmissionCoordinator:
                 ),
             )
             writer.persist(planned)
-            runtime_control = txn.get_runtime_control(
-                self.workspace_id, session.session_id, client_message_id
+            runtime_control = (
+                txn.get_runtime_control(self.workspace_id, session.session_id, client_message_id)
+                if self.workflow_leaf is None
+                else None
             )
             if runtime_control is not None:
                 if runtime_control.text != user_input:

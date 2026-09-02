@@ -1286,14 +1286,25 @@ class SqliteOperationalJournal:
             self.workflows.get_run(workspace_id, node.workflow_run_id) if node is not None else None
         )
         task = self.get_task_run(workspace_id, turn.task_run_id)
-        if (
-            node is None
-            or node.status.value != "queued"
-            or run is None
-            or run.status.terminal
-            or task is None
-            or task.purpose.value != "workflow_node"
-        ):
+        if node is None or node.status.value != "queued" or run is None or run.status.terminal:
+            raise ValueError("Workflow Turn requires an active Workflow and queued internal Task")
+        revision = self.workflows.get_revision(workspace_id, run.workflow_revision_id)
+        definition = next(n for n in revision.nodes if n.node_id == node.node_id)
+        direct = definition.conversation_scope == "invoking_session"
+        if direct:
+            session = self.get_session(workspace_id, turn.session_id)
+            if (
+                task is None
+                or task.purpose.value != "user"
+                or task.task_run_id != run.root_task_run_id
+                or task.row_version != run.invoking_root_row_version
+                or session is None
+                or session.current_task_run_id != task.task_run_id
+                or turn.client_message_id != run.invoking_client_message_id
+            ):
+                raise ValueError("Workflow Direct Turn does not match its frozen root binding")
+            return self._conversation_journal._create_turn(workspace_id, turn)
+        if task is None or task.purpose.value != "workflow_node":
             raise ValueError("Workflow Turn requires an active Workflow and queued internal Task")
         owner = self._backend.read_one(
             "SELECT session_id, task_run_id FROM workflow_leaf_ownership WHERE node_run_id=?",

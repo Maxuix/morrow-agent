@@ -262,6 +262,11 @@ class SqliteWorkflowJournal:
                 or value.budget_snapshot != revision.budget
             ):
                 raise ValueError("Workflow admission must preserve the revision budget")
+            direct = revision.nodes[0].conversation_scope == "invoking_session"
+            if direct != (value.invoking_client_message_id is not None):
+                raise ValueError("Workflow Direct binding does not match its revision scope")
+            if direct and value.invoking_root_row_version != root.row_version:
+                raise ValueError("Workflow Direct binding does not match the root revision")
             if (
                 value.started_at is None
                 or value.admission_deadline_at
@@ -383,13 +388,23 @@ class SqliteWorkflowJournal:
                 run = self.get_run(value.workspace_id, value.workflow_run_id)
                 revision = self.get_revision(value.workspace_id, run.workflow_revision_id)
                 definition = next(n for n in revision.nodes if n.node_id == value.node_id)
+                direct = definition.conversation_scope == "invoking_session"
                 owner = self.backend.read_one(
                     "SELECT session_id, task_run_id FROM workflow_leaf_ownership WHERE node_run_id=?",
                     (value.node_run_id,),
                 )
-                if owner != (value.conversation_session_id, value.leaf_task_run_id):
+                if direct:
+                    if (
+                        owner is not None
+                        or leaf is None
+                        or leaf.purpose != TaskRunPurpose.USER
+                        or leaf.task_run_id != run.root_task_run_id
+                        or leaf.session_id != value.conversation_session_id
+                    ):
+                        raise ValueError("Workflow invoking-session scope mismatch")
+                elif owner != (value.conversation_session_id, value.leaf_task_run_id):
                     raise ValueError("Workflow node does not own this leaf")
-                if (
+                elif (
                     leaf is None
                     or leaf.purpose != TaskRunPurpose.WORKFLOW_NODE
                     or leaf.session_id != value.conversation_session_id
@@ -495,7 +510,14 @@ class SqliteWorkflowJournal:
                         "SELECT session_id, task_run_id FROM workflow_leaf_ownership WHERE node_run_id=?",
                         (node_run_id,),
                     )
-                    if owner != (artifact.session_id, artifact.task_run_id):
+                    direct = declared.conversation_scope == "invoking_session"
+                    root = self.get_task(workspace_id, run.root_task_run_id)
+                    expected_owner = (
+                        (root.session_id, root.task_run_id)
+                        if direct and root is not None
+                        else owner
+                    )
+                    if expected_owner != (artifact.session_id, artifact.task_run_id):
                         raise ValueError("Workflow output Artifact scope mismatch")
                 elif direction == "input":
                     declared_input = next(

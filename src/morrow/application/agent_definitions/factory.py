@@ -12,7 +12,7 @@ from morrow.application.agent_definitions.publication import resolve_definition_
 from morrow.application.prompt import DirectCodingPromptAssembler
 from morrow.core.agent_runs import AgentDefinitionRef
 from morrow.core.capabilities import OperationIntent, OperationKind, PolicyVerdict
-from morrow.core.domain import TaskRunStatus, session_can_start_work
+from morrow.core.domain import TaskRunPurpose, TaskRunStatus, session_can_start_work
 from morrow.core.models import ModelRef, ToolEffect
 from morrow.core.workflows.contracts import MECHANISM_TOOL_NAMES
 from morrow.runtime.tools import ToolExecutor, ToolRegistry
@@ -35,6 +35,7 @@ class AgentFactory:
         session,
         task_run_id,
         invoking_session_id,
+        conversation_scope="isolated",
     ):
         self.preparation = preparation
         self.publication = publication
@@ -42,6 +43,7 @@ class AgentFactory:
         self.session = session
         self.task_run_id = task_run_id
         self.invoking_session_id = invoking_session_id
+        self.conversation_scope = conversation_scope
         self.diagnostics = ()
 
     def _scope(self, *, fresh):
@@ -49,16 +51,29 @@ class AgentFactory:
         journal = self.publication.journal
         stored = journal.get_session(ws, self.session.session_id)
         task = journal.get_task_run(ws, self.task_run_id)
-        if (
+        common_invalid = (
             stored is None
             or task is None
             or task.session_id != stored.session_id
             or stored.current_task_run_id != task.task_run_id
-            or stored.session_id == self.invoking_session_id
-            or stored.parent_session_id is not None
             or not session_can_start_work(stored.lifecycle, stored.health)
             or task.status is not TaskRunStatus.OPEN
-        ):
+        )
+        if common_invalid:
+            failure = (
+                DefinitionFailure.DIRECT_SCOPE
+                if self.conversation_scope == "invoking_session"
+                else DefinitionFailure.SCOPE
+            )
+            raise AgentDefinitionAdmissionError(failure)
+        if self.conversation_scope == "invoking_session":
+            if (
+                stored.session_id != self.invoking_session_id
+                or task.purpose is not TaskRunPurpose.USER
+            ):
+                raise AgentDefinitionAdmissionError(DefinitionFailure.DIRECT_SCOPE)
+            return stored
+        if stored.session_id == self.invoking_session_id or stored.parent_session_id is not None:
             raise AgentDefinitionAdmissionError(DefinitionFailure.SCOPE)
         if fresh and (stored.conversation_position != 0 or self.session.log.snapshot().records):
             raise AgentDefinitionAdmissionError(DefinitionFailure.NONEMPTY)

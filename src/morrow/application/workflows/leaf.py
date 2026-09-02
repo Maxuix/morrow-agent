@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from morrow.application.artifacts import ArtifactService
+from morrow.application.tasks import TaskOutcomeAssembler
 from morrow.application.workflows.artifacts import ensure_workflow_payload
 from morrow.application.workflows.capture import CHANGE_CAPTURE_ROLE, VALIDATION_REPORT_ROLE
 from morrow.application.workflows.evidence import text_result_from_assistant
@@ -24,6 +25,7 @@ from morrow.core.artifacts import ArtifactError, ArtifactErrorCode, ArtifactKind
 from morrow.core.domain import (
     TASK_TRANSITION_ID_PREFIX,
     DurableTaskRunTransition,
+    TaskOutcomeTrigger,
     TaskRunStatus,
     canonical_json_bytes,
 )
@@ -94,6 +96,28 @@ class WorkflowLeafHooks:
             raise ApplicationError(
                 ApplicationErrorCode.INVALID, "Workflow revision is missing for the admitted node"
             )
+        run = txn.workflows.get_run(self.workspace_id, ctx.workflow_run_id)
+        if run is None or run.workflow_revision_id != ctx.workflow_revision_id:
+            raise ApplicationError(
+                ApplicationErrorCode.INVALID, "Workflow run binding is inconsistent"
+            )
+        if ctx.node.conversation_scope == "invoking_session":
+            root = txn.get_task_run(self.workspace_id, run.root_task_run_id)
+            session = txn.get_session(self.workspace_id, ctx.leaf_session_id)
+            if (
+                root is None
+                or session is None
+                or ctx.leaf_task_run_id != run.root_task_run_id
+                or root.session_id != ctx.leaf_session_id
+                or session.current_task_run_id != root.task_run_id
+                or root.status is not TaskRunStatus.OPEN
+                or root.row_version != run.invoking_root_row_version
+                or run.invoking_client_message_id is None
+            ):
+                raise ApplicationError(
+                    ApplicationErrorCode.INVALID,
+                    "Direct Workflow Turn admission facts changed; the bound root is no longer current",
+                )
         if txn.workflows.get_revocation(self.workspace_id, ctx.workflow_revision_id) is not None:
             raise ApplicationError(
                 ApplicationErrorCode.INVALID,
@@ -536,6 +560,24 @@ class WorkflowLeafHooks:
             ),
             expected_row_version=task.row_version,
         )
-        # Leaf evidence stays in its Turn/ToolExecution records; only the root
-        # TaskRun ever produces a TaskOutcome (the journal enforces this).
+        if ctx.node.conversation_scope == "invoking_session" and target in {
+            TaskRunStatus.CANCELLED,
+            TaskRunStatus.FAILED,
+        }:
+            updated = txn.get_task_run(self.workspace_id, ctx.leaf_task_run_id)
+            outcome = TaskOutcomeAssembler(
+                txn,
+                workspace_id=self.workspace_id,
+                id_source=self.id_source,
+                clock=self.clock,
+            ).build(
+                updated,
+                trigger=TaskOutcomeTrigger.TERMINAL_CLOSE,
+                workflow_profile=True,
+            )
+            txn.put_task_outcome(self.workspace_id, outcome)
+        # Isolated leaf evidence stays in its Turn/ToolExecution records; only
+        # the root TaskRun ever produces a TaskOutcome. In invoking-session
+        # scope this exact Task is the root, so ERROR/CANCEL uses the internal
+        # Workflow safety profile above.
         return target.is_terminal

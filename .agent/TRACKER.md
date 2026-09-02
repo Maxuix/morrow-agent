@@ -2,18 +2,17 @@
 
 ## Current status
 
-Stage 7 Subplan 6 (Serial Multi-Agent Artifact Pipeline) is completed and integrated into local
-`main` (implementation `bfcf869`, closeout `48fb1a3`, review-fix `ab02204`). Review-fix offline
-gate: 1493 passed, 2 Live deselected; ruff format/check, compileall and `git diff --check` clean.
+Stage 7 Subplan 7 (Direct Invoking-Session Adapter) is active on
+`feat/stage7-direct-adapter`, based on verified local `main` after Subplan 6 review-fix integration.
 
 ## Active task
 
-None. Subplan 7 is not active.
+Task 7: finish the declared focused/regression matrix and run the full offline validation gate.
 
 ## Next action
 
-Await explicit continuation before activating Subplan 7 (Direct Invoking-Session Adapter) from
-verified `main`.
+Run formatting/static checks, the agent-preparation and crash-recovery regressions, then the full
+non-Live suite; repair any regressions before closeout.
 
 ## Blockers
 

@@ -146,6 +146,18 @@ def compile_workflow(
 def _check_graph(source: WorkflowDefinitionSource, diagnostics: list[CompileDiagnostic]):
     node_ids = {node.node_id for node in source.nodes}
     edges = [(edge.from_node_id, edge.to_node_id) for edge in source.edges]
+    invoking = sorted(
+        node.node_id for node in source.nodes if node.conversation_scope == "invoking_session"
+    )
+    if invoking and (len(source.nodes) != 1 or edges):
+        diagnostics.append(
+            CompileDiagnostic(
+                DiagnosticSeverity.ERROR,
+                "invoking_session_shape_invalid",
+                "invoking_session is legal only for an entire graph with exactly one node and "
+                "no edges; use isolated scope for multi-node Workflows",
+            )
+        )
     for from_id, to_id in edges:
         if from_id not in node_ids or to_id not in node_ids or from_id == to_id:
             diagnostics.append(
