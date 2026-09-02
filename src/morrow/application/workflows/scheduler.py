@@ -720,7 +720,7 @@ class WorkflowScheduler:
         extra = []
         node = hooks.context.node
         if any(contract.kind in SUBMISSION_OUTPUT_KINDS for contract in node.output_contracts):
-            extra.append(make_submit_node_result_tool(hooks))
+            extra.append(make_submit_node_result_tool(hooks, node.output_contracts))
         isolation = executor.expected_process_isolation
         patch_required = any(
             contract.kind == "ImplementationPatch" and contract.required_for_node_completion

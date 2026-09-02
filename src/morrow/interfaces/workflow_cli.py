@@ -5,9 +5,12 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
+from collections.abc import Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
-from dataclasses import replace
+from dataclasses import fields, is_dataclass, replace
+from datetime import date, datetime
+from enum import Enum
 from pathlib import Path
 
 import typer
@@ -70,23 +73,32 @@ def definition_options(
 
 
 def _dump(value) -> None:
-    if hasattr(value, "model_dump"):
-        value = value.model_dump(mode="json")
-    elif hasattr(value, "__dict__"):
-        value = {key: _jsonable(item) for key, item in value.__dict__.items()}
-    typer.echo(json.dumps(_jsonable(value), ensure_ascii=False, sort_keys=True))
+    typer.echo(json.dumps(_jsonable(value), ensure_ascii=False, sort_keys=True, allow_nan=False))
 
 
 def _jsonable(value):
+    if isinstance(value, Enum):
+        return _jsonable(value.value)
     if hasattr(value, "model_dump"):
         return value.model_dump(mode="json")
-    if hasattr(value, "__dict__"):
-        return {key: _jsonable(item) for key, item in value.__dict__.items()}
-    if isinstance(value, tuple):
-        return [_jsonable(item) for item in value]
-    if isinstance(value, dict):
+    if is_dataclass(value) and not isinstance(value, type):
+        return {field.name: _jsonable(getattr(value, field.name)) for field in fields(value)}
+    if isinstance(value, Mapping):
         return {str(key): _jsonable(item) for key, item in value.items()}
-    return value
+    if isinstance(value, (tuple, list)):
+        return [_jsonable(item) for item in value]
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    if isinstance(value, Path):
+        return str(value)
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    raise TypeError(f"unsupported CLI JSON value: {type(value).__name__}")
+
+
+def _workflow_run_exit_code(run) -> int:
+    status = getattr(run.status, "value", run.status)
+    return 0 if status == "completed" else 1
 
 
 def _source(path: Path, model):
@@ -431,6 +443,25 @@ def workflow_list(
         _fail(exc)
 
 
+@workflow_app.command("runs")
+def workflow_runs(
+    limit: int = typer.Option(100, "--limit", min=1, max=100),
+    after: str | None = typer.Option(None, "--after"),
+    workspace_id: str | None = typer.Option(None, "--workspace-id"),
+    directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+):
+    """List durable Workflow runs so interrupted foreground work remains discoverable."""
+
+    try:
+        with _definition_services(
+            write=False, **_options(workspace_id, directory, state_root)
+        ) as ctx:
+            _dump(ctx[4].list_runs(limit=limit, after=after))
+    except Exception as exc:
+        _fail(exc)
+
+
 @workflow_app.command("show")
 def workflow_show(
     definition_id: str,
@@ -632,6 +663,7 @@ def workflow_run(
     state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
 ):
     products = None
+    run_exit_code = 0
     try:
         if (task is None) == (not stdin):
             raise ValueError("choose exactly one bounded input source: --task TEXT or --stdin")
@@ -675,19 +707,20 @@ def workflow_run(
             command_id=command_id,
             client_message_id=client_message_id,
         )
-        result = asyncio.run(
-            products.workflow_management.run_foreground(
-                command,
-            )
-        )
+        started = products.workflow_management.start_foreground(command)
+        typer.echo(f"workflow_run_id: {started.run.workflow_run_id}")
+        result = asyncio.run(products.workflow_management.drive_foreground(started))
         if publication is not None:
             result = replace(result, published=publication.created)
         _dump(result)
+        run_exit_code = _workflow_run_exit_code(result.run)
     except Exception as exc:
         _fail(exc)
     finally:
         if products is not None:
             products.persistence.store_session.close()
+    if run_exit_code:
+        raise typer.Exit(code=run_exit_code)
 
 
 def _runtime_for_run(state_root, workspace_id, directory, workflow_run_id):

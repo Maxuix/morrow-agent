@@ -126,7 +126,8 @@ class LocalSearchAdapter:
             "--glob",
             "!**/{build,dist}/**",
         ]
-        argv.append("--fixed-strings" if query.literal else "--regexp")
+        if query.literal:
+            argv.append("--fixed-strings")
         if query.case is SearchCase.INSENSITIVE:
             argv.append("--ignore-case")
         elif query.case is SearchCase.SENSITIVE:
@@ -137,7 +138,10 @@ class LocalSearchAdapter:
             argv.extend(("--glob", query.glob))
         if query.context_lines:
             argv.extend(("--context", str(query.context_lines)))
-        argv.extend(("--", query.pattern, relative_root))
+        # Bind the pattern as the value of --regexp before ending option parsing.
+        # The previous ``--regexp -- pattern path`` shape made ripgrep consume
+        # ``--`` as the regex and interpret the real pattern as a filesystem path.
+        argv.extend(("--regexp", query.pattern, "--", relative_root))
         env = {"PATH": str(Path(rg_path).parent), "LC_ALL": "C.UTF-8", "LANG": "C.UTF-8"}
         try:
             completed = subprocess.run(

@@ -1,5 +1,19 @@
 # Execution Log
 
+## 2026-09-02 — Stage 7 real-user evaluation blockers repaired
+
+- Repaired the installed-ripgrep regex argv defect, projected each Node's exact submitted Artifact
+  slots and payload shapes onto the Provider schema, and added bounded value-free validation paths.
+- Replaced recursive CLI `__dict__` serialization, separated durable foreground Start from
+  Scheduler drive so `workflow_run_id` is emitted before model work, added `workflow runs`, and
+  mapped completed versus failed/cancelled/blocked foreground exits truthfully.
+- Stage 7 matrix: 232 passed. Full offline gate: 1536 passed, 2 skipped, 2 Live deselected. Ruff
+  format/check, compileall, installed-rg smoke and `git diff --check` passed.
+- A typed EvidenceBundle Live smoke was prepared in isolated temporary state, but external-action
+  review rejected sending README-derived content to `opencode.ai` without more explicit user
+  authorization. No workaround was attempted. No dependency, runtime-policy default or public
+  event lifecycle changed.
+
 ## 2026-09-02 — Subplan 6 review findings repaired
 
 - On `fix/stage7-capture-review` from local `main@6ba0146`, repaired all seven Subplan 6 review

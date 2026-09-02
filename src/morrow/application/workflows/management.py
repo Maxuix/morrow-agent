@@ -239,10 +239,9 @@ class WorkflowManagementService:
 
     # Foreground execution and recovery -------------------------------------
 
-    async def run_foreground(
-        self,
-        command,
-    ) -> ForegroundWorkflowResult:
+    def start_foreground(self, command):
+        """Durably create or replay a run before any foreground model work starts."""
+
         if self.runtime is None:
             raise RuntimeError("foreground execution requires a composed Workflow runtime")
         revision_id = command.workflow_revision_id
@@ -255,9 +254,22 @@ class WorkflowManagementService:
                 "Workflow revision is not published; run workflow publish first or opt in to "
                 "--ensure-published",
             )
-        started = self.runtime.start.start(command)
+        return self.runtime.start.start(command)
+
+    async def drive_foreground(self, started) -> ForegroundWorkflowResult:
+        """Drive one already-durable start result and preserve its exact revision identity."""
+
+        if self.runtime is None:
+            raise RuntimeError("foreground execution requires a composed Workflow runtime")
         run = await self.runtime.scheduler.run(started.run.workflow_run_id)
-        return ForegroundWorkflowResult(revision_id, False, run)
+        return ForegroundWorkflowResult(started.run.workflow_revision_id, False, run)
+
+    async def run_foreground(
+        self,
+        command,
+    ) -> ForegroundWorkflowResult:
+        started = self.start_foreground(command)
+        return await self.drive_foreground(started)
 
     async def resume(self, workflow_run_id: str) -> WorkflowRun:
         if self.runtime is None:

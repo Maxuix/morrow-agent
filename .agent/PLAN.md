@@ -4,6 +4,8 @@
 > Active subplan: none
 > Next subplan: none
 > Closeout evidence: Subplan 9 acceptance commit `506a276`; tree clean, full offline gate green
+> Post-closeout remediation: 2026-09-02 evaluation blockers repaired; evidence in
+> `docs/acceptance/stage-7-evaluation-blocker-remediation-2026-09-02.md`
 > Roadmap authority: `docs/roadmap/stage-7-workflow-runtime.md`
 > Entry evidence: `docs/acceptance/s7p-10-stage7-entry-review.md` — GO
 > Revision: 2026-08-31 conditional-GO plan review applied

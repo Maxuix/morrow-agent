@@ -1148,6 +1148,7 @@ morrow workflow publish <definition-id> [--disabled]
 morrow workflow enable <definition-id> --expected-head-version <n>
 morrow workflow disable <definition-id> --expected-head-version <n>
 morrow workflow revoke <definition-id> --revision <workflow-revision-id> --reason <text>
+morrow workflow runs [--limit <n>] [--after <workflow-run-id>]
 morrow workflow run <definition-id> [--revision <workflow-revision-id> | --ensure-published] \
   --session <session-id> --root-task <task-run-id> --expected-task-version <n> \
   (--task <text> | --stdin) [--command-id <command-id>] \
@@ -1171,7 +1172,10 @@ list/show/validate/run，且其 Head 可 enable/disable；Stage 7 不提供 copy
 enable/disable 只 OCC 修改 Head gate，不生成新 Version/Revision。`run` 必须显式选择 Session/root
 Task 和 exact Revision，并从 `--task`/`--stdin` 二选一生成 bounded TaskContract；CLI 不替用户创建、
 abandon 或 resume Task。CLI 可生成并在 dispatch 前回显省略的 command ID，以及 Direct 所需的
-client-message ID。`resume` 只继续同一个非终态 recovery run，不能当作失败 Run 的 rerun。再次
+client-message ID；持久化 Workflow Start 后、首个模型请求前还会回显 `workflow_run_id`，崩溃后可
+通过 `workflow runs` 重新发现并用 `status/resume` 处理。前台 Run 对 `completed`（包括
+`needs_revision`）返回退出码 0，对 `failed/cancelled/blocked` 返回 1；命令参数、配置或边界错误返回
+2。`resume` 只继续同一个非终态 recovery run，不能当作失败 Run 的 rerun。再次
 `run` 会创建新的 WorkflowRun；若显式复用 failed root Task，必须先用现有 root Task resume 使其回到
 open。root 已有非终态 Workflow 时，ordinary Task/Turn mutation 不会暗中替换它；用户先用对应
 前台 `workflow run` Ctrl-C/同进程 cancellation 或 recovery 收口。`abandon` 是 recovery-only 命令：

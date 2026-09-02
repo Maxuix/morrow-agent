@@ -1275,6 +1275,51 @@ def test_mechanism_tool_cannot_be_granted_by_definition():
         )
 
 
+@pytest.mark.parametrize(
+    ("kind", "slot", "payload_field", "valid_payload"),
+    [
+        ("EvidenceBundle", "evidence", "findings", {}),
+        ("PlanArtifact", "plan", "steps", {"steps": ["inspect"]}),
+        ("ReviewReport", "review", "verdict", {"verdict": "approve"}),
+        ("SynthesisReport", "synthesis", "summary", {"summary": "done"}),
+    ],
+)
+def test_submission_tool_exposes_exact_node_contract(kind, slot, payload_field, valid_payload):
+    from types import SimpleNamespace
+
+    from morrow.application.workflows.submit import make_submit_node_result_tool
+    from morrow.runtime.tool_arguments import ToolArgumentsValidationError
+
+    contract = OutputContract(kind=kind, slot=slot)
+    tool = make_submit_node_result_tool(SimpleNamespace(), (contract,))
+    schema = tool.definition.function.parameters
+    outputs = schema["properties"]["outputs"]
+
+    assert outputs["required"] == [slot]
+    assert outputs["additionalProperties"] is False
+    assert set(outputs["properties"]) == {slot}
+    assert payload_field in outputs["properties"][slot]["properties"]
+    with pytest.raises(ToolArgumentsValidationError) as exc:
+        tool.arguments_validator.validate(json.dumps({"outputs": {}}))
+    assert exc.value.details == ({"path": f"outputs.{slot}", "type": "missing"},)
+    with pytest.raises(ToolArgumentsValidationError) as exc:
+        tool.arguments_validator.validate(
+            json.dumps({"outputs": {slot: valid_payload, "undeclared": {}}})
+        )
+    assert exc.value.details == ({"path": "outputs.undeclared", "type": "additionalProperties"},)
+
+
+def test_payload_validation_reports_a_safe_exact_field_path():
+    from morrow.application.workflows.submit import parse_submitted_payload
+    from morrow.runtime.tools import ToolErrorCode, ToolExecutionError
+
+    with pytest.raises(ToolExecutionError) as exc:
+        parse_submitted_payload("PlanArtifact", {}, slot="plan")
+
+    assert exc.value.code is ToolErrorCode.INVALID_ARGUMENTS
+    assert exc.value.details == ({"path": "outputs.plan.steps", "type": "missing"},)
+
+
 # Pipeline ---------------------------------------------------------------------
 
 
@@ -1366,6 +1411,22 @@ async def test_explore_implement_verify_succeeds_and_isolates_sessions(fx):
     assert "write" not in explorer_tools
     assert "write" not in reviewer_tools
     assert "write" in {tool.function.name for tool in fx.bank.providers[1].stream_tools[0]}
+    explorer_submit = next(
+        tool
+        for tool in fx.bank.providers[0].stream_tools[0]
+        if tool.function.name == SUBMIT_NODE_RESULT_NAME
+    )
+    reviewer_submit = next(
+        tool
+        for tool in fx.bank.providers[2].stream_tools[0]
+        if tool.function.name == SUBMIT_NODE_RESULT_NAME
+    )
+    explorer_outputs = explorer_submit.function.parameters["properties"]["outputs"]
+    reviewer_outputs = reviewer_submit.function.parameters["properties"]["outputs"]
+    assert explorer_outputs["required"] == ["evidence"]
+    assert set(explorer_outputs["properties"]) == {"evidence"}
+    assert reviewer_outputs["required"] == ["review"]
+    assert set(reviewer_outputs["properties"]) == {"review"}
 
 
 @pytest.mark.asyncio

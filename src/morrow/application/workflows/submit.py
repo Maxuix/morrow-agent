@@ -7,6 +7,7 @@ correct; a conflicting second submission is refused without overwrite.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -18,6 +19,7 @@ from morrow.core.models import ToolEffect
 from morrow.core.workflows.contracts import (
     SUBMIT_NODE_RESULT_NAME,
     EvidenceBundle,
+    OutputContract,
     PlanArtifact,
     ReviewReport,
     SynthesisReport,
@@ -47,7 +49,38 @@ class SubmitNodeResultArguments(BaseModel):
     evidence_refs: tuple[str, ...] = Field(default=(), max_length=32)
 
 
-def make_submit_node_result_tool(hooks) -> RegisteredTool:
+def submit_node_result_provider_schema(
+    output_contracts: Iterable[OutputContract],
+) -> dict[str, Any]:
+    """Project one node's exact structured output contract onto the Provider wire."""
+
+    structured = tuple(contract for contract in output_contracts if contract.kind in _PAYLOADS)
+    if not structured:
+        raise ValueError("submit_node_result requires a structured output contract")
+    schema = SubmitNodeResultArguments.model_json_schema()
+    output_properties = {
+        contract.slot: _PAYLOADS[contract.kind].model_json_schema() for contract in structured
+    }
+    output_schema: dict[str, Any] = {
+        "type": "object",
+        "properties": output_properties,
+        "additionalProperties": False,
+        "minProperties": 1,
+    }
+    required = sorted(
+        contract.slot for contract in structured if contract.required_for_node_completion
+    )
+    if required:
+        output_schema["required"] = required
+    schema["properties"]["outputs"] = output_schema
+    return schema
+
+
+def make_submit_node_result_tool(
+    hooks, output_contracts: Iterable[OutputContract]
+) -> RegisteredTool:
+    structured = tuple(contract for contract in output_contracts if contract.kind in _PAYLOADS)
+
     async def handler(arguments: SubmitNodeResultArguments, context) -> dict[str, object]:
         del context
         return hooks.submit_node_result(arguments)
@@ -61,9 +94,17 @@ def make_submit_node_result_tool(hooks) -> RegisteredTool:
         name=SUBMIT_NODE_RESULT_NAME,
         description=(
             "Submit this node's declared structured outputs. Call once with every required "
-            "structured slot. The final message is transcript only and is never parsed."
+            "structured slot. The final message is transcript only and is never parsed. "
+            "Declared slots: "
+            + ", ".join(
+                f"{contract.slot} ({contract.kind}"
+                f"{' required' if contract.required_for_node_completion else ' optional'})"
+                for contract in structured
+            )
+            + "."
         ),
         arguments_model=SubmitNodeResultArguments,
+        provider_schema=submit_node_result_provider_schema(structured),
         handler=handler,
         context_handler=handler,
         intent_resolver=resolve,
@@ -88,7 +129,7 @@ def submission_digest(
     )
 
 
-def parse_submitted_payload(kind: str, raw: dict[str, Any]):
+def parse_submitted_payload(kind: str, raw: dict[str, Any], *, slot: str):
     model = _PAYLOADS.get(kind)
     if model is None:
         raise ToolExecutionError(
@@ -98,7 +139,15 @@ def parse_submitted_payload(kind: str, raw: dict[str, Any]):
     try:
         return model.model_validate(raw)
     except ValidationError as exc:
+        details = tuple(
+            {
+                "path": ".".join(("outputs", slot, *(str(part) for part in error["loc"]))),
+                "type": str(error["type"]),
+            }
+            for error in exc.errors(include_url=False, include_input=False)[:8]
+        )
         raise ToolExecutionError(
             ToolErrorCode.INVALID_ARGUMENTS,
             f"schema violation: {exc.error_count()} field error(s)",
+            details=details,
         ) from None

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -54,6 +56,42 @@ def test_search_regex_smart_case_and_invalid_pattern(tmp_path):
     with pytest.raises(LocalFileError) as error:
         service.search_text(".", query=SearchQuery(pattern="[", literal=False))
     assert error.value.code == "invalid_pattern"
+
+
+@pytest.mark.parametrize("literal", [False, True])
+def test_rg_receives_the_pattern_before_the_option_terminator(tmp_path, monkeypatch, literal):
+    pattern = "-needle" if literal else "needle"
+    (tmp_path / "a.txt").write_text(pattern + "\n", encoding="utf-8")
+    observed = {}
+
+    def run(argv, **kwargs):
+        observed["argv"] = argv
+        assert kwargs["cwd"] == tmp_path
+        event = {
+            "type": "match",
+            "data": {
+                "path": {"text": "a.txt"},
+                "line_number": 1,
+                "lines": {"text": pattern + "\n"},
+                "submatches": [{"start": 0}],
+            },
+        }
+        return subprocess.CompletedProcess(
+            argv, 0, stdout=(json.dumps(event) + "\n").encode(), stderr=b""
+        )
+
+    monkeypatch.setattr("morrow.adapters.local.search.subprocess.run", run)
+    result = _search(tmp_path, rg_path="/fake/rg").search_text(
+        ".", query=SearchQuery(pattern=pattern, literal=literal)
+    )
+
+    argv = observed["argv"]
+    pattern_index = argv.index("--regexp")
+    assert argv[pattern_index + 1] == pattern
+    assert argv[pattern_index + 2 :] == ["--", "."]
+    assert ("--fixed-strings" in argv) is literal
+    assert result.engine.value == "rg"
+    assert result.matches[0].path == "a.txt"
 
 
 def test_search_fallback_skips_ignored_and_binary_but_searches_keyword_files(tmp_path):

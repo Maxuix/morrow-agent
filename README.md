@@ -159,10 +159,15 @@ morrow agent publish DEFINITION_ID --expected-head-revision HEAD_REV --command-i
 morrow workflow list --dir PATH
 morrow workflow validate DEFINITION_ID --dir PATH
 morrow workflow publish DEFINITION_ID --expected-head-revision HEAD_REV --command-id COMMAND_ID --dir PATH
+morrow workflow runs --dir PATH
 morrow workflow run DEFINITION_ID --revision WORKFLOW_REVISION_ID \
   --session SESSION_ID --root-task TASK_RUN_ID --expected-task-version TASK_ROW_VERSION --dir PATH
 morrow workflow status WORKFLOW_RUN_ID --dir PATH
 ```
+
+`workflow run` 在持久化 Start 后、调用模型前回显 `workflow_run_id`，因此前台进程意外退出后可直接
+使用 `workflow status/resume`；若未保存该行，可用 `workflow runs` 查询持久化 Run。命令完成时，
+`completed`（包括 `needs_revision`）返回 0，`failed/cancelled/blocked` 返回 1，参数或配置错误返回 2。
 
 内置模板包括 Direct、Explore Implement Verify、Parallel Research 和 Planned Refactor。Stage 7 的
 Parallel Research 名字描述固定 fan-out/fan-in 图形，执行仍由同一个 Scheduler 按稳定顺序逐节点串行

@@ -227,7 +227,7 @@ class WorkflowLeafHooks:
                     ToolErrorCode.INVALID_ARGUMENTS,
                     f"slot '{slot}' payload must be an object",
                 )
-            parsed[slot] = parse_submitted_payload(contract.kind, raw)
+            parsed[slot] = parse_submitted_payload(contract.kind, raw, slot=slot)
         missing = sorted(
             slot
             for slot, contract in declared.items()
