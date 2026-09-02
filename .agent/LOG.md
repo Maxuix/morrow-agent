@@ -4687,3 +4687,17 @@
   `chore/stage7-acceptance` branch was retired after ancestry verification.
 - Stage 7 is complete with ordinary Direct still the default. Stage 8 remains unplanned/inactive;
   remote publication and every Live campaign still require separate explicit authorization.
+
+## 2026-09-02 — Final Stage 7 Grok review repair
+
+- Ran the user-requested `grok-delegate` review with Grok 4.6 at xhigh effort over the complete
+  Stage 7 implementation. One permission non-escalation defect was confirmed: Compiler-frozen
+  node `resolved_tool_requirements` were not consumed by AgentFactory, so a read node on a
+  write-capable Definition or a node-level `write=forbidden` overlay could still expose `write`.
+- The Scheduler now passes the exact compiled requirements into AgentFactory; new preparation and
+  rehydration intersect the live ToolSet with that freeze and reject missing frozen required tools.
+  Standalone AgentFactory behavior remains unchanged when no Workflow freeze is supplied.
+- Added two end-to-end scripted regressions for read-ceiling and overlay-forbidden narrowing.
+  Independent affected tests: 177 passed; complete Stage 7 matrix: 222 passed; full offline gate:
+  1525 passed, 2 Live deselected in 473.77 seconds. Ruff format/check, compileall and
+  `git diff --check` passed. No other finding was confirmed; no Live test or remote push was run.

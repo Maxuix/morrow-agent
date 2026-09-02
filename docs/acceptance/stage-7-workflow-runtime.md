@@ -15,7 +15,8 @@ remains runnable and is still the default.
 
 The closeout entrance is `tests/test_stage7_acceptance.py`. Its matrix freezes 28 owner-test
 selectors spanning the contracts and execution paths below; its executable comparisons use only
-Scripted Providers. The complete Stage 7 matrix passed **220 tests**. The final repository-wide
+Scripted Providers. After the final delegated review remediation, the complete Stage 7 matrix
+passed **222 tests**. The final repository-wide
 gate is recorded in the closeout section after it is run.
 
 ## Four phase gates
@@ -110,13 +111,13 @@ Closeout-focused results:
 
 ```text
 uv run pytest -q tests/test_stage7_acceptance.py  -> 3 passed
-uv run pytest -q tests/test_stage7_*.py           -> 220 passed
+uv run pytest -q tests/test_stage7_*.py           -> 222 passed
 ```
 
 Final closeout results:
 
 ```text
-uv run pytest -m 'not live'              -> 1523 passed, 2 Live deselected
+uv run pytest -m 'not live'              -> 1525 passed, 2 Live deselected
 uv run ruff format --check .             -> 558 files already formatted
 uv run ruff check .                      -> passed
 uv run python -m compileall -q src tests -> passed
@@ -125,3 +126,21 @@ uv run morrow agent --help               -> passed
 uv run morrow workflow --help            -> passed
 git diff --check                         -> passed
 ```
+
+## Final delegated review follow-up
+
+A post-closeout Grok 4.6/xhigh review of the complete Stage 7 implementation found one confirmed
+permission non-escalation defect. The Compiler correctly froze a node's narrowed
+`resolved_tool_requirements`, but Workflow leaf preparation rebuilt the ToolSet from the broader
+AgentDefinition requirements and did not consume that node freeze. A read node backed by a
+write-capable definition—or a write node whose overlay explicitly forbade `write`—could therefore
+still expose the write tool to the Provider.
+
+The Scheduler now passes the exact compiled node requirements into AgentFactory. Workflow
+preparation and rehydration intersect the live ToolSet with that frozen allow/forbid result and
+fail locally if a frozen required tool is unavailable. Standalone AgentFactory callers retain their
+existing behavior because the new restriction is optional and only supplied by Workflow nodes.
+Two deterministic regressions exercise the read-ceiling and overlay-forbidden paths through a real
+compiled Revision and assert against the Provider-visible tools. The independent affected matrix
+passed 177 tests, the complete Stage 7 matrix passed 222 tests, and the full offline gate passed
+1525 tests with 2 Live tests deselected. No other review finding was confirmed.

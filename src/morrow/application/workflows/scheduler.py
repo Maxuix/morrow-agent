@@ -366,6 +366,7 @@ class WorkflowScheduler:
             task_run_id=leaf_task_run_id,
             invoking_session_id=root.session_id,
             conversation_scope=node_def.conversation_scope,
+            resolved_tool_requirements=node_def.resolved_tool_requirements,
         )
         error_message: str | None = None
         cancelled = False

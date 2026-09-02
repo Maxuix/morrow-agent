@@ -1136,6 +1136,128 @@ def test_compose_leaf_runtime_rejects_host_bash_for_complete_patch(fx):
         fx.runtime.scheduler._compose_leaf_runtime(prepared, hooks)
 
 
+def _offered_tool_names(fx) -> set[str]:
+    return {tool.function.name for tool in fx.bank.providers[0].stream_tools[0]}
+
+
+def _start_named(fx, definition_id, revision, command_id):
+    root_task = fx.journal.get_task_run(WS, "task_root")
+    return fx.runtime.start.start(
+        StartWorkflowCommand(
+            workflow_definition_id=definition_id,
+            workflow_revision_id=revision.workflow_revision_id,
+            session_id="ses_root",
+            root_task_run_id="task_root",
+            expected_root_row_version=root_task.row_version,
+            contract=CONTRACT,
+            command_id=command_id,
+        )
+    )
+
+
+@pytest.mark.asyncio
+async def test_read_node_on_write_definition_does_not_receive_write_tools(fx):
+    writer = AgentDefinitionSource(
+        definition_id="writer",
+        name="Writer",
+        role_prompt="Inspect or edit password validation.",
+        access_mode_ceiling="write",
+        tool_requirements=(
+            ToolRequirement(name="read", requirement="required"),
+            ToolRequirement(name="write", requirement="optional"),
+        ),
+        model_selection=MODEL,
+    )
+    ref = _publish_agent(fx, writer, "cmd_writer")
+    source = WorkflowDefinitionSource(
+        workflow_definition_id="narrow_read",
+        name="Narrow read",
+        default_budget=BUDGET,
+        nodes=(
+            AgentNodeSource(
+                node_id="reader",
+                agent_definition_ref=ref,
+                task_contract=TaskContract(objective="Read only"),
+                input_bindings=(_task_binding(),),
+                output_contracts=(OutputContract(slot="result"),),
+                access_mode="read",
+            ),
+        ),
+        required_outputs=(NodeOutputRef(node_id="reader", output_slot="result"),),
+    )
+    revision = fx.compiler.publish(
+        source,
+        source_revision=0,
+        expected_head_revision=0,
+        command_id="cmd_publish_narrow",
+        active_model=MODEL,
+    ).revision
+    allowed = {
+        item.name
+        for item in revision.nodes[0].resolved_tool_requirements
+        if item.requirement != "forbidden"
+    }
+    assert "read" in allowed and "write" not in allowed
+    fx.bank.scripts.append([["read-only work"]])
+    run = await fx.runtime.scheduler.run(
+        _start_named(fx, "narrow_read", revision, "cmd_start_narrow").run.workflow_run_id
+    )
+    assert run.status is WorkflowStatus.COMPLETED
+    tools = _offered_tool_names(fx)
+    assert "read" in tools
+    assert "write" not in tools
+
+
+@pytest.mark.asyncio
+async def test_node_overlay_forbidden_write_is_absent_from_leaf_toolset(fx):
+    writer = AgentDefinitionSource(
+        definition_id="writer",
+        name="Writer",
+        role_prompt="Inspect or edit password validation.",
+        access_mode_ceiling="write",
+        tool_requirements=(
+            ToolRequirement(name="read", requirement="required"),
+            ToolRequirement(name="write", requirement="optional"),
+        ),
+        model_selection=MODEL,
+    )
+    ref = _publish_agent(fx, writer, "cmd_writer")
+    source = WorkflowDefinitionSource(
+        workflow_definition_id="overlay_forbid",
+        name="Overlay forbid",
+        default_budget=BUDGET,
+        nodes=(
+            AgentNodeSource(
+                node_id="worker",
+                agent_definition_ref=ref,
+                task_contract=TaskContract(objective="Write is forbidden here"),
+                input_bindings=(_task_binding(),),
+                output_contracts=(OutputContract(slot="result"),),
+                access_mode="write",
+                tool_requirements=(ToolRequirement(name="write", requirement="forbidden"),),
+            ),
+        ),
+        required_outputs=(NodeOutputRef(node_id="worker", output_slot="result"),),
+    )
+    revision = fx.compiler.publish(
+        source,
+        source_revision=0,
+        expected_head_revision=0,
+        command_id="cmd_publish_overlay",
+        active_model=MODEL,
+    ).revision
+    frozen = {item.name: item.requirement for item in revision.nodes[0].resolved_tool_requirements}
+    assert frozen.get("write") == "forbidden"
+    fx.bank.scripts.append([["no writes"]])
+    run = await fx.runtime.scheduler.run(
+        _start_named(fx, "overlay_forbid", revision, "cmd_start_overlay").run.workflow_run_id
+    )
+    assert run.status is WorkflowStatus.COMPLETED
+    tools = _offered_tool_names(fx)
+    assert "read" in tools
+    assert "write" not in tools
+
+
 def test_mechanism_tool_cannot_be_granted_by_definition():
     with pytest.raises(ValueError, match="mechanism tools"):
         from morrow.application.agent_definitions.publication import validate_definition

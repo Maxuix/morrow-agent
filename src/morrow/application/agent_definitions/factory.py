@@ -36,6 +36,7 @@ class AgentFactory:
         task_run_id,
         invoking_session_id,
         conversation_scope="isolated",
+        resolved_tool_requirements=None,
     ):
         self.preparation = preparation
         self.publication = publication
@@ -44,6 +45,7 @@ class AgentFactory:
         self.task_run_id = task_run_id
         self.invoking_session_id = invoking_session_id
         self.conversation_scope = conversation_scope
+        self.resolved_tool_requirements = resolved_tool_requirements
         self.diagnostics = ()
 
     def _scope(self, *, fresh):
@@ -99,6 +101,18 @@ class AgentFactory:
         required = {
             item.name for item in version.source.tool_requirements if item.requirement == "required"
         }
+        if self.resolved_tool_requirements is not None:
+            allowed = {
+                item.name
+                for item in self.resolved_tool_requirements
+                if item.requirement != "forbidden"
+            }
+            required = {
+                item.name
+                for item in self.resolved_tool_requirements
+                if item.requirement == "required"
+            }
+            selected &= allowed
         diagnostics = list(validation.diagnostics)
 
         def restrict(executor):
@@ -148,6 +162,8 @@ class AgentFactory:
                     diagnostics.append(f"optional_removed:{name}")
                     continue
                 chosen[name] = tool
+            if self.resolved_tool_requirements is not None and not required <= set(chosen):
+                raise AgentDefinitionAdmissionError(DefinitionFailure.TOOLS)
             self.diagnostics = tuple(sorted(set(diagnostics)))
             if preflight_skills and version.source.skill_version_ids:
                 if self.session.durable_runtime is None:

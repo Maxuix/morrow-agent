@@ -2,9 +2,10 @@
 
 ## Current status
 
-Stage 7 is complete. Subplan 9 (Acceptance and Closeout) is integrated into local `main` at
-`506a276`. Focused acceptance: 3 passed; Stage 7 matrix: 220 passed; full offline gate:
-1523 passed, 2 Live deselected. Ruff format/check, compileall, root/Agent/Workflow CLI help and
+Stage 7 is complete. A final delegated Grok review confirmed and repaired one node-level ToolSet
+non-escalation defect after the Subplan 9 closeout: Workflow preparation/rehydration now enforce the
+Compiler-frozen `resolved_tool_requirements`. Focused affected matrix: 177 passed; Stage 7 matrix:
+222 passed; full offline gate: 1525 passed, 2 Live deselected. Ruff format/check, compileall and
 `git diff --check` passed.
 
 ## Active task
