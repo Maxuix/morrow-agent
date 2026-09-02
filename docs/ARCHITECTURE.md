@@ -1,13 +1,12 @@
 # Morrow 架构基线
 
-> 状态：阶段 2–6 已完成；S7P-10 已把 Stage 7 准入升级为 **GO**。Stage 7 静态 Workflow
-> Runtime 的 Subplans 1–7 已集成，Subplan 8 管理 CLI、查询与内置模板正在实现
+> 状态：阶段 2–7 已完成；Stage 7 静态 Workflow Runtime 的九个 Subplan 已通过离线工程验收
 > （macOS；Linux 原生运行仍 unsupported）。
 
 本文锁定当前依赖方向、数据所有权和安全边界。阶段 3 的能力策略、配置工具、工作空间读搜、冲突安全文件变更、直接 Host 命令、只读 Git 和当前 macOS 原生沙箱
 已经交付；Linux 原生运行尚未声明支持。Stage 4 已落地数据根 SQLite Operational Store 的
 身份/迁移/备份基础、无工具 Session 历史、工具执行/审批日志、恢复分类与
-崩溃对账，以及 TaskRun 生命周期、转移审计、版本化 TaskOutcome、Artifact 元数据/引用与受控字节发布、确定性 ContextCheckpoint 与不可变 Session lineage、有界 application event/command receipt、按 AgentRun 冻结的权限证据与可撤销 grant。Stage 5 已增加 LearningPolicy、Review、Evidence、Candidate、Suppression 的有界领域与 SQLite 持久化；accepted TaskOutcome 的同事务 Review 请求、一次性 lease Runner、Evidence/Context 安全边界和候选去重/抑制；Inbox、Candidate 决策、Project Knowledge 生命周期；Profile Promotion Saga；确定性 MemorySelection、AgentRun 冻结注入、RunContextProjection；以及 no-tool production Reviewer、离线评估、只读 Learning doctor 和完整 backup 引用校验。Stage 6 的 Skills 包、生命周期、选择/上下文、Draft/Usage、受限脚本执行、Provider/Model 控制面以及 MCP desired state/Catalog 持久化已在本地完成；MCP Runtime/Security、当前完整 Backup 与 Stage 6 Doctor 也已完成；S7P-01 增加了不改变公开事件的 AgentRun request/terminal observability 与复用同一 SessionOrchestrator/AgentLoop 的 headless JSONL 入口。Stage 7 已实现 AgentDefinition 基础层，Workflow 编译/执行尚未开始；Stage 8–10 的 GUI、后台自动化和产品化也未开始。本文架构门禁以离线证据为主，S7P 验收中的单独 Live 证据不改变这些当前模块事实。
+崩溃对账，以及 TaskRun 生命周期、转移审计、版本化 TaskOutcome、Artifact 元数据/引用与受控字节发布、确定性 ContextCheckpoint 与不可变 Session lineage、有界 application event/command receipt、按 AgentRun 冻结的权限证据与可撤销 grant。Stage 5 已增加 LearningPolicy、Review、Evidence、Candidate、Suppression 的有界领域与 SQLite 持久化；accepted TaskOutcome 的同事务 Review 请求、一次性 lease Runner、Evidence/Context 安全边界和候选去重/抑制；Inbox、Candidate 决策、Project Knowledge 生命周期；Profile Promotion Saga；确定性 MemorySelection、AgentRun 冻结注入、RunContextProjection；以及 no-tool production Reviewer、离线评估、只读 Learning doctor 和完整 backup 引用校验。Stage 6 的 Skills 包、生命周期、选择/上下文、Draft/Usage、受限脚本执行、Provider/Model 控制面以及 MCP desired state/Catalog 持久化已在本地完成；MCP Runtime/Security、当前完整 Backup 与 Stage 6 Doctor 也已完成；S7P-01 增加了不改变公开事件的 AgentRun request/terminal observability 与复用同一 SessionOrchestrator/AgentLoop 的 headless JSONL 入口。Stage 7 已完成版本化 AgentDefinition、静态 Workflow 编译、串行调度、Artifact 协作、管理 CLI 与恢复闭环；Stage 8–10 的自适应图、GUI、后台自动化和后续产品化尚未开始。本文架构门禁以离线证据为主；未获授权的 Live 证据不改变这些当前模块事实。
 
 S56–S61 已冻结并接通 generic Preference 契约、加载前一次性旧 YAML 迁移、当前 workspace Preference、
 Operational Store v13 Review/Evidence/Proposal/Writer saga、异步 Worker、Inbox、Writer 和下一

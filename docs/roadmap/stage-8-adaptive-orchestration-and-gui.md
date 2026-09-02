@@ -62,6 +62,9 @@ Morrow Core Process
 
 ## 三、进入条件
 
+- **最高优先级运行时跟进**：先实现 child-run continuation，使晚失败后的显式重试可以复用已完成
+  节点的不可变 Artifact，而不是像 Stage 7 full rerun 一样从 attempt 1 重跑整图；Stage 7 的两节点
+  确定性证据显示失败 Run 4 次加新 Run 2 次、合计 6 次 primary admissions。
 - Stage 7 已支持手写静态 Workflow、AgentDefinition、Artifact 和运行观察。
 - Stage 7 的串行 DAG 已经历真实 crash/restart 考验，取消、恢复、blocked/unknown outcome 语义稳定。
   Pause/Drain 与运行中 future-only

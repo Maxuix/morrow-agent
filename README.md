@@ -152,6 +152,18 @@ Agent desired source、纯只读 validate、显式 publish、Head enable/disable
 复用。`create/edit` 只接受 `origin=user` 的文件，内置源
 只读；如需定制，请以新 ID 创建用户定义。
 
+```bash
+morrow agent list --dir PATH
+morrow agent validate DEFINITION_ID --dir PATH
+morrow agent publish DEFINITION_ID --expected-head-revision HEAD_REV --command-id COMMAND_ID --dir PATH
+morrow workflow list --dir PATH
+morrow workflow validate DEFINITION_ID --dir PATH
+morrow workflow publish DEFINITION_ID --expected-head-revision HEAD_REV --command-id COMMAND_ID --dir PATH
+morrow workflow run DEFINITION_ID --revision WORKFLOW_REVISION_ID \
+  --session SESSION_ID --root-task TASK_RUN_ID --expected-task-version TASK_ROW_VERSION --dir PATH
+morrow workflow status WORKFLOW_RUN_ID --dir PATH
+```
+
 内置模板包括 Direct、Explore Implement Verify、Parallel Research 和 Planned Refactor。Stage 7 的
 Parallel Research 名字描述固定 fan-out/fan-in 图形，执行仍由同一个 Scheduler 按稳定顺序逐节点串行
 完成；并发留待 Stage 8。四个预算字段都必须估算：总 Agent generation request 上限、节点默认上限、

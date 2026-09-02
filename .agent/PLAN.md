@@ -1,8 +1,8 @@
 # Stage 7 Static Workflow Runtime Implementation Plan
 
-> Status: Subplan 8 completed and integrated; Stage 7 remains in progress
-> Active subplan: none
-> Next subplan: 9 — Acceptance Closeout (ready; not active)
+> Status: Subplan 9 acceptance closeout is verified; integration pending
+> Active subplan: 9 — Acceptance Closeout
+> Next subplan: none
 > Planning base: local `main` after the Subplan 7 shared-root evidence review fix
 > (`d19d898`; tree clean, full offline gate green)
 > Roadmap authority: `docs/roadmap/stage-7-workflow-runtime.md`

@@ -1,6 +1,6 @@
 # Subplan 9 — Stage 7 Acceptance and Closeout
 
-> Status: pending
+> Status: verified; integration pending
 > Branch: `chore/stage7-acceptance`
 > Prerequisite: Subplan 8 completed, verified and integrated
 > Revised 2026-08-31 per the conditional-GO plan review: acceptance rolls up the four phase gates

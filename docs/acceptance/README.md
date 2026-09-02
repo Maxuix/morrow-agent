@@ -10,6 +10,7 @@
 - [`stage6-skills-and-extensions.md`](stage6-skills-and-extensions.md)：当前 Skill、Provider/Model、MCP、Doctor 与完整 Backup 验收入口。
 - [`stage7-direct-agent-baseline.md`](stage7-direct-agent-baseline.md)：当前 direct-agent 可靠性基线状态。
 - [`s7p-10-stage7-entry-review.md`](s7p-10-stage7-entry-review.md)：Stage 7 进入审查、历史 CONDITIONAL GO 边界与当前 GO 决定。
+- [`stage-7-workflow-runtime.md`](stage-7-workflow-runtime.md)：Stage 7 静态串行 Workflow Runtime 的四阶段门、Direct 对照、重跑成本与最终离线验收。
 - [`s7p-10-go-upgrade-proof.md`](s7p-10-go-upgrade-proof.md)：当前代码困难任务的定向升级证明、FAIL_MODEL 结果与 GO 依据。
 
 ## Historical evidence

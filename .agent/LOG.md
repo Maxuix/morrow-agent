@@ -4657,3 +4657,25 @@
 - Subplan 9 (Stage 7 Acceptance Closeout) is next and remains inactive pending explicit
   continuation. Remote publication remains blocked pending explicit authorization; no Live tests
   were run.
+
+## 2026-09-02 — Subplan 9: Stage 7 acceptance verified
+
+- Added `tests/test_stage7_acceptance.py`: a 28-selector owner-evidence matrix, an executable
+  ordinary-Direct versus opt-in Direct Workflow comparison, and deterministic late-failure rerun
+  accounting. Focused acceptance passed 3 tests; the complete Stage 7 matrix passed 220 tests.
+- The paired Direct case completed both paths with one generation request and no rework. Usage,
+  cost and elapsed-quality evidence remain unavailable. Scripted role fixtures cannot prove a
+  quality benefit, so ordinary Direct remains the default and all templates remain explicit
+  opt-in preview.
+- The late-failure case measured four primary admissions in the failed Run (one upstream success
+  plus three downstream Provider attempts) and two more in the new full rerun. Stage 8 now records
+  child-run continuation as the highest-priority orchestration follow-up, ahead of separately gated
+  bounded read-only parallelism.
+- Inspected the Stage 7 owner boundaries and full regression matrix. No production-runtime defect
+  was confirmed; repaired stale architecture/roadmap/status text and published the four-phase gate,
+  invariant, promotion and unavailable-Live evidence in
+  `docs/acceptance/stage-7-workflow-runtime.md`.
+- Final full offline gate passed: 1523 passed, 2 Live deselected in 627.29 seconds. Ruff
+  format/check, compileall, root/Agent/Workflow CLI help and `git diff --check` passed. No Live
+  tests, dependency, bundled runtime-policy default or public ApplicationEvent change was made.
+  Remote publication remains blocked pending explicit authorization.

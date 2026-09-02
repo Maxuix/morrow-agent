@@ -1,8 +1,8 @@
 # Stage 7 current-plan subplans
 
 This directory contains only child plans owned by the active Stage 7 master plan. Production
-implementation is active; Subplans 1–8 are completed and integrated. Subplan 9 is ready but not
-active. The sequence
+implementation is active; Subplans 1–8 are completed and integrated. Subplan 9 is verified and
+awaiting integration. The sequence
 was revised on 2026-08-31 per the conditional-GO plan review
 (`docs/acceptance/stage-7-plan-review-revision-2026-08-31.md`); the superseded children are archived
 under `.agent/archive/subplans/stage7-workflow-runtime-v1/`.
@@ -17,7 +17,7 @@ under `.agent/archive/subplans/stage7-workflow-runtime-v1/`.
 | 6 | `6-stage7-multi-agent-pipeline.md` | completed and integrated |
 | 7 | `7-stage7-direct-adapter.md` | completed and integrated |
 | 8 | `8-stage7-management-templates.md` | completed and integrated |
-| 9 | `9-stage7-acceptance-closeout.md` | ready; not active |
+| 9 | `9-stage7-acceptance-closeout.md` | verified; integration pending |
 
 ## Lifecycle
 

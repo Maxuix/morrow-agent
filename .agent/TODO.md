@@ -1,19 +1,12 @@
-# Subplan 8 — Stage 7 Workflow Management and Templates
+# Subplan 9 — Stage 7 Acceptance and Closeout
 
-- [x] Task 1: add the Agent and Workflow management command surfaces, including pure validation,
-  publication, operational head controls, exact immutable revocation, foreground run/resume and
-  recovery-only abandon.
-- [x] Task 2: add bounded read-only management and run/node/Artifact queries.
-- [x] Task 3: keep query/CLI polling complete and defer additive `ApplicationEvent` types because
-  the current request did not separately authorize a public event-lifecycle change.
-- [x] Task 4: add the focused `morrow agent` and `morrow workflow` CLI surfaces.
-- [x] Task 5: add explicit, idempotently publishable built-in Agent and Workflow definitions.
-- [x] Task 6: add Planner/PlanArtifact and Synthesizer/SynthesisReport plus Planned Refactor and
-  serial Parallel Research templates through the generic runtime.
-- [x] Task 7: finish Stage 7 backup/doctor coverage and human usage documentation.
-- [x] Task 8: add the management/CLI/template regression matrix and run the declared validation
-  gate.
-
-Subplan 8 is complete and integrated into local `main` (implementation `ee68cb8`, closeout
-`2054dde`). Full offline gate: 1517 passed, 2 Live deselected; Ruff
-format/check, compileall, root/Agent/Workflow CLI help and `git diff --check` passed.
+- [x] Task 1: freeze the deterministic integrated Stage 7 acceptance matrix and representative
+  workspace fixtures.
+- [x] Task 2: prove the master-plan invariants and four phase gates end to end.
+- [x] Task 3: record the minimal ordinary-Direct versus Workflow comparison and full-rerun cost.
+- [x] Task 4: keep Live evaluation separate unless explicitly authorized.
+- [x] Task 5: apply the template promotion rule from available evidence.
+- [x] Task 6: inspect the complete Stage 7 diff and repair confirmed findings only.
+- [x] Task 7: reconcile acceptance, architecture, roadmap, Stage 8 entry conditions and usage docs;
+  run the final offline/static/CLI gate.
+- [>] Task 8: commit, fast-forward integrate, verify ancestry and retire the topic branch.
