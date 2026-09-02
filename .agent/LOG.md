@@ -4618,3 +4618,35 @@
   submission, exclusion of a prior validation Artifact from TestReport aggregation, and exclusion of
   prior root Turn/ToolExecution evidence from a later result snapshot. Stage 7 Workflow matrix:
   103 passed. Full offline gate: 1510 passed, 2 Live deselected. No Live tests were run.
+
+## 2026-09-02 — Subplan 8 activated
+
+- Committed the verified Subplan 7 shared-root evidence fix as `d19d898`, then activated Workflow
+  Management and Templates on `feat/stage7-workflow-management` from that clean local `main`.
+- Task 1 starts with the application management command surface. Additive `ApplicationEvent` types
+  remain deferred because the current request did not separately authorize a public event-lifecycle
+  change; complete Query/CLI polling remains in scope. No Live tests are authorized.
+
+## 2026-09-02 — Subplan 8 implementation
+
+- Added one management boundary over desired Agent/Workflow YAML, immutable publication, operational
+  enable/disable, exact one-way revocation, foreground run/recovery/abandon and bounded query
+  projections. Repeated validation remains read-only; no Workflow `ApplicationEvent` type was added.
+- Added `morrow agent` and `morrow workflow` command groups, including node inspection and exact
+  Revision foreground execution, and composed the same Workflow runtime into production Session
+  applications without changing ordinary Direct dispatch.
+- Added Planner/PlanArtifact and Synthesizer/SynthesisReport through `submit_node_result`, plus four
+  packaged templates. Parallel Research is a fixed fan-out/fan-in graph but remains serial; non-native
+  platforms declare TextResult instead of an uncapturable complete ImplementationPatch.
+- Updated Workflow usage, budget, disable/revoke, recovery, backup/doctor and cross-platform guidance.
+  Focused management/CLI tests: 7 passed; focused Stage 7 management/store/Direct/pipeline gate:
+  59 passed. Full validation remains in progress; no Live tests were run.
+
+## 2026-09-02 — Subplan 8 verified
+
+- Implementation commit `ee68cb8` adds the application/query boundary, production composition,
+  Agent/Workflow CLI, Planner and Synthesizer contracts, four serial templates, tests and docs.
+- Full offline gate passed: 1517 passed, 2 Live deselected. Ruff format/check, compileall,
+  `morrow --help`, `morrow agent --help`, `morrow workflow --help` and `git diff --check` passed.
+- No public event lifecycle, bundled runtime-policy default, dependency or Live-test change was
+  made. The verified branch is ready for fast-forward integration into local `main`.

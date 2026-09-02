@@ -2,23 +2,24 @@
 
 ## Current status
 
-Stage 7 Subplan 7 (Direct Invoking-Session Adapter) is completed and integrated into local `main`
-(implementation `cda0c0c`, closeout `72767b1`). A post-integration review fix now scopes Direct
-node evidence, capture aggregation and result snapshots to the admitted NodeRun AgentRun instead of
-the shared root Task. Full offline gate: 1510 passed, 2 Live deselected; Ruff format/check,
-compileall, `morrow --help` and `git diff --check` clean.
+Stage 7 Subplan 8 (Workflow Management and Templates) is complete and verified on
+`feat/stage7-workflow-management` (implementation `ee68cb8`), pending fast-forward integration.
+Full offline gate: 1517 passed, 2 Live deselected; Ruff format/check, compileall,
+root/Agent/Workflow CLI help and `git diff --check` passed.
 
 ## Active task
 
-None. Subplan 8 is not active.
+None. Subplan 8 implementation and validation are complete.
 
 ## Next action
 
-Await explicit continuation before activating Subplan 8 (Management, Templates and Optional
-Events) from verified `main`.
+Commit the closeout state, fast-forward merge the verified branch into local `main`, verify ancestry
+and remove the clean topic branch. Subplan 9 remains inactive.
 
 ## Blockers
 
-No local implementation blocker. Local `main` is ahead of `origin/main` (31 commits); remote
+No local implementation blocker. Additive `ApplicationEvent` types remain deferred because the
+current request does not separately authorize a public event lifecycle change; Query/CLI polling is
+the required complete path. Local `main` is ahead of `origin/main` (32 commits); remote
 publication remains blocked pending explicit authorization for the configured GitHub remote. No
 Live tests were run.

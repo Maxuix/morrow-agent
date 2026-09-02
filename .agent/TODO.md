@@ -1,15 +1,19 @@
-# Subplan 7 — Direct Invoking-Session Adapter
+# Subplan 8 — Stage 7 Workflow Management and Templates
 
-- [x] Task 1: add `invoking_session` scope and enforce the one-node/no-edge compiler shape.
-- [x] Task 2: add the Direct client-message binding and transactional Turn admission recheck.
-- [x] Task 3: compose the same AgentLoop leaf without the ordinary steering/follow-up queue.
-- [x] Task 4: delegate root terminal ownership to TurnLifecycle and add idempotent finalization and
-  recovery for STOP/ERROR/CANCEL/committer failure.
-- [x] Task 5: reuse NodeResultCommitter for TextResult and structured output slots.
-- [x] Task 6: prove ordinary-Direct parity and document the TaskContract secret-shaped exception.
-- [x] Task 7: add the focused Scripted Provider and regression matrix, then run the full offline
-  validation gate.
+- [x] Task 1: add the Agent and Workflow management command surfaces, including pure validation,
+  publication, operational head controls, exact immutable revocation, foreground run/resume and
+  recovery-only abandon.
+- [x] Task 2: add bounded read-only management and run/node/Artifact queries.
+- [x] Task 3: keep query/CLI polling complete and defer additive `ApplicationEvent` types because
+  the current request did not separately authorize a public event-lifecycle change.
+- [x] Task 4: add the focused `morrow agent` and `morrow workflow` CLI surfaces.
+- [x] Task 5: add explicit, idempotently publishable built-in Agent and Workflow definitions.
+- [x] Task 6: add Planner/PlanArtifact and Synthesizer/SynthesisReport plus Planned Refactor and
+  serial Parallel Research templates through the generic runtime.
+- [x] Task 7: finish Stage 7 backup/doctor coverage and human usage documentation.
+- [x] Task 8: add the management/CLI/template regression matrix and run the declared validation
+  gate.
 
-Subplan 7 is complete and integrated into local `main` (implementation `cda0c0c`, closeout
-`72767b1`). Full offline gate: 1507 passed, 2 Live deselected; Ruff
-format/check, compileall, `morrow --help` and `git diff --check` passed. No Live tests were run.
+Subplan 8 is complete and verified on `feat/stage7-workflow-management` (implementation `ee68cb8`),
+pending fast-forward integration. Full offline gate: 1517 passed, 2 Live deselected; Ruff
+format/check, compileall, root/Agent/Workflow CLI help and `git diff --check` passed.

@@ -1,9 +1,10 @@
 # Stage 7 Static Workflow Runtime Implementation Plan
 
-> Status: Subplan 7 completed and integrated; Stage 7 remains in progress
+> Status: Subplan 8 completed and verified; integration pending
 > Active subplan: none
-> Next subplan: 8 — Management, Templates and Optional Events (ready; not active)
-> Planning base: local `main` after Subplan 6 review-fix integration (tree clean, full offline gate green)
+> Next subplan: 9 — Acceptance Closeout (after Subplan 8 integration)
+> Planning base: local `main` after the Subplan 7 shared-root evidence review fix
+> (`d19d898`; tree clean, full offline gate green)
 > Roadmap authority: `docs/roadmap/stage-7-workflow-runtime.md`
 > Entry evidence: `docs/acceptance/s7p-10-stage7-entry-review.md` — GO
 > Revision: 2026-08-31 conditional-GO plan review applied

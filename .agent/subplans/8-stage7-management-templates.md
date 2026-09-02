@@ -1,6 +1,6 @@
 # Subplan 8 — Stage 7 Workflow Management and Templates
 
-> Status: pending
+> Status: completed and verified; integration pending
 > Branch: `feat/stage7-workflow-management`
 > Prerequisite: Subplan 7 completed, verified and integrated
 > Revised 2026-08-31 per the conditional-GO plan review: `validate` is provably write-free and only
