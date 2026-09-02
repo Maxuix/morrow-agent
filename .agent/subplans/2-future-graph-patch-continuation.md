@@ -5,6 +5,8 @@
 > Activation base: latest verified `main` with Subplan 1 integrated
 > Prerequisite: Subplan 1 (Pause/Drain runtime) verified
 > Roadmap authority: stage-8 §6.2–6.5, §8C bullets 4–10, §13 (retry/rerun), §16.2
+> Contracts authority: `docs/decisions/stage-8-runtime-contracts.md` (C1 lineage model,
+> C3 lineage budget, C6 run-local revisions, C7 retry/rerun semantics)
 
 ## Objective
 
@@ -24,14 +26,19 @@ whole graph (the Stage 7 six-primary-admissions cost).
   never-admitted queued or cancelled-before-admission rows do not make a semantic node Past. Only
   Future nodes and Future-targeted bindings/edges are editable; Past outputs may be referenced as
   exact immutable `node_id.slot` sources; Future→Past and Past-provenance changes are rejected.
-- New terminal `WorkflowRun.status=superseded(reason=continued_by_patch)`, including a migration
-  v27 table rebuild of `workflow_runs` adding `superseded` to the status CHECK (terminal, so the
-  `workflow_active_root` index and `active_for_root` query are unchanged). Handoff is one
+- New terminal `WorkflowRun.status=superseded(reason=continued_by_patch)` (schema landed in the
+  Subplan 1 v26 rebuild; this subplan owns the transition code path). Handoff is one
   transaction: CAS on the exact paused parent row version, no Active nodes, no unknown outcomes,
   root still nonterminal → close old run and its unstarted NodeRuns, create the child referencing
-  the new Revision with `parent_run_id`, `run_relation=continuation`, inherited Artifact bindings
-  and the full Compiler-closed `execution_node_ids` (attempt-1 rows pre-created), transfer the
-  root's single nonterminal ownership. A non-empty child starts `running,pause_requested=false`.
+  the new Revision with `parent_run_id`, `run_relation=continuation`, inherited Artifact imports
+  and the full Compiler-closed `execution_node_ids` persisted in `workflow_run_execution_nodes`
+  (attempt-1 rows pre-created), transfer the root's single nonterminal ownership. A non-empty
+  child starts `running,pause_requested=false`.
+- Run-local Revision publication: patches produce **detached** immutable Revisions with parent
+  lineage that never move the WorkflowDefinition head and never appear as templates
+  (contracts C6) — the existing publication service moves the head, so the patch path uses a
+  dedicated run-local store path through the same pure Compiler, with head-moving publication
+  reserved for an explicit user "save/publish as definition" command.
 - Dedicated journal transaction `create_continuation_run` (and its `rerun` sibling) instead of
   reusing `create_run`: the existing `create_run` rigidly requires QUEUED status, row_version 1,
   `budget_snapshot == revision.budget`, `deadline == started_at + timeout` and a full one-NodeRun-
@@ -39,29 +46,35 @@ whole graph (the Stage 7 six-primary-admissions cost).
   method keeps the real invariants (exact immutable Revision, root ownership, pre-created
   execution set, recorded inherited budget/deadline facts) and drops the initial-run-only
   assertions. `create_run` itself is unchanged for initial runs.
-- Inherited Past projection: Past nodes are never re-materialized as NodeRuns in the child
-  (roadmap §6.3). Instead the handoff transaction records inherited output bindings in the
-  child's `workflow_artifact_bindings` (direction=output rows referencing the parent NodeRun and
-  the original immutable Artifact IDs — references, never re-published bytes), and the run carries
-  an explicit inherited-Past node map. Scheduler readiness (`_require_ready`,
-  `_bind_node_inputs`) treats an edge/binding whose producer is inherited Past as satisfied by the
-  recorded inherited binding, and the finalizer's `compute_workflow_result` resolves
-  required_outputs refs through the same projection — no KeyError/StopIteration on missing child
-  NodeRuns, no lineage-wide SQL scans.
-- Scheduler drive loop keyed by the child's `execution_node_ids`, not by the full Revision
-  topological order: `stable_execution_order` is filtered to the execution set before iteration,
-  so `_node_for` is only ever called for nodes with pre-created child rows.
+- Inherited Past projection per contracts C1: Past nodes are never re-materialized as NodeRuns in
+  the child. Inherited outputs are recorded in `workflow_run_artifact_imports` (references to the
+  source run/node/slot and the original immutable Artifact IDs — never re-published bytes, never
+  rows in `workflow_artifact_bindings`, which correctly enforces current-run producer ownership).
+  One `EffectiveOutputResolver` is the single lineage-aware read path for scheduler readiness,
+  input binding, finalizer result computation, required-outputs checks and queries — no module
+  does its own lineage fallback. `compute_workflow_result` resolves required_outputs through it,
+  so an inherited result-driving ReviewReport drives the child truthfully.
+- Scheduler drive loop keyed by the child's persisted execution set, not by the full Revision
+  topological order: `stable_execution_order` is filtered to `workflow_run_execution_nodes` before
+  iteration, so `_node_for` is only ever called for nodes with pre-created child rows, and child
+  completion requires only the execution set to complete.
 - Empty execution set: accepted only when exact inherited Artifacts satisfy every required contract
   of the new Revision; child is created and terminalized in the same transaction through the
   existing fixed result owner (`succeeded` writes the READY transition + marked snapshot;
   `needs_revision` writes FAILED transition + terminal TaskOutcome referencing required blocking
   reports). No empty `running` child, no separate finalize command.
-- Lineage budget: `run_relation: initial | continuation | rerun` and
-  `lineage_budget_root_run_id`; continuations inherit the budget root, remaining request cap and
+- Lineage budget per contracts C3: Workflow-level budget enforcement moves from the scheduler's
+  per-run pre-check into the existing durable `admit_model_request` seam, counting
+  `purpose=agent` rows across the continuation chain under `lineage_budget_root_run_id` (never
+  crossing the nearest rerun/new-root boundary). Continuations inherit the remaining cap and the
   absolute `admission_deadline_at`; cap/deadline increases must be user-exact edits or
   user-approved proposals applied under OCC with parent facts; non-positive remaining budget or an
   expired deadline still allows saving the patch but does not start a non-empty child. Explicit
-  post-terminal `rerun`/new Runs become new budget roots and the CLI says so.
+  post-terminal `rerun`/new Runs become new budget roots and the CLI says so. No second ledger
+  table — the durable request rows are the claim record.
+- Retry/rerun semantics per contracts C7: artifact inheritance is derived from whether the
+  execution set maps inherited Past nodes, and budget-root creation from `run_relation` — no
+  orthogonal columns; the derivation matrix is documented and tested for all four combinations.
 - Result-driving report re-targeting: a patch may point required outputs at a Future replacement
   Reviewer; old blocking reports remain inherited evidence but no longer drive the child; multiple
   result-driving reports keep the Stage 7 any-blocking rule.

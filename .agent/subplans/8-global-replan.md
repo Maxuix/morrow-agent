@@ -26,9 +26,14 @@ than blanket approval.
   no patch ever lands on a mid-flight graph.
 - `ReplanCoordinator`: the sole automatic Patch proposer (not required to be an LLM Agent); turns
   signals into concrete `FutureGraphPatch` proposals against the exact current base Revision.
-- Deterministic patch risk classification per master-plan §3.2: low risk = no permission/budget/
-  role expansion, no unauthorized Provider/Model/Skill change, Future-node-only edits. The
-  classifier is data-derived from the patch diff, not model-declared.
+- Deterministic patch risk classification per master-plan §3.2 and contracts doc C8: low risk =
+  Future-node-only edits with no permission/budget/role expansion and no unauthorized
+  Provider/Model/Skill change. Additionally, these are never low risk: removing a
+  Reviewer/approval gate, loosening an output contract, dropping a test/report dependency,
+  deleting a control edge, reordering Writer nodes, re-pointing required outputs, changing
+  `conversation_scope`, changing the Provider/Model data boundary, or removing a user-explicit
+  node; unclassifiable diffs default to approval-required. The classifier is data-derived from the
+  patch diff, not model-declared.
 - Risk-tiered application: `auto_replan_mode=approval_only` (default) queues every proposed patch
   for user approval; `allow_low_risk` auto-applies low-risk patches through the same
   PatchApplicationService (Compiler + OCC/CAS), with every auto-application recorded and
@@ -44,6 +49,10 @@ than blanket approval.
 
 - User exact edits and Agent proposals converge on the single patch path; the autonomy tier decides
   only which gate fires before application.
+- The signal/admission race is closed at the Subplan 1 admission transaction: the node terminal
+  commit records the signal durably, and every subsequent admission re-checks for unconsumed
+  signals in the same transaction (contracts C2), so no node can be admitted between signal
+  persistence and the drain decision.
 - Auto-accept never bypasses Compiler/OCC; compile failure falls back per §4.5.
 - Task-class-level default automation stays closed until §4.6 paired evidence exists.
 

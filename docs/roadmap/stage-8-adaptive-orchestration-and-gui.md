@@ -393,7 +393,10 @@ Node Agent / Orchestrator                              │  → pure WorkflowCom
   Active 节点的窗口执行。
 - `PatchApplicationService` 是手工和建议 Patch 的唯一 deterministic apply 入口，并复用 Stage 7 的
   pure Compiler + publication service。Patch 必须引用 base Revision 并经过 OCC/CAS、权限/合同/预算
-  校验；stale patch 返回冲突供重新生成或用户处理，不静默重放。
+  校验；stale patch 返回冲突供重新生成或用户处理，不静默重放。运行中 Patch（含自动 Replan）产生
+  的是 **run-local detached Revision**：不可变、记录 parent 谱系、仅供该 continuation child 引用，
+  不移动 WorkflowDefinition head、不进入模板列表；只有显式的“保存/发布为定义”用户命令才更新
+  desired source 和 head。
 - 新 child Run 显式引用 parent run、复用的历史 Artifact 和新 Revision；旧 Run/Revision/NodeRun
   永不原地修改。
 - handoff 是 old Run terminal + future NodeRun supersession + child/root ownership creation 的单事务；
@@ -593,8 +596,9 @@ Node.js；桌面打包留到 Stage 10，避免当前被安装器和跨平台 sid
 GUI 使用：
 
 ```text
-initial query snapshot
-+ ordered event stream
+initial query snapshot（同事务捕获 max cursor）
++ ordered event stream（durable /events?after= 拉取）
++ WebSocket latest_cursor 通知（仅提示，不承载事实）
 + gap detection
 + resync query
 ```

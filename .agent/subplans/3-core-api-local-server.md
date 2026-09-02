@@ -27,9 +27,18 @@ stream that survives disconnects.
   address/port and the one-time session token, and shuts down gracefully on SIGINT (drain
   in-flight requests; running foreground Workflows follow the existing owning-process rules —
   Stage 8 has no background daemon).
+- Core Host concurrency model per contracts doc C4: the thread-bound SQLite store is never handed
+  to ASGI workers. One Core runtime thread/event loop owns all durable writes through a bounded
+  serialized command bus (queue-full → explicit backpressure, never silent drop); read projections
+  run on the Core thread or dedicated read-only connections; an explicit `RunSupervisor` owns at
+  most one in-process driver per WorkflowRun; server shutdown is never recorded as user
+  cancellation.
+- Event delivery reuses the existing workspace monotonic cursor + append-only event + command
+  receipt machinery (no second event truth): client takes an initial snapshot under a read
+  transaction capturing the max cursor, then consumes events after that cursor; WebSocket pushes
+  only `latest_cursor` notifications and clients pull from durable `/events?after=`; gap detection
+  and resync query are part of the contract, and the stream is never the permanent authority.
 - Idempotent Command IDs end to end; command retry cannot double-apply.
-- Event delivery contract: initial query snapshot + ordered events with sequence numbers + client
-  gap detection + resync query; the stream is never the permanent authority.
 - Read-only Catalog Query APIs (AgentDefinitions, Providers/Models, Skills, Tools, Artifact
   contracts) shipped here, not in the editor subplan: the editor (Subplan 5) and planner
   (Subplan 7) both consume them, so the backend surface lands once with the server.

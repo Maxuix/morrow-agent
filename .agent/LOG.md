@@ -4835,3 +4835,22 @@
   evidence at node closure; handoff only from a fully paused run).
 - Roadmap synced: §6.5 records the signal lifecycle, §11.1 records `morrow serve`/`morrow gui` and
   zero-Node distribution, §15 8B notes catalog APIs come from 8A.
+
+## 2026-09-03 — Second review round: runtime contracts frozen (C1–C8)
+
+- Verified the second external review against the tree. Confirmed: `bind_artifact` enforces
+  current-run node ownership (the round-1 inherited-bindings plan would fail as written);
+  `_bind_node_inputs` and `_drive_node` are separate steps (a Pause can land between them);
+  `admit_model_request` enforces only the per-AgentRun snapshot cap while the Workflow budget is a
+  per-run scheduler pre-check; store connections are owner-thread-bound; the migration runner
+  hardcodes `version == 5` pragma handling; publication always advances the Definition head.
+- Frozen as `docs/decisions/stage-8-runtime-contracts.md` C1–C8: lineage model (execution-set and
+  artifact-imports tables + single EffectiveOutputResolver), one atomic admission transaction,
+  lineage budget at the existing durable seam (no second ledger), single-writer Core Host for ASGI,
+  generalized migration metadata with one merged v26 rebuild, run-local detached Revisions, the
+  retry/rerun derivation matrix, and expanded risk-classification dimensions.
+- Deliberately not adopted: a separate claims ledger table (durable purpose=agent rows already are
+  crash-safe claims), orthogonal retry/rerun columns (derivable), and a no-code "Subplan 0"
+  (contracts are frozen in the decision doc instead of adding process).
+- Subplans 1, 2, 3, 4, 5, 8 updated to the contracts; roadmap §6.5 (run-local revision rule) and
+  §11.3 (cursor + notify/pull event model) synced; PLAN §3.4 records the freeze.

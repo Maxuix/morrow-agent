@@ -24,9 +24,12 @@ An illegal graph cannot be run.
 - Read-only Catalogs and pickers the editor needs (Provider/Model/Skill/Tool/Artifact), plus Budget
   configuration — consuming the Catalog Query APIs delivered by Subplan 3, not new backend work
   here.
-- Draft lifecycle per §6.1: edit freely without creating Revisions; every edit re-validates through
-  the pure Compiler; only explicit freeze/run publishes an immutable Revision through the sole
-  publication service.
+- Draft lifecycle per §6.1: the GUI Draft is a durable OCC object owned by Core (fields:
+  `draft_id`, base revision/head references with their row versions, source body, status,
+  timestamps), so refresh, multi-tab editing and long sessions cannot drift; every edit
+  re-validates through the pure Compiler (debounced); only explicit freeze/run publishes an
+  immutable Revision through the sole publication service. Catalog/head staleness surfaces as a
+  warning, not silent divergence.
 - Compile errors surfaced as actionable GUI diagnostics (per §6.4: downstream dependency, removed
   required Artifact, broken approval/review gate, no termination path); the GUI never guesses
   reconnections itself. To make canvas highlighting precise, the backend `CompileDiagnostic`

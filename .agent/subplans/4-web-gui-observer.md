@@ -25,8 +25,12 @@ Workflow/Node/Artifact state live, proving the GUI–CLI parity gate on the same
 - Distribution strategy: development uses the Vite dev server; production GUI assets are
   prebuilt static HTML/CSS/JS (including the bundled fonts) embedded in the Python package and
   served directly by the Core server — an end user installing via `pip`/`uv tool install` never
-  needs Node.js. The wheel build includes the prebuilt assets; building them from source is a
-  maintainer-only step. (Desktop packaging/installers remain Stage 10.)
+  needs Node.js. The packaging contract is: pinned Node and package-manager versions with a
+  committed lockfile and deterministic build; the wheel/sdist includes the prebuilt assets as
+  package data (Hatch include rules) so offline install + `morrow gui` works; no CDN or runtime
+  font/asset fetching; font licenses and third-party notices shipped alongside; the build is
+  compatible with a restrictive CSP (no inline scripts/styles); a bundle-size budget is enforced
+  in the frontend CI to keep the wheel lean. (Desktop packaging/installers remain Stage 10.)
 - Design-token foundation per the Warm Paper decision: CSS-variable tokens for light/dark, Tailwind
   wired to the tokens, the three bundled font families with their assigned roles (serif for reading content,
   sans for UI chrome, mono for commands/diffs/previews), status-dot + label treatment for run

@@ -92,6 +92,17 @@ continuation handoff, lineage budget) with deterministic offline evidence and no
 API and GUI slices then consume settled semantics instead of freezing a protocol around unsettled
 ones. Roadmap slice numbering is unchanged.
 
+### 3.4 Frozen runtime contracts
+
+Two review rounds against the Stage 7 code were verified and their confirmed findings frozen as
+eight runtime contracts in `docs/decisions/stage-8-runtime-contracts.md`: the lineage data model
+(execution-set and artifact-imports tables plus a single EffectiveOutputResolver), one atomic
+admission transaction, lineage budget enforcement at the existing durable request-admission seam
+(no second ledger), the single-writer Core Host model for ASGI hosting, generalized migration
+metadata with one merged v26 rebuild, run-local Revisions that never move the Definition head, the
+retry/rerun derivation matrix, and the expanded patch risk-classification dimensions. Subplans 1–3
+and 8 cite these as contracts authority; deviations require updating the decision document first.
+
 ## 4. Subplan sequence
 
 | Order | File | Roadmap slice | Depends on |
