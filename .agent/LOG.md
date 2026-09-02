@@ -4715,3 +4715,16 @@
   Independent affected tests: 177 passed; complete Stage 7 matrix: 222 passed; full offline gate:
   1525 passed, 2 Live deselected in 473.77 seconds. Ruff format/check, compileall and
   `git diff --check` passed. No other finding was confirmed; no Live test or remote push was run.
+
+## 2026-09-02 — Stage 7 evaluation-blocker Live verification
+
+- After explicit authorization for README-derived transfer to `opencode.ai`, ran the isolated
+  `opencode-go/deepseek-v4-flash` typed EvidenceBundle smoke. Run `wrun_HEDHY72pOWc6jHxy`
+  completed `succeeded` with CLI exit 0 and remained discoverable through `workflow runs`.
+- Node `nrun_GYFM7pQhoEu5kf85` used the frozen read-only tool surface and bound Artifact
+  `art_d26bdaf9ea0918426834ad95431195a3` as `EvidenceBundle` v1 to the required `evidence` slot;
+  the terminal snapshot reported no changed paths.
+- The Provider made one recoverable `submit_node_result` attempt with `invalid_arguments`, then
+  corrected it and submitted successfully. The missing detailed diagnostic on the first attempt is
+  retained as a non-blocking observability follow-up; it did not prevent typed completion or make
+  the Workflow/CLI result untruthful.

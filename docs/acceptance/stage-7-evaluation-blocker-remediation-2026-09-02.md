@@ -53,8 +53,28 @@ maps to the documented exit code.
 
 ## Live Provider status
 
-An isolated live workflow state and typed EvidenceBundle smoke were prepared against the configured
-`opencode-go/deepseek-v4-flash` Provider. Execution was not performed because the external-action
-review correctly required explicit authorization to send local README-derived content to the
-third-party `opencode.ai` endpoint. No workaround was attempted. This is the only remaining
-evaluation item; it is an authorization boundary, not a failing offline implementation gate.
+After explicit authorization, an isolated typed EvidenceBundle smoke ran against the configured
+`opencode-go/deepseek-v4-flash` Provider and the third-party `opencode.ai` endpoint:
+
+```text
+workflow_run_id: wrun_HEDHY72pOWc6jHxy
+node_run_id: nrun_GYFM7pQhoEu5kf85
+agent_run_id: arun_uo_kQdMF5ay_NeJX
+artifact_id: art_d26bdaf9ea0918426834ad95431195a3
+workflow status: completed
+workflow result: succeeded
+CLI exit code: 0
+agent generation requests: 5 / 8
+```
+
+The Explorer used only the frozen `ls` and `read` capabilities, identified Morrow and
+`src/morrow/`, and produced the required `EvidenceBundle` v1 in the exact `evidence` output slot.
+The terminal snapshot referenced the resulting Artifact and reported no changed paths. The Run was
+also discoverable through `workflow runs`, proving the repaired durable Run-ID and recovery-query
+path against a real Provider.
+
+One first `submit_node_result` attempt returned recoverable `invalid_arguments` after the reads; the
+same Agent corrected the submission and the next attempt succeeded. This did not block or misreport
+the Run, and it demonstrates that the Provider can consume the node-specific schema and reach the
+typed committer. The empty diagnostic detail on that first attempt remains an observability signal
+for future refinement, not a Stage 7 evaluation blocker.
