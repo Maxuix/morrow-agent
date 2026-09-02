@@ -24,7 +24,9 @@ SUBMIT_NODE_RESULT_NAME = "submit_node_result"
 SUBMIT_SCHEMA_VERSION = 1
 CAPTURE_SCHEMA_VERSION = 1
 TEXT_OUTPUT_KINDS = frozenset({"TextResult"})
-SUBMISSION_OUTPUT_KINDS = frozenset({"EvidenceBundle", "ReviewReport"})
+SUBMISSION_OUTPUT_KINDS = frozenset(
+    {"EvidenceBundle", "PlanArtifact", "ReviewReport", "SynthesisReport"}
+)
 CAPTURE_OUTPUT_KINDS = frozenset({"ImplementationPatch", "TestReport"})
 STRUCTURED_OUTPUT_KINDS = SUBMISSION_OUTPUT_KINDS | CAPTURE_OUTPUT_KINDS
 RESULT_DRIVING_KIND = "ReviewReport"
@@ -37,6 +39,8 @@ WorkflowContractKind = Literal[
     "ImplementationPatch",
     "TestReport",
     "ReviewReport",
+    "PlanArtifact",
+    "SynthesisReport",
     "ChangeCapture",
 ]
 NodeOutputKind = Literal[
@@ -45,6 +49,8 @@ NodeOutputKind = Literal[
     "ImplementationPatch",
     "TestReport",
     "ReviewReport",
+    "PlanArtifact",
+    "SynthesisReport",
 ]
 
 
@@ -156,6 +162,34 @@ class EvidenceBundle(ProtocolModel):
         return self
 
 
+class PlanArtifact(ProtocolModel):
+    """Planner output consumed by a Coder; bounded intent, never executable authority."""
+
+    steps: tuple[BoundedLine, ...] = Field(min_length=1, max_length=32)
+    target_paths: tuple[BoundedLine, ...] = Field(default=(), max_length=64)
+    validation: tuple[BoundedLine, ...] = Field(default=(), max_length=32)
+    risks: tuple[BoundedLine, ...] = Field(default=(), max_length=32)
+
+    @model_validator(mode="after")
+    def safe_payload(self):
+        _refuse_workflow_payload(self, label="PlanArtifact", budget=16384)
+        return self
+
+
+class SynthesisReport(ProtocolModel):
+    """Serial fan-in synthesis over bounded Explorer evidence bundles."""
+
+    summary: str = Field(min_length=1, max_length=4096)
+    findings: tuple[BoundedLine, ...] = Field(default=(), max_length=64)
+    source_refs: tuple[BoundedLine, ...] = Field(default=(), max_length=64)
+    uncertainties: tuple[BoundedLine, ...] = Field(default=(), max_length=32)
+
+    @model_validator(mode="after")
+    def safe_payload(self):
+        _refuse_workflow_payload(self, label="SynthesisReport", budget=16384)
+        return self
+
+
 class ImplementationPatch(ProtocolModel):
     """Coder change evidence assembled from durable capture refs, never parsed text."""
 
@@ -246,14 +280,23 @@ class ArtifactBinding(ProtocolModel):
 
 
 WorkflowPayload = (
-    TaskContract | TextResult | EvidenceBundle | ImplementationPatch | TestReport | ReviewReport
+    TaskContract
+    | TextResult
+    | EvidenceBundle
+    | PlanArtifact
+    | ImplementationPatch
+    | TestReport
+    | ReviewReport
+    | SynthesisReport
 )
 NODE_OUTPUT_PAYLOAD_TYPES = (
     TextResult,
     EvidenceBundle,
+    PlanArtifact,
     ImplementationPatch,
     TestReport,
     ReviewReport,
+    SynthesisReport,
 )
 
 
@@ -273,6 +316,8 @@ def workflow_payload_excerpt(payload: object) -> str:
         return payload.excerpt
     if isinstance(payload, EvidenceBundle):
         return "; ".join(payload.findings)[:4096] or "evidence"
+    if isinstance(payload, PlanArtifact):
+        return "; ".join(payload.steps)[:4096]
     if isinstance(payload, ImplementationPatch):
         return (payload.rationale or ",".join(payload.changed_paths) or "patch")[:4096]
     if isinstance(payload, TestReport):
@@ -281,6 +326,8 @@ def workflow_payload_excerpt(payload: object) -> str:
         return payload.omission_reason or "tests"
     if isinstance(payload, ReviewReport):
         return (f"{payload.verdict}: " + "; ".join(payload.findings))[:4096]
+    if isinstance(payload, SynthesisReport):
+        return payload.summary
     if isinstance(payload, ChangeCapture):
         return f"{payload.operation} {payload.path}"[:4096]
     return type(payload).__name__
@@ -293,9 +340,11 @@ def parse_workflow_payload(kind: str, content: bytes):
         "TaskContract": TaskContract,
         "TextResult": TextResult,
         "EvidenceBundle": EvidenceBundle,
+        "PlanArtifact": PlanArtifact,
         "ImplementationPatch": ImplementationPatch,
         "TestReport": TestReport,
         "ReviewReport": ReviewReport,
+        "SynthesisReport": SynthesisReport,
     }
     model = mapping.get(kind)
     if model is None:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from morrow.adapters.credentials.keyring import CredentialAccessError, KeyringCredentialStore
@@ -22,6 +22,10 @@ from morrow.adapters.models.openai_compatible import (
 from morrow.adapters.models.preference_reviewer import ModelPreferenceReviewer
 from morrow.adapters.registry import AdapterRegistry
 from morrow.adapters.state.artifacts import FilesystemArtifactStore
+from morrow.adapters.state.definition_yaml import (
+    AgentDefinitionYamlStore,
+    WorkflowDefinitionYamlStore,
+)
 from morrow.adapters.state.extension_yaml import ExtensionYamlStore
 from morrow.adapters.state.journal import SqliteOperationalJournal
 from morrow.adapters.state.operational import OperationalStore, OperationalStoreSession
@@ -31,6 +35,11 @@ from morrow.adapters.state.yaml import (
     GlobalConfigYamlStore,
     ProjectStateYamlStore,
     WorkspaceIndexYamlStore,
+)
+from morrow.application.agent_definitions.builtins import builtin_definitions
+from morrow.application.agent_definitions.publication import (
+    AgentDefinitionPublicationService,
+    DefinitionCatalog,
 )
 from morrow.application.agent_runs.preparation import (
     AgentRunPreparationService,
@@ -84,7 +93,13 @@ from morrow.application.skills.usage import SkillUsageService
 from morrow.application.tasks import TaskService
 from morrow.application.turn_lifecycle import PreferenceRunSources
 from morrow.application.turns import SessionPersistence
-from morrow.core.agent_runs import exact_model_capabilities
+from morrow.application.workflows.builtins import visible_builtin_workflows
+from morrow.application.workflows.capture import ChangeArtifactCapture
+from morrow.application.workflows.composition import build_workflow_runtime
+from morrow.application.workflows.management import WorkflowManagementService
+from morrow.application.workflows.publication import WorkflowCompilationService
+from morrow.application.workflows.queries import WorkflowQueryService
+from morrow.core.agent_runs import AgentDefinitionRef, exact_model_capabilities
 from morrow.core.artifacts import ArtifactKind
 from morrow.core.capabilities import (
     AccessScope,
@@ -95,6 +110,7 @@ from morrow.core.capabilities import (
 )
 from morrow.core.domain import DurableSession, SessionLifecycle
 from morrow.core.models import (
+    ModelRef,
     ProviderConfig,
     ProviderModelConfig,
     StateLoadStatus,
@@ -173,6 +189,8 @@ class SessionApplication:
     backup: OperationalBackupService | None = None
     preference_service: PreferenceManagementService | None = None
     review_worker: ReviewWorker | None = None
+    workflow_runtime: object | None = None
+    workflow_management: WorkflowManagementService | None = None
 
 
 @dataclass(frozen=True)
@@ -1118,6 +1136,98 @@ def build_session_application(
             preparation=preparation,
             runtime_control=runtime_control,
         )
+        tool_names = (
+            tuple(tool.function.name for tool in tool_executor.definitions)
+            if tool_executor is not None
+            else ()
+        )
+        read_tools = {"read", "read_artifact", "ls", "find", "grep"}
+        workflow_catalog = DefinitionCatalog(
+            models=tuple(
+                ModelRef(provider_id=provider_id, model_id=model_id)
+                for provider_id, value in (config.providers.items() if config else ())
+                for model_id in value.models
+            )
+            or (model,),
+            skill_version_ids=frozenset(
+                item.version_id
+                for item in journal.list_skill_versions(workspace_id=identity.workspace_id)
+            ),
+            tool_access={name: "read" if name in read_tools else "write" for name in tool_names},
+            allowed_tools=frozenset(tool_names),
+        )
+        agent_publication = AgentDefinitionPublicationService(
+            journal,
+            workspace_id=identity.workspace_id,
+            catalog=workflow_catalog,
+            id_source=app.id_source,
+        )
+        workflow_publication = WorkflowCompilationService(
+            journal,
+            workspace_id=identity.workspace_id,
+            catalog=workflow_catalog,
+            id_source=app.id_source,
+        )
+        workflow_runtime = build_workflow_runtime(
+            journal,
+            handle,
+            workspace_id=identity.workspace_id,
+            artifacts=operational.artifacts,
+            agent_publication=agent_publication,
+            preparation=preparation,
+            id_source=app.id_source,
+            runtime_instance_id=f"inst-{os.getpid()}",
+            clock=journal.now,
+            skill_selection=skill_services.selection,
+            mutation=mutation,
+            change_capture=ChangeArtifactCapture(operational.artifacts, mutation),
+        )
+        packaged_agents = builtin_definitions(model)
+        packaged_refs = {}
+        for source in packaged_agents:
+            head = journal.agent_definitions.get_head(identity.workspace_id, source.definition_id)
+            version = (
+                journal.agent_definitions.get_version(identity.workspace_id, head.version_id)
+                if head is not None
+                else None
+            )
+            if version is not None:
+                packaged_refs[source.definition_id] = AgentDefinitionRef(
+                    definition_id=source.definition_id,
+                    version_id=version.version_id,
+                    content_hash=version.content_hash,
+                )
+        packaged_workflows = visible_builtin_workflows(
+            packaged_refs,
+            native_sandbox=(
+                permission_profile.process_isolation is ProcessIsolation.NATIVE_SANDBOX
+                and sandbox_capability.supported
+            ),
+        )
+        agent_source_store = AgentDefinitionYamlStore(app.data_root.root)
+        workflow_source_store = WorkflowDefinitionYamlStore(app.data_root.root)
+        workflow_runtime = replace(
+            workflow_runtime,
+            queries=WorkflowQueryService(
+                journal,
+                workspace_id=identity.workspace_id,
+                agent_sources=agent_source_store,
+                workflow_sources=workflow_source_store,
+                agent_builtins=packaged_agents,
+                workflow_builtins=packaged_workflows,
+            ),
+        )
+        workflow_management = WorkflowManagementService(
+            workspace_id=identity.workspace_id,
+            agent_sources=agent_source_store,
+            workflow_sources=workflow_source_store,
+            agent_publication=agent_publication,
+            workflow_publication=workflow_publication,
+            runtime=workflow_runtime,
+            active_model=model,
+            agent_builtins=packaged_agents,
+            workflow_builtins=packaged_workflows,
+        )
         products = SessionApplication(
             session=session,
             context_builder=context_builder,
@@ -1140,6 +1250,8 @@ def build_session_application(
             backup=operational.backup,
             preference_service=preference_service,
             review_worker=api.review_worker,
+            workflow_runtime=workflow_runtime,
+            workflow_management=workflow_management,
         )
     except BaseException:
         handle.close()

@@ -142,6 +142,33 @@ Session，不删除或归档旧会话；仅当对话仍只存在于进程内时�
 已持久化会话上直接退出并保留历史；仅进程内未保存对话仍需确认丢弃，取消则留在 REPL，确认提示
 期间 EOF 返回 2 且不重置会话。
 
+## 静态 Workflow
+
+Stage 7 的 Workflow 是显式选择的前台串行运行；普通聊天仍默认走 Direct。`morrow agent` 管理
+Agent desired source、纯只读 validate、显式 publish、Head enable/disable 与精确不可变版本 revoke；
+`morrow workflow` 提供对应的定义管理，以及 `run/status/resume/abandon` 和 `node show`。`validate`
+不会创建 Version/Revision 或推进 Head；plain `run` 必须给出已经发布的精确 `--revision`，只有显式
+`--ensure-published` 会先写入并回显所选 Revision。`create/edit` 只接受 `origin=user` 的文件，内置源
+只读；如需定制，请以新 ID 创建用户定义。
+
+内置模板包括 Direct、Explore Implement Verify、Parallel Research 和 Planned Refactor。Stage 7 的
+Parallel Research 名字描述固定 fan-out/fan-in 图形，执行仍由同一个 Scheduler 按稳定顺序逐节点串行
+完成；并发留待 Stage 8。四个预算字段都必须估算：总 Agent generation request 上限、节点默认上限、
+admission timeout 秒数和 `max_concurrency=1`。上限或截止时间过小会如实使本次 Run 失败；Stage 7
+没有 run-level override，重新运行会创建新 Run 并重新执行每个节点，不会把旧 Run 的叶子当缓存。
+
+普通 disable 只阻止新的 Workflow/Agent admission，已接纳 Run 继续使用冻结 Revision；emergency
+revoke 针对精确 `adev_...` 或 `wrev_...`，是带原因和 command ID 的永久单向安全刹车。blocked Run
+应先对账未知 Tool 结果再 `resume`；只有无本进程 live handle 的 OCC-current blocked Run 才能
+`abandon`，该操作保留未知证据。当前格式的 `state backup`/`state verify-backup` 包含 definition YAML
+与完整 SQLite Workflow 记录，restore 仍只写新的隔离目标；`state doctor` 会把 desired-ahead 作为
+局部 warning，把不可变引用/hash/运行关系损坏报告为 repair error。
+
+完整 `ImplementationPatch` 只有在 native sandbox backend 可用时由内置 Writer 模板声明；其他平台
+声明结构化的 `TextResult` implementation 产物，避免把平台缺少捕获后端误报成整个图不可运行。
+常见错误的处理方式是：unpublished 先 `publish`，stale revision 重新读取 Head/source revision，disabled
+显式 enable，revoked 发布新版本替代，blocked 先对账再 resume/abandon。
+
 ## 状态与恢复边界
 
 当前持久化内容包括工作空间身份、Profile、全局/工作空间 Preferences、Provider 配置、凭据引用，
@@ -206,4 +233,4 @@ Linux 原生运行仍在真实 runner 验证前保持 unsupported。每次完成
 `auto-sandboxed` 在 native backend 不可用或无法证明时会 fail closed。持久化聊天历史、Artifact、恢复、
 checkpoint、fork、按 AgentRun 冻结的 CapabilityGrant 与 Full Access Manual 属于 Stage 4；Full Access Auto
 和 raw auto 仍不支持。可审查学习从 Stage 5 开始；Skills/MCP 与 Provider/Model 扩展已在 Stage 6 交付，
-Multi-Agent Workflow、GUI 和后台任务仍属于后续阶段。
+静态串行 Multi-Agent Workflow 已由 Stage 7 提供；自适应图、并发、GUI 和后台任务仍属于后续阶段。

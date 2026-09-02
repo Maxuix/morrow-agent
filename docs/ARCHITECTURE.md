@@ -1,8 +1,8 @@
 # Morrow 架构基线
 
 > 状态：阶段 2–6 已完成；S7P-10 已把 Stage 7 准入升级为 **GO**。Stage 7 静态 Workflow
-> Runtime 的 Subplan 1–6 已集成，Subplan 7 Direct invoking-session adapter 已实现并通过离线门禁；
-> 管理 CLI/模板交付仍待 Subplan 8（macOS；Linux 原生运行仍 unsupported）。
+> Runtime 的 Subplans 1–7 已集成，Subplan 8 管理 CLI、查询与内置模板正在实现
+> （macOS；Linux 原生运行仍 unsupported）。
 
 本文锁定当前依赖方向、数据所有权和安全边界。阶段 3 的能力策略、配置工具、工作空间读搜、冲突安全文件变更、直接 Host 命令、只读 Git 和当前 macOS 原生沙箱
 已经交付；Linux 原生运行尚未声明支持。Stage 4 已落地数据根 SQLite Operational Store 的
@@ -21,7 +21,9 @@ Workspace 扩展配置继续由 YAML 持有，CredentialStore 是唯一凭据权
 以及 v21 的有界 retry progress、v22 的 durable runtime-control queue 独立于不可变
 AgentRun admission snapshot。Stage 7 当前已交付纯 Workflow Compiler、不可变 Revision 发布、统一串行
 Scheduler、isolated 多节点 Artifact pipeline，以及复用同一 Scheduler/TurnLifecycle 的 opt-in 单节点
-`invoking_session` adapter；普通 Direct 仍是默认路径。
+`invoking_session` adapter；Subplan 8 增加 application management/query boundary、`morrow agent` /
+`morrow workflow` CLI，以及 Direct、Explore Implement Verify、Parallel Research 和 Planned Refactor
+只读模板源。普通 Direct 仍是默认路径，Stage 7 Scheduler 仍完全串行。
 `application/backup_service.py` 组合在线 SQLite、Artifact、脱敏 YAML 和被引用 managed Skill 版本，并以新目标
 目录执行原子、隔离 restore。Backup 只有当前完整格式，且不复制凭据。
 
@@ -63,7 +65,8 @@ ConversationLog。isolated 节点拥有独立 Session/`workflow_node` Task；单
 `invoking_session` 节点改为绑定根 Session/user Task，并由 TurnLifecycle 独占根终态写入，Workflow
 finalizer 随后幂等关闭 Run 与结果 snapshot。NodeResultCommitter、Artifact binding、取消与恢复路径在
 两种 scope 间共享。多节点 DAG 使用 Artifact-only handoff，包含 Explorer→Coder→Reviewer 与 truthful
-`needs_revision` 结果。当前仍没有 Agent/Workflow 管理 CLI；Subplan 8 才接入命令和内置模板枚举。
+`needs_revision` 结果。管理 CLI 只调用 application services；validate 保持零写入，publication、Head
+toggle、精确 revoke、foreground recovery 与查询没有第二套 SQLite/YAML 逻辑。
 只读 ceiling 要求可证明的静态只读工具契约，未知副作用工具仍可用于 write ceiling 的串行 Agent，
 不能因角色提示变成只读。
 

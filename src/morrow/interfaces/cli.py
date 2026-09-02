@@ -59,6 +59,7 @@ from morrow.interfaces.mcp_cli import mcp_app
 from morrow.interfaces.preferences_cli import preference_inbox_app
 from morrow.interfaces.skills_cli import skill_app
 from morrow.interfaces.terminal import Terminal, TerminalApprovalPort, run_repl
+from morrow.interfaces.workflow_cli import agent_app, workflow_app
 from morrow.runtime.durable_log import restore_conversation_log
 from morrow.runtime.tools import ToolExecutionError
 from morrow.services.workspace import WorkspaceError, WorkspaceWriterLock
@@ -91,6 +92,8 @@ preferences_app.add_typer(preference_inbox_app, name="inbox")
 app.add_typer(learning_app, name="learning")
 app.add_typer(memory_app, name="memory")
 app.add_typer(mcp_app, name="mcp")
+app.add_typer(agent_app, name="agent")
+app.add_typer(workflow_app, name="workflow")
 
 
 def _secret(provider_id: str = "opencode-go") -> str:

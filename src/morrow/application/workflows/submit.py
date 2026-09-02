@@ -18,7 +18,9 @@ from morrow.core.models import ToolEffect
 from morrow.core.workflows.contracts import (
     SUBMIT_NODE_RESULT_NAME,
     EvidenceBundle,
+    PlanArtifact,
     ReviewReport,
+    SynthesisReport,
 )
 from morrow.runtime.policy import ToolApproval, ToolExecutionPolicy
 from morrow.runtime.tools import (
@@ -28,7 +30,12 @@ from morrow.runtime.tools import (
     make_tool,
 )
 
-_PAYLOADS = {"EvidenceBundle": EvidenceBundle, "ReviewReport": ReviewReport}
+_PAYLOADS = {
+    "EvidenceBundle": EvidenceBundle,
+    "PlanArtifact": PlanArtifact,
+    "ReviewReport": ReviewReport,
+    "SynthesisReport": SynthesisReport,
+}
 
 
 class SubmitNodeResultArguments(BaseModel):

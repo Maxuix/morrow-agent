@@ -1510,7 +1510,7 @@ async def test_crash_after_submission_completes_from_durable_facts(fx):
 
 @pytest.mark.asyncio
 async def test_builtin_coder_reviewer_publish_and_leaf_tasks_are_not_user_accept(fx):
-    direct, explorer, coder, reviewer = builtin_definitions(MODEL)
+    direct, explorer, coder, reviewer, *_ = builtin_definitions(MODEL)
     published = fx.agents.publish(
         explorer, source_revision=0, expected_head_revision=0, command_id="cmd_be", origin="builtin"
     )
