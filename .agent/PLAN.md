@@ -3,8 +3,7 @@
 > Status: Stage 7 completed; all nine subplans verified and integrated
 > Active subplan: none
 > Next subplan: none
-> Planning base: local `main` after the Subplan 7 shared-root evidence review fix
-> (`d19d898`; tree clean, full offline gate green)
+> Closeout evidence: Subplan 9 acceptance commit `506a276`; tree clean, full offline gate green
 > Roadmap authority: `docs/roadmap/stage-7-workflow-runtime.md`
 > Entry evidence: `docs/acceptance/s7p-10-stage7-entry-review.md` — GO
 > Revision: 2026-08-31 conditional-GO plan review applied
