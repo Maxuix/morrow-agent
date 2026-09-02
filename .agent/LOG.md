@@ -4679,3 +4679,11 @@
   format/check, compileall, root/Agent/Workflow CLI help and `git diff --check` passed. No Live
   tests, dependency, bundled runtime-policy default or public ApplicationEvent change was made.
   Remote publication remains blocked pending explicit authorization.
+
+## 2026-09-02 — Stage 7 completed
+
+- Fast-forward integrated Subplan 9 acceptance commit `506a276` into local `main`.
+- All nine Stage 7 subplans and every Stage 7 topic commit are ancestors of `main`; the clean
+  `chore/stage7-acceptance` branch was retired after ancestry verification.
+- Stage 7 is complete with ordinary Direct still the default. Stage 8 remains unplanned/inactive;
+  remote publication and every Live campaign still require separate explicit authorization.

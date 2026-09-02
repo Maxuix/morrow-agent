@@ -9,4 +9,8 @@
 - [x] Task 6: inspect the complete Stage 7 diff and repair confirmed findings only.
 - [x] Task 7: reconcile acceptance, architecture, roadmap, Stage 8 entry conditions and usage docs;
   run the final offline/static/CLI gate.
-- [>] Task 8: commit, fast-forward integrate, verify ancestry and retire the topic branch.
+- [x] Task 8: commit, fast-forward integrate, verify ancestry and retire the topic branch.
+
+Subplan 9 is complete and integrated into local `main` (`506a276`). Focused acceptance: 3 passed;
+Stage 7 matrix: 220 passed; full offline gate: 1523 passed, 2 Live deselected. Ruff format/check,
+compileall, root/Agent/Workflow CLI help and `git diff --check` passed.

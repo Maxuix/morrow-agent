@@ -1,7 +1,7 @@
 # Stage 7 Static Workflow Runtime Implementation Plan
 
-> Status: Subplan 9 acceptance closeout is verified; integration pending
-> Active subplan: 9 — Acceptance Closeout
+> Status: Stage 7 completed; all nine subplans verified and integrated
+> Active subplan: none
 > Next subplan: none
 > Planning base: local `main` after the Subplan 7 shared-root evidence review fix
 > (`d19d898`; tree clean, full offline gate green)
@@ -825,9 +825,9 @@ next phase starts.
 | 8 | 7D | Workflow Management and Templates | application commands/queries, CLI, four built-in static templates, doctor completion and separately authorized additive events if approved |
 | 9 | — | Stage 7 Acceptance and Closeout | deterministic integrated acceptance, Direct comparison, truthful promotion evidence and documentation sync |
 
-Child contracts are in `.agent/subplans/1-*.md` through `9-*.md`. Subplans 1–6 are completed and
-integrated; Subplan 7 is next but not active. Later children remain pending and may be corrected by
-verified earlier implementation facts. Bounded
+Child contracts are in `.agent/subplans/1-*.md` through `9-*.md`. All nine subplans are completed
+and integrated. Final evidence is recorded in
+`docs/acceptance/stage-7-workflow-runtime.md`. Bounded
 read-only parallelism is no longer a Stage 7 child; its design (per-request budget claim, entry
 conditions) lives in the Stage 8 roadmap.
 
