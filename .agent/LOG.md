@@ -4728,3 +4728,22 @@
   corrected it and submitted successfully. The missing detailed diagnostic on the first attempt is
   retained as a non-blocking observability follow-up; it did not prevent typed completion or make
   the Workflow/CLI result untruthful.
+
+## 2026-09-02 — Stage 7 post-simulation Doctor/Backup repair
+
+- The repeated real-user simulation found that every Workflow leaf stored its frozen effective
+  request cap while AgentDefinition integrity required exact equality with the Definition-declared
+  cap. This contradicted the v25 insertion rule and made Doctor report
+  `agent_definition_integrity`, causing Backup to fail after legal Workflow use.
+- Integrity now accepts a positive cap narrowing only when the AgentRun has durable
+  `workflow_agent_run_refs` ownership and the cap does not exceed a declared Definition ceiling.
+  Standalone AgentRuns retain exact equality.
+- Added an end-to-end Scripted Workflow regression proving the narrowed snapshot, Doctor health,
+  Backup creation and bundle verification. Focused matrix: 5 passed; Stage 7 matrix: 234 passed.
+- Both prior independent Live states changed from `needs_repair` to `ok` without data rewriting.
+  The full four-node state and the post-fix single-node state both produced verifiable backups.
+  Post-fix Live Run `wrun_AiuY6Yo55gcN9fV6` completed with a bound EvidenceBundle; an immediately
+  preceding attempt failed on Provider `invalid_response` and remains recorded as a non-deterministic
+  Provider reliability signal rather than a Doctor regression.
+- Final full offline gate passed: 1537 passed, 2 skipped and 2 Live deselected in 146.10 seconds.
+  Ruff format/check, compileall and `git diff --check` passed.

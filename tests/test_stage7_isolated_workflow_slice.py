@@ -25,6 +25,8 @@ from morrow.application.agent_definitions.publication import (
 )
 from morrow.application.agent_runs.preparation import AgentRunPreparationService
 from morrow.application.artifacts import ArtifactService
+from morrow.application.backup import OperationalBackupService
+from morrow.application.doctor import OperationalDoctor
 from morrow.application.prompt import DirectCodingPromptAssembler
 from morrow.application.tasks import TaskService
 from morrow.application.turns import SessionPersistence
@@ -387,6 +389,30 @@ async def test_isolated_slice_completes_end_to_end(fx):
     again = await fx.runtime.scheduler.run(run.workflow_run_id)
     assert again.status is WorkflowStatus.COMPLETED
     assert len(fx.bank.providers[0].stream_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_workflow_effective_request_cap_passes_doctor_and_backup(fx):
+    fx.bank.scripts.append([["observed"]])
+    version, revision = publish(fx)
+    assert version.source.max_agent_generation_requests is None
+
+    started = start(fx, revision)
+    run = await fx.runtime.scheduler.run(started.run.workflow_run_id)
+    node = only_node(fx, run.workflow_run_id)
+    agent_run = fx.journal.get_agent_run(WS, node.agent_run_id)
+
+    assert run.status is WorkflowStatus.COMPLETED
+    assert agent_run is not None
+    assert agent_run.snapshot.max_agent_generation_requests == 3
+    report = OperationalDoctor(fx.store).inspect(WS)
+    assert report.health.value == "ok"
+    assert "agent_definition_integrity" not in {issue.code for issue in report.issues}
+
+    backup = OperationalBackupService(fx.store)
+    created = backup.create("workflow-effective-cap")
+    bundle = fx.store.layout.backups_dir / created.bundle_name
+    assert backup.verify(bundle).ok
 
 
 @pytest.mark.asyncio

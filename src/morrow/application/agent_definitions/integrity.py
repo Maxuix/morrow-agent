@@ -62,22 +62,35 @@ def verify_definition_rows(executor):
                 or revocation.workspace_id != versions[version_id].workspace_id
             ):
                 raise ValueError("revocation mismatch")
-        for ws, session_id, body in rows(
-            "SELECT s.workspace_id, r.session_id, r.snapshot_json FROM agent_runs r JOIN sessions s USING(session_id)"
+        workflow_agent_runs = {
+            agent_run_id
+            for (agent_run_id,) in rows("SELECT agent_run_id FROM workflow_agent_run_refs")
+        }
+        for agent_run_id, ws, session_id, body in rows(
+            "SELECT r.agent_run_id, s.workspace_id, r.session_id, r.snapshot_json "
+            "FROM agent_runs r JOIN sessions s USING(session_id)"
         ):
             snapshot = json.loads(body)
             ref = snapshot.get("definition_ref")
             if ref is None:
                 continue
             value = versions[ref["version_id"]]
+            frozen_cap = snapshot.get("max_agent_generation_requests")
+            declared_cap = value.source.max_agent_generation_requests
+            workflow_cap_matches = (
+                agent_run_id in workflow_agent_runs
+                and isinstance(frozen_cap, int)
+                and not isinstance(frozen_cap, bool)
+                and frozen_cap > 0
+                and (declared_cap is None or frozen_cap <= declared_cap)
+            )
             if (
                 value.workspace_id != ws
                 or ref["definition_id"] != value.source.definition_id
                 or ref["content_hash"] != value.content_hash
                 or snapshot.get("conversation_session_id") != session_id
                 or snapshot.get("role_prompt_digest") != sha256_digest(value.source.role_prompt)
-                or snapshot.get("max_agent_generation_requests")
-                != value.source.max_agent_generation_requests
+                or (frozen_cap != declared_cap and not workflow_cap_matches)
             ):
                 raise ValueError("AgentRun definition evidence mismatch")
         return True, ()

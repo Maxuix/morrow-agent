@@ -1,6 +1,33 @@
 # Stage 7 真实用户模拟复测 — 2026-09-02
 
-## 结论
+## 修复后复测结论
+
+**F1 已修复，Doctor → Backup → Verify 的 Stage 7 阻塞链通过。**
+
+修复后的完整性检查仍要求 standalone AgentRun 的请求上限与 AgentDefinition 声明严格相等；只有
+存在 `workflow_agent_run_refs` 归属证据时，才允许 Workflow 节点把正数有效请求上限收窄到定义上限
+以内。该规则与 v25 写入约束和 Workflow journal 的冻结证据一致，不放宽普通 AgentRun。
+
+复测证据：
+
+- 新增确定性回归先运行真实 Scripted Workflow，再验证 `doctor health=ok`、Backup 创建和
+  `verify-backup` 成功。
+- Stage 7 完整矩阵：`234 passed in 29.87s`。
+- 完整离线门禁：`1537 passed, 2 skipped, 2 Live deselected in 146.10s`；全仓 Ruff
+  format/check、compileall 与 `git diff --check` 通过。
+- 两个此前稳定报 `agent_definition_integrity` 的独立 Live 状态现在均为 `health=ok`。
+- 包含失败 Run、成功四节点 Run、撤销历史和 10 个 Artifact 的原复测状态成功生成
+  `stage7-rerun-fixed.bundle`；manifest、数据库、外键、文件、YAML、Artifacts、References 与凭据
+  排除检查全部通过。
+- 修复后新增 Live Run `wrun_AiuY6Yo55gcN9fV6` 完成 `completed/succeeded`，生成并绑定
+  `EvidenceBundle`；加入该历史后 Doctor、Backup 和 Verify 仍全部通过。
+- 新增 Live 的第一次尝试 `wrun_BWANEmxvFfJKWAhF` 因 Provider `invalid_response` 失败，重试成功；
+  这不是 Doctor 修复回归，但继续证明当前 Provider/typed submission 存在非确定性可靠性风险。
+
+因此，**本次要求修复的 P1 评测阻塞项判定 PASS**。下文保留修复前的原始模拟结果与 F2/F3 风险，
+作为历史复现证据；不把 Provider 重试风险误写为已经消失。
+
+## 原始复测结论
 
 **未完全通过，不建议按“Stage 7 所有用户目标均可发布”验收。**
 
@@ -92,7 +119,7 @@ AgentRun 判为完整性错误，Backup 随之失败。最终结果 FAIL。
 
 ## 缺陷与风险
 
-### F1 — P1：Workflow AgentRun 的有效节点预算导致 Doctor 误报，并阻断 Backup
+### F1 — P1（已修复）：Workflow AgentRun 的有效节点预算导致 Doctor 误报，并阻断 Backup
 
 - 受影响用户：任何执行过 Stage 7 Workflow 后需要 Doctor/备份的用户。
 - 最短公开复现：发布一个 `max_agent_generation_requests` 由 Workflow 节点决定的 Agent → 成功运行
@@ -105,6 +132,8 @@ AgentRun 判为完整性错误，Backup 随之失败。最终结果 FAIL。
   `application/agent_definitions/integrity.py` 将其与 AgentDefinition 的声明值 `null` 直接比较。合法的
   Workflow override 因此永远不相等。
 - 临时绕过：未观察到公开 CLI 绕过；发布替代定义不能清除历史 AgentRun 的误报。
+- 修复状态：完整性检查现在只对有 Workflow 归属证据的 AgentRun 接受合法的正数收窄 cap；既有
+  两套 Live 历史的 Doctor、Backup 和 Verify 已通过。
 
 ### F2 — P2 风险：内置 Explorer 对普通研究提示可能在提交前耗尽节点预算
 
