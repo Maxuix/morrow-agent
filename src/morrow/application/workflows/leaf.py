@@ -280,10 +280,15 @@ class WorkflowLeafHooks:
         return {"submitted": True, "digest": digest, "reused": False}
 
     def _require_in_scope_evidence(self, refs: tuple[str, ...]) -> None:
+        if not refs:
+            return
         ctx = self.context
-        executions = {
-            item.tool_execution_id
-            for item in self.journal.list_task_executions(self.workspace_id, ctx.leaf_task_run_id)
+        node_executions = self._node_executions()
+        executions = {item.tool_execution_id for item in node_executions}
+        execution_artifacts = {
+            reference.artifact_id
+            for execution in node_executions
+            for reference in execution.artifact_refs
         }
         for ref in refs:
             if ref.startswith("tex_"):
@@ -295,7 +300,9 @@ class WorkflowLeafHooks:
                 continue
             if ref.startswith("art_"):
                 stored = self.artifacts.get(ref)
-                if stored is None or stored.task_run_id != ctx.leaf_task_run_id:
+                if stored is None or not (
+                    stored.producer_node_run_id == ctx.node_run_id or ref in execution_artifacts
+                ):
                     raise ToolExecutionError(
                         ToolErrorCode.INVALID_ARGUMENTS,
                         "evidence_refs must name Artifacts from this node",
@@ -305,6 +312,22 @@ class WorkflowLeafHooks:
                 ToolErrorCode.INVALID_ARGUMENTS,
                 "evidence_refs must be Artifact or ToolExecution identifiers",
             )
+
+    def _node_executions(self):
+        """Return only ToolExecutions owned by this NodeRun's admitted AgentRun."""
+
+        ctx = self.context
+        node_run = self.journal.workflows.get_node(self.workspace_id, ctx.node_run_id)
+        if (
+            node_run is None
+            or node_run.workflow_run_id != ctx.workflow_run_id
+            or node_run.agent_run_id is None
+        ):
+            raise ApplicationError(
+                ApplicationErrorCode.INVALID,
+                "Workflow node AgentRun binding is missing or inconsistent",
+            )
+        return self.journal.list_executions(self.workspace_id, agent_run_id=node_run.agent_run_id)
 
     def _prepare_required_outputs(self) -> tuple[ArtifactBinding, ...]:
         ctx = self.context
@@ -347,8 +370,7 @@ class WorkflowLeafHooks:
         )
 
     def _commit_capture_slot(self, contract) -> ArtifactBinding:
-        ctx = self.context
-        executions = self.journal.list_task_executions(self.workspace_id, ctx.leaf_task_run_id)
+        executions = self._node_executions()
         if contract.kind == "ImplementationPatch":
             payload = self._implementation_patch(executions)
         else:

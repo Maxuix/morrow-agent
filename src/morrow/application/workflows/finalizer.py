@@ -434,17 +434,30 @@ class WorkflowOutcomeFinalizer:
                         role="workflow_node_agent_run",
                     )
                 )
-            if node.leaf_task_run_id is not None:
-                for turn in txn.list_task_turns(self.workspace_id, node.leaf_task_run_id):
-                    evidence_refs.append(
-                        TaskOutcomeEvidenceRef(
-                            kind=TaskOutcomeEvidenceKind.TURN,
-                            reference_id=turn.turn_id,
-                            role="workflow_leaf_turn",
-                        )
+                agent_run = txn.get_agent_run(self.workspace_id, node.agent_run_id)
+                if agent_run is None:
+                    raise ApplicationError(
+                        ApplicationErrorCode.INVALID,
+                        "Workflow node AgentRun evidence is missing",
                     )
+                turn = txn.get_turn(self.workspace_id, agent_run.turn_id)
+                if turn is None:
+                    raise ApplicationError(
+                        ApplicationErrorCode.INVALID,
+                        "Workflow node Turn evidence is missing",
+                    )
+                evidence_refs.append(
+                    TaskOutcomeEvidenceRef(
+                        kind=TaskOutcomeEvidenceKind.TURN,
+                        reference_id=turn.turn_id,
+                        role="workflow_leaf_turn",
+                    )
+                )
                 executions.extend(
-                    txn.list_task_executions(self.workspace_id, node.leaf_task_run_id)
+                    txn.list_executions(
+                        self.workspace_id,
+                        agent_run_id=node.agent_run_id,
+                    )
                 )
         for execution in executions:
             evidence_refs.append(

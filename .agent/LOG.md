@@ -4603,3 +4603,18 @@
 - Closeout `72767b1` and implementation `cda0c0c` were fast-forward merged into local `main`.
 - Subplan 8 is next and remains inactive pending explicit continuation. Remote publication remains
   blocked pending explicit authorization; no Live tests were run.
+
+## 2026-09-02 — Subplan 7 review fix: shared-root evidence isolation
+
+- External Grok review found one shared cause across three Direct-only failures: NodeResultCommitter
+  evidence validation, capture aggregation and the final Workflow snapshot walked every row on the
+  invoking root Task, so a later Direct Workflow could reuse or attribute evidence from an earlier
+  ordinary/Workflow Turn.
+- Confirmed and fixed the findings by projecting each NodeRun through its admitted `agent_run_id`:
+  ToolExecution evidence and capture inputs now come only from that AgentRun; Artifact evidence must
+  either be a NodeRun-produced output or be attached to one of those executions; final snapshots now
+  record only the AgentRun's Turn and ToolExecutions.
+- Added three Direct regressions covering rejection of a prior root execution in ReviewReport
+  submission, exclusion of a prior validation Artifact from TestReport aggregation, and exclusion of
+  prior root Turn/ToolExecution evidence from a later result snapshot. Stage 7 Workflow matrix:
+  103 passed. Full offline gate: 1510 passed, 2 Live deselected. No Live tests were run.

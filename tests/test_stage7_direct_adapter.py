@@ -3,15 +3,19 @@
 from __future__ import annotations
 
 import asyncio
+import json
 
 import pytest
 
 from morrow.application.agent_definitions.builtins import builtin_definitions
 from morrow.application.workflows.builtins import builtin_direct_workflow
+from morrow.application.workflows.capture import VALIDATION_REPORT_ROLE
 from morrow.application.workflows.start import StartWorkflowCommand
 from morrow.core.agent_runs import AgentDefinitionRef
 from morrow.core.application import ApplicationError, ApplicationErrorCode
+from morrow.core.artifacts import ArtifactKind
 from morrow.core.domain import (
+    ArtifactReference,
     DurableTaskRun,
     DurableTurn,
     TaskOutcomeEvidenceKind,
@@ -20,8 +24,21 @@ from morrow.core.domain import (
     TextSafetyProfile,
 )
 from morrow.core.faults import FaultPoint, InjectedFault, OnceFaultInjector
+from morrow.core.models import AssistantMessage, FunctionToolCall
 from morrow.core.runtime_control import RuntimeControlKind, RuntimeControlStatus
-from morrow.core.workflows.contracts import NodeOutputRef, OutputContract, node_output_artifact_id
+from morrow.core.workflows.contracts import (
+    SUBMIT_NODE_RESULT_NAME,
+    NodeOutputRef,
+    OutputContract,
+    node_output_artifact_id,
+    parse_workflow_payload,
+)
+from morrow.core.workflows.contracts import (
+    TestReport as WorkflowTestReport,
+)
+from morrow.core.workflows.contracts import (
+    TestReportItem as WorkflowTestReportItem,
+)
 from morrow.core.workflows.runs import WorkflowStatus
 from test_stage7_isolated_workflow_slice import (
     CONTRACT,
@@ -77,6 +94,54 @@ def start_direct(fx, revision, *, command_id="cmd_direct_start", message_id="msg
             client_message_id=message_id,
         )
     )
+
+
+async def run_direct_with_read(fx, revision):
+    fx.bank.scripts.append(
+        [
+            AssistantMessage(
+                tool_calls=(
+                    FunctionToolCall(
+                        id="call_history",
+                        name="read",
+                        arguments='{"path": "history.py"}',
+                    ),
+                )
+            ),
+            ["historical answer"],
+        ]
+    )
+    run = await fx.runtime.scheduler.run(start_direct(fx, revision).run.workflow_run_id)
+    assert run.status is WorkflowStatus.COMPLETED
+    execution = fx.journal.list_task_executions(WS, "task_root")[-1]
+    fx.tasks.resume("task_root", command_id="cmd_history_resume")
+    return execution
+
+
+def publish_direct_output(fx, base, *, kind, slot):
+    contracts = (OutputContract(kind=kind, slot=slot),)
+    node = (
+        workflow_source(base.nodes[0].agent_definition_ref)
+        .nodes[0]
+        .model_copy(
+            update={
+                "conversation_scope": "invoking_session",
+                "output_contracts": contracts,
+            }
+        )
+    )
+    source = workflow_source(
+        node.agent_definition_ref,
+        nodes=(node,),
+        required_outputs=(NodeOutputRef(node_id="worker", output_slot=slot),),
+    )
+    return fx.compiler.publish(
+        source,
+        source_revision=2,
+        expected_head_revision=2,
+        command_id=f"cmd_{kind.lower()}_publish",
+        active_model=base.nodes[0].resolved_model_ref,
+    ).revision
 
 
 def test_direct_start_requires_distinct_client_message_binding(fx):
@@ -379,3 +444,135 @@ async def test_direct_blocking_review_is_completed_needs_revision(fx):
     assert run.result_status == "needs_revision"
     assert root(fx).status is TaskRunStatus.READY_FOR_ACCEPTANCE
     assert "workflow_result=needs_revision" in outcomes(fx)[-1].completion_basis
+
+
+@pytest.mark.asyncio
+async def test_direct_structured_submission_rejects_prior_root_execution(fx):
+    _version, base = publish_direct(fx)
+    historical = await run_direct_with_read(fx, base)
+    revision = publish_direct_output(fx, base, kind="ReviewReport", slot="review")
+    fx.bank.scripts.append(
+        [
+            AssistantMessage(
+                tool_calls=(
+                    FunctionToolCall(
+                        id="call_review_history",
+                        name=SUBMIT_NODE_RESULT_NAME,
+                        arguments=json.dumps(
+                            {
+                                "schema_version": 1,
+                                "outputs": {
+                                    "review": {
+                                        "verdict": "approve",
+                                        "findings": [],
+                                    }
+                                },
+                                "summary": "reused old evidence",
+                                "evidence_refs": [historical.tool_execution_id],
+                            }
+                        ),
+                    ),
+                )
+            ),
+            ["done"],
+        ]
+    )
+
+    run = await fx.runtime.scheduler.run(
+        start_direct(
+            fx,
+            revision,
+            command_id="cmd_review_history_start",
+            message_id="msg_review_history",
+        ).run.workflow_run_id
+    )
+
+    assert run.status is WorkflowStatus.FAILED
+    node = only_node(fx, run.workflow_run_id)
+    assert fx.artifacts.get(node_output_artifact_id(node.node_run_id, "review")) is None
+
+
+@pytest.mark.asyncio
+async def test_direct_capture_ignores_prior_root_validation_artifact(fx):
+    _version, base = publish_direct(fx)
+    historical = await run_direct_with_read(fx, base)
+    prior_report = WorkflowTestReport(
+        items=(
+            WorkflowTestReportItem(
+                validator_kind="pytest",
+                scope="historical",
+                status="passed",
+                exit_code=0,
+                evidence_summary="old validation",
+                content_complete=True,
+                tool_execution_id=historical.tool_execution_id,
+            ),
+        ),
+        content_complete=True,
+    )
+    artifact = fx.artifacts.publish_bytes(
+        prior_report.model_dump_json().encode(),
+        kind=ArtifactKind.TEST_REPORT,
+        session_id="ses_root",
+        task_run_id="task_root",
+    )
+    updated = historical.model_copy(
+        update={
+            "artifact_refs": (
+                *historical.artifact_refs,
+                ArtifactReference(
+                    artifact_id=artifact.artifact_id,
+                    role=VALIDATION_REPORT_ROLE,
+                ),
+            ),
+            "row_version": historical.row_version + 1,
+        }
+    )
+    fx.journal.save_execution(
+        WS,
+        updated,
+        expected_row_version=historical.row_version,
+    )
+    revision = publish_direct_output(fx, base, kind="TestReport", slot="tests")
+    fx.bank.scripts.append([["current result"]])
+
+    run = await fx.runtime.scheduler.run(
+        start_direct(
+            fx,
+            revision,
+            command_id="cmd_test_report_start",
+            message_id="msg_test_report",
+        ).run.workflow_run_id
+    )
+
+    assert run.status is WorkflowStatus.COMPLETED
+    node = only_node(fx, run.workflow_run_id)
+    stored = fx.artifacts.get(node_output_artifact_id(node.node_run_id, "tests"))
+    report = parse_workflow_payload(
+        "TestReport",
+        fx.artifacts.read(stored.artifact_id, max_bytes=stored.byte_size).content,
+    )
+    assert report.items == ()
+
+
+@pytest.mark.asyncio
+async def test_direct_snapshot_excludes_prior_root_turn_and_execution(fx):
+    _version, revision = publish_direct(fx)
+    historical = await run_direct_with_read(fx, revision)
+    fx.bank.scripts.append([["current answer"]])
+
+    run = await fx.runtime.scheduler.run(
+        start_direct(
+            fx,
+            revision,
+            command_id="cmd_current_start",
+            message_id="msg_current",
+        ).run.workflow_run_id
+    )
+
+    assert run.status is WorkflowStatus.COMPLETED
+    snapshot = outcomes(fx)[-1]
+    evidence_ids = {item.reference_id for item in snapshot.evidence_refs}
+    assert historical.tool_execution_id not in evidence_ids
+    assert historical.turn_id not in evidence_ids
+    assert len([item for item in snapshot.evidence_refs if item.role == "workflow_leaf_turn"]) == 1
