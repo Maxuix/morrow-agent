@@ -1486,6 +1486,9 @@ class SqliteOperationalJournal:
     def put_application_event(self, workspace_id: str, event: ApplicationEvent) -> ApplicationEvent:
         return self._application_journal.put_event(workspace_id, event)
 
+    def latest_application_event_cursor(self, workspace_id: str) -> int:
+        return self._application_journal.latest_cursor(workspace_id)
+
     def put_application_event_in_txn(
         self, workspace_id: str, event: ApplicationEvent
     ) -> ApplicationEvent:

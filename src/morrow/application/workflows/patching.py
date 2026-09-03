@@ -12,7 +12,12 @@ from morrow.application.workflows.compiler import (
 )
 from morrow.application.workflows.outputs import EffectiveOutputResolver
 from morrow.application.workflows.scheduler import stable_execution_order
-from morrow.core.application import ApplicationError, ApplicationErrorCode
+from morrow.core.application import (
+    ApplicationCommandReceipt,
+    ApplicationError,
+    ApplicationErrorCode,
+)
+from morrow.core.domain import canonical_json_bytes, sha256_digest, validate_prefixed_id
 from morrow.core.workflows.definitions import WorkflowRevision
 from morrow.core.workflows.patches import FutureGraphPatch
 from morrow.core.workflows.runs import (
@@ -22,6 +27,8 @@ from morrow.core.workflows.runs import (
     WorkflowRun,
     WorkflowStatus,
 )
+
+RERUN_OPERATION = "workflow_rerun"
 
 
 @dataclass(frozen=True)
@@ -248,9 +255,33 @@ class PatchApplicationService:
         child = self.journal.transact(handoff)
         return PatchApplication(patch, saved.revision, parent, child, saved.validation)
 
-    def rerun(self, parent_run_id: str, *, full: bool) -> RerunApplication:
-        """Create an explicit new-budget rerun after the root Task was resumed."""
+    def rerun(
+        self, parent_run_id: str, *, full: bool, command_id: str | None = None
+    ) -> RerunApplication:
+        """Create an explicit new-budget rerun after the root Task was resumed.
 
+        With ``command_id`` the creation receipt is written in the same
+        transaction as the rerun child, so a client retry after any crash can
+        never double-apply: the replay path rebuilds the recorded child.
+        """
+
+        digest = None
+        if command_id is not None:
+            validate_prefixed_id(command_id, "cmd")
+            digest = sha256_digest(
+                canonical_json_bytes(
+                    {
+                        "operation": RERUN_OPERATION,
+                        "parent_run_id": parent_run_id,
+                        "full": full,
+                    }
+                )
+            )
+            replay = self._rerun_replay(
+                self.journal, command_id, digest, parent_run_id=parent_run_id, full=full
+            )
+            if replay is not None:
+                return replay
         parent = self.journal.workflows.get_run(self.workspace_id, parent_run_id)
         if parent is None:
             raise ApplicationError(ApplicationErrorCode.NOT_FOUND, "rerun parent is missing")
@@ -334,7 +365,64 @@ class PatchApplicationService:
             for ordinal, node_id in enumerate(execution)
         )
         imports = () if full else self._imports(parent, child_id, revision, inherited)
-        self.journal.workflows.create_rerun(parent, child, nodes, execution_rows, imports)
+        if command_id is None:
+            self.journal.workflows.create_rerun(parent, child, nodes, execution_rows, imports)
+            return RerunApplication(parent, child, full, inherited, execution)
+
+        def work(txn) -> RerunApplication:
+            replayed = self._rerun_replay(
+                txn, command_id, digest, parent_run_id=parent_run_id, full=full
+            )
+            if replayed is not None:
+                return replayed
+            txn.workflows.create_rerun(parent, child, nodes, execution_rows, imports)
+            txn.put_application_command_receipt_in_txn(
+                self.workspace_id,
+                ApplicationCommandReceipt(
+                    command_id=command_id,
+                    workspace_id=self.workspace_id,
+                    operation=RERUN_OPERATION,
+                    request_digest=digest,
+                    result_kind="workflow_run",
+                    result_id=child.workflow_run_id,
+                ),
+            )
+            return RerunApplication(parent, child, full, inherited, execution)
+
+        return self.journal.transact(work)
+
+    def _rerun_replay(
+        self, journal, command_id: str, digest: str, *, parent_run_id: str, full: bool
+    ) -> RerunApplication | None:
+        receipt = journal.get_application_command_receipt(self.workspace_id, command_id)
+        if receipt is None:
+            return None
+        if receipt.operation != RERUN_OPERATION or receipt.request_digest != digest:
+            raise ApplicationError(
+                ApplicationErrorCode.CONFLICT,
+                "command ID was reused with a different request",
+            )
+        parent = journal.workflows.get_run(self.workspace_id, parent_run_id)
+        child = journal.workflows.get_run(self.workspace_id, receipt.result_id or "")
+        if parent is None or child is None:
+            raise ApplicationError(
+                ApplicationErrorCode.NEEDS_RECOVERY, "rerun receipt result is missing"
+            )
+        revision = journal.workflows.get_revision(self.workspace_id, child.workflow_revision_id)
+        if revision is None:
+            raise ApplicationError(
+                ApplicationErrorCode.NEEDS_RECOVERY, "rerun child Revision is missing"
+            )
+        execution = tuple(
+            item.node_id
+            for item in sorted(
+                journal.workflows.list_execution_nodes(self.workspace_id, child.workflow_run_id),
+                key=lambda item: item.topology_ordinal,
+            )
+        )
+        inherited = tuple(
+            node for node in stable_execution_order(revision) if node not in set(execution)
+        )
         return RerunApplication(parent, child, full, inherited, execution)
 
     def _require_base(self, patch: FutureGraphPatch):

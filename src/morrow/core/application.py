@@ -32,6 +32,22 @@ APPLICATION_EVENT_SCHEMA_VERSION = 1
 APPLICATION_EVENT_MAX_BYTES = 32 * 1024
 _EVENT_TOKEN_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]{0,127}$")
 
+# Additive Stage 8 lifecycle types (authorized 2026-09-03): the minimum the
+# observer surface needs. Query/polling remains the complete fallback path for
+# every projection these events describe; the stream is never authoritative.
+WORKFLOW_RUN_CREATED_EVENT = "workflow_run.created"
+WORKFLOW_RUN_STATUS_EVENT = "workflow_run.status_changed"
+WORKFLOW_NODE_STATUS_EVENT = "workflow_node.status_changed"
+APPROVAL_REQUESTED_EVENT = "approval.requested"
+STAGE8_APPLICATION_EVENT_TYPES = frozenset(
+    {
+        WORKFLOW_RUN_CREATED_EVENT,
+        WORKFLOW_RUN_STATUS_EVENT,
+        WORKFLOW_NODE_STATUS_EVENT,
+        APPROVAL_REQUESTED_EVENT,
+    }
+)
+
 
 class ApplicationErrorCode(StrEnum):
     INVALID = "invalid"

@@ -70,6 +70,13 @@ class SqliteApplicationJournal:
         )
         return tuple(_event_from_row(row) for row in rows)
 
+    def latest_cursor(self, workspace_id: str) -> int:
+        value = self.backend.read_one(
+            "SELECT COALESCE(MAX(cursor), 0) FROM application_events WHERE workspace_id = ?",
+            (workspace_id,),
+        )
+        return int(value[0])
+
     def put_event(self, workspace_id: str, event: ApplicationEvent) -> ApplicationEvent:
         return self.backend.transact(lambda: self.put_event_in_txn(workspace_id, event))
 

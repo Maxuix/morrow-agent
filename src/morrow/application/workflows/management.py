@@ -301,10 +301,10 @@ class WorkflowManagementService:
             raise RuntimeError("Workflow patching requires a composed Workflow runtime")
         return self.runtime.patches.apply(patch, active_model=self.active_model)
 
-    def rerun(self, workflow_run_id: str, *, full: bool):
+    def rerun(self, workflow_run_id: str, *, full: bool, command_id: str | None = None):
         if self.runtime is None:
             raise RuntimeError("Workflow rerun requires a composed Workflow runtime")
-        return self.runtime.patches.rerun(workflow_run_id, full=full)
+        return self.runtime.patches.rerun(workflow_run_id, full=full, command_id=command_id)
 
     def abandon(self, workflow_run_id: str, *, expected_row_version: int) -> WorkflowRun:
         if self.runtime is None:

@@ -2,33 +2,27 @@
 
 ## Current status
 
-Stage 7 is complete and remediated (full offline gate: 1538 passed, 2 skipped, 2 Live deselected;
-Ruff format/check, compileall and diff checks passed). Stage 8 planning is done: the stage-8
-roadmap was revised on 2026-09-03 (risk-tiered Replan autonomy aligned with mainstream harness
-practice; runtime-kernel-first ordering), the Stage 7 subplans are archived under
-`.agent/archive/subplans/stage7-workflow-runtime/`, and the Stage 8 master plan plus eleven child
-plans are drafted under `.agent/`.
+Stage 7 is complete and remediated. Stage 8 Subplans 1–2 are complete: the Subplan 2 review
+remediation (four confirmed contract bugs plus two accepted suggestions) is integrated and, with
+explicit user authorization on 2026-09-03, local `main` through `bd3a8c5` is published to
+`origin/main` — neither ahead nor behind. Subplan 3 (Core API and Local Server) is now active on
+`feat/stage8-core-api` with both prerequisite authorizations granted: the additive public
+`ApplicationEvent` lifecycle extension and promoting `starlette` + `uvicorn` to direct
+dependencies (already present as transitive deps of `mcp>=2.0.0`).
 
 ## Active task
 
-Stage 8 Subplan 2 review remediation is active on `fix/stage8-continuation-review`. Four confirmed
-bugs are repaired: detached Revision number isolation, multi-hop Past derivation, inherited
-ReviewReport empty-set finalization, and atomic idle RUNNING pause completion. Two useful review
-suggestions are also implemented for admission-reason normalization and Query effective-output
-projection. Review-focused matrix: 56 passed; full offline gate: 1566 passed / 2 deselected in
-283.88 seconds; static gates and CLI help smoke are green. Remediation commit `b8cdb2f` is
-fast-forward integrated into local `main`; only separately authorized remote publication remains.
+Stage 8 Subplan 3 implementation: versioned `/v1` Command/Query/Approval/Event protocol, local
+loopback server with per-session token and CSRF/origin checks, Core Host single-writer command
+bus per contracts C4, `morrow serve` CLI entry, read-only Catalog Query APIs, and a scripted
+in-process verification client with deterministic contract and §16.3 security tests.
 
 ## Next action
 
-Subplan 3 starts only on explicit activation and additionally needs authorization for the additive
-`ApplicationEvent` lifecycle extension and Python web-framework dependency; Subplan 4 needs
-frontend toolchain authorization.
+Implement the wire protocol models and the additive workflow ApplicationEvent emission, then the
+Core Host and ASGI transport.
 
 ## Blockers
 
-Remote publication is blocked: the safety approval rejected `git push origin main` because the
-current request was not accepted as explicit authorization to send these commits to the configured
-GitHub destination. Local `main` is three closeout commits ahead after recording this blocker.
-Additive `ApplicationEvent` types remain deferred pending separate Subplan 3 authorization;
-Query/CLI polling remains the complete path.
+None. Remote publication is authorized and current. No Live Provider/MCP/network/credential test
+is authorized; the loopback server is exercised by scripted in-process clients only.

@@ -111,10 +111,10 @@ def _source(path: Path, model):
 
 def _identity(application, workspace_id, directory):
     if workspace_id is not None:
-        for item in application.workspace_service.list():
-            if item.workspace_id == workspace_id:
-                return item
-        raise WorkspaceError("workspace is not registered")
+        identity = application.workspace_service.get(workspace_id)
+        if identity is None:
+            raise WorkspaceError("workspace is not registered")
+        return identity
     resolution = application.workspace_service.resolve(directory)
     if resolution.status == "candidate":
         raise WorkspaceError("workspace is not registered; confirm it first or use --workspace-id")

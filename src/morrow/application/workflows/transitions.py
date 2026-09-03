@@ -11,17 +11,67 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import datetime
 
-from morrow.core.application import ApplicationError, ApplicationErrorCode
+from morrow.core.application import (
+    WORKFLOW_NODE_STATUS_EVENT,
+    WORKFLOW_RUN_STATUS_EVENT,
+    ApplicationError,
+    ApplicationErrorCode,
+)
 from morrow.core.models import utc_now
 from morrow.core.workflows.contracts import ArtifactBinding
 from morrow.core.workflows.runs import NodeRun, WorkflowRun, WorkflowStatus
 
+EventSink = Callable[[str, str, str, dict], None]
+
 
 class WorkflowTransitionService:
-    def __init__(self, journal, *, workspace_id: str, clock: Callable[[], datetime] = utc_now):
+    def __init__(
+        self,
+        journal,
+        *,
+        workspace_id: str,
+        clock: Callable[[], datetime] = utc_now,
+        event_sink: EventSink | None = None,
+    ) -> None:
         self.journal = journal
         self.workspace_id = workspace_id
         self.clock = clock
+        # Optional additive Stage 8 projection seam: invoked once per committed
+        # state change with bounded id/status facts, never inside the transition
+        # transaction and never with sensitive payloads. Public so composition
+        # roots can attach the sink after the runtime bundle exists.
+        self.event_sink = event_sink
+
+    def _emit_run(self, run: WorkflowRun) -> None:
+        if self.event_sink is None:
+            return
+        self.event_sink(
+            WORKFLOW_RUN_STATUS_EVENT,
+            "workflow_run",
+            run.workflow_run_id,
+            {
+                "status": run.status.value,
+                "pause_requested": run.pause_requested,
+                "result_status": run.result_status,
+                "pending_terminal_intent": run.pending_terminal_intent,
+                "row_version": run.row_version,
+            },
+        )
+
+    def _emit_node(self, node: NodeRun) -> None:
+        if self.event_sink is None:
+            return
+        self.event_sink(
+            WORKFLOW_NODE_STATUS_EVENT,
+            "workflow_node",
+            node.node_run_id,
+            {
+                "workflow_run_id": node.workflow_run_id,
+                "node_id": node.node_id,
+                "status": node.status.value,
+                "row_version": node.row_version,
+            },
+        )
 
     # NodeRun transitions ------------------------------------------------------
 
@@ -61,7 +111,11 @@ class WorkflowTransitionService:
                 "row_version": current.row_version + 1,
             }
         )
-        return self.journal.workflows.save_node(updated, expected_row_version=current.row_version)
+        updated = self.journal.workflows.save_node(
+            updated, expected_row_version=current.row_version
+        )
+        self._emit_node(updated)
+        return updated
 
     def complete_node(self, node_run_id: str) -> NodeRun:
         return self._node_terminal(node_run_id, WorkflowStatus.COMPLETED)
@@ -115,9 +169,11 @@ class WorkflowTransitionService:
         update = {"status": target, "row_version": current.row_version + 1}
         if terminal:
             update["completed_at"] = self.clock()
-        return self.journal.workflows.save_node(
+        updated = self.journal.workflows.save_node(
             current.model_copy(update=update), expected_row_version=current.row_version
         )
+        self._emit_node(updated)
+        return updated
 
     def _require_node(self, node_run_id: str) -> NodeRun:
         current = self.journal.workflows.get_node(self.workspace_id, node_run_id)
@@ -140,7 +196,9 @@ class WorkflowTransitionService:
                 "row_version": current.row_version + 1,
             }
         )
-        return self.journal.workflows.save_run(updated, expected_row_version=current.row_version)
+        updated = self.journal.workflows.save_run(updated, expected_row_version=current.row_version)
+        self._emit_run(updated)
+        return updated
 
     def complete_run(self, workflow_run_id: str, *, result_status: str) -> WorkflowRun:
         current = self._require_run(workflow_run_id)
@@ -156,7 +214,9 @@ class WorkflowTransitionService:
                 "row_version": current.row_version + 1,
             }
         )
-        return self.journal.workflows.save_run(updated, expected_row_version=current.row_version)
+        updated = self.journal.workflows.save_run(updated, expected_row_version=current.row_version)
+        self._emit_run(updated)
+        return updated
 
     def fail_run(self, workflow_run_id: str) -> WorkflowRun:
         return self._run_terminal(workflow_run_id, WorkflowStatus.FAILED)
@@ -171,7 +231,9 @@ class WorkflowTransitionService:
         updated = current.model_copy(
             update={"status": WorkflowStatus.BLOCKED, "row_version": current.row_version + 1}
         )
-        return self.journal.workflows.save_run(updated, expected_row_version=current.row_version)
+        updated = self.journal.workflows.save_run(updated, expected_row_version=current.row_version)
+        self._emit_run(updated)
+        return updated
 
     def resume_blocked_run(self, workflow_run_id: str) -> WorkflowRun:
         current = self._require_run(workflow_run_id)
@@ -180,7 +242,9 @@ class WorkflowTransitionService:
         updated = current.model_copy(
             update={"status": WorkflowStatus.RUNNING, "row_version": current.row_version + 1}
         )
-        return self.journal.workflows.save_run(updated, expected_row_version=current.row_version)
+        updated = self.journal.workflows.save_run(updated, expected_row_version=current.row_version)
+        self._emit_run(updated)
+        return updated
 
     # Pause/Drain control -----------------------------------------------------
 
@@ -242,7 +306,11 @@ class WorkflowTransitionService:
                 current.model_copy(update=update), expected_row_version=current.row_version
             )
 
-        return self.journal.transact(work)
+        before = self._require_run(workflow_run_id)
+        updated = self.journal.transact(work)
+        if updated.row_version != before.row_version:
+            self._emit_run(updated)
+        return updated
 
     def resume_run(self, workflow_run_id: str) -> WorkflowRun:
         """Atomically clear the pause fact; a paused/draining run runs again.
@@ -266,9 +334,11 @@ class WorkflowTransitionService:
                 ApplicationErrorCode.INVALID,
                 f"a {current.status.value} Workflow cannot resume",
             )
-        return self.journal.workflows.save_run(
+        updated = self.journal.workflows.save_run(
             current.model_copy(update=update), expected_row_version=current.row_version
         )
+        self._emit_run(updated)
+        return updated
 
     def complete_drain(self, workflow_run_id: str) -> WorkflowRun:
         """A draining run with no Active nodes becomes paused.
@@ -286,7 +356,9 @@ class WorkflowTransitionService:
         updated = current.model_copy(
             update={"status": WorkflowStatus.PAUSED, "row_version": current.row_version + 1}
         )
-        return self.journal.workflows.save_run(updated, expected_row_version=current.row_version)
+        updated = self.journal.workflows.save_run(updated, expected_row_version=current.row_version)
+        self._emit_run(updated)
+        return updated
 
     def resume_blocked_run_to_draining(self, workflow_run_id: str) -> WorkflowRun:
         """Recovery resolve-success on a paused blocked run drains instead of running."""
@@ -297,7 +369,9 @@ class WorkflowTransitionService:
         updated = current.model_copy(
             update={"status": WorkflowStatus.DRAINING, "row_version": current.row_version + 1}
         )
-        return self.journal.workflows.save_run(updated, expected_row_version=current.row_version)
+        updated = self.journal.workflows.save_run(updated, expected_row_version=current.row_version)
+        self._emit_run(updated)
+        return updated
 
     def set_pending_user_cancel(self, workflow_run_id: str) -> WorkflowRun:
         """Record the one narrow pending terminal intent; it can never be cleared."""
@@ -311,7 +385,9 @@ class WorkflowTransitionService:
                 "row_version": current.row_version + 1,
             }
         )
-        return self.journal.workflows.save_run(updated, expected_row_version=current.row_version)
+        updated = self.journal.workflows.save_run(updated, expected_row_version=current.row_version)
+        self._emit_run(updated)
+        return updated
 
     def _run_terminal(self, workflow_run_id: str, target: WorkflowStatus) -> WorkflowRun:
         current = self._require_run(workflow_run_id)
@@ -324,7 +400,9 @@ class WorkflowTransitionService:
                 "row_version": current.row_version + 1,
             }
         )
-        return self.journal.workflows.save_run(updated, expected_row_version=current.row_version)
+        updated = self.journal.workflows.save_run(updated, expected_row_version=current.row_version)
+        self._emit_run(updated)
+        return updated
 
     def _require_run(self, workflow_run_id: str) -> WorkflowRun:
         current = self.journal.workflows.get_run(self.workspace_id, workflow_run_id)

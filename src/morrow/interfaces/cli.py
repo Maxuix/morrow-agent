@@ -57,6 +57,7 @@ from morrow.core.store import StorageError, StorageErrorCode, StoreOpenMode
 from morrow.interfaces.learning_cli import learning_app, memory_app
 from morrow.interfaces.mcp_cli import mcp_app
 from morrow.interfaces.preferences_cli import preference_inbox_app
+from morrow.interfaces.serve_cli import register as _register_serve
 from morrow.interfaces.skills_cli import skill_app
 from morrow.interfaces.terminal import Terminal, TerminalApprovalPort, run_repl
 from morrow.interfaces.workflow_cli import agent_app, workflow_app
@@ -94,6 +95,7 @@ app.add_typer(memory_app, name="memory")
 app.add_typer(mcp_app, name="mcp")
 app.add_typer(agent_app, name="agent")
 app.add_typer(workflow_app, name="workflow")
+_register_serve(app)
 
 
 def _secret(provider_id: str = "opencode-go") -> str:

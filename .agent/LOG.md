@@ -1,5 +1,18 @@
 # Execution Log
 
+## 2026-09-03 — Subplan 3 activated; remote publication closed
+
+- At explicit user direction, activated Stage 8 Subplan 3 (Core API and Local Server) on
+  `feat/stage8-core-api` from verified `main@bd3a8c5`.
+- The user explicitly authorized both Subplan 3 prerequisites: (a) the additive public
+  `ApplicationEvent` lifecycle extension and (b) promoting `starlette` + `uvicorn` to direct
+  dependencies (both already ship as transitive deps of the direct `mcp>=2.0.0` dependency).
+- The user explicitly authorized remote publication; local `main` (5 commits ahead, through
+  `bd3a8c5`) was pushed to `origin/main` after transient github.com TLS interference cleared.
+  The Subplan 2 publication blocker is closed.
+- No Live Provider/MCP/network/credential test is authorized; the loopback server will be
+  exercised by scripted in-process clients only.
+
 ## 2026-09-02 — Stage 7 real-user evaluation blockers repaired
 
 - Repaired the installed-ripgrep regex argv defect, projected each Node's exact submitted Artifact

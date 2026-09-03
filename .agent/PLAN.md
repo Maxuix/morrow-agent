@@ -1,9 +1,11 @@
 # Stage 8 Adaptive Orchestration and GUI Implementation Plan
 
 > Status: active 2026-09-03
-> Active subplan: `2-future-graph-patch-continuation` closeout (review remediation integrated;
-> remote publication still requires explicit approval)
-> Next subplan: `3-core-api-local-server` (after explicit activation and its authorizations are confirmed)
+> Active subplan: `3-core-api-local-server` on `feat/stage8-core-api` (both prerequisite
+> authorizations granted 2026-09-03: additive `ApplicationEvent` extension; `starlette` +
+> `uvicorn` as direct dependencies)
+> Next subplan: `4-web-gui-observer` (after explicit activation and frontend toolchain
+> authorization)
 > Roadmap authority: `docs/roadmap/stage-8-adaptive-orchestration-and-gui.md`
 > (revised 2026-09-03: risk-tiered Replan autonomy; runtime-kernel-first ordering)
 > Entry evidence: Stage 7 completed and remediated; full offline gate 1538 passed, 2 skipped,

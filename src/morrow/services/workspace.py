@@ -244,6 +244,20 @@ class WorkspaceService:
             current = current.parent
         return None
 
+    def get(self, workspace_id: str) -> WorkspaceIdentity | None:
+        """Look up one registered workspace identity by exact ID."""
+
+        entries = self._entries()
+        entry = entries.workspaces.get(workspace_id)
+        if entry is None:
+            return None
+        return WorkspaceIdentity(
+            workspace_id=entry.workspace_id,
+            path=entry.path,
+            display_name=entry.display_name,
+            git_root=entry.git_root,
+        )
+
     def resolve(self, path: Path) -> WorkspaceResolution:
         normalized = self.normalize_path(path)
         git_root = self.git_root(normalized)

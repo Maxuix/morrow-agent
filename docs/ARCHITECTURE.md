@@ -313,6 +313,34 @@ bounded partial failure，不回滚或覆盖用户数据；
 未来 Git、网络等有状态或有副作用工具必须沿用同一注册与 ToolCycle 协议，并把实际能力委托给相应 Service/Port。模型请求中的 ToolDefinition 保持标准化；
 本地风险与审批元数据不得泄露为 Provider 私有协议。
 
+### Core API Server（Stage 8）
+
+`server/` 是 CLI 之外的第二个接口层：一个由 Core 进程拥有的本地版本化 API（`/v1`），供 Web GUI
+与未来其他壳消费与 CLI 完全相同的 application services。传输层（Starlette ASGI，
+`server/app.py`）不含任何业务状态机，不触碰 Repository/YAML；它只解析严格 wire 模型
+（`server/protocol.py`，extra 一律拒绝）、委托给 Core Host 并渲染投影。所有出站 payload 由
+`server/projections.py` 的显式字段白名单装配：凭据、完整敏感工具参数、reasoning、SDK 对象与
+traceback 永不越界；Provider catalog 只暴露 `credential_configured` 布尔值，审批面只暴露有界
+preview。
+
+并发模型遵守冻结合同 C4：`server/host.py` 的 `CoreHost` 持有唯一 Core runtime 线程/事件循环，
+线程绑定的 SQLite session 永不交给 ASGI worker。变更命令经有界串行 command bus（queue 满即显式
+503 背压，绝不静默丢弃）；读投影在同一 Core loop 上运行。`RunSupervisor` 为每个 WorkflowRun 持有
+至多一个进程内 driver；server 关闭只取消 driver，从不记录为 user cancellation，durable 状态留给
+恢复路径。命令幂等端到端：Start/审批/rerun 走服务自带 receipt（rerun 的 receipt 与子 Run 创建
+同事务），Pause/Resume/Cancel/Abandon 等天然幂等 transition 由命令层的提交后 receipt 包装，replay
+一律从当前 durable 事实重建应答。
+
+事件不是第二真相：新增量公开 `ApplicationEvent` 类型（`workflow_run.created`、
+`workflow_run.status_changed`、`workflow_node.status_changed`、`approval.requested`）追加进既有
+workspace 单调游标流；`WorkflowTransitionService` 的可选 `event_sink` 是唯一 transition 发射缝，
+CLI 默认不挂接。客户端取同事务 snapshot（含 max cursor），WebSocket 只推 `latest_cursor` 提示，
+事实一律从 durable `/v1/events?after=` 拉取；gap 检测与 resync 是协议的一部分。驱动中的审批由
+`ServerApprovalPort` 挂起，API 解析把决定递交给等待者，durable consume 仍由 ToolCycle 完成；
+无等待者时走既有 `resolve_approval` durable 路径。服务器只绑定 loopback，以每进程随机 token
+认证，拒绝非 loopback Origin/Referer 与非 JSON 变更请求。`morrow serve` 以前台进程启动该服务并
+在 SIGINT 时优雅退出（Stage 8 无后台守护）。
+
 ## 当前运行流
 
 ```text
