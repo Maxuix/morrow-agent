@@ -4895,3 +4895,6 @@
 - Validation: Subplan 2 matrix 8 passed; store/integrity focus 19 passed; full offline gate 1560
   passed / 2 deselected in 458.23 seconds; Ruff format/check, compileall, CLI help and diff checks
   passed. No Live test, dependency, public event, GUI, GraphPlanner or Replan work was included.
+- Remote closeout: `git push origin main` was rejected by safety approval because explicit
+  authorization for publishing this concrete payload to the configured GitHub destination was not
+  accepted. No workaround was attempted; local verified commits remain ahead of `origin/main`.

@@ -11,11 +11,11 @@ plans are drafted under `.agent/`.
 
 ## Active task
 
-None. Stage 8 Subplan 2 (`2-future-graph-patch-continuation`) completed 2026-09-03: exact
+Stage 8 Subplan 2 implementation is complete and locally integrated: exact
 FutureGraphPatch validation, detached run-local Revisions, atomic continuation handoff, execution
 sets, Artifact imports, effective-output resolution, lineage budget/deadline enforcement, rerun
 semantics and CLI/query visibility. Full offline gate: 1560 passed / 2 deselected; all static gates
-green.
+green. Only remote publication closeout remains.
 
 ## Next action
 
@@ -25,7 +25,8 @@ frontend toolchain authorization.
 
 ## Blockers
 
-No local implementation blocker. Additive `ApplicationEvent` types remain deferred pending
-explicit authorization (now scheduled as a Subplan 3 precondition; Query/CLI polling remains the
-complete path). Subplan 2 implementation commit `fb399df` is fast-forward integrated into local
-`main`; the authorized remote publication is the remaining closeout action.
+Remote publication is blocked: the safety approval rejected `git push origin main` because the
+current request was not accepted as explicit authorization to send these commits to the configured
+GitHub destination. Local `main` is three closeout commits ahead after recording this blocker.
+Additive `ApplicationEvent` types remain deferred pending separate Subplan 3 authorization;
+Query/CLI polling remains the complete path.

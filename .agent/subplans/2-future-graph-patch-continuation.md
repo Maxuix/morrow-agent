@@ -1,6 +1,6 @@
 # Subplan 2 — FutureGraphPatch and Continuation Child Runs
 
-> Status: completed 2026-09-03
+> Status: implementation complete 2026-09-03; remote publication closeout blocked pending approval
 > Branch: `feat/stage8-patch-continuation`
 > Activation base: latest verified `main` with Subplan 1 integrated
 > Prerequisite: Subplan 1 (Pause/Drain runtime) verified
