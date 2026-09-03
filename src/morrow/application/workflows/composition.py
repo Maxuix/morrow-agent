@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from morrow.application.workflows.finalizer import WorkflowOutcomeFinalizer
+from morrow.application.workflows.patching import PatchApplicationService
 from morrow.application.workflows.queries import WorkflowQueryService
 from morrow.application.workflows.scheduler import WorkflowScheduler
 from morrow.application.workflows.start import WorkflowStartService
@@ -25,6 +26,7 @@ class WorkflowRuntime:
     transitions: WorkflowTransitionService
     finalizer: WorkflowOutcomeFinalizer
     queries: WorkflowQueryService
+    patches: PatchApplicationService
 
 
 def build_workflow_runtime(
@@ -84,4 +86,12 @@ def build_workflow_runtime(
         transitions=transitions,
         finalizer=finalizer,
         queries=WorkflowQueryService(journal, workspace_id=workspace_id),
+        patches=PatchApplicationService(
+            journal,
+            workspace_id=workspace_id,
+            catalog=agent_publication.catalog,
+            id_source=id_source,
+            finalizer=finalizer,
+            clock=clock,
+        ),
     )

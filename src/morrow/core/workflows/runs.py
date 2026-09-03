@@ -11,11 +11,33 @@ from pydantic import Field, field_validator, model_validator
 from morrow.core.agent_definitions import WorkspaceId
 from morrow.core.domain import CLIENT_MESSAGE_ID_PATTERN
 from morrow.core.models import ProtocolModel
-from morrow.core.workflows.contracts import ArtifactBinding, SlotName
+from morrow.core.workflows.contracts import ArtifactBinding, ContractRef, SlotName
 from morrow.core.workflows.definitions import WorkflowBudget, WorkflowRevisionId
 
 WorkflowRunId = Annotated[str, Field(pattern=r"^wrun_[A-Za-z0-9_-]+$")]
 NodeRunId = Annotated[str, Field(pattern=r"^nrun_[A-Za-z0-9_-]+$")]
+
+
+class WorkflowExecutionNode(ProtocolModel):
+    """One immutable member of a run's compiler-closed execution set."""
+
+    workflow_run_id: WorkflowRunId
+    node_id: SlotName
+    topology_ordinal: int = Field(ge=0, strict=True)
+    inclusion_reason: Literal["initial", "retained_future", "failed_retry"]
+
+
+class WorkflowArtifactImport(ProtocolModel):
+    """A child-run reference to one immutable output produced by its lineage."""
+
+    workflow_run_id: WorkflowRunId
+    source_workflow_run_id: WorkflowRunId
+    source_node_run_id: NodeRunId
+    source_node_id: SlotName
+    output_slot: SlotName
+    artifact_id: Annotated[str, Field(pattern=r"^art_[A-Za-z0-9_-]+$")]
+    contract: ContractRef
+    inherited_at: datetime
 
 
 class WorkflowStatus(StrEnum):
@@ -108,6 +130,7 @@ class WorkflowRun(RunState):
     run_relation: Literal["initial", "continuation", "rerun"] = "initial"
     lineage_budget_root_run_id: WorkflowRunId | None = None
     parent_run_id: WorkflowRunId | None = None
+    superseded_reason: Literal["continued_by_patch"] | None = None
 
     @property
     def effective_lineage_budget_root_run_id(self) -> str:
@@ -138,6 +161,8 @@ class WorkflowRun(RunState):
                 raise ValueError("an initial Workflow run is its own lineage budget root")
         elif self.parent_run_id is None or self.lineage_budget_root_run_id is None:
             raise ValueError("a continuation/rerun Workflow run requires its lineage facts")
+        if (self.status is WorkflowStatus.SUPERSEDED) != (self.superseded_reason is not None):
+            raise ValueError("only a superseded Workflow records its supersession reason")
         if (
             self.pause_requested
             and not self.status.terminal

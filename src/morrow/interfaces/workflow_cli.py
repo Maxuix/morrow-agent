@@ -44,12 +44,15 @@ from morrow.core.models import ModelRef
 from morrow.core.store import StorageError, StorageErrorCode, StoreOpenMode
 from morrow.core.workflows.contracts import TaskContract
 from morrow.core.workflows.definitions import WorkflowDefinitionSource
+from morrow.core.workflows.patches import FutureGraphPatch
 from morrow.services.workspace import WorkspaceError
 
 agent_app = typer.Typer(help="Agent definition desired state and immutable publication.")
 workflow_app = typer.Typer(help="Static Workflow definition, execution and recovery management.")
 node_app = typer.Typer(help="Workflow NodeRun inspection.")
+patch_app = typer.Typer(help="Validate, save, and apply exact future-only graph patches.")
 workflow_app.add_typer(node_app, name="node")
+workflow_app.add_typer(patch_app, name="patch")
 _CLI_PERMISSION_PROFILE: ContextVar[PermissionProfile | None] = ContextVar(
     "workflow_cli_permission_profile", default=None
 )
@@ -731,6 +734,142 @@ def _runtime_for_run(state_root, workspace_id, directory, workflow_run_id):
     return _session_management(state_root, workspace_id, directory, recovery.session_id)
 
 
+def _patch_action(
+    action,
+    workflow_run_id,
+    base_revision,
+    expected_parent_version,
+    file,
+    patch_id,
+    requested_by,
+    workspace_id,
+    directory,
+    state_root,
+):
+    products = None
+    try:
+        products = _runtime_for_run(state_root, workspace_id, directory, workflow_run_id)
+        patch = FutureGraphPatch(
+            workflow_patch_id=patch_id,
+            workspace_id=products.persistence.workspace_id,
+            parent_run_id=workflow_run_id,
+            base_workflow_revision_id=base_revision,
+            expected_parent_row_version=expected_parent_version,
+            source=_source(file, WorkflowDefinitionSource),
+            requested_by=requested_by,
+        )
+        _dump(getattr(products.workflow_management, f"{action}_patch")(patch))
+    except Exception as exc:
+        _fail(exc)
+    finally:
+        if products is not None:
+            products.persistence.store_session.close()
+
+
+def _patch_options(
+    action,
+    workflow_run_id,
+    base_revision,
+    expected_parent_version,
+    file,
+    patch_id,
+    requested_by,
+    workspace_id,
+    directory,
+    state_root,
+):
+    _patch_action(
+        action,
+        workflow_run_id,
+        base_revision,
+        expected_parent_version,
+        file,
+        patch_id,
+        requested_by,
+        workspace_id,
+        directory,
+        state_root,
+    )
+
+
+@patch_app.command("validate")
+def workflow_patch_validate(
+    workflow_run_id: str,
+    base_revision: str = typer.Option(..., "--base-revision"),
+    expected_parent_version: int = typer.Option(..., "--expected-parent-version", min=1),
+    file: Path = typer.Option(..., "--file", exists=True, dir_okay=False),
+    patch_id: str = typer.Option(..., "--patch-id"),
+    requested_by: str = typer.Option(..., "--requested-by"),
+    workspace_id: str | None = typer.Option(None, "--workspace-id"),
+    directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+):
+    _patch_options(
+        "validate",
+        workflow_run_id,
+        base_revision,
+        expected_parent_version,
+        file,
+        patch_id,
+        requested_by,
+        workspace_id,
+        directory,
+        state_root,
+    )
+
+
+@patch_app.command("save")
+def workflow_patch_save(
+    workflow_run_id: str,
+    base_revision: str = typer.Option(..., "--base-revision"),
+    expected_parent_version: int = typer.Option(..., "--expected-parent-version", min=1),
+    file: Path = typer.Option(..., "--file", exists=True, dir_okay=False),
+    patch_id: str = typer.Option(..., "--patch-id"),
+    requested_by: str = typer.Option(..., "--requested-by"),
+    workspace_id: str | None = typer.Option(None, "--workspace-id"),
+    directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+):
+    _patch_options(
+        "save",
+        workflow_run_id,
+        base_revision,
+        expected_parent_version,
+        file,
+        patch_id,
+        requested_by,
+        workspace_id,
+        directory,
+        state_root,
+    )
+
+
+@patch_app.command("apply")
+def workflow_patch_apply(
+    workflow_run_id: str,
+    base_revision: str = typer.Option(..., "--base-revision"),
+    expected_parent_version: int = typer.Option(..., "--expected-parent-version", min=1),
+    file: Path = typer.Option(..., "--file", exists=True, dir_okay=False),
+    patch_id: str = typer.Option(..., "--patch-id"),
+    requested_by: str = typer.Option(..., "--requested-by"),
+    workspace_id: str | None = typer.Option(None, "--workspace-id"),
+    directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+):
+    _patch_options(
+        "apply",
+        workflow_run_id,
+        base_revision,
+        expected_parent_version,
+        file,
+        patch_id,
+        requested_by,
+        workspace_id,
+        directory,
+        state_root,
+    )
+
+
 @contextmanager
 def _control_service(*, state_root, workspace_id, directory):
     """Minimal Workflow control surface: the transition owner, nothing else."""
@@ -800,6 +939,33 @@ def workflow_status(
             _dump(value)
     except Exception as exc:
         _fail(exc)
+
+
+@workflow_app.command("rerun")
+def workflow_rerun(
+    workflow_run_id: str,
+    full: bool = typer.Option(
+        False,
+        "--full",
+        help="Execute the full graph without inherited outputs; otherwise retry failed nodes.",
+    ),
+    workspace_id: str | None = typer.Option(None, "--workspace-id"),
+    directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+):
+    """Create a new-budget rerun after explicitly resuming the root TaskRun."""
+
+    products = None
+    try:
+        products = _runtime_for_run(state_root, workspace_id, directory, workflow_run_id)
+        result = products.workflow_management.rerun(workflow_run_id, full=full)
+        typer.echo(f"new_budget_root: {result.child.workflow_run_id}")
+        _dump(result)
+    except Exception as exc:
+        _fail(exc)
+    finally:
+        if products is not None:
+            products.persistence.store_session.close()
 
 
 @workflow_app.command("pause")

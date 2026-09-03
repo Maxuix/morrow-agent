@@ -11,14 +11,15 @@ plans are drafted under `.agent/`.
 
 ## Active task
 
-None. Subplan 1 (`1-pause-drain-runtime`) completed 2026-09-03: durable Pause/Drain/Resume,
-migration framework generalization, schema v26, single admission transaction (C2), CLI
-`workflow pause`, full offline gate 1552 passed / 2 deselected, all lint/format/compile gates
+None. Stage 8 Subplan 2 (`2-future-graph-patch-continuation`) completed 2026-09-03: exact
+FutureGraphPatch validation, detached run-local Revisions, atomic continuation handoff, execution
+sets, Artifact imports, effective-output resolution, lineage budget/deadline enforcement, rerun
+semantics and CLI/query visibility. Full offline gate: 1560 passed / 2 deselected; all static gates
 green.
 
 ## Next action
 
-Subplan 2 (`2-future-graph-patch-continuation`) starts on explicit user activation. Subplan 3
+Subplan 3
 additionally needs explicit authorization for the additive `ApplicationEvent` lifecycle extension
 and the Python web-framework dependency; Subplan 4 needs frontend toolchain authorization.
 

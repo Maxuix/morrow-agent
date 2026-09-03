@@ -1,8 +1,8 @@
 # Stage 8 Adaptive Orchestration and GUI Implementation Plan
 
 > Status: active 2026-09-03
-> Active subplan: none (Subplan 1 completed 2026-09-03; Subplan 2 awaits explicit activation)
-> Next subplan: `1-pause-drain-runtime` (after activation and its preconditions are confirmed)
+> Active subplan: none (Subplans 1–2 completed 2026-09-03)
+> Next subplan: `3-core-api-local-server` (after explicit activation and its authorizations are confirmed)
 > Roadmap authority: `docs/roadmap/stage-8-adaptive-orchestration-and-gui.md`
 > (revised 2026-09-03: risk-tiered Replan autonomy; runtime-kernel-first ordering)
 > Entry evidence: Stage 7 completed and remediated; full offline gate 1538 passed, 2 skipped,

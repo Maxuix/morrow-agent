@@ -4880,3 +4880,17 @@
   v26 backfill with scripted legacy rows, root exclusivity at index and active_for_root
   layers, and rebuild-verification rollback. Ruff format/check, compileall, git diff --check
   green.
+
+## 2026-09-03 — Stage 8 Subplan 2 completed: FutureGraphPatch and continuation
+
+- Implemented exact FutureGraphPatch validation, detached run-local Revision publication, Past/
+  Future guards, stale OCC rejection and the single PatchApplicationService save/apply path.
+- Implemented atomic parent supersession/root handoff, immutable execution sets and Artifact imports,
+  the shared EffectiveOutputResolver, empty-set finalization, lineage request-budget admission and
+  inherited absolute deadlines. Initial, continuation, failed-retry and full-rerun semantics are
+  derived from execution/import facts plus run_relation; reruns explicitly create new budget roots.
+- Added CLI patch validate/save/apply and rerun surfaces, lineage/import query visibility, and updated
+  shared integrity/Artifact-reference paths for continuation evidence.
+- Validation: Subplan 2 matrix 8 passed; store/integrity focus 19 passed; full offline gate 1560
+  passed / 2 deselected in 458.23 seconds; Ruff format/check, compileall, CLI help and diff checks
+  passed. No Live test, dependency, public event, GUI, GraphPlanner or Replan work was included.

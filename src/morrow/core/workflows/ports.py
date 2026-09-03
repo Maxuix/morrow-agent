@@ -15,7 +15,12 @@ from morrow.core.workflows.definitions import (
     WorkflowRevision,
     WorkflowRevisionRevocation,
 )
-from morrow.core.workflows.runs import NodeRun, WorkflowRun
+from morrow.core.workflows.runs import (
+    NodeRun,
+    WorkflowArtifactImport,
+    WorkflowExecutionNode,
+    WorkflowRun,
+)
 
 
 class WorkflowJournalPort(Protocol):
@@ -25,6 +30,7 @@ class WorkflowJournalPort(Protocol):
     def store_compiled_revision(
         self, revision: WorkflowRevision, head: WorkflowDefinitionHead, *, expected_row_version: int
     ) -> WorkflowRevision: ...
+    def store_detached_revision(self, revision: WorkflowRevision) -> WorkflowRevision: ...
     def set_enabled(
         self, workspace_id: str, definition_id: str, *, enabled: bool, expected_row_version: int
     ) -> WorkflowDefinitionHead: ...
@@ -33,9 +39,36 @@ class WorkflowJournalPort(Protocol):
     ) -> WorkflowRevisionRevocation | None: ...
     def put_revocation(self, value: WorkflowRevisionRevocation) -> WorkflowRevisionRevocation: ...
     def create_run(self, value: WorkflowRun, nodes: tuple[NodeRun, ...]) -> WorkflowRun: ...
+    def create_continuation_run(
+        self,
+        parent: WorkflowRun,
+        value: WorkflowRun,
+        nodes: tuple[NodeRun, ...],
+        execution_nodes: tuple[WorkflowExecutionNode, ...],
+        imports: tuple[WorkflowArtifactImport, ...],
+        *,
+        expected_parent_row_version: int,
+    ) -> WorkflowRun: ...
+    def create_rerun(
+        self,
+        parent: WorkflowRun,
+        value: WorkflowRun,
+        nodes: tuple[NodeRun, ...],
+        execution_nodes: tuple[WorkflowExecutionNode, ...],
+        imports: tuple[WorkflowArtifactImport, ...],
+    ) -> WorkflowRun: ...
     def get_run(self, workspace_id: str, run_id: str) -> WorkflowRun | None: ...
     def get_node(self, workspace_id: str, node_run_id: str) -> NodeRun | None: ...
     def list_nodes(self, workspace_id: str, workflow_run_id: str) -> tuple[NodeRun, ...]: ...
+    def list_execution_nodes(
+        self, workspace_id: str, workflow_run_id: str
+    ) -> tuple[WorkflowExecutionNode, ...]: ...
+    def list_artifact_imports(
+        self, workspace_id: str, workflow_run_id: str
+    ) -> tuple[WorkflowArtifactImport, ...]: ...
+    def get_effective_output(
+        self, workspace_id: str, workflow_run_id: str, node_id: str, output_slot: str
+    ) -> ArtifactBinding | None: ...
     def save_run(self, value: WorkflowRun, *, expected_row_version: int) -> WorkflowRun: ...
     def save_node(self, value: NodeRun, *, expected_row_version: int) -> NodeRun: ...
     def active_for_root(self, workspace_id: str, task_run_id: str) -> WorkflowRun | None: ...

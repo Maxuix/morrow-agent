@@ -134,7 +134,13 @@ def _legacy_run_body() -> str:
     """A genuine pre-v26 row body: no pause/lineage keys at all."""
 
     body = _run(workflow_run_id="wrun_old", status="running").model_dump(mode="json")
-    for key in ("pause_requested", "run_relation", "lineage_budget_root_run_id", "parent_run_id"):
+    for key in (
+        "pause_requested",
+        "run_relation",
+        "lineage_budget_root_run_id",
+        "parent_run_id",
+        "superseded_reason",
+    ):
         del body[key]
     return json.dumps(body)
 

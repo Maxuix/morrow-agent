@@ -4,7 +4,7 @@ Only a compiled immutable value may be stored; this repository never compiles,
 resolves a model, generates an identity or computes a content hash.
 """
 
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 
 from morrow.core.domain import TaskRunPurpose, TaskRunStatus
 from morrow.core.store import StorageError, StorageErrorCode
@@ -14,7 +14,14 @@ from morrow.core.workflows.definitions import (
     WorkflowRevision,
     WorkflowRevisionRevocation,
 )
-from morrow.core.workflows.runs import NodeRun, WorkflowRun, WorkflowStatus, validate_run_transition
+from morrow.core.workflows.runs import (
+    NodeRun,
+    WorkflowArtifactImport,
+    WorkflowExecutionNode,
+    WorkflowRun,
+    WorkflowStatus,
+    validate_run_transition,
+)
 
 
 class SqliteWorkflowJournal:
@@ -132,6 +139,59 @@ class SqliteWorkflowJournal:
                     ),
                 )
             self._put_head(head)
+            return revision
+
+        return self.backend.transact(work)
+
+    def store_detached_revision(self, revision: WorkflowRevision):
+        """Store one run-local immutable Revision without moving a Definition head."""
+
+        def work():
+            existing = self.get_revision(revision.workspace_id, revision.workflow_revision_id)
+            if existing is not None:
+                if existing != revision:
+                    raise ValueError("detached Workflow revision identifier conflict")
+                return existing
+            parent = (
+                self.get_revision(revision.workspace_id, revision.parent_workflow_revision_id)
+                if revision.parent_workflow_revision_id
+                else None
+            )
+            if (
+                parent is None
+                or parent.workflow_definition_id != revision.workflow_definition_id
+                or revision.revision != parent.revision + 1
+            ):
+                raise ValueError("detached Workflow revision lineage mismatch")
+            for node in revision.nodes:
+                ref = node.agent_definition_ref
+                agent = self.get_agent_version(revision.workspace_id, ref.version_id)
+                if agent is None or (agent.source.definition_id, agent.content_hash) != (
+                    ref.definition_id,
+                    ref.content_hash,
+                ):
+                    raise ValueError("Workflow Agent version reference mismatch")
+            sql = self.backend.executor()
+            sql.execute(
+                "INSERT INTO workflow_revisions VALUES(?,?,?,?,?,?)",
+                (
+                    revision.workflow_revision_id,
+                    revision.workspace_id,
+                    revision.workflow_definition_id,
+                    revision.revision,
+                    revision.content_hash,
+                    revision.model_dump_json(),
+                ),
+            )
+            for node in revision.nodes:
+                sql.execute(
+                    "INSERT INTO workflow_revision_nodes VALUES(?,?,?)",
+                    (
+                        revision.workflow_revision_id,
+                        node.node_id,
+                        node.agent_definition_ref.version_id,
+                    ),
+                )
             return revision
 
         return self.backend.transact(work)
@@ -320,10 +380,380 @@ class SqliteWorkflowJournal:
                         node.model_dump_json(),
                     ),
                 )
+            for ordinal, node_id in enumerate(self._stable_order(revision)):
+                self.backend.executor().execute(
+                    "INSERT INTO workflow_run_execution_nodes VALUES(?,?,?,?)",
+                    (value.workflow_run_id, node_id, ordinal, "initial"),
+                )
             self.bind_artifact(value.workspace_id, value.workflow_run_id, value.input_artifacts[0])
             return value
 
         return self.backend.transact(work)
+
+    def create_continuation_run(
+        self,
+        parent: WorkflowRun,
+        value: WorkflowRun,
+        nodes: tuple[NodeRun, ...],
+        execution_nodes: tuple[WorkflowExecutionNode, ...],
+        imports: tuple[WorkflowArtifactImport, ...],
+        *,
+        expected_parent_row_version: int,
+    ):
+        """Atomically supersede a paused parent and transfer root ownership."""
+
+        def work():
+            current = self.get_run(parent.workspace_id, parent.workflow_run_id)
+            revision = self.get_revision(value.workspace_id, value.workflow_revision_id)
+            root = self.get_task(value.workspace_id, value.root_task_run_id)
+            if (
+                current is None
+                or current != parent
+                or current.row_version != expected_parent_row_version
+                or current.status is not WorkflowStatus.PAUSED
+                or not current.pause_requested
+            ):
+                raise ValueError("continuation parent revision conflict or parent is not paused")
+            parent_nodes = self.list_nodes(parent.workspace_id, parent.workflow_run_id)
+            if any(
+                item.status in (WorkflowStatus.RUNNING, WorkflowStatus.BLOCKED)
+                for item in parent_nodes
+            ):
+                raise ValueError("continuation requires a drained parent with no Active nodes")
+            if (
+                revision is None
+                or root is None
+                or root.purpose != TaskRunPurpose.USER
+                or root.status != TaskRunStatus.OPEN
+                or value.workspace_id != parent.workspace_id
+                or value.root_task_run_id != parent.root_task_run_id
+                or value.parent_run_id != parent.workflow_run_id
+                or value.run_relation not in {"continuation", "rerun"}
+                or value.status is not WorkflowStatus.RUNNING
+                or value.pause_requested
+                or value.row_version != 1
+            ):
+                raise ValueError("continuation child facts are invalid")
+            if value.run_relation == "continuation":
+                if (
+                    value.effective_lineage_budget_root_run_id
+                    != parent.effective_lineage_budget_root_run_id
+                    or value.admission_deadline_at != parent.admission_deadline_at
+                ):
+                    raise ValueError("continuation must inherit budget-root and deadline facts")
+            elif value.effective_lineage_budget_root_run_id != value.workflow_run_id:
+                raise ValueError("rerun must start a new lineage budget root")
+            execution_ids = {item.node_id for item in execution_nodes}
+            if (
+                len(execution_ids) != len(execution_nodes)
+                or execution_ids != {item.node_id for item in nodes}
+                or any(item.workflow_run_id != value.workflow_run_id for item in execution_nodes)
+            ):
+                raise ValueError("continuation execution set does not match its NodeRuns")
+            if execution_ids - {item.node_id for item in revision.nodes}:
+                raise ValueError("continuation execution set references an unknown node")
+            for node in nodes:
+                if (node.workspace_id, node.workflow_run_id, node.status, node.row_version) != (
+                    value.workspace_id,
+                    value.workflow_run_id,
+                    WorkflowStatus.QUEUED,
+                    1,
+                ):
+                    raise ValueError("invalid continuation NodeRun")
+            for item in parent_nodes:
+                if item.status is WorkflowStatus.QUEUED:
+                    self.save_node(
+                        item.model_copy(
+                            update={
+                                "status": WorkflowStatus.CANCELLED,
+                                "completed_at": self.backend.now(),
+                                "row_version": item.row_version + 1,
+                            }
+                        ),
+                        expected_row_version=item.row_version,
+                    )
+            superseded = current.model_copy(
+                update={
+                    "status": WorkflowStatus.SUPERSEDED,
+                    "superseded_reason": "continued_by_patch",
+                    "completed_at": self.backend.now(),
+                    "row_version": current.row_version + 1,
+                }
+            )
+            self.save_run(superseded, expected_row_version=current.row_version)
+            sql = self.backend.executor()
+            sql.execute(
+                "INSERT INTO workflow_runs VALUES(?,?,?,?,?,?,?,?,?,?)",
+                (
+                    value.workflow_run_id,
+                    value.workspace_id,
+                    value.workflow_revision_id,
+                    value.root_task_run_id,
+                    value.status.value,
+                    0,
+                    value.run_relation,
+                    value.effective_lineage_budget_root_run_id,
+                    value.parent_run_id,
+                    value.model_dump_json(),
+                ),
+            )
+            for node in nodes:
+                sql.execute(
+                    "INSERT INTO workflow_node_runs VALUES(?,?,?,?,?,?,?)",
+                    (
+                        node.node_run_id,
+                        node.workspace_id,
+                        node.workflow_run_id,
+                        node.node_id,
+                        node.attempt,
+                        node.status.value,
+                        node.model_dump_json(),
+                    ),
+                )
+            for item in sorted(execution_nodes, key=lambda row: row.topology_ordinal):
+                sql.execute(
+                    "INSERT INTO workflow_run_execution_nodes VALUES(?,?,?,?)",
+                    (
+                        item.workflow_run_id,
+                        item.node_id,
+                        item.topology_ordinal,
+                        item.inclusion_reason,
+                    ),
+                )
+            for item in imports:
+                if item.workflow_run_id != value.workflow_run_id:
+                    raise ValueError("continuation Artifact import has the wrong child")
+                expected = self.get_effective_output(
+                    value.workspace_id,
+                    item.source_workflow_run_id,
+                    item.source_node_id,
+                    item.output_slot,
+                )
+                if expected is None or (
+                    expected.artifact_id,
+                    expected.contract,
+                ) != (item.artifact_id, item.contract):
+                    raise ValueError("continuation Artifact import is not exact lineage evidence")
+                sql.execute(
+                    "INSERT INTO workflow_run_artifact_imports VALUES(?,?,?,?,?,?,?,?)",
+                    (
+                        item.workflow_run_id,
+                        item.source_workflow_run_id,
+                        item.source_node_run_id,
+                        item.source_node_id,
+                        item.output_slot,
+                        item.artifact_id,
+                        item.contract.model_dump_json(),
+                        int(item.inherited_at.timestamp()),
+                    ),
+                )
+            self.bind_artifact(value.workspace_id, value.workflow_run_id, value.input_artifacts[0])
+            return value
+
+        return self.backend.transact(work)
+
+    def list_execution_nodes(self, workspace_id, workflow_run_id):
+        run = self.get_run(workspace_id, workflow_run_id)
+        if run is None:
+            return ()
+        rows = self.backend.read_all(
+            "SELECT node_id, topology_ordinal, inclusion_reason "
+            "FROM workflow_run_execution_nodes WHERE workflow_run_id=? "
+            "ORDER BY topology_ordinal, node_id",
+            (workflow_run_id,),
+        )
+        return tuple(
+            WorkflowExecutionNode(
+                workflow_run_id=workflow_run_id,
+                node_id=str(row[0]),
+                topology_ordinal=int(row[1]),
+                inclusion_reason=str(row[2]),
+            )
+            for row in rows
+        )
+
+    def create_rerun(
+        self,
+        parent: WorkflowRun,
+        value: WorkflowRun,
+        nodes: tuple[NodeRun, ...],
+        execution_nodes: tuple[WorkflowExecutionNode, ...],
+        imports: tuple[WorkflowArtifactImport, ...],
+    ):
+        """Create a post-terminal rerun as a new lineage budget root."""
+
+        def work():
+            current = self.get_run(parent.workspace_id, parent.workflow_run_id)
+            revision = self.get_revision(value.workspace_id, value.workflow_revision_id)
+            root = self.get_task(value.workspace_id, value.root_task_run_id)
+            if current != parent or current is None or not current.status.terminal:
+                raise ValueError("rerun requires an exact terminal parent")
+            if (
+                revision is None
+                or root is None
+                or root.purpose != TaskRunPurpose.USER
+                or root.status is not TaskRunStatus.OPEN
+                or self.active_for_root(value.workspace_id, value.root_task_run_id) is not None
+                or value.run_relation != "rerun"
+                or value.parent_run_id != parent.workflow_run_id
+                or value.status is not WorkflowStatus.RUNNING
+                or value.pause_requested
+                or value.effective_lineage_budget_root_run_id != value.workflow_run_id
+            ):
+                raise ValueError("rerun child facts are invalid; resume the failed root first")
+            execution_ids = {item.node_id for item in execution_nodes}
+            if execution_ids != {item.node_id for item in nodes} or execution_ids - {
+                item.node_id for item in revision.nodes
+            }:
+                raise ValueError("rerun execution set does not match its NodeRuns")
+            sql = self.backend.executor()
+            sql.execute(
+                "INSERT INTO workflow_runs VALUES(?,?,?,?,?,?,?,?,?,?)",
+                (
+                    value.workflow_run_id,
+                    value.workspace_id,
+                    value.workflow_revision_id,
+                    value.root_task_run_id,
+                    value.status.value,
+                    0,
+                    value.run_relation,
+                    value.workflow_run_id,
+                    value.parent_run_id,
+                    value.model_dump_json(),
+                ),
+            )
+            for node in nodes:
+                if (node.workspace_id, node.workflow_run_id, node.status, node.row_version) != (
+                    value.workspace_id,
+                    value.workflow_run_id,
+                    WorkflowStatus.QUEUED,
+                    1,
+                ):
+                    raise ValueError("invalid rerun NodeRun")
+                sql.execute(
+                    "INSERT INTO workflow_node_runs VALUES(?,?,?,?,?,?,?)",
+                    (
+                        node.node_run_id,
+                        node.workspace_id,
+                        node.workflow_run_id,
+                        node.node_id,
+                        node.attempt,
+                        node.status.value,
+                        node.model_dump_json(),
+                    ),
+                )
+            for item in execution_nodes:
+                sql.execute(
+                    "INSERT INTO workflow_run_execution_nodes VALUES(?,?,?,?)",
+                    (
+                        item.workflow_run_id,
+                        item.node_id,
+                        item.topology_ordinal,
+                        item.inclusion_reason,
+                    ),
+                )
+            for item in imports:
+                expected = self.get_effective_output(
+                    value.workspace_id,
+                    item.source_workflow_run_id,
+                    item.source_node_id,
+                    item.output_slot,
+                )
+                if expected is None or (expected.artifact_id, expected.contract) != (
+                    item.artifact_id,
+                    item.contract,
+                ):
+                    raise ValueError("rerun Artifact import is not exact lineage evidence")
+                sql.execute(
+                    "INSERT INTO workflow_run_artifact_imports VALUES(?,?,?,?,?,?,?,?)",
+                    (
+                        item.workflow_run_id,
+                        item.source_workflow_run_id,
+                        item.source_node_run_id,
+                        item.source_node_id,
+                        item.output_slot,
+                        item.artifact_id,
+                        item.contract.model_dump_json(),
+                        int(item.inherited_at.timestamp()),
+                    ),
+                )
+            self.bind_artifact(value.workspace_id, value.workflow_run_id, value.input_artifacts[0])
+            return value
+
+        return self.backend.transact(work)
+
+    def list_artifact_imports(self, workspace_id, workflow_run_id):
+        run = self.get_run(workspace_id, workflow_run_id)
+        if run is None:
+            return ()
+        rows = self.backend.read_all(
+            "SELECT source_workflow_run_id, source_node_run_id, source_node_id, output_slot, "
+            "artifact_id, contract_json, inherited_at_unix "
+            "FROM workflow_run_artifact_imports WHERE workflow_run_id=? "
+            "ORDER BY source_node_id, output_slot",
+            (workflow_run_id,),
+        )
+        from morrow.core.workflows.contracts import ContractRef
+
+        return tuple(
+            WorkflowArtifactImport(
+                workflow_run_id=workflow_run_id,
+                source_workflow_run_id=str(row[0]),
+                source_node_run_id=str(row[1]),
+                source_node_id=str(row[2]),
+                output_slot=str(row[3]),
+                artifact_id=str(row[4]),
+                contract=ContractRef.model_validate_json(row[5]),
+                inherited_at=datetime.fromtimestamp(int(row[6]), UTC),
+            )
+            for row in rows
+        )
+
+    def get_effective_output(self, workspace_id, workflow_run_id, node_id, output_slot):
+        row = self.backend.read_one(
+            "SELECT b.body_json FROM workflow_artifact_bindings b "
+            "JOIN workflow_node_runs n ON n.node_run_id=b.node_run_id "
+            "WHERE b.workflow_run_id=? AND n.workspace_id=? AND n.node_id=? "
+            "AND b.direction='output' AND b.name=?",
+            (workflow_run_id, workspace_id, node_id, output_slot),
+        )
+        if row is not None:
+            return ArtifactBinding.model_validate_json(row[0])
+        row = self.backend.read_one(
+            "SELECT artifact_id, contract_json FROM workflow_run_artifact_imports "
+            "WHERE workflow_run_id=? AND source_node_id=? AND output_slot=?",
+            (workflow_run_id, node_id, output_slot),
+        )
+        if row is None:
+            return None
+        from morrow.core.workflows.contracts import ContractRef
+
+        return ArtifactBinding(
+            name=output_slot,
+            artifact_id=str(row[0]),
+            contract=ContractRef.model_validate_json(row[1]),
+        )
+
+    @staticmethod
+    def _stable_order(revision: WorkflowRevision) -> tuple[str, ...]:
+        incoming = {item.node_id: 0 for item in revision.nodes}
+        consumers = {item.node_id: [] for item in revision.nodes}
+        for edge in revision.edges:
+            incoming[edge.to_node_id] += 1
+            consumers[edge.from_node_id].append(edge.to_node_id)
+        ready = sorted(key for key, value in incoming.items() if value == 0)
+        result = []
+        while ready:
+            current = ready.pop(0)
+            result.append(current)
+            for target in sorted(consumers[current]):
+                incoming[target] -= 1
+                if incoming[target] == 0:
+                    ready.append(target)
+            ready.sort()
+        if len(result) != len(incoming):
+            raise ValueError("Workflow revision is not a DAG")
+        return tuple(result)
 
     def get_node(self, workspace_id, node_run_id):
         value = self._load(
@@ -375,7 +805,12 @@ class SqliteWorkflowJournal:
                     "effective_node_generation_request_cap",
                 }
             if not node:
-                mutable |= {"result_status", "pending_terminal_intent", "pause_requested"}
+                mutable |= {
+                    "result_status",
+                    "pending_terminal_intent",
+                    "pause_requested",
+                    "superseded_reason",
+                }
             for field in type(value).model_fields.keys() - mutable:
                 if getattr(value, field) != getattr(current, field):
                     raise ValueError("frozen Workflow evidence cannot change")
@@ -554,16 +989,10 @@ class SqliteWorkflowJournal:
                         expected_artifact_id = run.input_artifacts[0].artifact_id
                     else:
                         ref = declared_input.node_output
-                        producer = next(
-                            n
-                            for n in self.list_nodes(workspace_id, run_id)
-                            if n.node_id == ref.node_id
+                        linked = self.get_effective_output(
+                            workspace_id, run_id, ref.node_id, ref.output_slot
                         )
-                        linked = self.backend.read_one(
-                            "SELECT artifact_id FROM workflow_artifact_bindings WHERE node_run_id=? AND direction='output' AND name=?",
-                            (producer.node_run_id, ref.output_slot),
-                        )
-                        expected_artifact_id = linked[0] if linked else None
+                        expected_artifact_id = linked.artifact_id if linked else None
                     if binding.artifact_id != expected_artifact_id:
                         raise ValueError("Workflow input producer mismatch")
                 else:

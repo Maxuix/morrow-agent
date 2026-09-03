@@ -18,6 +18,7 @@ from morrow.application.recovery import RecoveryService
 from morrow.application.turns import SessionPersistence
 from morrow.application.workflows.finalizer import WorkflowOutcomeFinalizer
 from morrow.application.workflows.leaf import WorkflowLeafContext, WorkflowLeafHooks
+from morrow.application.workflows.outputs import EffectiveOutputResolver
 from morrow.application.workflows.recovery import WorkflowAbandonService
 from morrow.application.workflows.submit import make_submit_node_result_tool
 from morrow.application.workflows.tasks import WorkflowTaskLifecycle
@@ -143,6 +144,7 @@ class WorkflowScheduler:
         self.faults = faults
         self.mutation = mutation
         self.change_capture = change_capture
+        self.outputs = EffectiveOutputResolver(journal, workspace_id=workspace_id)
         self.lifecycle = WorkflowTaskLifecycle(journal, workspace_id=workspace_id)
         self.recovery = RecoveryService(journal, workspace_id=workspace_id, id_source=id_source)
         self._live_node_run_id: str | None = None
@@ -167,7 +169,20 @@ class WorkflowScheduler:
             )
         revision = self.journal.workflows.get_revision(self.workspace_id, run.workflow_revision_id)
         node_defs = {node.node_id: node for node in revision.nodes}
-        for node_id in stable_execution_order(revision):
+        execution_ids = {
+            item.node_id
+            for item in self.journal.workflows.list_execution_nodes(
+                self.workspace_id, workflow_run_id
+            )
+        }
+        if not execution_ids and run.run_relation == "initial":
+            # Compatibility for a store that was already opened on the v26
+            # schema before Subplan 2 began populating immutable execution sets.
+            execution_ids = set(node_defs)
+        execution_order = tuple(
+            item for item in stable_execution_order(revision) if item in execution_ids
+        )
+        for node_id in execution_order:
             run = self._require_run(workflow_run_id)
             # BLOCKED admits nothing until recovery resolves it, PAUSED waits for
             # the user's resume, and DRAINING settles Active nodes without ever
@@ -190,10 +205,10 @@ class WorkflowScheduler:
             if node.status is WorkflowStatus.QUEUED:
                 if run.status is WorkflowStatus.DRAINING:
                     continue
-                # Budget/deadline gate admission only. An admitted node's next
-                # request is enforced at the durable purpose=agent seam, and a
-                # crash replay needing no new request must still complete. The
-                # authoritative recheck lives in the admission transaction.
+                # Early deterministic refusal avoids preparing a Provider that
+                # cannot be called. The durable model-request admission seam
+                # repeats this lineage-wide check atomically and remains the
+                # authority when concurrent callers race this projection.
                 remaining = (
                     run.budget_snapshot.max_agent_generation_requests
                     - self.journal.count_lineage_agent_requests(
@@ -207,11 +222,9 @@ class WorkflowScheduler:
                     self.finalizer.finalize_failure(workflow_run_id, reason="deadline_exceeded")
                     break
                 nodes_by_id = self._nodes_by_id(run)
-            else:
-                remaining = None
             cap = (
                 min(node_def.declared_node_max_agent_generation_requests, remaining)
-                if remaining is not None
+                if node.status is WorkflowStatus.QUEUED
                 else node.effective_node_generation_request_cap
             )
             try:
@@ -680,26 +693,21 @@ class WorkflowScheduler:
         for edge in revision.edges:
             if edge.to_node_id != node_def.node_id:
                 continue
-            predecessor = nodes_by_id[edge.from_node_id]
+            predecessor = nodes_by_id.get(edge.from_node_id)
+            if predecessor is None:
+                # A missing child NodeRun denotes immutable inherited Past.
+                continue
             if predecessor.status is not WorkflowStatus.COMPLETED:
                 raise ApplicationError(
                     ApplicationErrorCode.NEEDS_RECOVERY,
                     f"node {node_def.node_id} is not ready: predecessor "
                     f"{edge.from_node_id} is {predecessor.status.value}",
                 )
-        bound_outputs = {
-            (node_run_id, binding.name)
-            for node_run_id, direction, binding in self.journal.workflows.list_bindings(
-                self.workspace_id, run.workflow_run_id
-            )
-            if direction == "output"
-        }
         for binding in node_def.input_bindings:
             if binding.source == "workflow_input":
                 continue
             ref = binding.node_output
-            producer = nodes_by_id[ref.node_id]
-            if (producer.node_run_id, ref.output_slot) not in bound_outputs:
+            if self.outputs.resolve(run.workflow_run_id, ref.node_id, ref.output_slot) is None:
                 raise ApplicationError(
                     ApplicationErrorCode.NEEDS_RECOVERY,
                     f"node {node_def.node_id} is not ready: input {binding.input_name} has "
@@ -761,7 +769,6 @@ class WorkflowScheduler:
             read = self.artifacts.read(source.artifact_id, max_bytes=stored.byte_size)
             return self._format_contract(TaskContract.model_validate_json(read.content))
 
-        nodes_by_id = self._nodes_by_id(run)
         parts = [self._format_contract(node_def.task_contract)]
         for binding in node_def.input_bindings:
             if binding.source == "workflow_input":
@@ -775,16 +782,12 @@ class WorkflowScheduler:
                 )
                 continue
             ref = binding.node_output
-            producer = nodes_by_id[ref.node_id]
-            produced = next(
-                item
-                for nid, direction, item in self.journal.workflows.list_bindings(
-                    self.workspace_id, run.workflow_run_id
+            produced = self.outputs.resolve(run.workflow_run_id, ref.node_id, ref.output_slot)
+            if produced is None:
+                raise ApplicationError(
+                    ApplicationErrorCode.NEEDS_RECOVERY,
+                    f"node {node_def.node_id} input {binding.input_name} is missing",
                 )
-                if nid == producer.node_run_id
-                and direction == "output"
-                and item.name == ref.output_slot
-            )
             stored = self.artifacts.get(produced.artifact_id)
             read = self.artifacts.read(produced.artifact_id, max_bytes=stored.byte_size)
             kind = produced.contract.kind

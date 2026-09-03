@@ -19,6 +19,7 @@ from morrow.application.tasks import TaskOutcomeAssembler
 from morrow.application.workflows.artifacts import ensure_workflow_payload
 from morrow.application.workflows.capture import CHANGE_CAPTURE_ROLE, VALIDATION_REPORT_ROLE
 from morrow.application.workflows.evidence import text_result_from_assistant
+from morrow.application.workflows.outputs import EffectiveOutputResolver
 from morrow.application.workflows.submit import parse_submitted_payload, submission_digest
 from morrow.core.application import ApplicationError, ApplicationErrorCode
 from morrow.core.artifacts import ArtifactError, ArtifactErrorCode, ArtifactKind, ArtifactState
@@ -85,6 +86,7 @@ class WorkflowLeafHooks:
         self.transitions = transitions
         self.id_source = id_source
         self.clock = clock
+        self.outputs = EffectiveOutputResolver(journal, workspace_id=workspace_id)
 
     # Admission --------------------------------------------------------------
 
@@ -113,6 +115,22 @@ class WorkflowLeafHooks:
             raise ApplicationError(
                 ApplicationErrorCode.CONFLICT,
                 "paused: the Workflow pause fact is set; admission is closed",
+            )
+        owner = txn.workflows.active_for_root(self.workspace_id, run.root_task_run_id)
+        if owner is None or owner.workflow_run_id != run.workflow_run_id:
+            raise ApplicationError(
+                ApplicationErrorCode.CONFLICT,
+                "Workflow root ownership moved before node admission",
+            )
+        execution_ids = {
+            item.node_id
+            for item in txn.workflows.list_execution_nodes(self.workspace_id, run.workflow_run_id)
+        }
+        legacy_initial = not execution_ids and run.run_relation == "initial"
+        if ctx.node.node_id not in execution_ids and not legacy_initial:
+            raise ApplicationError(
+                ApplicationErrorCode.INVALID,
+                "Workflow node is outside the immutable execution set",
             )
         if self.clock() > run.admission_deadline_at:
             raise ApplicationError(
@@ -197,10 +215,6 @@ class WorkflowLeafHooks:
             raise ApplicationError(
                 ApplicationErrorCode.NEEDS_RECOVERY, "Workflow run is missing for the admitted node"
             )
-        nodes_by_id = {
-            item.node_id: item
-            for item in txn.workflows.list_nodes(self.workspace_id, ctx.workflow_run_id)
-        }
         for binding in ctx.node.input_bindings:
             if binding.source == "workflow_input":
                 source = run.input_artifacts[0]
@@ -211,19 +225,7 @@ class WorkflowLeafHooks:
                 )
             else:
                 ref = binding.node_output
-                producer = nodes_by_id[ref.node_id]
-                produced = next(
-                    (
-                        produced
-                        for nid, direction, produced in txn.workflows.list_bindings(
-                            self.workspace_id, ctx.workflow_run_id
-                        )
-                        if nid == producer.node_run_id
-                        and direction == "output"
-                        and produced.name == ref.output_slot
-                    ),
-                    None,
-                )
+                produced = self.outputs.resolve(ctx.workflow_run_id, ref.node_id, ref.output_slot)
                 if produced is None:
                     raise ApplicationError(
                         ApplicationErrorCode.NEEDS_RECOVERY,

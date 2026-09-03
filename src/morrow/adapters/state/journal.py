@@ -1096,6 +1096,11 @@ class SqliteOperationalJournal:
             "SELECT 1 FROM workflow_artifact_bindings WHERE artifact_id=? LIMIT 1", (artifact_id,)
         ):
             return True
+        if self.schema_version() >= 26 and self._read_one(
+            "SELECT 1 FROM workflow_run_artifact_imports WHERE artifact_id=? LIMIT 1",
+            (artifact_id,),
+        ):
+            return True
 
         row = self._read_one(
             """

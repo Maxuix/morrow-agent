@@ -286,6 +286,26 @@ class WorkflowManagementService:
             raise RuntimeError("Workflow control requires a composed Workflow runtime")
         return self.runtime.transitions.request_pause(workflow_run_id)
 
+    def validate_patch(self, patch):
+        if self.runtime is None:
+            raise RuntimeError("Workflow patching requires a composed Workflow runtime")
+        return self.runtime.patches.validate(patch, active_model=self.active_model)
+
+    def save_patch(self, patch):
+        if self.runtime is None:
+            raise RuntimeError("Workflow patching requires a composed Workflow runtime")
+        return self.runtime.patches.save(patch, active_model=self.active_model)
+
+    def apply_patch(self, patch):
+        if self.runtime is None:
+            raise RuntimeError("Workflow patching requires a composed Workflow runtime")
+        return self.runtime.patches.apply(patch, active_model=self.active_model)
+
+    def rerun(self, workflow_run_id: str, *, full: bool):
+        if self.runtime is None:
+            raise RuntimeError("Workflow rerun requires a composed Workflow runtime")
+        return self.runtime.patches.rerun(workflow_run_id, full=full)
+
     def abandon(self, workflow_run_id: str, *, expected_row_version: int) -> WorkflowRun:
         if self.runtime is None:
             raise RuntimeError("Workflow recovery requires a composed Workflow runtime")

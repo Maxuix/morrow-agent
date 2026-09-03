@@ -12,6 +12,7 @@ from collections.abc import Callable
 from datetime import datetime
 
 from morrow.application.workflows.evidence import workflow_task_outcome
+from morrow.application.workflows.outputs import EffectiveOutputResolver
 from morrow.application.workflows.transitions import WorkflowTransitionService
 from morrow.core.application import ApplicationError, ApplicationErrorCode
 from morrow.core.artifacts import ArtifactError
@@ -47,6 +48,8 @@ def compute_workflow_result(
     bindings,
     *,
     artifacts=None,
+    resolver: EffectiveOutputResolver | None = None,
+    workflow_run_id: str | None = None,
 ) -> str:
     """Result semantics over the exported required outputs.
 
@@ -72,6 +75,8 @@ def compute_workflow_result(
         binding = (
             bound.get((producer.node_run_id, ref.output_slot)) if producer is not None else None
         )
+        if binding is None and resolver is not None and workflow_run_id is not None:
+            binding = resolver.resolve(workflow_run_id, ref.node_id, ref.output_slot)
         if producer is None or binding is None or artifacts is None:
             raise ApplicationError(
                 ApplicationErrorCode.INVALID,
@@ -114,6 +119,7 @@ class WorkflowOutcomeFinalizer:
         self.id_source = id_source
         self.clock = clock
         self.artifacts = artifacts
+        self.outputs = EffectiveOutputResolver(journal, workspace_id=workspace_id)
 
     # Terminal mappings ----------------------------------------------------------
 
@@ -136,6 +142,8 @@ class WorkflowOutcomeFinalizer:
                 nodes,
                 bindings,
                 artifacts=self.artifacts,
+                resolver=self.outputs,
+                workflow_run_id=workflow_run_id,
             )
             if revision.nodes[0].conversation_scope == "invoking_session":
                 root = txn.get_task_run(self.workspace_id, run.root_task_run_id)
@@ -477,6 +485,8 @@ class WorkflowOutcomeFinalizer:
                 if producer is not None
                 else None
             )
+            if binding is None:
+                binding = self.outputs.resolve(run.workflow_run_id, ref.node_id, ref.output_slot)
             if binding is not None:
                 artifact_refs.append(
                     ArtifactReference(artifact_id=binding.artifact_id, role="workflow_result")

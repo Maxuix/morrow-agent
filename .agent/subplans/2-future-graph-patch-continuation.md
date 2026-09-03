@@ -1,6 +1,6 @@
 # Subplan 2 — FutureGraphPatch and Continuation Child Runs
 
-> Status: pending activation
+> Status: completed 2026-09-03
 > Branch: `feat/stage8-patch-continuation`
 > Activation base: latest verified `main` with Subplan 1 integrated
 > Prerequisite: Subplan 1 (Pause/Drain runtime) verified

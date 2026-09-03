@@ -242,6 +242,20 @@ class SqliteArtifactJournal:
                 (row[0], "workflow", row[2] or row[1], row[3])
                 for row in self.backend.read_all(workflow_sql, tuple(workflow_args))
             )
+        if self.backend.schema_version() >= 26:
+            import_sql = (
+                "SELECT i.artifact_id, i.workflow_run_id, i.source_node_id, i.output_slot "
+                "FROM workflow_run_artifact_imports i JOIN workflow_runs r "
+                "USING(workflow_run_id) WHERE r.workspace_id=?"
+            )
+            import_args = [workspace_id]
+            if artifact_id is not None:
+                import_sql += " AND i.artifact_id=?"
+                import_args.append(artifact_id)
+            references.extend(
+                (row[0], "workflow_import", row[1], f"{row[2]}.{row[3]}")
+                for row in self.backend.read_all(import_sql, tuple(import_args))
+            )
         return tuple(sorted(references, key=lambda item: (item[0], item[1], item[2], item[3])))
 
     def replace_references(

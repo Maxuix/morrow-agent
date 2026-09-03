@@ -31,6 +31,7 @@ from morrow.core.observability import (
 from morrow.core.ports import IdSource
 from morrow.core.prompt import PromptProfileEvidence
 from morrow.core.store import StorageError, StorageErrorCode
+from morrow.core.workflows.runs import WorkflowRun
 
 
 def _unix(value: datetime) -> int:
@@ -216,6 +217,34 @@ class SqliteObservabilityJournal:
                         StorageErrorCode.BUDGET_EXHAUSTED,
                         "budget_exhausted: Agent generation request limit reached",
                     )
+            if candidate.purpose is ModelRequestPurpose.AGENT:
+                workflow_row = self.backend.read_one(
+                    "SELECT wr.body_json FROM workflow_runs wr "
+                    "JOIN workflow_node_runs n ON n.workflow_run_id=wr.workflow_run_id "
+                    "JOIN workflow_agent_run_refs w ON w.node_run_id=n.node_run_id "
+                    "WHERE w.agent_run_id=?",
+                    (agent_run_id,),
+                )
+                if workflow_row is not None:
+                    workflow = WorkflowRun.model_validate_json(workflow_row[0])
+                    lineage_count = self.backend.read_one(
+                        "SELECT COUNT(*) FROM agent_run_model_requests r "
+                        "JOIN workflow_agent_run_refs w ON r.agent_run_id=w.agent_run_id "
+                        "JOIN workflow_node_runs n ON w.node_run_id=n.node_run_id "
+                        "JOIN workflow_runs wr ON n.workflow_run_id=wr.workflow_run_id "
+                        "WHERE wr.lineage_budget_root_run_id=? AND r.purpose='agent'",
+                        (workflow.effective_lineage_budget_root_run_id,),
+                    )[0]
+                    if lineage_count >= workflow.budget_snapshot.max_agent_generation_requests:
+                        raise StorageError(
+                            StorageErrorCode.BUDGET_EXHAUSTED,
+                            "budget_exhausted: Workflow lineage request limit reached",
+                        )
+                    if stamp > workflow.admission_deadline_at:
+                        raise StorageError(
+                            StorageErrorCode.UNAVAILABLE,
+                            "deadline_exceeded: Workflow lineage admission deadline reached",
+                        )
             self.backend.executor().execute(
                 f"INSERT INTO agent_run_model_requests({_REQUEST_COLUMNS}) VALUES ({', '.join('?' for _ in range(_REQUEST_VALUE_COUNT))})",
                 self._request_values(candidate),

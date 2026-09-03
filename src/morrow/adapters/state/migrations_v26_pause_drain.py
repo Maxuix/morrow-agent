@@ -62,6 +62,16 @@ V26_STATEMENTS = (
     )
     """,
     """
+    INSERT INTO workflow_run_execution_nodes(
+        workflow_run_id, node_id, topology_ordinal, inclusion_reason
+    )
+    SELECT workflow_run_id, node_id,
+           ROW_NUMBER() OVER (PARTITION BY workflow_run_id ORDER BY node_id) - 1,
+           'initial'
+    FROM workflow_node_runs
+    WHERE attempt = 1
+    """,
+    """
     CREATE TABLE workflow_run_artifact_imports (
         workflow_run_id TEXT NOT NULL REFERENCES workflow_runs(workflow_run_id),
         source_workflow_run_id TEXT NOT NULL REFERENCES workflow_runs(workflow_run_id),

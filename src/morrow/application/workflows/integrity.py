@@ -1,7 +1,7 @@
 """Read-only Workflow integrity shared by the current backup and doctor owners."""
 
 import json
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 
 from morrow.core.agent_definitions import AgentDefinitionVersion
 from morrow.core.domain import TaskOutcome, TaskOutcomeEvidenceKind
@@ -11,7 +11,12 @@ from morrow.core.workflows.definitions import (
     WorkflowRevision,
     WorkflowRevisionRevocation,
 )
-from morrow.core.workflows.runs import NodeRun, WorkflowRun
+from morrow.core.workflows.runs import (
+    NodeRun,
+    WorkflowArtifactImport,
+    WorkflowExecutionNode,
+    WorkflowRun,
+)
 
 
 def _first(executor, sql, parameters):
@@ -136,11 +141,21 @@ def verify_workflow_rows(executor):
                 or run.budget_snapshot != revisions[rid].budget
             ):
                 raise ValueError("run ownership mismatch")
-            if run.started_at is None or run.admission_deadline_at != run.started_at + timedelta(
+            runs[run_id] = run
+        for run in runs.values():
+            if run.started_at is None:
+                raise ValueError("run admission timestamp is missing")
+            if run.run_relation == "continuation":
+                parent = runs[run.parent_run_id]
+                if (
+                    run.lineage_budget_root_run_id != parent.effective_lineage_budget_root_run_id
+                    or run.admission_deadline_at != parent.admission_deadline_at
+                ):
+                    raise ValueError("continuation lineage facts mismatch")
+            elif run.admission_deadline_at != run.started_at + timedelta(
                 seconds=run.budget_snapshot.admission_timeout_seconds
             ):
                 raise ValueError("run deadline mismatch")
-            runs[run_id] = run
         nodes = {}
         for node_id, ws, run_id, nid, attempt, status, body in executor.execute(
             "SELECT * FROM workflow_node_runs"
@@ -177,11 +192,36 @@ def verify_workflow_rows(executor):
                 if not valid_leaf:
                     raise ValueError("leaf ownership mismatch")
             nodes[node_id] = node
+        execution_sets = {}
+        for run_id, node_id, ordinal, reason in executor.execute(
+            "SELECT * FROM workflow_run_execution_nodes"
+        ):
+            item = WorkflowExecutionNode(
+                workflow_run_id=run_id,
+                node_id=node_id,
+                topology_ordinal=ordinal,
+                inclusion_reason=reason,
+            )
+            if node_id not in {
+                node.node_id for node in revisions[runs[run_id].workflow_revision_id].nodes
+            }:
+                raise ValueError("execution-set node is outside the Revision")
+            execution_sets.setdefault(run_id, []).append(item)
         for run in runs.values():
-            if {n.node_id for n in nodes.values() if n.workflow_run_id == run.workflow_run_id} != {
+            execution_ids = {item.node_id for item in execution_sets.get(run.workflow_run_id, ())}
+            actual_ids = {
+                n.node_id for n in nodes.values() if n.workflow_run_id == run.workflow_run_id
+            }
+            if not execution_ids and run.run_relation == "initial":
+                # Compatibility for stores opened on v26 before execution-set
+                # population shipped; the legacy full NodeRun set is exact.
+                execution_ids = actual_ids
+            if actual_ids != execution_ids:
+                raise ValueError("run node set mismatch")
+            if run.run_relation == "initial" and execution_ids != {
                 n.node_id for n in revisions[run.workflow_revision_id].nodes
             }:
-                raise ValueError("run node set mismatch")
+                raise ValueError("initial run execution set is incomplete")
             root_binding = _first(
                 executor,
                 "SELECT body_json FROM workflow_artifact_bindings WHERE workflow_run_id=? AND node_run_id='' AND direction='input' AND name='task'",
@@ -192,6 +232,7 @@ def verify_workflow_rows(executor):
                 or ArtifactBinding.model_validate_json(root_binding[0]) != run.input_artifacts[0]
             ):
                 raise ValueError("Workflow input binding is missing")
+        effective_outputs = {}
         for run_id, node_id, direction, name, artifact_id, body in executor.execute(
             "SELECT * FROM workflow_artifact_bindings"
         ):
@@ -211,6 +252,55 @@ def verify_workflow_rows(executor):
                 raise ValueError("Artifact node scope mismatch")
             if direction == "output" and (node_id, name) != artifact[2:]:
                 raise ValueError("Artifact producer mismatch")
+            if direction == "output":
+                effective_outputs[(run_id, nodes[node_id].node_id, name)] = binding
+        for (
+            run_id,
+            source_run_id,
+            source_node_run_id,
+            source_node_id,
+            output_slot,
+            artifact_id,
+            contract_json,
+            inherited_at,
+        ) in executor.execute("SELECT * FROM workflow_run_artifact_imports"):
+            item = WorkflowArtifactImport(
+                workflow_run_id=run_id,
+                source_workflow_run_id=source_run_id,
+                source_node_run_id=source_node_run_id,
+                source_node_id=source_node_id,
+                output_slot=output_slot,
+                artifact_id=artifact_id,
+                contract=ContractRef.model_validate_json(contract_json),
+                inherited_at=datetime.fromtimestamp(inherited_at, UTC),
+            )
+            source_node = nodes[source_node_run_id]
+            artifact = _first(
+                executor,
+                "SELECT workspace_id, contract_json FROM artifacts WHERE artifact_id=?",
+                (artifact_id,),
+            )
+            if (
+                item.source_workflow_run_id != source_node.workflow_run_id
+                or item.source_node_id != source_node.node_id
+                or artifact[0] != runs[run_id].workspace_id
+                or ContractRef.model_validate_json(artifact[1]) != item.contract
+            ):
+                raise ValueError("Workflow Artifact import mismatch")
+            key = (run_id, source_node_id, output_slot)
+            if key in effective_outputs:
+                raise ValueError("Workflow effective output is ambiguous")
+            effective_outputs[key] = ArtifactBinding(
+                name=output_slot, artifact_id=artifact_id, contract=item.contract
+            )
+        for run in runs.values():
+            if run.status.value == "completed":
+                revision = revisions[run.workflow_revision_id]
+                if any(
+                    (run.workflow_run_id, ref.node_id, ref.output_slot) not in effective_outputs
+                    for ref in revision.required_outputs
+                ):
+                    raise ValueError("completed Workflow required output is missing")
         for node_id, session_id, task_id in executor.execute(
             "SELECT * FROM workflow_leaf_ownership"
         ):

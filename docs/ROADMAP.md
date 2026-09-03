@@ -1,7 +1,7 @@
 # Morrow 个人 Agent 工作台开发路线总览
 
-> 状态：阶段 1–7 已完成；Stage 7 静态 Workflow Runtime 的九个顺序 Subplan 已完成离线工程
-> 验收，普通 Direct 保持默认，内置模板保持显式 opt-in；只读并行与 child-run continuation 进入 Stage 8。
+> 状态：阶段 1–7 已完成；Stage 8 已进入实施，Pause/Drain 与 future-only continuation
+> 运行时内核已完成离线工程验收；Core API、GUI、自适应编排与只读并行仍待后续 Subplan。
 > 基线日期：2026-08-30（Stage 7 计划修订：2026-08-31）
 > 用途：维护 Morrow 的长期产品方向、阶段顺序、稳定边界与详细阶段文档入口。
 > 执行约定：具体实现任务、活跃子计划、进度与验证结果继续维护在 `.agent/`；本文不承担实时 TODO 或开发日志职责。
@@ -228,7 +228,7 @@ Morrow 必须在数据模型中区分以下信息，不允许都塞入一个“m
 | 5. 可审查学习与长期记忆 | 已完成 | 通用原子 Preference、no-tool Reviewer、SQLite 异步队列、Inbox/Writer、下一 AgentRun 冻结注入、Project Knowledge/Memory 与 doctor/backup 已实现；当前离线验收通过 | [阶段 5](roadmap/stage-5-reviewable-learning-and-memory.md) |
 | 6. Skills 与扩展生命周期 | 已完成 | Skill 生命周期、Draft/Usage、受限脚本、Provider/Model 控制面、MCP desired state/runtime、Doctor、当前完整 Backup 与离线综合验收已通过 | [阶段 6](roadmap/stage-6-skills-and-extensions.md) |
 | 7. Agent Definition 与静态 Workflow Runtime | 已完成 | 用户可定义多个 Agent，并运行经编译验证的版本化串行 Workflow | [阶段 7](roadmap/stage-7-workflow-runtime.md) |
-| 8. 自适应编排与 GUI 控制面 | 未开始 | 系统生成可编辑 Workflow Draft，用户在 GUI 中观察与控制运行 | [阶段 8](roadmap/stage-8-adaptive-orchestration-and-gui.md) |
+| 8. 自适应编排与 GUI 控制面 | 进行中 | Pause/Drain、FutureGraphPatch、continuation/rerun 内核已交付；Core API、GUI 与自适应编排待实现 | [阶段 8](roadmap/stage-8-adaptive-orchestration-and-gui.md) |
 | 9. 后台任务与可靠自动化 | 未开始 | Workflow 可作为可恢复、可暂停、可审计的后台或周期任务运行 | [阶段 9](roadmap/stage-9-background-automation.md) |
 | 10. 产品化与 Morrow 1.0 | 未开始 | 形成可安装、升级、诊断、备份并长期日用的个人 Agent 产品 | [阶段 10](roadmap/stage-10-productization-and-1.0.md) |
 

@@ -8,7 +8,7 @@ from morrow.core.artifacts import ArtifactMetadata
 from morrow.core.execution import ToolExecutionState
 from morrow.core.workflows.contracts import ArtifactBinding
 from morrow.core.workflows.definitions import WorkflowRevision
-from morrow.core.workflows.runs import NodeRun, WorkflowRun, WorkflowStatus
+from morrow.core.workflows.runs import NodeRun, WorkflowArtifactImport, WorkflowRun, WorkflowStatus
 
 
 @dataclass(frozen=True)
@@ -26,6 +26,8 @@ class WorkflowRunView:
     nodes: tuple[WorkflowNodeView, ...]
     input_artifacts: tuple[ArtifactMetadata, ...]
     agent_generation_request_count: int
+    lineage_agent_generation_request_count: int
+    inherited_artifacts: tuple[WorkflowArtifactImport, ...]
     usage_availability: str
     terminal_outcome: object | None
     actionable_status: str | None
@@ -324,6 +326,12 @@ class WorkflowQueryService:
             nodes=tuple(nodes),
             input_artifacts=inputs,
             agent_generation_request_count=self.journal.count_workflow_agent_requests(
+                self.workspace_id, workflow_run_id
+            ),
+            lineage_agent_generation_request_count=self.journal.count_lineage_agent_requests(
+                self.workspace_id, run.effective_lineage_budget_root_run_id
+            ),
+            inherited_artifacts=self.journal.workflows.list_artifact_imports(
                 self.workspace_id, workflow_run_id
             ),
             usage_availability=self._usage_availability(nodes),
