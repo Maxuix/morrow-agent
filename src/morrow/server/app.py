@@ -70,6 +70,7 @@ def _with_security_headers(send):
 
     return sender
 
+
 MAX_BODY_BYTES = 1024 * 1024
 LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1", "[::1]"})
 

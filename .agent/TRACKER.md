@@ -5,16 +5,18 @@
 Stage 7 and Stage 8 Subplans 1–3 are complete, including the 2026-09-04 review remediation on
 `fix/stage8-core-api-review`. All 15 reported findings were confirmed and repaired. Full offline
 gate: 1597 passed, 2 deselected; focused regressions and static/CLI gates are green. Subplan 4 is
-not active.
+active on `feat/stage8-gui-observer`.
 
 ## Active task
 
-None. Await explicit activation of Stage 8 Subplan 4.
+Stage 8 Subplan 4 `4-web-gui-observer` on `feat/stage8-gui-observer` (activated 2026-09-03 with
+frontend toolchain authorization: pnpm/Node 26, @xyflow/react, Newsreader+Inter+JetBrains Mono,
+`gui/` at repo root).
 
 ## Next action
 
-Subplan 4 starts only on explicit activation and additionally needs frontend toolchain
-authorization.
+Server-side static GUI serving + `morrow gui` CLI, then frontend scaffold and views per
+`.agent/TODO.md`.
 
 ## Blockers
 

@@ -36,3 +36,10 @@ body {
     background-color var(--duration-base) var(--ease-out),
     color var(--duration-base) var(--ease-out);
 }
+
+/* Accessibility baseline: a visible accent-colored focus ring everywhere. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}

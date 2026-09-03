@@ -74,6 +74,24 @@ scripts/morrow-mimo model current
 事件或模型上下文。环境变量优先于 CredentialStore；环境变量存在时必须先取消它，才能使用
 `--replace-credential` 轮换存储凭据。
 
+## Web GUI（只读观察器）
+
+```bash
+morrow serve          # 仅启动 headless Core API（loopback + 一次性会话 token）
+morrow gui            # 启动同一个 Core 服务器并打开浏览器中的 Web GUI
+```
+
+`morrow gui` 与 `morrow serve` 是同一个前台 Core 进程：只监听 loopback，Ctrl+C 优雅退出；
+GUI 静态资源由 Core 服务器直接提供，浏览器地址中的一次性会话 token 位于 URL fragment，
+不会发送到服务器。当前 GUI 是只读观察器：Session/Task/Workflow/节点/Artifact/预算与审批
+展示；审批处理与运行控制仍在 CLI。
+
+源码检出中构建 GUI 资源（发布 wheel/sdist 的前置步骤，缺少资源时 `uv build` 会显式失败）：
+
+```bash
+cd gui && pnpm install && pnpm build   # 产出 src/morrow/gui_static/
+```
+
 ## 运行策略配置
 
 Morrow 随程序发布只读的 `morrow/resources/runtime-policy.toml` 作为 AgentRun 和 Preference

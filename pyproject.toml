@@ -26,8 +26,8 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/morrow"]
 # The prebuilt GUI bundle (src/morrow/gui_static) is gitignored build output;
-# include whatever exists in the package tree so built wheels ship the GUI.
-ignore-vcs = false
+# ignore VCS ignore files so built wheels ship the GUI bundle anyway.
+ignore-vcs = true
 exclude = ["**/__pycache__", "**/*.pyc"]
 
 [tool.hatch.build.targets.sdist.force-include]

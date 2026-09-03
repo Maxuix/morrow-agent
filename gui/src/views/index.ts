@@ -1,2 +1,10 @@
-// Top-level views (Chat, Workflow graph, Approvals, ...). Later subplan.
-export {}
+export { AppShell } from './AppShell'
+export { WorkflowPanel } from './WorkflowPanel'
+export { TaskWorkspace } from './TaskWorkspace'
+export { SessionNav } from './SessionNav'
+export { TopBar } from './TopBar'
+export { ConnectionBanner } from './ConnectionBanner'
+export { ApprovalsBar } from './ApprovalsBar'
+export { RunGraph } from './RunGraph'
+export { DirectNodeCard } from './DirectNodeCard'
+export { NodeDetail } from './NodeDetail'

@@ -1,11 +1,12 @@
 # Subplan 4 — Web GUI Run Observer
 
-> Status: pending activation
+> Status: active on `feat/stage8-gui-observer` (activated 2026-09-03)
 > Branch: `feat/stage8-gui-observer`
 > Activation base: latest verified `main` with Subplan 3 integrated
 > Prerequisite: Subplan 3 verified; explicit user authorization for the frontend toolchain
 > (Node/React/TypeScript plus Tailwind and the bundled open-license fonts per the design decision;
-> node-graph library selection per roadmap §11.4)
+> node-graph library selection per roadmap §11.4) — GRANTED 2026-09-03: pnpm + Node 26,
+> @xyflow/react, Newsreader + Inter + JetBrains Mono bundled, `gui/` at repo root
 > Roadmap authority: stage-8 §8.1–8.4 (information architecture), §11.3–11.4, §8A
 > Design authority: `docs/decisions/stage-8-gui-design-language.md` (Warm Paper: dual light/dark
 > themes following the system, CSS variables + Tailwind, bundled Inter + serif + JetBrains Mono)

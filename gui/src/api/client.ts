@@ -10,6 +10,8 @@
  * This subplan's surface is read-only: GETs only, no mutation helpers.
  */
 import type {
+  AgentRunEnvelopeWire,
+  AgentRunObservationWire,
   ApprovalWire,
   ApprovalsListWire,
   ArtifactsPageWire,
@@ -163,6 +165,13 @@ export class ApiClient {
 
   listArtifacts(params: ListArtifactsParams = {}): Promise<ArtifactsPageWire> {
     return this.get(`/v1/artifacts${query(params)}`)
+  }
+
+  async getAgentRun(agentRunId: string): Promise<AgentRunObservationWire> {
+    const envelope = await this.get<AgentRunEnvelopeWire>(
+      `/v1/agent-runs/${encodeURIComponent(agentRunId)}`,
+    )
+    return envelope.observation
   }
 
   private async get<T>(path: string): Promise<T> {

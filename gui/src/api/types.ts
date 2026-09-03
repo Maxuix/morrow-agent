@@ -215,6 +215,49 @@ export interface ApprovalWire {
   row_version: number
 }
 
+/** `model_usage` wire — absent values are explicit, never fabricated zeros. */
+export interface ModelUsageWire {
+  availability: 'available' | 'unavailable'
+  input_tokens: number | null
+  output_tokens: number | null
+  total_tokens: number | null
+}
+
+/** `model_cost` wire. */
+export interface ModelCostWire {
+  availability: 'available' | 'unavailable'
+  amount_minor: number | null
+  currency: string | null
+  source: string | null
+}
+
+/** `agent_run_terminal_wire` — the subset the observer renders. */
+export interface AgentRunTerminalWire {
+  agent_run_id: string
+  finish_reason: string | null
+  stop_code: string | null
+  model_attempts: number
+  retry_count: number
+  tool_rounds: number
+  tool_calls: number
+  usage: ModelUsageWire
+  cost: ModelCostWire
+  accounting_basis: string
+  finalized_at: string
+}
+
+/** `agent_run_observation_wire` — the subset the observer renders. */
+export interface AgentRunObservationWire {
+  agent_run_id: string
+  session_id: string
+  task_run_id: string
+  terminal_metrics: AgentRunTerminalWire | null
+}
+
+export interface AgentRunEnvelopeWire {
+  observation: AgentRunObservationWire
+}
+
 /** `EventWire` from `src/morrow/server/protocol.py` */
 export interface EventWire {
   cursor: number
