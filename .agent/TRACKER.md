@@ -11,15 +11,16 @@ plans are drafted under `.agent/`.
 
 ## Active task
 
-Subplan 1 (`1-pause-drain-runtime`) on branch `feat/stage8-pause-drain`: Pause/Drain/Resume
-runtime — migration framework generalization, schema v26, core model states, single admission
-transaction, Pause/Resume semantics, CLI commands, deterministic tests.
+None. Subplan 1 (`1-pause-drain-runtime`) completed 2026-09-03: durable Pause/Drain/Resume,
+migration framework generalization, schema v26, single admission transaction (C2), CLI
+`workflow pause`, full offline gate 1552 passed / 2 deselected, all lint/format/compile gates
+green.
 
 ## Next action
 
-Study the contracts doc and relevant source (migrations in `operational.py`,
-`core/workflows/runs.py`, `workflow_journal.py`, scheduler admission path), then implement the
-migration framework generalization and schema v26.
+Subplan 2 (`2-future-graph-patch-continuation`) starts on explicit user activation. Subplan 3
+additionally needs explicit authorization for the additive `ApplicationEvent` lifecycle extension
+and the Python web-framework dependency; Subplan 4 needs frontend toolchain authorization.
 
 ## Blockers
 

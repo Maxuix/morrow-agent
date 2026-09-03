@@ -4854,3 +4854,29 @@
   (contracts are frozen in the decision doc instead of adding process).
 - Subplans 1, 2, 3, 4, 5, 8 updated to the contracts; roadmap §6.5 (run-local revision rule) and
   §11.3 (cursor + notify/pull event model) synced; PLAN §3.4 records the freeze.
+
+## 2026-09-03 — Stage 8 Subplan 1 completed: Pause/Drain runtime
+
+- Branch `feat/stage8-pause-drain`, commit `0c8b981`. All deliverables landed: generalized
+  migration framework (per-migration metadata, pre-commit foreign_key_check + integrity
+  verification, pragma restoration), single merged v26 rebuild (statuses draining/paused/
+  superseded, pause_requested, run_relation, lineage_budget_root_run_id, parent_run_id, rebuilt
+  workflow_active_root index, inert execution-set/artifact-imports tables, legacy backfill),
+  core model + validators, single authoritative admission transaction (C2: status/pause,
+  deadline, lineage-budget rechecks + input binding inside the Turn admission transaction),
+  Pause/Resume on the transition owner, drain completion, blocked/recovery interplay, CLI
+  `workflow pause` (+ resume clears the fact), draining/paused projections with the
+  approval-pending node marker.
+- Design notes: Pause on a queued run transitions straight to PAUSED (QUEUED->PAUSED); the
+  admission recheck accepts QUEUED/RUNNING with pause_requested=false so first admission and
+  Pause still have exactly one winner; terminal runs keep pause_requested as historical fact;
+  `morrow workflow resume` reuses the existing recovery-resume surface and clears the pause
+  fact first; `SchemaMigration.checksum` is unchanged (metadata excluded), keeping all prior
+  checksums stable; the runner tolerates duck-typed test migrations without metadata.
+- Validation: full offline gate 1552 passed / 2 deselected; Stage 7 workflow matrix green;
+  new tests tests/test_stage8_pause_drain.py (9) plus store/CLI additions prove the
+  barrier-controlled admission race, drain without admission, blocked+pause recovery,
+  approval-pending drain projection with denial terminal mapping, restart preservation,
+  v26 backfill with scripted legacy rows, root exclusivity at index and active_for_root
+  layers, and rebuild-verification rollback. Ruff format/check, compileall, git diff --check
+  green.
