@@ -70,6 +70,7 @@ def validate_run_transition(current: WorkflowStatus, target: WorkflowStatus) -> 
             WorkflowStatus.CANCELLED,
             WorkflowStatus.BLOCKED,
             WorkflowStatus.DRAINING,
+            WorkflowStatus.PAUSED,
         },
         WorkflowStatus.BLOCKED: {
             WorkflowStatus.RUNNING,

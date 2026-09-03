@@ -1,8 +1,8 @@
 # Stage 8 Adaptive Orchestration and GUI Implementation Plan
 
 > Status: active 2026-09-03
-> Active subplan: `2-future-graph-patch-continuation` closeout (implementation complete;
-> remote publication blocked pending explicit approval)
+> Active subplan: `2-future-graph-patch-continuation` review remediation verified; local integration
+> pending
 > Next subplan: `3-core-api-local-server` (after explicit activation and its authorizations are confirmed)
 > Roadmap authority: `docs/roadmap/stage-8-adaptive-orchestration-and-gui.md`
 > (revised 2026-09-03: risk-tiered Replan autonomy; runtime-kernel-first ordering)
@@ -191,8 +191,8 @@ evidence recorded under `docs/acceptance/`.
   topic ancestry verification and clean branch/worktree removal.
 - The retired Stage 7 sequence remains archived under
   `.agent/archive/subplans/stage7-workflow-runtime/` and is never renumbered or reactivated.
-- Remote publication requires explicit authorization; the current user request authorizes pushing
-  the verified local `main` to the configured GitHub remote.
+- Remote publication requires explicit authorization; the current review-remediation request does
+  not authorize a GitHub push.
 
 ## 8. Explicitly out of scope
 

@@ -11,15 +11,17 @@ plans are drafted under `.agent/`.
 
 ## Active task
 
-Stage 8 Subplan 2 implementation is complete and locally integrated: exact
-FutureGraphPatch validation, detached run-local Revisions, atomic continuation handoff, execution
-sets, Artifact imports, effective-output resolution, lineage budget/deadline enforcement, rerun
-semantics and CLI/query visibility. Full offline gate: 1560 passed / 2 deselected; all static gates
-green. Only remote publication closeout remains.
+Stage 8 Subplan 2 review remediation is active on `fix/stage8-continuation-review`. Four confirmed
+bugs are repaired: detached Revision number isolation, multi-hop Past derivation, inherited
+ReviewReport empty-set finalization, and atomic idle RUNNING pause completion. Two useful review
+suggestions are also implemented for admission-reason normalization and Query effective-output
+projection. Review-focused matrix: 56 passed; full offline gate: 1566 passed / 2 deselected in
+283.88 seconds; static gates and CLI help smoke are green. Only local Git integration remains.
 
 ## Next action
 
-Subplan 3 starts only on explicit activation and additionally needs authorization for the additive
+Run the full offline gate, record final evidence, commit the remediation and fast-forward it into
+local `main`. Subplan 3 starts only on explicit activation and additionally needs authorization for the additive
 `ApplicationEvent` lifecycle extension and Python web-framework dependency; Subplan 4 needs
 frontend toolchain authorization.
 

@@ -77,7 +77,7 @@ def compute_workflow_result(
         )
         if binding is None and resolver is not None and workflow_run_id is not None:
             binding = resolver.resolve(workflow_run_id, ref.node_id, ref.output_slot)
-        if producer is None or binding is None or artifacts is None:
+        if binding is None or artifacts is None:
             raise ApplicationError(
                 ApplicationErrorCode.INVALID,
                 "output_contract_unsatisfied: required exported ReviewReport is missing",
@@ -145,7 +145,52 @@ class WorkflowOutcomeFinalizer:
                 resolver=self.outputs,
                 workflow_run_id=workflow_run_id,
             )
-            if revision.nodes[0].conversation_scope == "invoking_session":
+            if result == RESULT_NEEDS_REVISION and not nodes:
+                root = txn.get_task_run(self.workspace_id, run.root_task_run_id)
+                if root.status is TaskRunStatus.READY_FOR_ACCEPTANCE:
+                    reopen = self._transition_record(
+                        root, TaskRunStatus.OPEN, reason="workflow_needs_revision_reopen"
+                    )
+                    root = txn.transition_workflow_task(
+                        self.workspace_id,
+                        workflow_run_id,
+                        root.task_run_id,
+                        target=TaskRunStatus.OPEN,
+                        transition=reopen,
+                        expected_row_version=root.row_version,
+                    )
+                if root.status is TaskRunStatus.OPEN:
+                    failed = self._transition_record(
+                        root, TaskRunStatus.FAILED, reason="workflow_needs_revision"
+                    )
+                    root = txn.transition_workflow_task(
+                        self.workspace_id,
+                        workflow_run_id,
+                        root.task_run_id,
+                        target=TaskRunStatus.FAILED,
+                        transition=failed,
+                        expected_row_version=root.row_version,
+                    )
+                elif root.status is not TaskRunStatus.FAILED:
+                    raise ApplicationError(
+                        ApplicationErrorCode.NEEDS_RECOVERY,
+                        "empty continuation root cannot record needs_revision",
+                    )
+                run = self.transitions.complete_run(workflow_run_id, result_status=result)
+                outcome = self._build_outcome(
+                    txn,
+                    run,
+                    revision,
+                    nodes,
+                    root,
+                    trigger=TaskOutcomeTrigger.TERMINAL_CLOSE,
+                    summary=f"Workflow '{revision.name}' requires revision.",
+                    basis_extra=(f"workflow_result={result}", "node_count=0"),
+                    markers=None,
+                )
+                txn.put_task_outcome(self.workspace_id, outcome)
+                return run
+            if nodes and revision.nodes[0].conversation_scope == "invoking_session":
                 root = txn.get_task_run(self.workspace_id, run.root_task_run_id)
                 if root.status is not TaskRunStatus.READY_FOR_ACCEPTANCE:
                     raise ApplicationError(

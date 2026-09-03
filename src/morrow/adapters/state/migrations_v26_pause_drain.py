@@ -1,12 +1,13 @@
-"""Stage 8 Pause/Drain runtime schema: one merged rebuild of ``workflow_runs``.
+"""Stage 8 Pause/Drain and continuation runtime schema.
 
 Per the frozen runtime contracts (docs/decisions/stage-8-runtime-contracts.md,
-C1/C5) a single rebuild covers every Stage 8 runtime change to the core table:
+C1/C5/C6) the merged migration covers every Stage 8 runtime schema change:
 the ``draining``/``paused``/``superseded`` statuses, the orthogonal
 ``pause_requested`` fact, the lineage columns (``run_relation``,
 ``lineage_budget_root_run_id``, ``parent_run_id``), the widened
 ``workflow_active_root`` partial unique index, and the immutable execution-set
-and artifact-import tables. The continuation code paths land in later subplans;
+and artifact-import tables. It also separates negative run-local Revision
+numbers from the positive published sequence. The continuation code paths land in later subplans;
 the lineage tables stay inert until then. Existing rows backfill to
 ``pause_requested=0``, ``run_relation='initial'`` and a self budget root, so
 upgraded running/blocked runs recover without NULL-induced stalls.
@@ -14,6 +15,38 @@ upgraded running/blocked runs recover without NULL-induced stalls.
 
 V26_NAME = "workflow_pause_drain_lineage"
 V26_STATEMENTS = (
+    """
+    ALTER TABLE workflow_revisions RENAME TO workflow_revisions_v25
+    """,
+    """
+    CREATE TABLE workflow_revisions (
+        workflow_revision_id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        workflow_definition_id TEXT NOT NULL,
+        revision INTEGER NOT NULL CHECK(revision != 0),
+        content_hash TEXT NOT NULL CHECK(length(content_hash)=64),
+        body_json TEXT NOT NULL CHECK(length(body_json)<=262144),
+        UNIQUE(workspace_id, workflow_definition_id, revision),
+        UNIQUE(workspace_id, workflow_definition_id, workflow_revision_id)
+    )
+    """,
+    """
+    INSERT INTO workflow_revisions
+    SELECT * FROM workflow_revisions_v25
+    """,
+    """
+    DROP TABLE workflow_revisions_v25
+    """,
+    """
+    CREATE TRIGGER workflow_revisions_update_immutable
+    BEFORE UPDATE ON workflow_revisions
+    BEGIN SELECT RAISE(ABORT, 'Workflow evidence is immutable'); END
+    """,
+    """
+    CREATE TRIGGER workflow_revisions_delete_immutable
+    BEFORE DELETE ON workflow_revisions
+    BEGIN SELECT RAISE(ABORT, 'Workflow evidence is immutable'); END
+    """,
     """
     ALTER TABLE workflow_runs RENAME TO workflow_runs_v25
     """,

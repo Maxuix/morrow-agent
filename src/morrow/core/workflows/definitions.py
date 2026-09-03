@@ -236,13 +236,23 @@ def compiled_content_hash(candidate: CompiledWorkflow) -> str:
 class WorkflowRevision(CompiledWorkflow):
     workflow_revision_id: WorkflowRevisionId
     workspace_id: WorkspaceId
-    revision: int = Field(ge=1, strict=True)
+    # Published revisions use the positive Definition-head sequence. Detached,
+    # run-local revisions use a negative sequence so they can never consume a
+    # future published slot; zero belongs to neither namespace.
+    revision: int = Field(strict=True)
     parent_workflow_revision_id: WorkflowRevisionId | None = None
     content_hash: Digest
     source_revision: int = Field(ge=0, strict=True)
     source_hash: Digest
     created_by: OpaqueId
     created_at: datetime
+
+    @field_validator("revision")
+    @classmethod
+    def nonzero_revision_namespace(cls, value: int) -> int:
+        if value == 0:
+            raise ValueError("Workflow Revision number cannot be zero")
+        return value
 
     @model_validator(mode="after")
     def immutable_hash(self):

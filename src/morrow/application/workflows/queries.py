@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from morrow.application.workflows.outputs import EffectiveOutputResolver
 from morrow.core.artifacts import ArtifactMetadata
 from morrow.core.execution import ToolExecutionState
 from morrow.core.workflows.contracts import ArtifactBinding
@@ -20,6 +21,15 @@ class WorkflowNodeView:
 
 
 @dataclass(frozen=True)
+class WorkflowEffectiveOutputView:
+    node_id: str
+    output_slot: str
+    binding: ArtifactBinding
+    artifact: ArtifactMetadata | None
+    inherited: bool
+
+
+@dataclass(frozen=True)
 class WorkflowRunView:
     run: WorkflowRun
     revision: WorkflowRevision
@@ -28,6 +38,7 @@ class WorkflowRunView:
     agent_generation_request_count: int
     lineage_agent_generation_request_count: int
     inherited_artifacts: tuple[WorkflowArtifactImport, ...]
+    effective_outputs: tuple[WorkflowEffectiveOutputView, ...]
     usage_availability: str
     terminal_outcome: object | None
     actionable_status: str | None
@@ -90,6 +101,7 @@ class WorkflowQueryService:
         self.workflow_sources = workflow_sources
         self.agent_builtins = {item.definition_id: item for item in agent_builtins}
         self.workflow_builtins = {item.workflow_definition_id: item for item in workflow_builtins}
+        self.outputs = EffectiveOutputResolver(journal, workspace_id=workspace_id)
 
     def list_runs(self, *, limit: int = 100, after: str | None = None) -> tuple[WorkflowRun, ...]:
         values = self.journal.workflows.list_runs(self.workspace_id)
@@ -288,13 +300,14 @@ class WorkflowQueryService:
         if run is None:
             return None
         revision = self.journal.workflows.get_revision(self.workspace_id, run.workflow_revision_id)
-        bindings = self.journal.workflows.list_bindings(self.workspace_id, workflow_run_id)
+        declared_nodes = {item.node_id: item for item in revision.nodes}
         nodes = []
         for node in self.journal.workflows.list_nodes(self.workspace_id, workflow_run_id):
             outputs = tuple(
                 binding
-                for node_run_id, direction, binding in bindings
-                if node_run_id == node.node_run_id and direction == "output"
+                for slot in declared_nodes[node.node_id].output_contracts
+                if (binding := self.outputs.resolve(workflow_run_id, node.node_id, slot.slot))
+                is not None
             )
             artifacts = tuple(
                 metadata
@@ -320,6 +333,23 @@ class WorkflowQueryService:
             )
             if metadata is not None
         )
+        imports = self.outputs.list_imports(workflow_run_id)
+        imported = {(item.source_node_id, item.output_slot) for item in imports}
+        effective_outputs = []
+        for declared in revision.nodes:
+            for slot in declared.output_contracts:
+                binding = self.outputs.resolve(workflow_run_id, declared.node_id, slot.slot)
+                if binding is None:
+                    continue
+                effective_outputs.append(
+                    WorkflowEffectiveOutputView(
+                        node_id=declared.node_id,
+                        output_slot=slot.slot,
+                        binding=binding,
+                        artifact=self.journal.get_artifact(self.workspace_id, binding.artifact_id),
+                        inherited=(declared.node_id, slot.slot) in imported,
+                    )
+                )
         return WorkflowRunView(
             run=run,
             revision=revision,
@@ -331,9 +361,8 @@ class WorkflowQueryService:
             lineage_agent_generation_request_count=self.journal.count_lineage_agent_requests(
                 self.workspace_id, run.effective_lineage_budget_root_run_id
             ),
-            inherited_artifacts=self.journal.workflows.list_artifact_imports(
-                self.workspace_id, workflow_run_id
-            ),
+            inherited_artifacts=imports,
+            effective_outputs=tuple(effective_outputs),
             usage_availability=self._usage_availability(nodes),
             terminal_outcome=self._terminal_outcome(run),
             actionable_status=self._actionable_status(run),
@@ -352,11 +381,14 @@ class WorkflowQueryService:
         node = self.journal.workflows.get_node(self.workspace_id, node_run_id)
         if node is None:
             return None
-        bindings = self.journal.workflows.list_bindings(self.workspace_id, node.workflow_run_id)
+        run = self.journal.workflows.get_run(self.workspace_id, node.workflow_run_id)
+        revision = self.journal.workflows.get_revision(self.workspace_id, run.workflow_revision_id)
+        declared = next(item for item in revision.nodes if item.node_id == node.node_id)
         outputs = tuple(
             binding
-            for bound_node_id, direction, binding in bindings
-            if bound_node_id == node_run_id and direction == "output"
+            for slot in declared.output_contracts
+            if (binding := self.outputs.resolve(node.workflow_run_id, node.node_id, slot.slot))
+            is not None
         )
         artifacts = tuple(
             metadata

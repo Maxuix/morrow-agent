@@ -6,9 +6,12 @@ import pytest
 
 from morrow.application.workflows.integrity import verify_workflow_rows
 from morrow.core.application import ApplicationError
+from morrow.core.domain import TaskOutcomeTrigger, TaskRunStatus
+from morrow.core.workflows.contracts import ContractRef, NodeOutputRef, OutputContract
 from morrow.core.workflows.definitions import WorkflowBudget
 from morrow.core.workflows.patches import FutureGraphPatch
 from morrow.core.workflows.runs import WorkflowStatus
+from test_stage7_multi_agent_pipeline import _script_submit_then_stop
 from test_stage7_serial_scheduler import (
     CATALOG,
     MODEL,
@@ -113,6 +116,109 @@ async def test_future_patch_handoff_inherits_past_and_runs_only_execution_set(tm
         assert len(view.inherited_artifacts) == 1
         assert view.lineage_agent_generation_request_count == 2
         assert fixture.handle.run_read(verify_workflow_rows) == (True, ())
+    finally:
+        fixture.close()
+
+
+@pytest.mark.asyncio
+async def test_detached_revisions_do_not_consume_published_revision_numbers(tmp_path):
+    fixture, base, parent = await _paused_after_first_node(tmp_path)
+    try:
+        ref = base.nodes[0].agent_definition_ref
+        source = pair_source(ref)
+        first = fixture.runtime.patches.save(
+            _patch(parent, base, source=source, patch_id="wpatch_first"), active_model=MODEL
+        )
+        second = fixture.runtime.patches.save(
+            _patch(parent, base, source=source, patch_id="wpatch_second"), active_model=MODEL
+        )
+        assert (first.revision.revision, second.revision.revision) == (-1, -2)
+        assert fixture.journal.workflows.list_revisions(WS) == (base,)
+
+        alpha = next(node for node in source.nodes if node.node_id == "alpha")
+        published_source = source.model_copy(
+            update={
+                "nodes": tuple(
+                    node.model_copy(
+                        update={
+                            "task_contract": node.task_contract.model_copy(
+                                update={"objective": "Publish a changed future objective"}
+                            )
+                        }
+                    )
+                    if node.node_id == alpha.node_id
+                    else node
+                    for node in source.nodes
+                )
+            }
+        )
+        publication = fixture.compiler.publish(
+            published_source,
+            source_revision=1,
+            expected_head_revision=1,
+            command_id="cmd_publish_after_detached",
+            active_model=MODEL,
+        )
+        assert publication.revision.revision == 2
+    finally:
+        fixture.close()
+
+
+@pytest.mark.asyncio
+async def test_chained_continuation_keeps_inherited_past_immutable(tmp_path):
+    fixture, base, parent = await _paused_after_first_node(tmp_path)
+    try:
+        ref = base.nodes[0].agent_definition_ref
+        source = pair_source(ref)
+        first = fixture.runtime.patches.apply(
+            _patch(parent, base, source=source, patch_id="wpatch_chain_one"),
+            active_model=MODEL,
+        )
+        paused_child = fixture.runtime.transitions.request_pause(first.child.workflow_run_id)
+        assert paused_child.status is WorkflowStatus.PAUSED
+
+        forged = source.model_copy(
+            update={
+                "nodes": tuple(
+                    node.model_copy(
+                        update={
+                            "task_contract": node.task_contract.model_copy(
+                                update={"objective": "Rewrite inherited ancestor evidence"}
+                            )
+                        }
+                    )
+                    if node.node_id == "gamma"
+                    else node
+                    for node in source.nodes
+                )
+            }
+        )
+        with pytest.raises(ApplicationError, match="past_forgery"):
+            fixture.runtime.patches.validate(
+                _patch(
+                    paused_child,
+                    first.revision,
+                    source=forged,
+                    patch_id="wpatch_chain_forged",
+                ),
+                active_model=MODEL,
+            )
+
+        second = fixture.runtime.patches.apply(
+            _patch(
+                paused_child,
+                first.revision,
+                source=source,
+                patch_id="wpatch_chain_two",
+            ),
+            active_model=MODEL,
+        )
+        assert second.validation.past_node_ids == ("gamma",)
+        assert second.validation.execution_node_ids == ("alpha",)
+        chained_import = fixture.journal.workflows.list_artifact_imports(
+            WS, second.child.workflow_run_id
+        )[0]
+        assert chained_import.source_workflow_run_id == parent.workflow_run_id
     finally:
         fixture.close()
 
@@ -259,6 +365,92 @@ async def test_empty_execution_set_closes_child_atomically_from_inherited_output
         assert fixture.journal.workflows.list_execution_nodes(WS, child.workflow_run_id) == ()
         assert len(fixture.journal.workflows.list_artifact_imports(WS, child.workflow_run_id)) == 2
         assert root(fixture).status.value == "ready_for_acceptance"
+    finally:
+        fixture.close()
+
+
+@pytest.mark.asyncio
+async def test_empty_continuation_resolves_inherited_blocking_review_report(tmp_path):
+    cell = {}
+
+    def pause_at_second_preparation(count):
+        if count == 2:
+            cell["fx"].runtime.transitions.request_pause(cell["run_id"])
+
+    fixture = DagFixture(tmp_path, bank=ScriptBank(on_create=pause_at_second_preparation))
+    cell["fx"] = fixture
+    try:
+
+        def review_source(ref):
+            source = pair_source(ref)
+            gamma = next(node for node in source.nodes if node.node_id == "gamma")
+            alpha = next(node for node in source.nodes if node.node_id == "alpha")
+            gamma = gamma.model_copy(
+                update={"output_contracts": (OutputContract(kind="ReviewReport", slot="review"),)}
+            )
+            binding = alpha.input_bindings[0]
+            alpha = alpha.model_copy(
+                update={
+                    "input_bindings": (
+                        binding.model_copy(
+                            update={
+                                "node_output": NodeOutputRef(node_id="gamma", output_slot="review"),
+                                "accepts": ContractRef(kind="ReviewReport"),
+                            }
+                        ),
+                    )
+                }
+            )
+            return source.model_copy(
+                update={
+                    "nodes": (gamma, alpha),
+                    "required_outputs": (NodeOutputRef(node_id="gamma", output_slot="review"),),
+                }
+            )
+
+        fixture.bank.scripts.extend(
+            [
+                _script_submit_then_stop(
+                    "call_review",
+                    "review",
+                    {"verdict": "request_changes", "findings": ["fix required"]},
+                ),
+                ["unused"],
+            ]
+        )
+        _, publication = publish(fixture, review_source)
+        started = start(fixture, publication.revision)
+        cell["run_id"] = started.run.workflow_run_id
+        parent = await fixture.runtime.scheduler.run(cell["run_id"])
+        assert parent.status is WorkflowStatus.PAUSED
+
+        source = review_source(publication.revision.nodes[0].agent_definition_ref)
+        gamma = next(node for node in source.nodes if node.node_id == "gamma")
+        empty_source = source.model_copy(update={"nodes": (gamma,), "edges": ()})
+        applied = fixture.runtime.patches.apply(
+            _patch(
+                parent,
+                publication.revision,
+                source=empty_source,
+                patch_id="wpatch_empty_review",
+            ),
+            active_model=MODEL,
+        )
+        assert applied.child.status is WorkflowStatus.COMPLETED
+        assert applied.child.result_status == "needs_revision"
+        assert root(fixture).status is TaskRunStatus.FAILED
+        outcome = fixture.journal.list_task_outcomes(WS, "task_root")[-1]
+        assert outcome.trigger is TaskOutcomeTrigger.TERMINAL_CLOSE
+        imports = fixture.journal.workflows.list_artifact_imports(WS, applied.child.workflow_run_id)
+        assert {item.artifact_id for item in outcome.artifact_refs} == {
+            item.artifact_id for item in imports
+        }
+        assert fixture.journal.workflows.list_nodes(WS, applied.child.workflow_run_id) == ()
+        assert (
+            fixture.runtime.queries.get_run_view(applied.child.workflow_run_id)
+            .effective_outputs[0]
+            .inherited
+        )
     finally:
         fixture.close()
 

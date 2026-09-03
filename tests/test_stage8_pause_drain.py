@@ -33,6 +33,7 @@ from morrow.core.workflows.runs import WorkflowRun, WorkflowStatus, validate_run
 from morrow.runtime.policy import ToolApproval, ToolExecutionPolicy
 from morrow.runtime.tools import ToolExecutor, ToolRegistry, make_tool
 from test_stage7_serial_scheduler import (
+    WS,
     DagFixture,
     ReadArgs,
     ScriptBank,
@@ -89,6 +90,7 @@ def test_pause_drain_statuses_and_transition_map():
     validate_run_transition(WorkflowStatus.DRAINING, WorkflowStatus.FAILED)
     validate_run_transition(WorkflowStatus.DRAINING, WorkflowStatus.BLOCKED)
     validate_run_transition(WorkflowStatus.PAUSED, WorkflowStatus.RUNNING)
+    validate_run_transition(WorkflowStatus.RUNNING, WorkflowStatus.PAUSED)
     validate_run_transition(WorkflowStatus.QUEUED, WorkflowStatus.PAUSED)
     validate_run_transition(WorkflowStatus.BLOCKED, WorkflowStatus.DRAINING)
     with pytest.raises(ValueError, match="illegal"):
@@ -248,6 +250,20 @@ def test_rebuild_migration_verification_rolls_back_and_restores_pragmas(tmp_path
 
 
 # Scheduler: Pause/Drain/Resume --------------------------------------------------
+
+
+def test_pause_idle_running_run_completes_drain_in_control_transaction(fx):
+    _, publication = publish(fx, pair_source)
+    started = start(fx, publication.revision)
+    running = fx.runtime.transitions.mark_run_running(started.run.workflow_run_id)
+    assert all(
+        node.status is WorkflowStatus.QUEUED
+        for node in fx.journal.workflows.list_nodes(WS, running.workflow_run_id)
+    )
+
+    paused = fx.runtime.transitions.request_pause(running.workflow_run_id)
+    assert paused.status is WorkflowStatus.PAUSED
+    assert paused.pause_requested
 
 
 @pytest.mark.asyncio

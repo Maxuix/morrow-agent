@@ -812,11 +812,10 @@ def test_pause_resume_ladder_occ_and_terminal_rejection(state):
     resumed = transitions.resume_run("wrun_one")
     assert resumed.status is WorkflowStatus.RUNNING and not resumed.pause_requested
     assert transitions.resume_run("wrun_one") == resumed
-    # Running -> draining -> paused (no Active nodes) -> running.
-    draining = transitions.request_pause("wrun_one")
-    assert draining.status is WorkflowStatus.DRAINING and draining.pause_requested
-    settled = transitions.complete_drain("wrun_one")
+    # An idle RUNNING run completes its drain in the pause transaction.
+    settled = transitions.request_pause("wrun_one")
     assert settled.status is WorkflowStatus.PAUSED and settled.pause_requested
+    assert transitions.complete_drain("wrun_one") == settled
     running = transitions.resume_run("wrun_one")
     assert running.status is WorkflowStatus.RUNNING and not running.pause_requested
     # A terminal run rejects Pause.

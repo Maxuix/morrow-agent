@@ -1,7 +1,8 @@
 # Subplan 2 — FutureGraphPatch and Continuation Child Runs
 
-> Status: implementation complete 2026-09-03; remote publication closeout blocked pending approval
-> Branch: `feat/stage8-patch-continuation`
+> Status: review remediation verified 2026-09-03; local integration pending
+> Implementation branch: `feat/stage8-patch-continuation`
+> Review remediation branch: `fix/stage8-continuation-review`
 > Activation base: latest verified `main` with Subplan 1 integrated
 > Prerequisite: Subplan 1 (Pause/Drain runtime) verified
 > Roadmap authority: stage-8 §6.2–6.5, §8C bullets 4–10, §13 (retry/rerun), §16.2

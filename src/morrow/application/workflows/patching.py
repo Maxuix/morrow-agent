@@ -117,7 +117,7 @@ class PatchApplicationService:
                 **result.candidate.model_dump(),
                 workflow_revision_id="wrev_validation",
                 workspace_id=self.workspace_id,
-                revision=base.revision + 1,
+                revision=-1,
                 parent_workflow_revision_id=base.workflow_revision_id,
                 content_hash=result.content_hash,
                 source_revision=0,
@@ -153,7 +153,7 @@ class PatchApplicationService:
             **candidate.model_dump(),
             workflow_revision_id=revision_id,
             workspace_id=self.workspace_id,
-            revision=base.revision + 1,
+            revision=-1,
             parent_workflow_revision_id=base.workflow_revision_id,
             content_hash=validation.compilation.content_hash,
             source_revision=0,
@@ -356,7 +356,7 @@ class PatchApplicationService:
         return parent, base
 
     def _past_node_ids(self, parent: WorkflowRun) -> set[str]:
-        return {
+        admitted = {
             item.node_id
             for item in self.journal.workflows.list_nodes(self.workspace_id, parent.workflow_run_id)
             if item.started_at is not None
@@ -369,6 +369,24 @@ class PatchApplicationService:
                 WorkflowStatus.BLOCKED,
             }
         }
+        revision = self.journal.workflows.get_revision(
+            self.workspace_id, parent.workflow_revision_id
+        )
+        if revision is None:
+            raise ApplicationError(
+                ApplicationErrorCode.NEEDS_RECOVERY, "patch parent Revision is missing"
+            )
+        execution = {
+            item.node_id
+            for item in self.journal.workflows.list_execution_nodes(
+                self.workspace_id, parent.workflow_run_id
+            )
+        }
+        inherited = {item.node_id for item in revision.nodes} - execution
+        imported = {
+            item.source_node_id for item in self.outputs.list_imports(parent.workflow_run_id)
+        }
+        return admitted | inherited | imported
 
     def _imports(self, parent, child_id, revision, past_node_ids):
         parent_nodes = {

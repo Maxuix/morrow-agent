@@ -28,6 +28,8 @@ workflow_run_artifact_imports       -- 继承产物（引用，非复制字节�
   binding、finalizer result 计算、Query/GUI、Backup/Doctor/Cleanup 都经它解析 effective
   output）；禁止各模块自行做 lineage fallback，也禁止把 parent node_run_id 写进 child 的
   `workflow_artifact_bindings`（现有 `bind_artifact` 的 run 内归属校验正确地拒绝这种写法）。
+- Query 对 Revision 的有效输出做统一投影，并显式标记 imported output；不能因 child 未物化
+  inherited Past 的 NodeRun 而从状态视图中丢失这些输出。
 
 ## C2. 单次 admission 事务
 
@@ -48,6 +50,11 @@ commit
 
 Provider 调用只能发生在 commit 之后。现有"先 `_bind_node_inputs` 后 `_drive_node`"的两段式
 结构必须合并，否则 Pause 可在两段之间提交。
+
+Pause 控制写入也遵循同一事务边界：idle RUNNING（无 RUNNING/BLOCKED NodeRun）直接形成
+`pause_requested=true,status=paused`，只有仍有 Active 工作才保持 `draining`。当前产品选择是
+PAUSED 只允许 resume 或 continuation supersede；若要取消，须先显式 resume，再由前台 owner
+执行既有 cancel 流程。
 
 ## C3. Lineage 预算在既有 admission seam 执行
 
@@ -72,14 +79,15 @@ SQLite connection 绑定 owner thread（`operational.py`），不能交给 ASGI 
 - 一个 WorkflowRun 至多一个 in-process driver（显式 `RunSupervisor` 持有）；server shutdown
   不得被记录为 user cancellation。
 
-## C5. 迁移框架通用化 + 单次 v26 重建
+## C5. 迁移框架通用化 + 单次 v26 迁移
 
 现有 runner 只对 version 5 特判 `legacy_alter_table`/`foreign_keys`（`operational.py:628`）。
 先给 `SchemaMigration` 增加通用 metadata（`requires_foreign_keys_off`、
 `requires_legacy_alter_table`、rebuild 后 `PRAGMA foreign_key_check` + integrity 检查 +
-失败恢复），再做**一次** v26 重建覆盖 Stage 8 runtime 全部 schema：`draining/paused/superseded`
+失败恢复），再做**一次** v26 迁移覆盖 Stage 8 runtime 全部 schema：`draining/paused/superseded`
 状态、`pause_requested`、`run_relation`、`lineage_budget_root_run_id`、`parent_run_id`、执行集表、
-imports 表、`workflow_active_root` 索引重建。这是对"不提前实现后续子计划 schema"规则的有意
+imports 表、`workflow_active_root` 索引重建，以及 C6 的 Revision 编号命名空间分离。这是对
+"不提前实现后续子计划 schema"规则的有意
 例外：对同一核心表连续重建的风险大于 schema 先行（代码路径仍按子计划逐个落地）。
 
 ## C6. Run-local Revision 与 Definition Head 分离
@@ -88,6 +96,10 @@ imports 表、`workflow_active_root` 索引重建。这是对"不提前实现后
 Replan 产生的 Revision 必须是 **detached**：不可变、有 parent 谱系、仅供该 continuation child
 引用，不移动 Definition head、不进入模板列表。只有显式的 "save/publish as definition" 用户命令
 才更新 desired source 和 head。
+
+Published Revision 使用正整数 head 序列；detached Revision 使用同一 definition 下单独递减的
+负整数序列，0 禁用。两者保留数据库唯一约束但永不争用槽位；detached 的谱系由
+`parent_workflow_revision_id` 表达，不以数值相邻推断。
 
 ## C7. Retry / Rerun / Continuation 的语义推导
 

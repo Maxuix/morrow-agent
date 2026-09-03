@@ -19,6 +19,7 @@ from morrow.application.doctor import OperationalDoctor
 from morrow.application.local_tools import BASH_PROVIDER_SCHEMA, BashArguments
 from morrow.application.tool_persistence import _envelope_from_outcome
 from morrow.application.turns import SessionPersistence
+from morrow.core.application import ApplicationError
 from morrow.core.capabilities import ProcessIsolation
 from morrow.core.domain import DurableSession
 from morrow.core.execution import ToolExecutionDisposition, ToolExecutionState, tool_declaration
@@ -124,6 +125,42 @@ def test_fresh_v17_schema_contains_observation_tables(tmp_path):
             ("table", "agent_run_model_requests"),
             ("table", "agent_run_terminal_metrics"),
         )
+    finally:
+        handle.close()
+
+
+@pytest.mark.parametrize(
+    ("code", "message"),
+    [
+        (
+            StorageErrorCode.BUDGET_EXHAUSTED,
+            "budget_exhausted: Workflow lineage request limit reached",
+        ),
+        (
+            StorageErrorCode.UNAVAILABLE,
+            "deadline_exceeded: Workflow lineage admission deadline reached",
+        ),
+    ],
+)
+def test_session_persistence_preserves_authoritative_lineage_admission_reason(
+    tmp_path, monkeypatch, code, message
+):
+    handle, journal, session, persistence = _open(tmp_path)
+    try:
+        persistence.submit_user(
+            session,
+            "hello",
+            "cmsg_1",
+            turn_id="turn_1",
+            agent_run_id="arun_1",
+        )
+
+        def reject(*_args, **_kwargs):
+            raise StorageError(code, message)
+
+        monkeypatch.setattr(journal, "admit_model_request", reject)
+        with pytest.raises(ApplicationError, match=message):
+            persistence.admit_model_request(agent_run_id="arun_1")
     finally:
         handle.close()
 

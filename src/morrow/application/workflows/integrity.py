@@ -47,12 +47,15 @@ def verify_workflow_rows(executor):
         for value in revisions.values():
             if value.parent_workflow_revision_id:
                 parent = revisions[value.parent_workflow_revision_id]
-                if (parent.workspace_id, parent.workflow_definition_id, parent.revision) != (
+                if (parent.workspace_id, parent.workflow_definition_id) != (
                     value.workspace_id,
                     value.workflow_definition_id,
-                    value.revision - 1,
                 ):
                     raise ValueError("revision lineage mismatch")
+                if value.revision > 0 and (
+                    parent.revision <= 0 or parent.revision != value.revision - 1
+                ):
+                    raise ValueError("published revision lineage mismatch")
             expected = {(n.node_id, n.agent_definition_ref.version_id) for n in value.nodes}
             actual = set(
                 executor.execute(
@@ -84,6 +87,8 @@ def verify_workflow_rows(executor):
                 value.workflow_revision_id,
             ) or (ws, did) != (revision.workspace_id, revision.workflow_definition_id):
                 raise ValueError("head mismatch")
+            if revision.revision <= 0:
+                raise ValueError("Definition head references a detached Revision")
             if (value.source_revision, value.source_hash) != (
                 revision.source_revision,
                 revision.source_hash,

@@ -58,7 +58,9 @@ class SqliteWorkflowJournal:
 
     def list_revisions(self, workspace_id):
         rows = self.backend.read_all(
-            "SELECT workflow_revision_id FROM workflow_revisions WHERE workspace_id=? ORDER BY workflow_definition_id, revision",
+            "SELECT workflow_revision_id FROM workflow_revisions "
+            "WHERE workspace_id=? AND revision > 0 "
+            "ORDER BY workflow_definition_id, revision",
             (workspace_id,),
         )
         return tuple(self.get_revision(workspace_id, row[0]) for row in rows)
@@ -147,52 +149,60 @@ class SqliteWorkflowJournal:
         """Store one run-local immutable Revision without moving a Definition head."""
 
         def work():
-            existing = self.get_revision(revision.workspace_id, revision.workflow_revision_id)
+            candidate = revision
+            existing = self.get_revision(candidate.workspace_id, candidate.workflow_revision_id)
             if existing is not None:
-                if existing != revision:
+                if existing != candidate.model_copy(update={"revision": existing.revision}):
                     raise ValueError("detached Workflow revision identifier conflict")
                 return existing
             parent = (
-                self.get_revision(revision.workspace_id, revision.parent_workflow_revision_id)
-                if revision.parent_workflow_revision_id
+                self.get_revision(candidate.workspace_id, candidate.parent_workflow_revision_id)
+                if candidate.parent_workflow_revision_id
                 else None
             )
             if (
                 parent is None
-                or parent.workflow_definition_id != revision.workflow_definition_id
-                or revision.revision != parent.revision + 1
+                or parent.workflow_definition_id != candidate.workflow_definition_id
+                or candidate.revision >= 0
             ):
                 raise ValueError("detached Workflow revision lineage mismatch")
-            for node in revision.nodes:
+            for node in candidate.nodes:
                 ref = node.agent_definition_ref
-                agent = self.get_agent_version(revision.workspace_id, ref.version_id)
+                agent = self.get_agent_version(candidate.workspace_id, ref.version_id)
                 if agent is None or (agent.source.definition_id, agent.content_hash) != (
                     ref.definition_id,
                     ref.content_hash,
                 ):
                     raise ValueError("Workflow Agent version reference mismatch")
             sql = self.backend.executor()
+            row = self.backend.read_one(
+                "SELECT MIN(revision) FROM workflow_revisions "
+                "WHERE workspace_id=? AND workflow_definition_id=? AND revision < 0",
+                (candidate.workspace_id, candidate.workflow_definition_id),
+            )
+            assigned_revision = int(row[0]) - 1 if row is not None and row[0] is not None else -1
+            stored = candidate.model_copy(update={"revision": assigned_revision})
             sql.execute(
                 "INSERT INTO workflow_revisions VALUES(?,?,?,?,?,?)",
                 (
-                    revision.workflow_revision_id,
-                    revision.workspace_id,
-                    revision.workflow_definition_id,
-                    revision.revision,
-                    revision.content_hash,
-                    revision.model_dump_json(),
+                    stored.workflow_revision_id,
+                    stored.workspace_id,
+                    stored.workflow_definition_id,
+                    stored.revision,
+                    stored.content_hash,
+                    stored.model_dump_json(),
                 ),
             )
-            for node in revision.nodes:
+            for node in stored.nodes:
                 sql.execute(
                     "INSERT INTO workflow_revision_nodes VALUES(?,?,?)",
                     (
-                        revision.workflow_revision_id,
+                        stored.workflow_revision_id,
                         node.node_id,
                         node.agent_definition_ref.version_id,
                     ),
                 )
-            return revision
+            return stored
 
         return self.backend.transact(work)
 

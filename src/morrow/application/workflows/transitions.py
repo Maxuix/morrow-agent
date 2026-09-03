@@ -191,34 +191,58 @@ class WorkflowTransitionService:
         untouched; a pending user-cancel intent owns its blocked run instead.
         """
 
-        current = self._require_run(workflow_run_id)
-        if current.pause_requested:
-            return current
-        if current.status.terminal:
-            raise ApplicationError(
-                ApplicationErrorCode.INVALID, "a terminal Workflow cannot be paused"
+        def work(txn) -> WorkflowRun:
+            current = txn.workflows.get_run(self.workspace_id, workflow_run_id)
+            if current is None:
+                raise ValueError("WorkflowRun is missing")
+            if current.pause_requested:
+                if current.status is not WorkflowStatus.DRAINING:
+                    return current
+                nodes = txn.workflows.list_nodes(self.workspace_id, workflow_run_id)
+                if any(
+                    node.status in (WorkflowStatus.RUNNING, WorkflowStatus.BLOCKED)
+                    for node in nodes
+                ):
+                    return current
+                update = {
+                    "status": WorkflowStatus.PAUSED,
+                    "row_version": current.row_version + 1,
+                }
+                return txn.workflows.save_run(
+                    current.model_copy(update=update), expected_row_version=current.row_version
+                )
+            if current.status.terminal:
+                raise ApplicationError(
+                    ApplicationErrorCode.INVALID, "a terminal Workflow cannot be paused"
+                )
+            if (
+                current.status is WorkflowStatus.BLOCKED
+                and current.pending_terminal_intent == "user_cancel"
+            ):
+                raise ApplicationError(
+                    ApplicationErrorCode.INVALID,
+                    "a Workflow with a pending user cancellation cannot be paused",
+                )
+            update: dict = {"pause_requested": True, "row_version": current.row_version + 1}
+            if current.status is WorkflowStatus.RUNNING:
+                nodes = txn.workflows.list_nodes(self.workspace_id, workflow_run_id)
+                active = any(
+                    node.status in (WorkflowStatus.RUNNING, WorkflowStatus.BLOCKED)
+                    for node in nodes
+                )
+                update["status"] = WorkflowStatus.DRAINING if active else WorkflowStatus.PAUSED
+            elif current.status is WorkflowStatus.QUEUED:
+                update["status"] = WorkflowStatus.PAUSED
+            elif current.status is not WorkflowStatus.BLOCKED:
+                raise ApplicationError(
+                    ApplicationErrorCode.INVALID,
+                    f"a {current.status.value} Workflow cannot be paused",
+                )
+            return txn.workflows.save_run(
+                current.model_copy(update=update), expected_row_version=current.row_version
             )
-        if (
-            current.status is WorkflowStatus.BLOCKED
-            and current.pending_terminal_intent == "user_cancel"
-        ):
-            raise ApplicationError(
-                ApplicationErrorCode.INVALID,
-                "a Workflow with a pending user cancellation cannot be paused",
-            )
-        update: dict = {"pause_requested": True, "row_version": current.row_version + 1}
-        if current.status is WorkflowStatus.RUNNING:
-            update["status"] = WorkflowStatus.DRAINING
-        elif current.status is WorkflowStatus.QUEUED:
-            update["status"] = WorkflowStatus.PAUSED
-        elif current.status is not WorkflowStatus.BLOCKED:
-            raise ApplicationError(
-                ApplicationErrorCode.INVALID,
-                f"a {current.status.value} Workflow cannot be paused",
-            )
-        return self.journal.workflows.save_run(
-            current.model_copy(update=update), expected_row_version=current.row_version
-        )
+
+        return self.journal.transact(work)
 
     def resume_run(self, workflow_run_id: str) -> WorkflowRun:
         """Atomically clear the pause fact; a paused/draining run runs again.

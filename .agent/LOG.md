@@ -4898,3 +4898,18 @@
 - Remote closeout: `git push origin main` was rejected by safety approval because explicit
   authorization for publishing this concrete payload to the configured GitHub destination was not
   accepted. No workaround was attempted; local verified commits remain ahead of `origin/main`.
+
+## 2026-09-03 — Subplan 2 review remediation verified
+
+- Confirmed and repaired all four review bugs: detached Revision numbers now occupy a negative
+  per-definition namespace and stay out of template lists; chained continuations derive immutable
+  Past from admitted rows, execution-set complements and imports; inherited ReviewReports drive
+  empty-child `needs_revision` finalization without a child NodeRun; idle RUNNING pause completes to
+  PAUSED atomically when no Active node exists.
+- Accepted two suggestions: SessionPersistence preserves authoritative lineage budget/deadline
+  reasons, and Query projects all effective outputs through EffectiveOutputResolver with inherited
+  markers. Comment-only cleanup was omitted; PAUSED cancellation behavior was documented rather
+  than expanding the public lifecycle.
+- Added regressions across Stage 8 continuation/pause and request observability. Review-focused
+  matrix: 56 passed. Full offline gate: 1566 passed / 2 deselected in 283.88 seconds. Ruff
+  format/check, compileall, CLI help and `git diff --check` passed. No Live/network test ran.

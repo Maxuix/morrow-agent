@@ -326,8 +326,16 @@ class SessionPersistence:
             if exc.code is StorageErrorCode.BUDGET_EXHAUSTED:
                 raise ApplicationError(
                     ApplicationErrorCode.INVALID,
-                    "budget_exhausted: Agent generation request limit reached",
+                    (
+                        str(exc)
+                        if str(exc).startswith("budget_exhausted:")
+                        else "budget_exhausted: Agent generation request limit reached"
+                    ),
                 ) from None
+            if exc.code is StorageErrorCode.UNAVAILABLE and str(exc).startswith(
+                "deadline_exceeded:"
+            ):
+                raise ApplicationError(ApplicationErrorCode.INVALID, str(exc)) from None
             raise
 
     def settle_model_request(self, model_request_id: str, **kwargs):
