@@ -13,6 +13,7 @@ import asyncio
 import hmac
 import json
 import logging
+from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
@@ -41,6 +42,33 @@ from .protocol import (
     WorkflowResumeRequest,
     WorkflowStartRequest,
 )
+from .static import make_gui_static_handler
+
+MAX_BODY_BYTES = 1024 * 1024
+LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1", "[::1]"})
+
+# Applied to every HTTP response. The CSP assumes the prebuilt GUI bundle:
+# self-hosted scripts/styles/fonts only, no inline anything, no framing.
+_SECURITY_HEADERS = (
+    (
+        b"content-security-policy",
+        b"default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; "
+        b"img-src 'self' data:; connect-src 'self' ws: wss:; object-src 'none'; "
+        b"base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
+    ),
+    (b"x-content-type-options", b"nosniff"),
+    (b"referrer-policy", b"no-referrer"),
+)
+
+
+def _with_security_headers(send):
+    async def sender(message):
+        if message["type"] == "http.response.start":
+            headers = message.setdefault("headers", [])
+            headers.extend(_SECURITY_HEADERS)
+        await send(message)
+
+    return sender
 
 MAX_BODY_BYTES = 1024 * 1024
 LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1", "[::1]"})
@@ -66,23 +94,34 @@ def _error_body(code: str, message: str) -> dict[str, Any]:
 
 
 class LocalApiSecurityMiddleware:
-    """Session-token auth plus browser-originated request rejection."""
+    """Session-token auth plus browser-originated request rejection.
 
-    def __init__(self, app, *, token: str) -> None:
+    With ``gui_enabled`` the prebuilt GUI's static assets are served without
+    the token (the token lives in the URL fragment and never reaches the
+    server); the surface stays read-only GET/HEAD behind the same loopback
+    Origin/Referer allowlist, and every response carries the security headers.
+    """
+
+    def __init__(self, app, *, token: str, gui_enabled: bool = False) -> None:
         self.app = app
         self.token = token
+        self.gui_enabled = gui_enabled
 
     async def __call__(self, scope, receive, send) -> None:
         if scope["type"] not in ("http", "websocket"):
             await self.app(scope, receive, send)
             return
+        headers = {key.lower(): value for key, value in scope["headers"]}
         if not scope["path"].startswith(API_PREFIX + "/"):
             if scope["type"] == "websocket":
                 await self._close_ws(scope, receive, send, 1008)
-            else:
+                return
+            static_get = self.gui_enabled and scope["method"] in ("GET", "HEAD")
+            if not static_get or not self._origin_allowed(headers):
                 await self._respond(send, 404, _error_body("not_found", "unknown path"))
+                return
+            await self.app(scope, receive, _with_security_headers(send))
             return
-        headers = {key.lower(): value for key, value in scope["headers"]}
         presented = self._presented_token(scope, headers)
         if presented is None or not hmac.compare_digest(presented, self.token):
             if scope["type"] == "websocket":
@@ -108,7 +147,10 @@ class LocalApiSecurityMiddleware:
                     _error_body("unsupported_media_type", "mutations require application/json"),
                 )
                 return
-        await self.app(scope, receive, send)
+        if scope["type"] == "http":
+            await self.app(scope, receive, _with_security_headers(send))
+        else:
+            await self.app(scope, receive, send)
 
     def _presented_token(self, scope, headers) -> str | None:
         authorization = headers.get(b"authorization", b"").decode("latin-1")
@@ -141,7 +183,7 @@ class LocalApiSecurityMiddleware:
             {
                 "type": "http.response.start",
                 "status": status,
-                "headers": [(b"content-type", b"application/json")],
+                "headers": [(b"content-type", b"application/json"), *_SECURITY_HEADERS],
             }
         )
         await send({"type": "http.response.body", "body": payload})
@@ -158,8 +200,13 @@ def create_asgi_app(
     *,
     auth_token: str,
     ws_ping_seconds: float = 30.0,
+    gui_static_dir: Path | None = None,
 ) -> LocalApiSecurityMiddleware:
-    """Build the loopback API app around a running Core Host."""
+    """Build the loopback API app around a running Core Host.
+
+    ``gui_static_dir`` mounts the prebuilt GUI bundle (read-only GET/HEAD) so
+    `morrow gui` serves the observer from the same loopback origin.
+    """
 
     commands = ServerCommands(host.context)
 
@@ -559,7 +606,18 @@ def create_asgi_app(
             Route(f"{API_PREFIX}/catalog/skills", catalog_skills),
             Route(f"{API_PREFIX}/catalog/tools", catalog_tools),
             Route(f"{API_PREFIX}/catalog/artifact-contracts", catalog_artifact_contracts),
-        ],
+        ]
+        + (
+            [
+                Route(
+                    "/{path:path}",
+                    make_gui_static_handler(gui_static_dir),
+                    methods=["GET", "HEAD"],
+                )
+            ]
+            if gui_static_dir is not None
+            else []
+        ),
         exception_handlers={
             ApplicationError: _application_error,
             CommandBackpressureError: _backpressure,
@@ -568,7 +626,7 @@ def create_asgi_app(
             Exception: _internal_error,
         },
     )
-    return LocalApiSecurityMiddleware(app, token=auth_token)
+    return LocalApiSecurityMiddleware(app, token=auth_token, gui_enabled=gui_static_dir is not None)
 
 
 class _PatchResult:

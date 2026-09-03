@@ -3,7 +3,8 @@
 The server binds loopback only, prints its address and one-time session token,
 and shuts down gracefully on SIGINT: in-flight requests drain, driver tasks are
 cancelled without recording any user cancellation, and durable state stays
-owned by the Core process.
+owned by the Core process. `morrow gui` reuses the same core runner and adds
+the prebuilt GUI asset mount plus a browser open.
 """
 
 from __future__ import annotations
@@ -11,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import secrets
 import socket
+from collections.abc import Callable
 from pathlib import Path
 
 import typer
@@ -25,6 +27,63 @@ from morrow.server.host import CoreHost
 from morrow.services.workspace import WorkspaceError, WorkspaceWriterLock
 
 _LOOPBACK_BINDS = {"127.0.0.1", "localhost", "::1"}
+
+
+def _serve_core(
+    *,
+    application,
+    identity,
+    permission_profile: PermissionProfile,
+    bind: str,
+    port: int,
+    gui_static_dir: Path | None = None,
+    announce: Callable[[str, str], None],
+) -> None:
+    """Run the Core server loop shared by `serve` and `gui`.
+
+    ``announce`` receives the loopback base URL and the one-time session token
+    once the socket is bound, before uvicorn starts serving.
+    """
+
+    token = secrets.token_urlsafe(32)
+    host = CoreHost(
+        make_context_builder(
+            application,
+            identity,
+            permission_profile=permission_profile,
+        )
+    )
+    try:
+        with WorkspaceWriterLock(application.data_root, identity.workspace_id):
+            try:
+                host.start()
+                listener = socket.socket(socket.AF_INET6 if bind == "::1" else socket.AF_INET)
+                try:
+                    listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                    listener.bind((bind, port))
+                    listener.listen(socket.SOMAXCONN)
+                    bound_port = listener.getsockname()[1]
+                except OSError:
+                    listener.close()
+                    raise
+                asgi_app = create_asgi_app(host, auth_token=token, gui_static_dir=gui_static_dir)
+                display_host = "[::1]" if bind == "::1" else bind
+                announce(f"http://{display_host}:{bound_port}", token)
+                config = uvicorn.Config(
+                    asgi_app,
+                    log_level="warning",
+                    access_log=False,
+                )
+                server = uvicorn.Server(config)
+                try:
+                    asyncio.run(server.serve(sockets=[listener]))
+                except KeyboardInterrupt:
+                    pass
+            finally:
+                host.stop()
+    except WorkspaceError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
 
 
 def serve(
@@ -51,46 +110,19 @@ def serve(
     except WorkspaceError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=2) from exc
-    token = secrets.token_urlsafe(32)
-    host = CoreHost(
-        make_context_builder(
-            application,
-            identity,
-            permission_profile=PermissionProfile.from_preset(permission_mode),
-        )
+
+    def announce(base_url: str, token: str) -> None:
+        typer.echo(f"morrow serve listening: {base_url}")
+        typer.echo(f"session token: {token}")
+
+    _serve_core(
+        application=application,
+        identity=identity,
+        permission_profile=PermissionProfile.from_preset(permission_mode),
+        bind=bind,
+        port=port,
+        announce=announce,
     )
-    try:
-        with WorkspaceWriterLock(application.data_root, identity.workspace_id):
-            try:
-                host.start()
-                listener = socket.socket(socket.AF_INET6 if bind == "::1" else socket.AF_INET)
-                try:
-                    listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                    listener.bind((bind, port))
-                    listener.listen(socket.SOMAXCONN)
-                    bound_port = listener.getsockname()[1]
-                except OSError:
-                    listener.close()
-                    raise
-                asgi_app = create_asgi_app(host, auth_token=token)
-                display_host = "[::1]" if bind == "::1" else bind
-                typer.echo(f"morrow serve listening: http://{display_host}:{bound_port}")
-                typer.echo(f"session token: {token}")
-                config = uvicorn.Config(
-                    asgi_app,
-                    log_level="warning",
-                    access_log=False,
-                )
-                server = uvicorn.Server(config)
-                try:
-                    asyncio.run(server.serve(sockets=[listener]))
-                except KeyboardInterrupt:
-                    pass
-            finally:
-                host.stop()
-    except WorkspaceError as exc:
-        typer.echo(str(exc), err=True)
-        raise typer.Exit(code=2) from exc
 
 
 def register(app: typer.Typer) -> None:
