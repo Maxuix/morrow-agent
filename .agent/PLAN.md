@@ -1,9 +1,7 @@
 # Stage 8 Adaptive Orchestration and GUI Implementation Plan
 
 > Status: active 2026-09-03
-> Active subplan: `3-core-api-local-server` on `feat/stage8-core-api` (both prerequisite
-> authorizations granted 2026-09-03: additive `ApplicationEvent` extension; `starlette` +
-> `uvicorn` as direct dependencies)
+> Active subplan: `3-core-api-local-server` closeout on `feat/stage8-core-api`
 > Next subplan: `4-web-gui-observer` (after explicit activation and frontend toolchain
 > authorization)
 > Roadmap authority: `docs/roadmap/stage-8-adaptive-orchestration-and-gui.md`

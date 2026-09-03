@@ -1,7 +1,8 @@
 # Subplan 3 — Core API and Local Server
 
-> Status: active 2026-09-03 (both prerequisite authorizations granted explicitly by the user:
-> additive `ApplicationEvent` lifecycle extension; `starlette` + `uvicorn` as direct dependencies)
+> Status: completed 2026-09-03 (both prerequisite authorizations were granted explicitly by the
+> user on 2026-09-03: additive `ApplicationEvent` lifecycle extension; `starlette` + `uvicorn` as
+> direct dependencies)
 > Branch: `feat/stage8-core-api`
 > Activation base: latest verified `main` with Subplan 2 integrated
 > Prerequisite: Subplan 2 verified; explicit user authorization for (a) the additive public

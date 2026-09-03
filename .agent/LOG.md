@@ -1,5 +1,28 @@
 # Execution Log
 
+## 2026-09-03 — Subplan 3 completed
+
+- Implemented the Core API and local server on `feat/stage8-core-api`: versioned `/v1`
+  Command/Query/Approval/Event protocol, `CoreHost` single-writer runtime thread with bounded
+  serialized command bus (explicit 503 backpressure), `RunSupervisor` (one driver per run,
+  shutdown never records user cancellation), loopback-only `morrow serve` with per-session token,
+  Origin/CSRF checks, strict wire models and the allowlist projection boundary.
+- Additive `ApplicationEvent` types (`workflow_run.created`, `workflow_run.status_changed`,
+  `workflow_node.status_changed`, `approval.requested`) flow through the optional
+  `WorkflowTransitionService.event_sink` seam; CLI composition unchanged. Rerun accepts a
+  `command_id` whose receipt lands in the child-creation transaction; naturally idempotent
+  transition commands use a post-commit receipt wrapper whose replay rebuilds from durable facts.
+- Event stream reuses the workspace monotonic cursor: same-transaction snapshot, WebSocket
+  cursor-only hints, durable `/v1/events?after=` pulls, gap detection and resync proven by the
+  scripted in-process ASGI client (`tests/fixtures/core_api_client.py`).
+- Fixed the latent `WorkspaceService.list()` call in `workflow_cli._identity` with an exact
+  `WorkspaceService.get()`.
+- Focused suites: 22 passed (`tests/test_stage8_core_api.py`,
+  `tests/test_stage8_core_api_security.py`). Full offline gate: 1588 passed, 2 deselected in
+  598.75s. Ruff format/check, compileall, `git diff --check` and CLI help smoke green. Acceptance
+  evidence: `docs/acceptance/stage-8-subplan-3-core-api-local-server.md`.
+- No Live Provider/MCP/network/credential tests ran; no bundled runtime-policy defaults changed.
+
 ## 2026-09-03 — Subplan 3 activated; remote publication closed
 
 - At explicit user direction, activated Stage 8 Subplan 3 (Core API and Local Server) on
