@@ -4883,6 +4883,7 @@
 
 ## 2026-09-03 — Stage 8 Subplan 2 completed: FutureGraphPatch and continuation
 
+- Implementation commit `fb399df` was fast-forward integrated into local `main`.
 - Implemented exact FutureGraphPatch validation, detached run-local Revision publication, Past/
   Future guards, stale OCC rejection and the single PatchApplicationService save/apply path.
 - Implemented atomic parent supersession/root handoff, immutable execution sets and Artifact imports,

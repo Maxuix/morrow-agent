@@ -1,7 +1,7 @@
 # Stage 8 Subplan 2 — FutureGraphPatch and Continuation Child Runs
 
-Date: 2026-09-03. Result: local implementation accepted on
-`feat/stage8-patch-continuation`; integration/publication is recorded at closeout.
+Date: 2026-09-03. Result: implementation commit `fb399df` accepted and fast-forward integrated
+into local `main`; remote publication is verified separately after the closeout commit.
 
 ## Delivered
 
