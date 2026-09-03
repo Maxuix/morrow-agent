@@ -74,6 +74,9 @@ class DurableToolExecutionCoordinator:
     def get_execution(self, tool_execution_id: str) -> DurableToolExecution | None:
         return self.journal.get_execution(self.workspace_id, tool_execution_id)
 
+    def get_approval(self, approval_id: str) -> DurableApproval | None:
+        return self.journal.get_approval(self.workspace_id, approval_id)
+
     def create_pending_approval(
         self, execution: DurableToolExecution, *, now: datetime | None = None
     ) -> DurableApproval:

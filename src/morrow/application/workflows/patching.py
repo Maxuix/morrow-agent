@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import timedelta
 
+from morrow.application.api_context import request_digest
 from morrow.application.workflows.compiler import (
     CompilationResult,
     WorkflowCompilationError,
@@ -18,7 +19,7 @@ from morrow.core.application import (
     ApplicationErrorCode,
 )
 from morrow.core.domain import canonical_json_bytes, sha256_digest, validate_prefixed_id
-from morrow.core.workflows.definitions import WorkflowRevision
+from morrow.core.workflows.definitions import CompiledWorkflow, WorkflowRevision
 from morrow.core.workflows.patches import FutureGraphPatch
 from morrow.core.workflows.runs import (
     NodeRun,
@@ -29,6 +30,7 @@ from morrow.core.workflows.runs import (
 )
 
 RERUN_OPERATION = "workflow_rerun"
+PATCH_APPLY_OPERATION = "patch_apply"
 
 
 @dataclass(frozen=True)
@@ -171,7 +173,23 @@ class PatchApplicationService:
         revision = self.journal.workflows.store_detached_revision(revision)
         return PatchApplication(patch, revision, parent, None, validation)
 
-    def apply(self, patch: FutureGraphPatch, *, active_model=None) -> PatchApplication:
+    def apply(
+        self,
+        patch: FutureGraphPatch,
+        *,
+        active_model=None,
+        command_id: str | None = None,
+    ) -> PatchApplication:
+        digest = None
+        if command_id is not None:
+            validate_prefixed_id(command_id, "cmd")
+            digest = request_digest(
+                PATCH_APPLY_OPERATION,
+                {"patch_digest": patch.source.content_hash, "patch_id": patch.workflow_patch_id},
+            )
+            replay = self._patch_replay(self.journal, command_id, digest, patch=patch)
+            if replay is not None:
+                return replay
         saved = self.save(patch, active_model=active_model)
         parent = self.journal.workflows.get_run(self.workspace_id, patch.parent_run_id)
         if parent is None or parent.row_version != patch.expected_parent_row_version:
@@ -239,6 +257,10 @@ class PatchApplicationService:
         imports = self._imports(parent, child_id, saved.revision, saved.validation.past_node_ids)
 
         def handoff(txn):
+            if command_id is not None:
+                replayed = self._patch_replay(txn, command_id, digest, patch=patch)
+                if replayed is not None:
+                    return replayed
             txn.workflows.create_continuation_run(
                 parent,
                 child,
@@ -249,11 +271,70 @@ class PatchApplicationService:
             )
             if not execution:
                 self._require_empty_outputs(child_id, saved.revision)
-                return self.finalizer.finalize_success(child_id)
-            return child
+                committed_child = self.finalizer.finalize_success(child_id)
+            else:
+                committed_child = child
+            if command_id is not None:
+                txn.put_application_command_receipt_in_txn(
+                    self.workspace_id,
+                    ApplicationCommandReceipt(
+                        command_id=command_id,
+                        workspace_id=self.workspace_id,
+                        operation=PATCH_APPLY_OPERATION,
+                        request_digest=digest,
+                        result_kind="workflow_run",
+                        result_id=committed_child.workflow_run_id,
+                    ),
+                )
+            return PatchApplication(
+                patch, saved.revision, parent, committed_child, saved.validation
+            )
 
-        child = self.journal.transact(handoff)
-        return PatchApplication(patch, saved.revision, parent, child, saved.validation)
+        return self.journal.transact(handoff)
+
+    def _patch_replay(
+        self,
+        journal,
+        command_id: str,
+        digest: str,
+        *,
+        patch: FutureGraphPatch,
+    ) -> PatchApplication | None:
+        receipt = journal.get_application_command_receipt(self.workspace_id, command_id)
+        if receipt is None:
+            return None
+        if receipt.operation != PATCH_APPLY_OPERATION or receipt.request_digest != digest:
+            raise ApplicationError(
+                ApplicationErrorCode.CONFLICT,
+                "command ID was reused with a different request",
+            )
+        parent = journal.workflows.get_run(self.workspace_id, patch.parent_run_id)
+        child = journal.workflows.get_run(self.workspace_id, receipt.result_id or "")
+        if parent is None or child is None:
+            raise ApplicationError(
+                ApplicationErrorCode.NEEDS_RECOVERY, "patch receipt result is missing"
+            )
+        revision = journal.workflows.get_revision(self.workspace_id, child.workflow_revision_id)
+        if revision is None or revision.workflow_revision_id != self._revision_id(patch):
+            raise ApplicationError(
+                ApplicationErrorCode.NEEDS_RECOVERY, "patch receipt Revision is missing"
+            )
+        execution = tuple(
+            item.node_id
+            for item in sorted(
+                journal.workflows.list_execution_nodes(self.workspace_id, child.workflow_run_id),
+                key=lambda item: item.topology_ordinal,
+            )
+        )
+        execution_set = set(execution)
+        past = tuple(
+            sorted(node.node_id for node in revision.nodes if node.node_id not in execution_set)
+        )
+        candidate = CompiledWorkflow(
+            **{name: getattr(revision, name) for name in CompiledWorkflow.model_fields}
+        )
+        validation = PatchValidation(CompilationResult(candidate, ()), past, execution)
+        return PatchApplication(patch, revision, parent, child, validation)
 
     def rerun(
         self, parent_run_id: str, *, full: bool, command_id: str | None = None

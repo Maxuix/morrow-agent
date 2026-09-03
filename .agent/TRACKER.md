@@ -2,24 +2,19 @@
 
 ## Current status
 
-Stage 7 is complete and remediated. Stage 8 Subplans 1–2 are complete and published. Subplan 3
-(Core API and Local Server) is complete on `feat/stage8-core-api`: the versioned `/v1`
-Command/Query/Approval/Event protocol, Core Host single-writer model per contract C4, loopback
-`morrow serve` with session token and Origin/CSRF checks, additive workflow `ApplicationEvent`
-emission, end-to-end command idempotency, read-only Catalog APIs, and the scripted in-process
-verification client. Focused suites 22 passed; full offline gate 1588 passed, 2 deselected;
-static gates and CLI help smoke green. Acceptance evidence:
-`docs/acceptance/stage-8-subplan-3-core-api-local-server.md`.
+Stage 7 and Stage 8 Subplans 1–3 are complete, including the 2026-09-04 review remediation on
+`fix/stage8-core-api-review`. All 15 reported findings were confirmed and repaired. Full offline
+gate: 1597 passed, 2 deselected; focused regressions and static/CLI gates are green. Subplan 4 is
+not active.
 
 ## Active task
 
-None. Subplan 3 is fully closed: merged into `main` at `2289131`, pushed to `origin/main`
-(neither ahead nor behind), topic branch `feat/stage8-core-api` verified absorbed and deleted.
+None. Await explicit activation of Stage 8 Subplan 4.
 
 ## Next action
 
-Subplan 4 (`4-web-gui-observer`) starts only on explicit activation and additionally needs
-frontend toolchain authorization.
+Subplan 4 starts only on explicit activation and additionally needs frontend toolchain
+authorization.
 
 ## Blockers
 

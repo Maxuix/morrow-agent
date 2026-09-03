@@ -32,6 +32,14 @@ class CredentialInspection:
     message: str = ""
 
 
+@dataclass(frozen=True)
+class ProviderCatalogSnapshot:
+    """Read-only Provider facts safe for an interface projection boundary."""
+
+    config: GlobalConfig
+    credential_availability: tuple[tuple[str, bool], ...]
+
+
 class ProviderService(ProviderControlMixin):
     def __init__(
         self, global_store, credentials, registry: AdapterRegistry, credential_resolver=None
@@ -264,6 +272,16 @@ class ProviderService(ProviderControlMixin):
         if not result.value:
             return GlobalConfig()
         return result.value
+
+    def catalog_snapshot(self) -> ProviderCatalogSnapshot:
+        config = self.list()
+        return ProviderCatalogSnapshot(
+            config=config,
+            credential_availability=tuple(
+                (provider_id, self.credential_available(provider_id))
+                for provider_id in sorted(config.providers)
+            ),
+        )
 
     def current_model(self) -> ModelRef | None:
         return self.list().active_model

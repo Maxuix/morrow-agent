@@ -10,13 +10,6 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from morrow.application.local_tools import (
-    make_bash_tool,
-    make_edit_tool,
-    make_mainstream_read_search_tools,
-    make_read_artifact_tool,
-    make_write_tool,
-)
 from morrow.bootstrap import build_session_application, build_skill_services
 from morrow.core.capabilities import PermissionProfile
 
@@ -57,19 +50,13 @@ def build_server_context(
     products.workflow_runtime.transitions.event_sink = emitter.emit
     approval_port.emitter = emitter
 
-    tool_definitions = [
-        *make_mainstream_read_search_tools(products.files, products.search),
-        make_read_artifact_tool(products.artifacts),
-        make_edit_tool(products.mutation, products.changes),
-        make_write_tool(products.mutation, products.changes),
-        make_bash_tool(products.process),
-    ]
+    tool_executor = products.orchestrator.runtime.loop.tool_executor
     tool_catalog = tuple(
         {
-            "name": registered.definition.function.name,
-            "description": registered.definition.function.description,
+            "name": definition.function.name,
+            "description": definition.function.description,
         }
-        for registered in tool_definitions
+        for definition in (tool_executor.definitions if tool_executor is not None else ())
     )
     skills = build_skill_services(application, workspace_id=identity.workspace_id, journal=journal)
     return ServerContext(

@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import pytest
 
+from morrow.server import projections
+from morrow.server.commands import ServerCommands
 from test_stage8_core_api import ServerFixture
 
 
@@ -50,6 +52,12 @@ async def test_mutations_require_json_content_type(fx):
     )
     assert form.status == 415
     assert form.json()["error"]["code"] == "unsupported_media_type"
+    jsonp = await fx.client.post("/v1/sessions", {}, content_type="application/jsonp")
+    assert jsonp.status == 415
+    parameterized = await fx.client.post(
+        "/v1/sessions", {}, content_type="application/json; charset=utf-8"
+    )
+    assert parameterized.status == 200
 
 
 async def test_unknown_paths_are_rejected(fx):
@@ -118,6 +126,44 @@ async def test_error_payloads_are_bounded_and_traceback_free(fx):
     )
     assert conflict_b.status == 409
     assert "Traceback" not in conflict_b.body.decode()
+
+
+async def test_domain_revision_conflict_is_not_flattened_to_invalid(fx, monkeypatch):
+    def fail_pause(_self, _run_id, _request):
+        raise ValueError("Workflow run revision conflict")
+
+    monkeypatch.setattr(ServerCommands, "workflow_pause", fail_pause)
+    response = await fx.client.post("/v1/workflow-runs/wrun_conflict/pause", {})
+    assert response.status == 409
+    assert response.json()["error"] == {
+        "code": "conflict",
+        "message": "resource revision conflict",
+    }
+
+
+def test_agent_run_projection_ignores_future_unapproved_fields():
+    class FutureObservation:
+        terminal_metrics = None
+        retry_progress = None
+        requests = ()
+
+        @staticmethod
+        def model_dump(*, mode):
+            assert mode == "json"
+            return {
+                "agent_run_id": "arun_safe",
+                "workspace_id": "ws_safe",
+                "session_id": "ses_safe",
+                "task_run_id": "task_safe",
+                "turn_id": "turn_safe",
+                "resume_of_agent_run_id": None,
+                "created_at": "2026-09-04T00:00:00Z",
+                "future_sensitive_field": "must-not-cross",
+            }
+
+    wire = projections.agent_run_observation_wire(FutureObservation())
+    assert wire["agent_run_id"] == "arun_safe"
+    assert "future_sensitive_field" not in wire
 
 
 async def test_websocket_auth_and_origin(fx):

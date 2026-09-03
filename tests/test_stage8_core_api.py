@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from types import SimpleNamespace
 
 import pytest
 from typer.testing import CliRunner
@@ -20,19 +21,23 @@ from fixtures.core_api_client import CoreApiVerificationClient
 from morrow.adapters.credentials.keyring import MemoryCredentialStore
 from morrow.bootstrap import build_application
 from morrow.core.agent_runs import AgentDefinitionRef, ProviderCapabilities
-from morrow.core.capabilities import PermissionProfile
+from morrow.core.capabilities import PermissionPreset, PermissionProfile
 from morrow.core.models import (
     AssistantMessage,
     CredentialRef,
     FunctionToolCall,
     ProviderConfig,
     ProviderModelConfig,
+    ToolApprovalRequest,
+    ToolEffect,
 )
 from morrow.core.workflows.definitions import WorkflowBudget
+from morrow.interfaces import serve_cli
 from morrow.interfaces.cli import app as cli_app
 from morrow.server.app import create_asgi_app
+from morrow.server.approvals import ServerApprovalPort
 from morrow.server.composition import make_context_builder
-from morrow.server.host import CommandBackpressureError, CoreHost
+from morrow.server.host import ApprovalWaiters, CommandBackpressureError, CoreHost
 from test_stage7_serial_scheduler import (
     MODEL,
     ScriptBank,
@@ -284,6 +289,115 @@ async def test_stale_snapshot_triggers_resync(fx):
     assert fresh["cursor"] == meta.json()["latest_cursor"]
 
 
+async def test_event_hints_publish_only_after_outer_transaction_commit(fx):
+    def exercise():
+        context = fx.host.context
+        published = []
+        original_publish = context.hub.publish
+        context.hub.publish = published.append
+        before = context.journal.latest_application_event_cursor(fx.workspace_id)
+
+        def roll_back(_txn):
+            context.emitter.emit(
+                "workflow_run.status_changed",
+                "workflow_run",
+                "wrun_rolled_back",
+                {"status": "running", "row_version": 1},
+            )
+            assert published == []
+            raise RuntimeError("roll back outer transaction")
+
+        try:
+            with pytest.raises(RuntimeError, match="roll back outer"):
+                context.journal.transact(roll_back)
+            assert context.journal.latest_application_event_cursor(fx.workspace_id) == before
+            assert published == []
+
+            def commit(_txn):
+                event = context.emitter.emit(
+                    "workflow_run.status_changed",
+                    "workflow_run",
+                    "wrun_committed",
+                    {"status": "running", "row_version": 1},
+                )
+                assert published == []
+                return event
+
+            event = context.journal.transact(commit)
+            return event.cursor, published
+        finally:
+            context.hub.publish = original_publish
+
+    cursor, published = await fx.on_core(exercise)
+    assert published == [cursor]
+
+
+async def test_reference_client_drains_every_event_page(fx):
+    def emit_pages():
+        for index in range(205):
+            fx.host.context.emitter.emit(
+                "workflow_run.status_changed",
+                "workflow_run",
+                f"wrun_page_{index}",
+                {"status": "running", "row_version": 1},
+            )
+
+    await fx.on_core(emit_pages)
+    events = await fx.client.pull_events()
+    assert len(events) == 205
+    assert [event["cursor"] for event in events] == list(range(1, 206))
+    assert fx.client.last_cursor == 205
+
+
+async def test_approval_waiter_precedes_redaction_safe_requested_event(fx):
+    async def exercise():
+        waiters = ApprovalWaiters()
+        port = ServerApprovalPort(waiters, fx.host.context.emitter)
+        request = ToolApprovalRequest(
+            call_id="call_preview",
+            effect=ToolEffect.PERSISTENT_WRITE,
+            preview=("update password policy documentation",),
+            reason_codes=("mutation_approval_required",),
+            approval_id="appr_preview",
+        )
+        pending = asyncio.create_task(port.request(request))
+        await asyncio.sleep(0)
+        assert waiters.waiting("appr_preview")
+        assert waiters.claim("appr_preview")
+        assert waiters.deliver_claimed("appr_preview", approved=True)
+        decision = await pending
+        return decision, waiters.waiting("appr_preview")
+
+    decision, still_waiting = await fx.host.execute_command(exercise)
+    assert decision.approved is True
+    assert still_waiting is False
+    events = (await fx.client.get("/v1/events?after=0")).json()["events"]
+    requested = next(event for event in events if event["event_type"] == "approval.requested")
+    assert requested["payload"]["preview_line_count"] == 1
+    assert "preview" not in requested["payload"]
+
+
+async def test_approval_emission_failure_cleans_registered_waiter(fx):
+    class FailingEmitter:
+        @staticmethod
+        def emit(*_args, **_kwargs):
+            raise ValueError("event rejected")
+
+    async def exercise():
+        waiters = ApprovalWaiters()
+        port = ServerApprovalPort(waiters, FailingEmitter())
+        request = ToolApprovalRequest(
+            call_id="call_failure",
+            effect=ToolEffect.PERSISTENT_WRITE,
+            approval_id="appr_failure",
+        )
+        with pytest.raises(ValueError, match="event rejected"):
+            await port.request(request)
+        return waiters.waiting("appr_failure")
+
+    assert await fx.host.execute_command(exercise) is False
+
+
 # Command idempotency ------------------------------------------------------------
 
 
@@ -325,6 +439,10 @@ async def test_workflow_run_happy_path_events_and_cli_parity(fx):
     assert view["run"]["result_status"] == "succeeded"
     assert {node["node"]["status"] for node in view["nodes"]} == {"completed"}
     assert view["usage_availability"] in {"available", "unavailable"}
+    agent_run_id = view["nodes"][0]["node"]["agent_run_id"]
+    observation = await fx.client.get(f"/v1/agent-runs/{agent_run_id}")
+    assert observation.status == 200, observation.body
+    assert observation.json()["observation"]["agent_run_id"] == agent_run_id
 
     event_types = [
         event["event_type"]
@@ -393,21 +511,39 @@ async def test_pause_resume_and_drain_through_the_api(fx):
     assert len(pending[0]["preview"]) <= 16
 
     # Pause while the approval is in flight: draining, not blocked.
-    paused = await fx.client.post(f"/v1/workflow-runs/{run_id}/pause", {})
+    pause_body = {"command_id": "cmd_pause_drain_1"}
+    paused = await fx.client.post(f"/v1/workflow-runs/{run_id}/pause", pause_body)
     assert paused.status == 200, paused.body
     assert paused.json()["result"]["run"]["status"] == "draining"
     assert paused.json()["result"]["run"]["pause_requested"] is True
 
     # Pause replay is a no-op with the same Command ID.
-    replayed = await fx.client.post(f"/v1/workflow-runs/{run_id}/pause", {})
+    replayed = await fx.client.post(f"/v1/workflow-runs/{run_id}/pause", pause_body)
     assert replayed.status == 200
+    assert replayed.json()["receipt"]["disposition"] == "replay"
 
-    # Resolving the approval lets gamma finish; the drain then settles paused.
-    resolved = await fx.client.post(
-        f"/v1/approvals/{pending[0]['approval_id']}/resolve", {"approved": True}
+    # Conflicting commands queued against the same live waiter have one winner.
+    first_resolution, conflicting_resolution = await asyncio.gather(
+        fx.client.post(
+            f"/v1/approvals/{pending[0]['approval_id']}/resolve",
+            {"approved": True, "command_id": "cmd_live_approval_1"},
+        ),
+        fx.client.post(
+            f"/v1/approvals/{pending[0]['approval_id']}/resolve",
+            {"approved": True, "command_id": "cmd_live_approval_2"},
+        ),
     )
-    assert resolved.status == 200, resolved.body
+    assert sorted((first_resolution.status, conflicting_resolution.status)) == [200, 409]
+    resolved = first_resolution if first_resolution.status == 200 else conflicting_resolution
     assert resolved.json()["result"]["delivery"] == "live"
+    assert resolved.json()["result"]["approval"]["resolution"] == "approved"
+    accepted_command_id = resolved.json()["receipt"]["command_id"]
+    replayed_resolution = await fx.client.post(
+        f"/v1/approvals/{pending[0]['approval_id']}/resolve",
+        {"approved": True, "command_id": accepted_command_id},
+    )
+    assert replayed_resolution.status == 200
+    assert replayed_resolution.json()["receipt"]["disposition"] == "replay"
     view = await wait_for_run(fx.client, run_id, "paused")
     assert view["run"]["pause_requested"] is True
     gamma = next(node for node in view["nodes"] if node["node"]["node_id"] == "gamma")
@@ -562,6 +698,68 @@ async def test_core_restart_recovers_through_the_api(fx, tmp_path):
         restarted.close()
 
 
+async def test_core_shutdown_stops_driver_without_user_cancellation(tmp_path):
+    from morrow.core.agent_definitions import ToolRequirement
+
+    fx = ServerFixture(tmp_path)
+    restarted = None
+    try:
+        agent = agent_source(
+            access_mode_ceiling="write",
+            tool_requirements=(
+                ToolRequirement(name="update_configuration", requirement="required"),
+            ),
+        )
+        revision = await publish_pipeline(fx, agent=agent, make_source=write_pair_source)
+        fx.bank.scripts.extend([WRITE_CALL_SCRIPT])
+        session_id, task_id, task_version = await create_session_and_task(fx.client)
+        started = await start_run(
+            fx.client, revision.workflow_revision_id, session_id, task_id, task_version
+        )
+        run_id = started.json()["result"]["run"]["workflow_run_id"]
+
+        for _ in range(4000):
+            await asyncio.sleep(0)
+            view = (await fx.client.get(f"/v1/workflow-runs/{run_id}")).json()["view"]
+            if any(node["approval_pending"] for node in view["nodes"]):
+                break
+        else:
+            raise AssertionError("workflow approval never became pending")
+
+        fx.close()
+        restarted = CoreHost(
+            make_context_builder(fx.app, fx.identity, permission_profile=PermissionProfile())
+        )
+        restarted.start()
+
+        def durable_status():
+            context = restarted.context
+            run = context.runtime.transitions.get_run(run_id)
+            nodes = context.journal.workflows.list_nodes(fx.workspace_id, run_id)
+            root = context.journal.get_task_run(fx.workspace_id, task_id)
+            return run, nodes, root
+
+        run, nodes, root = await restarted.execute_query(durable_status)
+        assert run.status.value == "running"
+        assert any(node.status.value == "running" for node in nodes)
+        assert run.pending_terminal_intent is None
+        assert root.status.value != "cancelled"
+    finally:
+        if restarted is not None:
+            restarted.stop()
+        fx.close()
+
+
+def test_core_host_build_failure_is_not_masked_by_stop():
+    def fail_build():
+        raise ValueError("composition failed")
+
+    host = CoreHost(fail_build)
+    with pytest.raises(ValueError, match="composition failed"):
+        host.start()
+    host.stop()
+
+
 # Command bus backpressure --------------------------------------------------------
 
 
@@ -646,6 +844,39 @@ async def test_patch_validate_save_apply_and_replay(tmp_path):
         )
         assert saved.status == 200, saved.body
 
+        def inject_receipt_failure():
+            journal = fx.host.context.journal
+            original = journal.put_application_command_receipt_in_txn
+
+            def fail_receipt(*_args, **_kwargs):
+                raise RuntimeError("injected receipt failure")
+
+            journal.put_application_command_receipt_in_txn = fail_receipt
+            return original
+
+        original_receipt_writer = await fx.on_core(inject_receipt_failure)
+        with pytest.raises(RuntimeError, match="injected receipt failure"):
+            await fx.client.post(
+                "/v1/patches/apply", {"patch": patch, "command_id": "cmd_patch_apply_1"}
+            )
+
+        def restore_and_inspect():
+            context = fx.host.context
+            context.journal.put_application_command_receipt_in_txn = original_receipt_writer
+            current = context.runtime.transitions.get_run(run_id)
+            receipt = context.journal.get_application_command_receipt(
+                fx.workspace_id, "cmd_patch_apply_1"
+            )
+            runs = context.runtime.queries.list_runs(limit=50, after=None)
+            return current, receipt, runs
+
+        rolled_back_parent, missing_receipt, runs_after_failure = await fx.on_core(
+            restore_and_inspect
+        )
+        assert rolled_back_parent.status.value == "paused"
+        assert missing_receipt is None
+        assert len(runs_after_failure) == 1
+
         applied = await fx.client.post(
             "/v1/patches/apply", {"patch": patch, "command_id": "cmd_patch_apply_1"}
         )
@@ -688,6 +919,19 @@ async def test_patch_validate_save_apply_and_replay(tmp_path):
             if event["event_type"] == "workflow_run.status_changed"
         ]
         assert (run_id, "superseded") in statuses
+        parent_nodes = (await fx.client.get(f"/v1/workflow-runs/{run_id}")).json()["view"]["nodes"]
+        cancelled_node_ids = {
+            item["node"]["node_run_id"]
+            for item in parent_nodes
+            if item["node"]["status"] == "cancelled"
+        }
+        node_events = [
+            event
+            for event in (await fx.client.get("/v1/events?after=0")).json()["events"]
+            if event["event_type"] == "workflow_node.status_changed"
+            and event["payload"].get("status") == "cancelled"
+        ]
+        assert cancelled_node_ids <= {event["aggregate_id"] for event in node_events}
     finally:
         fx.close()
 
@@ -718,7 +962,25 @@ async def test_catalog_surfaces(fx):
 
     tools = await fx.client.get("/v1/catalog/tools")
     names = [item["name"] for item in tools.json()["tools"]]
-    assert {"read", "ls", "find", "grep", "edit", "write", "bash"} <= set(names)
+    actual_names = await fx.on_core(
+        lambda: [
+            definition.function.name
+            for definition in fx.host.context.products.orchestrator.runtime.loop.tool_executor.definitions
+        ]
+    )
+    assert names == actual_names
+    assert {
+        "read",
+        "ls",
+        "find",
+        "grep",
+        "edit",
+        "write",
+        "bash",
+        "update_configuration",
+        "manage_preferences",
+        "run_skill_script",
+    } <= set(names)
 
     contracts = await fx.client.get("/v1/catalog/artifact-contracts")
     kinds = [item["kind"] for item in contracts.json()["contracts"]]
@@ -730,6 +992,82 @@ async def test_catalog_surfaces(fx):
 
 
 # CLI smoke ------------------------------------------------------------------------
+
+
+def test_serve_holds_writer_lock_until_core_stop(monkeypatch, tmp_path):
+    events = []
+    application = SimpleNamespace(data_root=object())
+    identity = SimpleNamespace(workspace_id="ws_lock")
+
+    class FakeLock:
+        def __init__(self, *_args):
+            pass
+
+        def __enter__(self):
+            events.append("lock")
+            return self
+
+        def __exit__(self, *_args):
+            events.append("unlock")
+
+    class FakeHost:
+        def __init__(self, _build):
+            pass
+
+        def start(self):
+            events.append("start")
+
+        def stop(self):
+            events.append("stop")
+
+    class FakeSocket:
+        def setsockopt(self, *_args):
+            pass
+
+        def bind(self, _address):
+            pass
+
+        def listen(self, _backlog):
+            pass
+
+        def getsockname(self):
+            return ("127.0.0.1", 43123)
+
+        def close(self):
+            pass
+
+    class FakeServer:
+        def __init__(self, _config):
+            pass
+
+        async def serve(self, *, sockets):
+            assert len(sockets) == 1
+
+    def fake_run(coroutine):
+        events.append("serve")
+        coroutine.close()
+
+    monkeypatch.setattr(serve_cli, "build_application", lambda **_kwargs: application)
+    monkeypatch.setattr(serve_cli, "_identity", lambda *_args: identity)
+    monkeypatch.setattr(serve_cli, "WorkspaceWriterLock", FakeLock)
+    monkeypatch.setattr(serve_cli, "make_context_builder", lambda *_args, **_kwargs: object())
+    monkeypatch.setattr(serve_cli, "CoreHost", FakeHost)
+    monkeypatch.setattr(serve_cli, "create_asgi_app", lambda *_args, **_kwargs: object())
+    monkeypatch.setattr(serve_cli.socket, "socket", lambda *_args: FakeSocket())
+    monkeypatch.setattr(serve_cli.uvicorn, "Config", lambda *_args, **_kwargs: object())
+    monkeypatch.setattr(serve_cli.uvicorn, "Server", FakeServer)
+    monkeypatch.setattr(serve_cli.asyncio, "run", fake_run)
+
+    serve_cli.serve(
+        port=0,
+        bind="127.0.0.1",
+        workspace_id=None,
+        directory=tmp_path,
+        state_root=tmp_path / "state",
+        permission_mode=PermissionPreset.MANUAL,
+    )
+
+    assert events == ["lock", "start", "serve", "stop", "unlock"]
 
 
 def test_serve_help_smoke():

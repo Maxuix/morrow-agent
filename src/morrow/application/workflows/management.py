@@ -271,7 +271,7 @@ class WorkflowManagementService:
         started = self.start_foreground(command)
         return await self.drive_foreground(started)
 
-    async def resume(self, workflow_run_id: str) -> WorkflowRun:
+    async def resume(self, workflow_run_id: str, *, cancelled_is_user: bool = True) -> WorkflowRun:
         if self.runtime is None:
             raise RuntimeError("Workflow recovery requires a composed Workflow runtime")
         run = self.runtime.transitions.get_run(workflow_run_id)
@@ -279,7 +279,9 @@ class WorkflowManagementService:
             # Resume atomically clears the durable pause fact; a blocked run
             # keeps its status and stays recovery-owned either way.
             self.runtime.transitions.resume_run(workflow_run_id)
-        return await self.runtime.scheduler.recover(workflow_run_id)
+        return await self.runtime.scheduler.recover(
+            workflow_run_id, cancelled_is_user=cancelled_is_user
+        )
 
     def pause(self, workflow_run_id: str) -> WorkflowRun:
         if self.runtime is None:
@@ -296,10 +298,12 @@ class WorkflowManagementService:
             raise RuntimeError("Workflow patching requires a composed Workflow runtime")
         return self.runtime.patches.save(patch, active_model=self.active_model)
 
-    def apply_patch(self, patch):
+    def apply_patch(self, patch, *, command_id: str | None = None):
         if self.runtime is None:
             raise RuntimeError("Workflow patching requires a composed Workflow runtime")
-        return self.runtime.patches.apply(patch, active_model=self.active_model)
+        return self.runtime.patches.apply(
+            patch, active_model=self.active_model, command_id=command_id
+        )
 
     def rerun(self, workflow_run_id: str, *, full: bool, command_id: str | None = None):
         if self.runtime is None:

@@ -210,6 +210,124 @@ def node_view_wire(view) -> dict[str, Any]:
     }
 
 
+def model_request_observation_wire(request) -> dict[str, Any]:
+    return _dump(
+        request,
+        (
+            "model_request_id",
+            "workspace_id",
+            "agent_run_id",
+            "attempt_ordinal",
+            "purpose",
+            "prompt_evidence",
+            "state",
+            "admitted_at",
+            "settled_at",
+            "estimated_request_chars",
+            "request_char_budget",
+            "cleared_cycle_count",
+            "dropped_turn_count",
+            "dropped_cycle_count",
+            "dropped_record_count",
+            "tool_rounds",
+            "tool_calls",
+            "policy_schema_version",
+            "estimated_context_tokens",
+            "context_window_tokens",
+            "reserve_tokens",
+            "keep_recent_tokens",
+            "accounting_basis",
+            "compaction_required",
+            "finish_reason",
+            "error_code",
+            "usage",
+            "cost",
+        ),
+    )
+
+
+def agent_run_terminal_wire(metrics) -> dict[str, Any]:
+    return _dump(
+        metrics,
+        (
+            "agent_run_id",
+            "workspace_id",
+            "session_id",
+            "task_run_id",
+            "turn_id",
+            "finish_reason",
+            "stop_code",
+            "stop_detail",
+            "model_attempts",
+            "retry_count",
+            "tool_rounds",
+            "tool_calls",
+            "max_estimated_request_chars",
+            "request_char_budget",
+            "cleared_cycle_count",
+            "dropped_turn_count",
+            "dropped_cycle_count",
+            "dropped_record_count",
+            "usage",
+            "cost",
+            "tool_terminal_counts",
+            "policy_schema_version",
+            "max_context_tokens",
+            "last_context_tokens",
+            "context_window_tokens",
+            "reserve_tokens",
+            "keep_recent_tokens",
+            "accounting_basis",
+            "compaction_count",
+            "overflow_recovery_count",
+            "validation_outcome",
+            "finalized_at",
+        ),
+    )
+
+
+def agent_run_retry_wire(progress) -> dict[str, Any]:
+    return _dump(
+        progress,
+        (
+            "agent_run_id",
+            "workspace_id",
+            "consecutive_model_retries",
+            "total_retry_count",
+            "summary_retry_count",
+            "updated_at",
+        ),
+    )
+
+
+def agent_run_observation_wire(observation) -> dict[str, Any]:
+    return {
+        **_dump(
+            observation,
+            (
+                "agent_run_id",
+                "workspace_id",
+                "session_id",
+                "task_run_id",
+                "turn_id",
+                "resume_of_agent_run_id",
+                "created_at",
+            ),
+        ),
+        "terminal_metrics": (
+            agent_run_terminal_wire(observation.terminal_metrics)
+            if observation.terminal_metrics is not None
+            else None
+        ),
+        "retry_progress": (
+            agent_run_retry_wire(observation.retry_progress)
+            if observation.retry_progress is not None
+            else None
+        ),
+        "requests": [model_request_observation_wire(item) for item in observation.requests],
+    }
+
+
 def run_view_wire(view) -> dict[str, Any]:
     """The observer's full run projection, including lineage-aware outputs."""
 

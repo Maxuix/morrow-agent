@@ -480,6 +480,9 @@ class SessionPersistence:
     def get_execution(self, tool_execution_id: str) -> DurableToolExecution | None:
         return self.tool_executions.get_execution(tool_execution_id)
 
+    def get_approval(self, approval_id: str) -> DurableApproval | None:
+        return self.tool_executions.get_approval(approval_id)
+
     def deny_execution_before_handler(
         self, execution: DurableToolExecution, *, now: datetime | None = None
     ) -> DurableToolExecution:

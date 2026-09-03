@@ -24,6 +24,7 @@ from starlette.routing import Route, WebSocketRoute
 from starlette.websockets import WebSocket
 
 from morrow.core.application import ApplicationError, ApplicationErrorCode
+from morrow.core.execution import StaleRowVersionError
 
 from .commands import ServerCommands
 from .host import CommandBackpressureError, CoreHost, CoreHostUnavailableError
@@ -99,7 +100,8 @@ class LocalApiSecurityMiddleware:
             return
         if scope["type"] == "http" and scope["method"] not in ("GET", "HEAD", "OPTIONS"):
             content_type = headers.get(b"content-type", b"").decode("latin-1")
-            if not content_type.startswith("application/json"):
+            media_type = content_type.partition(";")[0].strip().casefold()
+            if media_type != "application/json":
                 await self._respond(
                     send,
                     415,
@@ -480,6 +482,26 @@ def create_asgi_app(
         return JSONResponse(_error_body("unavailable", str(exc)), status_code=503)
 
     async def _value_error(request: Request, exc: ValueError) -> Response:
+        text = str(exc).casefold()
+        if isinstance(exc, StaleRowVersionError) or "stale" in text:
+            return JSONResponse(
+                _error_body("stale", "resource row version is stale"), status_code=409
+            )
+        if any(
+            marker in text
+            for marker in (
+                "conflict",
+                "already exists",
+                "already resolved",
+                "already consumed",
+            )
+        ):
+            message = (
+                "resource revision conflict"
+                if "revision conflict" in text
+                else "request conflicts with current state"
+            )
+            return JSONResponse(_error_body("conflict", message), status_code=409)
         return JSONResponse(_error_body("invalid", "request is invalid"), status_code=400)
 
     async def _internal_error(request: Request, exc: Exception) -> Response:

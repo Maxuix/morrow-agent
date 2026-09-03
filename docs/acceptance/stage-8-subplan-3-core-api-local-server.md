@@ -1,6 +1,7 @@
 # Stage 8 Subplan 3 — Core API and Local Server
 
-Date: 2026-09-03. Branch `feat/stage8-core-api`. Both prerequisite authorizations were granted
+Date: 2026-09-03; review remediation 2026-09-04. Initial branch `feat/stage8-core-api`, remediation
+branch `fix/stage8-core-api-review`. Both prerequisite authorizations were granted
 explicitly by the user on 2026-09-03: the additive public `ApplicationEvent` lifecycle extension
 and promoting `starlette` + `uvicorn` to direct dependencies (both already shipped as transitive
 deps of `mcp>=2.0.0`; the lockfile gained no new packages).
@@ -24,26 +25,30 @@ deps of `mcp>=2.0.0`; the lockfile gained no new packages).
 - Event delivery reuses the workspace monotonic cursor and append-only event machinery — no second
   event truth. Clients take a snapshot capturing the max cursor in one transaction, WebSocket
   pushes `latest_cursor` hints only, and facts come from durable `GET /v1/events?after=`. Gap
-  detection and snapshot resync are part of the scripted client contract.
+  detection, complete multi-page pulls and snapshot resync are part of the scripted client
+  contract. Event rows participate in an outer transition transaction and WebSocket hints publish
+  only after its successful commit.
 - Additive public `ApplicationEvent` types (`workflow_run.created`, `workflow_run.status_changed`,
   `workflow_node.status_changed`, `approval.requested`) emitted through the optional
   `WorkflowTransitionService.event_sink` seam — CLI composition unchanged (no sink attached).
-- Idempotent Command IDs end to end: native receipts for start/approval/rerun (the rerun receipt
-  lands in the same transaction as the child run, so a crash-retry cannot double-apply), and a
-  post-commit receipt wrapper for the naturally idempotent transition commands whose replay path
-  rebuilds answers from current durable facts.
-- Approvals: `ServerApprovalPort` parks drivers and emits `approval.requested`; the API resolution
-  surface delivers decisions to live waiters (the ToolCycle remains the sole durable consumer) and
-  falls back to the existing durable `resolve_approval` path for dormant approvals; replay rebuilds
-  from current facts.
+- Idempotent Command IDs end to end: native receipts for start/approval/rerun/patch apply. Rerun
+  receipt + child creation and patch-apply receipt + continuation handoff each share one
+  transaction, so a crash-retry cannot double-apply; replay ensures any nonterminal child has a
+  driver. Naturally idempotent transition commands retain the serialized receipt wrapper and
+  rebuild answers from current durable facts.
+- Approvals: `ServerApprovalPort` registers its waiter before emitting a value-free
+  `approval.requested` hint. The API atomically commits resolution, consume/deny, event and receipt
+  before releasing a claimed live waiter; ToolCycle recognizes and verifies that durable decision
+  instead of consuming twice. Dormant approvals use the same durable command path.
 - Redaction boundary: every payload is assembled in `server/projections.py` via explicit field
-  allowlists; provider catalog exposes only `credential_configured` booleans; approval surfaces
-  carry bounded previews, never full tool arguments; error payloads are bounded and
-  traceback-free.
+  allowlists, including AgentRun observations; ProviderService owns catalog/config/credential
+  queries and the server sees only `credential_configured` booleans; approval query surfaces carry
+  bounded previews while lifecycle events carry only a count, never full tool arguments; error
+  payloads are bounded and traceback-free.
 
 ## Deterministic evidence
 
-`tests/test_stage8_core_api.py` (13 tests) and `tests/test_stage8_core_api_security.py` (9 tests)
+`tests/test_stage8_core_api.py` (20 tests) and `tests/test_stage8_core_api_security.py` (11 tests)
 drive the real serve composition through `tests/fixtures/core_api_client.py`, a scripted
 in-process ASGI client that doubles as the reference event-stream consumer. No sockets, no
 network, no wall-clock sleeps (pytest's `network_guard` stays intact).
@@ -75,9 +80,31 @@ Security coverage (§16.3 transport-reachable items):
 - provider catalog carries no credential value or reference; error payloads bounded and
   traceback-free.
 
+## Review remediation
+
+The 2026-09-04 branch review reported 6 bugs, 7 suggestions and 2 nits. All 15 were confirmed as
+real correctness, contract-test, projection-ownership or protocol-hardening gaps and repaired:
+
+- Core Host cancellation is explicitly non-user cancellation all the way through AgentLoop, so an
+  approval-waiting workflow remains open and recoverable after host shutdown; ordinary scheduler
+  task cancellation keeps the existing user-cancel contract.
+- Live approval delivery is claimed exactly once, with durable consume/deny and receipt committed
+  before the waiter resumes; waiter registration precedes the redaction-safe lifecycle event.
+- `morrow serve` retains the workspace writer lock until `host.stop()` closes Core resources, and
+  a composition failure is preserved rather than being masked by a second stop error.
+- Patch Apply atomically records its command receipt with the continuation handoff; replay returns
+  the same child, ensures its driver, and continuation cancellation emits parent NodeRun events.
+- Tool catalog derives from the composed Session ToolSet; event hints are commit-safe; the
+  reference client drains every event page; pause replay uses one explicit Command ID; conflicts
+  map to 409; AgentRun and Provider projections have explicit ownership/allowlists.
+- Mutation Content-Type parsing accepts `application/json` parameters but rejects lookalikes such
+  as `application/jsonp`; stale architecture/history comments were corrected.
+
 ## Gates
 
-- Focused suites: 22 passed.
-- Full offline gate: 1588 passed, 2 deselected (598.75s).
+- Review-focused suites: Stage 8 Core API/security 31 passed; Stage 7 workflow regression 68
+  passed; durable tool/observability/runtime-control regression 65 passed; serial scheduler plus
+  Core API/security 58 passed.
+- Full offline gate: 1597 passed, 2 deselected (290.25s).
 - `uv run ruff format --check .`, `uv run ruff check .`, `uv run python -m compileall -q src tests`,
   `git diff --check` all green; `morrow --help` / `morrow serve --help` smoke green.

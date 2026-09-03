@@ -61,35 +61,36 @@ def serve(
     )
     try:
         with WorkspaceWriterLock(application.data_root, identity.workspace_id):
-            host.start()
-            listener = socket.socket(socket.AF_INET6 if bind == "::1" else socket.AF_INET)
             try:
-                listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                listener.bind((bind, port))
-                listener.listen(socket.SOMAXCONN)
-                bound_port = listener.getsockname()[1]
-            except OSError:
-                listener.close()
-                raise
-            asgi_app = create_asgi_app(host, auth_token=token)
-            display_host = "[::1]" if bind == "::1" else bind
-            typer.echo(f"morrow serve listening: http://{display_host}:{bound_port}")
-            typer.echo(f"session token: {token}")
-            config = uvicorn.Config(
-                asgi_app,
-                log_level="warning",
-                access_log=False,
-            )
-            server = uvicorn.Server(config)
-            try:
-                asyncio.run(server.serve(sockets=[listener]))
-            except KeyboardInterrupt:
-                pass
+                host.start()
+                listener = socket.socket(socket.AF_INET6 if bind == "::1" else socket.AF_INET)
+                try:
+                    listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                    listener.bind((bind, port))
+                    listener.listen(socket.SOMAXCONN)
+                    bound_port = listener.getsockname()[1]
+                except OSError:
+                    listener.close()
+                    raise
+                asgi_app = create_asgi_app(host, auth_token=token)
+                display_host = "[::1]" if bind == "::1" else bind
+                typer.echo(f"morrow serve listening: http://{display_host}:{bound_port}")
+                typer.echo(f"session token: {token}")
+                config = uvicorn.Config(
+                    asgi_app,
+                    log_level="warning",
+                    access_log=False,
+                )
+                server = uvicorn.Server(config)
+                try:
+                    asyncio.run(server.serve(sockets=[listener]))
+                except KeyboardInterrupt:
+                    pass
+            finally:
+                host.stop()
     except WorkspaceError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=2) from exc
-    finally:
-        host.stop()
 
 
 def register(app: typer.Typer) -> None:

@@ -328,16 +328,19 @@ preview。
 503 背压，绝不静默丢弃）；读投影在同一 Core loop 上运行。`RunSupervisor` 为每个 WorkflowRun 持有
 至多一个进程内 driver；server 关闭只取消 driver，从不记录为 user cancellation，durable 状态留给
 恢复路径。命令幂等端到端：Start/审批/rerun 走服务自带 receipt（rerun 的 receipt 与子 Run 创建
-同事务），Pause/Resume/Cancel/Abandon 等天然幂等 transition 由命令层的提交后 receipt 包装，replay
-一律从当前 durable 事实重建应答。
+同事务），Patch Apply 的 receipt 与 continuation handoff 也在同一事务；Pause/Resume/Cancel/Abandon
+等天然幂等 transition 由命令层的提交后 receipt 包装，replay 一律从当前 durable 事实重建应答并在
+需要时重新确保 child driver 存在。
 
 事件不是第二真相：新增量公开 `ApplicationEvent` 类型（`workflow_run.created`、
 `workflow_run.status_changed`、`workflow_node.status_changed`、`approval.requested`）追加进既有
 workspace 单调游标流；`WorkflowTransitionService` 的可选 `event_sink` 是唯一 transition 发射缝，
-CLI 默认不挂接。客户端取同事务 snapshot（含 max cursor），WebSocket 只推 `latest_cursor` 提示，
-事实一律从 durable `/v1/events?after=` 拉取；gap 检测与 resync 是协议的一部分。驱动中的审批由
-`ServerApprovalPort` 挂起，API 解析把决定递交给等待者，durable consume 仍由 ToolCycle 完成；
-无等待者时走既有 `resolve_approval` durable 路径。服务器只绑定 loopback，以每进程随机 token
+CLI 默认不挂接。事件行加入其外层状态变更事务，subscriber hint 延迟到最外层 commit 后。客户端取
+同事务 snapshot（含 max cursor），WebSocket 只推 `latest_cursor` 提示，事实一律分页从 durable
+`/v1/events?after=` 拉取；gap 检测与 resync 是协议的一部分。驱动中的审批由
+`ServerApprovalPort` 先注册等待者再发无 preview 正文的提示事件；API 在同一事务提交 resolution、
+consume/deny、事件和 receipt 后才释放 live waiter，ToolCycle 对已提交决定只做一致性复核；无等待者
+时走同一个 durable `resolve_approval` 路径。服务器只绑定 loopback，以每进程随机 token
 认证，拒绝非 loopback Origin/Referer 与非 JSON 变更请求。`morrow serve` 以前台进程启动该服务并
 在 SIGINT 时优雅退出（Stage 8 无后台守护）。
 

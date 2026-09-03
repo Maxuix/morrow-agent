@@ -11,6 +11,7 @@ from datetime import datetime
 from morrow.core.capabilities import PolicyVerdict, ToolRunContext
 from morrow.core.execution import (
     ApprovalDecisionError,
+    ApprovalResolution,
     DurableToolExecution,
     ExecutionTransitionError,
     MissingCompletionPolicy,
@@ -372,6 +373,39 @@ class ToolCycleExecutor:
             )
             decision = await self.tool_executor.request_approval(request)
             approved = bool(decision is not None and decision.approved)
+            current_approval = coordinator.get_approval(approval.approval_id)
+            if (
+                current_approval is not None
+                and current_approval.resolution is not ApprovalResolution.PENDING
+            ):
+                current_execution = coordinator.get_execution(execution.tool_execution_id)
+                if current_execution is None:
+                    raise ApprovalDecisionError("approval execution is missing")
+                if approved:
+                    if (
+                        current_approval.resolution is not ApprovalResolution.APPROVED
+                        or current_approval.consumed_at is None
+                        or current_execution.state is not ToolExecutionState.EXECUTING
+                    ):
+                        raise ApprovalDecisionError(
+                            "live approval decision conflicts with durable state"
+                        )
+                    return current_execution, None
+                if (
+                    current_approval.resolution is not ApprovalResolution.DENIED
+                    or current_execution.state is not ToolExecutionState.CLOSED
+                    or current_execution.disposition is not ToolExecutionDisposition.DENIED
+                ):
+                    raise ApprovalDecisionError(
+                        "live approval decision conflicts with durable state"
+                    )
+                denied = self.tool_executor.error_outcome(
+                    call,
+                    ToolErrorCode.APPROVAL_REJECTED,
+                    "工具操作未获批准",
+                    result_limit=result_limit,
+                )
+                return current_execution, denied
             execution, _approval, run_handler = coordinator.consume_and_mark_executing(
                 execution,
                 approval,

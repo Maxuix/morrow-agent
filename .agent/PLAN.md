@@ -1,9 +1,10 @@
 # Stage 8 Adaptive Orchestration and GUI Implementation Plan
 
-> Status: active 2026-09-03
-> Active subplan: none — `3-core-api-local-server` completed, merged (`2289131`) and published
-> Next subplan: `4-web-gui-observer` (after explicit activation and frontend toolchain
-> authorization)
+> Status: awaiting next explicit activation 2026-09-04
+> Last completed subplan: `3-core-api-local-server` review remediation on
+> `fix/stage8-core-api-review`
+> Next subplan: `4-web-gui-observer` (only after explicit activation and
+> frontend toolchain authorization)
 > Roadmap authority: `docs/roadmap/stage-8-adaptive-orchestration-and-gui.md`
 > (revised 2026-09-03: risk-tiered Replan autonomy; runtime-kernel-first ordering)
 > Entry evidence: Stage 7 completed and remediated; full offline gate 1538 passed, 2 skipped,

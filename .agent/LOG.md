@@ -4951,3 +4951,24 @@
   format/check, compileall, CLI help and `git diff --check` passed. No Live/network test ran.
 - Committed as `b8cdb2f` and fast-forward integrated into local `main`. Remote publication was not
   attempted because this review-remediation request did not authorize a GitHub push.
+
+## 2026-09-04 — Subplan 3 review remediation verified
+
+- Confirmed and repaired all 15 reported findings (6 bugs, 7 suggestions, 2 nits). Core Host
+  shutdown now propagates a non-user driver interruption through AgentLoop without closing durable
+  Turn/Task/Workflow state; explicit scheduler cancellation retains its original user-cancel
+  semantics. The workspace writer lock now outlives `host.stop()`, and composition failures are no
+  longer masked by stopping an already-closed loop.
+- Live approval resolution now claims one waiter and atomically commits resolve/consume-or-deny,
+  event and receipt before delivery; ToolCycle verifies the pre-resolved durable decision. Approval
+  waiters register before a value-free requested event, avoiding both missed delivery and preview
+  secret-filter failures. Patch Apply now commits its receipt with the continuation handoff,
+  replays the same child, ensures its driver and emits superseded-node cancellation events.
+- Tool catalog derives from the composed ToolSet; event hints publish only after outer commit;
+  reference event pulls drain all pages; pause tests exercise an actual same-ID replay; conflict
+  responses preserve 409 semantics; AgentRun projection is allowlisted; ProviderService owns
+  catalog reads; JSON Content-Type parsing rejects lookalikes; stale comments were corrected.
+- Validation: review-focused matrices passed (31 Stage 8 API/security, 68 Stage 7 workflows, 65
+  durable tool/observation/control, 58 serial scheduler plus API/security). Final full offline gate:
+  1597 passed, 2 deselected in 290.25 seconds. Ruff format/check, compileall, CLI help and
+  `git diff --check` passed. No Live/network/credential test ran.

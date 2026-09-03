@@ -88,6 +88,7 @@ class ApprovalWaiters:
 
     def __init__(self) -> None:
         self._waiters: dict[str, asyncio.Future] = {}
+        self._claimed: set[str] = set()
 
     def waiting(self, approval_id: str) -> bool:
         future = self._waiters.get(approval_id)
@@ -101,21 +102,35 @@ class ApprovalWaiters:
         self._waiters[approval_id] = future
         return future
 
-    def deliver(self, approval_id: str, *, approved: bool) -> bool:
+    def claim(self, approval_id: str) -> bool:
+        """Reserve the sole live delivery before its durable decision commits."""
+
         future = self._waiters.get(approval_id)
-        if future is None or future.done():
+        if future is None or future.done() or approval_id in self._claimed:
+            return False
+        self._claimed.add(approval_id)
+        return True
+
+    def deliver_claimed(self, approval_id: str, *, approved: bool) -> bool:
+        future = self._waiters.get(approval_id)
+        if future is None or future.done() or approval_id not in self._claimed:
             return False
         future.set_result(approved)
         return True
 
+    def release(self, approval_id: str) -> None:
+        self._claimed.discard(approval_id)
+
     def forget(self, approval_id: str) -> None:
         self._waiters.pop(approval_id, None)
+        self._claimed.discard(approval_id)
 
     def cancel_all(self) -> None:
         for future in self._waiters.values():
             if not future.done():
                 future.cancel()
         self._waiters.clear()
+        self._claimed.clear()
 
 
 class CoreHost:
@@ -169,12 +184,22 @@ class CoreHost:
         loop, thread = self._loop, self._thread
         if loop is None or thread is None:
             return
+        if loop.is_closed() or not thread.is_alive():
+            self._thread = None
+            self._loop = None
+            return
         self._closing = True
-        future = asyncio.run_coroutine_threadsafe(self._shutdown(), loop)
+        try:
+            future = asyncio.run_coroutine_threadsafe(self._shutdown(), loop)
+        except RuntimeError:
+            self._thread = None
+            self._loop = None
+            return
         try:
             future.result(timeout=timeout)
         finally:
-            loop.call_soon_threadsafe(loop.stop)
+            if not loop.is_closed():
+                loop.call_soon_threadsafe(loop.stop)
             thread.join(timeout=timeout)
         self._thread = None
         self._loop = None

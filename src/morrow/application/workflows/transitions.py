@@ -36,10 +36,9 @@ class WorkflowTransitionService:
         self.journal = journal
         self.workspace_id = workspace_id
         self.clock = clock
-        # Optional additive Stage 8 projection seam: invoked once per committed
-        # state change with bounded id/status facts, never inside the transition
-        # transaction and never with sensitive payloads. Public so composition
-        # roots can attach the sink after the runtime bundle exists.
+        # Optional projection seam with bounded id/status facts. If a caller is
+        # already in a larger transaction, the event row joins that transaction
+        # and its subscriber hint is deferred until the outer commit.
         self.event_sink = event_sink
 
     def _emit_run(self, run: WorkflowRun) -> None:

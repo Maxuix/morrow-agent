@@ -88,5 +88,5 @@ class WorkflowEventEmitter:
                 created_at=self.clock(),
             ),
         )
-        self.hub.publish(event.cursor)
+        self.journal.after_commit(lambda: self.hub.publish(event.cursor))
         return event

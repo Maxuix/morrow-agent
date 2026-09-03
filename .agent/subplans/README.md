@@ -1,15 +1,15 @@
 # Stage 8 current-plan subplans
 
 This directory contains only child plans owned by the active Stage 8 master plan
-(`.agent/PLAN.md`). Subplan 2 review remediation is verified and integrated locally; remote
-publication still requires separate explicit approval. The
+(`.agent/PLAN.md`). Subplan 3 review remediation completed on
+`fix/stage8-core-api-review`. The
 retired Stage 7 sequence is archived under `.agent/archive/subplans/stage7-workflow-runtime/`.
 
 | Order | File | Roadmap slice | Status |
 |---|---|---|---|
 | 1 | `1-pause-drain-runtime.md` | 8C (runtime, part 1) | completed 2026-09-03 |
-| 2 | `2-future-graph-patch-continuation.md` | 8C (runtime, part 2) | remediation verified and integrated; publication pending |
-| 3 | `3-core-api-local-server.md` | 8A (protocol/server) | pending activation; needs ApplicationEvent + web-framework authorization |
+| 2 | `2-future-graph-patch-continuation.md` | 8C (runtime, part 2) | completed 2026-09-03 |
+| 3 | `3-core-api-local-server.md` | 8A (protocol/server) | completed 2026-09-04 after review remediation |
 | 4 | `4-web-gui-observer.md` | 8A (GUI) | pending activation; needs frontend toolchain authorization |
 | 5 | `5-workflow-editor-agent-inspector.md` | 8B | pending activation |
 | 6 | `6-run-control-gui.md` | 8C (GUI) | pending activation |

@@ -24,6 +24,7 @@ class JournalTransactionContext:
     timestamp: datetime | None = None
     replayable: bool | None = None
     touched_session_ids: set[str] = field(default_factory=set)
+    after_commit_callbacks: list[Callable[[], None]] = field(default_factory=list)
 
     @property
     def active(self) -> bool:
@@ -57,6 +58,7 @@ class JournalTransactionContext:
         self.timestamp = timestamp
         self.replayable = replayable
         self.touched_session_ids = set()
+        self.after_commit_callbacks = []
         try:
             yield
         finally:
@@ -64,6 +66,7 @@ class JournalTransactionContext:
             self.timestamp = None
             self.replayable = None
             self.touched_session_ids = set()
+            self.after_commit_callbacks = []
 
 
 class SqliteJournalBackend:
@@ -91,15 +94,34 @@ class SqliteJournalBackend:
             return work()
         run_write = self.session.run_write if replayable else self.session.run_write_once
 
+        callbacks: list[Callable[[], None]] = []
+
         def body(executor: SqliteExecutor) -> T:
+            callbacks.clear()
             with self.transaction.activate(
                 executor,
                 timestamp=self.now(),
                 replayable=replayable,
             ):
-                return work()
+                result = work()
+                callbacks.extend(self.transaction.after_commit_callbacks)
+                return result
 
-        return run_write(body)
+        result = run_write(body)
+        for callback in callbacks:
+            try:
+                callback()
+            except Exception:
+                # Post-commit notifications are best-effort hints. Durable
+                # readers recover from the committed store state.
+                pass
+        return result
+
+    def after_commit(self, callback: Callable[[], None]) -> None:
+        if self.transaction.active:
+            self.transaction.after_commit_callbacks.append(callback)
+            return
+        callback()
 
     def executor(self) -> SqliteExecutor:
         return self.transaction.require_executor()

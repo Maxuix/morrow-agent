@@ -1,26 +1,17 @@
 # TODO
 
-Active subplan: Stage 8 Subplan 3 (`3-core-api-local-server`) on `feat/stage8-core-api`.
+Active subplan: none. Stage 8 Subplan 3 review remediation completed on
+`fix/stage8-core-api-review`.
 
-- [x] Wire protocol models and `/v1` surface: separated Command/Query, Approval resolution, Event
-  stream (`snapshot + /events?after= + WebSocket latest_cursor + gap resync`).
-- [x] Additive `ApplicationEvent` lifecycle extension for workflow run/node/approval facts
-  (authorized 2026-09-03), emitted through the existing workspace monotonic cursor machinery.
-- [x] Local server owned by the Core process: loopback-only bind, per-session random auth token,
-  CSRF and WebSocket origin checks, redaction boundary intact in every payload.
-- [x] Core Host concurrency per contracts C4: single Core runtime thread/event loop, bounded
-  serialized command bus with explicit backpressure, RunSupervisor one driver per WorkflowRun,
-  shutdown never recorded as user cancellation.
-- [x] CLI entry `morrow serve`: foreground headless server, prints loopback address/port and
-  one-time session token, graceful SIGINT drain.
-- [x] Read-only Catalog Query APIs: AgentDefinitions, Providers/Models, Skills, Tools, Artifact
-  contracts.
-- [x] Scripted in-process verification client fixture covering snapshot, stream, forced
-  disconnect/reconnect, gap resync, command idempotency, stale snapshot handling.
-- [x] Deterministic contract tests: event loss/reorder/duplication/reconnect, command idempotency
-  under retry, CLI–API parity for the same WorkflowRun state, Core restart recovery via API,
-  §16.3 transport-reachable security tests (22 passed).
-- [x] Full offline gate (1588 passed, 2 deselected), Ruff format/check, compileall,
-  `git diff --check`, CLI help smoke.
+- [x] Repair the six confirmed correctness bugs: shutdown cancellation semantics, approval
+  exactly-once delivery/consume, writer-lock lifetime, atomic patch-apply receipt/replay driving,
+  approval waiter registration/redaction, and Core Host build-failure cleanup.
+- [x] Resolve the confirmed protocol/projection findings: actual ToolSet catalog, commit-safe event
+  hints plus continuation node events, real pause receipt replay evidence, paginated reference
+  client pulls, typed conflict responses, AgentRun allowlist and Provider query ownership.
+- [x] Resolve the two transport/documentation nits and add focused deterministic regressions.
+- [x] Run the touched-test matrix, full offline gate, Ruff format/check, compileall, CLI help and
+  `git diff --check`; update acceptance/execution records and commit verified remediation.
 
-Subplan 4 starts only after explicit activation and frontend toolchain authorization.
+Subplan 4 remains closed until this remediation finishes and the user explicitly activates it with
+frontend toolchain authorization.

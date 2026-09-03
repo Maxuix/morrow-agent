@@ -230,6 +230,9 @@ class SqliteOperationalJournal:
     def transaction_is_active(self) -> bool:
         return self._backend.transaction.active
 
+    def after_commit(self, callback: Callable[[], None]) -> None:
+        self._backend.after_commit(callback)
+
     def enqueue_runtime_control(
         self,
         workspace_id: str,

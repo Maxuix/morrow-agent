@@ -219,18 +219,21 @@ class CoreApiVerificationClient:
     async def pull_events(self) -> list[dict]:
         """Durable ordered pull after the recorded cursor; duplicates re-skip."""
 
-        response = await self.get(f"/v1/events?after={self.last_cursor}&limit=100")
-        assert response.status == 200, response.body
-        page = response.json()
         fresh = []
-        for event in page["events"]:
-            assert event["cursor"] > self.last_cursor, "event stream regressed"
-            if event["event_id"] in self.seen_event_ids:
-                continue
-            self.seen_event_ids.add(event["event_id"])
-            self.applied.append(event)
-            fresh.append(event)
-        self.last_cursor = page["latest_cursor"]
+        while True:
+            response = await self.get(f"/v1/events?after={self.last_cursor}&limit=100")
+            assert response.status == 200, response.body
+            page = response.json()
+            for event in page["events"]:
+                assert event["cursor"] > self.last_cursor, "event stream regressed"
+                self.last_cursor = event["cursor"]
+                if event["event_id"] in self.seen_event_ids:
+                    continue
+                self.seen_event_ids.add(event["event_id"])
+                self.applied.append(event)
+                fresh.append(event)
+            if not page["has_more"]:
+                break
         return fresh
 
     def websocket(self, *, token: str | None = None, origin: str | None = None) -> WSSession:

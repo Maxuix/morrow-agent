@@ -1,6 +1,7 @@
 # Subplan 3 — Core API and Local Server
 
-> Status: completed 2026-09-03 (both prerequisite authorizations were granted explicitly by the
+> Status: completed 2026-09-03; review remediation completed 2026-09-04 on
+> `fix/stage8-core-api-review` (both prerequisite authorizations were granted explicitly by the
 > user on 2026-09-03: additive `ApplicationEvent` lifecycle extension; `starlette` + `uvicorn` as
 > direct dependencies)
 > Branch: `feat/stage8-core-api`

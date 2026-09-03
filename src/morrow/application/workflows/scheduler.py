@@ -151,7 +151,7 @@ class WorkflowScheduler:
 
     # Driving ------------------------------------------------------------------
 
-    async def run(self, workflow_run_id: str) -> WorkflowRun:
+    async def run(self, workflow_run_id: str, *, cancelled_is_user: bool = True) -> WorkflowRun:
         """Drive every not-yet-completed node in stable order; never reruns completed work."""
 
         run = self._require_run(workflow_run_id)
@@ -230,7 +230,17 @@ class WorkflowScheduler:
             try:
                 if node.status is WorkflowStatus.QUEUED:
                     self._require_ready(run, revision, node_def, nodes_by_id)
-                await self._drive_node(run, revision, node_def, node, cap)
+                if cancelled_is_user:
+                    await self._drive_node(run, revision, node_def, node, cap)
+                else:
+                    await self._drive_node(
+                        run,
+                        revision,
+                        node_def,
+                        node,
+                        cap,
+                        cancelled_is_user=False,
+                    )
                 self._require_settled(run, node)
             except ApplicationError as exc:
                 if exc.code is ApplicationErrorCode.NEEDS_RECOVERY:
@@ -288,7 +298,7 @@ class WorkflowScheduler:
                 run = self._require_run(workflow_run_id)
         return run
 
-    async def recover(self, workflow_run_id: str) -> WorkflowRun:
+    async def recover(self, workflow_run_id: str, *, cancelled_is_user: bool = True) -> WorkflowRun:
         """Finish cancel/recovery mappings from durable facts after reconciliation.
 
         Blocking unknown Tool outcomes keep the run blocked; a resolved
@@ -314,7 +324,7 @@ class WorkflowScheduler:
             None,
         )
         if active is None:
-            return await self.run(workflow_run_id)
+            return await self.run(workflow_run_id, cancelled_is_user=cancelled_is_user)
         report = self._leaf_report(active)
         if report is not None and any(item.blocking for item in report.items):
             return self.finalizer.mark_blocked(
@@ -334,7 +344,7 @@ class WorkflowScheduler:
                 self.transitions.resume_blocked_run_to_draining(run.workflow_run_id)
             else:
                 self.transitions.resume_blocked_run(run.workflow_run_id)
-        return await self.run(workflow_run_id)
+        return await self.run(workflow_run_id, cancelled_is_user=cancelled_is_user)
 
     def abandon(self, workflow_run_id: str, *, expected_row_version: int) -> WorkflowRun:
         """Recovery-only abandon of an OCC-current blocked run.
@@ -361,6 +371,8 @@ class WorkflowScheduler:
         node_def: AgentNode,
         node: NodeRun,
         cap: int,
+        *,
+        cancelled_is_user: bool = True,
     ) -> None:
         leaf_session_id, leaf_task_run_id = self._ensure_leaf(run, node_def, node)
         hooks = WorkflowLeafHooks(
@@ -429,11 +441,13 @@ class WorkflowScheduler:
                     )
                     prepared = self._compose_leaf_runtime(prepared, hooks)
                     text = self._contract_text(run, node_def)
+                    drive_options = {} if cancelled_is_user else {"cancelled_is_user": False}
                     drive_error = await self._drive(
                         session,
                         text,
                         client_message_id=self._client_message_id(run, node_def, node),
                         prepared=prepared,
+                        **drive_options,
                     )
                 elif (
                     leaf is not None
@@ -460,12 +474,14 @@ class WorkflowScheduler:
                         session.finish_turn(FinishReason.STOP)
                         drive_error = None
                     else:
+                        drive_options = {} if cancelled_is_user else {"cancelled_is_user": False}
                         drive_error = await self._drive(
                             session,
                             "",
                             client_message_id=self._client_message_id(run, node_def, node),
                             prepared=prepared,
                             resume=True,
+                            **drive_options,
                         )
                 else:
                     drive_error = None
@@ -475,6 +491,8 @@ class WorkflowScheduler:
                 if settled != "resume" or attempts >= _MAX_RESUME_ATTEMPTS:
                     return
         except asyncio.CancelledError:
+            if not cancelled_is_user:
+                raise
             cancelled = True
             self._settle(run.workflow_run_id, node, error_message, cancelled)
         finally:
@@ -488,6 +506,7 @@ class WorkflowScheduler:
         client_message_id: str,
         prepared,
         resume: bool = False,
+        cancelled_is_user: bool = True,
     ) -> str | None:
         loop = AgentLoop(
             prepared.provider,
@@ -506,6 +525,7 @@ class WorkflowScheduler:
             client_message_id=client_message_id,
             resume_current_turn=resume,
             prepared=prepared,
+            cancelled_is_user=cancelled_is_user,
         )
         try:
             async for event in stream:

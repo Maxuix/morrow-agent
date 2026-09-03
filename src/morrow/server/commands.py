@@ -1,13 +1,4 @@
-"""Command and query handlers for the local Core API.
-
-Every handler runs on the Core Host's single runtime loop. Mutations go
-through the bounded serialized bus; each carries a client-supplied idempotent
-Command ID end to end — natively where the underlying service owns receipts
-(session/task commands, workflow start, approval resolution, rerun), or through
-the post-commit receipt wrapper here for the naturally idempotent transition
-commands. The replay path always rebuilds its answer from current durable
-facts, so a retried command can never double-apply.
-"""
+"""Command and query handlers running on the Core Host's serialized loop."""
 
 from __future__ import annotations
 
@@ -17,6 +8,7 @@ from typing import Any
 
 from morrow.application.api_context import request_digest
 from morrow.core.application import (
+    WORKFLOW_NODE_STATUS_EVENT,
     WORKFLOW_RUN_CREATED_EVENT,
     WORKFLOW_RUN_STATUS_EVENT,
     ApplicationCommandDisposition,
@@ -182,7 +174,9 @@ class ServerCommands:
             self._emit_run_created(started.run, relation="start")
         driving = self.context.supervisor.ensure_driver(
             started.run.workflow_run_id,
-            lambda: self.context.runtime.scheduler.run(started.run.workflow_run_id),
+            lambda: self.context.runtime.scheduler.run(
+                started.run.workflow_run_id, cancelled_is_user=False
+            ),
         )
         return CommandOutcome(
             {
@@ -223,7 +217,7 @@ class ServerCommands:
         if request.drive and not value.status.terminal:
             driving = self.context.supervisor.ensure_driver(
                 workflow_run_id,
-                lambda: self.context.management.resume(workflow_run_id),
+                lambda: self.context.management.resume(workflow_run_id, cancelled_is_user=False),
             )
         return CommandOutcome({"run": projections.run_wire(value), "driving": driving}, receipt)
 
@@ -295,7 +289,9 @@ class ServerCommands:
             self._emit_run_created(application.child, relation="rerun")
         driving = self.context.supervisor.ensure_driver(
             application.child.workflow_run_id,
-            lambda: self.context.runtime.scheduler.run(application.child.workflow_run_id),
+            lambda: self.context.runtime.scheduler.run(
+                application.child.workflow_run_id, cancelled_is_user=False
+            ),
         )
         return CommandOutcome(
             {
@@ -370,60 +366,65 @@ class ServerCommands:
 
     def patch_apply(self, request: PatchCommandRequest) -> CommandOutcome:
         patch = request.patch
-
-        def rebuild(existing: ApplicationCommandReceipt):
-            child = (
-                self.context.runtime.transitions.get_run(existing.result_id)
-                if existing.result_id
-                else None
-            )
-            return {
-                "workflow_patch_id": patch.workflow_patch_id,
-                "child_run": projections.run_wire(child) if child is not None else None,
-            }
-
-        def execute():
-            application = self.context.management.apply_patch(patch)
-            child_id = application.child.workflow_run_id if application.child is not None else None
-            return application, child_id or patch.workflow_patch_id
-
-        value, receipt = self._idempotent(
-            "patch_apply",
-            request.command_id,
-            {"patch_digest": patch.source.content_hash, "patch_id": patch.workflow_patch_id},
-            execute,
-            rebuild,
-            result_kind="workflow_patch",
+        command_id = request.command_id or self.context.api.id_source.new_id("cmd")
+        replayed = (
+            request.command_id is not None
+            and self.journal.get_application_command_receipt(self.workspace_id, command_id)
+            is not None
         )
-        if receipt.disposition is not ApplicationCommandDisposition.REPLAY:
+        value = self.context.management.apply_patch(patch, command_id=command_id)
+        receipt = self.journal.get_application_command_receipt(self.workspace_id, command_id)
+        if receipt is None:
+            raise ApplicationError(
+                ApplicationErrorCode.NEEDS_RECOVERY, "patch command receipt is missing"
+            )
+        if replayed:
+            receipt = receipt.model_copy(
+                update={"disposition": ApplicationCommandDisposition.REPLAY}
+            )
+        child = value.child
+        if not replayed:
+            for node in self.journal.workflows.list_nodes(
+                self.workspace_id, value.parent.workflow_run_id
+            ):
+                if node.status is WorkflowStatus.CANCELLED:
+                    self.context.emitter.emit(
+                        WORKFLOW_NODE_STATUS_EVENT,
+                        "workflow_node",
+                        node.node_run_id,
+                        {
+                            "workflow_run_id": node.workflow_run_id,
+                            "node_id": node.node_id,
+                            "status": node.status.value,
+                            "row_version": node.row_version,
+                        },
+                    )
             self.context.emitter.emit(
                 WORKFLOW_RUN_STATUS_EVENT,
                 "workflow_run",
                 value.parent.workflow_run_id,
                 {"status": "superseded", "superseded_reason": "continued_by_patch"},
             )
-            child = value.child
-            driving = False
             if child is not None:
                 self._emit_run_created(child, relation="continuation")
-                if not child.status.terminal:
-                    driving = self.context.supervisor.ensure_driver(
-                        child.workflow_run_id,
-                        lambda: self.context.runtime.scheduler.run(child.workflow_run_id),
-                    )
-            return CommandOutcome(
-                {
-                    "workflow_patch_id": patch.workflow_patch_id,
-                    "workflow_revision_id": value.revision.workflow_revision_id,
-                    # The handoff supersedes the parent inside its transaction;
-                    # re-read so the response reflects committed facts.
-                    "parent_run": self._run_wire_by_id(value.parent.workflow_run_id),
-                    "child_run": projections.run_wire(child) if child is not None else None,
-                    "driving": driving,
-                },
-                receipt,
+        driving = False
+        if child is not None and not child.status.terminal:
+            driving = self.context.supervisor.ensure_driver(
+                child.workflow_run_id,
+                lambda: self.context.runtime.scheduler.run(
+                    child.workflow_run_id, cancelled_is_user=False
+                ),
             )
-        return CommandOutcome(value, receipt)
+        return CommandOutcome(
+            {
+                "workflow_patch_id": patch.workflow_patch_id,
+                "workflow_revision_id": value.revision.workflow_revision_id,
+                "parent_run": self._run_wire_by_id(value.parent.workflow_run_id),
+                "child_run": projections.run_wire(child) if child is not None else None,
+                "driving": driving,
+            },
+            receipt,
+        )
 
     # Approvals -------------------------------------------------------------------
 
@@ -464,47 +465,33 @@ class ServerCommands:
             )
         if approval.resolution is not ApprovalResolution.PENDING:
             raise ApplicationError(ApplicationErrorCode.CONFLICT, "approval is already resolved")
-        if self.context.approval_waiters.waiting(approval_id):
-            if not self.context.approval_waiters.deliver(approval_id, approved=request.approved):
-                raise ApplicationError(
-                    ApplicationErrorCode.CONFLICT, "approval resolution is already in flight"
-                )
-            receipt = self.journal.put_application_command_receipt(
-                self.workspace_id,
-                ApplicationCommandReceipt(
-                    command_id=command_id,
-                    workspace_id=self.workspace_id,
-                    session_id=execution.session_id,
-                    operation="approval_resolve",
-                    request_digest=digest,
-                    result_kind="approval",
-                    result_id=approval_id,
-                ),
+        live = self.context.approval_waiters.waiting(approval_id)
+        if live and not self.context.approval_waiters.claim(approval_id):
+            raise ApplicationError(
+                ApplicationErrorCode.CONFLICT, "approval resolution is already in flight"
             )
-            self.context.emitter.emit(
-                "approval.resolved",
-                "approval",
-                approval_id,
-                {
-                    "resolution": "approved" if request.approved else "denied",
-                    "delivery": "live",
-                },
+        try:
+            # Resolution, consume/deny, event and receipt commit together before
+            # a live ToolCycle is released to enter the handler.
+            resolved = self.context.api.resolve_approval(
+                execution, approval, approved=request.approved, command_id=command_id
             )
-            return CommandOutcome(
-                {
-                    "approval": projections.approval_wire(approval, execution),
-                    "delivery": "live",
-                },
-                receipt,
-            )
-        resolved = self.context.api.resolve_approval(
-            execution, approval, approved=request.approved, command_id=command_id
-        )
+        except BaseException:
+            if live:
+                self.context.approval_waiters.release(approval_id)
+            raise
         saved_execution, saved_approval, did_execute = resolved.value
+        if live and not self.context.approval_waiters.deliver_claimed(
+            approval_id, approved=request.approved
+        ):
+            raise ApplicationError(
+                ApplicationErrorCode.NEEDS_RECOVERY,
+                "live approval waiter disappeared after the durable decision",
+            )
         return CommandOutcome(
             {
                 "approval": projections.approval_wire(saved_approval, saved_execution),
-                "delivery": "durable",
+                "delivery": "live" if live else "durable",
                 "executed": did_execute,
             },
             resolved.receipt,
@@ -587,7 +574,7 @@ class ServerCommands:
         observation = self.context.api.get_agent_run_observation(agent_run_id)
         if observation is None:
             raise ApplicationError(ApplicationErrorCode.NOT_FOUND, "agent run is missing")
-        return {"observation": observation.model_dump(mode="json")}
+        return {"observation": projections.agent_run_observation_wire(observation)}
 
     def list_artifacts(
         self, *, session_id: str | None, task_run_id: str | None, cursor: str | None, limit: int
@@ -667,22 +654,20 @@ class ServerCommands:
         return {"workflow_revisions": [projections.workflow_revision_wire(v) for v in views]}
 
     def catalog_providers(self) -> dict[str, Any]:
-        loaded = self.context.application.global_store.load()
-        config = loaded.value
+        snapshot = self.context.application.provider_service.catalog_snapshot()
+        config = snapshot.config
+        credential_availability = dict(snapshot.credential_availability)
         providers = []
-        active_model = config.active_model if config is not None else None
-        if config is not None:
-            for provider_id, provider in sorted(config.providers.items()):
-                providers.append(
-                    projections.provider_wire(
-                        provider_id,
-                        provider,
-                        credential_configured=self.context.application.provider_service.credential_available(
-                            provider_id
-                        ),
-                        active_model=active_model,
-                    )
+        active_model = config.active_model
+        for provider_id, provider in sorted(config.providers.items()):
+            providers.append(
+                projections.provider_wire(
+                    provider_id,
+                    provider,
+                    credential_configured=credential_availability[provider_id],
+                    active_model=active_model,
                 )
+            )
         return {
             "providers": providers,
             "active_model": (
