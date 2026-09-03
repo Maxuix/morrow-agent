@@ -1,0 +1,38 @@
+/* Self-hosted variable fonts (woff2 only, no CDN / runtime fetching). */
+@import '@fontsource-variable/inter';
+@import '@fontsource-variable/newsreader';
+@import '@fontsource-variable/jetbrains-mono';
+
+@import 'tailwindcss';
+@import './styles/tokens.css';
+
+/* Wire Tailwind v4 to the Warm Paper tokens so utilities like
+ * `bg-base text-primary border-subtle text-accent` work. */
+@theme inline {
+  --color-base: var(--bg-base);
+  --color-raised: var(--bg-raised);
+  --color-subtle: var(--border-subtle);
+  --color-primary: var(--text-primary);
+  --color-secondary: var(--text-secondary);
+  --color-accent: var(--accent);
+
+  --color-running: var(--status-running);
+  --color-completed: var(--status-completed);
+  --color-failed: var(--status-failed);
+  --color-blocked: var(--status-blocked);
+  --color-paused: var(--status-paused);
+  --color-queued: var(--status-queued);
+
+  --font-sans: var(--font-sans);
+  --font-serif: var(--font-serif);
+  --font-mono: var(--font-mono);
+}
+
+body {
+  background-color: var(--bg-base);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  transition:
+    background-color var(--duration-base) var(--ease-out),
+    color var(--duration-base) var(--ease-out);
+}

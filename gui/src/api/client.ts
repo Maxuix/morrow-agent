@@ -1,0 +1,224 @@
+/**
+ * Typed client for the Morrow Core API (`/v1`).
+ *
+ * Same-origin in production (the Core server serves the prebuilt bundle) and
+ * the Vite dev proxy forwards `/v1`, so `baseUrl` is always the relative `''`.
+ * Every call carries `Authorization: Bearer <token>`; the token itself is
+ * bootstrapped from the URL fragment (`#token=...`) into sessionStorage and
+ * the fragment is scrubbed so it cannot leak into copy-pasted URLs.
+ *
+ * This subplan's surface is read-only: GETs only, no mutation helpers.
+ */
+import type {
+  ApprovalWire,
+  ApprovalsListWire,
+  ArtifactsPageWire,
+  EventsPageWire,
+  MetaWire,
+  NodeViewEnvelopeWire,
+  NodeViewWire,
+  RunViewEnvelopeWire,
+  RunViewWire,
+  SessionEnvelopeWire,
+  SessionWire,
+  SessionsPageWire,
+  SnapshotWire,
+  TaskEnvelopeWire,
+  TaskRunWire,
+  TasksPageWire,
+} from './types'
+
+export const TOKEN_STORAGE_KEY = 'morrow.sessionToken'
+
+let sessionToken: string | null = null
+let tokenBootstrapped = false
+
+/**
+ * Read `#token=...` from the URL fragment once, persist it to sessionStorage,
+ * and scrub the fragment from the URL bar. Safe to call repeatedly.
+ */
+export function bootstrapSessionToken(): string | null {
+  if (tokenBootstrapped) return sessionToken
+  tokenBootstrapped = true
+  if (typeof window === 'undefined') return null
+  const match = /#token=([^&]+)/.exec(window.location.hash)
+  if (match) {
+    sessionToken = decodeURIComponent(match[1])
+    window.sessionStorage.setItem(TOKEN_STORAGE_KEY, sessionToken)
+    window.history.replaceState(null, '', window.location.pathname + window.location.search)
+  } else {
+    sessionToken = window.sessionStorage.getItem(TOKEN_STORAGE_KEY)
+  }
+  return sessionToken
+}
+
+export function getToken(): string | null {
+  return bootstrapSessionToken()
+}
+
+export function hasToken(): boolean {
+  return getToken() !== null
+}
+
+/** Test hook: forget a bootstrapped token so bootstrap re-reads the URL. */
+export function resetSessionTokenForTests(): void {
+  sessionToken = null
+  tokenBootstrapped = false
+}
+
+export class ApiError extends Error {
+  constructor(
+    readonly status: number,
+    readonly code: string,
+    message: string,
+    readonly retryAfterSeconds: number | null = null,
+  ) {
+    super(message)
+    this.name = 'ApiError'
+  }
+}
+
+export interface ApiClientOptions {
+  /** Always `''` (relative, same-origin); injectable only for tests. */
+  baseUrl: string
+  token: string
+  fetchImpl?: typeof fetch
+}
+
+// Type aliases (not interfaces) so they stay assignable to the query()
+// Record parameter without an explicit index signature.
+export type ListParams = {
+  cursor?: string
+  limit?: number
+}
+
+export type ListArtifactsParams = ListParams & {
+  session_id?: string
+  task_run_id?: string
+}
+
+export class ApiClient {
+  private readonly baseUrl: string
+  private readonly token: string
+  private readonly fetchImpl: typeof fetch
+
+  constructor({ baseUrl, token, fetchImpl }: ApiClientOptions) {
+    this.baseUrl = baseUrl.replace(/\/+$/, '')
+    this.token = token
+    this.fetchImpl = fetchImpl ?? ((...args) => fetch(...args))
+  }
+
+  meta(): Promise<MetaWire> {
+    return this.get('/v1/meta')
+  }
+
+  snapshot(): Promise<SnapshotWire> {
+    return this.get('/v1/snapshot')
+  }
+
+  events(after: number, limit = 100): Promise<EventsPageWire> {
+    return this.get(`/v1/events${query({ after, limit })}`)
+  }
+
+  listSessions(params: ListParams = {}): Promise<SessionsPageWire> {
+    return this.get(`/v1/sessions${query(params)}`)
+  }
+
+  listTasks(sessionId: string, params: ListParams = {}): Promise<TasksPageWire> {
+    return this.get(`/v1/sessions/${encodeURIComponent(sessionId)}/tasks${query(params)}`)
+  }
+
+  async getSession(sessionId: string): Promise<SessionWire> {
+    const envelope = await this.get<SessionEnvelopeWire>(
+      `/v1/sessions/${encodeURIComponent(sessionId)}`,
+    )
+    return envelope.session
+  }
+
+  async getTask(taskRunId: string): Promise<TaskRunWire> {
+    const envelope = await this.get<TaskEnvelopeWire>(`/v1/tasks/${encodeURIComponent(taskRunId)}`)
+    return envelope.task
+  }
+
+  async getRunView(runId: string): Promise<RunViewWire> {
+    const envelope = await this.get<RunViewEnvelopeWire>(
+      `/v1/workflow-runs/${encodeURIComponent(runId)}`,
+    )
+    return envelope.view
+  }
+
+  async getNodeView(runId: string, nodeRunId: string): Promise<NodeViewWire> {
+    const envelope = await this.get<NodeViewEnvelopeWire>(
+      `/v1/workflow-runs/${encodeURIComponent(runId)}/nodes/${encodeURIComponent(nodeRunId)}`,
+    )
+    return envelope.view
+  }
+
+  async listApprovals(pendingOnly = true): Promise<ApprovalWire[]> {
+    const envelope = await this.get<ApprovalsListWire>(
+      `/v1/approvals${query({ pending: pendingOnly ? 'true' : 'false' })}`,
+    )
+    return envelope.approvals
+  }
+
+  listArtifacts(params: ListArtifactsParams = {}): Promise<ArtifactsPageWire> {
+    return this.get(`/v1/artifacts${query(params)}`)
+  }
+
+  private async get<T>(path: string): Promise<T> {
+    let response: Response
+    try {
+      response = await this.fetchImpl(`${this.baseUrl}${path}`, {
+        headers: { authorization: `Bearer ${this.token}`, accept: 'application/json' },
+      })
+    } catch (error) {
+      throw new ApiError(
+        0,
+        'network_error',
+        error instanceof Error ? error.message : 'network request failed',
+      )
+    }
+    if (!response.ok) {
+      throw await toApiError(response)
+    }
+    return (await response.json()) as T
+  }
+}
+
+async function toApiError(response: Response): Promise<ApiError> {
+  let code = 'unknown'
+  let message = `request failed with HTTP ${response.status}`
+  try {
+    const body: unknown = await response.json()
+    if (body !== null && typeof body === 'object' && 'error' in body) {
+      const error = (body as { error: unknown }).error
+      if (error !== null && typeof error === 'object') {
+        const { code: bodyCode, message: bodyMessage } = error as {
+          code?: unknown
+          message?: unknown
+        }
+        if (typeof bodyCode === 'string') code = bodyCode
+        if (typeof bodyMessage === 'string') message = bodyMessage
+      }
+    }
+  } catch {
+    // Non-JSON error body; keep the status-derived defaults.
+  }
+  const retryAfter = response.headers.get('retry-after')
+  const retryAfterSeconds = retryAfter === null ? null : Number(retryAfter)
+  return new ApiError(
+    response.status,
+    code,
+    message,
+    retryAfterSeconds !== null && Number.isFinite(retryAfterSeconds) ? retryAfterSeconds : null,
+  )
+}
+
+function query(params: Record<string, string | number | undefined>): string {
+  const search = new URLSearchParams()
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined) search.set(key, String(value))
+  }
+  const text = search.toString()
+  return text === '' ? '' : `?${text}`
+}

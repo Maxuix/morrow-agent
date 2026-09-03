@@ -11,6 +11,8 @@ build/
 dist/
 *.egg-info/
 .mypy_cache/
+node_modules/
+src/morrow/gui_static/
 .env
 .env.*
 !.env.example
