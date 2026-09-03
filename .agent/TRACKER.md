@@ -13,8 +13,8 @@ static gates and CLI help smoke green. Acceptance evidence:
 
 ## Active task
 
-Subplan 3 closeout: docs/execution-state commit, fast-forward merge into `main`, remote
-publication (authorized 2026-09-03), topic branch retirement.
+None. Subplan 3 is fully closed: merged into `main` at `2289131`, pushed to `origin/main`
+(neither ahead nor behind), topic branch `feat/stage8-core-api` verified absorbed and deleted.
 
 ## Next action
 

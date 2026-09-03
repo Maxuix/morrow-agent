@@ -1,7 +1,7 @@
 # Stage 8 Adaptive Orchestration and GUI Implementation Plan
 
 > Status: active 2026-09-03
-> Active subplan: `3-core-api-local-server` closeout on `feat/stage8-core-api`
+> Active subplan: none — `3-core-api-local-server` completed, merged (`2289131`) and published
 > Next subplan: `4-web-gui-observer` (after explicit activation and frontend toolchain
 > authorization)
 > Roadmap authority: `docs/roadmap/stage-8-adaptive-orchestration-and-gui.md`
