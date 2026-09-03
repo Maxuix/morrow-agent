@@ -1,6 +1,6 @@
 # Subplan 1 — Pause/Drain Runtime
 
-> Status: pending activation
+> Status: in progress (activated 2026-09-03)
 > Branch: `feat/stage8-pause-drain`
 > Activation base: latest verified `main` at activation
 > Prerequisite: Stage 8 master plan approved

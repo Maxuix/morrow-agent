@@ -711,6 +711,7 @@ def test_previous_current_migration_defaults_and_future_refusal(tmp_path):
     assert store.migrate().applied == (
         "workflow_revision_artifact_contracts",
         "workflow_node_request_cap",
+        "workflow_pause_drain_lineage",
     )
     with store.open(StoreOpenMode.READ_WRITE) as handle:
         assert (
@@ -726,8 +727,8 @@ def test_previous_current_migration_defaults_and_future_refusal(tmp_path):
             journal.get_artifact("ws_one", "art_old").text_safety_profile
             == TextSafetyProfile.LEGACY_STRICT
         )
-        handle.run_write(lambda ex: ex.execute("PRAGMA user_version=26"))
-        handle.run_write(lambda ex: ex.execute("UPDATE store_identity SET schema_version=26"))
+        handle.run_write(lambda ex: ex.execute("PRAGMA user_version=27"))
+        handle.run_write(lambda ex: ex.execute("UPDATE store_identity SET schema_version=27"))
     assert store.classify().health is StoreHealth.FUTURE_SCHEMA
 
 
@@ -782,3 +783,67 @@ def test_wrong_outcome_workflow_reference_and_missing_ready_epoch_rejected(state
             "wrun_one",
             journal.workflows.get_run("ws_one", "wrun_one").input_artifacts[0],
         )
+
+
+def test_pause_resume_ladder_occ_and_terminal_rejection(state):
+    from morrow.application.workflows.transitions import WorkflowTransitionService
+    from morrow.core.application import ApplicationError
+
+    _, _, journal, _, _, _, _ = state
+    transitions = WorkflowTransitionService(journal, workspace_id="ws_one", clock=journal.now)
+
+    # Pause on a never-admitted run pauses it directly; the fact is durable.
+    paused = transitions.request_pause("wrun_one")
+    assert paused.status is WorkflowStatus.PAUSED and paused.pause_requested
+    assert paused.row_version == 2
+    # Idempotent replay returns the same row.
+    assert transitions.request_pause("wrun_one") == paused
+    # Stale OCC writes are rejected.
+    stale = paused.model_copy(
+        update={
+            "status": WorkflowStatus.RUNNING,
+            "pause_requested": False,
+            "row_version": paused.row_version + 1,
+        }
+    )
+    with pytest.raises(ValueError, match="revision conflict"):
+        journal.workflows.save_run(stale, expected_row_version=1)
+    # Resume atomically clears the fact and returns to running.
+    resumed = transitions.resume_run("wrun_one")
+    assert resumed.status is WorkflowStatus.RUNNING and not resumed.pause_requested
+    assert transitions.resume_run("wrun_one") == resumed
+    # Running -> draining -> paused (no Active nodes) -> running.
+    draining = transitions.request_pause("wrun_one")
+    assert draining.status is WorkflowStatus.DRAINING and draining.pause_requested
+    settled = transitions.complete_drain("wrun_one")
+    assert settled.status is WorkflowStatus.PAUSED and settled.pause_requested
+    running = transitions.resume_run("wrun_one")
+    assert running.status is WorkflowStatus.RUNNING and not running.pause_requested
+    # A terminal run rejects Pause.
+    cancelled = transitions.cancel_run("wrun_one")
+    assert cancelled.status is WorkflowStatus.CANCELLED
+    with pytest.raises(ApplicationError, match="terminal"):
+        transitions.request_pause("wrun_one")
+
+
+def test_pause_on_blocked_run_keeps_status_and_cancel_intent_rejects(state):
+    from morrow.application.workflows.transitions import WorkflowTransitionService
+    from morrow.core.application import ApplicationError
+
+    _, _, journal, _, _, _, _ = state
+    transitions = WorkflowTransitionService(journal, workspace_id="ws_one", clock=journal.now)
+
+    transitions.mark_run_running("wrun_one")
+    blocked = transitions.block_run("wrun_one")
+    assert blocked.status is WorkflowStatus.BLOCKED
+    # Pause on a blocked run records only the fact; the status stays blocked.
+    paused = transitions.request_pause("wrun_one")
+    assert paused.status is WorkflowStatus.BLOCKED and paused.pause_requested
+    # Resume clears the fact but leaves the blocked run recovery-owned.
+    resumed = transitions.resume_run("wrun_one")
+    assert resumed.status is WorkflowStatus.BLOCKED and not resumed.pause_requested
+    # A pending user-cancel intent rejects Pause outright.
+    with_intent = transitions.set_pending_user_cancel("wrun_one")
+    assert with_intent.pending_terminal_intent == "user_cancel"
+    with pytest.raises(ApplicationError, match="cancellation"):
+        transitions.request_pause("wrun_one")

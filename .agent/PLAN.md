@@ -1,7 +1,7 @@
 # Stage 8 Adaptive Orchestration and GUI Implementation Plan
 
-> Status: drafted 2026-09-03; pending user review and activation
-> Active subplan: none
+> Status: active 2026-09-03
+> Active subplan: `1-pause-drain-runtime` (branch `feat/stage8-pause-drain`)
 > Next subplan: `1-pause-drain-runtime` (after activation and its preconditions are confirmed)
 > Roadmap authority: `docs/roadmap/stage-8-adaptive-orchestration-and-gui.md`
 > (revised 2026-09-03: risk-tiered Replan autonomy; runtime-kernel-first ordering)

@@ -25,10 +25,13 @@ class WorkflowStatus(StrEnum):
     FAILED = "failed"
     CANCELLED = "cancelled"
     BLOCKED = "blocked"
+    DRAINING = "draining"
+    PAUSED = "paused"
+    SUPERSEDED = "superseded"
 
     @property
     def terminal(self):
-        return self in {self.COMPLETED, self.FAILED, self.CANCELLED}
+        return self in {self.COMPLETED, self.FAILED, self.CANCELLED, self.SUPERSEDED}
 
 
 def validate_run_transition(current: WorkflowStatus, target: WorkflowStatus) -> None:
@@ -37,17 +40,35 @@ def validate_run_transition(current: WorkflowStatus, target: WorkflowStatus) -> 
             WorkflowStatus.RUNNING,
             WorkflowStatus.FAILED,
             WorkflowStatus.CANCELLED,
+            WorkflowStatus.PAUSED,
         },
         WorkflowStatus.RUNNING: {
             WorkflowStatus.COMPLETED,
             WorkflowStatus.FAILED,
             WorkflowStatus.CANCELLED,
             WorkflowStatus.BLOCKED,
+            WorkflowStatus.DRAINING,
         },
         WorkflowStatus.BLOCKED: {
             WorkflowStatus.RUNNING,
             WorkflowStatus.FAILED,
             WorkflowStatus.CANCELLED,
+            WorkflowStatus.DRAINING,
+            WorkflowStatus.PAUSED,
+            WorkflowStatus.SUPERSEDED,
+        },
+        WorkflowStatus.DRAINING: {
+            WorkflowStatus.RUNNING,
+            WorkflowStatus.PAUSED,
+            WorkflowStatus.BLOCKED,
+            WorkflowStatus.COMPLETED,
+            WorkflowStatus.FAILED,
+            WorkflowStatus.CANCELLED,
+            WorkflowStatus.SUPERSEDED,
+        },
+        WorkflowStatus.PAUSED: {
+            WorkflowStatus.RUNNING,
+            WorkflowStatus.SUPERSEDED,
         },
     }
     if target not in legal.get(current, set()):
@@ -81,6 +102,18 @@ class WorkflowRun(RunState):
     pending_terminal_intent: Literal["user_cancel"] | None = None
     invoking_client_message_id: str | None = None
     invoking_root_row_version: int | None = Field(default=None, ge=1, strict=True)
+    # The one durable orthogonal Pause fact: never a process-local flag, never
+    # inherited by a handoff child, and mutated only under row-version OCC.
+    pause_requested: bool = False
+    run_relation: Literal["initial", "continuation", "rerun"] = "initial"
+    lineage_budget_root_run_id: WorkflowRunId | None = None
+    parent_run_id: WorkflowRunId | None = None
+
+    @property
+    def effective_lineage_budget_root_run_id(self) -> str:
+        """Legacy rows predate the lineage column; an initial run is its own root."""
+
+        return self.lineage_budget_root_run_id or self.workflow_run_id
 
     @field_validator("invoking_client_message_id")
     @classmethod
@@ -98,6 +131,25 @@ class WorkflowRun(RunState):
             raise ValueError("Workflow input must bind TaskContract@1 as task")
         if (self.invoking_client_message_id is None) != (self.invoking_root_row_version is None):
             raise ValueError("Direct Workflow binding facts must be present together")
+        if self.run_relation == "initial":
+            if self.parent_run_id is not None:
+                raise ValueError("an initial Workflow run has no parent")
+            if self.effective_lineage_budget_root_run_id != self.workflow_run_id:
+                raise ValueError("an initial Workflow run is its own lineage budget root")
+        elif self.parent_run_id is None or self.lineage_budget_root_run_id is None:
+            raise ValueError("a continuation/rerun Workflow run requires its lineage facts")
+        if (
+            self.pause_requested
+            and not self.status.terminal
+            and self.status
+            not in {WorkflowStatus.DRAINING, WorkflowStatus.PAUSED, WorkflowStatus.BLOCKED}
+        ):
+            raise ValueError("pause_requested requires a draining, paused or blocked state")
+        if self.status in {WorkflowStatus.DRAINING, WorkflowStatus.PAUSED}:
+            if not self.pause_requested:
+                raise ValueError("a draining/paused Workflow keeps the pause fact")
+            if self.started_at is None:
+                raise ValueError("a draining/paused Workflow requires an admission timestamp")
         return self
 
 

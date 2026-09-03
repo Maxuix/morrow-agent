@@ -29,8 +29,6 @@ from morrow.core.faults import InjectedFault
 from morrow.core.models import FinishReason, utc_now
 from morrow.core.workflows.contracts import (
     SUBMISSION_OUTPUT_KINDS,
-    ArtifactBinding,
-    ContractRef,
     parse_workflow_payload,
     workflow_payload_excerpt,
 )
@@ -162,12 +160,22 @@ class WorkflowScheduler:
                 ApplicationErrorCode.NEEDS_RECOVERY,
                 "Workflow is blocked; resolve its recovery items first",
             )
+        if run.status is WorkflowStatus.PAUSED:
+            raise ApplicationError(
+                ApplicationErrorCode.INVALID,
+                "Workflow is paused; resume it before driving again",
+            )
         revision = self.journal.workflows.get_revision(self.workspace_id, run.workflow_revision_id)
         node_defs = {node.node_id: node for node in revision.nodes}
         for node_id in stable_execution_order(revision):
             run = self._require_run(workflow_run_id)
-            # BLOCKED is nonterminal but admits nothing until recovery resolves it.
-            if run.status.terminal or run.status is WorkflowStatus.BLOCKED:
+            # BLOCKED admits nothing until recovery resolves it, PAUSED waits for
+            # the user's resume, and DRAINING settles Active nodes without ever
+            # admitting a queued one.
+            if run.status.terminal or run.status in (
+                WorkflowStatus.BLOCKED,
+                WorkflowStatus.PAUSED,
+            ):
                 break
             node_def = node_defs[node_id]
             node = self._node_for(run, node_def)
@@ -180,13 +188,16 @@ class WorkflowScheduler:
             if gate is not None:
                 break
             if node.status is WorkflowStatus.QUEUED:
+                if run.status is WorkflowStatus.DRAINING:
+                    continue
                 # Budget/deadline gate admission only. An admitted node's next
                 # request is enforced at the durable purpose=agent seam, and a
-                # crash replay needing no new request must still complete.
+                # crash replay needing no new request must still complete. The
+                # authoritative recheck lives in the admission transaction.
                 remaining = (
                     run.budget_snapshot.max_agent_generation_requests
-                    - self.journal.count_workflow_agent_requests(
-                        self.workspace_id, run.workflow_run_id
+                    - self.journal.count_lineage_agent_requests(
+                        self.workspace_id, run.effective_lineage_budget_root_run_id
                     )
                 )
                 if remaining <= 0:
@@ -206,7 +217,6 @@ class WorkflowScheduler:
             try:
                 if node.status is WorkflowStatus.QUEUED:
                     self._require_ready(run, revision, node_def, nodes_by_id)
-                    self._bind_node_inputs(run, node_def, nodes_by_id)
                 await self._drive_node(run, revision, node_def, node, cap)
                 self._require_settled(run, node)
             except ApplicationError as exc:
@@ -229,27 +239,34 @@ class WorkflowScheduler:
             except Exception:
                 self.finalizer.finalize_failure(workflow_run_id, reason="node_failed")
                 break
-        return self._finalize_when_all_completed(workflow_run_id)
+        run = self._finalize_when_all_completed(workflow_run_id)
+        return self._settle_drain(workflow_run_id)
 
     def _require_settled(self, run: WorkflowRun, node: NodeRun) -> None:
         """A returned drive must leave its node terminal or the run blocked.
 
         Without this guard an exhausted resume loop would let the serial order
         advance while the node is still RUNNING, admitting a sibling whose
-        predecessors completed on a fork.
+        predecessors completed on a fork. The guard yields to drain semantics:
+        on a draining/paused run the pause fact owns the next step.
         """
 
         current_run = self._require_run(run.workflow_run_id)
-        if current_run.status.terminal or current_run.status is WorkflowStatus.BLOCKED:
+        if current_run.status is not WorkflowStatus.RUNNING:
             return
         current_node = self.transitions.get_node(node.node_run_id) or node
         if current_node.status.terminal or current_node.status is WorkflowStatus.BLOCKED:
             return
         self.finalizer.finalize_failure(run.workflow_run_id, reason="node_failed")
 
+    def _settle_drain(self, workflow_run_id: str) -> WorkflowRun:
+        """A drained run with no Active nodes left becomes paused."""
+
+        return self.transitions.complete_drain(workflow_run_id)
+
     def _finalize_when_all_completed(self, workflow_run_id: str) -> WorkflowRun:
         run = self._require_run(workflow_run_id)
-        if not run.status.terminal and run.status is not WorkflowStatus.BLOCKED:
+        if run.status in (WorkflowStatus.RUNNING, WorkflowStatus.DRAINING):
             nodes = self.journal.workflows.list_nodes(self.workspace_id, workflow_run_id)
             if nodes and all(node.status is WorkflowStatus.COMPLETED for node in nodes):
                 # Crash-safe: a run whose last node completed but whose success
@@ -269,6 +286,11 @@ class WorkflowScheduler:
         run = self._require_run(workflow_run_id)
         if run.status.terminal:
             return run
+        if run.status is WorkflowStatus.PAUSED:
+            raise ApplicationError(
+                ApplicationErrorCode.INVALID,
+                "Workflow is paused; resume it before driving again",
+            )
         nodes = self.journal.workflows.list_nodes(self.workspace_id, workflow_run_id)
         active = next(
             (
@@ -293,7 +315,12 @@ class WorkflowScheduler:
         if active.status is WorkflowStatus.BLOCKED:
             self.transitions.resume_blocked_node(active.node_run_id)
         if run.status is WorkflowStatus.BLOCKED:
-            self.transitions.resume_blocked_run(run.workflow_run_id)
+            if run.pause_requested:
+                # Resolve-success under a standing pause returns to draining and
+                # never admits queued nodes; the drain settles after Active work.
+                self.transitions.resume_blocked_run_to_draining(run.workflow_run_id)
+            else:
+                self.transitions.resume_blocked_run(run.workflow_run_id)
         return await self.run(workflow_run_id)
 
     def abandon(self, workflow_run_id: str, *, expected_row_version: int) -> WorkflowRun:
@@ -491,6 +518,14 @@ class WorkflowScheduler:
         if run.status.terminal:
             return "terminal"
         node = self.transitions.get_node(node.node_run_id) or node
+        if (
+            error_message is not None
+            and error_message.startswith("paused:")
+            and node.status is WorkflowStatus.QUEUED
+        ):
+            # Pause won the admission race: the rolled-back Turn leaves the node
+            # queued, and the draining run settles without a failure mapping.
+            return "paused"
         if reason == "policy_revoked":
             self.finalizer.finalize_cancel(workflow_run_id, reason="policy_revoked")
             return "terminal"
@@ -670,46 +705,6 @@ class WorkflowScheduler:
                     f"node {node_def.node_id} is not ready: input {binding.input_name} has "
                     "no bound producer Artifact",
                 )
-
-    def _bind_node_inputs(
-        self,
-        run: WorkflowRun,
-        node_def: AgentNode,
-        nodes_by_id: dict[str, NodeRun],
-    ) -> None:
-        """Durably bind every declared input before admission; replay is a no-op."""
-
-        node_run_id = nodes_by_id[node_def.node_id].node_run_id
-        bound_bindings: list[ArtifactBinding] = []
-        for binding in node_def.input_bindings:
-            if binding.source == "workflow_input":
-                source = run.input_artifacts[0]
-                bound = ArtifactBinding(
-                    name=binding.input_name,
-                    artifact_id=source.artifact_id,
-                    contract=source.contract,
-                )
-            else:
-                ref = binding.node_output
-                producer = nodes_by_id[ref.node_id]
-                produced = next(
-                    produced
-                    for nid, direction, produced in self.journal.workflows.list_bindings(
-                        self.workspace_id, run.workflow_run_id
-                    )
-                    if nid == producer.node_run_id
-                    and direction == "output"
-                    and produced.name == ref.output_slot
-                )
-                bound = ArtifactBinding(
-                    name=binding.input_name,
-                    artifact_id=produced.artifact_id,
-                    contract=ContractRef(
-                        kind=binding.accepts.kind, version=binding.accepts.version
-                    ),
-                )
-            bound_bindings.append(bound)
-        self.transitions.bind_node_inputs(node_run_id, tuple(bound_bindings))
 
     def _compose_leaf_runtime(self, prepared, hooks: WorkflowLeafHooks):
         """Inject mechanism tools and freeze Coder bash to the native sandbox."""

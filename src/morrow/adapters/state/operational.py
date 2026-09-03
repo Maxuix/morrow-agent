@@ -123,6 +123,31 @@ def rollback_quietly(connection: sqlite3.Connection) -> None:
         pass
 
 
+def _restore_migration_pragmas(connection: sqlite3.Connection, migration: SchemaMigration) -> None:
+    try:
+        if getattr(migration, "requires_foreign_keys_off", False):
+            connection.execute("PRAGMA foreign_keys = ON")
+        if getattr(migration, "requires_legacy_alter_table", False):
+            connection.execute("PRAGMA legacy_alter_table = OFF")
+    except sqlite3.Error:
+        pass
+
+
+def _verify_rebuild(connection: sqlite3.Connection) -> None:
+    """A rebuild migration proves the store consistent before its own commit."""
+
+    try:
+        violations = connection.execute("PRAGMA foreign_key_check").fetchall()
+        integrity = connection.execute("PRAGMA integrity_check").fetchone()[0]
+    except sqlite3.Error as exc:
+        raise translate_sqlite_error(exc) from exc
+    if violations or integrity != "ok":
+        raise StorageError(
+            StorageErrorCode.NEEDS_REPAIR,
+            "operational store migration left the store inconsistent",
+        )
+
+
 def posix_mode(path: Path) -> int:
     return stat.S_IMODE(path.stat().st_mode)
 
@@ -625,13 +650,14 @@ class OperationalStore:
 
     def _apply_migration(self, connection: sqlite3.Connection, migration: SchemaMigration) -> None:
         applied_at = int(self.clock.now().timestamp())
-        rebuilds_task_runs = migration.version == 5
         try:
-            if rebuilds_task_runs:
-                # SQLite cannot alter the v2 CHECK constraint in place.  The v5 migration
-                # rebuilds the parent table while preserving child FK SQL with legacy rename
-                # behavior; this pragma must be set before the transaction begins.
+            # SQLite cannot alter CHECK constraints in place. A rebuild migration
+            # declares its pragma needs as metadata; foreign_keys must be set
+            # before the transaction begins and both pragmas are always restored.
+            # Duck-typed test migrations carry no metadata and get no pragmas.
+            if getattr(migration, "requires_legacy_alter_table", False):
                 connection.execute("PRAGMA legacy_alter_table = ON")
+            if getattr(migration, "requires_foreign_keys_off", False):
                 connection.execute("PRAGMA foreign_keys = OFF")
             connection.execute("BEGIN IMMEDIATE")
             self._fail("begin")
@@ -650,28 +676,18 @@ class OperationalStore:
                 migration_insert_sql(),
                 (migration.version, migration.name, migration.checksum, applied_at),
             )
+            if getattr(migration, "requires_rebuild_verification", False):
+                _verify_rebuild(connection)
             self._fail("before_migration_commit")
             connection.execute("COMMIT")
-            if rebuilds_task_runs:
-                connection.execute("PRAGMA foreign_keys = ON")
-                connection.execute("PRAGMA legacy_alter_table = OFF")
+            _restore_migration_pragmas(connection, migration)
         except sqlite3.Error as exc:
             rollback_quietly(connection)
-            if rebuilds_task_runs:
-                try:
-                    connection.execute("PRAGMA foreign_keys = ON")
-                    connection.execute("PRAGMA legacy_alter_table = OFF")
-                except sqlite3.Error:
-                    pass
+            _restore_migration_pragmas(connection, migration)
             raise translate_sqlite_error(exc) from exc
         except Exception:
             rollback_quietly(connection)
-            if rebuilds_task_runs:
-                try:
-                    connection.execute("PRAGMA foreign_keys = ON")
-                    connection.execute("PRAGMA legacy_alter_table = OFF")
-                except sqlite3.Error:
-                    pass
+            _restore_migration_pragmas(connection, migration)
             raise
 
     def _backup_locked(self, destination_name: str | None = None) -> BackupReport:

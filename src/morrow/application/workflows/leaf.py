@@ -46,6 +46,7 @@ from morrow.core.workflows.contracts import (
     node_submission_artifact_id,
 )
 from morrow.core.workflows.definitions import AgentNode
+from morrow.core.workflows.runs import WorkflowStatus
 from morrow.runtime.conversation import TurnTerminalRecord
 from morrow.runtime.tools import ToolErrorCode, ToolExecutionError
 
@@ -101,6 +102,34 @@ class WorkflowLeafHooks:
             raise ApplicationError(
                 ApplicationErrorCode.INVALID, "Workflow run binding is inconsistent"
             )
+        # The single authoritative admission gate (runtime contracts C2/C3):
+        # Pause and queued→running have exactly one winner because both the
+        # pause command and this recheck commit in authoritative transactions.
+        # A pause rejection is a control outcome, never a node failure.
+        if run.pause_requested or run.status not in (
+            WorkflowStatus.QUEUED,
+            WorkflowStatus.RUNNING,
+        ):
+            raise ApplicationError(
+                ApplicationErrorCode.CONFLICT,
+                "paused: the Workflow pause fact is set; admission is closed",
+            )
+        if self.clock() > run.admission_deadline_at:
+            raise ApplicationError(
+                ApplicationErrorCode.INVALID,
+                "deadline_exceeded: Workflow admission deadline reached",
+            )
+        remaining = (
+            run.budget_snapshot.max_agent_generation_requests
+            - txn.count_lineage_agent_requests(
+                self.workspace_id, run.effective_lineage_budget_root_run_id
+            )
+        )
+        if remaining <= 0:
+            raise ApplicationError(
+                ApplicationErrorCode.INVALID,
+                "budget_exhausted: Workflow lineage budget is exhausted",
+            )
         if ctx.node.conversation_scope == "invoking_session":
             root = txn.get_task_run(self.workspace_id, run.root_task_run_id)
             session = txn.get_session(self.workspace_id, ctx.leaf_session_id)
@@ -150,6 +179,71 @@ class WorkflowLeafHooks:
                 "Workflow leaf preparation does not match the frozen Revision node",
             )
         return version.source.skill_version_ids
+
+    def bind_node_inputs_in_txn(self, txn) -> None:
+        """Bind declared inputs inside the authoritative admission transaction.
+
+        Binding inputs and admitting the node are one atomic step (runtime
+        contract C2), so a Pause can never land between them. Replay of an
+        identical set is a no-op through the journal's immutable-binding rule.
+        """
+
+        ctx = self.context
+        node = txn.workflows.get_node(self.workspace_id, ctx.node_run_id)
+        if node is None or node.status is not WorkflowStatus.QUEUED:
+            return
+        run = txn.workflows.get_run(self.workspace_id, ctx.workflow_run_id)
+        if run is None:
+            raise ApplicationError(
+                ApplicationErrorCode.NEEDS_RECOVERY, "Workflow run is missing for the admitted node"
+            )
+        nodes_by_id = {
+            item.node_id: item
+            for item in txn.workflows.list_nodes(self.workspace_id, ctx.workflow_run_id)
+        }
+        for binding in ctx.node.input_bindings:
+            if binding.source == "workflow_input":
+                source = run.input_artifacts[0]
+                bound = ArtifactBinding(
+                    name=binding.input_name,
+                    artifact_id=source.artifact_id,
+                    contract=source.contract,
+                )
+            else:
+                ref = binding.node_output
+                producer = nodes_by_id[ref.node_id]
+                produced = next(
+                    (
+                        produced
+                        for nid, direction, produced in txn.workflows.list_bindings(
+                            self.workspace_id, ctx.workflow_run_id
+                        )
+                        if nid == producer.node_run_id
+                        and direction == "output"
+                        and produced.name == ref.output_slot
+                    ),
+                    None,
+                )
+                if produced is None:
+                    raise ApplicationError(
+                        ApplicationErrorCode.NEEDS_RECOVERY,
+                        f"node {ctx.node.node_id} is not ready: input {binding.input_name} has "
+                        "no bound producer Artifact",
+                    )
+                bound = ArtifactBinding(
+                    name=binding.input_name,
+                    artifact_id=produced.artifact_id,
+                    contract=ContractRef(
+                        kind=binding.accepts.kind, version=binding.accepts.version
+                    ),
+                )
+            txn.workflows.bind_artifact(
+                self.workspace_id,
+                ctx.workflow_run_id,
+                bound,
+                node_run_id=ctx.node_run_id,
+                direction="input",
+            )
 
     def admit_node_in_txn(self, txn, *, agent_run_id: str) -> None:
         """Atomically bind the queued NodeRun's leaf references inside Turn admission.

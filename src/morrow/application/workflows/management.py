@@ -274,7 +274,17 @@ class WorkflowManagementService:
     async def resume(self, workflow_run_id: str) -> WorkflowRun:
         if self.runtime is None:
             raise RuntimeError("Workflow recovery requires a composed Workflow runtime")
+        run = self.runtime.transitions.get_run(workflow_run_id)
+        if run is not None and run.pause_requested:
+            # Resume atomically clears the durable pause fact; a blocked run
+            # keeps its status and stays recovery-owned either way.
+            self.runtime.transitions.resume_run(workflow_run_id)
         return await self.runtime.scheduler.recover(workflow_run_id)
+
+    def pause(self, workflow_run_id: str) -> WorkflowRun:
+        if self.runtime is None:
+            raise RuntimeError("Workflow control requires a composed Workflow runtime")
+        return self.runtime.transitions.request_pause(workflow_run_id)
 
     def abandon(self, workflow_run_id: str, *, expected_row_version: int) -> WorkflowRun:
         if self.runtime is None:

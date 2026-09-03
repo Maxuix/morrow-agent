@@ -240,7 +240,7 @@ class SqliteWorkflowJournal:
     def active_for_root(self, workspace_id, task_run_id):
         row = self.backend.read_one(
             "SELECT workflow_run_id FROM workflow_runs WHERE workspace_id=? AND root_task_run_id=? "
-            "AND status IN ('queued','running','blocked')",
+            "AND status IN ('queued','running','blocked','draining','paused')",
             (workspace_id, task_run_id),
         )
         return self.get_run(workspace_id, row[0]) if row else None
@@ -278,14 +278,25 @@ class SqliteWorkflowJournal:
                 nodes
             ) != len(revision.nodes):
                 raise ValueError("Workflow must pre-create exactly one NodeRun per node")
+            if (
+                value.pause_requested
+                or value.run_relation != "initial"
+                or value.parent_run_id is not None
+                or value.effective_lineage_budget_root_run_id != value.workflow_run_id
+            ):
+                raise ValueError("Workflow admission starts an initial lineage root")
             self.backend.executor().execute(
-                "INSERT INTO workflow_runs VALUES(?,?,?,?,?,?)",
+                "INSERT INTO workflow_runs VALUES(?,?,?,?,?,?,?,?,?,?)",
                 (
                     value.workflow_run_id,
                     value.workspace_id,
                     value.workflow_revision_id,
                     value.root_task_run_id,
                     value.status.value,
+                    1 if value.pause_requested else 0,
+                    value.run_relation,
+                    value.effective_lineage_budget_root_run_id,
+                    value.parent_run_id,
                     value.model_dump_json(),
                 ),
             )
@@ -364,7 +375,7 @@ class SqliteWorkflowJournal:
                     "effective_node_generation_request_cap",
                 }
             if not node:
-                mutable |= {"result_status", "pending_terminal_intent"}
+                mutable |= {"result_status", "pending_terminal_intent", "pause_requested"}
             for field in type(value).model_fields.keys() - mutable:
                 if getattr(value, field) != getattr(current, field):
                     raise ValueError("frozen Workflow evidence cannot change")
@@ -373,7 +384,10 @@ class SqliteWorkflowJournal:
             elif (
                 current.status.terminal
                 or node
-                or current.pending_terminal_intent == value.pending_terminal_intent
+                or (
+                    current.pending_terminal_intent == value.pending_terminal_intent
+                    and current.pause_requested == value.pause_requested
+                )
             ):
                 raise ValueError("Workflow state did not advance")
             if (
@@ -455,14 +469,22 @@ class SqliteWorkflowJournal:
                 if node
                 else ("workflow_runs", "workflow_run_id")
             )
-            self.backend.executor().execute(
-                f"UPDATE {table} SET status=?, body_json=? WHERE {key}=?",
-                (
-                    value.status.value,
-                    value.model_dump_json(),
-                    getattr(value, key),
-                ),
-            )
+            if node:
+                self.backend.executor().execute(
+                    "UPDATE workflow_node_runs SET status=?, body_json=? WHERE node_run_id=?",
+                    (value.status.value, value.model_dump_json(), value.node_run_id),
+                )
+            else:
+                self.backend.executor().execute(
+                    "UPDATE workflow_runs SET status=?, pause_requested=?, body_json=? "
+                    "WHERE workflow_run_id=?",
+                    (
+                        value.status.value,
+                        1 if value.pause_requested else 0,
+                        value.model_dump_json(),
+                        value.workflow_run_id,
+                    ),
+                )
             return value
 
         return self.backend.transact(work)

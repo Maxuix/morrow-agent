@@ -5,9 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from morrow.core.artifacts import ArtifactMetadata
+from morrow.core.execution import ToolExecutionState
 from morrow.core.workflows.contracts import ArtifactBinding
 from morrow.core.workflows.definitions import WorkflowRevision
-from morrow.core.workflows.runs import NodeRun, WorkflowRun
+from morrow.core.workflows.runs import NodeRun, WorkflowRun, WorkflowStatus
 
 
 @dataclass(frozen=True)
@@ -15,6 +16,7 @@ class WorkflowNodeView:
     node: NodeRun
     output_bindings: tuple[ArtifactBinding, ...]
     artifacts: tuple[ArtifactMetadata, ...]
+    approval_pending: bool = False
 
 
 @dataclass(frozen=True)
@@ -300,7 +302,14 @@ class WorkflowQueryService:
                 )
                 if metadata is not None
             )
-            nodes.append(WorkflowNodeView(node=node, output_bindings=outputs, artifacts=artifacts))
+            nodes.append(
+                WorkflowNodeView(
+                    node=node,
+                    output_bindings=outputs,
+                    artifacts=artifacts,
+                    approval_pending=self._approval_pending(node),
+                )
+            )
         inputs = tuple(
             metadata
             for metadata in (
@@ -319,11 +328,7 @@ class WorkflowQueryService:
             ),
             usage_availability=self._usage_availability(nodes),
             terminal_outcome=self._terminal_outcome(run),
-            actionable_status=(
-                "resolve unknown Tool evidence, then resume or abandon this blocked Workflow"
-                if run.status.value == "blocked"
-                else None
-            ),
+            actionable_status=self._actionable_status(run),
         )
 
     def get_run_recovery_view(self, workflow_run_id: str) -> WorkflowRunRecoveryView | None:
@@ -352,7 +357,38 @@ class WorkflowQueryService:
             )
             if metadata is not None
         )
-        return WorkflowNodeView(node=node, output_bindings=outputs, artifacts=artifacts)
+        return WorkflowNodeView(
+            node=node,
+            output_bindings=outputs,
+            artifacts=artifacts,
+            approval_pending=self._approval_pending(node),
+        )
+
+    def _approval_pending(self, node: NodeRun) -> bool:
+        """True while a running node waits on an unconsumed Approval.
+
+        During a drain this is the projection that explains why the Workflow
+        stays draining: the node is neither blocked nor finished.
+        """
+
+        if node.status is not WorkflowStatus.RUNNING or node.agent_run_id is None:
+            return False
+        return any(
+            execution.state is ToolExecutionState.AWAITING_APPROVAL
+            for execution in self.journal.list_executions(
+                self.workspace_id, agent_run_id=node.agent_run_id
+            )
+        )
+
+    @staticmethod
+    def _actionable_status(run: WorkflowRun) -> str | None:
+        if run.status is WorkflowStatus.BLOCKED:
+            return "resolve unknown Tool evidence, then resume or abandon this blocked Workflow"
+        if run.status is WorkflowStatus.DRAINING:
+            return "draining: in-flight nodes settle first, then the Workflow pauses"
+        if run.status is WorkflowStatus.PAUSED:
+            return "paused: resume with `morrow workflow resume` to continue"
+        return None
 
     def _desired_agents(self):
         if self.agent_sources is None:

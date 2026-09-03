@@ -732,6 +732,29 @@ def _runtime_for_run(state_root, workspace_id, directory, workflow_run_id):
 
 
 @contextmanager
+def _control_service(*, state_root, workspace_id, directory):
+    """Minimal Workflow control surface: the transition owner, nothing else."""
+
+    application = build_application(state_root=state_root)
+    identity = _identity(application, workspace_id, directory)
+    store = OperationalStore(application.data_root.root)
+    try:
+        handle = store.open(StoreOpenMode.READ_WRITE)
+    except StorageError as exc:
+        if exc.code is StorageErrorCode.NOT_FOUND:
+            handle = store.initialize()
+        else:
+            raise
+    try:
+        journal = SqliteOperationalJournal(handle)
+        yield WorkflowTransitionService(
+            journal, workspace_id=identity.workspace_id, clock=journal.now
+        )
+    finally:
+        handle.close()
+
+
+@contextmanager
 def _abandon_service(*, state_root, workspace_id, directory):
     application = build_application(state_root=state_root)
     identity = _identity(application, workspace_id, directory)
@@ -775,6 +798,22 @@ def workflow_status(
             if value is None:
                 raise ValueError("Workflow run is missing")
             _dump(value)
+    except Exception as exc:
+        _fail(exc)
+
+
+@workflow_app.command("pause")
+def workflow_pause(
+    workflow_run_id: str,
+    workspace_id: str | None = typer.Option(None, "--workspace-id"),
+    directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+):
+    """Record the durable pause fact; a running Workflow drains, then pauses."""
+
+    try:
+        with _control_service(**_options(workspace_id, directory, state_root)) as transitions:
+            _dump(transitions.request_pause(workflow_run_id))
     except Exception as exc:
         _fail(exc)
 

@@ -418,6 +418,9 @@ class TurnSubmissionCoordinator:
                     definition_skills = self.workflow_leaf.check_turn_admission_in_txn(
                         txn, prepared_spec
                     )
+                    # Input binding joins the same authoritative transaction, so
+                    # a Pause can never land between binding and admission.
+                    self.workflow_leaf.bind_node_inputs_in_txn(txn)
                 else:
                     from morrow.application.agent_definitions.admission import (
                         require_definition_admission,

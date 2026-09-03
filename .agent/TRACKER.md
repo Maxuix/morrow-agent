@@ -11,13 +11,15 @@ plans are drafted under `.agent/`.
 
 ## Active task
 
-None. Stage 8 plan is pending user review; no subplan is activated.
+Subplan 1 (`1-pause-drain-runtime`) on branch `feat/stage8-pause-drain`: Pause/Drain/Resume
+runtime — migration framework generalization, schema v26, core model states, single admission
+transaction, Pause/Resume semantics, CLI commands, deterministic tests.
 
 ## Next action
 
-User review of the Stage 8 plan, then activate Subplan 1 (`1-pause-drain-runtime`). Subplan 3
-additionally needs explicit authorization for the additive `ApplicationEvent` lifecycle extension
-and the Python web-framework dependency; Subplan 4 needs frontend toolchain authorization.
+Study the contracts doc and relevant source (migrations in `operational.py`,
+`core/workflows/runs.py`, `workflow_journal.py`, scheduler admission path), then implement the
+migration framework generalization and schema v26.
 
 ## Blockers
 

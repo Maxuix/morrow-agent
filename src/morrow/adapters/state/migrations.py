@@ -40,6 +40,7 @@ from morrow.adapters.state.migrations_v22_runtime_control import V22_NAME, V22_S
 from morrow.adapters.state.migrations_v23_agent_definitions import V23_NAME, V23_STATEMENTS
 from morrow.adapters.state.migrations_v24_workflows import V24_NAME, V24_STATEMENTS
 from morrow.adapters.state.migrations_v25_workflow_execution import V25_NAME, V25_STATEMENTS
+from morrow.adapters.state.migrations_v26_pause_drain import V26_NAME, V26_STATEMENTS
 from morrow.core.store import (
     APPLICATION_NAME,
     RESERVED_SCHEMA_VERSIONS,
@@ -75,6 +76,13 @@ class SchemaMigration:
     version: int
     name: str
     statements: tuple[str, ...]
+    # Rebuild metadata: a migration that rewrites an existing table in place
+    # declares its pragma needs here instead of tripping a version special-case
+    # in the runner. Rebuild migrations verify the store before commit; any
+    # failure rolls the transaction back and restores both pragmas.
+    requires_foreign_keys_off: bool = False
+    requires_legacy_alter_table: bool = False
+    requires_rebuild_verification: bool = False
 
     @property
     def checksum(self) -> str:
@@ -431,7 +439,14 @@ V5_STATEMENTS = (
     """,
 )
 
-V5 = SchemaMigration(version=5, name=V5_NAME, statements=V5_STATEMENTS)
+V5 = SchemaMigration(
+    version=5,
+    name=V5_NAME,
+    statements=V5_STATEMENTS,
+    requires_foreign_keys_off=True,
+    requires_legacy_alter_table=True,
+    requires_rebuild_verification=True,
+)
 
 V6_NAME = "artifact_store_and_references"
 V6_STATEMENTS = (
@@ -1435,6 +1450,15 @@ V23 = SchemaMigration(version=23, name=V23_NAME, statements=V23_STATEMENTS)
 V24 = SchemaMigration(version=24, name=V24_NAME, statements=V24_STATEMENTS)
 V25 = SchemaMigration(version=25, name=V25_NAME, statements=V25_STATEMENTS)
 
+V26 = SchemaMigration(
+    version=26,
+    name=V26_NAME,
+    statements=V26_STATEMENTS,
+    requires_foreign_keys_off=True,
+    requires_legacy_alter_table=True,
+    requires_rebuild_verification=True,
+)
+
 
 class MigrationRegistry:
     def __init__(self, *, supported_version: int = SUPPORTED_SCHEMA_VERSION) -> None:
@@ -1514,6 +1538,7 @@ def production_registry() -> MigrationRegistry:
     registry.add(V23)
     registry.add(V24)
     registry.add(V25)
+    registry.add(V26)
     return registry
 
 

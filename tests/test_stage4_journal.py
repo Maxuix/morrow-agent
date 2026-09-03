@@ -305,6 +305,7 @@ def test_v3_store_migrates_to_v4_recovery(tmp_path):
         "agent_definition_foundation",
         "workflow_revision_artifact_contracts",
         "workflow_node_request_cap",
+        "workflow_pause_drain_lineage",
     )
 
 
@@ -361,6 +362,7 @@ def test_v4_task_children_survive_task_run_rebuild_to_v5(tmp_path):
         "agent_definition_foundation",
         "workflow_revision_artifact_contracts",
         "workflow_node_request_cap",
+        "workflow_pause_drain_lineage",
     )
     with upgraded.open(StoreOpenMode.READ_WRITE) as opened:
         journal = SqliteOperationalJournal(opened)

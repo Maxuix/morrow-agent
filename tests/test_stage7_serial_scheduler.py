@@ -108,14 +108,17 @@ class MutableClock:
 class ScriptBank:
     """One scripted Provider per preparation, in construction order."""
 
-    def __init__(self, scripts=()) -> None:
+    def __init__(self, scripts=(), on_create=None) -> None:
         self.scripts = list(scripts)
         self.providers: list[ScriptedModelProvider] = []
+        self.on_create = on_create
 
     def __call__(self, config, credential) -> ScriptedModelProvider:
         script = self.scripts.pop(0) if self.scripts else [["done"]]
         provider = ScriptedModelProvider(script)
         self.providers.append(provider)
+        if self.on_create is not None:
+            self.on_create(len(self.providers))
         return provider
 
 
@@ -136,7 +139,7 @@ async def _write_handler(arguments) -> str:
 
 
 class DagFixture:
-    def __init__(self, tmp_path, scripts=()) -> None:
+    def __init__(self, tmp_path, scripts=(), bank=None) -> None:
         self.clock = MutableClock()
         self.store = OperationalStore(tmp_path / "state", clock=self.clock)
         self.handle = self.store.initialize()
@@ -148,7 +151,7 @@ class DagFixture:
         self.app = build_application(
             state_root=tmp_path / "app", credentials=MemoryCredentialStore()
         )
-        self.bank = ScriptBank(scripts)
+        self.bank = bank if bank is not None else ScriptBank(scripts)
         self.app.registry.register(
             "fake-adapter",
             self.bank,
@@ -195,6 +198,7 @@ class DagFixture:
                 handler=_write_handler,
             )
         )
+        self.tool_registry = registry
         self.preparation = AgentRunPreparationService(
             global_store=self.app.global_store,
             registry=self.app.registry,

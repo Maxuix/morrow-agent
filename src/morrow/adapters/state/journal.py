@@ -1243,6 +1243,26 @@ class SqliteOperationalJournal:
         )
         return int(row[0]) if row else 0
 
+    def count_lineage_agent_requests(
+        self, workspace_id: str, lineage_budget_root_run_id: str
+    ) -> int:
+        """Durable purpose=agent admissions across one whole continuation lineage.
+
+        Stage 8 continuation children share their root's budget; an initial run
+        is its own root, so this equals the single-run count until then.
+        """
+
+        del workspace_id
+        row = self._read_one(
+            "SELECT COUNT(*) FROM agent_run_model_requests r "
+            "JOIN workflow_agent_run_refs w ON r.agent_run_id = w.agent_run_id "
+            "JOIN workflow_node_runs n ON w.node_run_id = n.node_run_id "
+            "JOIN workflow_runs wr ON n.workflow_run_id = wr.workflow_run_id "
+            "WHERE wr.lineage_budget_root_run_id=? AND r.purpose='agent'",
+            (lineage_budget_root_run_id,),
+        )
+        return int(row[0]) if row else 0
+
     def require_user_task(self, workspace_id, task_run_id):
         task = self.get_task_run(workspace_id, task_run_id)
         if task is not None:

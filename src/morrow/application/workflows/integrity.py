@@ -92,9 +92,18 @@ def verify_workflow_rows(executor):
             ):
                 raise ValueError("revocation mismatch")
         runs = {}
-        for run_id, ws, rid, root_id, status, body in executor.execute(
-            "SELECT * FROM workflow_runs"
-        ):
+        for (
+            run_id,
+            ws,
+            rid,
+            root_id,
+            status,
+            pause_requested,
+            run_relation,
+            budget_root,
+            parent_run_id,
+            body,
+        ) in executor.execute("SELECT * FROM workflow_runs"):
             run = WorkflowRun.model_validate_json(body)
             root = _first(
                 executor,
@@ -109,6 +118,18 @@ def verify_workflow_rows(executor):
                     run.workflow_revision_id,
                     run.root_task_run_id,
                     run.status.value,
+                )
+                or (
+                    pause_requested,
+                    run_relation,
+                    budget_root,
+                    parent_run_id,
+                )
+                != (
+                    1 if run.pause_requested else 0,
+                    run.run_relation,
+                    run.effective_lineage_budget_root_run_id,
+                    run.parent_run_id,
                 )
                 or root != (ws, "user")
                 or revisions[rid].workspace_id != ws

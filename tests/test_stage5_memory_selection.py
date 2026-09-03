@@ -203,6 +203,7 @@ def test_v11_store_upgrades_to_v13_without_rewriting_v11(tmp_path):
         "agent_definition_foundation",
         "workflow_revision_artifact_contracts",
         "workflow_node_request_cap",
+        "workflow_pause_drain_lineage",
     )
     with upgraded.open(StoreOpenMode.READ_WRITE) as session:
         assert session.schema_version == SUPPORTED_SCHEMA_VERSION

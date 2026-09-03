@@ -72,7 +72,7 @@ def test_agent_and_workflow_help_expose_the_complete_stage7_surface():
     ):
         assert command in agent.output
         assert command in workflow.output
-    for command in ("run", "runs", "status", "resume", "abandon", "node"):
+    for command in ("run", "runs", "status", "pause", "resume", "abandon", "node"):
         assert command in workflow.output
 
 
@@ -443,3 +443,51 @@ def test_workflow_run_prints_durable_id_early_and_maps_terminal_exit(
     assert lines[0] == "command_id: cmd_one"
     assert lines[1] == "workflow_run_id: wrun_visible"
     assert json.loads(lines[2])["run"]["status"] == status.value
+
+
+def test_workflow_pause_cli_reports_truthful_state(tmp_path, monkeypatch):
+    from contextlib import contextmanager
+    from datetime import UTC, datetime, timedelta
+
+    from morrow.core.workflows.contracts import ArtifactBinding
+    from morrow.core.workflows.runs import WorkflowRun
+
+    project = tmp_path / "project"
+    project.mkdir()
+    stamp = datetime(2026, 9, 1, tzinfo=UTC)
+    paused_run = WorkflowRun(
+        workflow_run_id="wrun_paused",
+        workspace_id="ws_one",
+        workflow_revision_id="wrev_one",
+        root_task_run_id="task_root",
+        budget_snapshot=WorkflowBudget(
+            max_agent_generation_requests=10,
+            default_node_max_agent_generation_requests=3,
+            admission_timeout_seconds=300,
+            max_concurrency=1,
+        ),
+        status="paused",
+        pause_requested=True,
+        started_at=stamp,
+        admission_deadline_at=stamp + timedelta(seconds=300),
+        input_artifacts=(
+            ArtifactBinding(name="task", artifact_id="art_one", contract={"kind": "TaskContract"}),
+        ),
+    )
+
+    class Transitions:
+        def request_pause(self, workflow_run_id):
+            assert workflow_run_id == "wrun_paused"
+            return paused_run
+
+    @contextmanager
+    def control(**_kwargs):
+        yield Transitions()
+
+    monkeypatch.setattr("morrow.interfaces.workflow_cli._control_service", control)
+    result = CliRunner().invoke(app, ["workflow", "pause", "wrun_paused", "--dir", str(project)])
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["status"] == "paused"
+    assert payload["pause_requested"] is True

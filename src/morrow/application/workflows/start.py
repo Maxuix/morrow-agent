@@ -123,8 +123,9 @@ class WorkflowStartService:
                 return replayed
             self._check_mutable_facts(txn, command, revision)
             started_at = self.clock()
+            workflow_run_id = self.id_source.new_id("wrun")
             run = WorkflowRun(
-                workflow_run_id=self.id_source.new_id("wrun"),
+                workflow_run_id=workflow_run_id,
                 workspace_id=self.workspace_id,
                 workflow_revision_id=revision.workflow_revision_id,
                 root_task_run_id=command.root_task_run_id,
@@ -145,6 +146,7 @@ class WorkflowStartService:
                     if command.client_message_id is not None
                     else None
                 ),
+                lineage_budget_root_run_id=workflow_run_id,
             )
             nodes = tuple(
                 NodeRun(
