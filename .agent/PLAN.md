@@ -1,8 +1,8 @@
 # Stage 8 Adaptive Orchestration and GUI Implementation Plan
 
 > Status: active 2026-09-03
-> Active subplan: `2-future-graph-patch-continuation` review remediation verified; local integration
-> pending
+> Active subplan: `2-future-graph-patch-continuation` closeout (review remediation integrated;
+> remote publication still requires explicit approval)
 > Next subplan: `3-core-api-local-server` (after explicit activation and its authorizations are confirmed)
 > Roadmap authority: `docs/roadmap/stage-8-adaptive-orchestration-and-gui.md`
 > (revised 2026-09-03: risk-tiered Replan autonomy; runtime-kernel-first ordering)

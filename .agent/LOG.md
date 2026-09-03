@@ -4913,3 +4913,5 @@
 - Added regressions across Stage 8 continuation/pause and request observability. Review-focused
   matrix: 56 passed. Full offline gate: 1566 passed / 2 deselected in 283.88 seconds. Ruff
   format/check, compileall, CLI help and `git diff --check` passed. No Live/network test ran.
+- Committed as `b8cdb2f` and fast-forward integrated into local `main`. Remote publication was not
+  attempted because this review-remediation request did not authorize a GitHub push.

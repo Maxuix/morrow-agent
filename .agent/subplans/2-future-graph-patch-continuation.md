@@ -1,6 +1,6 @@
 # Subplan 2 — FutureGraphPatch and Continuation Child Runs
 
-> Status: review remediation verified 2026-09-03; local integration pending
+> Status: review remediation verified and integrated 2026-09-03; remote publication pending approval
 > Implementation branch: `feat/stage8-patch-continuation`
 > Review remediation branch: `fix/stage8-continuation-review`
 > Activation base: latest verified `main` with Subplan 1 integrated

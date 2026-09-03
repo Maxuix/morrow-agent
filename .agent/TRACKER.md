@@ -16,12 +16,12 @@ bugs are repaired: detached Revision number isolation, multi-hop Past derivation
 ReviewReport empty-set finalization, and atomic idle RUNNING pause completion. Two useful review
 suggestions are also implemented for admission-reason normalization and Query effective-output
 projection. Review-focused matrix: 56 passed; full offline gate: 1566 passed / 2 deselected in
-283.88 seconds; static gates and CLI help smoke are green. Only local Git integration remains.
+283.88 seconds; static gates and CLI help smoke are green. Remediation commit `b8cdb2f` is
+fast-forward integrated into local `main`; only separately authorized remote publication remains.
 
 ## Next action
 
-Run the full offline gate, record final evidence, commit the remediation and fast-forward it into
-local `main`. Subplan 3 starts only on explicit activation and additionally needs authorization for the additive
+Subplan 3 starts only on explicit activation and additionally needs authorization for the additive
 `ApplicationEvent` lifecycle extension and Python web-framework dependency; Subplan 4 needs
 frontend toolchain authorization.
 

@@ -1,7 +1,7 @@
 # Stage 8 Subplan 2 — FutureGraphPatch and Continuation Child Runs
 
-Date: 2026-09-03. Result: implementation commit `fb399df` was integrated into local `main`;
-review remediation is being verified on `fix/stage8-continuation-review` before reintegration.
+Date: 2026-09-03. Result: implementation commit `fb399df` and review-remediation commit `b8cdb2f`
+are fast-forward integrated into local `main`. Remote publication remains separately authorized.
 
 ## Delivered
 
