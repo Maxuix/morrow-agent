@@ -97,6 +97,8 @@ schema version of 28. Expectations now include v28 and the future-version reject
 supported version plus one. A subsequent full gate passed 1677 tests; the final gate above also
 includes the cancellation and task-policy precedence regressions added afterwards.
 
-Verified work is ready for fast-forward local integration; the final Git closure is recorded
-in the execution log.
+Verified implementation and acceptance were fast-forwarded into local `main` at `ef63a24`.
+The topic had zero commits absent from main and was deleted. The existing checkout is retained;
+no worktree was created. Main was 38 commits ahead of locally recorded origin/main and 0 behind
+before the final documentation closure commit. No fetch or push was attempted.
 Remote push and Subplan 10 activation are outside this delivery's authorization.

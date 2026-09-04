@@ -1,7 +1,7 @@
 # Subplan 9 — Global Future-Only Replan
 
-> Status: active (2026-09-05); base `a799982`, current worktree
-> Branch: `feat/stage8-global-replan`
+> Status: completed (2026-09-05); implementation integrated at `ef63a24`
+> Branch: `feat/stage8-global-replan` (ancestry verified and retired)
 > Activation base: latest verified `main` with Subplan 8 integrated
 > Prerequisite: Subplan 8 verified
 > Roadmap authority: stage-8 §6.5 (as revised 2026-09-03), §4.6, §8E, §16.4
@@ -68,3 +68,14 @@ than blanket approval.
 
 Feedback-driven OrchestrationPolicy candidates and evaluation dashboards (Subplan 11); nested
 dynamic subgraphs or leaf-created DAGs (never).
+
+## Acceptance and closure
+
+Full offline: 1679 passed, 2 native Seatbelt skips, 2 Live deselected; integration matrix 110
+passed. GUI typecheck/88 tests/build, browser review/decision/history/reopen, Ruff, compileall,
+CLI help, offline sdist/wheel and diff checks passed. Evidence:
+`docs/acceptance/stage-8-subplan-9-global-replan.md`.
+
+Local main was fast-forwarded from `a799982` to `ef63a24`; zero topic commits were absent from
+main before deleting the topic. Existing checkout retained, no new worktree. No remote push or
+Subplan 10 activation.

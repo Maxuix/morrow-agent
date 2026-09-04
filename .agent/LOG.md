@@ -5213,3 +5213,11 @@ rejection retains Pause and automatic history; no external Provider/MCP request 
   reject and automatic history; warning/error logs empty. Fixture and tab closed.
 - Acceptance: `docs/acceptance/stage-8-subplan-9-global-replan.md`. Ready for local integration;
   no push, Live tests, new worktree or Subplan 10 activation.
+
+## 2026-09-05 — Subplan 9 completed
+
+- Committed verified implementation and acceptance as `ef63a24`, then fast-forwarded local main
+  from `a799982`. Ancestry check succeeded and main..topic count was zero before topic deletion.
+- Deleted `feat/stage8-global-replan`; the original checkout is the only worktree and is retained.
+- Closed the execution state. Subplan 10 remains unactivated. No remote push was attempted;
+  local main was 38 ahead / 0 behind locally recorded origin/main before this closure commit.

@@ -1,16 +1,16 @@
 # Stage 8 Adaptive Orchestration and GUI Implementation Plan
 
-> Status: Subplans 1–8 and review remediation completed
-> Last completed subplan: `8-graph-planner-draft` (topic branch retired)
-> (acceptance `docs/acceptance/stage-8-subplan-8-graph-planner-draft.md`)
-> Active subplan: `9-global-replan`
+> Status: Subplans 1–9 and review remediation completed
+> Last completed subplan: `9-global-replan` (topic branch retired)
+> (acceptance `docs/acceptance/stage-8-subplan-9-global-replan.md`)
+> Active subplan: none
 > Next planned subplan: `10-context-learning-skill-gui` (not activated)
 > Roadmap authority: `docs/roadmap/stage-8-adaptive-orchestration-and-gui.md`
 > (revised 2026-09-03: risk-tiered Replan autonomy; runtime-kernel-first ordering)
-> Current evidence: full offline gate 1653 passed / 2 native-sandbox skipped / 2 Live deselected;
-> Planner matrix 23 and related integration matrix 100 passed; Ruff format/check, compileall,
-> CLI help, GUI typecheck/85 tests/build budget, browser planning/edit/freeze/policy/reopen flows
-> and `git diff --check` green; no Live Provider/network test was run in Subplan 8
+> Current evidence: full offline gate 1679 passed / 2 native-sandbox skipped / 2 Live deselected;
+> related integration matrix 110 passed; Ruff format/check, compileall, CLI help,
+> GUI typecheck/88 tests/build budget, browser Replan review/approve/reject/auto/stale/reopen,
+> offline sdist/wheel with bundled GUI and `git diff --check` green; no Live test was run
 > Previous master plan: Stage 7, archived under `.agent/archive/subplans/stage7-workflow-runtime/`
 
 ## 1. Objective
