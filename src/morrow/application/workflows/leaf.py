@@ -62,7 +62,7 @@ class WorkflowLeafContext:
     node: AgentNode
     leaf_session_id: str
     leaf_task_run_id: str
-    effective_node_generation_request_cap: int
+    effective_node_generation_request_cap: int | None
 
 
 class WorkflowLeafHooks:
@@ -132,22 +132,21 @@ class WorkflowLeafHooks:
                 ApplicationErrorCode.INVALID,
                 "Workflow node is outside the immutable execution set",
             )
-        if self.clock() > run.admission_deadline_at:
+        if run.admission_deadline_at is not None and self.clock() > run.admission_deadline_at:
             raise ApplicationError(
                 ApplicationErrorCode.INVALID,
                 "deadline_exceeded: Workflow admission deadline reached",
             )
-        remaining = (
-            run.budget_snapshot.max_agent_generation_requests
-            - txn.count_lineage_agent_requests(
+        workflow_cap = run.budget_snapshot.max_agent_generation_requests
+        if workflow_cap is not None:
+            remaining = workflow_cap - txn.count_lineage_agent_requests(
                 self.workspace_id, run.effective_lineage_budget_root_run_id
             )
-        )
-        if remaining <= 0:
-            raise ApplicationError(
-                ApplicationErrorCode.INVALID,
-                "budget_exhausted: Workflow lineage budget is exhausted",
-            )
+            if remaining <= 0:
+                raise ApplicationError(
+                    ApplicationErrorCode.INVALID,
+                    "budget_exhausted: Workflow lineage budget is exhausted",
+                )
         if ctx.node.conversation_scope == "invoking_session":
             root = txn.get_task_run(self.workspace_id, run.root_task_run_id)
             session = txn.get_session(self.workspace_id, ctx.leaf_session_id)
@@ -268,7 +267,11 @@ class WorkflowLeafHooks:
         """Deadline gate at the durable purpose=agent request-admission seam."""
 
         run = self.journal.workflows.get_run(self.workspace_id, self.context.workflow_run_id)
-        if run is not None and self.clock() > run.admission_deadline_at:
+        if (
+            run is not None
+            and run.admission_deadline_at is not None
+            and self.clock() > run.admission_deadline_at
+        ):
             raise ApplicationError(
                 ApplicationErrorCode.INVALID,
                 "deadline_exceeded: Workflow admission deadline reached",

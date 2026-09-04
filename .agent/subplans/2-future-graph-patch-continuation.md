@@ -42,10 +42,10 @@ whole graph (the Stage 7 six-primary-admissions cost).
   reserved for an explicit user "save/publish as definition" command.
 - Dedicated journal transaction `create_continuation_run` (and its `rerun` sibling) instead of
   reusing `create_run`: the existing `create_run` rigidly requires QUEUED status, row_version 1,
-  `budget_snapshot == revision.budget`, `deadline == started_at + timeout` and a full one-NodeRun-
+  `budget_snapshot == revision.budget`, optional `deadline == started_at + timeout` and a full one-NodeRun-
   per-revision-node pre-creation — all four are violated by a continuation child by design. The new
   method keeps the real invariants (exact immutable Revision, root ownership, pre-created
-  execution set, recorded inherited budget/deadline facts) and drops the initial-run-only
+  execution set, recorded inherited accounting/optional-limit facts) and drops the initial-run-only
   assertions. `create_run` itself is unchanged for initial runs.
 - Inherited Past projection per contracts C1: Past nodes are never re-materialized as NodeRuns in
   the child. Inherited outputs are recorded in `workflow_run_artifact_imports` (references to the
@@ -64,15 +64,16 @@ whole graph (the Stage 7 six-primary-admissions cost).
   existing fixed result owner (`succeeded` writes the READY transition + marked snapshot;
   `needs_revision` writes FAILED transition + terminal TaskOutcome referencing required blocking
   reports). No empty `running` child, no separate finalize command.
-- Lineage budget per contracts C3: Workflow-level budget enforcement moves from the scheduler's
-  per-run pre-check into the existing durable `admit_model_request` seam, counting
+- Lineage accounting/optional limits per contracts C3: configured Workflow cap enforcement moves
+  from the scheduler's per-run pre-check into the existing durable `admit_model_request` seam, counting
   `purpose=agent` rows across the continuation chain under `lineage_budget_root_run_id` (never
-  crossing the nearest rerun/new-root boundary). Continuations inherit the remaining cap and the
-  absolute `admission_deadline_at`; cap/deadline increases must be user-exact edits or
-  user-approved proposals applied under OCC with parent facts; non-positive remaining budget or an
-  expired deadline still allows saving the patch but does not start a non-empty child. Explicit
-  post-terminal `rerun`/new Runs become new budget roots and the CLI says so. No second ledger
-  table — the durable request rows are the claim record.
+  crossing the nearest rerun/new-root boundary). Continuations inherit any configured remaining
+  cap and absolute `admission_deadline_at`; absent limits remain absent. Relaxing/removing an
+  explicit cap/deadline must be a user-exact edit or user-approved proposal under OCC with parent
+  facts; non-positive explicit remaining allowance or an expired explicit deadline still allows
+  saving the patch but does not start a non-empty child. Explicit post-terminal `rerun`/new Runs
+  become new accounting roots and the CLI says so. No second ledger table — durable request rows
+  are the usage and optional-claim record.
 - Retry/rerun semantics per contracts C7: artifact inheritance is derived from whether the
   execution set maps inherited Past nodes, and budget-root creation from `run_relation` — no
   orthogonal columns; the derivation matrix is documented and tested for all four combinations.
@@ -115,5 +116,5 @@ whole graph (the Stage 7 six-primary-admissions cost).
 
 ## Out of scope
 
-Any GUI; ReplanSignal/ReplanCoordinator (Subplan 8); GraphPlanner (Subplan 7); parallelism
-(Subplan 11).
+Any GUI; ReplanSignal/ReplanCoordinator (Subplan 9); GraphPlanner (Subplan 8); parallelism
+(Subplan 12).

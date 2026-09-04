@@ -7,13 +7,18 @@
 > 上一阶段：[Stage 6：Skills 与扩展生命周期](stage-6-skills-and-extensions.md)
 > 下一阶段：[Stage 8：自适应编排与 GUI 控制面](stage-8-adaptive-orchestration-and-gui.md)
 
+> 2026-09-04 现行纠偏：内置 Workflow 是可复制、可改图的建议，不是角色专用协议。
+> Explore → Implement → Verify 统一用 `TextResult@1/result` 传递上一节点最终结果；历史结构化合同
+> 仅作为兼容的可选高级能力。Workflow/Node generation request cap 与 admission timeout 均为可空、
+> 用户显式选择的 guardrail，内置起点不设默认值。以下历史设计若与本段冲突，以本段和当前代码为准。
+
 ## 一、阶段目标
 
 Stage 7 首次引入 Multi-Agent，但目标不是让多个聊天机器人自由讨论，而是建立可靠的 Workflow Runtime：
 
 ```text
 用户选择一个静态 WorkflowDefinition
-→ WorkflowCompiler 校验图、输入输出、权限与预算结构
+→ WorkflowCompiler 校验图、输入输出、权限与可选执行限制
 → 冻结 WorkflowRevision
 → 创建 WorkflowRun
 → Scheduler 按依赖启动 NodeRun
@@ -47,18 +52,13 @@ ToolExecutor 识别 planner/reviewer/coder
 ConversationLog 混写所有 Agent 对话
 ```
 
-### 2.2 Multi-Agent 以 Artifact 协作为主
+### 2.2 Multi-Agent 使用一个通用结果链
 
-节点输出：
-
-- `PlanArtifact`
-- `EvidenceBundle`
-- `ImplementationPatch`
-- `TestReport`
-- `ReviewReport`
-- `SynthesisReport`
-
-后续节点读取这些 Artifact 的结构化摘要和按需内容，而不是默认继承前一个 Agent 的完整聊天历史。
+所有普通 Agent 节点都能把最终回答物化为 `TextResult@1/result`，下游通过同一种
+`NodeOutputBinding` 消费；通信机制不识别 Explorer、Coder、Reviewer 或用户新增的 Web Developer。
+节点仍不共享完整聊天历史。`PlanArtifact`、`EvidenceBundle`、`ImplementationPatch`、`TestReport`、
+`ReviewReport` 和 `SynthesisReport` 保留给历史 Revision 及用户显式需要机器可读字段的高级图，
+但模板不再强迫角色使用各自的专用提交工具或修复循环。
 
 ### 2.3 Workflow 是版本化 DAG
 
@@ -226,11 +226,11 @@ WorkflowDefinitionSource（editable YAML）
 - input_contract
 - required_outputs[]（绑定 exact node_id.slot）
 - tags[]
-- default_budget
-  - max_agent_generation_requests
-  - default_node_max_agent_generation_requests
-  - admission_timeout_seconds
-  - max_concurrency
+- default_budget（可整体省略）
+  - max_agent_generation_requests（可空；用户显式总请求上限）
+  - default_node_max_agent_generation_requests（可空；用户显式节点默认上限）
+  - admission_timeout_seconds（可空；用户显式准入期限）
+  - max_concurrency（默认 1）
 - nodes[]（4.5 的 source fields；不含 compiled-only declared cap）
 - edges[]
   - from_node_id / to_node_id
@@ -269,7 +269,7 @@ restore、应用启动、最后一个有效 published head 或 ordinary Direct�
 integrity 损坏才是 error/needs-repair。
 
 因此 editable source 本身拥有图：source-form nodes、unconditional edges、input contract、exact
-required `node_id.slot` outputs 与 finite default budget。`entry_nodes`、`terminal_nodes`、normalized budget
+required `node_id.slot` outputs 与可选 guardrail。`entry_nodes`、`terminal_nodes`、normalized limits
 和每个 node 的 `declared_node_max_agent_generation_requests` 都是 Compiler 派生并写入 Revision 的事实，
 不要求用户在 YAML 重复维护。
 Stage 7 v1 的 `input_contract` 只接受 exact `TaskContract@1`，因为 Start 只拥有这一种 bounded Workflow
@@ -294,7 +294,7 @@ WorkflowRevision
 - budget
   - max_agent_generation_requests
   - default_node_max_agent_generation_requests
-  - admission_timeout_seconds（正数相对时长）
+  - admission_timeout_seconds（可空；设置时为正数相对时长）
   - max_concurrency
 - compiler_version
 - content_hash
@@ -324,7 +324,7 @@ NodeDefinition
 - conversation_scope: isolated（invoking_session 随子计划 7 的 Direct adapter 引入）
 - tool_requirements[]（可空；只能收窄/禁止 Definition 已声明集合，或声明节点机制必需）
 - budget_override.max_agent_generation_requests（可空）
-- declared_node_max_agent_generation_requests（Compiler 冻结，正数）
+- declared_node_max_agent_generation_requests（Compiler 冻结，可空正数）
 ```
 
 Stage 7 v1 只实现 Agent 节点。并行 fan-in 由 Synthesizer Agent 消费多个 Artifact，不先创建
@@ -340,8 +340,9 @@ binding 消费的输出在生产者完成时必然存在；被绑定但不导出
 `required_for_node_completion=false` slot 只是可检查的观察产物：产生时被物化，缺失不失败节点，
 不参与 readiness 也不可导出。Stage 7 不增加 binding 级 `on_missing`、optional input、fallback 或
 skip 语义——生产者的完成门禁是唯一保障机制，等真实消费者出现再扩展。Artifact identity 固定为
-`(node_run_id, output_slot)`。因此 Coder 的 ImplementationPatch 与 TestReport 是两个明确输出，不塞进
-一个无类型 composite blob。所有 success/needs-revision root Outcome 必带的导出 result refs 必须适配现有 TaskOutcome
+`(node_run_id, output_slot)`。通用 `TextResult` 是角色无关的完整最终结果引用；若用户显式选择
+`ImplementationPatch` 与 `TestReport`，它们仍是两个明确输出，不塞进一个无类型 composite blob。
+所有 success/needs-revision root Outcome 必带的导出 result refs 必须适配现有 TaskOutcome
 `artifact_refs` 上限（当前 64）；TaskContract 使用单独的 `goal_reference`，不重复占用该 tuple。Compiler
 在上限处接受、超一条拒绝。可选叶子明细可带确定性 omission fact 做 bounded projection，但导出 ref
 不能静默截断或塞入无类型 manifest。
@@ -367,7 +368,7 @@ WorkflowRun
 - status
 - result_status: succeeded | needs_revision（仅 completed 时）
 - budget_snapshot（Revision normalized budget 的不可变副本）
-- admission_deadline_at
+- admission_deadline_at（可空）
 - pending_terminal_intent: null | user_cancel
 - input_artifacts[]（至少绑定一个 bounded TaskContract）
 - started_at / completed_at
@@ -710,37 +711,24 @@ Compiler 在运行前执行确定性检查。
 
 ### 7.5 预算
 
-- Workflow 只对 Morrow 可权威准入的维度设置硬上限：primary
-  `agent_generation_request_count`（现有 durable `purpose=agent` request rows）、正数相对
-  `admission_timeout_seconds` 和 concurrency。Revision 不保存绝对 wall-clock deadline；Start 使用
-  injected clock 冻结 `WorkflowRun.admission_deadline_at = started_at + duration`。静态 DAG 与唯一
-  NodeRun rows 已经限制 Node admission，不另建 counter。
-- Source 的 finite Workflow budget 由 Compiler 固化为 Revision 的
-  `max_agent_generation_requests`、`default_node_max_agent_generation_requests`、
-  `admission_timeout_seconds` 与 `max_concurrency`。每个 node 的
-  `declared_node_max_agent_generation_requests = min(node override（若有，否则 Workflow node
-  default）, AgentDefinition run ceiling（若有，否则不额外限制）)`，且必须为正；这四个 aggregate
-  字段和一个 node override 是固定 v1 schema，不是预算 DSL。
-- 串行节点准入时冻结
-  `effective_node_generation_request_cap = min(declared_node_max_agent_generation_requests,
-  workflow_remaining_agent_generation_requests)`；只要大于 0 就允许运行，并通过现有 durable
-  agent-request admission seam 执行。只有 remaining=0 才停止。
-- Stage 7 串行 admission 每次只准入一个节点；评审已否决"并行 batch 为每个叶子预留完整最大额度"
-  的设计（过度保守、恢复账本复杂）。Stage 8 的只读并行条目改为按请求原子 claim：在 frozen
-  node-local cap 与 Workflow remaining 之下，每次 Provider 请求前以幂等键原子申领、响应后按实际
-  结算，不再预留整节点最坏额度。admission 把串行 cap 冻结到 NodeRun；恢复时由 frozen cap 减去该
-  leaf 已 durable admitted 的 `purpose=agent` request rows 推导剩余额度，不增加只存在内存里的
-  ledger 或第二个 request counter。
-- 当前 automatic compaction Provider summary/retry 不经过上述 durable admission seam，因此 Stage 7
-  不把该字段称为 total model/Provider requests。Compaction 继续受现有 AgentRun context/retry 上限，
-  Workflow aggregate 明确显示 excluded/unavailable；本阶段不为此改造通用 AgentLoop observation。
-- request/admission deadline 是 Node/agent-generation request 准入截止，不是 compaction/Tool 总 wall-
-  clock deadline。过期后不会强制中断正在执行的 Tool 而制造 unknown side effect。Tool 安全 settle 后，现有 durable agent-request admission seam 在下一次 generation 请求前
-  拒绝，并把 active Node 映射为 `failed(reason=budget_exhausted|deadline_exceeded)`、queued nodes 映射为
-  cancelled、Workflow/root 映射为 failed；若 Tool outcome_unknown 则沿用 blocked。取消/恢复继续使用
-  现有语义。
-- tool-call/round 和 Provider token/cost 在 Stage 7 是可观察事实，不是硬总预算。若任一必要 usage
-  缺失，总量标为 `unavailable`，不能以零或猜测的最坏值扣减并阻塞后续合法节点。
+- Durable `purpose=agent` request rows 始终记录 Provider 请求与 usage，它们首先是可观察的 accounting，
+  不是系统替用户猜测出来的任务预算。
+- `max_agent_generation_requests`、`default_node_max_agent_generation_requests` 和
+  `admission_timeout_seconds` 都可空；内置起点三个值均为 `None`。只有用户或其明确授权的配置写入
+  正数后，它们才成为硬 guardrail。`max_concurrency=1` 描述当前 Scheduler 能力，不是任务完成预算。
+- Compiler 只合并实际存在的限制：node override、Workflow node default 和 AgentDefinition ceiling
+  中的有限值取最小；全部缺失时 `declared_node_max_agent_generation_requests=None`。Scheduler 再与
+  可选 Workflow remaining 合并；全部缺失时 NodeRun/AgentRun 的 effective cap 也保持 `None`。
+- 显式 cap 仍在既有 durable request admission 事务中按每次请求原子执行，continuation 沿 accounting
+  root 累计，恢复不会重置或重复计数。显式 timeout 才生成绝对 `admission_deadline_at`；未设置时该
+  字段为 `None`。这保留了用户主动选择的保护，又不会让未知规模的合法任务因模板猜测而失败。
+- 超出显式 cap/timeout 时仍使用既有 `budget_exhausted`/`deadline_exceeded` 终态与 unknown-effect
+  恢复语义。没有显式限制时，用户通过前台 `Ctrl+C`、host stop hook 或 Stage 8 Pause/Drain 自主停止。
+  AgentLoop 不新增固定 turn count 或重复-cycle kill switch；通用模板也不再用强制结构化提交修复循环
+  作为角色间通信前提。
+- automatic compaction Provider summary/retry 不经过 primary request admission seam，仍按自己的
+  context/retry policy 观测；tool-call/round 和 Provider token/cost 继续如实记录，缺失值标为
+  `unavailable`，不能猜零或最坏值来阻塞后续节点。
 - 现有每 AgentRun 的 context/retry/tool-timeout Policy 继续生效，但不被误称为 total-token budget。
 - Stage 7 没有递归和 Scheduler 自动 retry；usage/cost unavailable 不作为编译失败。
 
@@ -939,7 +927,7 @@ execution 一并实现。
 
 ## 九、首批 AgentDefinition
 
-内置定义应少而明确：
+内置定义是可组合的角色建议，不拥有专用消息协议：
 
 ### 9.1 Direct Coder
 
@@ -951,35 +939,36 @@ execution 一并实现。
 
 - 只读。
 - 定位代码、事实和风险。
-- 输出 EvidenceBundle。
+- 以普通最终回答输出 `TextResult`。
 
 ### 9.3 Planner
 
 - 默认只读。
-- 基于 Task + Evidence 生成 PlanArtifact。
+- 基于 Task 与任意已绑定结果给出计划。
 - 不执行修改。
 
 ### 9.4 Coder
 
-- 接收 Task/Plan/Evidence。
-- 修改代码并输出 Patch/TestReport。
+- 接收 Task 与任意已绑定结果。
+- 修改代码、验证并以普通最终回答输出 `TextResult`。
 
 ### 9.5 Reviewer
 
 - 默认只读。
 - 独立读取任务、Diff、测试和相关文件。
-- 输出 ReviewReport。
+- 以普通最终回答输出清晰的验证结果。
 - 不沿用 Coder ConversationLog。
 
 ### 9.6 Synthesizer
 
-- 只读消费多个 Explorer Artifact。
-- 输出一个有来源引用的 SynthesisReport。
+- 只读消费多个通用 node result。
+- 输出一个有来源引用的最终结果。
 - 不承担多 Writer/worktree 合并；Integrator 在出现真实隔离写用例前延期。
 
-用户后续可以复制和编辑这些 Definition，但固定安全边界不随复制改变。
+用户可复制和编辑 Definition，也可创建 Web Developer、Database Reviewer 等任何新角色；固定安全
+边界来自权限、工具和 access ceiling，而不是角色名或输出类型。
 
-## 十、首批静态 Workflow Template
+## 十、静态 Workflow 起点
 
 ### 10.1 Direct
 
@@ -995,32 +984,11 @@ Direct Coder
 Explorer → Coder → Reviewer
 ```
 
-该模板把 Reviewer 的 exact ReviewReport slot 列入 Workflow 导出 required outputs；若它给出 blocking
-verdict，本阶段按上面的 `completed + result_status=needs_revision` 结束图，root TaskRun 进入
-`READY_FOR_ACCEPTANCE`，结果快照引用该报告并带 `workflow_result=needs_revision` 事实。用户需要时接受
-或 resume 后显式创建新的完整 WorkflowRun；自动循环不在 Stage 7，completed-node partial rerun 也不进入
-Stage 8 v1（Stage 8 只保留 failed retry 与 full rerun）。
-
-### 10.3 Parallel Research
-
-```text
-Explorer A ─┐
-Explorer B ─┼→ Synthesizer
-Explorer C ─┘
-```
-
-全部只读，适合架构研究和方案比较。Stage 7 以串行方式执行该 fan-out/fan-in 图（Scheduler 按稳定
-顺序每次准入一个节点）；各 Explorer 的 EvidenceBundle 声明为 `required_for_node_completion=true` 供
-Synthesizer 绑定消费但不导出，只有聚合的 SynthesisReport 进入导出 required outputs，大 fan-out 不会
-逼近 64-ref 编译上限。真正的并发 fan-out 执行是 Stage 8 条目。
-
-### 10.4 Planned Refactor
-
-```text
-Explorer → Planner → Coder → Reviewer
-```
-
-第一版保持单 Writer，不立即并行多个 Coder。
+这是最小可编辑示例，而非 Harness 特判。每个节点都输出 `TextResult@1/result`，下游的
+`previous_result` 绑定同一种合同，最终导出 `reviewer.result`。`workflow clone` 把只读起点复制为
+用户 source 后，用户可以改变任意节点、边、角色和绑定；例如插入 Web Developer 只需要普通节点和
+两条边，不需要新增模板或转接层。Parallel Research、Planned Refactor 不再作为内置 Workflow 起点；
+相同图形可直接从通用 source 组合，历史已发布 Revision 继续运行。
 
 ## 十一、定义格式与管理入口
 
@@ -1032,92 +1000,69 @@ Operational Store。CLI/GUI Query 组合显示 desired/published 状态，但不
 YAML。workspace `agent-definitions.yaml`、`workflow-definitions.yaml` 与数据库记录都进入现有
 current-format backup/verify/restore/doctor，包含未发布的 desired edit。
 
-以下是单个 Definition body 的 v1 typed YAML 示例；文件级 revision/OCC wrapper 复用现有 typed
-document adapter。`entry_nodes`、`terminal_nodes` 与 `declared_node_max_agent_generation_requests` 不由
-用户填写，而由 Compiler 写入 immutable Revision：
+最稳妥的入口是先克隆再编辑；文件级 revision/OCC wrapper 复用现有 typed document adapter。
+`entry_nodes`、`terminal_nodes` 与 `declared_node_max_agent_generation_requests` 不由用户填写，而由
+Compiler 写入 immutable Revision：
+
+```text
+morrow workflow clone builtin_explore_implement_verify user_delivery \
+  --expected-revision <current-source-revision>
+morrow workflow show user_delivery
+```
+
+克隆出的关键 source 结构如下；`agent_definition_ref` 在真实文件中始终是完整 exact
+Definition/version/hash：
 
 ```yaml
-workflow_definition_id: user_explore_implement_verify
-name: explore-implement-verify
-description: Explore, implement, and review one bounded task.
+workflow_definition_id: user_delivery
+name: delivery
 origin: user
-input_contract:
-  kind: TaskContract
-  version: 1
 required_outputs:
   - node_id: reviewer
-    slot: review_report
-tags: [implementation]
-default_budget:
-  max_agent_generation_requests: 24
-  default_node_max_agent_generation_requests: 8
-  admission_timeout_seconds: 1800
+    output_slot: result
+default_budget:                    # 三个停止 guardrail 缺省为 null
+  max_agent_generation_requests: null
+  default_node_max_agent_generation_requests: null
+  admission_timeout_seconds: null
   max_concurrency: 1
 nodes:
   - node_id: explorer
-    agent_definition_ref: builtin/explorer@1
-    task_contract: Gather bounded evidence relevant to the task.
-    input_bindings:
-      - input_name: task
-        accepts: {kind: TaskContract, version: 1}
-        source_kind: workflow_input
-        workflow_input: task
+    agent_definition_ref: {definition_id: builtin_explorer, version_id: adev_..., content_hash: ...}
+    task_contract: {objective: Explore the task and return a useful result.}
     output_contracts:
-      - slot: evidence_bundle
-        kind: EvidenceBundle
+      - slot: result
+        kind: TextResult
         version: 1
         required_for_node_completion: true
     access_mode: read
-    conversation_scope: isolated
   - node_id: coder
-    agent_definition_ref: user/coder@3
-    task_contract: Implement the task using the bound evidence.
+    agent_definition_ref: {definition_id: builtin_coder, version_id: adev_..., content_hash: ...}
+    task_contract: {objective: Implement and validate the requested change.}
     input_bindings:
-      - input_name: task
-        accepts: {kind: TaskContract, version: 1}
-        source_kind: workflow_input
-        workflow_input: task
-      - input_name: evidence
-        accepts: {kind: EvidenceBundle, version: 1}
-        source_kind: node_output
-        node_id: explorer
-        slot: evidence_bundle
+      - source: node_output
+        input_name: previous_result
+        accepts: {kind: TextResult, version: 1}
+        node_output: {node_id: explorer, output_slot: result}
     output_contracts:
-      - slot: implementation_patch
-        kind: ImplementationPatch
-        version: 1
-        required_for_node_completion: true
-      - slot: test_report
-        kind: TestReport
+      - slot: result
+        kind: TextResult
         version: 1
         required_for_node_completion: true
     access_mode: write
-    conversation_scope: isolated
   - node_id: reviewer
-    agent_definition_ref: builtin/reviewer@1
-    task_contract: Review the implementation and validation evidence.
+    agent_definition_ref: {definition_id: builtin_reviewer, version_id: adev_..., content_hash: ...}
+    task_contract: {objective: Verify the task outcome and return the final result.}
     input_bindings:
-      - input_name: task
-        accepts: {kind: TaskContract, version: 1}
-        source_kind: workflow_input
-        workflow_input: task
-      - input_name: patch
-        accepts: {kind: ImplementationPatch, version: 1}
-        source_kind: node_output
-        node_id: coder
-        slot: implementation_patch
-      - input_name: tests
-        accepts: {kind: TestReport, version: 1}
-        source_kind: node_output
-        node_id: coder
-        slot: test_report
+      - source: node_output
+        input_name: previous_result
+        accepts: {kind: TextResult, version: 1}
+        node_output: {node_id: coder, output_slot: result}
     output_contracts:
-      - slot: review_report
-        kind: ReviewReport
+      - slot: result
+        kind: TextResult
         version: 1
         required_for_node_completion: true
     access_mode: read
-    conversation_scope: isolated
 edges:
   - from_node_id: explorer
     to_node_id: coder
@@ -1141,6 +1086,7 @@ morrow agent disable <definition-id> --expected-head-version <n>
 morrow agent revoke <definition-id> --version <exact-version-id> --reason <text>
 morrow workflow list
 morrow workflow show <definition-id> [--revision <workflow-revision-id>]
+morrow workflow clone <source-definition-id> <new-definition-id> --expected-revision <n>
 morrow workflow create <definition-id>
 morrow workflow edit <definition-id>
 morrow workflow validate <definition-id>
@@ -1255,7 +1201,10 @@ Workflow 成功必须基于 TaskOutcome 和验证，而不是 DAG 全绿。
 - 一次命令即可确定的诊断。
 - 无法定义节点产物的模糊任务。
 
-## 十四、实施切片
+## 十四、历史实施切片
+
+以下记录描述 2026-09-02 的原始交付顺序；其中专用 Artifact pipeline、四模板与固定预算设计已被
+本文件开头的 2026-09-04 现行纠偏取代，不再是当前产品约束。
 
 生产计划按依赖拆为九个顺序子计划，分为四个阶段门禁：7A 合同（1–3）、7B 可靠串行执行（4–5）、
 7C Multi-Agent 语义（6）、7D 产品化（7–8）；每次只激活一个：
@@ -1409,33 +1358,34 @@ Workflow 成功必须基于 TaskOutcome 和验证，而不是 DAG 全绿。
   与 AgentRun 快照。
 - 最小分层 Prompt/Context 组合与 Session-owned 叶子 conversation scope。
 - WorkflowDefinitionSource/Head、Revision、Run、NodeRun。
-- 类型化 Artifact Contract 与 `submit_node_result` 结构化提交协议。
+- 通用 `TextResult` Artifact 链；可选高级结构化合同继续使用 `submit_node_result` 协议。
 - WorkflowCompiler（纯 validate + 显式 publish）与单一套串行 Scheduler。
-- 首批内置 Agent 和 Workflow Templates（含串行 fan-in 的 Parallel Research）。
+- 可组合内置 Agent，以及 Direct/Explore Implement Verify 两个可克隆 Workflow 起点。
 - CLI、Query 与运行观察；获单独授权时才包含 additive ApplicationEvent。
 - 最小 Direct/Multi 成对离线评估；单独授权且凭据可用时补充真实 Provider 证据。
 
 ## 十七、完成标准
 
 1. `AgentLoop` 保持单 Agent、领域无关的叶子执行器。
-2. 用户能定义不同 Provider、Role Prompt、Skill、工具和预算的 AgentDefinition，工具必选性由声明
+2. 用户能定义不同 Provider、Role Prompt、Skill、工具和可选 guardrail 的 AgentDefinition，工具必选性由声明
    模型显式表达。
 3. 每个 AgentRun 冻结 Definition、Model、Skill、ToolSet、Preference 和 Policy 快照。
 4. Workflow 使用不可变 Revision，Run 不受后续编辑漂移；普通 disable 不影响已准入 Run，紧急
    revoke 有独立审计路径。
 5. Compiler 能在运行前阻止非法图（含 disconnected component）、合同不匹配和权限越界；多个 Writer
    由 Scheduler 稳定串行，而不是用过度保守的编译拒绝阻止合法图。
-6. 节点通过类型化 Artifact 协作，不默认共享完整聊天历史；结构化结果只来自 durable 校验提交。
+6. 节点通过统一 `TextResult` 或用户显式选择的结构化 Artifact 协作，不默认共享完整聊天历史；
+   角色名不决定通信协议。
 7. Direct 单节点 Workflow（子计划 7 adapter）保持现有单 Agent 能力与完成语义、不增加模型请求；
    编排开销如实测量，required output 在 root ready 前 durable，且不用未经定义的性能阈值阻塞合法运行。
-8. Explore → Coder → Reviewer 能完成、取消、失败和恢复；blocking review 是
-   `completed/needs_revision` 而非执行失败。
-9. 串行节点受 agent-generation-request/request-admission-deadline 权威预算约束；静态图不重复
-   计数 Node，token/cost 缺失如实显示。
+8. Explore → Coder → Reviewer 能完成、取消、失败和恢复；复制后可插入或替换任意普通节点而无需
+   新模板或新转接协议。显式使用 `ReviewReport` 的高级图仍保留 `needs_revision` 语义。
+9. 每次 agent generation request 都持久化计数；只有用户显式设置 cap/deadline 时才执行限制，
+   未设置不会因模板猜测而终止，token/cost 缺失如实显示。
 10. 每个 Scheduler 管理的 WorkflowRun 同时只有一个运行节点；Reviewer 默认只读。
 11. Workflow 可通过 CLI 完整观察和诊断。
-12. 至少完成一种代表性任务的 Direct/Multi-Agent 成对评估并如实记录；只有观察到明确收益的
-    模板才可成为对应任务类型的推荐或默认。无收益不阻止正确 Runtime 的工程验收。
+12. 至少完成一种代表性任务的 Direct/Multi-Agent 成对评估并如实记录；内置图只作为建议，
+    用户可克隆并自行组合。无收益不阻止正确 Runtime 的工程验收。
 
 ## 十八、明确不包含
 

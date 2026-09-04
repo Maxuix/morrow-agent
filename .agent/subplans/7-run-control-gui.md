@@ -1,9 +1,9 @@
-# Subplan 6 — Run Control GUI
+# Subplan 7 — Run Control GUI
 
 > Status: pending activation
 > Branch: `feat/stage8-run-control-gui`
-> Activation base: latest verified `main` with Subplan 5 integrated
-> Prerequisite: Subplan 5 verified; Subplans 1–2 runtime semantics already integrated
+> Activation base: latest verified `main` with Subplan 6 integrated
+> Prerequisite: Subplan 6 verified; Subplans 1–2 runtime semantics already integrated
 > Roadmap authority: stage-8 §8.3, §8.5, §13, §8C (GUI portion), §16.1–16.2
 
 ## Objective
@@ -15,17 +15,17 @@ parent/child lineage and inherited-Artifact visibility.
 ## Deliverables
 
 - Run-control actions in GUI and CLI parity: Start, Pause, Resume, Cancel, Resolve Approval,
-  Retry failed node (explicit root resume + `run_relation=rerun` child), Full rerun (new budget
-  root, clearly labelled as new budget), Edit pending graph, Accept/Correct TaskOutcome.
+  Retry failed node (explicit root resume + `run_relation=rerun` child), Full rerun (new accounting
+  root, clearly labelled), Edit pending graph, Accept/Correct TaskOutcome.
 - Workflow panel upgrades: current Revision, parent/child Run lineage, inherited Artifact
-  provenance projection, per-node budget consumed/remaining, retries/failures, approval surface per
+  provenance projection, per-node request usage and optional-limit remaining, retries/failures, approval surface per
   §8.5 (requesting Task/Workflow/Node/Agent, operation type, affected objects, risk level, redacted
   preview, allow/deny/limited-session choices — never a bare "Agent wants to run a tool").
-- Edit-pending flow: Pause → drain → edit Future nodes in the editor (Subplan 5) → patch preview
+- Edit-pending flow: Pause → drain → edit Future nodes in the editor (Subplan 6) → patch preview
   with diff and risk classification → user confirmation → continuation child starts; the old Run
   shows terminal `superseded`.
-- Cost feedback per §14.1–14.2: pre-run node count/models/max budget/parallelism/writers; live
-  used/remaining budget and per-node consumption.
+- Cost feedback per §14.1–14.2: pre-run node count/models/user-set limits/parallelism/writers; live
+  request usage, optional remaining allowance and per-node consumption.
 - CLI parity for every action and projection above.
 
 ## Key semantics
@@ -33,7 +33,7 @@ parent/child lineage and inherited-Artifact visibility.
 - GUI triggers the same commands as CLI; identical revision/event/runtime resolution results on
   both surfaces.
 - Pause during in-flight Approval shows running + approval-pending, never mislabelled blocked.
-- A rerun that establishes a new budget root is explicitly marked as such.
+- A rerun that establishes a new accounting root is explicitly marked as such.
 
 ## Validation
 
@@ -45,5 +45,5 @@ parent/child lineage and inherited-Artifact visibility.
 
 ## Out of scope
 
-Automatic Draft generation (Subplan 7), Agent-proposed Replan (Subplan 8), feedback capture UI
-(Subplan 10).
+Automatic Draft generation (Subplan 8), Agent-proposed Replan (Subplan 9), feedback capture UI
+(Subplan 11).

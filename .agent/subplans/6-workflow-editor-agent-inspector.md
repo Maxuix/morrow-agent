@@ -1,9 +1,9 @@
-# Subplan 5 — Workflow Editor and Agent Module Inspector
+# Subplan 6 — Workflow Editor and Agent Module Inspector
 
 > Status: pending activation
 > Branch: `feat/stage8-editor`
-> Activation base: latest verified `main` with Subplan 4 integrated
-> Prerequisite: Subplan 4 verified
+> Activation base: latest verified `main` with Subplan 5 integrated
+> Prerequisite: Subplan 5 verified
 > Roadmap authority: stage-8 §6.1–6.2, §6.4, §7, §8.3, §8B, §16.2 (edit cases)
 
 ## Objective
@@ -17,7 +17,7 @@ An illegal graph cannot be run.
 - Node-graph editor (approved node-based UI library) with add/delete/replace of Pending nodes, edge
   and input/output binding editing, and a Node inspector.
 - AgentDefinition editing per roadmap §7.1 (name/description, role prompt, Provider/Model, Skills,
-  Tool/Capability policy, ContextPolicy, contracts, budgets, read-only/Writer flag), with §7.2
+  Tool/Capability policy, ContextPolicy, contracts, optional guardrails, read-only/Writer flag), with §7.2
   non-overridable boundaries enforced and §7.3 Node override resolution shown with its source.
   Definition copy/derivative flow per §7.4 (new ID/Version, parent/source recorded, diff view,
   built-in updates never silently overwrite user copies).
@@ -55,5 +55,5 @@ An illegal graph cannot be run.
 
 ## Out of scope
 
-Run-control actions (Subplan 6), automatic Draft generation (Subplan 7), Context/Learning/Skill
-management beyond the editor's read-only pickers (Subplan 9).
+Run-control actions (Subplan 7), automatic Draft generation (Subplan 8), Context/Learning/Skill
+management beyond the editor's read-only pickers (Subplan 10).

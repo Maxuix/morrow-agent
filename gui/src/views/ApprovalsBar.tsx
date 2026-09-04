@@ -62,7 +62,7 @@ export function ApprovalsBar({
             <span className="font-mono text-secondary">{shortId(run.workflow_run_id)}</span>
             {budget !== null && (
               <span className="font-mono text-secondary">
-                预算 {budget.current}
+                模型请求 {budget.current}
                 {budget.lineage !== null && ` · ${budget.lineage}`}
               </span>
             )}

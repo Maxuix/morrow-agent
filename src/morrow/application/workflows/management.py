@@ -92,6 +92,28 @@ class WorkflowManagementService:
     ) -> DefinitionSourceResult:
         return self._write_workflow(source, expected_source_revision, create=False)
 
+    def clone_workflow_source(
+        self,
+        definition_id: str,
+        *,
+        new_definition_id: str,
+        expected_source_revision: int,
+        name: str | None = None,
+    ) -> DefinitionSourceResult:
+        """Copy any visible definition into editable user-owned desired state."""
+
+        source, _source_revision = self._workflow_source(definition_id)
+        payload = source.model_dump(mode="python")
+        payload.update(
+            {
+                "workflow_definition_id": new_definition_id,
+                "name": name if name is not None else source.name,
+                "origin": "user",
+            }
+        )
+        clone = WorkflowDefinitionSource.model_validate(payload)
+        return self.create_workflow_source(clone, expected_source_revision=expected_source_revision)
+
     def _write_agent(self, source, expected, *, create):
         if source.definition_id.startswith("builtin_"):
             raise ValueError(

@@ -175,6 +175,8 @@ morrow agent list --dir PATH
 morrow agent validate DEFINITION_ID --dir PATH
 morrow agent publish DEFINITION_ID --expected-head-revision HEAD_REV --command-id COMMAND_ID --dir PATH
 morrow workflow list --dir PATH
+morrow workflow clone builtin_explore_implement_verify MY_WORKFLOW \
+  --expected-revision SOURCE_REVISION --dir PATH
 morrow workflow validate DEFINITION_ID --dir PATH
 morrow workflow publish DEFINITION_ID --expected-head-revision HEAD_REV --command-id COMMAND_ID --dir PATH
 morrow workflow runs --dir PATH
@@ -187,11 +189,18 @@ morrow workflow status WORKFLOW_RUN_ID --dir PATH
 使用 `workflow status/resume`；若未保存该行，可用 `workflow runs` 查询持久化 Run。命令完成时，
 `completed`（包括 `needs_revision`）返回 0，`failed/cancelled/blocked` 返回 1，参数或配置错误返回 2。
 
-内置模板包括 Direct、Explore Implement Verify、Parallel Research 和 Planned Refactor。Stage 7 的
-Parallel Research 名字描述固定 fan-out/fan-in 图形，执行仍由同一个 Scheduler 按稳定顺序逐节点串行
-完成；并发留待 Stage 8。四个预算字段都必须估算：总 Agent generation request 上限、节点默认上限、
-admission timeout 秒数和 `max_concurrency=1`。上限或截止时间过小会如实使本次 Run 失败；Stage 7
-没有 run-level override，重新运行会创建新 Run 并重新执行每个节点，不会把旧 Run 的叶子当缓存。
+内置 Workflow 只提供 Direct 和 Explore Implement Verify 两个起点。后者是最小示例，不是固定
+协议：三个普通节点只通过同一种 `TextResult@1/result` 链接传递上一节点的最终结果。先用
+`workflow clone` 复制成 `origin=user` 的 desired source，便可像其他 Workflow 一样增删或替换任意
+节点、角色、边和绑定，例如在 Coder 与 Reviewer 之间插入 Web Developer；之后再 `edit`、
+`validate`、`publish`。历史 Revision 和用户定义里的 `EvidenceBundle`、`ReviewReport` 等结构化合同
+继续可读、可运行，也可由高级自定义图显式选择，但不再是内置多 Agent 链路的前提。
+
+总 Agent generation request 上限、节点默认上限和 admission timeout 都是可空的用户 guardrail；
+内置起点不预设这三项，因此不会因系统猜测的请求次数或任务时长自动终止。显式填写正数时仍由
+持久化准入层按原语义执行，`max_concurrency=1` 继续描述当前串行 Scheduler。无论是否设置上限，
+模型请求与 usage 都照常记录；用户可用前台 `Ctrl+C` 或 `workflow pause/resume` 控制运行。
+重新运行会创建新 Run，不会把旧 Run 的叶子当缓存。
 
 普通 disable 只阻止新的 Workflow/Agent admission，已接纳 Run 继续使用冻结 Revision；emergency
 revoke 针对精确 `adev_...` 或 `wrev_...`，是带原因和 command ID 的永久单向安全刹车。blocked Run
@@ -200,8 +209,8 @@ revoke 针对精确 `adev_...` 或 `wrev_...`，是带原因和 command ID 的�
 与完整 SQLite Workflow 记录，restore 仍只写新的隔离目标；`state doctor` 会把 desired-ahead 作为
 局部 warning，把不可变引用/hash/运行关系损坏报告为 repair error。
 
-完整 `ImplementationPatch` 只有在 native sandbox backend 可用时由内置 Writer 模板声明；其他平台
-声明结构化的 `TextResult` implementation 产物，避免把平台缺少捕获后端误报成整个图不可运行。
+`ImplementationPatch`、`TestReport` 等捕获型合同仍要求其对应的安全捕获后端；通用内置起点统一
+使用 `TextResult`，不会再让平台能力改变 Agent 间通信协议。
 常见错误的处理方式是：unpublished 先 `publish`，stale revision 重新读取 Head/source revision，disabled
 显式 enable，revoked 发布新版本替代，blocked 先对账再 resume/abandon。
 

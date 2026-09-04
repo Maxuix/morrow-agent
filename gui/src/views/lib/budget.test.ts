@@ -21,4 +21,12 @@ describe('budgetDisplay', () => {
     expect(budgetDisplay(200, 200, 200).remaining).toBe(0)
     expect(budgetDisplay(201, 200, 201).remaining).toBe(-1)
   })
+
+  it('shows request accounting without inventing a cap', () => {
+    expect(budgetDisplay(27, null, 42)).toEqual({
+      current: '27 / 无上限',
+      lineage: '谱系累计 42 / 无上限',
+      remaining: null,
+    })
+  })
 })

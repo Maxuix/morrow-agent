@@ -40,7 +40,7 @@ Workflow/Node/Artifact state live, proving the GUI–CLI parity gate on the same
 - Main layout per roadmap §8.1: Session/Task navigation, main workspace (Chat/Task/Artifacts),
   Workflow panel with node states and budget, tool/approval/status bar.
 - Read-only projections only: Task/Workflow/Node/Agent/Tool/Artifact/budget views; approval
-  *display* is in scope but approval *resolution* UI waits for Subplan 6 unless trivially available
+  *display* is in scope but approval *resolution* UI waits for Subplan 7 unless trivially available
   through the API.
 - Client state built as snapshot + ordered event stream + gap detection + resync query; a stale
   client resyncs instead of showing wrong state; disconnects surface as an honest connection
@@ -66,5 +66,5 @@ Workflow/Node/Artifact state live, proving the GUI–CLI parity gate on the same
 
 ## Out of scope
 
-Editing of any kind (Subplan 5), run-control actions (Subplan 6), Context/Learning/Skill
-management (Subplan 9), desktop packaging (Stage 10).
+Editing of any kind (Subplan 6), run-control actions (Subplan 7), Context/Learning/Skill
+management (Subplan 10), desktop packaging (Stage 10).

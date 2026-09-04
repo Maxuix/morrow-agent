@@ -157,10 +157,13 @@ def verify_workflow_rows(executor):
                     or run.admission_deadline_at != parent.admission_deadline_at
                 ):
                     raise ValueError("continuation lineage facts mismatch")
-            elif run.admission_deadline_at != run.started_at + timedelta(
-                seconds=run.budget_snapshot.admission_timeout_seconds
-            ):
-                raise ValueError("run deadline mismatch")
+            else:
+                timeout = run.budget_snapshot.admission_timeout_seconds
+                expected_deadline = (
+                    run.started_at + timedelta(seconds=timeout) if timeout is not None else None
+                )
+                if run.admission_deadline_at != expected_deadline:
+                    raise ValueError("run deadline mismatch")
         nodes = {}
         for node_id, ws, run_id, nid, attempt, status, body in executor.execute(
             "SELECT * FROM workflow_node_runs"
@@ -335,9 +338,12 @@ def verify_workflow_rows(executor):
                 or snapshot.get("model") != declared.resolved_model_ref.model_dump(mode="json")
             ):
                 raise ValueError("Workflow AgentRun frozen reference mismatch")
+            effective_cap = node.effective_node_generation_request_cap
+            declared_cap = declared.declared_node_max_agent_generation_requests
             if (
-                node.effective_node_generation_request_cap
-                > declared.declared_node_max_agent_generation_requests
+                effective_cap is not None
+                and declared_cap is not None
+                and effective_cap > declared_cap
             ):
                 raise ValueError("Workflow node budget mismatch")
         for node in nodes.values():

@@ -1,9 +1,10 @@
 # Stage 8 Adaptive Orchestration and GUI Implementation Plan
 
-> Status: awaiting next explicit activation 2026-09-04
+> Status: Subplan 5 active 2026-09-04
 > Last completed subplan: `4-web-gui-observer` on `feat/stage8-gui-observer`
 > (acceptance `docs/acceptance/stage-8-subplan-4-web-gui-observer.md`)
-> Next subplan: `5-workflow-editor-agent-inspector` (only after explicit activation)
+> Active subplan: `5-generic-workflow-foundation` on `refactor/general-workflow-runtime`
+> Next planned subplan: `6-workflow-editor-agent-inspector`
 > Roadmap authority: `docs/roadmap/stage-8-adaptive-orchestration-and-gui.md`
 > (revised 2026-09-03: risk-tiered Replan autonomy; runtime-kernel-first ordering)
 > Entry evidence: Stage 7 completed and remediated; full offline gate 1538 passed, 2 skipped,
@@ -17,7 +18,8 @@ Turn the Stage 5–7 capabilities into a user-controllable personal Agent workbe
 ```text
 risk-tiered runtime control (Pause/Drain + future-only Patch + continuation child runs)
 → versioned local Core API (Command/Query/Event/Approval) with a scripted verification client
-→ read-only Web GUI observer → Workflow editor and Agent inspector
+→ read-only Web GUI observer → generic customizable Workflow foundation
+→ Workflow editor and Agent inspector
 → task-specialized constrained GraphPlanner Drafts
 → global future-only Replan with risk-tiered autonomy
 → Context/Learning/Skill management GUI, feedback/evaluation loop
@@ -69,14 +71,14 @@ Aligned with mainstream harness practice (Codex approval policies, Claude Code p
 OpenCode per-tool allow/ask/deny): autonomy is the default inside the permission envelope, and
 user involvement happens at envelope boundaries.
 
-- Leaf-local self-correction within the frozen Node Contract, ToolSet and budget remains free and
+- Leaf-local self-correction within the frozen Node Contract, ToolSet and any user guardrail remains free and
   never asks the user; graph-level Replan does not change this.
 - A FutureGraphPatch is risk-classified deterministically at proposal time. Low risk means: no new
-  or widened permissions, no cap/deadline increase, no added or replaced roles, no switch to an
+  or widened permissions, no relaxation/removal of an explicit cap/deadline, no added or replaced roles, no switch to an
   unauthorized Provider/Model/Skill, Future-node-only edits. Low-risk patches may be applied
   without interactive approval when `OrchestrationPolicy.auto_replan_mode=allow_low_risk`, and are
   always visible and auditable afterwards. The default is `approval_only`.
-- Any privilege- or budget-expanding patch requires explicit user approval regardless of policy
+- Any privilege- or explicit-guardrail-expanding patch requires user approval regardless of policy
   or evidence; an Agent signal or template can never silently widen the envelope.
 - Task-class-level default automation remains a separate promotion gate requiring paired
   Direct/Multi benefit evidence per roadmap §4.6.
@@ -89,7 +91,7 @@ fires before application.
 
 Per the roadmap entry condition naming child-run continuation the highest-priority runtime
 follow-up, Subplans 1–2 deliver the 8C runtime kernel (Pause/Drain, patch application,
-continuation handoff, lineage budget) with deterministic offline evidence and no GUI. The versioned
+continuation handoff, lineage accounting and optional limits) with deterministic offline evidence and no GUI. The versioned
 API and GUI slices then consume settled semantics instead of freezing a protocol around unsettled
 ones. Roadmap slice numbering is unchanged.
 
@@ -98,11 +100,23 @@ ones. Roadmap slice numbering is unchanged.
 Two review rounds against the Stage 7 code were verified and their confirmed findings frozen as
 eight runtime contracts in `docs/decisions/stage-8-runtime-contracts.md`: the lineage data model
 (execution-set and artifact-imports tables plus a single EffectiveOutputResolver), one atomic
-admission transaction, lineage budget enforcement at the existing durable request-admission seam
+admission transaction, lineage accounting and optional-limit enforcement at the durable request-admission seam
 (no second ledger), the single-writer Core Host model for ASGI hosting, generalized migration
 metadata with one merged v26 rebuild, run-local Revisions that never move the Definition head, the
 retry/rerun derivation matrix, and the expanded patch risk-classification dimensions. Subplans 1–3
-and 8 cite these as contracts authority; deviations require updating the decision document first.
+and 9 cite these as contracts authority; deviations require updating the decision document first.
+
+### 3.5 Templates are suggestions; execution limits are opt-in
+
+The 2026-09-04 user correction replaces role-specific packaged transfer chains with one generic
+`TextResult@1` node-result path. Explore → Implement → Verify remains a minimal example graph, not
+a special orchestration protocol: users may clone it and freely add, replace or remove ordinary
+nodes and edges. Historical structured contracts remain compatible optional building blocks.
+
+Workflow-wide request caps, default node request caps and admission timeouts are optional positive
+guardrails. Their absence means the harness does not terminate a task based on a guessed request
+count or duration; durable usage accounting and explicit user stop/Pause controls still apply. If
+an explicit limit exists, the already-delivered lineage enforcement remains authoritative.
 
 ## 4. Subplan sequence
 
@@ -112,17 +126,18 @@ and 8 cite these as contracts authority; deviations require updating the decisio
 | 2 | `2-future-graph-patch-continuation.md` | 8C (runtime, part 2) | 1 |
 | 3 | `3-core-api-local-server.md` | 8A (protocol/server) | 2; ApplicationEvent + web-framework authorization |
 | 4 | `4-web-gui-observer.md` | 8A (GUI) | 3; frontend toolchain authorization |
-| 5 | `5-workflow-editor-agent-inspector.md` | 8B | 4 |
-| 6 | `6-run-control-gui.md` | 8C (GUI) | 5 |
-| 7 | `7-graph-planner-draft.md` | 8D | 6 |
-| 8 | `8-global-replan.md` | 8E | 7 |
-| 9 | `9-context-learning-skill-gui.md` | 8F | 4 (no dependency on 5–8; sequenced to keep one active subplan) |
-| 10 | `10-feedback-evaluation.md` | 8G | 8 |
-| 11 | `11-read-only-parallelism.md` | 8H | 2 plus its own roadmap entry conditions; allowed to slip |
+| 5 | `5-generic-workflow-foundation.md` | Stage 7/8 corrective foundation | 4; user activation |
+| 6 | `6-workflow-editor-agent-inspector.md` | 8B | 5 |
+| 7 | `7-run-control-gui.md` | 8C (GUI) | 6 |
+| 8 | `8-graph-planner-draft.md` | 8D | 7 |
+| 9 | `9-global-replan.md` | 8E | 8 |
+| 10 | `10-context-learning-skill-gui.md` | 8F | 4 (no dependency on 5–9; sequenced to keep one active subplan) |
+| 11 | `11-feedback-evaluation.md` | 8G | 9 |
+| 12 | `12-read-only-parallelism.md` | 8H | 2 plus its own roadmap entry conditions; allowed to slip |
 
-Subplan 9 may be re-sequenced earlier by explicit decision; the one-active-subplan rule still
-applies. Subplan 11 starts only when its roadmap entry conditions (stable ToolEffect
-classification, provider rate-limit ownership, atomic per-request budget claim, isolation stress
+Subplan 10 may be re-sequenced earlier by explicit decision; the one-active-subplan rule still
+applies. Subplan 12 starts only when its roadmap entry conditions (stable ToolEffect
+classification, provider rate-limit ownership, atomic per-request accounting/optional cap claim, isolation stress
 evidence, visibility barrier) are verified.
 
 ## 5. Cross-cutting invariants
@@ -144,9 +159,10 @@ exceptions:
    pre-created for the whole set in the handoff transaction; an empty set closes child and root
    terminally in the same transaction when inherited contracts satisfy required outputs, and the
    Compiler rejects the patch otherwise.
-5. Continuation children inherit `lineage_budget_root_run_id` consumption and
-   `admission_deadline_at`; only an explicit user-approved patch may raise cap/deadline, under OCC
-   with the parent facts; `rerun`/new Runs start a new budget root and the UI/CLI says so.
+5. When a Workflow explicitly sets request caps or an admission timeout, continuation children
+   inherit the lineage consumption and absolute deadline; only an explicit user-approved patch may
+   raise those limits under OCC with the parent facts. Omitted limits remain omitted across the
+   lineage; `rerun`/new Runs start a new accounting root and the UI/CLI says so.
 6. Blocked/outcome-unknown parents may save patches but never start children until Recovery
    resolves and the root remains nonterminal; abandon closes the lineage on that root.
 7. GUI and CLI invoke the same application services; the API never exposes credentials, full
@@ -172,7 +188,7 @@ uv run python -m compileall -q src tests
 git diff --check
 ```
 
-Subplans 1, 2, 3 and 11 additionally run the full offline gate (`uv run pytest -m 'not live'`);
+Subplans 1, 2, 3, 5 and 12 additionally run the full offline gate (`uv run pytest -m 'not live'`);
 every subplan runs the Stage 7/8 matrices it touches. Concurrency and Pause/admission races are
 proven with barriers/events, never wall-clock sleeps. GUI slices add deterministic contract-level
 tests of snapshot + event-stream + resync behavior; browser-level checks use the scripted local

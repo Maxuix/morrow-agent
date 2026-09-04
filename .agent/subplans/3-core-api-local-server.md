@@ -43,8 +43,8 @@ stream that survives disconnects.
   and resync query are part of the contract, and the stream is never the permanent authority.
 - Idempotent Command IDs end to end; command retry cannot double-apply.
 - Read-only Catalog Query APIs (AgentDefinitions, Providers/Models, Skills, Tools, Artifact
-  contracts) shipped here, not in the editor subplan: the editor (Subplan 5) and planner
-  (Subplan 7) both consume them, so the backend surface lands once with the server.
+  contracts) shipped here, not in the editor subplan: the editor (Subplan 6) and planner
+  (Subplan 8) both consume them, so the backend surface lands once with the server.
 - A scripted in-process verification client (test fixture, not a product) that exercises the full
   contract: snapshot, stream, forced disconnect/reconnect, gap resync, command idempotency, stale
   snapshot handling.
@@ -72,4 +72,4 @@ stream that survives disconnects.
 ## Out of scope
 
 Any browser frontend (Subplan 4); editing commands beyond what Subplans 1–2 already expose
-(editor-facing commands arrive with Subplan 5); background daemon process model (Stage 9).
+(editor-facing commands arrive with Subplan 6); background daemon process model (Stage 9).

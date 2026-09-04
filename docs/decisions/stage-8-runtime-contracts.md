@@ -40,7 +40,7 @@ Node admission 是不可分割的一个权威事务，其间不得出现 `await`
 校验 lineage/head 事实（child 未 superseded、root ownership 仍属本 run）
 校验无未消费 ReplanSignal（Subplan 8 接入同一断言语句）
 校验 node 属于执行集且为 queued
-校验 deadline 与 lineage 剩余预算（C3）
+校验用户显式配置的 deadline 与 lineage 剩余 cap（C3；未配置则只记录 accounting）
 解析并绑定有效输入（含 inherited imports）
 创建/绑定 leaf AgentRun 证据
 node queued -> running
@@ -56,14 +56,16 @@ Pause 控制写入也遵循同一事务边界：idle RUNNING（无 RUNNING/BLOCK
 PAUSED 只允许 resume 或 continuation supersede；若要取消，须先显式 resume，再由前台 owner
 执行既有 cancel 流程。
 
-## C3. Lineage 预算在既有 admission seam 执行
+## C3. 可选 Lineage 限制在既有 admission seam 执行
 
 不新建账本表。`admit_model_request` 的 durable `purpose=agent` 行在请求准入时原子写入，本身
-就是崩溃安全的 claim（无法证明 Provider 未收到请求即视为已消耗）。Stage 8 的改动是把
-Workflow 级预算判定从"Scheduler 按单 run 预检"移入该既有 seam，并按
+就是崩溃安全的 usage/accounting 事实（无法证明 Provider 未收到请求即视为已消耗）。Workflow 或
+Node 只有在用户显式设置正数 cap 时才执行预算判定；缺省 `None` 不因请求次数停止。Stage 8 的改动
+是把已配置的 Workflow 级判定从"Scheduler 按单 run 预检"移入该既有 seam，并按
 `lineage_budget_root_run_id` 统计 continuation 链已消费量（不越过最近的 rerun/new-root 边界）。
 request 行需可关联到 budget root（经 run 的 lineage 字段推导，或冗余列——实现时取最简）。
-cap/deadline 的提高只能是用户 exact edit 或已批准 proposal，与 parent 事实一起做 OCC。
+显式 cap/deadline 的放宽或移除只能是用户 exact edit 或已批准 proposal，与 parent 事实一起做 OCC；
+未配置 timeout 时 `admission_deadline_at=None`。
 
 ## C4. Core Host 单写线程模型
 
@@ -108,15 +110,16 @@ Published Revision 使用正整数 head 序列；detached Revision 使用同一 
 | | artifact 继承 | budget root |
 |---|---|---|
 | `initial` | 无（全新执行集） | 自己 |
-| `continuation` | 有（执行集不含 inherited Past） | 继承 parent root |
-| `rerun`（failed-node retry） | 有（执行集 = 失败节点 + retained Future） | 新 root（明示新预算） |
-| `rerun`（full） | 无（执行集 = 全图） | 新 root（明示新预算） |
+| `continuation` | 有（执行集不含 inherited Past） | 继承 parent accounting root |
+| `rerun`（failed-node retry） | 有（执行集 = 失败节点 + retained Future） | 新 accounting root |
+| `rerun`（full） | 无（执行集 = 全图） | 新 accounting root |
 
 继承与否由执行集是否映射 inherited Past 决定，不需独立列；UI/CLI 对任何新 budget root 明示。
 
 ## C8. 风险分类维度
 
 Patch 风险分类不止看权限/预算/角色扩张。以下任一为真即非低风险（默认 approval-required）：
-删除 Reviewer/审批门禁、放宽 output contract、删除测试/报告依赖、删除 control edge、改变
-Writer 节点顺序、改 required outputs 指向、改 `conversation_scope`、改变 Provider/Model 数据
-边界、删除用户显式指定的节点，以及任何无法确定归类的变化（unknown 默认升级）。
+删除用户显式声明的 Reviewer/审批门禁、放宽 output contract、删除用户显式声明的测试/报告依赖、
+删除 control edge、改变 Writer 节点顺序、改 required outputs 指向、改 `conversation_scope`、改变
+Provider/Model 数据边界、删除用户显式指定的节点、放宽或移除显式 cap/deadline，以及任何无法确定
+归类的变化（unknown 默认升级）。角色名本身、通用模板顺序或不存在的默认预算不是风险权限来源。

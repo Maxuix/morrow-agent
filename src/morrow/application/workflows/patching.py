@@ -208,12 +208,17 @@ class PatchApplicationService:
         consumed = self.journal.count_lineage_agent_requests(
             self.workspace_id, parent.effective_lineage_budget_root_run_id
         )
-        if execution and consumed >= saved.revision.budget.max_agent_generation_requests:
+        workflow_cap = saved.revision.budget.max_agent_generation_requests
+        if execution and workflow_cap is not None and consumed >= workflow_cap:
             raise ApplicationError(
                 ApplicationErrorCode.INVALID,
                 "budget_exhausted: patch saved, but the continuation cannot start",
             )
-        if execution and self.clock() > parent.admission_deadline_at:
+        if (
+            execution
+            and parent.admission_deadline_at is not None
+            and self.clock() > parent.admission_deadline_at
+        ):
             raise ApplicationError(
                 ApplicationErrorCode.INVALID,
                 "deadline_exceeded: patch saved, but the continuation cannot start",
@@ -411,8 +416,11 @@ class PatchApplicationService:
             status=WorkflowStatus.RUNNING,
             budget_snapshot=revision.budget,
             started_at=stamp,
-            admission_deadline_at=stamp
-            + timedelta(seconds=revision.budget.admission_timeout_seconds),
+            admission_deadline_at=(
+                stamp + timedelta(seconds=revision.budget.admission_timeout_seconds)
+                if revision.budget.admission_timeout_seconds is not None
+                else None
+            ),
             input_artifacts=parent.input_artifacts,
             invoking_client_message_id=parent.invoking_client_message_id,
             invoking_root_row_version=parent.invoking_root_row_version,

@@ -36,14 +36,23 @@ WorkflowRevisionId = Annotated[str, Field(pattern=r"^wrev_[A-Za-z0-9_-]+$")]
 
 
 class WorkflowBudget(ProtocolModel):
-    max_agent_generation_requests: int = Field(gt=0, strict=True)
-    default_node_max_agent_generation_requests: int = Field(gt=0, strict=True)
-    admission_timeout_seconds: float = Field(gt=0, allow_inf_nan=False)
-    max_concurrency: int = Field(gt=0, strict=True)
+    """Optional user guardrails plus the scheduler's concurrency declaration.
+
+    Request counts and the whole-run admission timeout are deliberately opt-in:
+    task size cannot be inferred from a template. Durable usage accounting remains
+    active when these values are absent.
+    """
+
+    max_agent_generation_requests: int | None = Field(default=None, gt=0, strict=True)
+    default_node_max_agent_generation_requests: int | None = Field(default=None, gt=0, strict=True)
+    admission_timeout_seconds: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+    max_concurrency: int = Field(default=1, gt=0, strict=True)
 
     @field_validator("admission_timeout_seconds", mode="before")
     @classmethod
     def numeric_duration(cls, value):
+        if value is None:
+            return None
         if type(value) not in {int, float}:
             raise ValueError("admission duration must be numeric")
         return value
@@ -85,7 +94,7 @@ class AgentNode(AgentNodeSource):
     # Compiler-frozen merge of Definition and node declarations; the source
     # overlay stays in tool_requirements so any source edit changes the hash.
     resolved_tool_requirements: tuple[ToolRequirement, ...] = Field(default=(), max_length=128)
-    declared_node_max_agent_generation_requests: int = Field(gt=0, strict=True)
+    declared_node_max_agent_generation_requests: int | None = Field(default=None, gt=0, strict=True)
 
     @field_validator("resolved_tool_requirements")
     @classmethod
@@ -138,7 +147,7 @@ class WorkflowMetadata(ProtocolModel):
 
 
 class WorkflowDefinitionSource(WorkflowMetadata):
-    default_budget: WorkflowBudget
+    default_budget: WorkflowBudget = Field(default_factory=WorkflowBudget)
     nodes: tuple[AgentNodeSource, ...] = Field(min_length=1, max_length=128)
 
     @field_validator("nodes")

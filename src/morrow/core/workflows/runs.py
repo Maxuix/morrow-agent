@@ -119,7 +119,7 @@ class WorkflowRun(RunState):
     workflow_revision_id: WorkflowRevisionId
     root_task_run_id: Annotated[str, Field(pattern=r"^task_[A-Za-z0-9_-]+$")]
     budget_snapshot: WorkflowBudget
-    admission_deadline_at: datetime
+    admission_deadline_at: datetime | None = None
     input_artifacts: tuple[ArtifactBinding, ...] = Field(min_length=1, max_length=1)
     result_status: Literal["succeeded", "needs_revision"] | None = None
     pending_terminal_intent: Literal["user_cancel"] | None = None
@@ -198,20 +198,22 @@ class NodeRun(RunState):
 
     @model_validator(mode="after")
     def admission_facts(self):
-        refs = (
+        ownership_refs = (
             self.conversation_session_id,
             self.leaf_task_run_id,
             self.agent_run_id,
-            self.effective_node_generation_request_cap,
         )
-        if any(v is not None for v in refs) != all(v is not None for v in refs):
+        if any(v is not None for v in ownership_refs) != all(v is not None for v in ownership_refs):
             raise ValueError("Node admission references must be bound together")
-        if self.status == WorkflowStatus.QUEUED and any(v is not None for v in refs):
+        if self.status == WorkflowStatus.QUEUED and (
+            any(v is not None for v in ownership_refs)
+            or self.effective_node_generation_request_cap is not None
+        ):
             raise ValueError("queued Node cannot have admission references")
         if self.status in {
             WorkflowStatus.RUNNING,
             WorkflowStatus.COMPLETED,
             WorkflowStatus.BLOCKED,
-        } and any(v is None for v in refs):
+        } and any(v is None for v in ownership_refs):
             raise ValueError("admitted Node requires leaf references")
         return self

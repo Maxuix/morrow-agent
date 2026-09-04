@@ -1,9 +1,9 @@
-# Subplan 8 — Global Future-Only Replan
+# Subplan 9 — Global Future-Only Replan
 
 > Status: pending activation
 > Branch: `feat/stage8-global-replan`
-> Activation base: latest verified `main` with Subplan 7 integrated
-> Prerequisite: Subplan 7 verified
+> Activation base: latest verified `main` with Subplan 8 integrated
+> Prerequisite: Subplan 8 verified
 > Roadmap authority: stage-8 §6.5 (as revised 2026-09-03), §4.6, §8E, §16.4
 
 ## Objective
@@ -27,7 +27,7 @@ than blanket approval.
 - `ReplanCoordinator`: the sole automatic Patch proposer (not required to be an LLM Agent); turns
   signals into concrete `FutureGraphPatch` proposals against the exact current base Revision.
 - Deterministic patch risk classification per master-plan §3.2 and contracts doc C8: low risk =
-  Future-node-only edits with no permission/budget/role expansion and no unauthorized
+  Future-node-only edits with no permission/explicit-guardrail/role expansion and no unauthorized
   Provider/Model/Skill change. Additionally, these are never low risk: removing a
   Reviewer/approval gate, loosening an output contract, dropping a test/report dependency,
   deleting a control edge, reordering Writer nodes, re-pointing required outputs, changing
@@ -37,7 +37,7 @@ than blanket approval.
 - Risk-tiered application: `auto_replan_mode=approval_only` (default) queues every proposed patch
   for user approval; `allow_low_risk` auto-applies low-risk patches through the same
   PatchApplicationService (Compiler + OCC/CAS), with every auto-application recorded and
-  afterwards visible/auditable in UI and CLI. Privilege- or budget-expanding patches are never
+  afterwards visible/auditable in UI and CLI. Privilege- or explicit-guardrail-expanding patches are never
   auto-applied under any policy; they surface as pending proposals with the escalation reason.
 - Replan UI/CLI: proposal diff, risk class, escalation rationale, approve/reject; auto-applied
   history with the applied patch and its classification.
@@ -66,5 +66,5 @@ than blanket approval.
 
 ## Out of scope
 
-Feedback-driven OrchestrationPolicy candidates and evaluation dashboards (Subplan 10); nested
+Feedback-driven OrchestrationPolicy candidates and evaluation dashboards (Subplan 11); nested
 dynamic subgraphs or leaf-created DAGs (never).

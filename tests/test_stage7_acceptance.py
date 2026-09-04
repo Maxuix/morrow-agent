@@ -46,7 +46,7 @@ ACCEPTANCE_MATRIX = {
     ),
     "serial_fan_in_and_planned_refactor": (
         "tests/test_stage7_workflow_management.py::"
-        "test_four_builtin_templates_publish_through_generic_compiler"
+        "test_two_builtin_suggestions_publish_through_generic_compiler"
     ),
     "direct_invoking_session": (
         "tests/test_stage7_direct_adapter.py::"

@@ -72,6 +72,7 @@ def test_agent_and_workflow_help_expose_the_complete_stage7_surface():
     ):
         assert command in agent.output
         assert command in workflow.output
+    assert "clone" in workflow.output
     for command in ("run", "runs", "status", "pause", "resume", "abandon", "node"):
         assert command in workflow.output
 
@@ -136,13 +137,13 @@ def test_agent_cli_builtin_is_visible_but_unpublished(tmp_path):
     assert {item["workflow_definition_id"] for item in listed} == {
         "builtin_direct_workflow",
         "builtin_explore_implement_verify",
-        "builtin_parallel_research",
-        "builtin_planned_refactor",
     }
     assert all(item["head"] is None for item in listed)
 
 
-def test_workflow_cli_permission_mode_selects_truthful_builtin_contract(tmp_path, monkeypatch):
+def test_workflow_cli_permission_mode_does_not_change_generic_transfer_contract(
+    tmp_path, monkeypatch
+):
     state_root, project, _identity = configured_workspace(tmp_path)
     monkeypatch.setattr(
         "morrow.interfaces.workflow_cli.default_sandbox_backend",
@@ -167,7 +168,54 @@ def test_workflow_cli_permission_mode_selects_truthful_builtin_contract(tmp_path
         return coder["output_contracts"][0]["kind"]
 
     assert coder_contract(host) == "TextResult"
-    assert coder_contract(sandboxed) == "ImplementationPatch"
+    assert coder_contract(sandboxed) == "TextResult"
+
+    template = next(
+        item
+        for item in json.loads(sandboxed.output)
+        if item["workflow_definition_id"] == "builtin_explore_implement_verify"
+    )
+    assert template["source"]["default_budget"] == {
+        "admission_timeout_seconds": None,
+        "default_node_max_agent_generation_requests": None,
+        "max_agent_generation_requests": None,
+        "max_concurrency": 1,
+    }
+
+
+def test_workflow_clone_creates_an_editable_user_source(tmp_path):
+    state_root, project, _identity = configured_workspace(tmp_path)
+    common = ["--dir", str(project), "--state-root", str(state_root)]
+    result = CliRunner().invoke(
+        app,
+        [
+            "workflow",
+            "clone",
+            "builtin_explore_implement_verify",
+            "custom_delivery_flow",
+            "--name",
+            "Custom delivery flow",
+            "--expected-revision",
+            "0",
+            *common,
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["source_revision"] == 1
+    assert payload["source"]["workflow_definition_id"] == "custom_delivery_flow"
+    assert payload["source"]["origin"] == "user"
+    assert payload["source"]["name"] == "Custom delivery flow"
+    assert all(
+        output["kind"] == "TextResult"
+        for node in payload["source"]["nodes"]
+        for output in node["output_contracts"]
+    )
+
+    shown = CliRunner().invoke(app, ["workflow", "show", "custom_delivery_flow", *common])
+    assert shown.exit_code == 0, shown.output
+    assert json.loads(shown.output)["origin"] == "user"
 
 
 def test_workflow_run_revision_and_ensure_published_are_unambiguous(tmp_path):

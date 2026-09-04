@@ -337,12 +337,13 @@ class SqliteWorkflowJournal:
                 raise ValueError("Workflow Direct binding does not match its revision scope")
             if direct and value.invoking_root_row_version != root.row_version:
                 raise ValueError("Workflow Direct binding does not match the root revision")
-            if (
-                value.started_at is None
-                or value.admission_deadline_at
-                != value.started_at
-                + timedelta(seconds=value.budget_snapshot.admission_timeout_seconds)
-            ):
+            timeout = value.budget_snapshot.admission_timeout_seconds
+            expected_deadline = (
+                value.started_at + timedelta(seconds=timeout)
+                if value.started_at is not None and timeout is not None
+                else None
+            )
+            if value.started_at is None or value.admission_deadline_at != expected_deadline:
                 raise ValueError("Workflow admission deadline does not match its frozen duration")
             if {n.node_id for n in nodes} != {n.node_id for n in revision.nodes} or len(
                 nodes
@@ -876,9 +877,12 @@ class SqliteWorkflowJournal:
                     or agent.snapshot.model != definition.resolved_model_ref
                 ):
                     raise ValueError("Workflow AgentRun attribution mismatch")
+                effective_cap = value.effective_node_generation_request_cap
+                declared_cap = definition.declared_node_max_agent_generation_requests
                 if (
-                    value.effective_node_generation_request_cap
-                    > definition.declared_node_max_agent_generation_requests
+                    effective_cap is not None
+                    and declared_cap is not None
+                    and effective_cap > declared_cap
                 ):
                     raise ValueError("Workflow node request cap escalates the revision")
                 if current.agent_run_id is None:

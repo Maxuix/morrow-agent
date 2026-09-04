@@ -37,9 +37,9 @@ def builtin_definitions(exact_model):
             definition_id="builtin_coder",
             name="Coder",
             role_prompt=(
-                "Implement the requested change using structured edit/write tools and native-sandbox"
-                " bash. Promote sandbox changes before finishing. Do not guess diffs from the"
-                " workspace after the fact."
+                "Implement and verify the requested change using the workspace tools available in"
+                " the current permission mode, then return a clear final result. Do not claim"
+                " changes or checks that were not actually completed."
             ),
             model_selection="invoking_active",
             access_mode_ceiling="write",
@@ -58,8 +58,8 @@ def builtin_definitions(exact_model):
             definition_id="builtin_reviewer",
             name="Reviewer",
             role_prompt=(
-                "Review the task, change evidence and tests. Submit a ReviewReport verdict."
-                " Do not modify the workspace."
+                "Review the task and the supplied result, inspect relevant evidence, and return a"
+                " clear final verification result. Do not modify the workspace."
             ),
             model_selection="invoking_active",
             access_mode_ceiling="read",
@@ -78,8 +78,8 @@ def builtin_definitions(exact_model):
             definition_id="builtin_planner",
             name="Planner",
             role_prompt=(
-                "Turn the task and Explorer evidence into a bounded implementation plan. Submit a"
-                " PlanArtifact; do not modify the workspace."
+                "Turn the task and supplied context into a concise implementation plan as your"
+                " final result; do not modify the workspace."
             ),
             model_selection="invoking_active",
             access_mode_ceiling="read",
@@ -95,8 +95,8 @@ def builtin_definitions(exact_model):
             definition_id="builtin_synthesizer",
             name="Synthesizer",
             role_prompt=(
-                "Synthesize all supplied Explorer EvidenceBundles into one SynthesisReport."
-                " Preserve source attribution and uncertainties; do not modify the workspace."
+                "Synthesize all supplied results into one clear final result. Preserve source"
+                " attribution and uncertainties; do not modify the workspace."
             ),
             model_selection="invoking_active",
             access_mode_ceiling="read",

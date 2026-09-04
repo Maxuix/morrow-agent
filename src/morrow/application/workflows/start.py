@@ -131,8 +131,11 @@ class WorkflowStartService:
                 root_task_run_id=command.root_task_run_id,
                 budget_snapshot=revision.budget,
                 started_at=started_at,
-                admission_deadline_at=started_at
-                + timedelta(seconds=revision.budget.admission_timeout_seconds),
+                admission_deadline_at=(
+                    started_at + timedelta(seconds=revision.budget.admission_timeout_seconds)
+                    if revision.budget.admission_timeout_seconds is not None
+                    else None
+                ),
                 input_artifacts=(
                     ArtifactBinding(
                         name="task",

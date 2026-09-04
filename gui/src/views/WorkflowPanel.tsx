@@ -49,8 +49,8 @@ export function WorkflowPanel({
   const orderedRuns = useMemo(
     () =>
       [...runs].sort((a, b) =>
-        (b.run.started_at ?? b.run.admission_deadline_at).localeCompare(
-          a.run.started_at ?? a.run.admission_deadline_at,
+        (b.run.started_at ?? b.run.admission_deadline_at ?? '').localeCompare(
+          a.run.started_at ?? a.run.admission_deadline_at ?? '',
         ),
       ),
     [runs],
@@ -177,7 +177,7 @@ export function WorkflowPanel({
             )}
           </div>
           <div className="mt-2 font-mono text-xs text-secondary">
-            预算 {budget.current}
+            模型请求 {budget.current}
             {budget.lineage !== null && ` · ${budget.lineage}`}
           </div>
           {selectedRun.run.result_status !== null && (

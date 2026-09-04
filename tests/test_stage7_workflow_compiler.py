@@ -609,6 +609,19 @@ def test_budget_freeze_uses_node_default_and_definition_ceiling(state):
         with pytest.raises(ValidationError):
             WorkflowBudget(**{**BUDGET.model_dump(), field: 0})
 
+    no_guessed_limits = service.validate(
+        source(ref).model_copy(update={"default_budget": WorkflowBudget()}),
+        active_model=MODEL,
+    ).candidate
+    assert no_guessed_limits.budget == WorkflowBudget()
+    assert no_guessed_limits.nodes[0].declared_node_max_agent_generation_requests is None
+
+    definition_only = service.validate(
+        source(capped_ref).model_copy(update={"default_budget": WorkflowBudget()}),
+        active_model=MODEL,
+    ).candidate
+    assert definition_only.nodes[0].declared_node_max_agent_generation_requests == 2
+
 
 def test_missing_or_mismatched_agent_version_is_rejected(state):
     _, _, _, agents, service = state

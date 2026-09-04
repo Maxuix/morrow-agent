@@ -29,7 +29,7 @@ from morrow.core.workflows.definitions import (
 if TYPE_CHECKING:
     from morrow.application.agent_definitions.publication import DefinitionCatalog
 
-COMPILER_VERSION = "stage7-v1"
+COMPILER_VERSION = "stage7-v2"
 
 
 class DiagnosticSeverity(StrEnum):
@@ -105,9 +105,11 @@ def compile_workflow(
         ceiling = version.source.max_agent_generation_requests
         requested = (
             node.max_agent_generation_requests
-            or source.default_budget.default_node_max_agent_generation_requests
+            if node.max_agent_generation_requests is not None
+            else source.default_budget.default_node_max_agent_generation_requests
         )
-        declared = min(requested, ceiling) if ceiling is not None else requested
+        finite_caps = tuple(value for value in (requested, ceiling) if value is not None)
+        declared = min(finite_caps) if finite_caps else None
         compiled.append(
             AgentNode(
                 **node.model_dump(),

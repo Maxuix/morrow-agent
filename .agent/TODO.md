@@ -1,21 +1,17 @@
 # TODO
 
-Active subplan: none. Stage 8 Subplan 4 `4-web-gui-observer` completed on
-`feat/stage8-gui-observer`; see `docs/acceptance/stage-8-subplan-4-web-gui-observer.md`.
+Active subplan: `5-generic-workflow-foundation` on `refactor/general-workflow-runtime`.
 
-- [x] Server: static GUI asset serving (GET/HEAD, extension allowlist, traversal confinement),
-  uniform CSP/security headers, `morrow gui` CLI sharing the serve core runner.
-- [x] Packaging: wheel ships gitignored `src/morrow/gui_static` via `ignore-vcs = true`; sdist
-  force-includes the bundle (build fails loudly without it); verified via `uv build`.
-- [x] Frontend scaffold: pnpm-pinned Vite+React+TS+Tailwind 4, Warm Paper tokens both themes,
-  bundled Inter/Newsreader/JetBrains Mono, bundle budget gate.
-- [x] API client + SyncStore: snapshot + durable event pull + WS hints + gap resync; approval
-  staleness gap found by browser smoke and fixed (lifecycle events refresh pending approvals).
-- [x] Views: three-column observer shell, Direct card vs React Flow graph, node detail, approvals
-  strip, connection banner, a11y (keyboard, dot+label).
-- [x] Tests: 10 Python serving/CLI tests, 29 vitest tests, 16/16 scripted CDP browser smoke
-  (navigation, live update, keyboard traversal, offline banner, Core-restart resync).
-- [x] GUI–CLI parity evidence + acceptance doc; websockets dependency added (user-approved) after
-  the smoke found uvicorn had no WS backend over real sockets.
-- [x] Validation: full offline gate, Ruff format/check, compileall, `git diff --check`, frontend
-  typecheck/test/build, `uv build` wheel+sdist bundle check.
+- [x] Replace packaged role-specific node transfers with the generic `TextResult@1` result chain;
+  keep legacy structured contracts compatible but optional.
+- [x] Expose only Direct and the minimal multi-Agent starter as packaged Workflow suggestions;
+  make built-in role prompts contract-neutral.
+- [x] Add public Workflow clone-to-user-source support and prove arbitrary node insertion/editing.
+- [x] Make request caps and admission timeout opt-in; update compiler, run evidence, scheduler,
+  continuation/rerun, durable admission, integrity checks and GUI projections for `None`.
+- [x] Update current documentation and execution-state authority.
+- [x] Run focused and full offline/static/frontend validation.
+- [>] Execute fresh disposable public-surface E2E and compatible configured Provider-backed lane;
+  persist sanitized acceptance evidence.
+- [ ] Commit coherent progress, fast-forward verified work to `main`, verify ancestry, and retire the
+  clean topic branch. Remote push is not authorized.

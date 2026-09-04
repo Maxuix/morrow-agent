@@ -235,12 +235,16 @@ class SqliteObservabilityJournal:
                         "WHERE wr.lineage_budget_root_run_id=? AND r.purpose='agent'",
                         (workflow.effective_lineage_budget_root_run_id,),
                     )[0]
-                    if lineage_count >= workflow.budget_snapshot.max_agent_generation_requests:
+                    workflow_cap = workflow.budget_snapshot.max_agent_generation_requests
+                    if workflow_cap is not None and lineage_count >= workflow_cap:
                         raise StorageError(
                             StorageErrorCode.BUDGET_EXHAUSTED,
                             "budget_exhausted: Workflow lineage request limit reached",
                         )
-                    if stamp > workflow.admission_deadline_at:
+                    if (
+                        workflow.admission_deadline_at is not None
+                        and stamp > workflow.admission_deadline_at
+                    ):
                         raise StorageError(
                             StorageErrorCode.UNAVAILABLE,
                             "deadline_exceeded: Workflow lineage admission deadline reached",

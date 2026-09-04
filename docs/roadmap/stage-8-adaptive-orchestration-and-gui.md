@@ -1,10 +1,15 @@
 # Stage 8：自适应编排与 GUI 控制面
 
-> 状态：进行中（运行时内核 Subplans 1–2 已完成，2026-09-03）
+> 状态：进行中（Subplans 1–4 已完成；通用 Workflow 基础纠偏 Subplan 5 进行中，2026-09-04）
 > 阶段结果：Morrow 能根据任务选择并生成可验证的 Workflow Draft，用户可通过 GUI 观察、编辑和控制 Agent、偏好、Skill 与运行状态
 > 上级文档：[开发路线总览](../ROADMAP.md)
 > 上一阶段：[Stage 7：Agent Definition 与静态 Workflow Runtime](stage-7-workflow-runtime.md)
 > 下一阶段：[Stage 9：后台任务与可靠自动化](stage-9-background-automation.md)
+
+> 2026-09-04 现行纠偏：模板只是可复制、可任意改节点/边/角色的建议，默认节点通信统一为
+> `TextResult@1/result`；GraphPlanner 也必须生成普通可编辑 source，而非选择角色专用执行链。
+> request cap 和 admission timeout 是可空的用户 guardrail，缺省不终止任务。所有 request/usage
+> 仍持久化计量，用户 stop/Pause 是运行控制，不能用猜测预算替代 Harness 设计。
 
 ## 一、阶段目标
 
@@ -35,7 +40,7 @@ Stage 8 把 Stage 5–7 的能力组合成用户可直接掌控的个人 Agent �
 - 可配置 Agent 模块。
 - Multi-Agent 相对单 Agent 的效果反馈闭环。
 - 风险分级的运行自治：叶子内自我纠错始终自由；图级低风险 Patch 可按用户策略自动接受；
-  越权/扩预算变更始终需用户批准（对齐 Codex approval policy、Claude Code permission mode、
+  越权或放宽用户显式 guardrail 的变更始终需用户批准（对齐 Codex approval policy、Claude Code permission mode、
   OpenCode per-tool allow/ask/deny 的包络内自主、越界升级原则）。
 
 ## 二、GUI 产品定位
@@ -73,7 +78,7 @@ Morrow Core Process
   Pause/Drain 与运行中 future-only
   编辑是 Stage 8 自己的首要运行控制前置，不假定 Stage 7 已实现。
 - Stage 7 只交付串行执行；只读并行是本阶段的独立运行时切片（8H），其开工另有前置：ToolEffect
-  分类稳定、provider rate-limit ownership 已明确、按请求原子预算 claim 已实现、process/cwd/env 隔离
+  分类稳定、provider rate-limit ownership 已明确、按请求原子计量与可选 cap claim 已实现、process/cwd/env 隔离
   经过压力测试、并行结果可见性屏障已验证。
 - Command/Query/Approval 接口能够表达完整运行状态；若 Stage 7 未获授权扩展
   ApplicationEvent，则 Stage 8A 在建立 Event Stream 前先取得该 public contract 授权。
@@ -99,12 +104,10 @@ Morrow Core Process
 → 用户编辑/批准，或按已获推广的策略运行
 ```
 
-首批模板沿用 Stage 7：
-
-- Direct。
-- Explore–Implement–Verify。
-- Parallel Research（Stage 7 为串行 fan-in；并发 fan-out 形态由 8H 解锁）。
-- Planned Refactor。
+首批起点建议沿用 Stage 7 纠偏后的最小集合：Direct 与 Explore–Implement–Verify。后者只示范
+三节点通用 result 链，用户和 GraphPlanner 都可以从空图开始，或克隆后任意新增、替换、删除角色、
+节点与边；Parallel Research、Planned Refactor 等形状应当由同一个普通图模型组合出来，而不是成为
+拥有专用转接协议的新模板。
 
 `NodeCatalog + ArtifactCatalog + CapabilityCatalog` 是现有 AgentDefinition、Artifact contract 和
 Capability authority 的有界只读投影，不是第二套 Registry。`GraphGrammar` 只描述当前 Runtime 真正
@@ -143,7 +146,7 @@ TaskFeatures
 - 不需要独立证据收集。
 - Reviewer 价值低于额外成本。
 - 用户偏好不启用多 Agent。
-- 预算不足。
+- 用户显式设置的费用或请求 guardrail 不适合当前候选图。
 
 只有复杂度、风险或并行收益达到阈值时，才选择 Multi-Agent。
 
@@ -184,8 +187,8 @@ Draft compile failed
   证据验收。
 - 自动选择后直接运行、以及 task class 级默认自动化（免批准的自动 Draft 运行或自动接受
   Replan）属于产品推广，必须有对应任务类型的 Direct/Multi 对照收益和用户策略授权。
-- Replan 的自动接受按 Patch 风险分级，与 task class 推广是两个独立门槛：不扩大权限、不提高
-  cap/deadline、不引入新角色、仅修改 Future 节点的低风险结构修复 Patch，可在用户策略
+- Replan 的自动接受按 Patch 风险分级，与 task class 推广是两个独立门槛：不扩大权限、不放宽
+  用户显式 cap/deadline、不引入新角色、仅修改 Future 节点的低风险结构修复 Patch，可在用户策略
   （`auto_replan_mode`）允许时自动应用并事后可审计；任何越权或扩容 Patch 无论证据如何都
   必须用户明确批准。
 - 证据不足时系统仍正常运行，只把 Draft/Patch 交给用户批准；不得以“为了安全”禁用 Direct、手工
@@ -204,7 +207,7 @@ OrchestrationPolicy
 - excluded_templates[]
 - required_roles[]
 - model_preferences_by_role
-- budget_limits
+- budget_limits（可空；只来自用户显式配置）
 - review_requirement
 - parallelism_limit
 - auto_run_mode
@@ -334,24 +337,24 @@ terminal-parent child/new-Run 路径。选择 abandon 则按 Stage 7 关闭旧 r
 Past。Compiler 只有在 exact inherited Artifacts 已满足新 Revision 的全部 required contracts 时才接受；
 handoff transaction 此时不创建 queued NodeRun，而是创建并立即终态化 continuation child，通过 Stage 7
 同一个 fixed result owner、只按新 Revision required outputs 中 exact inherited result-driving
-ReviewReport 收口：`succeeded` 写 READY transition + marked Workflow result snapshot；`needs_revision`
+ReviewReport（若用户显式声明）收口：`succeeded` 写 READY transition + marked Workflow result snapshot；`needs_revision`
 写 FAILED transition + 引用 required blocking reports 的 terminal TaskOutcome，不伪造 success snapshot。
 两条路径都在同一 transaction terminalize old parent/child/root。若合同未满足则 Patch compile 失败。绝不留下
 `running` 的空 child，也不增加单独 finalize command。
 
 WorkflowRun 记录 `run_relation: initial | continuation | rerun` 与
-`lineage_budget_root_run_id`，避免把 Replan 当作免费重置预算。初始/new Run（`initial`）与显式
-`rerun` 都把自己设为新的 budget root；`continuation` 继承 parent
-的 budget root。累计 `agent_generation_request_count` 只从该 root 所属 continuation chain 的 durable
-`purpose=agent` rows 推导，遍历不得越过最近的 rerun/new-root 边界；child 只获得新 Revision aggregate
-cap 减去该 budget lineage 已消费量后的剩余额度，默认继承原
-`admission_deadline_at`，不能以 child `started_at` 自动重算。FutureGraphPatch 若提高 cap 或延长期限，
-必须把变化列为用户 exact edit 或经用户明确批准的 proposal，并与 parent cap/deadline 一起做 OCC；Agent
-signal/模板不能静默扩容。剩余额度非正或 inherited deadline 已过期时 Patch 仍可保存，但 continuation
+`lineage_budget_root_run_id`；该 root 始终是 request accounting 边界，不代表必有有限预算。初始/new
+Run（`initial`）与显式 `rerun` 都把自己设为新的 accounting root；`continuation` 继承 parent root。
+累计 `agent_generation_request_count` 只从该 root 所属 continuation chain 的 durable `purpose=agent`
+rows 推导，遍历不得越过最近的 rerun/new-root 边界。仅当 Revision 有显式 aggregate cap 时，child 才
+获得 cap 减去该 lineage 已消费量后的剩余额度；仅当 parent 有 deadline 时才继承原
+`admission_deadline_at`。FutureGraphPatch 若提高/移除显式 cap 或延长/移除显式期限，必须列为用户
+exact edit 或经用户明确批准的 proposal，并与 parent 事实一起做 OCC；Agent signal/模板不能静默
+放宽。显式剩余额度非正或 inherited deadline 已过期时 Patch 仍可保存，但 continuation
 child 的非空 execution set 不启动；empty child 不做 Node/model admission，仍可按上段用 inherited
 contracts 原子终态闭合。只有 terminal parent 后用户显式触发的 `rerun`/new WorkflowRun（并先完成现有合法 root
-transition）才把自己设为新 `lineage_budget_root_run_id` 并获得一份新的 Revision budget/deadline，且
-UI/CLI 明示这是新预算；它后续的 continuation 只累计这个新 root 之内的消费。
+transition）才把自己设为新 `lineage_budget_root_run_id` 并采用 Revision 的可选 guardrail，且 UI/CLI
+明示这是新 accounting root；它后续的 continuation 只累计这个 root 之内的消费。
 
 ### 6.4 删除节点
 
@@ -412,7 +415,7 @@ Node Agent / Orchestrator                              │  → pure WorkflowCom
   `approval_only` 下等待用户批准。任何越权或扩容 Patch 无论策略与证据如何都必须用户明确批准。
   task class 级的默认自动化推广仍按 §4.6 需要对照收益证据；证据不足时回落建议/批准模式，且不
   阻塞手工能力与工程验收。
-- Node 内部 Agent 仍可在固定 Node Contract、ToolSet 和预算内调整下一次模型/工具动作，这属于
+- Node 内部 Agent 仍可在固定 Node Contract、ToolSet 和用户 guardrail 内调整下一次模型/工具动作，这属于
   leaf-local replanning；第一版不让叶子创建嵌套 DAG，也不绕过 ReplanCoordinator 修改全局图。
 
 ## 七、Agent 模块编辑
@@ -428,7 +431,7 @@ Node Agent / Orchestrator                              │  → pure WorkflowCom
 - Tool/Capability Policy。
 - ContextPolicy。
 - 输入输出合同。
-- 时间、Token、调用和重试预算。
+- 可选的时间、Token、调用和重试 guardrail。
 - 是否只读/Writer。
 
 ### 7.2 不可配置为绕过项
@@ -438,7 +441,7 @@ Node Agent / Orchestrator                              │  → pure WorkflowCom
 - 路径越界能力。
 - 隐藏 ToolResult 或审计。
 - Provider reasoning 记录。
-- 无上限预算。
+- 隐藏 request/usage 计量。
 - 绕过审批的高风险工具。
 
 ### 7.3 Definition 与 Node Override
@@ -621,11 +624,11 @@ initial query snapshot（同事务捕获 max cursor）
 生成 Draft 时，系统必须提供简短解释：
 
 ```text
-结构先验：Explore–Implement–Verify
+起点建议：Explore–Implement–Verify（已克隆为普通可编辑图）
 任务特化：Explorer 聚焦 API/持久化；Coder 修改两个目标模块；Reviewer 校验恢复语义
-未加入 Parallel Research：任务没有多个独立研究方向
+自定义：按任务需要可插入 Web Developer；本次没有独立研究分支
 预计节点：3
-总预算：...
+显式 guardrail：未设置（仍显示实时 request/usage）
 写入节点：Coder（唯一）
 ```
 
@@ -664,7 +667,7 @@ Stage 8 是前台或 Core 进程存活期间的运行控制；真正独立后台
 
 - 节点数量。
 - 模型选择。
-- 最大预算。
+- 用户显式设置的最大费用/请求 guardrail（未设置时明确显示“无上限”）。
 - 预计并行度。
 - 哪些节点写入。
 
@@ -672,7 +675,7 @@ Stage 8 是前台或 Core 进程存活期间的运行控制；真正独立后台
 
 展示：
 
-- 已使用/剩余预算。
+- 已使用 request/usage，以及存在显式 guardrail 时的剩余额度。
 - 节点耗用。
 - 重试和失败。
 - Tool 调用和 Approval。
@@ -815,16 +818,16 @@ Replan，无收益不阻止 suggestion-only 和手工能力的工程验收。
 
 ### 8H：有界只读并行
 
-Stage 7 的全部 Workflow 都是串行的；本切片把并发准入限制在编译期可证明只读的固定 fan-out
-frontier（典型消费者是 Parallel Research 模板的并发形态），不引入通用执行器平台。
+Stage 7 的全部 Workflow 都是串行的；本切片把并发准入限制在编译期可证明只读的普通 fan-out
+frontier，不依赖 Parallel Research 等专用模板，也不引入新的角色执行器平台。
 
 交付：
 
 - 固定 ready frontier 的只读证明：以冻结 effective ToolSet、ToolEffect 与 PermissionSnapshot 为准，
   角色名不是证据；unknown/opaque effect 不得进入并行准入，read-contract drift 直接失败目标节点。
-- 按请求原子预算 claim：每次 Provider 请求前以幂等键（run/node/request 序号）在 Workflow 剩余额度
-  与节点 frozen cap 下原子申领，响应后按实际结算；不预留整节点最坏额度，不新增内存态账本或第二
-  request counter。
+- 按请求原子 accounting/可选 cap claim：每次 Provider 请求前以幂等键
+  （run/node/request 序号）记录请求；显式 Workflow/Node cap 存在时在剩余额度内原子申领，未配置时
+  只计量。响应后按实际结算，不预留整节点最坏额度，不新增内存态账本或第二 request counter。
 - 并发 slot 上限、确定性 gather（持久化与下游可见顺序按稳定 node 序，与完成顺序无关）、单 Writer
   串行不变量。
 - frontier 的确定性取消、每个已准入 NodeRun 恰好结算一次、部分完成恢复不重跑已完成节点。

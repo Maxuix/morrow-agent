@@ -4994,3 +4994,25 @@
   succeeded / row_version). Validation: full offline gate 1607 passed / 2 deselected, 29 vitest +
   10 Python GUI tests, Ruff format/check, compileall, `git diff --check`, frontend
   typecheck/test/build all green. Acceptance: docs/acceptance/stage-8-subplan-4-web-gui-observer.md.
+
+## 2026-09-04 — Subplan 5 generic Workflow foundation verified
+
+- Replaced packaged role-specific Artifact handoffs with one `TextResult@1/result` chain and
+  reduced the visible Workflow suggestions to Direct plus a minimal, cloneable Explore Implement
+  Verify graph. Added public `workflow clone`; built-in and custom nodes still use the same
+  compiler/runtime, and legacy structured contracts remain compatible optional definitions.
+- Made Workflow total/node request caps and admission timeout optional. Their absence now freezes
+  as `None`, while durable request/usage accounting remains authoritative and explicit positive
+  guardrails retain the existing lineage enforcement. A deterministic two-node run completed 51
+  requests, beyond both retired 12/48 defaults.
+- Provider-backed public-surface simulation used disposable state/workspace with the configured
+  `opencode-go/deepseek-v4-flash`: stale clone OCC was rejected, a Web Developer Agent was inserted
+  into a four-node cloned graph, and the real run completed with 32 requests. Its Web Developer
+  node completed after 15 requests, proving the retired 12-request default no longer kills useful
+  work. Hidden oracles found two result-quality edge cases; a freely reduced one-node graph first
+  failed on Provider `invalid_response`, then explicit task resume + rerun succeeded after 13
+  requests. Checked tests, hidden Python/JS oracles and source-test immutability passed; Doctor was
+  healthy and backup verification passed with credentials excluded.
+- Final gates: focused Workflow matrix 158 passed; full offline gate 1609 passed / 2 deselected in
+  176.61 seconds; Ruff format/check, compileall, Workflow CLI help, GUI typecheck, 31 Vitest tests,
+  GUI build/bundle budget and `git diff --check` passed. Remote push remains unauthorized.

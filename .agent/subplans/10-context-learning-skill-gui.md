@@ -1,9 +1,9 @@
-# Subplan 9 — Context, Learning and Skill Management GUI
+# Subplan 10 — Context, Learning and Skill Management GUI
 
 > Status: pending activation
 > Branch: `feat/stage8-context-learning-skill-gui`
 > Activation base: latest verified `main` with Subplan 4 integrated (re-sequenced per plan §4)
-> Prerequisite: Subplan 4 verified; technically independent of Subplans 5–8
+> Prerequisite: Subplan 4 verified; technically independent of Subplans 5–9
 > Roadmap authority: stage-8 §8.2, §9, §10, §8F
 
 ## Objective
@@ -41,5 +41,5 @@ resolution.
 
 ## Out of scope
 
-Workflow editing/run control (Subplans 5–6), OrchestrationPolicy editing beyond Preferences
-(Subplan 10 surfaces candidates).
+Workflow editing/run control (Subplans 6–7), OrchestrationPolicy editing beyond Preferences
+(Subplan 11 surfaces candidates).

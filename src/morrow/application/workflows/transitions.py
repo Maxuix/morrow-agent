@@ -84,7 +84,7 @@ class WorkflowTransitionService:
         conversation_session_id: str,
         leaf_task_run_id: str,
         agent_run_id: str,
-        effective_node_generation_request_cap: int,
+        effective_node_generation_request_cap: int | None,
     ) -> NodeRun:
         """Bind the pre-created queued NodeRun's leaf references and start it."""
 

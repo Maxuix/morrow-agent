@@ -8,15 +8,26 @@
  */
 
 export interface BudgetDisplay {
-  /** `used / max` for the run itself, mono-rendered by callers. */
+  /** Request usage for this run; an absent cap is shown explicitly. */
   current: string
   /** Lineage totals, only when the lineage count differs from the run count. */
   lineage: string | null
-  /** Remaining requests against the run's budget snapshot. */
-  remaining: number
+  /** Remaining requests when the user configured a finite cap. */
+  remaining: number | null
 }
 
-export function budgetDisplay(used: number, max: number, lineageUsed: number): BudgetDisplay {
+export function budgetDisplay(
+  used: number,
+  max: number | null,
+  lineageUsed: number,
+): BudgetDisplay {
+  if (max === null) {
+    return {
+      current: `${used} / 无上限`,
+      lineage: lineageUsed !== used ? `谱系累计 ${lineageUsed} / 无上限` : null,
+      remaining: null,
+    }
+  }
   return {
     current: `${used} / ${max}`,
     lineage: lineageUsed !== used ? `谱系累计 ${lineageUsed} / ${max}` : null,

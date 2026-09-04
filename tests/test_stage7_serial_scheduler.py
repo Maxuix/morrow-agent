@@ -631,6 +631,34 @@ async def test_duplicate_wake_never_reruns_or_duplicates_nodes(fx):
 
 
 @pytest.mark.asyncio
+async def test_omitted_limits_allow_more_than_legacy_node_and_workflow_caps(fx):
+    first_node_script = [
+        AssistantMessage(
+            tool_calls=(
+                FunctionToolCall(id=f"call_{index}", name="read", arguments='{"path": "a.py"}'),
+            )
+        )
+        for index in range(49)
+    ]
+    first_node_script.append(["first node complete"])
+    fx.bank.scripts.extend((first_node_script, [["second node complete"]]))
+    _, publication = publish(
+        fx,
+        lambda ref: pair_source(ref, budget=WorkflowBudget()),
+        agent=reader_agent(),
+    )
+    started = start(fx, publication.revision)
+
+    assert started.run.admission_deadline_at is None
+    run = await fx.runtime.scheduler.run(started.run.workflow_run_id)
+
+    assert run.status is WorkflowStatus.COMPLETED
+    assert fx.journal.count_workflow_agent_requests(WS, run.workflow_run_id) == 51
+    nodes = fx.journal.workflows.list_nodes(WS, run.workflow_run_id)
+    assert all(node.effective_node_generation_request_cap is None for node in nodes)
+
+
+@pytest.mark.asyncio
 async def test_zero_remaining_budget_cancels_later_node_and_fails_run(fx):
     fx.bank.scripts.extend([[["only node one runs"]]])
     tight = WorkflowBudget(

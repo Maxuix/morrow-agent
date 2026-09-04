@@ -205,7 +205,7 @@ def test_output_binding_export_and_observation_are_separate_facts():
         WorkflowDefinitionSource.model_validate(raw)
 
 
-def test_shared_export_bound_and_finite_budget():
+def test_shared_export_bound_and_optional_execution_limits():
     refs = tuple(
         NodeOutputRef(node_id="worker", output_slot=f"slot_{i}")
         for i in range(TASK_OUTCOME_ARTIFACT_MAX_REFS)
@@ -219,6 +219,12 @@ def test_shared_export_bound_and_finite_budget():
     for value in (0, float("inf"), float("nan"), True, "300"):
         with pytest.raises(ValidationError):
             WorkflowBudget(**{**BUDGET.model_dump(), "admission_timeout_seconds": value})
+    assert WorkflowBudget().model_dump() == {
+        "max_agent_generation_requests": None,
+        "default_node_max_agent_generation_requests": None,
+        "admission_timeout_seconds": None,
+        "max_concurrency": 1,
+    }
     for kind in ("TextResult", "ReviewReport"):
         with pytest.raises(ValidationError):
             source(input_contract={"kind": kind, "version": 1})

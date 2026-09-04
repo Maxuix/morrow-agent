@@ -71,9 +71,9 @@ export interface TaskRunWire {
 
 /** `WorkflowBudget.model_dump` */
 export interface WorkflowBudgetWire {
-  max_agent_generation_requests: number
-  default_node_max_agent_generation_requests: number
-  admission_timeout_seconds: number
+  max_agent_generation_requests: number | null
+  default_node_max_agent_generation_requests: number | null
+  admission_timeout_seconds: number | null
   max_concurrency: number
 }
 
@@ -87,7 +87,7 @@ export interface WorkflowRunWire {
   started_at: string | null
   completed_at: string | null
   budget_snapshot: WorkflowBudgetWire
-  admission_deadline_at: string
+  admission_deadline_at: string | null
   input_artifacts: ArtifactBindingWire[]
   result_status: 'succeeded' | 'needs_revision' | null
   pending_terminal_intent: 'user_cancel' | null

@@ -1,9 +1,9 @@
-# Subplan 7 — Task-Specialized GraphPlanner Draft
+# Subplan 8 — Task-Specialized GraphPlanner Draft
 
 > Status: pending activation
 > Branch: `feat/stage8-graph-planner`
-> Activation base: latest verified `main` with Subplan 6 integrated
-> Prerequisite: Subplan 6 verified
+> Activation base: latest verified `main` with Subplan 7 integrated
+> Prerequisite: Subplan 7 verified
 > Roadmap authority: stage-8 §4.1–4.6, §12, §8D, §16.4
 
 ## Objective
@@ -33,7 +33,7 @@ stay Direct.
 - `OrchestrationPolicy` domain + storage per §5.1–5.2 (including `auto_run_mode` and
   `auto_replan_mode`, defaulting to approval-first), workspace override support; auto-run stays
   off without paired-evidence promotion per §4.6.
-- GUI integration: Draft review/edit in the editor (Subplan 5), explanation panel, auto-run policy
+- GUI integration: Draft review/edit in the editor (Subplan 6), explanation panel, auto-run policy
   settings.
 
 ## Key semantics
@@ -47,11 +47,11 @@ stay Direct.
 ## Validation
 
 - Deterministic planner tests over scripted Providers: small task stays Direct, large task gains a
-  Reviewer, budget shortage handled, user-excluded role respected, workspace policy overrides
+  Reviewer, explicit guardrail handled, user-excluded role respected, workspace policy overrides
   global defaults, task-differentiated Drafts, compile-failure fallback.
 - Standard offline/static gates.
 
 ## Out of scope
 
-ReplanSignal/Coordinator (Subplan 8), feedback-driven policy candidates (Subplan 10), parallelism
-(Subplan 11).
+ReplanSignal/Coordinator (Subplan 9), feedback-driven policy candidates (Subplan 11), parallelism
+(Subplan 12).

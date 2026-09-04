@@ -209,24 +209,36 @@ class WorkflowScheduler:
                 # cannot be called. The durable model-request admission seam
                 # repeats this lineage-wide check atomically and remains the
                 # authority when concurrent callers race this projection.
+                workflow_cap = run.budget_snapshot.max_agent_generation_requests
                 remaining = (
-                    run.budget_snapshot.max_agent_generation_requests
+                    workflow_cap
                     - self.journal.count_lineage_agent_requests(
                         self.workspace_id, run.effective_lineage_budget_root_run_id
                     )
+                    if workflow_cap is not None
+                    else None
                 )
-                if remaining <= 0:
+                if remaining is not None and remaining <= 0:
                     self.finalizer.finalize_failure(workflow_run_id, reason="budget_exhausted")
                     break
-                if self.clock() > run.admission_deadline_at:
+                if (
+                    run.admission_deadline_at is not None
+                    and self.clock() > run.admission_deadline_at
+                ):
                     self.finalizer.finalize_failure(workflow_run_id, reason="deadline_exceeded")
                     break
                 nodes_by_id = self._nodes_by_id(run)
-            cap = (
-                min(node_def.declared_node_max_agent_generation_requests, remaining)
-                if node.status is WorkflowStatus.QUEUED
-                else node.effective_node_generation_request_cap
-            )
+                finite_caps = tuple(
+                    value
+                    for value in (
+                        node_def.declared_node_max_agent_generation_requests,
+                        remaining,
+                    )
+                    if value is not None
+                )
+                cap = min(finite_caps) if finite_caps else None
+            else:
+                cap = node.effective_node_generation_request_cap
             try:
                 if node.status is WorkflowStatus.QUEUED:
                     self._require_ready(run, revision, node_def, nodes_by_id)
@@ -370,7 +382,7 @@ class WorkflowScheduler:
         revision: WorkflowRevision,
         node_def: AgentNode,
         node: NodeRun,
-        cap: int,
+        cap: int | None,
         *,
         cancelled_is_user: bool = True,
     ) -> None:

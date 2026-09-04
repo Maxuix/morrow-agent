@@ -1,9 +1,9 @@
-# Subplan 10 — Workflow Feedback and Orchestration Evaluation
+# Subplan 11 — Workflow Feedback and Orchestration Evaluation
 
 > Status: pending activation
 > Branch: `feat/stage8-feedback-evaluation`
-> Activation base: latest verified `main` with Subplan 8 integrated
-> Prerequisite: Subplan 8 verified
+> Activation base: latest verified `main` with Subplan 9 integrated
+> Prerequisite: Subplan 9 verified
 > Roadmap authority: stage-8 §5.3, §14, §8G
 
 ## Objective

@@ -35,11 +35,15 @@ Workspace 扩展配置继续由 YAML 持有，CredentialStore 是唯一凭据权
 AgentRun admission snapshot。Stage 7 当前已交付纯 Workflow Compiler、不可变 Revision 发布、统一串行
 Scheduler、isolated 多节点 Artifact pipeline，以及复用同一 Scheduler/TurnLifecycle 的 opt-in 单节点
 `invoking_session` adapter；Subplan 8 增加 application management/query boundary、`morrow agent` /
-`morrow workflow` CLI，以及 Direct、Explore Implement Verify、Parallel Research 和 Planned Refactor
-只读模板源。Stage 8 运行时内核在 v26 上增加 durable Pause/Drain、execution set、Artifact imports、
+`morrow workflow` CLI，以及 Direct 和 Explore Implement Verify 两个只读起点；后者只使用通用
+`TextResult@1/result` 链，能通过 `workflow clone` 变为可任意编辑的用户 source。旧结构化合同和已发布
+Revision 保持兼容，但不再形成角色专用的内置传递协议。Stage 8 运行时内核在 v26 上增加 durable
+Pause/Drain、execution set、Artifact imports、
 detached run-local Revision、FutureGraphPatch 的 Past/Future 校验与 OCC handoff，以及 continuation/rerun
 lineage。`EffectiveOutputResolver` 是 Scheduler readiness、prompt/input binding、结果收口和查询的统一
-继承输出入口；continuation 共用 absolute deadline 与 lineage budget root，rerun 建立新预算根。
+继承输出入口；显式设置限制时 continuation 共用 absolute deadline 与 lineage accounting root，
+rerun 建立新 accounting root。请求 cap 和 admission timeout 缺省均为 `None`，不触发系统猜测的
+自动终止；durable request/usage accounting 始终保留。
 普通 Direct 仍是默认路径，Scheduler 仍完全串行。
 `application/backup_service.py` 组合在线 SQLite、Artifact、脱敏 YAML 和被引用 managed Skill 版本，并以新目标
 目录执行原子、隔离 restore。Backup 只有当前完整格式，且不复制凭据。
@@ -67,10 +71,11 @@ Artifact/TaskOutcome 保存内部 TextSafetyProfile；Workflow typed projection 
 明确声明 `invoking_session` 时绑定 exact invoking user Session/root Task。两种 scope 都限制既有
 preparation 的工具集合并选择 Compiler 冻结的精确模型。
 role prompt 经原 PromptAssembler 注入，精确 Skill 版本仍经过 enabled binding、pin 和依赖检查；Preference、Memory、
-Permission 与 Context 仍归原 owner。AgentRun 只新增 Definition ID/version/hash、conversation_session_id 和单一
+Permission 与 Context 仍归原 owner。AgentRun 只新增 Definition ID/version/hash、conversation_session_id 和可空的
 primary-generation-request cap；计入每次 `purpose=agent` 的调用（含工具后的继续生成与重试），
-在既有 durable request admission 事务中执行。预算耗尽以存储错误返回，由 SessionPersistence
-转换为现有 known-failure 诊断。Definition 准备与提交失败也沿用这一诊断路径；精确 Skill 在准备时
+在既有 durable request admission 事务中记录，仅当用户显式配置 cap 时拒绝超额请求。预算耗尽以
+存储错误返回，由 SessionPersistence 转换为现有 known-failure 诊断。Definition 准备与提交失败也
+沿用这一诊断路径；精确 Skill 在准备时
 预检，提交事务仍重新检查绑定并冻结选择，恢复不读取当前绑定。Session-local prompt owner binding
 供 admission/recovery 验证同一组装器，只有 Session-owned ConversationLog 和 AgentLoop 写聊天历史；禁止 transcript fork。
 普通 disable 只阻止新 admission，Factory recovery 只检查不可变版本及其撤销记录，不再检查 enabled head。
@@ -81,8 +86,9 @@ primary-generation-request cap；计入每次 `purpose=agent` 的调用（含工
 ConversationLog。isolated 节点拥有独立 Session/`workflow_node` Task；单节点无边的
 `invoking_session` 节点改为绑定根 Session/user Task，并由 TurnLifecycle 独占根终态写入，Workflow
 finalizer 随后幂等关闭 Run 与结果 snapshot。NodeResultCommitter、Artifact binding、取消与恢复路径在
-两种 scope 间共享。多节点 DAG 使用 Artifact-only handoff，包含 Explorer→Coder→Reviewer 与 truthful
-`needs_revision` 结果。管理 CLI 只调用 application services；validate 保持零写入，publication、Head
+两种 scope 间共享。多节点 DAG 使用 contract-bound Artifact handoff；内置
+Explorer→Coder→Reviewer 只传通用 `TextResult`，高级用户仍可显式声明结构化合同。管理 CLI 只调用
+application services；validate 保持零写入，publication、Head
 toggle、精确 revoke、foreground recovery 与查询没有第二套 SQLite/YAML 逻辑。
 只读 ceiling 要求可证明的静态只读工具契约，未知副作用工具仍可用于 write ceiling 的串行 Agent，
 不能因角色提示变成只读。

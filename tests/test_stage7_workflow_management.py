@@ -19,7 +19,19 @@ from morrow.application.workflows.publication import WorkflowCompilationService
 from morrow.application.workflows.queries import WorkflowQueryService
 from morrow.application.workflows.start import StartWorkflowCommand
 from morrow.core.agent_runs import AgentDefinitionRef
-from morrow.core.workflows.contracts import TaskContract
+from morrow.core.workflows.contracts import (
+    ContractRef,
+    NodeOutputBinding,
+    NodeOutputRef,
+    OutputContract,
+    TaskContract,
+)
+from morrow.core.workflows.definitions import (
+    AgentNodeSource,
+    WorkflowBudget,
+    WorkflowDefinitionSource,
+    WorkflowEdge,
+)
 from morrow.core.workflows.runs import WorkflowStatus
 from test_stage7_isolated_workflow_slice import (
     CONTRACT,
@@ -202,7 +214,7 @@ def test_definition_get_queries_are_not_limited_by_list_page_size(fx):
     )
 
 
-def test_four_builtin_templates_publish_through_generic_compiler(fx):
+def test_two_builtin_suggestions_publish_through_generic_compiler(fx):
     access = {
         "read": "read",
         "grep": "read",
@@ -244,8 +256,6 @@ def test_four_builtin_templates_publish_through_generic_compiler(fx):
     assert {item.workflow_definition_id for item in templates} == {
         "builtin_direct_workflow",
         "builtin_explore_implement_verify",
-        "builtin_parallel_research",
-        "builtin_planned_refactor",
     }
     for index, source in enumerate(templates, start=1):
         assert compiler.validate(source, active_model=MODEL).candidate is not None
@@ -257,9 +267,75 @@ def test_four_builtin_templates_publish_through_generic_compiler(fx):
             active_model=MODEL,
         )
         assert published.revision.workflow_definition_id == source.workflow_definition_id
-    research = next(
-        item for item in templates if item.workflow_definition_id == "builtin_parallel_research"
+    starter = next(
+        item
+        for item in templates
+        if item.workflow_definition_id == "builtin_explore_implement_verify"
     )
-    assert research.required_outputs == (
-        next(ref for ref in research.required_outputs if ref.output_slot == "synthesis"),
+    assert starter.default_budget == WorkflowBudget()
+    assert all(
+        output.kind == "TextResult" and output.slot == "result"
+        for node in starter.nodes
+        for output in node.output_contracts
+    )
+    assert starter.required_outputs == (NodeOutputRef(node_id="reviewer", output_slot="result"),)
+
+    by_id = {node.node_id: node for node in starter.nodes}
+    web_developer = AgentNodeSource(
+        node_id="web_developer",
+        agent_definition_ref=refs["builtin_coder"],
+        task_contract=TaskContract(objective="Implement the web portion of the requested task."),
+        input_bindings=(
+            next(
+                binding
+                for binding in by_id["coder"].input_bindings
+                if binding.source == "workflow_input"
+            ),
+            NodeOutputBinding(
+                source="node_output",
+                input_name="previous_result",
+                accepts=ContractRef(kind="TextResult"),
+                node_output=NodeOutputRef(node_id="coder", output_slot="result"),
+            ),
+        ),
+        output_contracts=(OutputContract(slot="result"),),
+        access_mode="write",
+    )
+    reviewer = by_id["reviewer"].model_copy(
+        update={
+            "input_bindings": (
+                next(
+                    binding
+                    for binding in by_id["reviewer"].input_bindings
+                    if binding.source == "workflow_input"
+                ),
+                NodeOutputBinding(
+                    source="node_output",
+                    input_name="previous_result",
+                    accepts=ContractRef(kind="TextResult"),
+                    node_output=NodeOutputRef(node_id="web_developer", output_slot="result"),
+                ),
+            )
+        }
+    )
+    custom = WorkflowDefinitionSource.model_validate(
+        {
+            **starter.model_dump(mode="python", exclude={"nodes", "edges"}),
+            "workflow_definition_id": "custom_web_delivery",
+            "origin": "user",
+            "nodes": (by_id["explorer"], by_id["coder"], web_developer, reviewer),
+            "edges": (
+                WorkflowEdge(from_node_id="explorer", to_node_id="coder"),
+                WorkflowEdge(from_node_id="coder", to_node_id="web_developer"),
+                WorkflowEdge(from_node_id="web_developer", to_node_id="reviewer"),
+            ),
+        }
+    )
+    result = compiler.validate(custom, active_model=MODEL)
+    assert result.candidate is not None
+    assert tuple(node.node_id for node in result.candidate.nodes) == (
+        "coder",
+        "explorer",
+        "reviewer",
+        "web_developer",
     )

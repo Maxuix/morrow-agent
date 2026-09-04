@@ -519,6 +519,34 @@ def workflow_edit(
         _fail(exc)
 
 
+@workflow_app.command("clone")
+def workflow_clone(
+    definition_id: str,
+    new_definition_id: str,
+    expected_revision: int = typer.Option(..., "--expected-revision", min=0),
+    name: str | None = typer.Option(None, "--name"),
+    workspace_id: str | None = typer.Option(None, "--workspace-id"),
+    directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+):
+    """Clone a visible Workflow into editable user-owned desired state."""
+
+    try:
+        with _definition_services(
+            write=True, **_options(workspace_id, directory, state_root)
+        ) as ctx:
+            _dump(
+                ctx[3].clone_workflow_source(
+                    definition_id,
+                    new_definition_id=new_definition_id,
+                    expected_source_revision=expected_revision,
+                    name=name,
+                )
+            )
+    except Exception as exc:
+        _fail(exc)
+
+
 def _workflow_action(
     action, identity, expected, command_id, reason, workspace_id, directory, state_root
 ):
