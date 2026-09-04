@@ -1,24 +1,21 @@
 # TODO
 
-Active subplan: Stage 8 Subplan 4 `4-web-gui-observer` on `feat/stage8-gui-observer`.
-Activation decisions (2026-09-03): toolchain approved (Vite + React + TypeScript + Tailwind 4,
-pnpm, Node 26); node graph = @xyflow/react (MIT); serif = Newsreader (with Inter + JetBrains Mono,
-all bundled via fontsource, no CDN); frontend lives in `gui/`, prebuilt assets ship as package data
-under `src/morrow/gui_static/`.
+Active subplan: none. Stage 8 Subplan 4 `4-web-gui-observer` completed on
+`feat/stage8-gui-observer`; see `docs/acceptance/stage-8-subplan-4-web-gui-observer.md`.
 
-- [ ] Server: static GUI asset serving with relaxed non-`/v1` GET gate, restrictive CSP/security
-  headers, and `morrow gui` CLI (loopback, token applied, browser open, graceful Ctrl+C).
-- [ ] Packaging: hatch include rules so `gui_static/` ships in wheel/sdist; font/third-party
-  notices bundled.
-- [ ] Frontend scaffold: `gui/` Vite+React+TS+Tailwind, pnpm lockfile, Warm Paper design tokens
-  (light/dark CSS variables), three bundled font families, React Flow theme from tokens.
-- [ ] API client: typed protocol mirror, snapshot + ordered event pull + gap detection + resync,
-  WS hint channel, honest connection indicator.
-- [ ] Views: Session/Task navigation, main workspace (Chat/Task/Artifacts), Workflow panel
-  (node states + budget, Direct = linear card), tool/approval/status bar; read-only only;
-  keyboard navigation and non-color status signals.
-- [ ] Tests: frontend vitest contract tests (snapshot+events, gap resync, reconnect dedup);
-  Python tests for static serving security headers/auth boundary and `morrow gui` wiring.
-- [ ] GUI–CLI parity evidence + acceptance doc under `docs/acceptance/`.
-- [ ] Validation: focused pytest matrix, Ruff format/check, compileall, `git diff --check`,
-  frontend typecheck/test/build; update `.agent` execution state and subplan closeout.
+- [x] Server: static GUI asset serving (GET/HEAD, extension allowlist, traversal confinement),
+  uniform CSP/security headers, `morrow gui` CLI sharing the serve core runner.
+- [x] Packaging: wheel ships gitignored `src/morrow/gui_static` via `ignore-vcs = true`; sdist
+  force-includes the bundle (build fails loudly without it); verified via `uv build`.
+- [x] Frontend scaffold: pnpm-pinned Vite+React+TS+Tailwind 4, Warm Paper tokens both themes,
+  bundled Inter/Newsreader/JetBrains Mono, bundle budget gate.
+- [x] API client + SyncStore: snapshot + durable event pull + WS hints + gap resync; approval
+  staleness gap found by browser smoke and fixed (lifecycle events refresh pending approvals).
+- [x] Views: three-column observer shell, Direct card vs React Flow graph, node detail, approvals
+  strip, connection banner, a11y (keyboard, dot+label).
+- [x] Tests: 10 Python serving/CLI tests, 29 vitest tests, 16/16 scripted CDP browser smoke
+  (navigation, live update, keyboard traversal, offline banner, Core-restart resync).
+- [x] GUI–CLI parity evidence + acceptance doc; websockets dependency added (user-approved) after
+  the smoke found uvicorn had no WS backend over real sockets.
+- [x] Validation: full offline gate, Ruff format/check, compileall, `git diff --check`, frontend
+  typecheck/test/build, `uv build` wheel+sdist bundle check.

@@ -4972,3 +4972,25 @@
   durable tool/observation/control, 58 serial scheduler plus API/security). Final full offline gate:
   1597 passed, 2 deselected in 290.25 seconds. Ruff format/check, compileall, CLI help and
   `git diff --check` passed. No Live/network/credential test ran.
+
+## 2026-09-04 — Subplan 4 Web GUI observer completed
+
+- Activated by explicit user request with toolchain authorization: pnpm 11.5.1 on Node 26,
+  Vite + React 19 + strict TS + Tailwind 4, `@xyflow/react`, bundled Inter/Newsreader/JetBrains
+  Mono (OFL via fontsource), `gui/` at repo root building into gitignored `src/morrow/gui_static/`.
+- Server: read-only static mount with extension allowlist + traversal confinement, uniform
+  CSP/nosniff/no-referrer headers, `morrow gui` sharing the serve core runner, token in the URL
+  fragment. Packaging: wheel `ignore-vcs = true` ships the bundle; sdist force-includes it and
+  fails loudly when the GUI was never built (verified with `uv build`: 18 bundle files in both).
+- Frontend: Warm Paper tokens (light/dark), typed API client, framework-agnostic SyncStore
+  (snapshot + durable pull + WS hints + gap resync), read-only observer views per roadmap §8.1
+  (Direct linear card vs React Flow graph, approvals display-only, honest connection banner).
+- Browser smoke (scripts/gui_smoke_server.py + scripts/gui_smoke_cdp.mjs, dedicated Chrome
+  profile over CDP, 16/16) found two real issues, both fixed: uvicorn had no WebSocket backend
+  over real sockets (added `websockets>=13,<16`, user-approved; the GUI had correctly degraded to
+  durable pulls) and resolved approvals never left the pending strip (no approval.resolved event
+  exists; lifecycle events now refresh the pending list, regression test added).
+- GUI–CLI parity: `morrow workflow status` and the GUI agree on the same run (completed /
+  succeeded / row_version). Validation: full offline gate 1607 passed / 2 deselected, 29 vitest +
+  10 Python GUI tests, Ruff format/check, compileall, `git diff --check`, frontend
+  typecheck/test/build all green. Acceptance: docs/acceptance/stage-8-subplan-4-web-gui-observer.md.

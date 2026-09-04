@@ -1,6 +1,7 @@
 # Subplan 4 — Web GUI Run Observer
 
-> Status: active on `feat/stage8-gui-observer` (activated 2026-09-03)
+> Status: completed 2026-09-04 on `feat/stage8-gui-observer`; acceptance
+> `docs/acceptance/stage-8-subplan-4-web-gui-observer.md`
 > Branch: `feat/stage8-gui-observer`
 > Activation base: latest verified `main` with Subplan 3 integrated
 > Prerequisite: Subplan 3 verified; explicit user authorization for the frontend toolchain

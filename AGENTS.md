@@ -28,6 +28,16 @@ uv run morrow --help
 git diff --check
 ```
 
+The Web GUI lives in `gui/` (pnpm-pinned Vite/React/TS); it builds into the gitignored
+`src/morrow/gui_static/`, which ships as package data — run the GUI build before `uv build`:
+
+```bash
+pnpm --dir gui install
+pnpm --dir gui typecheck
+pnpm --dir gui test
+pnpm --dir gui build   # includes the bundle-size budget gate
+```
+
 Offline (`-m 'not live'`) is the default gate. Do not claim a check passed unless it was run.
 Iterate on the tests you touched; finish implementation work only after those tests and `ruff` succeed.
 Do not run Live / real-network tests unless the user asks and an explicit compatible credential is present.

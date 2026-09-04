@@ -1,10 +1,9 @@
 # Stage 8 Adaptive Orchestration and GUI Implementation Plan
 
 > Status: awaiting next explicit activation 2026-09-04
-> Last completed subplan: `3-core-api-local-server` review remediation on
-> `fix/stage8-core-api-review`
-> Next subplan: `4-web-gui-observer` (only after explicit activation and
-> frontend toolchain authorization)
+> Last completed subplan: `4-web-gui-observer` on `feat/stage8-gui-observer`
+> (acceptance `docs/acceptance/stage-8-subplan-4-web-gui-observer.md`)
+> Next subplan: `5-workflow-editor-agent-inspector` (only after explicit activation)
 > Roadmap authority: `docs/roadmap/stage-8-adaptive-orchestration-and-gui.md`
 > (revised 2026-09-03: risk-tiered Replan autonomy; runtime-kernel-first ordering)
 > Entry evidence: Stage 7 completed and remediated; full offline gate 1538 passed, 2 skipped,
