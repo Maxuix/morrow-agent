@@ -1,7 +1,7 @@
 # Morrow 架构基线
 
-> 状态：阶段 2–7 已完成；Stage 8 的 Pause/Drain、future-only patch/continuation 与 rerun
-> 运行时内核已通过离线工程验收（macOS；Linux 原生运行仍 unsupported）。
+> 状态：阶段 2–7 已完成；Stage 8 的运行时内核、Core API、Web GUI 观察器、Workflow Draft
+> 编辑器与 Agent Inspector 已通过离线工程验收（macOS；Linux 原生运行仍 unsupported）。
 
 本文锁定当前依赖方向、数据所有权和安全边界。阶段 3 的能力策略、配置工具、工作空间读搜、冲突安全文件变更、直接 Host 命令、只读 Git 和当前 macOS 原生沙箱
 已经交付；Linux 原生运行尚未声明支持。Stage 4 已落地数据根 SQLite Operational Store 的
@@ -18,9 +18,10 @@ Provider/Model 控制面以及 MCP desired state/Catalog 持久化已在本地�
 当前完整 Backup 与 Stage 6 Doctor 也已完成；S7P-01 增加了不改变公开事件的 AgentRun
 request/terminal observability 与复用同一 SessionOrchestrator/AgentLoop 的 headless JSONL 入口。
 Stage 7 已完成版本化 AgentDefinition、静态 Workflow 编译、串行调度、Artifact 协作、管理 CLI 与
-恢复闭环；Stage 8 已交付 Pause/Drain、future-only patch/continuation 与 rerun 运行时内核，
-自适应图、GUI、后台自动化和后续产品化尚未交付。本文架构门禁以离线证据为主；未获授权的 Live
-证据不改变这些当前模块事实。
+恢复闭环；Stage 8 已交付 Pause/Drain、future-only patch/continuation 与 rerun 运行时内核、
+版本化 Core API、Web GUI 观察器，以及持久 Workflow Draft 编辑器和 Agent Inspector。任务特化
+GraphPlanner、全局 Replan、管理 GUI、反馈评估、只读并行和后台自动化尚未交付。本文架构门禁以
+离线证据为主；未获授权的 Live 证据不改变这些当前模块事实。
 
 S56–S61 已冻结并接通 generic Preference 契约、加载前一次性旧 YAML 迁移、当前 workspace Preference、
 Operational Store v13 Review/Evidence/Proposal/Writer saga、异步 Worker、Inbox、Writer 和下一
@@ -349,6 +350,17 @@ consume/deny、事件和 receipt 后才释放 live waiter，ToolCycle 对已提�
 时走同一个 durable `resolve_approval` 路径。服务器只绑定 loopback，以每进程随机 token
 认证，拒绝非 loopback Origin/Referer 与非 JSON 变更请求。`morrow serve` 以前台进程启动该服务并
 在 SIGINT 时优雅退出（Stage 8 无后台守护）。
+
+运行前编辑使用 Operational Store v27 的 `WorkflowDraft` 作为唯一可变图状态：source、base
+Workflow head/source revision、诊断、终态 Revision 引用与 `row_version` 一起持久化。所有 edit/
+revalidate/reject/freeze 命令仍经 Core Host 串行执行；OCC 冲突显式返回 409。编辑只调用现有 pure
+Compiler 并保存带 `node_id` / `edge_id` 的结构化诊断，绝不创建 Revision；只有 freeze 经现有唯一
+Workflow publication service 写 desired YAML 并生成或复用 immutable Revision。已提交 publication
+在 API receipt 落盘前崩溃时，可由 publication receipt 收敛 Draft，而不受之后 Catalog 变化影响。
+GUI 通过 400ms debounce 保存语义编辑，画布拖动不发验证请求；刷新后从 Draft Catalog 重新打开。
+Agent Inspector 只编辑既有 schema 中的可发布字段，复制为新用户定义时记录可校验的 parent
+Definition/source hash 和可用时的 parent Version；Credential、审批豁免、reasoning 与路径权限不在
+该 schema 中。
 
 ## 当前运行流
 

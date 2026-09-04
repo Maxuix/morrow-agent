@@ -5026,3 +5026,29 @@
   deletion after this closeout commit.
 - Subplan 6 (Workflow Editor and Agent Module Inspector) is next and remains inactive pending
   explicit activation. No remote push was attempted.
+
+## 2026-09-04 — Subplan 6 activated
+
+- Explicit user activation opened Workflow Editor and Agent Module Inspector implementation on
+  `feat/stage8-editor`, based on local `main` at `df7ae4f`.
+- Scope is limited to durable pre-freeze Draft editing/validation/publication, editor Catalogs and
+  diffs, and the GUI graph/Agent inspectors. Run-control UI, automatic GraphPlanner and global
+  Replan remain in later subplans.
+- Implementation will prefer existing Compiler, publication, Catalog and React Flow seams; no new
+  framework or generalized editor abstraction is planned.
+# 2026-09-04 — Stage 8 Subplan 6 completed
+
+- Added Operational Store v27 durable Workflow Drafts with OCC, pure compiler revalidation,
+  structured node/edge locators, staleness projection, idempotent commands and sole-publication
+  freeze including post-publication crash convergence.
+- Added the React Flow pre-freeze editor, Node inspector, durable Draft reopen, 400ms semantic
+  validation debounce, invalid/stale freeze gates, optional budgets, locked admitted nodes,
+  Definition/Revision diffs, and AgentDefinition copy/edit/publish with verified provenance and
+  no credential/safety-boundary fields.
+- Deterministic evidence: focused Draft/Agent matrix 46 passed; compiler/editor matrix 33 passed;
+  full offline gate 1613 passed with 2 Live deselected; Ruff format/check, compileall, CLI help,
+  GUI typecheck/37 tests/build/bundle budget, Node syntax and `git diff --check` passed. Dedicated
+  loopback Chrome smoke passed 26/26, including legal run/freeze, illegal deletion rejection,
+  offline and restart recovery. No Live Provider/MCP/network/credential test or dependency change.
+- Acceptance: `docs/acceptance/stage-8-subplan-6-workflow-editor-agent-inspector.md`. Subplan 7
+  remains unactivated. Remote push remains unauthorized.

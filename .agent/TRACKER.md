@@ -2,19 +2,17 @@
 
 ## Current status
 
-Stage 7 and Stage 8 Subplans 1–5 are complete. Corrective Subplan 5 was fast-forward integrated
-into local `main` through `95e8699`: fixed role-specific starter handoffs were replaced by a
-generic TextResult chain and guessed 12/48 request defaults were removed in favor of opt-in
-guardrails with durable accounting. Acceptance:
-`docs/acceptance/stage-8-subplan-5-generic-workflow-foundation.md`.
+Stage 7 and Stage 8 Subplans 1–6 are complete in the verified topic worktree. Subplan 6 is ready
+for local fast-forward integration from `feat/stage8-editor`, based on `main@df7ae4f`.
 
 ## Active task
 
-None. No subplan is active.
+Commit and fast-forward the verified Subplan 6 implementation into local `main`, then retire the
+topic branch.
 
 ## Next action
 
-Subplan 6 (`6-workflow-editor-agent-inspector.md`) starts only after explicit user activation.
+After integration, await explicit user activation of Subplan 7 (`7-run-control-gui`).
 
 ## Blockers
 

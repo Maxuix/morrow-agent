@@ -12,7 +12,7 @@ retired Stage 7 sequence is archived under `.agent/archive/subplans/stage7-workf
 | 3 | `3-core-api-local-server.md` | 8A (protocol/server) | completed 2026-09-04 after review remediation |
 | 4 | `4-web-gui-observer.md` | 8A (GUI) | completed 2026-09-04 |
 | 5 | `5-generic-workflow-foundation.md` | Stage 7/8 corrective foundation | completed 2026-09-04 |
-| 6 | `6-workflow-editor-agent-inspector.md` | 8B | pending activation |
+| 6 | `6-workflow-editor-agent-inspector.md` | 8B | completed 2026-09-04 |
 | 7 | `7-run-control-gui.md` | 8C (GUI) | pending activation |
 | 8 | `8-graph-planner-draft.md` | 8D | pending activation |
 | 9 | `9-global-replan.md` | 8E | pending activation |

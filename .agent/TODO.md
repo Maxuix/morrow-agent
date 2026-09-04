@@ -1,18 +1,17 @@
 # TODO
 
-Active subplan: none. Subplan 5 `5-generic-workflow-foundation` is completed and integrated into
-local `main`; see `docs/acceptance/stage-8-subplan-5-generic-workflow-foundation.md`.
+Active subplan: none. Subplan 6 completed on `feat/stage8-editor`; Subplan 7 is not activated.
 
-- [x] Replace packaged role-specific node transfers with the generic `TextResult@1` result chain;
-  keep legacy structured contracts compatible but optional.
-- [x] Expose only Direct and the minimal multi-Agent starter as packaged Workflow suggestions;
-  make built-in role prompts contract-neutral.
-- [x] Add public Workflow clone-to-user-source support and prove arbitrary node insertion/editing.
-- [x] Make request caps and admission timeout opt-in; update compiler, run evidence, scheduler,
-  continuation/rerun, durable admission, integrity checks and GUI projections for `None`.
-- [x] Update current documentation and execution-state authority.
-- [x] Run focused and full offline/static/frontend validation.
-- [x] Execute fresh disposable public-surface E2E and compatible configured Provider-backed lane;
-  persist sanitized acceptance evidence.
-- [x] Commit coherent progress, fast-forward verified work to `main`, verify ancestry, and retire the
-  clean topic branch. Remote push is not authorized.
+- [x] Add the durable Workflow Draft/OCC model, storage migration, application service and
+  versioned Core API commands; keep compile validation pure and publication the only Revision
+  writer.
+- [x] Add structured node/edge locators to compiler diagnostics and focused rejection tests.
+- [x] Complete the editor Catalog query types/client surfaces and safe Definition/Revision diffs.
+- [x] Build the pre-freeze Workflow graph editor and Node inspector with debounced Core validation,
+  explicit freeze, staleness warnings and locked non-Pending nodes.
+- [x] Build AgentDefinition copy/edit/publish inspection with immutable safety boundaries and
+  resolved node settings/source labels.
+- [x] Add contract and browser-level flows for legal creation/freeze and illegal freeze rejection.
+- [x] Update current docs and acceptance evidence; run focused, offline/static and frontend gates.
+- [>] Commit verified progress, fast-forward into `main`, verify ancestry and retire the topic
+  branch. Remote push is not authorized.
