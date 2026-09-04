@@ -5073,3 +5073,26 @@
   CLI help and `git diff --check` passed. No Live/network/credential test ran.
 - The verified remediation was committed as `d895451` and fast-forwarded into local `main`.
   Remote push remains unauthorized; Subplan 7 remains inactive.
+
+## 2026-09-05 — Subplan 7 (Run Control GUI) implemented
+
+- Activated `7-run-control-gui` on `feat/stage8-run-control-gui` (base `aadcfc1`).
+- Backend: §8.5 approval surface (requester identity, effect class, deterministic risk level,
+  affected objects from redacted evidence, granted scope); allow_once/deny/allow_session decisions
+  with high-risk session refusal; session-scope precedents pre-resolve later same-session approvals
+  durably at creation (one auditable approval row per execution); patch_validate now returns the
+  structural diff plus the C8 risk classification (`patch_preview.py`); per-node request usage and
+  the §14.1 pre-run summary projections (run view + `/run-preview` endpoint).
+- CLI parity: `workflow cancel`, `approval list/resolve`; patch validate prints diff/risk; task
+  accept/resume already covered Accept/Correct TaskOutcome.
+- GUI: typed run-control client methods; RunControls with the status enablement matrix, OCC error
+  display and new-budget-root labelling; ApprovalDialog with the full §8.5 surface; TaskWorkspace
+  accept/退回修正; PatchEditor edit-pending flow (Past locked, preview diff+risk, elevated-risk
+  acknowledgement, apply → continuation); AppShell wiring.
+- Browser-found fixes: React Flow pane covering the PatchEditor action bar; root task fetch
+  fallback so retry/rerun enable; root-resume pre-step extended to every resumable non-open status;
+  smoke seed budget raised for manual sessions. Also fixed `consume_and_mark_executing` to consume
+  pre-resolved approvals without re-saving an unchanged row.
+- Evidence: `docs/acceptance/stage-8-subplan-7-run-control-gui.md`; 15 focused run-control tests;
+  GUI 81 Vitest tests; browser flows (pause→edit→continue, superseded lineage, full-rerun label,
+  denial semantics, restart recovery, deadline guard) all pass.

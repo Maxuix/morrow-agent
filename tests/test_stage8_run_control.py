@@ -592,8 +592,6 @@ async def test_gui_cli_outcome_accept_conflict_has_exactly_one_winner(fx):
     the first commits, the loser gets the OCC conflict, and the task closes
     exactly once (no lost update)."""
 
-    import json
-
     from typer.testing import CliRunner
 
     from morrow.interfaces.cli import app as cli_app
