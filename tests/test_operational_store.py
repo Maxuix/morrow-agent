@@ -152,7 +152,9 @@ def _hold_write_transaction(root: str, ready, release) -> None:
 
         def work(executor) -> None:
             ready.set()
-            release.wait(timeout=10)
+            # The competing interpreter must reach its operation while this lock
+            # is held, even if importing application modules on the host is slow.
+            assert release.wait(timeout=180)
             executor.execute(
                 "UPDATE store_identity SET application_name = application_name WHERE singleton = 1"
             )
@@ -164,7 +166,7 @@ def _hold_maintenance_lock(root: str, ready, release) -> None:
     store = _store(Path(root))
     with store.maintenance_lock():
         ready.set()
-        release.wait(timeout=10)
+        assert release.wait(timeout=180)
 
 
 def _hold_maintenance_then_exit(root: str, ready) -> None:
@@ -190,9 +192,17 @@ def _migrate_and_exit(root: str, fault: str) -> None:
     _store(Path(root), failure_injector=injector).migrate()
 
 
+def _cleanup_processes(*processes) -> None:
+    for process in processes:
+        if process.is_alive():
+            process.terminate()
+            process.join(timeout=5)
+        process.close()
+
+
 def _touch_identity(root: str, count: int, ready, start) -> None:
     ready.set()
-    start.wait(timeout=10)
+    assert start.wait(timeout=60)
     store = OperationalStore(Path(root), retry_policy=_retry(busy_timeout_ms=250))
     with store.open(StoreOpenMode.READ_WRITE) as session:
         for _ in range(count):
@@ -554,8 +564,8 @@ def test_begin_immediate_contention_is_typed_busy(tmp_path):
     release = context.Event()
     process = context.Process(target=_hold_write_transaction, args=(str(root), ready, release))
     process.start()
-    assert ready.wait(timeout=10)
     try:
+        assert ready.wait(timeout=60)
         with (
             _store(root).open(StoreOpenMode.READ_WRITE) as session,
             pytest.raises(StorageError) as error,
@@ -567,10 +577,12 @@ def test_begin_immediate_contention_is_typed_busy(tmp_path):
                 )
             )
         assert error.value.code is StorageErrorCode.BUSY
+        release.set()
+        process.join(timeout=60)
+        assert process.exitcode == 0
     finally:
         release.set()
-        process.join(timeout=10)
-    assert process.exitcode == 0
+        _cleanup_processes(process)
 
 
 def test_maintenance_lock_excludes_a_second_process(tmp_path):
@@ -580,8 +592,8 @@ def test_maintenance_lock_excludes_a_second_process(tmp_path):
     release = context.Event()
     process = context.Process(target=_hold_maintenance_lock, args=(str(root), ready, release))
     process.start()
-    assert ready.wait(timeout=10)
     try:
+        assert ready.wait(timeout=60)
         with pytest.raises(StorageError) as error, store.maintenance_lock():
             raise AssertionError("second process acquired the maintenance lock")
         assert error.value.code is StorageErrorCode.BUSY
@@ -592,10 +604,12 @@ def test_maintenance_lock_excludes_a_second_process(tmp_path):
         with pytest.raises(StorageError) as backup_error:
             store.backup()
         assert backup_error.value.code is StorageErrorCode.BUSY
+        release.set()
+        process.join(timeout=60)
+        assert process.exitcode == 0
     finally:
         release.set()
-        process.join(timeout=10)
-    assert process.exitcode == 0
+        _cleanup_processes(process)
 
 
 def test_dead_maintenance_lock_owner_releases_the_os_lock(tmp_path):
@@ -604,9 +618,12 @@ def test_dead_maintenance_lock_owner_releases_the_os_lock(tmp_path):
     ready = context.Event()
     process = context.Process(target=_hold_maintenance_then_exit, args=(str(root), ready))
     process.start()
-    assert ready.wait(timeout=10)
-    process.join(timeout=10)
-    assert process.exitcode == 17
+    try:
+        assert ready.wait(timeout=60)
+        process.join(timeout=60)
+        assert process.exitcode == 17
+    finally:
+        _cleanup_processes(process)
     with store.maintenance_lock():
         assert store.layout.maintenance_lock.exists()
 
@@ -674,8 +691,11 @@ def test_interrupted_migration_before_commit_leaves_previous_version(tmp_path):
     context = multiprocessing.get_context("spawn")
     process = context.Process(target=_migrate_and_exit, args=(str(root), "before_migration_commit"))
     process.start()
-    process.join(timeout=10)
-    assert process.exitcode == 17
+    try:
+        process.join(timeout=60)
+        assert process.exitcode == 17
+    finally:
+        _cleanup_processes(process)
     store = _store(root)
     assert store.classify().schema_version == 1
     assert store.layout.database.exists()
@@ -691,18 +711,22 @@ def test_migration_versus_writer_does_not_rewrite_the_file(tmp_path):
     holder = context.Process(target=_hold_write_transaction, args=(str(root), ready, release))
     migrator = context.Process(target=_migrate_v2, args=(str(root), result))
     holder.start()
-    assert ready.wait(timeout=10)
-    migrator.start()
-    status, version = result.get(timeout=10)
     try:
+        assert ready.wait(timeout=60)
+        migrator.start()
+        status, version = result.get(timeout=60)
         assert status == StorageErrorCode.BUSY.value
         assert version is None
         assert Path(root, STORE_DIRNAME, DATABASE_NAME).read_bytes() == before
+        release.set()
+        holder.join(timeout=60)
+        migrator.join(timeout=60)
+        assert holder.exitcode == 0
+        assert migrator.exitcode == 0
     finally:
         release.set()
-        holder.join(timeout=10)
-        migrator.join(timeout=10)
-    assert holder.exitcode == 0
+        _cleanup_processes(holder, migrator)
+        result.close()
     assert _store(root).classify().schema_version == 1
 
 
@@ -811,13 +835,16 @@ def test_online_backup_during_writes_passes_integrity(tmp_path):
     start = context.Event()
     process = context.Process(target=_touch_identity, args=(str(root), 20, ready, start))
     process.start()
-    assert ready.wait(timeout=10)
-    start.set()
-    report = _store(root, retry_policy=_retry(busy_timeout_ms=250)).backup(
-        "operational-copy.sqlite"
-    )
-    process.join(timeout=10)
-    assert process.exitcode == 0
+    try:
+        assert ready.wait(timeout=60)
+        start.set()
+        report = _store(root, retry_policy=_retry(busy_timeout_ms=250)).backup(
+            "operational-copy.sqlite"
+        )
+        process.join(timeout=60)
+        assert process.exitcode == 0
+    finally:
+        _cleanup_processes(process)
     assert report.integrity_ok
     destination = store.layout.backups_dir / report.destination_name
     assert posix_mode(destination) == FILE_MODE

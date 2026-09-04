@@ -5148,3 +5148,16 @@ Live test, Replan implementation or remote push authorized.
 - Ledger acceptance matrix: 3 passed (67.89 seconds) after the setup-timeout adjustment. All known
   subprocess failures now have passing focused evidence. Fresh full offline run started with JUnit
   output at `/tmp/morrow-stage8-final-junit.xml`; application code is unchanged during this gate.
+
+- The fresh full run exposed two additional 10-second Operational Store subprocess startup
+  timeouts (interrupted migration and migration-versus-writer); both reproduced individually.
+  Module-wide follow-up exposed the same old startup window in its lock fixtures. Unified that
+  module's process setup waits and guaranteed cleanup. Holder fixtures now wait for explicit parent
+  release so slow competing imports cannot accidentally release the lock under test. Runtime
+  storage behavior and BUSY/version/file/exit assertions are unchanged. Full run continues;
+  the complete Operational Store module is being revalidated after these fixture-only edits.
+
+- Final Operational Store matrix: 33 passed (144.07 seconds), including every subprocess lock,
+  migration and concurrent-backup test. Ruff format/check, compileall and diff checks passed after
+  the fixture changes. All failures discovered so far have verified fixes; the full run is finishing
+  its remaining Stage 7/8 tests. Application code remains unchanged.
