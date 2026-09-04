@@ -2,17 +2,17 @@
 
 ## Current status
 
-Stage 7 and Stage 8 Subplans 1–6 are complete. Subplan 7 (`7-run-control-gui`) was activated
-on 2026-09-04 and is in progress on `feat/stage8-run-control-gui` (base `aadcfc1`).
+Stage 7 and Stage 8 Subplans 1–7 are complete. Subplan 7 (`7-run-control-gui`) was verified and
+fast-forward integrated into local `main` through `8050fdc`; acceptance evidence lives at
+`docs/acceptance/stage-8-subplan-7-run-control-gui.md`.
 
 ## Active task
 
-Subplan 7 backend slice: approval surface enrichment (§8.5), patch preview diff + C8 risk
-classification, per-node usage and pre-run cost projections.
+None. Subplan 8 (`8-graph-planner-draft`) awaits explicit activation.
 
 ## Next action
 
-Implement the enriched approval projection and resolution choices, then patch preview diff/risk.
+Await explicit activation of Subplan 8.
 
 ## Blockers
 
