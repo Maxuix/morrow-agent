@@ -420,11 +420,22 @@ def build_application(
 def _open_operational_store(app: Application):
     store = OperationalStore(app.data_root.root)
     try:
-        return store.open(StoreOpenMode.READ_WRITE)
+        handle = store.open(StoreOpenMode.READ_WRITE)
     except StorageError as exc:
         if exc.code is StorageErrorCode.NOT_FOUND:
             return store.initialize()
         raise
+    if handle.schema_version == store.registry.supported_version:
+        return handle
+
+    # A read-write open deliberately accepts older supported schemas so the
+    # migration service can inspect and upgrade them. Runtime composition,
+    # however, must never query tables newer than the opened schema. Close the
+    # old connection before taking the maintenance lock; migrate() creates its
+    # verified backup before applying the ordered migrations.
+    handle.close()
+    store.migrate()
+    return store.open(StoreOpenMode.READ_WRITE)
 
 
 def build_operational_services(
