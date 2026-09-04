@@ -12,7 +12,7 @@ GUI–CLI parity, `uv build` ships the bundle in wheel + sdist. Acceptance:
 
 ## Active task
 
-None. Subplan 4 awaits merge into `main` and branch retirement.
+None. Subplan 4 is merged into local `main` (`aa38711`) and its branch retired.
 
 ## Next action
 
@@ -20,6 +20,6 @@ Subplan 5 (`5-workflow-editor-agent-inspector`) starts only on explicit activati
 
 ## Blockers
 
-None. Remote publication was authorized on 2026-09-03 and `main` was pushed through `bd3a8c5`;
-the Subplan 4 merge is not yet pushed. No Live Provider/MCP/network/credential test is
-authorized.
+None. Local `main` is ahead of origin through `aa38711`; pushing was not authorized for this
+subplan (the 2026-09-03 authorization covered the earlier remediation push). No Live
+Provider/MCP/network/credential test is authorized.
