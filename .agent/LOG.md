@@ -5126,3 +5126,9 @@ Live test, Replan implementation or remote push authorized.
   including all four formerly timed-out subprocess cases, in 99.10 seconds. The change affects
   fixture setup/cleanup only; no production recovery behavior changed. Planner implementation
   checkpoint: `0f11dbe`.
+
+- Final error-boundary review separated fixed GraphCompositionError diagnostics from unexpected
+  Catalog/storage ValueErrors, so internal exception text cannot become a persisted planning
+  explanation. Added a rejection test; final Planner matrix 23 passed (120.18 seconds).
+- Final related integration matrix: 100 passed (Core API/security, Workflow editor/run control,
+  Agent definitions and Skill bindings). Ruff format/check, compileall and diff checks rerun green.

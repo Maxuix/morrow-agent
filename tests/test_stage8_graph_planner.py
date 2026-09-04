@@ -33,6 +33,27 @@ def planning(objective="Fix a typo in one file", **overrides):
     return value | overrides
 
 
+@pytest.mark.asyncio
+async def test_unexpected_catalog_error_is_not_a_user_facing_planning_diagnostic(tmp_path):
+    fx = ServerFixture(tmp_path)
+    marker = "internal-catalog-metadata"
+    try:
+
+        def fail_catalog():
+            raise ValueError(marker)
+
+        def install():
+            fx.host.context.products.graph_planner.catalogs.nodes = fail_catalog
+
+        await fx.on_core(install)
+        reply = await fx.client.post("/v1/workflow-planner", {"planning": planning()})
+        assert reply.status == 400
+        assert marker not in reply.body.decode()
+        assert (await fx.client.get("/v1/workflow-drafts")).json()["workflow_drafts"] == []
+    finally:
+        fx.close()
+
+
 async def generate(fx, request):
     reply = await fx.client.post("/v1/workflow-planner", {"planning": request})
     assert reply.status == 200, reply.body

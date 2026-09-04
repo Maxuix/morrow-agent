@@ -36,6 +36,10 @@ class TaskGraphDraft(ProtocolModel):
     diagnostics: tuple[str, ...] = Field(default=(), max_length=16)
 
 
+class GraphCompositionError(ValueError):
+    """Fixed user-facing planning diagnostics, distinct from Catalog/storage failures."""
+
+
 def effective_budget(policy, request):
     """Explicit caps can narrow each other; missing limits never become guessed budgets."""
     values = {}
@@ -214,7 +218,7 @@ class GraphPlannerService:
                 )
                 source = None
                 break
-            except ValueError as exc:
+            except GraphCompositionError as exc:
                 # Only fixed planning diagnostics cross this boundary.
                 diagnostics.append(str(exc)[:512])
                 source = None
@@ -249,7 +253,7 @@ class GraphPlannerService:
                 diagnostics.append(
                     "structure_invalid: Direct source exceeds the Compiler schema; narrow task facts"
                 )
-            except ValueError as exc:
+            except GraphCompositionError as exc:
                 diagnostics.append(str(exc)[:512])
         if candidate is None or source is None:
             return self._needs_input(policy, budget, reasons, diagnostics)
@@ -338,7 +342,7 @@ class GraphPlannerService:
 
     def _compose(self, request, features, policy, budget, roles, entries):
         if not roles or len(roles) > 16:
-            raise ValueError("graph_size: choose between 1 and 16 permitted roles")
+            raise GraphCompositionError("graph_size: choose between 1 and 16 permitted roles")
         nodes, edges = [], []
         explorers = []
         previous = None
@@ -387,7 +391,7 @@ class GraphPlannerService:
                     ),
                 )
             if not candidates:
-                raise ValueError(
+                raise GraphCompositionError(
                     f"catalog_missing: publish an enabled {role} Agent with the authorized model, Skills and {access} ceiling"
                 )
             entry = candidates[0]
@@ -436,7 +440,7 @@ class GraphPlannerService:
                 dict.fromkeys((*request.task.constraints, *features.workspace_constraints))
             )
             if len(constraints) > 32:
-                raise ValueError(
+                raise GraphCompositionError(
                     "constraint_capacity: combine task and workspace constraints into at most 32 entries"
                 )
             nodes.append(
