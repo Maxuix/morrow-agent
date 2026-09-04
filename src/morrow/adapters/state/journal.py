@@ -1251,6 +1251,18 @@ class SqliteOperationalJournal:
         )
         return int(row[0]) if row else 0
 
+    def count_node_agent_requests(self, workspace_id: str, node_run_id: str) -> int:
+        """Durable purpose=agent admissions for one NodeRun's AgentRuns."""
+
+        del workspace_id
+        row = self._read_one(
+            "SELECT COUNT(*) FROM agent_run_model_requests r "
+            "JOIN workflow_agent_run_refs w ON r.agent_run_id = w.agent_run_id "
+            "WHERE w.node_run_id=? AND r.purpose='agent'",
+            (node_run_id,),
+        )
+        return int(row[0]) if row else 0
+
     def count_lineage_agent_requests(
         self, workspace_id: str, lineage_budget_root_run_id: str
     ) -> int:

@@ -588,6 +588,9 @@ def create_asgi_app(
             )
         )
 
+    async def run_preview(request: Request) -> Response:
+        return await _query(lambda: commands.run_preview(request.path_params["revision_id"]))
+
     async def catalog_providers(request: Request) -> Response:
         return await _query(lambda: commands.catalog_providers())
 
@@ -748,6 +751,10 @@ def create_asgi_app(
                 catalog_workflow_definition,
             ),
             Route(f"{API_PREFIX}/catalog/workflow-revisions", catalog_workflow_revisions),
+            Route(
+                f"{API_PREFIX}/catalog/workflow-revisions/{{revision_id}}/run-preview",
+                run_preview,
+            ),
             Route(f"{API_PREFIX}/catalog/providers", catalog_providers),
             Route(f"{API_PREFIX}/catalog/skills", catalog_skills),
             Route(f"{API_PREFIX}/catalog/tools", catalog_tools),

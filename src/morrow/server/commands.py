@@ -949,6 +949,12 @@ class ServerCommands:
         )
         return {"workflow_revisions": [projections.workflow_revision_wire(v) for v in views]}
 
+    def run_preview(self, revision_id: str) -> dict[str, Any]:
+        revision = self.journal.workflows.get_revision(self.workspace_id, revision_id)
+        if revision is None:
+            raise ApplicationError(ApplicationErrorCode.NOT_FOUND, "workflow revision is missing")
+        return {"pre_run_summary": projections.pre_run_summary_wire(revision)}
+
     def catalog_providers(self) -> dict[str, Any]:
         snapshot = self.context.application.provider_service.catalog_snapshot()
         config = snapshot.config

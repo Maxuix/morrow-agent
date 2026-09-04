@@ -18,6 +18,7 @@ class WorkflowNodeView:
     output_bindings: tuple[ArtifactBinding, ...]
     artifacts: tuple[ArtifactMetadata, ...]
     approval_pending: bool = False
+    agent_generation_request_count: int = 0
 
 
 @dataclass(frozen=True)
@@ -340,6 +341,9 @@ class WorkflowQueryService:
                     output_bindings=outputs,
                     artifacts=artifacts,
                     approval_pending=self._approval_pending(node),
+                    agent_generation_request_count=self.journal.count_node_agent_requests(
+                        self.workspace_id, node.node_run_id
+                    ),
                 )
             )
         inputs = tuple(
@@ -419,6 +423,9 @@ class WorkflowQueryService:
             output_bindings=outputs,
             artifacts=artifacts,
             approval_pending=self._approval_pending(node),
+            agent_generation_request_count=self.journal.count_node_agent_requests(
+                self.workspace_id, node.node_run_id
+            ),
         )
 
     def _approval_pending(self, node: NodeRun) -> bool:

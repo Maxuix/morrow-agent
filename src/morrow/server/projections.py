@@ -212,6 +212,31 @@ def node_view_wire(view) -> dict[str, Any]:
         ],
         "artifacts": [artifact_wire(item) for item in view.artifacts],
         "approval_pending": view.approval_pending,
+        "agent_generation_request_count": view.agent_generation_request_count,
+    }
+
+
+def pre_run_summary_wire(revision) -> dict[str, Any]:
+    """§14.1 pre-run cost facts: counts, models, explicit limits and writers.
+
+    ``None`` limits are projected as ``None`` so every client renders the same
+    explicit "no cap" fact instead of guessing.
+    """
+
+    budget = revision.budget
+    return {
+        "node_count": len(revision.nodes),
+        "models": sorted({node.resolved_model_ref.model_id for node in revision.nodes}),
+        "providers": sorted({node.resolved_model_ref.provider_id for node in revision.nodes}),
+        "max_agent_generation_requests": budget.max_agent_generation_requests,
+        "default_node_max_agent_generation_requests": (
+            budget.default_node_max_agent_generation_requests
+        ),
+        "admission_timeout_seconds": budget.admission_timeout_seconds,
+        "max_concurrency": budget.max_concurrency,
+        "writer_node_ids": sorted(
+            node.node_id for node in revision.nodes if node.access_mode == "write"
+        ),
     }
 
 
@@ -343,6 +368,7 @@ def run_view_wire(view) -> dict[str, Any]:
         "input_artifacts": [artifact_wire(item) for item in view.input_artifacts],
         "agent_generation_request_count": view.agent_generation_request_count,
         "lineage_agent_generation_request_count": view.lineage_agent_generation_request_count,
+        "pre_run_summary": pre_run_summary_wire(view.revision),
         "inherited_artifacts": [import_wire(item) for item in view.inherited_artifacts],
         "effective_outputs": [
             {
