@@ -55,6 +55,28 @@ class CommandOutcome:
         return {"result": self.result, "receipt": projections.receipt_wire(self.receipt)}
 
 
+def _patch_diff_wire(validation) -> dict[str, Any] | None:
+    diff = validation.diff
+    if diff is None:
+        return None
+    return {
+        "added_node_ids": list(diff.added_node_ids),
+        "removed_node_ids": list(diff.removed_node_ids),
+        "changed_node_ids": list(diff.changed_node_ids),
+        "added_edges": list(diff.added_edges),
+        "removed_edges": list(diff.removed_edges),
+        "required_outputs_changed": diff.required_outputs_changed,
+        "budget_changed": diff.budget_changed,
+    }
+
+
+def _patch_risk_wire(validation) -> dict[str, Any] | None:
+    risk = validation.risk
+    if risk is None:
+        return None
+    return {"level": risk.level, "reasons": list(risk.reasons)}
+
+
 class ServerCommands:
     def __init__(self, context) -> None:
         self.context = context
@@ -580,6 +602,8 @@ class ServerCommands:
             ],
             "past_node_ids": list(validation.past_node_ids),
             "execution_node_ids": list(validation.execution_node_ids),
+            "diff": _patch_diff_wire(validation),
+            "risk": _patch_risk_wire(validation),
         }
 
     def patch_save(self, request: PatchCommandRequest) -> CommandOutcome:

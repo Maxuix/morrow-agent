@@ -12,6 +12,12 @@ from morrow.application.workflows.compiler import (
     compile_workflow,
 )
 from morrow.application.workflows.outputs import EffectiveOutputResolver
+from morrow.application.workflows.patch_preview import (
+    PatchDiffPreview,
+    PatchRiskPreview,
+    classify_patch_risk,
+    diff_compiled,
+)
 from morrow.application.workflows.scheduler import stable_execution_order
 from morrow.core.application import (
     ApplicationCommandReceipt,
@@ -38,6 +44,8 @@ class PatchValidation:
     compilation: CompilationResult
     past_node_ids: tuple[str, ...]
     execution_node_ids: tuple[str, ...]
+    diff: PatchDiffPreview | None = None
+    risk: PatchRiskPreview | None = None
 
 
 @dataclass(frozen=True)
@@ -136,7 +144,15 @@ class PatchApplicationService:
             )
         )
         execution = tuple(node_id for node_id in order if node_id not in past)
-        return PatchValidation(result, tuple(sorted(past)), execution)
+        candidate = result.candidate
+        assert candidate is not None
+        return PatchValidation(
+            result,
+            tuple(sorted(past)),
+            execution,
+            diff=diff_compiled(base, candidate),
+            risk=classify_patch_risk(base, candidate),
+        )
 
     def save(self, patch: FutureGraphPatch, *, active_model=None) -> PatchApplication:
         parent, base = self._require_base(patch)
