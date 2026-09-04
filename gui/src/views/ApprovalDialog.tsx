@@ -37,7 +37,7 @@ export function riskBadgeClass(riskLevel: ApprovalWire['risk_level']): string {
 /** Consequence copy for each resolution button (shown as a tooltip). */
 export const APPROVAL_DECISION_HINTS: Record<ApprovalDecisionWire, string> = {
   allow_once: '仅允许此次工具调用；同范围的后续请求仍会单独审批。',
-  deny: '拒绝此次工具调用；任务会停止，需人工处理后才能继续。',
+  deny: '拒绝此次工具调用；节点会收到拒绝错误并据此收尾。',
   allow_session:
     '本次执行，且本会话内相同工具与操作范围的请求将免审批（同范围免批）；该决定会被持久记录。',
 }

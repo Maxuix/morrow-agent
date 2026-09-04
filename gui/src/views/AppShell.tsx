@@ -1,11 +1,18 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import type { ApiClient } from '../api/client'
-import type { ArtifactWire, RunViewWire, SessionWire, TaskRunWire } from '../api/types'
+import type {
+  ArtifactWire,
+  RunViewWire,
+  SessionWire,
+  TaskRunWire,
+  WorkflowRunWire,
+} from '../api/types'
 import type { SyncStore } from '../state/sync'
 import { budgetDisplay } from './lib/budget'
 import { ApprovalsBar } from './ApprovalsBar'
 import { ConnectionBanner } from './ConnectionBanner'
 import { EditorShell } from './EditorShell'
+import { PatchEditor } from './PatchEditor'
 import { SessionNav } from './SessionNav'
 import { TaskWorkspace } from './TaskWorkspace'
 import { TopBar, type Theme } from './TopBar'
@@ -40,6 +47,12 @@ export function AppShell({
   const [artifacts, setArtifacts] = useState<ArtifactWire[] | null>(null)
   const [openRunView, setOpenRunView] = useState<RunViewWire | null>(null)
   const [activeView, setActiveView] = useState<'observe' | 'edit'>('observe')
+  // The edit-pending flow replaces the observer columns: pause → edit Future
+  // nodes → preview diff + risk → confirm → continuation child.
+  const [patchContext, setPatchContext] = useState<{
+    run: WorkflowRunWire
+    view: RunViewWire
+  } | null>(null)
 
   const sessions: SessionWire[] = [...state.sessions.values()].sort((a, b) =>
     b.created_at.localeCompare(a.created_at),
@@ -81,6 +94,7 @@ export function AppShell({
     setSelectedTask(task)
     setArtifacts(null)
     setOpenRunView(null)
+    setPatchContext(null)
     client
       .listArtifacts({ task_run_id: task.task_run_id, limit: 100 })
       .then((page) => setArtifacts(page.artifacts))
@@ -124,6 +138,14 @@ export function AppShell({
 
       {activeView === 'edit' ? (
         <EditorShell client={client} />
+      ) : patchContext !== null && workspaceId !== null ? (
+        <PatchEditor
+          client={client}
+          run={patchContext.run}
+          view={patchContext.view}
+          workspaceId={workspaceId}
+          onClose={() => setPatchContext(null)}
+        />
       ) : (
       <main className="grid min-h-0 flex-1 grid-cols-[260px_minmax(0,1fr)_minmax(320px,420px)]">
         <div className="min-h-0 border-r border-subtle">
@@ -154,6 +176,7 @@ export function AppShell({
               store={store}
               runs={runs}
               onRunViewChange={setOpenRunView}
+              onEditPending={(run, view) => setPatchContext({ run, view })}
             />
           )}
         </div>
@@ -161,7 +184,7 @@ export function AppShell({
 
       )}
 
-      {activeView === 'observe' && <ApprovalsBar
+      {activeView === 'observe' && patchContext === null && <ApprovalsBar
         client={client}
         run={openRunView?.run ?? null}
         budget={openBudget}

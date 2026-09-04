@@ -72,6 +72,25 @@ export const RISK_LEVEL_LABELS: Record<ApprovalWire['risk_level'], string> = {
   high: '高风险',
 }
 
+/**
+ * Patch risk reason codes (§6.3 C8 dimensions) → Chinese labels. Unknown codes
+ * are rendered as-is (font-mono) by the caller.
+ */
+export const RISK_REASON_LABELS: Record<string, string> = {
+  node_removed: '删除用户声明的节点',
+  review_or_test_gate_removed: '删除评审/测试门禁',
+  output_contract_relaxed: '放宽输出合同',
+  report_dependency_removed: '删除测试/报告依赖',
+  control_edge_removed: '删除控制边',
+  writer_order_changed: '改变写入节点顺序',
+  required_outputs_retargeted: '改变结果输出指向',
+  conversation_scope_changed: '改变会话隔离',
+  provider_model_boundary_changed: '改变 Provider/Model 边界',
+  cap_or_deadline_relaxed: '放宽或移除上限/期限',
+  permission_widened: '扩大权限',
+  role_replaced: '替换角色',
+}
+
 export const APPROVAL_DECISION_LABELS: Record<ApprovalDecisionWire, string> = {
   allow_once: '允许一次',
   deny: '拒绝',
