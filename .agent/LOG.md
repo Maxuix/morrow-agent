@@ -5132,3 +5132,19 @@ Live test, Replan implementation or remote push authorized.
   explanation. Added a rejection test; final Planner matrix 23 passed (120.18 seconds).
 - Final related integration matrix: 100 passed (Core API/security, Workflow editor/run control,
   Agent definitions and Skill bindings). Ruff format/check, compileall and diff checks rerun green.
+
+- First full offline run: 1639 passed, 8 failed, 2 native Seatbelt tests skipped in the nested
+  sandbox, 2 Live deselected (1779.14 seconds). Four additional workspace process fixtures hit the
+  same 10-second setup timeout. Extended their setup barriers and ensured cleanup; mutations now
+  assert the start event rather than proceeding after a timed-out wait. Workspace matrix and a
+  fresh complete offline run are in progress; this result is not recorded as a green gate.
+
+- Workspace matrix verified: 35 passed (109.55 seconds), including all four prior subprocess
+  failures. The next full run was deliberately interrupted after 70 passes when the legacy ledger
+  selector-collection subprocess exceeded its 30-second import window; isolated reproduction
+  confirmed the same TimeoutExpired. Increased only that collection/setup timeout to 120 seconds;
+  selector validity assertions remain unchanged. Final verification resumes after focused proof.
+
+- Ledger acceptance matrix: 3 passed (67.89 seconds) after the setup-timeout adjustment. All known
+  subprocess failures now have passing focused evidence. Fresh full offline run started with JUnit
+  output at `/tmp/morrow-stage8-final-junit.xml`; application code is unchanged during this gate.

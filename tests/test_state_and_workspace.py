@@ -21,6 +21,36 @@ from morrow.services.workspace import (
     WorkspaceWriterLock,
 )
 
+# Spawn imports application modules before reaching the synchronization barriers.
+# Give contended hosts setup time without using elapsed time as a correctness assertion.
+PROCESS_TIMEOUT = 60
+
+
+def _cleanup_processes(processes):
+    for process in processes:
+        if process.is_alive():
+            process.terminate()
+            process.join(timeout=5)
+        process.close()
+
+
+def _run_competing_processes(processes, ready, start, results):
+    for process in processes:
+        process.start()
+    try:
+        for _ in processes:
+            assert ready.get(timeout=PROCESS_TIMEOUT) is True
+        start.set()
+        outcomes = [results.get(timeout=PROCESS_TIMEOUT) for _ in processes]
+        for process in processes:
+            process.join(timeout=PROCESS_TIMEOUT)
+            assert process.exitcode == 0
+        return outcomes
+    finally:
+        _cleanup_processes(processes)
+        ready.close()
+        results.close()
+
 
 def _confirm_workspace_in_process(state_root, project, ready, start, results):
     class ProcessIdSource:
@@ -34,7 +64,7 @@ def _confirm_workspace_in_process(state_root, project, ready, start, results):
     )
     resolution = service.resolve(project)
     ready.put(True)
-    start.wait(timeout=10)
+    assert start.wait(timeout=PROCESS_TIMEOUT)
     try:
         identity = service.confirm(resolution)
         results.put(("ok", identity.workspace_id))
@@ -45,7 +75,7 @@ def _confirm_workspace_in_process(state_root, project, ready, start, results):
 def _hold_workspace_writer_lock(state_root, workspace_id, acquired, release):
     with WorkspaceWriterLock(DataRoot(state_root), workspace_id):
         acquired.set()
-        release.wait(timeout=10)
+        assert release.wait(timeout=PROCESS_TIMEOUT)
 
 
 def _mutate_profile_in_process(
@@ -59,7 +89,7 @@ def _mutate_profile_in_process(
 ):
     store = ProjectStateYamlStore(state_root)
     ready.put(True)
-    start.wait(timeout=10)
+    assert start.wait(timeout=PROCESS_TIMEOUT)
     if action == "write":
         result = store.write_profile(
             workspace_id,
@@ -110,15 +140,7 @@ def test_concurrent_confirmation_returns_one_authoritative_workspace_id(tmp_path
         )
         for _ in range(2)
     ]
-    for process in processes:
-        process.start()
-    for _ in processes:
-        assert ready.get(timeout=10) is True
-    start.set()
-    outcomes = [results.get(timeout=10) for _ in processes]
-    for process in processes:
-        process.join(timeout=10)
-        assert process.exitcode == 0
+    outcomes = _run_competing_processes(processes, ready, start, results)
 
     assert [status for status, _ in outcomes] == ["ok", "ok"]
     assert len({workspace_id for _, workspace_id in outcomes}) == 1
@@ -497,16 +519,18 @@ def test_workspace_writer_lock_rejects_a_separate_process_without_project_writes
         args=(state_root, "ws_process_lock", acquired, release),
     )
     process.start()
-    assert acquired.wait(timeout=10)
     try:
+        assert acquired.wait(timeout=PROCESS_TIMEOUT)
         with pytest.raises(WorkspaceError):
             with WorkspaceWriterLock(DataRoot(state_root), "ws_process_lock", timeout=0):
                 pass
+        release.set()
+        process.join(timeout=PROCESS_TIMEOUT)
+        assert process.exitcode == 0
     finally:
         release.set()
-        process.join(timeout=10)
+        _cleanup_processes([process])
 
-    assert process.exitcode == 0
     assert list(project.iterdir()) == []
 
 
@@ -559,15 +583,7 @@ def test_competing_workspace_publications_are_serialized_across_processes(
         )
         for _ in range(2)
     ]
-    for process in processes:
-        process.start()
-    for _ in processes:
-        assert ready.get(timeout=10) is True
-    start.set()
-    outcomes = [results.get(timeout=10) for _ in processes]
-    for process in processes:
-        process.join(timeout=10)
-        assert process.exitcode == 0
+    outcomes = _run_competing_processes(processes, ready, start, results)
 
     assert sorted(status for status, _ in outcomes) == ["ok", "revision_conflict"]
     assert {revision for _, revision in outcomes} == {expected_success_revision}

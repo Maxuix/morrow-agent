@@ -126,7 +126,9 @@ def test_s7p08_ledger_selectors_collect_in_the_current_tree() -> None:
         check=False,
         capture_output=True,
         text=True,
-        timeout=30,
+        # Collection imports many application modules in a fresh interpreter.
+        # This is a validity check, not a startup performance benchmark.
+        timeout=120,
     )
 
     assert completed.returncode == 0, completed.stdout + completed.stderr
