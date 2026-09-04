@@ -54,6 +54,7 @@ from morrow.core.permissions import (
 )
 from morrow.core.recovery import RecoveryResolution
 from morrow.core.store import StorageError, StorageErrorCode, StoreOpenMode
+from morrow.interfaces.approval_cli import approval_app
 from morrow.interfaces.gui_cli import register as _register_gui
 from morrow.interfaces.learning_cli import learning_app, memory_app
 from morrow.interfaces.mcp_cli import mcp_app
@@ -86,6 +87,7 @@ app.add_typer(session_app, name="session")
 app.add_typer(task_app, name="task")
 app.add_typer(artifact_app, name="artifact")
 app.add_typer(recovery_app, name="recovery")
+app.add_typer(approval_app, name="approval")
 app.add_typer(grant_app, name="grant")
 app.add_typer(state_app, name="state")
 app.add_typer(agent_run_app, name="agent-run")

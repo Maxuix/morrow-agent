@@ -45,6 +45,7 @@ from morrow.core.store import StorageError, StorageErrorCode, StoreOpenMode
 from morrow.core.workflows.contracts import TaskContract
 from morrow.core.workflows.definitions import WorkflowDefinitionSource
 from morrow.core.workflows.patches import FutureGraphPatch
+from morrow.core.workflows.runs import WorkflowStatus
 from morrow.services.workspace import WorkspaceError
 
 agent_app = typer.Typer(help="Agent definition desired state and immutable publication.")
@@ -950,6 +951,37 @@ def _abandon_service(*, state_root, workspace_id, directory):
         handle.close()
 
 
+@contextmanager
+def _cancel_service(*, state_root, workspace_id, directory):
+    """Cancel surface: the transition owner plus the fixed terminal mapping."""
+
+    application = build_application(state_root=state_root)
+    identity = _identity(application, workspace_id, directory)
+    store = OperationalStore(application.data_root.root)
+    try:
+        handle = store.open(StoreOpenMode.READ_WRITE)
+    except StorageError as exc:
+        if exc.code is StorageErrorCode.NOT_FOUND:
+            handle = store.initialize()
+        else:
+            raise
+    try:
+        journal = SqliteOperationalJournal(handle)
+        transitions = WorkflowTransitionService(
+            journal, workspace_id=identity.workspace_id, clock=journal.now
+        )
+        finalizer = WorkflowOutcomeFinalizer(
+            journal,
+            workspace_id=identity.workspace_id,
+            transitions=transitions,
+            id_source=application.id_source,
+            clock=journal.now,
+        )
+        yield journal, identity.workspace_id, transitions, finalizer
+    finally:
+        handle.close()
+
+
 @workflow_app.command("status")
 def workflow_status(
     workflow_run_id: str,
@@ -1028,6 +1060,44 @@ def workflow_resume(
     finally:
         if products is not None:
             products.persistence.store_session.close()
+
+
+@workflow_app.command("cancel")
+def workflow_cancel(
+    workflow_run_id: str,
+    workspace_id: str | None = typer.Option(None, "--workspace-id"),
+    directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+):
+    """Record the durable user-cancel intent; in-flight nodes settle in the owning process."""
+
+    try:
+        with _cancel_service(**_options(workspace_id, directory, state_root)) as (
+            journal,
+            ws_id,
+            transitions,
+            finalizer,
+        ):
+            run = transitions.get_run(workflow_run_id)
+            if run is None:
+                raise ValueError("Workflow run is missing")
+            if run.status.terminal:
+                raise ValueError("a terminal Workflow cannot be cancelled")
+            if run.status is WorkflowStatus.PAUSED:
+                raise ValueError("a paused Workflow must be resumed before cancellation")
+            run = transitions.set_pending_user_cancel(workflow_run_id)
+            nodes = journal.workflows.list_nodes(ws_id, workflow_run_id)
+            active = any(
+                node.status in (WorkflowStatus.RUNNING, WorkflowStatus.BLOCKED) for node in nodes
+            )
+            settled = not active
+            if settled:
+                # The fixed cancellation mapping: with nothing in flight the
+                # recorded intent owns the terminal transition immediately.
+                run = finalizer.finalize_cancel(workflow_run_id, reason="user_cancelled")
+            _dump({"run": run, "cancel_settled": settled})
+    except Exception as exc:
+        _fail(exc)
 
 
 @workflow_app.command("abandon")
