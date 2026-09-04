@@ -68,6 +68,14 @@ class WorkflowDraftService:
                 return self._view(existing)
             raise ValueError("Workflow Draft identifier conflict")
         head = self.journal.workflows.get_head(self.workspace_id, source.workflow_definition_id)
+        existing_source = next(
+            (
+                item
+                for item in document.definitions
+                if item.workflow_definition_id == source.workflow_definition_id
+            ),
+            None,
+        )
         result, diagnostics = self._validate(source)
         stamp = self.journal.now()
         draft = WorkflowDraft(
@@ -78,6 +86,9 @@ class WorkflowDraftService:
             base_workflow_revision_id=head.workflow_revision_id if head else None,
             base_head_row_version=head.row_version if head else 0,
             base_source_revision=document.revision,
+            base_definition_source_hash=(
+                existing_source.content_hash if existing_source is not None else None
+            ),
             status=(
                 WorkflowDraftStatus.VALID
                 if result.candidate is not None and not self._has_errors(diagnostics)
@@ -208,15 +219,6 @@ class WorkflowDraftService:
 
         result, diagnostics = self._validate(current.source)
         if result.candidate is None or self._has_errors(diagnostics):
-            invalid = current.model_copy(
-                update={
-                    "status": WorkflowDraftStatus.INVALID,
-                    "diagnostics": diagnostics,
-                    "row_version": current.row_version + 1,
-                    "updated_at": self.journal.now(),
-                }
-            )
-            self.journal.workflows.save_draft(invalid, expected_row_version=expected_row_version)
             errors = tuple(
                 CompileDiagnostic(
                     DiagnosticSeverity.ERROR,
@@ -240,22 +242,19 @@ class WorkflowDraftService:
         document = self.management.workflow_sources.load(self.workspace_id)
         desired = {item.workflow_definition_id: item for item in document.definitions}
         existing = desired.get(current.source.workflow_definition_id)
-        if document.revision != current.base_source_revision:
-            replayed_source_write = (
-                document.revision == current.base_source_revision + 1 and existing == current.source
-            )
-            if not replayed_source_write:
-                raise StaleRowVersionError("stale Workflow source document revision")
-        elif existing != current.source:
+        existing_hash = existing.content_hash if existing is not None else None
+        if existing != current.source:
+            if existing_hash != current.base_definition_source_hash:
+                raise StaleRowVersionError("stale Workflow definition source")
             if existing is None:
                 written = self.management.create_workflow_source(
                     current.source,
-                    expected_source_revision=current.base_source_revision,
+                    expected_source_revision=document.revision,
                 )
             else:
                 written = self.management.update_workflow_source(
                     current.source,
-                    expected_source_revision=current.base_source_revision,
+                    expected_source_revision=document.revision,
                 )
             document = document.model_copy(update={"revision": written.source_revision})
 
@@ -373,7 +372,10 @@ class WorkflowDraftService:
         if (head.row_version if head else 0) != draft.base_head_row_version:
             stale.append("workflow_head_changed")
         document = self.management.workflow_sources.load(self.workspace_id)
-        if document.revision != draft.base_source_revision:
+        desired = {item.workflow_definition_id: item for item in document.definitions}
+        existing = desired.get(draft.source.workflow_definition_id)
+        existing_hash = existing.content_hash if existing is not None else None
+        if existing_hash != draft.base_definition_source_hash and existing != draft.source:
             stale.append("workflow_source_changed")
         for node in draft.source.nodes:
             head = self.journal.agent_definitions.get_head(

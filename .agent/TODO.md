@@ -1,6 +1,10 @@
 # TODO
 
-Active subplan: none. Subplan 6 completed on `feat/stage8-editor`; Subplan 7 is not activated.
+Active subplan: none. Subplan 6 review remediation is complete on
+`fix/stage8-editor-review`; Subplan 7 is not activated.
+
+- [x] Verify and remediate the confirmed Subplans 5–6 review findings; add focused backend and
+  GUI regression coverage and rerun the required gates.
 
 - [x] Add the durable Workflow Draft/OCC model, storage migration, application service and
   versioned Core API commands; keep compile validation pure and publication the only Revision

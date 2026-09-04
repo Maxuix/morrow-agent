@@ -24,6 +24,7 @@ from starlette.responses import JSONResponse, Response
 from starlette.routing import Route, WebSocketRoute
 from starlette.websockets import WebSocket
 
+from morrow.application.workflows.compiler import WorkflowCompilationError
 from morrow.core.application import ApplicationError, ApplicationErrorCode
 from morrow.core.execution import StaleRowVersionError
 
@@ -612,6 +613,29 @@ def create_asgi_app(
     async def _unavailable(request: Request, exc: CoreHostUnavailableError) -> Response:
         return JSONResponse(_error_body("unavailable", str(exc)), status_code=503)
 
+    async def _workflow_compilation_error(
+        request: Request, exc: WorkflowCompilationError
+    ) -> Response:
+        return JSONResponse(
+            {
+                "error": {
+                    "code": "workflow_compilation_failed",
+                    "message": "Workflow compilation failed",
+                    "diagnostics": [
+                        {
+                            "severity": item.severity.value,
+                            "code": item.code,
+                            "message": item.message,
+                            "node_id": item.node_id,
+                            "edge_id": item.edge_id,
+                        }
+                        for item in exc.diagnostics
+                    ],
+                }
+            },
+            status_code=400,
+        )
+
     async def _value_error(request: Request, exc: ValueError) -> Response:
         text = str(exc).casefold()
         if isinstance(exc, StaleRowVersionError) or "stale" in text:
@@ -744,6 +768,7 @@ def create_asgi_app(
             ApplicationError: _application_error,
             CommandBackpressureError: _backpressure,
             CoreHostUnavailableError: _unavailable,
+            WorkflowCompilationError: _workflow_compilation_error,
             ValueError: _value_error,
             Exception: _internal_error,
         },

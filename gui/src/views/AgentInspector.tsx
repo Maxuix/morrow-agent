@@ -7,7 +7,7 @@ import type {
   SkillCatalogWire,
   ToolCatalogWire,
 } from '../api/types'
-import { commandId, structuralDiff } from './lib/editor'
+import { agentCopyProvenance, commandId, structuralDiff } from './lib/editor'
 
 export function AgentInspector({
   client,
@@ -47,12 +47,7 @@ export function AgentInspector({
         ...structuredClone(selected.source),
         definition_id: `${selected.definition_id.replace(/^builtin_/, '')}_copy`,
         name: `${selected.source.name} Copy`,
-        derived_from_version_id:
-          selected.published_version?.content_hash === selected.source_hash
-            ? selected.published_version.version_id
-            : null,
-        derived_from_definition_id: selected.definition_id,
-        derived_from_source_hash: selected.source_hash,
+        ...agentCopyProvenance(selected),
       })
       setBaseSource(selected.source)
       return
@@ -94,9 +89,6 @@ export function AgentInspector({
         ? {
             ...currentSource,
             definition_id: cloneId,
-            derived_from_version_id: currentSelected.published_version?.version_id ?? null,
-            derived_from_definition_id: currentSelected.definition_id,
-            derived_from_source_hash: currentSelected.source_hash,
           }
         : currentSource
       const value = cloning
@@ -147,12 +139,7 @@ export function AgentInspector({
       ...structuredClone(currentSource),
       definition_id: nextId,
       name: `${currentSource.name} Copy`,
-      derived_from_version_id:
-        currentSelected.published_version?.content_hash === currentSelected.source_hash
-          ? currentSelected.published_version.version_id
-          : null,
-      derived_from_definition_id: currentSelected.definition_id,
-      derived_from_source_hash: currentSelected.source_hash,
+      ...agentCopyProvenance(currentSelected),
     })
     setBaseSource(currentSource)
   }

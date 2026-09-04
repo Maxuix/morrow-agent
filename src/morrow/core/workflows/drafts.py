@@ -42,6 +42,7 @@ class WorkflowDraft(ProtocolModel):
     base_workflow_revision_id: WorkflowRevisionId | None = None
     base_head_row_version: int = Field(default=0, ge=0, strict=True)
     base_source_revision: int = Field(default=0, ge=0, strict=True)
+    base_definition_source_hash: Digest | None = None
     status: WorkflowDraftStatus = WorkflowDraftStatus.DRAFT
     diagnostics: tuple[WorkflowDraftDiagnostic, ...] = Field(default=(), max_length=256)
     frozen_workflow_revision_id: WorkflowRevisionId | None = None

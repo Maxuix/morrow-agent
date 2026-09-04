@@ -119,6 +119,8 @@ class WorkflowManagementService:
             raise ValueError(
                 "built-in Agent sources are read-only; create a new user definition ID"
             )
+        current = self.agent_sources.load(self.workspace_id)
+        values = {item.definition_id: item for item in current.definitions}
         if source.derived_from_definition_id is not None:
             parent = self.agent_builtins.get(source.derived_from_definition_id)
             if parent is None:
@@ -133,10 +135,10 @@ class WorkflowManagementService:
                     ),
                     None,
                 )
+            if parent is None:
+                parent = values.get(source.derived_from_definition_id)
             if parent is None or parent.content_hash != source.derived_from_source_hash:
                 raise ValueError("derived Agent source provenance does not match its parent")
-        current = self.agent_sources.load(self.workspace_id)
-        values = {item.definition_id: item for item in current.definitions}
         if current.revision == expected + 1 and values.get(source.definition_id) == source:
             return DefinitionSourceResult(source, current.revision)
         self._require_create_state(source.definition_id, values, create=create, kind="Agent")

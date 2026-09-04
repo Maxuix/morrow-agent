@@ -65,6 +65,33 @@ describe('ApiClient', () => {
     expect(apiError.message).toBe('invalid session token')
   })
 
+  it('preserves structured Workflow compile diagnostics on API errors', async () => {
+    const diagnostic = {
+      severity: 'error',
+      code: 'edge_endpoint_invalid',
+      message: 'edge endpoint is missing',
+      node_id: null,
+      edge_id: 'alpha->gamma',
+    }
+    const { fetchImpl } = scriptedFetch({
+      status: 400,
+      body: {
+        error: {
+          code: 'workflow_compilation_failed',
+          message: 'Workflow compilation failed',
+          diagnostics: [diagnostic, { severity: 'secret', code: 3 }],
+        },
+      },
+    })
+    const client = new ApiClient({ baseUrl: '', token: 't', fetchImpl })
+
+    const failure = (await client.listWorkflowDrafts().catch(
+      (error: unknown) => error,
+    )) as ApiError
+
+    expect(failure.diagnostics).toEqual([diagnostic])
+  })
+
   it('carries Retry-After on 503 busy responses', async () => {
     const { fetchImpl } = scriptedFetch({
       status: 503,

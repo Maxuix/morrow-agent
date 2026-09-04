@@ -414,6 +414,7 @@ export interface WorkflowDraftWire {
   base_workflow_revision_id: string | null
   base_head_row_version: number
   base_source_revision: number
+  base_definition_source_hash: string | null
   status: 'draft' | 'validating' | 'valid' | 'invalid' | 'rejected' | 'frozen'
   diagnostics: WorkflowDraftDiagnosticWire[]
   frozen_workflow_revision_id: string | null

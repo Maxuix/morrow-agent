@@ -1,4 +1,6 @@
 import type {
+  AgentDefinitionSourceWire,
+  AgentDefinitionViewWire,
   AgentDefinitionVersionWire,
   WorkflowStatus,
   WorkflowDefinitionSourceWire,
@@ -12,6 +14,40 @@ export interface DiffLine {
 
 export function nodeIsLocked(status: WorkflowStatus | undefined): boolean {
   return status !== undefined && status !== 'queued'
+}
+
+export function draftStalenessBlocksFreeze(staleReasons: string[]): boolean {
+  return staleReasons.some(
+    (reason) => reason === 'workflow_head_changed' || reason === 'workflow_source_changed',
+  )
+}
+
+export function agentCopyProvenance(
+  definition: AgentDefinitionViewWire,
+): Pick<
+  AgentDefinitionSourceWire,
+  'derived_from_version_id' | 'derived_from_definition_id' | 'derived_from_source_hash'
+> {
+  const sourceHash = definition.source_hash
+  return {
+    derived_from_version_id:
+      sourceHash !== null && definition.published_version?.content_hash === sourceHash
+        ? definition.published_version.version_id
+        : null,
+    derived_from_definition_id: sourceHash === null ? null : definition.definition_id,
+    derived_from_source_hash: sourceHash,
+  }
+}
+
+export function preserveCanvasPositions<T extends { id: string; position: { x: number; y: number } }>(
+  projected: T[],
+  current: T[],
+): T[] {
+  const positions = new Map(current.map((node) => [node.id, node.position]))
+  return projected.map((node) => ({
+    ...node,
+    position: positions.get(node.id) ?? node.position,
+  }))
 }
 
 export function commandId(scope: string): string {

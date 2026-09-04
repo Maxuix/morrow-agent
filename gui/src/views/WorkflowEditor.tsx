@@ -18,7 +18,7 @@ import type {
   WorkflowDraftDiagnosticWire,
   WorkflowStatus,
 } from '../api/types'
-import { nodeIsLocked } from './lib/editor'
+import { nodeIsLocked, preserveCanvasPositions } from './lib/editor'
 
 interface EditorNodeData extends Record<string, unknown> {
   label: string
@@ -120,7 +120,10 @@ export function WorkflowEditor({
   const [nodes, setNodes, onNodesChange] = useNodesState<EditorFlowNode>(flowNodes)
   const [edges, setEdges, onEdgesChange] = useEdgesState(flowEdges)
 
-  useEffect(() => setNodes(flowNodes), [flowNodes, setNodes])
+  useEffect(
+    () => setNodes((current) => preserveCanvasPositions(flowNodes, current)),
+    [flowNodes, setNodes],
+  )
   useEffect(() => setEdges(flowEdges), [flowEdges, setEdges])
 
   const selected = source.nodes.find((node) => node.node_id === selectedNodeId) ?? null
@@ -321,7 +324,7 @@ export function WorkflowEditor({
             onNodeClick={(_, node) => setSelectedNodeId(node.id)}
             nodesConnectable={!disabled}
             edgesReconnectable={!disabled}
-            deleteKeyCode={disabled ? null : ['Backspace', 'Delete']}
+            deleteKeyCode={null}
             fitView
           >
             <Background color="var(--border-subtle)" gap={16} />

@@ -66,3 +66,23 @@ production bundle completed the full flow.
 Run-control buttons remain Subplan 7. GraphPlanner Draft generation, global Replan, management GUI,
 feedback/evaluation and read-only parallelism remain their later subplans. No second compiler,
 publication path, credential surface or generalized command framework was introduced.
+
+## Post-integration review remediation
+
+The seven review findings reported after integration were verified; all six bugs were present and
+fixed, and the history-only comments from the suggestion were shortened or removed. Draft freeze
+now OCC-checks the individual Workflow definition source hash, rebases over unrelated YAML writes,
+and still rejects same-definition divergence. A rejected freeze leaves Draft OCC state unchanged
+and returns bounded structured diagnostics with node/edge locators.
+
+The GUI now treats Agent-head changes as warnings, preserves dragged React Flow positions across
+semantic validation, disables the inconsistent keyboard deletion path, and retains the provenance
+chosen when an Agent copy begins. Desired-ahead and unpublished user parents are accepted as
+source-level provenance without fabricating a parent Version. Regression coverage includes sibling
+Draft freeze, existing-definition rebase and conflict, freeze-error wire diagnostics/OCC stability,
+canvas positions, freeze blockers, API diagnostic parsing, and Agent-copy provenance.
+
+Remediation validation: focused backend matrix 8 passed; full offline gate 1617 passed with 2 Live
+deselected; GUI typecheck, 41 Vitest tests, production build and bundle budget passed; Ruff
+format/check, compileall, CLI help and `git diff --check` passed. No Live Provider, MCP, external
+network or credential test was run.

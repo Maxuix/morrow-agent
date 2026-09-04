@@ -95,8 +95,7 @@ class AgentDefinitionSource(ProtocolModel):
     @property
     def content_hash(self) -> str:
         payload = self.model_dump(mode="json")
-        # Additive provenance fields must not invalidate every pre-Stage-8
-        # immutable version when they are absent.
+        # Exclude null provenance fields so existing immutable hashes stay stable.
         for field in (
             "derived_from_version_id",
             "derived_from_definition_id",

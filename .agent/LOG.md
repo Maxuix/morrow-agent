@@ -5054,3 +5054,20 @@
   remains unactivated. Remote push remains unauthorized.
 - Committed as `ca4baa7`, `f2026bc` and `2fe5b51`, then fast-forwarded local `main`; the clean topic
   branch was retired after ancestry verification.
+
+## 2026-09-04 — Subplans 5–6 review remediation verified
+
+- Confirmed all six reported bugs: document-wide Draft freeze OCC, rejected-freeze row-version
+  mutation and hidden locators, warning-level Agent-head freeze blocking, React Flow layout reset,
+  inconsistent keyboard node deletion, and Agent-copy provenance overwrite. Applied the suggested
+  history-comment cleanup as well.
+- Freeze now uses a durable per-definition source-hash baseline: unrelated source writes rebase at
+  the current document revision, exact source replays converge, and same-definition divergence
+  remains a 409. Compile rejection returns bounded located diagnostics without changing the Draft.
+- GUI positions survive source/diagnostic projection, Agent-head staleness remains visible without
+  blocking Freeze, keyboard graph deletion is disabled in favor of the Inspector policy, and copy
+  provenance remains the hash-matched snapshot chosen at copy start. Desired-ahead/unpublished
+  parent desired sources are valid provenance without a fabricated Version reference.
+- Validation: focused backend matrix 8 passed; full offline gate 1617 passed / 2 Live deselected in
+  193.63 seconds; GUI typecheck, 41 Vitest tests, build/bundle budget, Ruff format/check, compileall,
+  CLI help and `git diff --check` passed. No Live/network/credential test ran.

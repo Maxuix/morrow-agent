@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import type { AgentDefinitionVersionWire } from '../../api/types'
-import { cloneWorkflowSource, newSingleNodeWorkflow, nodeIsLocked, sourceFromRevision, structuralDiff } from './editor'
+import type { AgentDefinitionVersionWire, AgentDefinitionViewWire } from '../../api/types'
+import {
+  agentCopyProvenance,
+  cloneWorkflowSource,
+  draftStalenessBlocksFreeze,
+  newSingleNodeWorkflow,
+  nodeIsLocked,
+  preserveCanvasPositions,
+  sourceFromRevision,
+  structuralDiff,
+} from './editor'
 
 const agent: AgentDefinitionVersionWire = {
   version_id: 'adev_one',
@@ -68,5 +77,50 @@ describe('Workflow editor source helpers', () => {
     expect(nodeIsLocked('running')).toBe(true)
     expect(nodeIsLocked('completed')).toBe(true)
     expect(nodeIsLocked('failed')).toBe(true)
+  })
+
+  it('treats Agent-head staleness as a warning rather than a freeze blocker', () => {
+    expect(draftStalenessBlocksFreeze(['agent_head_changed:agent'])).toBe(false)
+    expect(draftStalenessBlocksFreeze(['workflow_head_changed'])).toBe(true)
+    expect(draftStalenessBlocksFreeze(['workflow_source_changed'])).toBe(true)
+  })
+
+  it('preserves dragged canvas positions while adding defaults for new nodes', () => {
+    const current = [{ id: 'one', position: { x: 17, y: 29 }, label: 'old' }]
+    const projected = [
+      { id: 'one', position: { x: 0, y: 0 }, label: 'updated' },
+      { id: 'two', position: { x: 240, y: 0 }, label: 'new' },
+    ]
+
+    expect(preserveCanvasPositions(projected, current)).toEqual([
+      { id: 'one', position: { x: 17, y: 29 }, label: 'updated' },
+      { id: 'two', position: { x: 240, y: 0 }, label: 'new' },
+    ])
+  })
+
+  it('pins provenance only when the published Version matches desired source', () => {
+    const definition = {
+      definition_id: 'helper',
+      source_hash: 'b'.repeat(64),
+      published_version: agent,
+    } as AgentDefinitionViewWire
+
+    expect(agentCopyProvenance(definition)).toEqual({
+      derived_from_version_id: null,
+      derived_from_definition_id: 'helper',
+      derived_from_source_hash: 'b'.repeat(64),
+    })
+    expect(
+      agentCopyProvenance({ ...definition, source_hash: agent.content_hash }),
+    ).toEqual({
+      derived_from_version_id: agent.version_id,
+      derived_from_definition_id: 'helper',
+      derived_from_source_hash: agent.content_hash,
+    })
+    expect(agentCopyProvenance({ ...definition, published_version: null })).toEqual({
+      derived_from_version_id: null,
+      derived_from_definition_id: 'helper',
+      derived_from_source_hash: 'b'.repeat(64),
+    })
   })
 })

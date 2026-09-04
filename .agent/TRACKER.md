@@ -2,16 +2,16 @@
 
 ## Current status
 
-Stage 7 and Stage 8 Subplans 1–6 are complete. Subplan 6 was fast-forward integrated into local
-`main` through `2fe5b51`; its topic commits are all ancestors of `main`.
+Stage 7 and Stage 8 Subplans 1–6 are complete. The Subplans 5–6 review remediation is verified on
+`fix/stage8-editor-review`; Subplan 7 remains inactive.
 
 ## Active task
 
-None. Subplan 7 is not active.
+None. All seven review findings were resolved and the required gates pass.
 
 ## Next action
 
-After integration, await explicit user activation of Subplan 7 (`7-run-control-gui`).
+Integrate the verified remediation into local `main`, then await explicit activation of Subplan 7.
 
 ## Blockers
 

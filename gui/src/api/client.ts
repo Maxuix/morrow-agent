@@ -35,6 +35,7 @@ import type {
   ToolCatalogWire,
   WorkflowDefinitionSourceWire,
   WorkflowDefinitionViewWire,
+  WorkflowDraftDiagnosticWire,
   WorkflowDraftViewWire,
   TaskEnvelopeWire,
   TaskRunWire,
@@ -85,6 +86,7 @@ export class ApiError extends Error {
     readonly code: string,
     message: string,
     readonly retryAfterSeconds: number | null = null,
+    readonly diagnostics: WorkflowDraftDiagnosticWire[] = [],
   ) {
     super(message)
     this.name = 'ApiError'
@@ -380,17 +382,22 @@ export class ApiClient {
 async function toApiError(response: Response): Promise<ApiError> {
   let code = 'unknown'
   let message = `request failed with HTTP ${response.status}`
+  let diagnostics: WorkflowDraftDiagnosticWire[] = []
   try {
     const body: unknown = await response.json()
     if (body !== null && typeof body === 'object' && 'error' in body) {
       const error = (body as { error: unknown }).error
       if (error !== null && typeof error === 'object') {
-        const { code: bodyCode, message: bodyMessage } = error as {
+        const { code: bodyCode, message: bodyMessage, diagnostics: bodyDiagnostics } = error as {
           code?: unknown
           message?: unknown
+          diagnostics?: unknown
         }
         if (typeof bodyCode === 'string') code = bodyCode
         if (typeof bodyMessage === 'string') message = bodyMessage
+        if (Array.isArray(bodyDiagnostics)) {
+          diagnostics = bodyDiagnostics.filter(isWorkflowDraftDiagnostic)
+        }
       }
     }
   } catch {
@@ -403,6 +410,19 @@ async function toApiError(response: Response): Promise<ApiError> {
     code,
     message,
     retryAfterSeconds !== null && Number.isFinite(retryAfterSeconds) ? retryAfterSeconds : null,
+    diagnostics,
+  )
+}
+
+function isWorkflowDraftDiagnostic(value: unknown): value is WorkflowDraftDiagnosticWire {
+  if (value === null || typeof value !== 'object') return false
+  const item = value as Record<string, unknown>
+  return (
+    (item.severity === 'error' || item.severity === 'warning') &&
+    typeof item.code === 'string' &&
+    typeof item.message === 'string' &&
+    (item.node_id === null || typeof item.node_id === 'string') &&
+    (item.edge_id === null || typeof item.edge_id === 'string')
   )
 }
 

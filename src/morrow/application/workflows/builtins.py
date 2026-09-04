@@ -68,8 +68,6 @@ def builtin_explore_implement_verify(
     *,
     native_sandbox: bool,
 ) -> WorkflowDefinitionSource:
-    # The permission mode still selects the executable ToolSet at publication
-    # time. It no longer changes the template's communication protocol.
     del native_sandbox
     return WorkflowDefinitionSource(
         workflow_definition_id="builtin_explore_implement_verify",

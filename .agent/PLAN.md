@@ -1,6 +1,6 @@
 # Stage 8 Adaptive Orchestration and GUI Implementation Plan
 
-> Status: Subplans 1–6 completed; Subplan 7 awaits explicit activation
+> Status: Subplans 1–6 and review remediation completed; Subplan 7 awaits explicit activation
 > Last completed subplan: `6-workflow-editor-agent-inspector` on `feat/stage8-editor`
 > (acceptance `docs/acceptance/stage-8-subplan-6-workflow-editor-agent-inspector.md`)
 > Active subplan: none

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { ApiClient } from '../api/client'
+import { ApiError, type ApiClient } from '../api/client'
 import type {
   AgentDefinitionViewWire,
   ArtifactContractCatalogWire,
@@ -8,6 +8,7 @@ import type {
   ToolCatalogWire,
   WorkflowDefinitionSourceWire,
   WorkflowDefinitionViewWire,
+  WorkflowDraftDiagnosticWire,
   WorkflowDraftViewWire,
 } from '../api/types'
 import { AgentInspector } from './AgentInspector'
@@ -15,6 +16,7 @@ import { WorkflowEditor } from './WorkflowEditor'
 import {
   cloneWorkflowSource,
   commandId,
+  draftStalenessBlocksFreeze,
   draftId,
   newSingleNodeWorkflow,
   sourceFromRevision,
@@ -53,6 +55,7 @@ export function EditorShell({ client }: { client: ApiClient }) {
   const [baseSource, setBaseSource] = useState<WorkflowDefinitionSourceWire | null>(null)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
+  const [freezeDiagnostics, setFreezeDiagnostics] = useState<WorkflowDraftDiagnosticWire[]>([])
 
   async function refresh(selectedId?: string) {
     const [nextAgents, nextWorkflows, nextDrafts, nextCatalogs] = await Promise.all([
@@ -118,6 +121,7 @@ export function EditorShell({ client }: { client: ApiClient }) {
           commandId('draft_update'),
         )
         .then((view) => {
+          setFreezeDiagnostics([])
           setDraft(view)
           rememberDraft(view)
           setSavedSource(source)
@@ -140,6 +144,7 @@ export function EditorShell({ client }: { client: ApiClient }) {
     setDraft(null)
     setLocalSource(null)
     setSavedSource(null)
+    setFreezeDiagnostics([])
     const copy = value.origin === 'builtin'
     setTargetId(copy ? `${value.workflow_definition_id.replace(/^builtin_/, '')}_copy` : value.workflow_definition_id)
     setTargetName(copy ? `${value.source?.name ?? value.workflow_definition_id} Copy` : value.source?.name ?? value.workflow_definition_id)
@@ -153,6 +158,7 @@ export function EditorShell({ client }: { client: ApiClient }) {
     setDraft(value)
     setLocalSource(structuredClone(value.draft.source))
     setSavedSource(structuredClone(value.draft.source))
+    setFreezeDiagnostics([])
     setBaseSource(
       workflow?.published_revision === null || workflow === undefined
         ? null
@@ -185,6 +191,7 @@ export function EditorShell({ client }: { client: ApiClient }) {
       rememberDraft(view)
       setLocalSource(view.draft.source)
       setSavedSource(view.draft.source)
+      setFreezeDiagnostics([])
       setBaseSource(
         selectedWorkflow?.published_revision === null || selectedWorkflow === undefined
           ? null
@@ -211,9 +218,11 @@ export function EditorShell({ client }: { client: ApiClient }) {
       setDraft(value.workflow_draft)
       rememberDraft(value.workflow_draft)
       setSavedSource(value.workflow_draft.draft.source)
+      setFreezeDiagnostics([])
       setMessage(`已冻结 Revision ${String(value.workflow_revision.workflow_revision_id)}`)
       await refresh()
     } catch (error) {
+      if (error instanceof ApiError) setFreezeDiagnostics(error.diagnostics)
       setMessage(error instanceof Error ? error.message : 'Freeze 失败')
     } finally {
       setSaving(false)
@@ -274,9 +283,9 @@ export function EditorShell({ client }: { client: ApiClient }) {
               {dirty && <span className="text-xs text-blocked">待保存</span>}
               {draft.stale_reasons.length > 0 && <span className="text-xs text-blocked">Catalog/Head 已变化：{draft.stale_reasons.join(', ')}</span>}
               {message !== null && <span role="status" className="truncate text-xs text-secondary">{message}</span>}
-              <button type="button" className="editor-button ml-auto border-accent text-accent" disabled={saving || dirty || draft.draft.status !== 'valid' || draft.stale_reasons.length > 0} onClick={() => void freeze()}>Freeze Revision</button>
+              <button type="button" className="editor-button ml-auto border-accent text-accent" disabled={saving || dirty || draft.draft.status !== 'valid' || draftStalenessBlocksFreeze(draft.stale_reasons)} onClick={() => void freeze()}>Freeze Revision</button>
             </header>
-            <WorkflowEditor source={localSource} diagnostics={draft.draft.diagnostics} agents={agents} contracts={catalogs.contracts} disabled={draft.draft.status === 'frozen'} onChange={setLocalSource} />
+            <WorkflowEditor source={localSource} diagnostics={[...draft.draft.diagnostics, ...freezeDiagnostics]} agents={agents} contracts={catalogs.contracts} disabled={draft.draft.status === 'frozen'} onChange={(source) => { setFreezeDiagnostics([]); setLocalSource(source) }} />
             <details className="border-t border-subtle px-4 py-2 text-xs"><summary className="cursor-pointer text-secondary">Revision Diff · {revisionDiff.length} 项</summary><ul className="mt-2 grid max-h-40 grid-cols-2 gap-2 overflow-y-auto">{revisionDiff.map((line) => <li key={line.path} className="rounded-[8px] border border-subtle p-2 font-mono"><div className="text-secondary">{line.path}</div><div className="text-failed">− {line.before}</div><div className="text-completed">+ {line.after}</div></li>)}</ul></details>
           </>
         )}
