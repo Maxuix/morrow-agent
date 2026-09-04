@@ -2,20 +2,21 @@
 
 ## Current status
 
-Stage 7 and Stage 8 Subplans 1–4 are complete. The user explicitly activated corrective Subplan 5
-on 2026-09-04 after Provider-backed E2E exposed two architectural blockers: fixed role-specific
-artifact handoffs in the starter templates, and automatic termination from guessed 12/48 request
-budgets. Work is active on `refactor/general-workflow-runtime` from verified `main` at `c4fd731`.
+Stage 7 and Stage 8 Subplans 1–4 are complete. Corrective Subplan 5 is verified on
+`refactor/general-workflow-runtime` at implementation checkpoint `c4b1c4e`: fixed role-specific
+starter handoffs were replaced by a generic TextResult chain and guessed 12/48 request defaults
+were removed in favor of opt-in guardrails with durable accounting. Acceptance:
+`docs/acceptance/stage-8-subplan-5-generic-workflow-foundation.md`.
 
 ## Active task
 
-Finalize the verified generic Workflow foundation: commit the implementation, persist the
-Provider-backed acceptance report, then fast-forward local `main` and retire the topic branch.
+Fast-forward the verified Subplan 5 commits into local `main`, verify ancestry, retire the clean
+topic branch and record final integration state.
 
 ## Next action
 
-Create the implementation checkpoint, write acceptance evidence against that revision, update the
-Subplan state, then fast-forward merge and verify branch ancestry.
+Commit the acceptance/state checkpoint, fast-forward merge it to local `main`, then record and
+commit the integration closeout.
 
 ## Blockers
 

@@ -1,6 +1,7 @@
 # TODO
 
-Active subplan: `5-generic-workflow-foundation` on `refactor/general-workflow-runtime`.
+Active subplan: none. Subplan 5 is verified on `refactor/general-workflow-runtime`; integration
+closeout is in progress.
 
 - [x] Replace packaged role-specific node transfers with the generic `TextResult@1` result chain;
   keep legacy structured contracts compatible but optional.
@@ -11,7 +12,7 @@ Active subplan: `5-generic-workflow-foundation` on `refactor/general-workflow-ru
   continuation/rerun, durable admission, integrity checks and GUI projections for `None`.
 - [x] Update current documentation and execution-state authority.
 - [x] Run focused and full offline/static/frontend validation.
-- [>] Execute fresh disposable public-surface E2E and compatible configured Provider-backed lane;
+- [x] Execute fresh disposable public-surface E2E and compatible configured Provider-backed lane;
   persist sanitized acceptance evidence.
-- [ ] Commit coherent progress, fast-forward verified work to `main`, verify ancestry, and retire the
+- [>] Commit coherent progress, fast-forward verified work to `main`, verify ancestry, and retire the
   clean topic branch. Remote push is not authorized.

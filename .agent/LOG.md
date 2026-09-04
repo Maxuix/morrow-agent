@@ -5016,3 +5016,5 @@
 - Final gates: focused Workflow matrix 158 passed; full offline gate 1609 passed / 2 deselected in
   176.61 seconds; Ruff format/check, compileall, Workflow CLI help, GUI typecheck, 31 Vitest tests,
   GUI build/bundle budget and `git diff --check` passed. Remote push remains unauthorized.
+- Implementation checkpoint: `c4b1c4e`. Sanitized acceptance:
+  `docs/acceptance/stage-8-subplan-5-generic-workflow-foundation.md`.

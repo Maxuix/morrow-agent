@@ -1,6 +1,6 @@
 # Stage 8：自适应编排与 GUI 控制面
 
-> 状态：进行中（Subplans 1–4 已完成；通用 Workflow 基础纠偏 Subplan 5 进行中，2026-09-04）
+> 状态：进行中（Subplans 1–4 已完成；通用 Workflow 基础纠偏 Subplan 5 已验证、待集成，2026-09-04）
 > 阶段结果：Morrow 能根据任务选择并生成可验证的 Workflow Draft，用户可通过 GUI 观察、编辑和控制 Agent、偏好、Skill 与运行状态
 > 上级文档：[开发路线总览](../ROADMAP.md)
 > 上一阶段：[Stage 7：Agent Definition 与静态 Workflow Runtime](stage-7-workflow-runtime.md)

@@ -1,14 +1,15 @@
 # Stage 8 Adaptive Orchestration and GUI Implementation Plan
 
-> Status: Subplan 5 active 2026-09-04
-> Last completed subplan: `4-web-gui-observer` on `feat/stage8-gui-observer`
-> (acceptance `docs/acceptance/stage-8-subplan-4-web-gui-observer.md`)
-> Active subplan: `5-generic-workflow-foundation` on `refactor/general-workflow-runtime`
+> Status: Subplan 5 verified; fast-forward integration pending 2026-09-04
+> Last verified subplan: `5-generic-workflow-foundation` on `refactor/general-workflow-runtime`
+> (acceptance `docs/acceptance/stage-8-subplan-5-generic-workflow-foundation.md`)
+> Active subplan: none; Subplan 5 integration closeout only
 > Next planned subplan: `6-workflow-editor-agent-inspector`
 > Roadmap authority: `docs/roadmap/stage-8-adaptive-orchestration-and-gui.md`
 > (revised 2026-09-03: risk-tiered Replan autonomy; runtime-kernel-first ordering)
-> Entry evidence: Stage 7 completed and remediated; full offline gate 1538 passed, 2 skipped,
-> 2 Live deselected; Ruff format/check, compileall and `git diff --check` green
+> Current evidence: full offline gate 1609 passed / 2 Live deselected; focused Workflow matrix 158
+> passed; Ruff format/check, compileall, GUI typecheck/31 tests/build and `git diff --check` green;
+> disposable `opencode-go/deepseek-v4-flash` E2E passed after one explicit failed-run recovery
 > Previous master plan: Stage 7, archived under `.agent/archive/subplans/stage7-workflow-runtime/`
 
 ## 1. Objective

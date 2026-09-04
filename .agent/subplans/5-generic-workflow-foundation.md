@@ -1,6 +1,6 @@
 # Subplan 5 — Generic Workflow Foundation
 
-> Status: active 2026-09-04
+> Status: verified 2026-09-04; fast-forward integration pending
 > Branch: `refactor/general-workflow-runtime`
 > Activation base: verified local `main` at `c4fd731`
 > Prerequisite: Stage 8 Subplans 1–4 verified
@@ -55,3 +55,13 @@ task termination conditions.
 
 The visual graph editor, automatic GraphPlanner, general parallel execution and deletion of legacy
 structured contract support remain in their later Stage 8 subplans.
+
+## Acceptance
+
+- Implementation checkpoint: `c4b1c4e`.
+- Evidence: `docs/acceptance/stage-8-subplan-5-generic-workflow-foundation.md`.
+- Gates: focused 158 passed; full offline 1609 passed / 2 deselected; Ruff, compileall, CLI help,
+  GUI typecheck/31 tests/build/bundle budget and diff check passed.
+- Real Provider: configurable four-node graph completed with a 15-request node; hidden-oracle
+  correction recovered from one `invalid_response` through explicit failed-node rerun and then
+  passed all checked/hidden oracles. Credentials stayed in CredentialStore.
