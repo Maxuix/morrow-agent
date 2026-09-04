@@ -102,11 +102,18 @@ export function runControlActions(
 }
 
 /**
- * The root task must be explicitly reopened before a rerun when it ended in
- * a terminal state (roadmap: explicit root resume, like the CLI's rerun step).
+ * The runtime only creates a rerun child against an OPEN root task, so any
+ * non-open root (failed/cancelled/ready_for_acceptance) takes the explicit
+ * root-resume step first (roadmap §13, same as the CLI rerun flow).
  */
 export function rootResumeRequired(rootTaskStatus: TaskRunStatus): boolean {
-  return rootTaskStatus === 'failed' || rootTaskStatus === 'cancelled'
+  // The resumable non-open statuses; accepted/abandoned roots are rejected by
+  // the server with its own message.
+  return (
+    rootTaskStatus === 'failed' ||
+    rootTaskStatus === 'cancelled' ||
+    rootTaskStatus === 'ready_for_acceptance'
+  )
 }
 
 /** Inline banner text: ApiError messages pass through as-is (e.g. OCC conflicts). */

@@ -119,12 +119,14 @@ describe('runControlActions', () => {
 })
 
 describe('rootResumeRequired', () => {
-  it('reopens the root task only from the terminal task statuses', () => {
-    for (const status of ['open', 'ready_for_acceptance', 'accepted', 'abandoned'] as const) {
+  it('reopens the root task from every resumable non-open status', () => {
+    // The runtime only accepts a rerun child against an OPEN root task.
+    for (const status of ['failed', 'cancelled', 'ready_for_acceptance'] as const) {
+      expect(rootResumeRequired(status)).toBe(true)
+    }
+    for (const status of ['open', 'accepted', 'abandoned'] as const) {
       expect(rootResumeRequired(status)).toBe(false)
     }
-    expect(rootResumeRequired('failed')).toBe(true)
-    expect(rootResumeRequired('cancelled')).toBe(true)
   })
 })
 

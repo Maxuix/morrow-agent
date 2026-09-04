@@ -581,3 +581,102 @@ async def test_patch_validate_returns_diff_and_risk(tmp_path):
         assert "cap_or_deadline_relaxed" in result2["risk"]["reasons"]
     finally:
         fx.close()
+
+
+# GUI–CLI conflict parity -------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_gui_cli_outcome_accept_conflict_has_exactly_one_winner(fx):
+    """GUI (API) and CLI accept the same TaskOutcome with the same row version:
+    the first commits, the loser gets the OCC conflict, and the task closes
+    exactly once (no lost update)."""
+
+    import json
+
+    from typer.testing import CliRunner
+
+    from morrow.interfaces.cli import app as cli_app
+
+    fx.bank.scripts.extend([["phase one"], ["phase three"]])
+    revision = await publish_pipeline(fx)
+    session_id, task_id, task_version = await create_session_and_task(fx.client)
+    started = await start_run(
+        fx.client, revision.workflow_revision_id, session_id, task_id, task_version
+    )
+    assert started.status == 200, started.body
+    run_id = started.json()["result"]["run"]["workflow_run_id"]
+    await wait_for_run(fx.client, run_id, "completed")
+
+    task = (await fx.client.get(f"/v1/tasks/{task_id}")).json()["task"]
+    assert task["status"] == "ready_for_acceptance"
+    row_version = task["row_version"]
+
+    # The GUI path accepts first.
+    accepted = await fx.client.post(
+        f"/v1/tasks/{task_id}/accept",
+        {"expected_row_version": row_version, "command_id": "cmd_gui_accept_1"},
+    )
+    assert accepted.status == 200, accepted.body
+
+    # The CLI accept against the same (now stale) facts loses with a conflict.
+    cli = CliRunner().invoke(
+        cli_app,
+        [
+            "task",
+            "accept",
+            task_id,
+            "--expected-row-version",
+            str(row_version),
+            "--workspace-id",
+            fx.workspace_id,
+            "--dir",
+            str(fx.workspace_dir),
+            "--state-root",
+            str(fx.state_root),
+        ],
+    )
+    assert cli.exit_code == 2
+    assert "stale" in cli.output
+
+    # Reverse order: CLI wins, the GUI call gets the 409 conflict.
+    fx.bank.scripts.extend([["phase one"], ["phase three"]])
+    session2 = await fx.client.post("/v1/sessions", {})
+    session2_id = session2.json()["result"]["session"]["session_id"]
+    task2 = await fx.client.post("/v1/tasks", {"session_id": session2_id})
+    task2_id = task2.json()["result"]["task"]["task_run_id"]
+    task2_version = task2.json()["result"]["task"]["row_version"]
+    started2 = await start_run(
+        fx.client, revision.workflow_revision_id, session2_id, task2_id, task2_version
+    )
+    assert started2.status == 200, started2.body
+    run2_id = started2.json()["result"]["run"]["workflow_run_id"]
+    await wait_for_run(fx.client, run2_id, "completed")
+    task2_after = (await fx.client.get(f"/v1/tasks/{task2_id}")).json()["task"]
+    task2_version = task2_after["row_version"]
+
+    cli_win = CliRunner().invoke(
+        cli_app,
+        [
+            "task",
+            "accept",
+            task2_id,
+            "--expected-row-version",
+            str(task2_version),
+            "--workspace-id",
+            fx.workspace_id,
+            "--dir",
+            str(fx.workspace_dir),
+            "--state-root",
+            str(fx.state_root),
+        ],
+    )
+    assert cli_win.exit_code == 0, cli_win.output
+    gui_loses = await fx.client.post(
+        f"/v1/tasks/{task2_id}/accept",
+        {"expected_row_version": task2_version, "command_id": "cmd_gui_accept_2"},
+    )
+    assert gui_loses.status == 409
+    final = (await fx.client.get(f"/v1/tasks/{task2_id}")).json()["task"]
+    assert final["status"] == "accepted"
+    assert final["row_version"] == task2_version + 1

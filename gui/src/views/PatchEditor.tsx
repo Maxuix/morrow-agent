@@ -199,16 +199,18 @@ export function PatchEditor({
         />
       ) : (
         <>
-          <WorkflowEditor
-            source={localSource ?? revisionSource}
-            diagnostics={preview?.diagnostics ?? []}
-            agents={agents}
-            contracts={contracts}
-            disabled={applied !== null || applying}
-            onChange={handleSourceChange}
-            nodeStatuses={nodeStatuses}
-          />
-          <section className="max-h-[45vh] overflow-y-auto border-t border-subtle bg-raised px-4 py-3">
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            <WorkflowEditor
+              source={localSource ?? revisionSource}
+              diagnostics={preview?.diagnostics ?? []}
+              agents={agents}
+              contracts={contracts}
+              disabled={applied !== null || applying}
+              onChange={handleSourceChange}
+              nodeStatuses={nodeStatuses}
+            />
+          </div>
+          <section className="relative z-10 max-h-[45vh] shrink-0 overflow-y-auto border-t border-subtle bg-raised px-4 py-3">
             {applied !== null ? (
               <div className="rounded-[10px] border border-completed bg-base p-3">
                 <p className="text-xs text-completed">{patchResultMessage(applied)}</p>

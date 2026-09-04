@@ -108,17 +108,34 @@ export function WorkflowPanel({
   }, [client, store, selectedRunId, onRunViewChange])
 
   // The root task row arrives via its own task events (not run events), so
-  // keep it reactive off the store: retry/rerun stay disabled until loaded.
+  // keep it reactive off the store — and fetch it once when the store has
+  // never seen it (the nav cache lives outside the store).
   const rootTaskRunId = selectedRun?.run.root_task_run_id ?? null
   useEffect(() => {
+    let cancelled = false
     const sync = () => {
-      setRootTask(
-        rootTaskRunId === null ? null : (store.getState().tasks.get(rootTaskRunId) ?? null),
-      )
+      const cached =
+        rootTaskRunId === null ? null : (store.getState().tasks.get(rootTaskRunId) ?? null)
+      setRootTask(cached)
+      if (rootTaskRunId !== null && cached === null) {
+        client
+          .getTask(rootTaskRunId)
+          .then((task) => {
+            if (!cancelled) setRootTask(task)
+          })
+          .catch(() => {
+            // A transient failure leaves retry/rerun disabled; the next store
+            // event retries via the same effect.
+          })
+      }
     }
     sync()
-    return store.subscribe(sync)
-  }, [store, rootTaskRunId])
+    const unsubscribe = store.subscribe(sync)
+    return () => {
+      cancelled = true
+      unsubscribe()
+    }
+  }, [client, store, rootTaskRunId])
 
   if (selectedRun === null) {
     return (

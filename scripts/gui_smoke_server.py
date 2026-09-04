@@ -22,6 +22,16 @@ sys.path.insert(0, str(ROOT / "tests"))
 import uvicorn  # noqa: E402
 
 from morrow.core.agent_definitions import ToolRequirement  # noqa: E402
+from morrow.core.workflows.definitions import WorkflowBudget  # noqa: E402
+
+# A generous admission timeout keeps the seeded run patchable throughout a
+# manual browser session; the default 300s budget would expire mid-flow.
+SMOKE_BUDGET = WorkflowBudget(
+    max_agent_generation_requests=10,
+    default_node_max_agent_generation_requests=3,
+    admission_timeout_seconds=7200,
+    max_concurrency=1,
+)
 from morrow.server.app import create_asgi_app  # noqa: E402
 from test_stage7_serial_scheduler import ScriptBank, agent_source  # noqa: E402
 from test_stage8_core_api import (  # noqa: E402
@@ -99,7 +109,11 @@ async def main(state_dir: Path, *, serve_only: bool) -> None:
                 ToolRequirement(name="update_configuration", requirement="required"),
             ),
         )
-        revision = await publish_pipeline(fixture, agent=agent, make_source=write_pair_source)
+        revision = await publish_pipeline(
+            fixture,
+            agent=agent,
+            make_source=lambda ref: write_pair_source(ref, budget=SMOKE_BUDGET),
+        )
         fixture.bank.scripts.extend([WRITE_CALL_SCRIPT, ["phase three"]])
         session_id, task_id, task_version = await create_session_and_task(fixture.client)
         started = await start_run(
