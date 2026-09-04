@@ -16,6 +16,7 @@ from morrow.core.workflows.definitions import (
     WorkflowRevisionRevocation,
 )
 from morrow.core.workflows.drafts import WorkflowDraft
+from morrow.core.workflows.replan import ReplanProposal, ReplanSignal
 from morrow.core.workflows.runs import (
     NodeRun,
     WorkflowArtifactImport,
@@ -44,6 +45,137 @@ class SqliteWorkflowJournal:
             raise StorageError(
                 StorageErrorCode.NEEDS_REPAIR, "Workflow record is corrupt"
             ) from None
+
+    def list_replan_signals(self, workspace_id, run_id, *, pending_only=False):
+        rows = self.backend.read_all(
+            "SELECT body_json FROM workflow_replan_signals "
+            "WHERE workspace_id=? AND workflow_run_id=? "
+            + ("AND consumed_by IS NULL " if pending_only else "")
+            + "ORDER BY signal_id",
+            (workspace_id, run_id),
+        )
+        return tuple(ReplanSignal.model_validate_json(row[0]) for row in rows)
+
+    def put_replan_signal(self, value: ReplanSignal):
+        def work():
+            node = self.get_node(value.workspace_id, value.node_run_id)
+            leaf = self.get_task(value.workspace_id, node.leaf_task_run_id) if node else None
+            if (
+                node is None
+                or node.workflow_run_id != value.workflow_run_id
+                or node.started_at is None
+                or leaf is None
+                or leaf.status
+                not in {
+                    TaskRunStatus.READY_FOR_ACCEPTANCE,
+                    TaskRunStatus.FAILED,
+                    TaskRunStatus.CANCELLED,
+                }
+            ):
+                raise ValueError("ReplanSignal requires its own durable leaf closure")
+            existing = self._load(
+                ReplanSignal,
+                "SELECT body_json FROM workflow_replan_signals WHERE node_run_id=?",
+                (value.node_run_id,),
+            )
+            if existing:
+                if existing.model_copy(update={"created_at": value.created_at}) != value:
+                    raise ValueError("ReplanSignal closure evidence is immutable")
+                return existing
+            self.backend.executor().execute(
+                "INSERT INTO workflow_replan_signals VALUES(?,?,?,?,NULL,?)",
+                (
+                    value.signal_id,
+                    value.workspace_id,
+                    value.workflow_run_id,
+                    value.node_run_id,
+                    value.model_dump_json(),
+                ),
+            )
+            return value
+
+        return self.backend.transact(work)
+
+    def get_replan_proposal(self, workspace_id, proposal_id):
+        return self._load(
+            ReplanProposal,
+            "SELECT body_json FROM workflow_replan_proposals WHERE workspace_id=? AND proposal_id=?",
+            (workspace_id, proposal_id),
+        )
+
+    def list_replan_proposals(self, workspace_id, run_id):
+        rows = self.backend.read_all(
+            "SELECT body_json FROM workflow_replan_proposals "
+            "WHERE workspace_id=? AND workflow_run_id=? ORDER BY proposal_id",
+            (workspace_id, run_id),
+        )
+        return tuple(ReplanProposal.model_validate_json(row[0]) for row in rows)
+
+    def create_replan_proposal(self, value: ReplanProposal):
+        value = ReplanProposal.model_validate_json(value.model_dump_json())
+
+        def work():
+            if value.row_version != 1 or self.get_replan_proposal(
+                value.workspace_id, value.proposal_id
+            ):
+                raise ValueError("Replan proposal already exists")
+            run = self.get_run(value.workspace_id, value.patch.parent_run_id)
+            if run is None or value.patch.workspace_id != value.workspace_id:
+                raise ValueError("Replan proposal workspace mismatch")
+            for signal_id in value.signal_ids:
+                cursor = self.backend.executor().execute(
+                    "UPDATE workflow_replan_signals SET consumed_by=? "
+                    "WHERE workspace_id=? AND workflow_run_id=? AND signal_id=? AND consumed_by IS NULL RETURNING signal_id",
+                    (value.proposal_id, value.workspace_id, run.workflow_run_id, signal_id),
+                )
+                if len(cursor) != 1:
+                    raise ValueError("Replan signal consumption conflict")
+            self.backend.executor().execute(
+                "INSERT INTO workflow_replan_proposals VALUES(?,?,?,?,?)",
+                (
+                    value.proposal_id,
+                    value.workspace_id,
+                    run.workflow_run_id,
+                    value.row_version,
+                    value.model_dump_json(),
+                ),
+            )
+            return value
+
+        return self.backend.transact(work)
+
+    def decide_replan_proposal(self, value: ReplanProposal, *, expected_row_version):
+        value = ReplanProposal.model_validate_json(value.model_dump_json())
+
+        def work():
+            old = self.get_replan_proposal(value.workspace_id, value.proposal_id)
+            if old is None or old.status != "pending" or old.row_version != expected_row_version:
+                raise ValueError("Replan proposal decision conflict")
+            mutable = {
+                "status",
+                "disposition_reason",
+                "auto_applied",
+                "child_run_id",
+                "decided_by",
+                "decided_at",
+                "row_version",
+            }
+            if (
+                value.row_version != old.row_version + 1
+                or value.status == "pending"
+                or any(
+                    getattr(old, name) != getattr(value, name)
+                    for name in ReplanProposal.model_fields.keys() - mutable
+                )
+            ):
+                raise ValueError("Replan proposal facts are immutable")
+            self.backend.executor().execute(
+                "UPDATE workflow_replan_proposals SET row_version=?, body_json=? WHERE proposal_id=?",
+                (value.row_version, value.model_dump_json(), value.proposal_id),
+            )
+            return value
+
+        return self.backend.transact(work)
 
     def get_revision(self, workspace_id, revision_id):
         value = self._load(
@@ -882,6 +1014,15 @@ class SqliteWorkflowJournal:
                 or value.row_version != expected + 1
             ):
                 raise ValueError("Workflow run revision conflict")
+            if (
+                node
+                and current.status is WorkflowStatus.QUEUED
+                and value.status is WorkflowStatus.RUNNING
+                and self.list_replan_signals(
+                    value.workspace_id, value.workflow_run_id, pending_only=True
+                )
+            ):
+                raise ValueError("unconsumed ReplanSignal closes node admission")
             mutable = {"status", "row_version", "completed_at"}
             if node and current.status == WorkflowStatus.QUEUED:
                 mutable |= {

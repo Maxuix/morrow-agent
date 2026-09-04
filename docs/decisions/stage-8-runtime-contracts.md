@@ -1,7 +1,7 @@
 # Stage 8 运行时合同（Runtime Contracts）
 
 > 状态：已接受（2026-09-03）
-> 范围：Stage 8 Subplans 1–3（Runtime Kernel 与 Core API）
+> 范围：Stage 8 Subplans 1–3、9（Runtime Kernel、Core API 与 Replan）
 > 来源：第二轮外部评审 findings 经逐条代码核实后冻结；是 `.agent/PLAN.md` 的一部分权威，
 > 不是第二份实施规格——实现细节仍以各子计划为准。
 
@@ -38,7 +38,7 @@ Node admission 是不可分割的一个权威事务，其间不得出现 `await`
 ```text
 校验 run.status == running 且 pause_requested == false
 校验 lineage/head 事实（child 未 superseded、root ownership 仍属本 run）
-校验无未消费 ReplanSignal（Subplan 8 接入同一断言语句）
+校验无未消费 ReplanSignal（Subplan 9 接入同一准入事务）
 校验 node 属于执行集且为 queued
 校验用户显式配置的 deadline 与 lineage 剩余 cap（C3；未配置则只记录 accounting）
 解析并绑定有效输入（含 inherited imports）

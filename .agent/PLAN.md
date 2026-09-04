@@ -3,8 +3,8 @@
 > Status: Subplans 1–8 and review remediation completed
 > Last completed subplan: `8-graph-planner-draft` (topic branch retired)
 > (acceptance `docs/acceptance/stage-8-subplan-8-graph-planner-draft.md`)
-> Active subplan: none
-> Next planned subplan: `9-global-replan` (not activated)
+> Active subplan: `9-global-replan`
+> Next planned subplan: `10-context-learning-skill-gui` (not activated)
 > Roadmap authority: `docs/roadmap/stage-8-adaptive-orchestration-and-gui.md`
 > (revised 2026-09-03: risk-tiered Replan autonomy; runtime-kernel-first ordering)
 > Current evidence: full offline gate 1653 passed / 2 native-sandbox skipped / 2 Live deselected;

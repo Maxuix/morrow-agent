@@ -176,6 +176,7 @@ def test_migration_v26_backfills_legacy_rows_and_rebuilds_root_exclusivity(tmp_p
     assert store.migrate().applied == (
         "workflow_pause_drain_lineage",
         "workflow_editor_drafts",
+        "workflow_global_replan",
     )
     with store.open(StoreOpenMode.READ_WRITE) as handle:
         rows = handle.run_read(
@@ -250,6 +251,7 @@ def test_rebuild_migration_verification_rolls_back_and_restores_pragmas(tmp_path
     assert OperationalStore(root_dir, clock=FixedClock()).migrate().applied == (
         "workflow_pause_drain_lineage",
         "workflow_editor_drafts",
+        "workflow_global_replan",
     )
 
 

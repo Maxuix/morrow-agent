@@ -120,7 +120,25 @@ morrow workflow policy set policy.json --expected-revision 0 --workspace-id ws_e
 `extensions.yaml.orchestration` 中，按任务类型匹配，工作空间的完整策略覆盖全局策略。
 修改使用该 Extension 文档的 revision，保留 Skill/MCP 设置。`auto_run_mode` 默认
 `approval_only`；`allow_promoted` 仅保存用户偏好，当前没有已推广的任务类型。
-`auto_replan_mode` 默认 `approval_only`，自动 Replan 由后续 Subplan 交付。
+`auto_replan_mode` 默认 `approval_only`。全局重规划的节点信号在节点自身关闭时持久化，
+然后暂停并排空当前运行。GUI 运行面板展示完整提案差异、风险原因、批准/拒绝及自动应用历史。
+显式通配策略 `{"scope":"workspace","auto_replan_mode":"allow_low_risk"}` 允许低风险提案
+在完全暂停后自动应用；权限、角色、数据边界或显式约束扩张始终要求批准。
+任务类型专属的默认自动化仍需配对收益证据，当前保持建议模式。
+
+```bash
+morrow workflow replan list <wrun_id>
+morrow workflow replan decide <rprop_id> --approve --expected-row-version 1
+morrow workflow replan decide <rprop_id> --reject --expected-row-version 1
+morrow workflow replan process <wrun_id>  # 恢复后消费已落盘的节点关闭信号
+```
+
+提案绑定精确的 parent Revision 与行版本；冲突不会静默重放，需生成新提案或手工编辑当前运行。
+CLI 批准后返回 child ID，可用既有 `workflow resume` 驱动；GUI 由同一 Core Supervisor 驱动。
+拒绝保留暂停状态，可显式恢复原运行。blocked / outcome-unknown 运行只保存提案，必须先恢复。
+节点的 `submit_node_result` 可附带有界 `replan`（目标节点、TaskContract、可选依赖节点）；
+通用 TextResult 节点可只提交此信号，随后正常结束自身工作，不等待全局重规划。
+信号不携带可执行图、权限授予或原始工具执行内容。
 
 源码检出中构建 GUI 资源（发布 wheel/sdist 的前置步骤，缺少资源时 `uv build` 会显式失败）：
 
@@ -315,4 +333,4 @@ Linux 原生运行仍在真实 runner 验证前保持 unsupported。每次完成
 checkpoint、fork、按 AgentRun 冻结的 CapabilityGrant 与 Full Access Manual 属于 Stage 4；Full Access Auto
 和 raw auto 仍不支持。可审查学习从 Stage 5 开始；Skills/MCP 与 Provider/Model 扩展已在 Stage 6 交付，
 静态串行 Multi-Agent Workflow 已由 Stage 7 提供；Stage 8 已提供 GUI、运行控制、Draft 编辑和
-建议式任务特化 GraphPlanner。全局自动 Replan、并发与后台任务仍属于后续阶段。
+建议式任务特化 GraphPlanner 和按风险分级审批的全局 future-only Replan；并发与后台任务仍属于后续阶段。

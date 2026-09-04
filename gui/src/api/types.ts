@@ -711,3 +711,28 @@ export interface StreamHintWire {
   type: 'hello' | 'cursor' | 'ping'
   latest_cursor: number
 }
+
+
+export interface ReplanViewWire {
+  proposal: {
+    proposal_id: string
+    patch: FutureGraphPatchWire
+    signal_ids: string[]
+    status: 'pending' | 'applied' | 'rejected' | 'conflict' | 'invalid'
+    risk_level: 'low' | 'elevated'
+    risk_reasons: string[]
+    disposition_reason: string
+    auto_applied: boolean
+    child_run_id: string | null
+    decided_by: string | null
+    created_at: string
+    decided_at: string | null
+    row_version: number
+    policy_id: string
+    policy_revision: number
+  }
+  before: WorkflowDefinitionSourceWire
+  after: WorkflowDefinitionSourceWire
+  diff: { added_node_ids: string[]; removed_node_ids: string[]; changed_node_ids: string[];
+    added_edges: string[]; removed_edges: string[]; required_outputs_changed: boolean; budget_changed: boolean }
+}

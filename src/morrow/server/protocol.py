@@ -146,3 +146,8 @@ class MetaWire(ProtocolModel):
     protocol_version: int
     workspace_id: str
     latest_cursor: int = Field(ge=0)
+
+
+class ReplanDecisionRequest(CommandRequest):
+    approved: bool
+    expected_row_version: int = Field(ge=1)

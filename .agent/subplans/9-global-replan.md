@@ -1,6 +1,6 @@
 # Subplan 9 — Global Future-Only Replan
 
-> Status: pending activation
+> Status: active (2026-09-05); base `a799982`, current worktree
 > Branch: `feat/stage8-global-replan`
 > Activation base: latest verified `main` with Subplan 8 integrated
 > Prerequisite: Subplan 8 verified

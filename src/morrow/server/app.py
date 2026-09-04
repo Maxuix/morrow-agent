@@ -38,6 +38,7 @@ from .protocol import (
     GraphPlanRequest,
     OrchestrationPolicyRequest,
     PatchCommandRequest,
+    ReplanDecisionRequest,
     SessionCreateRequest,
     TaskCreateRequest,
     TaskTransitionRequest,
@@ -533,6 +534,23 @@ def create_asgi_app(
             lambda body: commands.agent_definition_publish(definition_id, body),
         )
 
+    async def replan_list(request: Request) -> Response:
+        return await _query(lambda: commands.replan_list(request.path_params["run_id"]))
+
+    async def replan_process(request: Request) -> Response:
+        return await _command(
+            request,
+            WorkflowControlRequest,
+            lambda body: commands.replan_process(request.path_params["run_id"], body),
+        )
+
+    async def replan_decide(request: Request) -> Response:
+        return await _command(
+            request,
+            ReplanDecisionRequest,
+            lambda body: commands.replan_decide(request.path_params["proposal_id"], body),
+        )
+
     async def patch_validate(request: Request) -> Response:
         return await _command(
             request, PatchCommandRequest, lambda body: _PatchResult(commands.patch_validate(body))
@@ -752,6 +770,13 @@ def create_asgi_app(
                 publish_agent_definition,
                 methods=["POST"],
             ),
+            Route(f"{API_PREFIX}/workflow-runs/{{run_id}}/replans", replan_list, methods=["GET"]),
+            Route(
+                f"{API_PREFIX}/workflow-runs/{{run_id}}/replans/process",
+                replan_process,
+                methods=["POST"],
+            ),
+            Route(f"{API_PREFIX}/replans/{{proposal_id}}/decide", replan_decide, methods=["POST"]),
             Route(f"{API_PREFIX}/patches/validate", patch_validate, methods=["POST"]),
             Route(f"{API_PREFIX}/patches/save", patch_save, methods=["POST"]),
             Route(f"{API_PREFIX}/patches/apply", patch_apply, methods=["POST"]),

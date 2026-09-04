@@ -9,6 +9,7 @@ import { buildGraphLayout, isDirectRun, parseRevision } from './lib/graph'
 import { RUN_RELATION_LABELS, shortId } from './lib/labels'
 import { DirectNodeCard } from './DirectNodeCard'
 import { NodeDetail } from './NodeDetail'
+import { ReplanPanel } from './ReplanPanel'
 import { RunControls } from './RunControls'
 import { RunGraph } from './RunGraph'
 
@@ -252,6 +253,8 @@ export function WorkflowPanel({
             }
           />
         </header>
+
+        <ReplanPanel key={selectedRun.run.workflow_run_id} client={client} run={selectedRun.run} />
 
         {runView !== null && runView.inherited_artifacts.length > 0 && (
           <div className="rounded-[10px] border border-subtle bg-raised p-3 text-xs">

@@ -47,6 +47,7 @@ from morrow.core.workflows.contracts import (
     node_submission_artifact_id,
 )
 from morrow.core.workflows.definitions import AgentNode
+from morrow.core.workflows.replan import ReplanRequest, ReplanSignal
 from morrow.core.workflows.runs import WorkflowStatus
 from morrow.runtime.conversation import TurnTerminalRecord
 from morrow.runtime.tools import ToolErrorCode, ToolExecutionError
@@ -115,6 +116,13 @@ class WorkflowLeafHooks:
             raise ApplicationError(
                 ApplicationErrorCode.CONFLICT,
                 "paused: the Workflow pause fact is set; admission is closed",
+            )
+        if txn.workflows.list_replan_signals(
+            self.workspace_id, run.workflow_run_id, pending_only=True
+        ):
+            raise ApplicationError(
+                ApplicationErrorCode.CONFLICT,
+                "paused: unconsumed ReplanSignal closes node admission",
             )
         owner = txn.workflows.active_for_root(self.workspace_id, run.root_task_run_id)
         if owner is None or owner.workflow_run_id != run.workflow_run_id:
@@ -338,7 +346,9 @@ class WorkflowLeafHooks:
                 "required structured slots are missing: " + ",".join(missing),
             )
         self._require_in_scope_evidence(arguments.evidence_refs)
-        digest = submission_digest(parsed, arguments.summary, arguments.evidence_refs)
+        digest = submission_digest(
+            parsed, arguments.summary, arguments.evidence_refs, arguments.replan
+        )
         marker_id = node_submission_artifact_id(ctx.node_run_id)
         prior = self.artifacts.get(marker_id)
         if prior is not None and prior.state is ArtifactState.AVAILABLE:
@@ -362,7 +372,15 @@ class WorkflowLeafHooks:
                     output_slot=slot,
                 )
             self.artifacts.publish_bytes(
-                canonical_json_bytes({"digest": digest, "slots": sorted(parsed)}),
+                canonical_json_bytes(
+                    {
+                        "digest": digest,
+                        "slots": sorted(parsed),
+                        "replan": arguments.replan.model_dump(mode="json")
+                        if arguments.replan
+                        else None,
+                    }
+                ),
                 kind=ArtifactKind.TASK_SUMMARY,
                 session_id=ctx.leaf_session_id,
                 task_run_id=ctx.leaf_task_run_id,
@@ -681,6 +699,22 @@ class WorkflowLeafHooks:
             ),
             expected_row_version=task.row_version,
         )
+        marker = self.artifacts.get(node_submission_artifact_id(ctx.node_run_id))
+        if marker is not None and marker.state is ArtifactState.AVAILABLE:
+            recorded = json.loads(
+                self.artifacts.read(marker.artifact_id, max_bytes=marker.byte_size).content
+            )
+            if recorded.get("replan") is not None:
+                txn.workflows.put_replan_signal(
+                    ReplanSignal(
+                        signal_id="rsig_" + ctx.node_run_id.removeprefix("nrun_"),
+                        workspace_id=self.workspace_id,
+                        workflow_run_id=ctx.workflow_run_id,
+                        node_run_id=ctx.node_run_id,
+                        request=ReplanRequest.model_validate(recorded["replan"]),
+                        created_at=self.clock(),
+                    )
+                )
         if ctx.node.conversation_scope == "invoking_session" and target in {
             TaskRunStatus.CANCELLED,
             TaskRunStatus.FAILED,

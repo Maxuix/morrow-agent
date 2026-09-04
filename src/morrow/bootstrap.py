@@ -1270,6 +1270,8 @@ def build_session_application(
         orchestration_policies = OrchestrationPolicyService(
             ExtensionYamlStore(app.data_root.root), workspace_id=identity.workspace_id
         )
+        workflow_runtime.replan.policies = orchestration_policies
+        workflow_runtime.replan.active_model = model
         graph_planner = GraphPlannerService(
             workflow_drafts,
             orchestration_policies,

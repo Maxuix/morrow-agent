@@ -12,7 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from morrow.core.workflows.contracts import NodeOutputBinding
-from morrow.core.workflows.definitions import AgentNode, CompiledWorkflow
+from morrow.core.workflows.definitions import AgentNode, CompiledWorkflow, WorkflowDefinitionSource
 
 REPORT_KINDS = frozenset({"TestReport", "ReviewReport"})
 
@@ -86,7 +86,10 @@ def _cap_relaxed(old: int | float | None, new: int | float | None) -> bool:
     return new is None or new > old
 
 
-def diff_compiled(base: CompiledWorkflow, candidate: CompiledWorkflow) -> PatchDiffPreview:
+def diff_compiled(
+    base: CompiledWorkflow | WorkflowDefinitionSource,
+    candidate: CompiledWorkflow | WorkflowDefinitionSource,
+) -> PatchDiffPreview:
     base_nodes = {node.node_id: node for node in base.nodes}
     candidate_nodes = {node.node_id: node for node in candidate.nodes}
     base_edges = {_edge_label(edge) for edge in base.edges}
@@ -104,7 +107,14 @@ def diff_compiled(base: CompiledWorkflow, candidate: CompiledWorkflow) -> PatchD
         added_edges=tuple(sorted(candidate_edges - base_edges)),
         removed_edges=tuple(sorted(base_edges - candidate_edges)),
         required_outputs_changed=base.required_outputs != candidate.required_outputs,
-        budget_changed=base.budget != candidate.budget,
+        budget_changed=(
+            base.default_budget if isinstance(base, WorkflowDefinitionSource) else base.budget
+        )
+        != (
+            candidate.default_budget
+            if isinstance(candidate, WorkflowDefinitionSource)
+            else candidate.budget
+        ),
     )
 
 
@@ -114,6 +124,8 @@ def classify_patch_risk(base: CompiledWorkflow, candidate: CompiledWorkflow) -> 
     reasons: list[str] = []
     base_nodes = {node.node_id: node for node in base.nodes}
     candidate_nodes = {node.node_id: node for node in candidate.nodes}
+    if candidate_nodes.keys() - base_nodes.keys():
+        reasons.append("role_added")
     removed = base_nodes.keys() - candidate_nodes.keys()
     if removed:
         reasons.append("node_removed")
@@ -143,6 +155,30 @@ def classify_patch_risk(base: CompiledWorkflow, candidate: CompiledWorkflow) -> 
         new = candidate_nodes[node_id]
         if old == new:
             continue
+        if not set(old.task_contract.constraints) <= set(new.task_contract.constraints):
+            reasons.append("explicit_constraint_removed")
+        if old.task_contract.source_refs != new.task_contract.source_refs:
+            reasons.append("unclassified_change")
+        if old.task_contract.scope != new.task_contract.scope:
+            reasons.append("task_scope_changed")
+        known_fields = {
+            "agent_definition_ref",
+            "resolved_model_ref",
+            "conversation_scope",
+            "access_mode",
+            "resolved_tool_requirements",
+            "tool_requirements",
+            "output_contracts",
+            "input_bindings",
+            "max_agent_generation_requests",
+            "declared_node_max_agent_generation_requests",
+            "task_contract",
+        }
+        if any(
+            getattr(old, field) != getattr(new, field)
+            for field in AgentNode.model_fields.keys() - known_fields
+        ):
+            reasons.append("unclassified_change")
         if old.agent_definition_ref != new.agent_definition_ref:
             reasons.append("role_replaced")
         if old.resolved_model_ref != new.resolved_model_ref:
@@ -193,6 +229,24 @@ def classify_patch_risk(base: CompiledWorkflow, candidate: CompiledWorkflow) -> 
     ):
         reasons.append("cap_or_deadline_relaxed")
 
+    known_graph_fields = {
+        "nodes",
+        "edges",
+        "required_outputs",
+        "budget",
+        "entry_nodes",
+        "terminal_nodes",
+        "name",
+        "description",
+        "tags",
+    }
+    if any(
+        getattr(base, field) != getattr(candidate, field)
+        for field in CompiledWorkflow.model_fields.keys() - known_graph_fields
+    ):
+        reasons.append("unclassified_change")
+    if budget.max_concurrency != candidate_budget.max_concurrency:
+        reasons.append("unclassified_change")
     unique = tuple(dict.fromkeys(reasons))
     return PatchRiskPreview(
         level=RISK_ELEVATED if unique else RISK_LOW,

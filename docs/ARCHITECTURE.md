@@ -20,7 +20,7 @@ request/terminal observability 与复用同一 SessionOrchestrator/AgentLoop 的
 Stage 7 已完成版本化 AgentDefinition、静态 Workflow 编译、串行调度、Artifact 协作、管理 CLI 与
 恢复闭环；Stage 8 已交付 Pause/Drain、future-only patch/continuation 与 rerun 运行时内核、
 版本化 Core API、Web GUI 观察器，以及持久 Workflow Draft 编辑器和 Agent Inspector。任务特化
-GraphPlanner 已接入相同 Draft/Compiler/发布链；全局 Replan、管理 GUI、反馈评估、只读并行和
+GraphPlanner 与全局 Replan 已接入相同 Draft/Compiler/发布链；管理 GUI、反馈评估、只读并行和
 后台自动化尚未交付。本文架构门禁以
 离线证据为主；未获授权的 Live 证据不改变这些当前模块事实。
 
@@ -100,6 +100,23 @@ toggle、精确 revoke、foreground recovery 与查询没有第二套 SQLite/YAM
 Direct 仍默认 legacy-strict。现有 backup/doctor 增加 definition
 行完整性与精确路径的原始 desired-source inventory：损坏草稿可备份/恢复且只报局部 warning；发布引用/hash 损坏才报 error。
 
+Stage 8 Subplan 9 的 `core/workflows/replan.py` 定义有界 ReplanRequest、节点关闭证据
+ReplanSignal 和精确 ReplanProposal。v28 只新增 signal/proposal 表；节点的提交 marker 仍由
+ArtifactService 保存，`WorkflowLeafHooks.apply_terminal_in_txn` 在 leaf 关闭事务中提交信号。
+同一节点准入事务与底层 queued→running 写入重检未消费信号。Scheduler 仅在节点收口后交给
+`ReplanCoordinator` 请求 Pause/Drain；无 Active 的 paused 窗口才可自动或批准 handoff。
+Coordinator 是唯一自动提案者，沿用 PatchApplicationService 的 pure Compiler、detached
+Revision 和 OCC/CAS。提案消费与创建原子提交，决策与 child handoff 原子提交；API command receipt
+加入同一事务。已有 RunSupervisor 仍独占每个 child driver，Session-owned ConversationLog 不变。
+
+风险沿用并补齐 `patch_preview.py` 的 C8 数据比较：新增/替换角色、权限/模型数据边界、合同、
+报告依赖、Writer 顺序、显式约束删除、scope 变化及未知字段变化均升级。显式通配用户策略的
+`allow_low_risk` 只自动接受当前分类仍为 low 的提案；任务类型级自动化没有配对证据时仍关闭。
+CLI、Core API 与 GUI 共用 Coordinator 的精确 before/after、分类、策略版本和决策历史投影。
+GUI 以 Query 轮询补齐提案显示，不新增 ApplicationEvent 生命周期；自动应用复用已有 run 事件。
+Backup/Doctor 复用 `verify_workflow_rows` 检查信号消费、proposal 身份与 child lineage。
+恢复时在校验 frozen tool-schema digest 前重建内部机制工具，并按冻结 digest 保留升级前工具集。
+
 Stage 8 Subplan 8 在 `core/orchestration.py` 定义有界 TaskFeatures、TaskBrief、用户
 OrchestrationPolicy 和 PlannerMetadata。策略复用全局/工作空间 Extension YAML 的唯一写入、
 OCC 与备份机制；`application/workflows/orchestration_policy.py` 按 workspace→global、精确
@@ -121,7 +138,8 @@ Core API 的只读规划准备在 Core loop 上等待 Provider，但不占用串
 重新读取策略/Catalog，再将同步编译与 Draft 写入提交到 bus。`workflow plan`、GUI 和 API
 共享应用服务。`auto_run_mode=allow_promoted` 只是用户偏好；本 Subplan 没有产品推广证据
 writer，故所有生成结果都保持 `auto_run_eligible=false`，不妨碍手工冻结和执行。
-`auto_replan_mode` 在策略中保存，Subplan 9 才消费它。
+`auto_replan_mode` 由 Subplan 9 的 ReplanCoordinator 消费：按不可变根任务分类解析策略，
+显式用户通配策略可允许低风险自动应用，任务类型级自动化仍受配对收益证据门槛约束。
 
 ## 分层与依赖方向
 

@@ -306,6 +306,14 @@ class WorkflowManagementService:
         if self.runtime is None:
             raise RuntimeError("foreground execution requires a composed Workflow runtime")
         run = await self.runtime.scheduler.run(started.run.workflow_run_id)
+        while run.status.value == "superseded":
+            proposals = self.runtime.patches.journal.workflows.list_replan_proposals(
+                self.workspace_id, run.workflow_run_id
+            )
+            child = next((p.child_run_id for p in proposals if p.auto_applied), None)
+            if child is None:
+                break
+            run = await self.runtime.scheduler.run(child)
         return ForegroundWorkflowResult(started.run.workflow_revision_id, False, run)
 
     async def run_foreground(

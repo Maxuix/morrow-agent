@@ -1,11 +1,11 @@
 # TODO
 
-Active subplan: none. Subplan 8 completed and integrated into local `main`.
+Active subplan: `9-global-replan`.
 
-- [x] Implement bounded features, existing-authority Catalogs and Extension YAML orchestration policy.
-- [x] Implement task-specific planner, one no-tool classification, optional Scout and Compiler fallback.
-- [x] Connect Core API/CLI, GUI editor, durable explanation and policy settings.
-- [x] Finish full offline gate: 1653 passed, 2 native-sandbox skipped, 2 Live deselected; all other gates passed.
-- [x] Record acceptance, commit verified work, fast-forward into main and retire topic branch.
+- [x] Implement durable closure signals, admission barrier and coordinator proposal lifecycle.
+- [x] Complete deterministic C8 classification and policy-gated application through existing Patch service.
+- [x] Connect shared Core API/CLI and GUI proposal review, decisions and audit history.
+- [x] Run focused/full offline, static and GUI gates; record acceptance evidence.
+- [>] Commit verified work, fast-forward local main, verify ancestry and retire topic branch.
 
-Subplan 9 awaits explicit activation. Remote push remains unauthorized by the active master plan.
+Subplan 10 remains inactive. Remote push and Live tests remain unauthorized.

@@ -5178,3 +5178,38 @@ Live test, Replan implementation or remote push authorized.
   Confirmed zero topic commits absent from main, then deleted `feat/stage8-graph-planner`.
 - Closed the active execution state. Subplan 9 remains unactivated. Remote push remains
   unauthorized by the master plan; local main is ahead of origin and no push was attempted.
+
+## 2026-09-05 — Subplan 9 activation
+
+Explicit user authorization activates Global Future-Only Replan on
+`feat/stage8-global-replan` from clean main `a799982` in the existing worktree.
+No new dependencies, Live tests, remote push or later subplans are authorized.
+
+## 2026-09-05 — Subplan 9 implementation and focused validation
+
+Delivered bounded closure signals and v28 signal/proposal persistence, admission recheck,
+Coordinator-only proposals and policy-gated PatchApplicationService handoff. Decisions and
+handoff share a transaction; Core receipts share that boundary. API/CLI/GUI expose exact diff,
+risk, approval/rejection and automatic history. The existing Supervisor owns child drivers.
+Frozen mechanism tools are reconstructed before recovery digest checking, including legacy wires.
+
+Focused runtime/API matrix: 80 passed (14.62 seconds). GUI: 88 tests, typecheck and build passed.
+Full offline attempts: 1651 passed / 7 failed, then 1676 passed / 1 failed, both with 2 native
+sandbox skips and 2 Live deselected. Failures were migration expected-name lists and a hard-coded
+future schema 28, now current; expectations were updated, future refusal uses supported+1.
+Browser fixture verified pause → signal proposal, full diff, approval child completion,
+rejection retains Pause and automatic history; no external Provider/MCP request occurred.
+
+## 2026-09-05 — Subplan 9 final acceptance
+
+- Final application matrix: 110 passed in 20.61 seconds. Added deterministic cancellation priority
+  and task-specific policy precedence coverage; no task-type promotion is enabled without evidence.
+- Final full offline gate: 1679 passed, 2 existing native Seatbelt skips, 2 Live deselected in
+  183.56 seconds, exit 0. Output `/tmp/morrow-subplan9-complete-gate.log`.
+- Ruff format/check (616 files), compileall, both CLI help commands, GUI typecheck/88 tests/build
+  and diff checks passed. Offline sdist/wheel built successfully using existing cached requirements;
+  wheel contains 18 GUI assets. No new dependency was added.
+- Browser verified stale approval disablement and durable reopening in addition to approve,
+  reject and automatic history; warning/error logs empty. Fixture and tab closed.
+- Acceptance: `docs/acceptance/stage-8-subplan-9-global-replan.md`. Ready for local integration;
+  no push, Live tests, new worktree or Subplan 10 activation.

@@ -243,7 +243,7 @@ class AgentFactory:
         )
         return replace(runtime, spec=spec)
 
-    def rehydrate(self, snapshot, *, agent_run_id=None):
+    def rehydrate(self, snapshot, *, agent_run_id=None, mechanism_transform=None):
         self._scope(fresh=False)
         version = self.publication.require_unrevoked(
             self.publication.journal.agent_definitions.get_version(
@@ -260,10 +260,16 @@ class AgentFactory:
             or snapshot.conversation_session_id != self.session.session_id
         ):
             raise AgentDefinitionAdmissionError(DefinitionFailure.EVIDENCE)
+        transform = self._tools(version)
+
+        def tools(executor):
+            executor = transform(executor)
+            return mechanism_transform(executor) if mechanism_transform else executor
+
         # Ordinary disable must not block recovery of an admitted run.
         return self.preparation.rehydrate(
             snapshot,
             agent_run_id=agent_run_id,
             prompt_assembler=self._assembler(version),
-            tool_transform=self._tools(version),
+            tool_transform=tools,
         )

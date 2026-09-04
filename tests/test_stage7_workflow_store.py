@@ -713,6 +713,7 @@ def test_previous_current_migration_defaults_and_future_refusal(tmp_path):
         "workflow_node_request_cap",
         "workflow_pause_drain_lineage",
         "workflow_editor_drafts",
+        "workflow_global_replan",
     )
     with store.open(StoreOpenMode.READ_WRITE) as handle:
         assert (
@@ -728,8 +729,13 @@ def test_previous_current_migration_defaults_and_future_refusal(tmp_path):
             journal.get_artifact("ws_one", "art_old").text_safety_profile
             == TextSafetyProfile.LEGACY_STRICT
         )
-        handle.run_write(lambda ex: ex.execute("PRAGMA user_version=28"))
-        handle.run_write(lambda ex: ex.execute("UPDATE store_identity SET schema_version=28"))
+        from morrow.core.store import SUPPORTED_SCHEMA_VERSION
+
+        future = SUPPORTED_SCHEMA_VERSION + 1
+        handle.run_write(lambda ex: ex.execute(f"PRAGMA user_version={future}"))
+        handle.run_write(
+            lambda ex: ex.execute("UPDATE store_identity SET schema_version=?", (future,))
+        )
     assert store.classify().health is StoreHealth.FUTURE_SCHEMA
 
 

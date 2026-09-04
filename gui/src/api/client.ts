@@ -10,7 +10,7 @@
  * Editor mutations use the same authenticated JSON API and Core command bus.
  */
 import type {
-  GraphPlanningRequestWire,
+  ReplanViewWire,  GraphPlanningRequestWire,
   TaskGraphDraftWire,
   OrchestrationPolicyWire,
   OrchestrationPoliciesWire,
@@ -404,6 +404,18 @@ export class ApiClient {
       { command_id: commandId, full },
     )
     return envelope.result
+  }
+
+  async listReplans(runId: string): Promise<ReplanViewWire[]> {
+    const result = await this.get<{ proposals: ReplanViewWire[] }>(`/v1/workflow-runs/${encodeURIComponent(runId)}/replans`)
+    return result.proposals
+  }
+
+  async decideReplan(proposalId: string, approved: boolean, expectedRowVersion: number, commandId: string): Promise<ReplanViewWire> {
+    const result = await this.post<{ result: ReplanViewWire }>(`/v1/replans/${encodeURIComponent(proposalId)}/decide`, {
+      approved, expected_row_version: expectedRowVersion, command_id: commandId,
+    })
+    return result.result
   }
 
   async validatePatch(patch: FutureGraphPatchWire): Promise<PatchValidationWire> {

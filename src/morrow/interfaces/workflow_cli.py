@@ -52,6 +52,10 @@ agent_app = typer.Typer(help="Agent definition desired state and immutable publi
 workflow_app = typer.Typer(help="Static Workflow definition, execution and recovery management.")
 node_app = typer.Typer(help="Workflow NodeRun inspection.")
 patch_app = typer.Typer(help="Validate, save, and apply exact future-only graph patches.")
+replan_app = typer.Typer(
+    help="Review, approve or reject global replan proposals and audit history."
+)
+workflow_app.add_typer(replan_app, name="replan")
 policy_app = typer.Typer(help="Explicit global/workspace orchestration policy.")
 workflow_app.add_typer(node_app, name="node")
 workflow_app.add_typer(patch_app, name="patch")
@@ -1205,3 +1209,65 @@ def node_show(
             _dump(value)
     except Exception as exc:
         _fail(exc)
+
+
+@replan_app.command("list")
+def workflow_replan_list(
+    run_id: str,
+    workspace_id: str | None = typer.Option(None, "--workspace-id"),
+    directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+):
+    """Show exact before/after diff, risk, decisions and auto-applied history."""
+    products = None
+    try:
+        products = _session_management(state_root, workspace_id, directory, None)
+        _dump(products.workflow_runtime.replan.list(run_id))
+    except Exception as exc:
+        _fail(exc)
+    finally:
+        if products is not None:
+            products.persistence.store_session.close()
+
+
+@replan_app.command("decide")
+def workflow_replan_decide(
+    proposal_id: str,
+    approve: bool = typer.Option(..., "--approve/--reject"),
+    expected_row_version: int = typer.Option(..., "--expected-row-version", min=1),
+    workspace_id: str | None = typer.Option(None, "--workspace-id"),
+    directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+):
+    """Decide the displayed exact proposal; conflicts require a new proposal."""
+    products = None
+    try:
+        products = _session_management(state_root, workspace_id, directory, None)
+        c = products.workflow_runtime.replan
+        result = c.decide(proposal_id, approved=approve, expected_row_version=expected_row_version)
+        _dump(c.view(result))
+    except Exception as exc:
+        _fail(exc)
+    finally:
+        if products is not None:
+            products.persistence.store_session.close()
+
+
+@replan_app.command("process")
+def workflow_replan_process(
+    run_id: str,
+    workspace_id: str | None = typer.Option(None, "--workspace-id"),
+    directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+):
+    """Consume durable settled signals after restart; obey current policy and Pause/Drain."""
+    products = None
+    try:
+        products = _session_management(state_root, workspace_id, directory, None)
+        products.workflow_runtime.replan.process_signals(run_id)
+        _dump(products.workflow_runtime.replan.list(run_id))
+    except Exception as exc:
+        _fail(exc)
+    finally:
+        if products is not None:
+            products.persistence.store_session.close()

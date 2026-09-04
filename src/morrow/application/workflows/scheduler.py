@@ -14,6 +14,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime
 
 from morrow.application.agent_definitions.factory import AgentFactory
+from morrow.application.agent_runs.preparation import tool_schema_digest
 from morrow.application.recovery import RecoveryService
 from morrow.application.turns import SessionPersistence
 from morrow.application.workflows.finalizer import WorkflowOutcomeFinalizer
@@ -144,6 +145,7 @@ class WorkflowScheduler:
         self.faults = faults
         self.mutation = mutation
         self.change_capture = change_capture
+        self.replan = None
         self.outputs = EffectiveOutputResolver(journal, workspace_id=workspace_id)
         self.lifecycle = WorkflowTaskLifecycle(journal, workspace_id=workspace_id)
         self.recovery = RecoveryService(journal, workspace_id=workspace_id, id_source=id_source)
@@ -183,6 +185,8 @@ class WorkflowScheduler:
             item for item in stable_execution_order(revision) if item in execution_ids
         )
         for node_id in execution_order:
+            if self.replan is not None:
+                self.replan.process_signals(workflow_run_id)
             run = self._require_run(workflow_run_id)
             # BLOCKED admits nothing until recovery resolves it, PAUSED waits for
             # the user's resume, and DRAINING settles Active nodes without ever
@@ -274,7 +278,9 @@ class WorkflowScheduler:
             except Exception:
                 self.finalizer.finalize_failure(workflow_run_id, reason="node_failed")
                 break
-        run = self._finalize_when_all_completed(workflow_run_id)
+        if self.replan is not None:
+            self.replan.process_signals(workflow_run_id)
+        self._finalize_when_all_completed(workflow_run_id)
         return self._settle_drain(workflow_run_id)
 
     def _require_settled(self, run: WorkflowRun, node: NodeRun) -> None:
@@ -476,8 +482,13 @@ class WorkflowScheduler:
                     # the leaf for lack of its prompt owner.
                     persistence.attach(session)
                     agent_run = self.journal.get_agent_run(self.workspace_id, node.agent_run_id)
-                    prepared = factory.rehydrate(agent_run.snapshot, agent_run_id=node.agent_run_id)
-                    prepared = self._compose_leaf_runtime(prepared, hooks)
+                    prepared = factory.rehydrate(
+                        agent_run.snapshot,
+                        agent_run_id=node.agent_run_id,
+                        mechanism_transform=lambda executor, digest=agent_run.snapshot.tool_schema_digest: (
+                            self._rehydrate_leaf_executor(executor, hooks, digest)
+                        ),
+                    )
                     persistence.restore_into(session)
                     if self._committed_final_assistant(leaf_session_id):
                         # The final Assistant message is durable; replay only the
@@ -589,6 +600,13 @@ class WorkflowScheduler:
             # A committed leaf stays completed even when a cancellation arrives
             # afterwards; the cancel still stops every not-yet-started node.
             self.transitions.complete_node(node.node_run_id)
+            if self.journal.workflows.list_replan_signals(
+                self.workspace_id, workflow_run_id, pending_only=True
+            ):
+                if user_cancel:
+                    self.finalizer.finalize_cancel(workflow_run_id, reason="user_cancelled")
+                    return "terminal"
+                return "continue"
             nodes = self.journal.workflows.list_nodes(self.workspace_id, workflow_run_id)
             if all(item.status is WorkflowStatus.COMPLETED for item in nodes):
                 # Success finalization waits for every declared node, not only
@@ -749,13 +767,29 @@ class WorkflowScheduler:
     def _compose_leaf_runtime(self, prepared, hooks: WorkflowLeafHooks):
         """Inject mechanism tools and freeze Coder bash to the native sandbox."""
 
-        executor = prepared.tool_executor
+        return replace(
+            prepared, tool_executor=self._compose_leaf_executor(prepared.tool_executor, hooks)
+        )
+
+    def _rehydrate_leaf_executor(self, executor, hooks, digest):
+        current = self._compose_leaf_executor(executor, hooks)
+        if tool_schema_digest(current.definitions if current else ()) == digest:
+            return current
+        # Preserve the exact pre-upgrade mechanism envelope. Preparation still
+        # verifies the frozen digest; this is not a schema-drift bypass.
+        return self._compose_leaf_executor(executor, hooks, allow_replan=False)
+
+    def _compose_leaf_executor(self, executor, hooks, *, allow_replan=True):
         if executor is None:
-            return prepared
+            return None
         extra = []
         node = hooks.context.node
-        if any(contract.kind in SUBMISSION_OUTPUT_KINDS for contract in node.output_contracts):
-            extra.append(make_submit_node_result_tool(hooks, node.output_contracts))
+        if allow_replan or any(c.kind in SUBMISSION_OUTPUT_KINDS for c in node.output_contracts):
+            extra.append(
+                make_submit_node_result_tool(
+                    hooks, node.output_contracts, allow_replan=allow_replan
+                )
+            )
         isolation = executor.expected_process_isolation
         patch_required = any(
             contract.kind == "ImplementationPatch" and contract.required_for_node_completion
@@ -770,21 +804,18 @@ class WorkflowScheduler:
         if patch_required and has_bash:
             isolation = ProcessIsolation.NATIVE_SANDBOX
         if not extra and isolation is executor.expected_process_isolation:
-            return prepared
+            return executor
         registry = ToolRegistry()
         for tool in executor.tool_set.tools.values():
             registry.register(tool)
         for tool in extra:
             registry.register(tool)
-        return replace(
-            prepared,
-            tool_executor=ToolExecutor(
-                registry.snapshot(),
-                executor.run_policy,
-                approval_port=executor.approval_port,
-                capability_policy=executor.capability_policy,
-                expected_process_isolation=isolation,
-            ),
+        return ToolExecutor(
+            registry.snapshot(),
+            executor.run_policy,
+            approval_port=executor.approval_port,
+            capability_policy=executor.capability_policy,
+            expected_process_isolation=isolation,
         )
 
     def _contract_text(self, run: WorkflowRun, node_def: AgentNode) -> str:

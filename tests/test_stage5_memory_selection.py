@@ -205,6 +205,7 @@ def test_v11_store_upgrades_to_v13_without_rewriting_v11(tmp_path):
         "workflow_node_request_cap",
         "workflow_pause_drain_lineage",
         "workflow_editor_drafts",
+        "workflow_global_replan",
     )
     with upgraded.open(StoreOpenMode.READ_WRITE) as session:
         assert session.schema_version == SUPPORTED_SCHEMA_VERSION

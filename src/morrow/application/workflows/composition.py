@@ -13,6 +13,7 @@ from datetime import datetime
 from morrow.application.workflows.finalizer import WorkflowOutcomeFinalizer
 from morrow.application.workflows.patching import PatchApplicationService
 from morrow.application.workflows.queries import WorkflowQueryService
+from morrow.application.workflows.replan import ReplanCoordinator
 from morrow.application.workflows.scheduler import WorkflowScheduler
 from morrow.application.workflows.start import WorkflowStartService
 from morrow.application.workflows.transitions import WorkflowTransitionService
@@ -27,6 +28,7 @@ class WorkflowRuntime:
     finalizer: WorkflowOutcomeFinalizer
     queries: WorkflowQueryService
     patches: PatchApplicationService
+    replan: ReplanCoordinator
 
 
 def build_workflow_runtime(
@@ -80,18 +82,22 @@ def build_workflow_runtime(
         mutation=mutation,
         change_capture=change_capture,
     )
+    patches = PatchApplicationService(
+        journal,
+        workspace_id=workspace_id,
+        catalog=agent_publication.catalog,
+        id_source=id_source,
+        finalizer=finalizer,
+        clock=clock,
+    )
+    replan = ReplanCoordinator(patches, transitions)
+    scheduler.replan = replan
     return WorkflowRuntime(
         start=start,
         scheduler=scheduler,
         transitions=transitions,
         finalizer=finalizer,
         queries=WorkflowQueryService(journal, workspace_id=workspace_id),
-        patches=PatchApplicationService(
-            journal,
-            workspace_id=workspace_id,
-            catalog=agent_publication.catalog,
-            id_source=id_source,
-            finalizer=finalizer,
-            clock=clock,
-        ),
+        patches=patches,
+        replan=replan,
     )

@@ -12,6 +12,7 @@ from morrow.core.workflows.definitions import (
     WorkflowRevisionRevocation,
 )
 from morrow.core.workflows.drafts import WorkflowDraft, WorkflowDraftStatus
+from morrow.core.workflows.replan import ReplanProposal, ReplanSignal
 from morrow.core.workflows.runs import (
     NodeRun,
     WorkflowArtifactImport,
@@ -416,6 +417,67 @@ def verify_workflow_rows(executor):
                         outcome.task_run_id,
                     ):
                         raise ValueError("Outcome Workflow scope mismatch")
+        if tuple(
+            executor.execute("SELECT name FROM sqlite_master WHERE name='workflow_replan_signals'")
+        ):
+            proposals = {}
+            for pid, ws, rid, version, body in executor.execute(
+                "SELECT * FROM workflow_replan_proposals"
+            ):
+                proposal = ReplanProposal.model_validate_json(body)
+                if (
+                    proposal.proposal_id,
+                    proposal.workspace_id,
+                    proposal.patch.parent_run_id,
+                    proposal.row_version,
+                ) != (pid, ws, rid, version):
+                    raise ValueError("Replan proposal identity mismatch")
+                if (
+                    runs[rid].workspace_id != ws
+                    or revisions[proposal.patch.base_workflow_revision_id].workspace_id != ws
+                ):
+                    raise ValueError("Replan proposal scope mismatch")
+                if proposal.child_run_id:
+                    child = runs[proposal.child_run_id]
+                    if (
+                        child.parent_run_id != rid
+                        or child.workspace_id != ws
+                        or child.run_relation != "continuation"
+                    ):
+                        raise ValueError("Replan child lineage mismatch")
+                proposals[pid] = proposal
+            consumed_signals = {}
+            for sid, ws, rid, nid, consumed, body in executor.execute(
+                "SELECT * FROM workflow_replan_signals"
+            ):
+                signal = ReplanSignal.model_validate_json(body)
+                if (
+                    signal.signal_id,
+                    signal.workspace_id,
+                    signal.workflow_run_id,
+                    signal.node_run_id,
+                ) != (sid, ws, rid, nid):
+                    raise ValueError("Replan signal identity mismatch")
+                if (
+                    nodes[nid].workspace_id != ws
+                    or nodes[nid].workflow_run_id != rid
+                    or nodes[nid].started_at is None
+                ):
+                    raise ValueError("Replan signal node ownership mismatch")
+                if consumed:
+                    proposal = proposals[consumed]
+                    if (
+                        proposal.workspace_id != ws
+                        or proposal.patch.parent_run_id != rid
+                        or sid not in proposal.signal_ids
+                    ):
+                        raise ValueError("Replan signal consumption mismatch")
+                    consumed_signals[sid] = consumed
+            for proposal in proposals.values():
+                if any(
+                    consumed_signals.get(sid) != proposal.proposal_id for sid in proposal.signal_ids
+                ):
+                    raise ValueError("Replan proposal signal evidence is missing")
         return True, ()
     except (ValueError, TypeError, KeyError, IndexError, AttributeError):
         return False, ("workflow_integrity",)

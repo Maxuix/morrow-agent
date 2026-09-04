@@ -82,6 +82,62 @@ class ServerCommands:
         self.context = context
         self.journal = context.journal
         self.workspace_id = context.workspace_id
+        if getattr(context.runtime, "replan", None) is not None:
+            context.runtime.replan.on_applied = self._replan_applied
+
+    def _replan_applied(self, proposal):
+        child = self.journal.workflows.get_run(self.workspace_id, proposal.child_run_id)
+        self.context.emitter.emit(
+            WORKFLOW_RUN_STATUS_EVENT,
+            "workflow_run",
+            proposal.patch.parent_run_id,
+            {"status": "superseded", "superseded_reason": "continued_by_patch"},
+        )
+        self._emit_run_created(child, relation="continuation")
+        if not child.status.terminal:
+            self.context.supervisor.ensure_driver(
+                child.workflow_run_id,
+                lambda: self.context.runtime.scheduler.run(
+                    child.workflow_run_id, cancelled_is_user=False
+                ),
+            )
+
+    def replan_list(self, run_id):
+        return {"proposals": list(self.context.runtime.replan.list(run_id))}
+
+    def replan_decide(self, proposal_id, request):
+        c = self.context.runtime.replan
+
+        def work(_):
+            result, receipt = self._idempotent(
+                "replan_decide",
+                request.command_id,
+                {
+                    "proposal_id": proposal_id,
+                    "approved": request.approved,
+                    "expected_row_version": request.expected_row_version,
+                },
+                lambda: (
+                    c.decide(
+                        proposal_id,
+                        approved=request.approved,
+                        expected_row_version=request.expected_row_version,
+                    ),
+                    proposal_id,
+                ),
+                lambda _: self.journal.workflows.get_replan_proposal(
+                    self.workspace_id, proposal_id
+                ),
+                result_kind="replan_proposal",
+            )
+            return result, receipt
+
+        result, receipt = self.journal.transact(work)
+        return CommandOutcome(c.view(result), receipt)
+
+    def replan_process(self, run_id, request):
+        self.context.runtime.replan.process_signals(run_id)
+        return CommandOutcome(self.replan_list(run_id), None)
 
     # Internal helpers ---------------------------------------------------------
 
