@@ -11,6 +11,14 @@
  */
 import type {
   AgentDefinitionSourceWire,
+  ApprovalDecisionWire,
+  ApprovalResolveResultWire,
+  FutureGraphPatchWire,
+  PatchApplyResultWire,
+  PatchValidationWire,
+  PreRunSummaryWire,
+  RerunResultWire,
+  RunControlResultWire,
   AgentDefinitionVersionWire,
   AgentDefinitionViewWire,
   AgentRunEnvelopeWire,
@@ -339,6 +347,95 @@ export class ApiClient {
       tools: tools.tools,
       contracts: contracts.contracts,
     }
+  }
+
+  // Run control ------------------------------------------------------------
+  // The same commands the CLI invokes; `commandId` makes retries idempotent.
+
+  async pauseRun(runId: string, commandId: string): Promise<RunControlResultWire> {
+    const envelope = await this.post<{ result: RunControlResultWire }>(
+      `/v1/workflow-runs/${encodeURIComponent(runId)}/pause`,
+      { command_id: commandId },
+    )
+    return envelope.result
+  }
+
+  async resumeRun(runId: string, commandId: string): Promise<RunControlResultWire> {
+    const envelope = await this.post<{ result: RunControlResultWire }>(
+      `/v1/workflow-runs/${encodeURIComponent(runId)}/resume`,
+      { command_id: commandId, drive: true },
+    )
+    return envelope.result
+  }
+
+  async cancelRun(runId: string, commandId: string): Promise<RunControlResultWire> {
+    const envelope = await this.post<{ result: RunControlResultWire }>(
+      `/v1/workflow-runs/${encodeURIComponent(runId)}/cancel`,
+      { command_id: commandId },
+    )
+    return envelope.result
+  }
+
+  async rerunRun(runId: string, full: boolean, commandId: string): Promise<RerunResultWire> {
+    const envelope = await this.post<{ result: RerunResultWire }>(
+      `/v1/workflow-runs/${encodeURIComponent(runId)}/rerun`,
+      { command_id: commandId, full },
+    )
+    return envelope.result
+  }
+
+  async validatePatch(patch: FutureGraphPatchWire): Promise<PatchValidationWire> {
+    const envelope = await this.post<{ result: PatchValidationWire }>('/v1/patches/validate', {
+      patch,
+    })
+    return envelope.result
+  }
+
+  async applyPatch(patch: FutureGraphPatchWire, commandId: string): Promise<PatchApplyResultWire> {
+    const envelope = await this.post<{ result: PatchApplyResultWire }>('/v1/patches/apply', {
+      command_id: commandId,
+      patch,
+    })
+    return envelope.result
+  }
+
+  async resolveApproval(
+    approvalId: string,
+    decision: ApprovalDecisionWire,
+    commandId: string,
+  ): Promise<ApprovalResolveResultWire> {
+    const envelope = await this.post<{ result: ApprovalResolveResultWire }>(
+      `/v1/approvals/${encodeURIComponent(approvalId)}/resolve`,
+      {
+        command_id: commandId,
+        approved: decision !== 'deny',
+        decision,
+      },
+    )
+    return envelope.result
+  }
+
+  async runPreview(revisionId: string): Promise<PreRunSummaryWire> {
+    const envelope = await this.get<{ pre_run_summary: PreRunSummaryWire }>(
+      `/v1/catalog/workflow-revisions/${encodeURIComponent(revisionId)}/run-preview`,
+    )
+    return envelope.pre_run_summary
+  }
+
+  async acceptTask(taskRunId: string, expectedRowVersion: number, commandId: string): Promise<TaskRunWire> {
+    const envelope = await this.post<{ result: { task: TaskRunWire } }>(
+      `/v1/tasks/${encodeURIComponent(taskRunId)}/accept`,
+      { command_id: commandId, expected_row_version: expectedRowVersion },
+    )
+    return envelope.result.task
+  }
+
+  async resumeTask(taskRunId: string, expectedRowVersion: number, commandId: string): Promise<TaskRunWire> {
+    const envelope = await this.post<{ result: { task: TaskRunWire } }>(
+      `/v1/tasks/${encodeURIComponent(taskRunId)}/resume`,
+      { command_id: commandId, expected_row_version: expectedRowVersion },
+    )
+    return envelope.result.task
   }
 
   private async get<T>(path: string): Promise<T> {

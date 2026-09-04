@@ -34,6 +34,7 @@ function nodeView(nodeId: string, status: WorkflowStatus, attempt = 1): NodeView
     output_bindings: [],
     artifacts: [],
     approval_pending: false,
+    agent_generation_request_count: 0,
   }
 }
 

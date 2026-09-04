@@ -339,6 +339,13 @@ export class SyncStore {
         await this.refreshApprovals()
         break
       }
+      case 'approval.resolved': {
+        // The durable decision is the authority; drop the pending entry and
+        // re-pull so replay/duplicate events cannot resurrect it.
+        this.state.pendingApprovals.delete(event.aggregate_id)
+        await this.refreshApprovals()
+        break
+      }
       case 'approval.requested': {
         // The event is only a pull hint ({effect, reason_codes,
         // preview_line_count}); the approvals query owns the bounded preview.

@@ -140,6 +140,7 @@ function makeNodeView(overrides: Partial<NodeViewWire['node']> = {}): NodeViewWi
     output_bindings: [],
     artifacts: [],
     approval_pending: false,
+    agent_generation_request_count: 0,
   }
 }
 
@@ -156,6 +157,16 @@ function makeRunView(run: WorkflowRunWire, nodes: NodeViewWire[] = []): RunViewW
     usage_availability: 'unavailable',
     terminal_outcome: null,
     actionable_status: null,
+    pre_run_summary: {
+      node_count: 0,
+      models: [],
+      providers: [],
+      max_agent_generation_requests: null,
+      default_node_max_agent_generation_requests: null,
+      admission_timeout_seconds: null,
+      max_concurrency: 1,
+      writer_node_ids: [],
+    },
   }
 }
 
@@ -195,6 +206,15 @@ function makeApproval(id = 'ap_1'): ApprovalWire {
     session_id: 'ses_1',
     task_run_id: 'task_1',
     agent_run_id: 'arun_1',
+    workflow_run_id: null,
+    node_run_id: null,
+    node_id: null,
+    agent_id: null,
+    effect_class: 'reconcileable_file_write',
+    risk_level: 'medium',
+    session_scope_allowed: true,
+    affected_objects: [],
+    granted_scope: null,
     requested_scope: 'workspace-write',
     preview: ['$ pnpm test'],
     resolution: 'pending',

@@ -140,6 +140,19 @@ export interface NodeViewWire {
   output_bindings: ArtifactBindingWire[]
   artifacts: ArtifactWire[]
   approval_pending: boolean
+  agent_generation_request_count: number
+}
+
+/** `pre_run_summary_wire` — §14.1 cost facts; `null` limits mean "no cap". */
+export interface PreRunSummaryWire {
+  node_count: number
+  models: string[]
+  providers: string[]
+  max_agent_generation_requests: number | null
+  default_node_max_agent_generation_requests: number | null
+  admission_timeout_seconds: number | null
+  max_concurrency: number
+  writer_node_ids: string[]
 }
 
 /** `import_wire` */
@@ -196,6 +209,7 @@ export interface RunViewWire {
   usage_availability: string
   terminal_outcome: TaskOutcomeWire | null
   actionable_status: string | null
+  pre_run_summary: PreRunSummaryWire
 }
 
 /** `approval_wire` — bounded previews only, never full tool arguments. */
@@ -206,7 +220,16 @@ export interface ApprovalWire {
   session_id: string
   task_run_id: string
   agent_run_id: string
+  workflow_run_id: string | null
+  node_run_id: string | null
+  node_id: string | null
+  agent_id: string | null
+  effect_class: string
+  risk_level: 'low' | 'medium' | 'high'
+  session_scope_allowed: boolean
+  affected_objects: string[]
   requested_scope: string
+  granted_scope: string | null
   preview: string[]
   resolution: ApprovalResolution
   created_at: string
@@ -214,6 +237,9 @@ export interface ApprovalWire {
   resolved_at: string | null
   row_version: number
 }
+
+export type ApprovalDecisionWire = 'allow_once' | 'deny' | 'allow_session'
+
 
 /** `model_usage` wire — absent values are explicit, never fabricated zeros. */
 export interface ModelUsageWire {
@@ -462,6 +488,79 @@ export interface EventWire {
   aggregate_id: string
   payload: Record<string, unknown>
   created_at: string
+}
+
+// Run-control command payloads ------------------------------------------------
+
+/** `FutureGraphPatch` on the wire. */
+export interface FutureGraphPatchWire {
+  workflow_patch_id: string
+  workspace_id: string
+  parent_run_id: string
+  base_workflow_revision_id: string
+  expected_parent_row_version: number
+  source: WorkflowDefinitionSourceWire
+  requested_by: string
+  request_kind?: 'user_exact' | 'approved_proposal'
+}
+
+/** `_patch_diff_wire` */
+export interface PatchDiffWire {
+  added_node_ids: string[]
+  removed_node_ids: string[]
+  changed_node_ids: string[]
+  added_edges: string[]
+  removed_edges: string[]
+  required_outputs_changed: boolean
+  budget_changed: boolean
+}
+
+/** `_patch_risk_wire` — `elevated` means a C8 dimension fired. */
+export interface PatchRiskWire {
+  level: 'low' | 'elevated'
+  reasons: string[]
+}
+
+/** `ServerCommands.patch_validate` result */
+export interface PatchValidationWire {
+  valid: boolean
+  diagnostics: WorkflowDraftDiagnosticWire[]
+  past_node_ids: string[]
+  execution_node_ids: string[]
+  diff: PatchDiffWire | null
+  risk: PatchRiskWire | null
+}
+
+/** run-control command result: `{run, driving?}` */
+export interface RunControlResultWire {
+  run: WorkflowRunWire
+  driving?: boolean
+}
+
+/** `ServerCommands.workflow_rerun` result */
+export interface RerunResultWire {
+  parent: WorkflowRunWire
+  child: WorkflowRunWire
+  full: boolean
+  inherited_node_ids: string[]
+  execution_node_ids: string[]
+  driving: boolean
+}
+
+/** `ServerCommands.patch_apply` result */
+export interface PatchApplyResultWire {
+  workflow_patch_id: string
+  workflow_revision_id: string
+  parent_run: WorkflowRunWire
+  child_run: WorkflowRunWire | null
+  driving: boolean
+}
+
+/** `ServerCommands.approval_resolve` result */
+export interface ApprovalResolveResultWire {
+  approval: ApprovalWire
+  delivery: 'live' | 'durable' | 'replay'
+  executed: boolean
 }
 
 /** `EventsPageWire` */
