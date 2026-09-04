@@ -1,6 +1,6 @@
 # Subplan 5 — Generic Workflow Foundation
 
-> Status: verified 2026-09-04; fast-forward integration pending
+> Status: completed 2026-09-04; fast-forward integrated into local `main`
 > Branch: `refactor/general-workflow-runtime`
 > Activation base: verified local `main` at `c4fd731`
 > Prerequisite: Stage 8 Subplans 1–4 verified

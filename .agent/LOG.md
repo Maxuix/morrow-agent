@@ -5018,3 +5018,11 @@
   GUI build/bundle budget and `git diff --check` passed. Remote push remains unauthorized.
 - Implementation checkpoint: `c4b1c4e`. Sanitized acceptance:
   `docs/acceptance/stage-8-subplan-5-generic-workflow-foundation.md`.
+
+## 2026-09-04 — Subplan 5 integrated
+
+- Fast-forward merged `c4b1c4e` and acceptance checkpoint `95e8699` into local `main` after all
+  required gates passed. The topic branch contains no commit absent from `main` and is ready for
+  deletion after this closeout commit.
+- Subplan 6 (Workflow Editor and Agent Module Inspector) is next and remains inactive pending
+  explicit activation. No remote push was attempted.

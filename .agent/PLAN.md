@@ -1,9 +1,9 @@
 # Stage 8 Adaptive Orchestration and GUI Implementation Plan
 
-> Status: Subplan 5 verified; fast-forward integration pending 2026-09-04
-> Last verified subplan: `5-generic-workflow-foundation` on `refactor/general-workflow-runtime`
+> Status: awaiting next explicit activation 2026-09-04
+> Last completed subplan: `5-generic-workflow-foundation` on `refactor/general-workflow-runtime`
 > (acceptance `docs/acceptance/stage-8-subplan-5-generic-workflow-foundation.md`)
-> Active subplan: none; Subplan 5 integration closeout only
+> Active subplan: none
 > Next planned subplan: `6-workflow-editor-agent-inspector`
 > Roadmap authority: `docs/roadmap/stage-8-adaptive-orchestration-and-gui.md`
 > (revised 2026-09-03: risk-tiered Replan autonomy; runtime-kernel-first ordering)
