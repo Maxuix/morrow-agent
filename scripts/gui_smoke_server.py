@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -116,6 +117,7 @@ async def main(state_dir: Path, *, serve_only: bool) -> None:
         )
         facts = {
             "url": f"http://{HOST}:{PORT}/#token={TOKEN}",
+            "server_pid": os.getpid(),
             "run_id": run_id,
             "approval_id": approval_id,
             "session_id": session_id,

@@ -115,4 +115,46 @@ describe('ApiClient', () => {
       node: { node_run_id: 'nrun_1' },
     })
   })
+
+  it('sends authenticated JSON mutations through POST and PUT', async () => {
+    const requests: Array<{ method: string; contentType: string | null; body: unknown }> = []
+    const fetchImpl: typeof fetch = async (_input, init) => {
+      const headers = new Headers(init?.headers)
+      requests.push({
+        method: init?.method ?? 'GET',
+        contentType: headers.get('content-type'),
+        body: JSON.parse(String(init?.body)),
+      })
+      return new Response(
+        JSON.stringify({ result: { workflow_draft: { draft: { row_version: 2 } } } }),
+      )
+    }
+    const client = new ApiClient({ baseUrl: '', token: 'editor-token', fetchImpl })
+    const source = { workflow_definition_id: 'flow' } as never
+
+    await client.createWorkflowDraft(source, 1, 'cmd_create', 'draft_1')
+    await client.updateWorkflowDraft('draft_1', source, 1, 'cmd_update')
+
+    expect(requests).toEqual([
+      {
+        method: 'POST',
+        contentType: 'application/json',
+        body: {
+          command_id: 'cmd_create',
+          draft_id: 'draft_1',
+          source,
+          expected_source_revision: 1,
+        },
+      },
+      {
+        method: 'PUT',
+        contentType: 'application/json',
+        body: {
+          command_id: 'cmd_update',
+          source,
+          expected_row_version: 1,
+        },
+      },
+    ])
+  })
 })

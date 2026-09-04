@@ -43,3 +43,33 @@ body {
   outline-offset: 2px;
   border-radius: var(--radius-sm);
 }
+
+@utility editor-input {
+  width: 100%;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-base);
+  color: var(--text-primary);
+  padding: 0.42rem 0.55rem;
+  font-size: 0.75rem;
+}
+
+@utility editor-button {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-raised);
+  color: var(--text-primary);
+  padding: 0.42rem 0.65rem;
+  font-size: 0.75rem;
+  transition: border-color var(--duration-base) var(--ease-out);
+}
+
+.editor-button:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.editor-button:disabled,
+.editor-input:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}

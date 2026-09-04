@@ -7,9 +7,12 @@
  * bootstrapped from the URL fragment (`#token=...`) into sessionStorage and
  * the fragment is scrubbed so it cannot leak into copy-pasted URLs.
  *
- * This subplan's surface is read-only: GETs only, no mutation helpers.
+ * Editor mutations use the same authenticated JSON API and Core command bus.
  */
 import type {
+  AgentDefinitionSourceWire,
+  AgentDefinitionVersionWire,
+  AgentDefinitionViewWire,
   AgentRunEnvelopeWire,
   AgentRunObservationWire,
   ApprovalWire,
@@ -17,6 +20,7 @@ import type {
   ArtifactsPageWire,
   EventsPageWire,
   MetaWire,
+  ModelRefWire,
   NodeViewEnvelopeWire,
   NodeViewWire,
   RunViewEnvelopeWire,
@@ -25,6 +29,13 @@ import type {
   SessionWire,
   SessionsPageWire,
   SnapshotWire,
+  ArtifactContractCatalogWire,
+  ProviderCatalogWire,
+  SkillCatalogWire,
+  ToolCatalogWire,
+  WorkflowDefinitionSourceWire,
+  WorkflowDefinitionViewWire,
+  WorkflowDraftViewWire,
   TaskEnvelopeWire,
   TaskRunWire,
   TasksPageWire,
@@ -174,11 +185,183 @@ export class ApiClient {
     return envelope.observation
   }
 
+  async listAgentDefinitions(): Promise<AgentDefinitionViewWire[]> {
+    const envelope = await this.get<{ agent_definitions: AgentDefinitionViewWire[] }>(
+      '/v1/catalog/agent-definitions?limit=100',
+    )
+    return envelope.agent_definitions
+  }
+
+  async getAgentDefinition(definitionId: string): Promise<AgentDefinitionViewWire> {
+    const envelope = await this.get<{ agent_definition: AgentDefinitionViewWire }>(
+      `/v1/catalog/agent-definitions/${encodeURIComponent(definitionId)}`,
+    )
+    return envelope.agent_definition
+  }
+
+  async getAgentVersion(versionId: string): Promise<AgentDefinitionVersionWire> {
+    const envelope = await this.get<{ agent_version: { version: AgentDefinitionVersionWire } }>(
+      `/v1/catalog/agent-versions/${encodeURIComponent(versionId)}`,
+    )
+    return envelope.agent_version.version
+  }
+
+  async listWorkflowDefinitions(): Promise<WorkflowDefinitionViewWire[]> {
+    const envelope = await this.get<{ workflow_definitions: WorkflowDefinitionViewWire[] }>(
+      '/v1/catalog/workflow-definitions?limit=100',
+    )
+    return envelope.workflow_definitions
+  }
+
+  async listWorkflowDrafts(): Promise<WorkflowDraftViewWire[]> {
+    const envelope = await this.get<{ workflow_drafts: WorkflowDraftViewWire[] }>(
+      '/v1/workflow-drafts?limit=100',
+    )
+    return envelope.workflow_drafts
+  }
+
+  async createWorkflowDraft(
+    source: WorkflowDefinitionSourceWire,
+    expectedSourceRevision: number,
+    commandId: string,
+    draftId: string,
+  ): Promise<WorkflowDraftViewWire> {
+    const envelope = await this.post<{
+      result: { workflow_draft: WorkflowDraftViewWire }
+    }>('/v1/workflow-drafts', {
+      command_id: commandId,
+      draft_id: draftId,
+      source,
+      expected_source_revision: expectedSourceRevision,
+    })
+    return envelope.result.workflow_draft
+  }
+
+  async updateWorkflowDraft(
+    draftId: string,
+    source: WorkflowDefinitionSourceWire,
+    expectedRowVersion: number,
+    commandId: string,
+  ): Promise<WorkflowDraftViewWire> {
+    const envelope = await this.put<{
+      result: { workflow_draft: WorkflowDraftViewWire }
+    }>(`/v1/workflow-drafts/${encodeURIComponent(draftId)}`, {
+      command_id: commandId,
+      source,
+      expected_row_version: expectedRowVersion,
+    })
+    return envelope.result.workflow_draft
+  }
+
+  async freezeWorkflowDraft(
+    draftId: string,
+    expectedRowVersion: number,
+    commandId: string,
+  ): Promise<{ workflow_draft: WorkflowDraftViewWire; workflow_revision: Record<string, unknown> }> {
+    const envelope = await this.post<{
+      result: {
+        workflow_draft: WorkflowDraftViewWire
+        workflow_revision: Record<string, unknown>
+      }
+    }>(`/v1/workflow-drafts/${encodeURIComponent(draftId)}/freeze`, {
+      command_id: commandId,
+      expected_row_version: expectedRowVersion,
+    })
+    return envelope.result
+  }
+
+  async createAgentDefinition(
+    source: AgentDefinitionSourceWire,
+    expectedSourceRevision: number,
+    commandId: string,
+  ): Promise<AgentDefinitionViewWire> {
+    const envelope = await this.post<{
+      result: { agent_definition: AgentDefinitionViewWire }
+    }>('/v1/agent-definitions', {
+      command_id: commandId,
+      source,
+      expected_source_revision: expectedSourceRevision,
+    })
+    return envelope.result.agent_definition
+  }
+
+  async updateAgentDefinition(
+    definitionId: string,
+    source: AgentDefinitionSourceWire,
+    expectedSourceRevision: number,
+    commandId: string,
+  ): Promise<AgentDefinitionViewWire> {
+    const envelope = await this.put<{
+      result: { agent_definition: AgentDefinitionViewWire }
+    }>(`/v1/agent-definitions/${encodeURIComponent(definitionId)}`, {
+      command_id: commandId,
+      source,
+      expected_source_revision: expectedSourceRevision,
+    })
+    return envelope.result.agent_definition
+  }
+
+  async publishAgentDefinition(
+    definitionId: string,
+    expectedHeadRevision: number,
+    commandId: string,
+  ): Promise<AgentDefinitionViewWire> {
+    const envelope = await this.post<{
+      result: { agent_definition: AgentDefinitionViewWire }
+    }>(`/v1/agent-definitions/${encodeURIComponent(definitionId)}/publish`, {
+      command_id: commandId,
+      expected_head_revision: expectedHeadRevision,
+    })
+    return envelope.result.agent_definition
+  }
+
+  async editorCatalogs(): Promise<{
+    providers: ProviderCatalogWire[]
+    active_model: { provider_id: string; model_id: string } | null
+    skills: SkillCatalogWire[]
+    tools: ToolCatalogWire[]
+    contracts: ArtifactContractCatalogWire[]
+  }> {
+    const [providers, skills, tools, contracts] = await Promise.all([
+      this.get<{ providers: ProviderCatalogWire[]; active_model: ModelRefWire | null }>(
+        '/v1/catalog/providers',
+      ),
+      this.get<{ skills: SkillCatalogWire[] }>('/v1/catalog/skills?limit=100'),
+      this.get<{ tools: ToolCatalogWire[] }>('/v1/catalog/tools'),
+      this.get<{ contracts: ArtifactContractCatalogWire[] }>('/v1/catalog/artifact-contracts'),
+    ])
+    return {
+      providers: providers.providers,
+      active_model: providers.active_model,
+      skills: skills.skills,
+      tools: tools.tools,
+      contracts: contracts.contracts,
+    }
+  }
+
   private async get<T>(path: string): Promise<T> {
+    return this.request('GET', path)
+  }
+
+  private async post<T>(path: string, body: unknown): Promise<T> {
+    return this.request('POST', path, body)
+  }
+
+  private async put<T>(path: string, body: unknown): Promise<T> {
+    return this.request('PUT', path, body)
+  }
+
+  private async request<T>(method: 'GET' | 'POST' | 'PUT', path: string, body?: unknown): Promise<T> {
     let response: Response
     try {
       response = await this.fetchImpl(`${this.baseUrl}${path}`, {
-        headers: { authorization: `Bearer ${this.token}`, accept: 'application/json' },
+        method,
+        headers: {
+          authorization: `Bearer ${this.token}`,
+          accept: 'application/json',
+          ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+        },
+        body: body === undefined ? undefined : JSON.stringify(body),
       })
     } catch (error) {
       throw new ApiError(

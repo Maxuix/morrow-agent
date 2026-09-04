@@ -258,6 +258,200 @@ export interface AgentRunEnvelopeWire {
   observation: AgentRunObservationWire
 }
 
+// Editor contracts ----------------------------------------------------------
+
+export interface ModelRefWire {
+  provider_id: string
+  model_id: string
+}
+
+export interface ToolRequirementWire {
+  name: string
+  requirement: 'required' | 'optional' | 'forbidden'
+}
+
+export interface AgentDefinitionSourceWire {
+  definition_id: string
+  name: string
+  description: string
+  role_prompt: string
+  skill_version_ids: string[]
+  tool_requirements: ToolRequirementWire[]
+  access_mode_ceiling: 'read' | 'write'
+  max_agent_generation_requests: number | null
+  model_selection: ModelRefWire | 'invoking_active'
+  derived_from_version_id: string | null
+  derived_from_definition_id: string | null
+  derived_from_source_hash: string | null
+}
+
+export interface AgentDefinitionVersionWire {
+  version_id: string
+  workspace_id: string
+  version: number
+  source: AgentDefinitionSourceWire
+  content_hash: string
+  origin: 'user' | 'builtin'
+  source_revision: number
+  created_at: string
+}
+
+export interface AgentDefinitionHeadWire {
+  workspace_id: string
+  definition_id: string
+  version_id: string
+  source_revision: number
+  source_hash: string
+  enabled: boolean
+  row_version: number
+}
+
+export interface AgentDefinitionViewWire {
+  definition_id: string
+  origin: 'user' | 'builtin'
+  source_revision: number | null
+  source_hash: string | null
+  revoked: boolean
+  desired_ahead_of_published: boolean
+  source: AgentDefinitionSourceWire | null
+  head: AgentDefinitionHeadWire | null
+  published_version: AgentDefinitionVersionWire | null
+}
+
+export interface TaskContractWire {
+  objective: string
+  scope: string[]
+  constraints: string[]
+  source_refs: unknown[]
+}
+
+export interface NodeOutputRefWire {
+  node_id: string
+  output_slot: string
+}
+
+export interface WorkflowInputBindingWire {
+  source: 'workflow_input'
+  input_name: string
+  accepts: { kind: 'TaskContract'; version: 1 }
+  workflow_input: 'task'
+}
+
+export interface NodeOutputBindingWire {
+  source: 'node_output'
+  input_name: string
+  accepts: ContractRefWire
+  node_output: NodeOutputRefWire
+}
+
+export type InputBindingWire = WorkflowInputBindingWire | NodeOutputBindingWire
+
+export interface OutputContractWire extends ContractRefWire {
+  slot: string
+  required_for_node_completion: boolean
+}
+
+export interface AgentDefinitionRefWire {
+  definition_id: string
+  version_id: string
+  content_hash: string
+}
+
+export interface AgentNodeSourceWire {
+  node_id: string
+  agent_definition_ref: AgentDefinitionRefWire
+  task_contract: TaskContractWire
+  input_bindings: InputBindingWire[]
+  output_contracts: OutputContractWire[]
+  access_mode: 'read' | 'write'
+  conversation_scope: 'isolated' | 'invoking_session'
+  tool_requirements: ToolRequirementWire[] | null
+  max_agent_generation_requests: number | null
+}
+
+export interface WorkflowEdgeWire {
+  from_node_id: string
+  to_node_id: string
+}
+
+export interface WorkflowDefinitionSourceWire {
+  workflow_definition_id: string
+  name: string
+  description: string
+  tags: string[]
+  origin: 'user' | 'builtin'
+  input_contract: { kind: 'TaskContract'; version: 1 }
+  required_outputs: NodeOutputRefWire[]
+  edges: WorkflowEdgeWire[]
+  default_budget: WorkflowBudgetWire
+  nodes: AgentNodeSourceWire[]
+}
+
+export interface WorkflowDefinitionViewWire {
+  workflow_definition_id: string
+  origin: 'user' | 'builtin'
+  source_revision: number | null
+  revoked: boolean
+  desired_ahead_of_published: boolean
+  source: WorkflowDefinitionSourceWire | null
+  head: { workflow_revision_id: string; row_version: number; enabled: boolean } | null
+  published_revision: Record<string, unknown> | null
+}
+
+export interface WorkflowDraftDiagnosticWire {
+  severity: 'error' | 'warning'
+  code: string
+  message: string
+  node_id: string | null
+  edge_id: string | null
+}
+
+export interface WorkflowDraftWire {
+  draft_id: string
+  workspace_id: string
+  source: WorkflowDefinitionSourceWire
+  source_hash: string
+  base_workflow_revision_id: string | null
+  base_head_row_version: number
+  base_source_revision: number
+  status: 'draft' | 'validating' | 'valid' | 'invalid' | 'rejected' | 'frozen'
+  diagnostics: WorkflowDraftDiagnosticWire[]
+  frozen_workflow_revision_id: string | null
+  row_version: number
+  created_at: string
+  updated_at: string
+}
+
+export interface WorkflowDraftViewWire {
+  draft: WorkflowDraftWire
+  stale_reasons: string[]
+}
+
+export interface ProviderCatalogWire {
+  provider_id: string
+  credential_configured: boolean
+  models: { model_id: string; active: boolean }[]
+}
+
+export interface SkillCatalogWire {
+  skill_id: string
+  name: string
+  availability: string
+  versions: { version_id: string; display_version: string }[]
+  binding: { enabled: boolean; pinned_version_id: string | null } | null
+}
+
+export interface ToolCatalogWire {
+  name: string
+  description: string
+}
+
+export interface ArtifactContractCatalogWire {
+  kind: string
+  version: number
+  schema: Record<string, unknown>
+}
+
 /** `EventWire` from `src/morrow/server/protocol.py` */
 export interface EventWire {
   cursor: number

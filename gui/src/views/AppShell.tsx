@@ -5,6 +5,7 @@ import type { SyncStore } from '../state/sync'
 import { budgetDisplay } from './lib/budget'
 import { ApprovalsBar } from './ApprovalsBar'
 import { ConnectionBanner } from './ConnectionBanner'
+import { EditorShell } from './EditorShell'
 import { SessionNav } from './SessionNav'
 import { TaskWorkspace } from './TaskWorkspace'
 import { TopBar, type Theme } from './TopBar'
@@ -38,6 +39,7 @@ export function AppShell({
   const [selectedTask, setSelectedTask] = useState<TaskRunWire | null>(null)
   const [artifacts, setArtifacts] = useState<ArtifactWire[] | null>(null)
   const [openRunView, setOpenRunView] = useState<RunViewWire | null>(null)
+  const [activeView, setActiveView] = useState<'observe' | 'edit'>('observe')
 
   const sessions: SessionWire[] = [...state.sessions.values()].sort((a, b) =>
     b.created_at.localeCompare(a.created_at),
@@ -115,9 +117,14 @@ export function AppShell({
         pendingApprovals={pendingApprovals.length}
         theme={theme}
         onThemeChange={onThemeChange}
+        activeView={activeView}
+        onViewChange={setActiveView}
       />
       <ConnectionBanner connection={state.connection} onRetry={() => store.retry()} />
 
+      {activeView === 'edit' ? (
+        <EditorShell client={client} />
+      ) : (
       <main className="grid min-h-0 flex-1 grid-cols-[260px_minmax(0,1fr)_minmax(320px,420px)]">
         <div className="min-h-0 border-r border-subtle">
           <SessionNav
@@ -151,11 +158,13 @@ export function AppShell({
         </div>
       </main>
 
-      <ApprovalsBar
+      )}
+
+      {activeView === 'observe' && <ApprovalsBar
         run={openRunView?.run ?? null}
         budget={openBudget}
         pendingApprovals={pendingApprovals}
-      />
+      />}
     </div>
   )
 }

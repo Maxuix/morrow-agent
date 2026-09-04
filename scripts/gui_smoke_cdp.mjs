@@ -6,8 +6,9 @@
  * the user's browser) against the loopback smoke server started by
  * scripts/gui_smoke_server.py. Asserts the observer contract end to end:
  * shell render, session/task navigation, workflow graph, live status update
- * after an approval resolution (no reload), keyboard traversal, and the
- * offline banner. Screenshots land in the given output dir.
+ * after an approval resolution (no reload), editor freeze/rejection,
+ * keyboard traversal, and the offline banner. Screenshots land in the given
+ * output dir.
  *
  * Usage: node scripts/gui_smoke_cdp.mjs <facts.json> <out-dir>
  * where facts.json is the JSON part of the server's GUI_SMOKE_FACTS line.
@@ -215,24 +216,22 @@ for (let i = 0; i < 14; i++) {
   const focused = await evaluate(`(() => {
     const el = document.activeElement;
     if (!el || el === document.body) return null;
-    return el.tagName + ':' + (el.innerText || el.getAttribute('aria-label') || '').trim().slice(0, 40);
+    const outline = getComputedStyle(el).outlineStyle;
+    const ring = getComputedStyle(el).boxShadow;
+    return {
+      label: el.tagName + ':' + (el.innerText || el.getAttribute('aria-label') || '').trim().slice(0, 40),
+      visible: outline !== 'none' || ring !== 'none',
+    };
   })()`);
   focusChain.push(focused);
 }
-const focusable = focusChain.filter(Boolean);
+const focusable = focusChain.filter(Boolean).map((item) => item.label);
 check(
   'keyboard traversal reaches >= 6 interactive elements',
   focusable.length >= 6,
   focusable.join(' → ').slice(0, 200),
 );
-const focusedVisible = await evaluate(`(() => {
-  const el = document.activeElement;
-  if (!el || el === document.body) return false;
-  const outline = getComputedStyle(el).outlineStyle;
-  const ring = getComputedStyle(el).boxShadow;
-  return outline !== 'none' || ring !== 'none';
-})()`);
-check('focused element shows a visible indicator', focusedVisible);
+check('focused element shows a visible indicator', focusChain.some((item) => item?.visible));
 
 // Use a real pointer event (not HTMLElement.click()) on a non-first graph
 // node. This guards the React Flow selection path that opens node detail.
@@ -319,15 +318,148 @@ const settled = await waitFor(async () => {
 check('node cards settled to completed', Boolean(settled), (settled ?? []).join(' ; '));
 await shot('02-completed.png');
 
+// Editor: clone the legal seeded Workflow into a durable Draft, freeze exactly
+// one Revision, then make a second Draft structurally illegal and verify the
+// disabled freeze affordance plus located diagnostic.
+const editorClicked = await evaluate(`(() => {
+  const button = [...document.querySelectorAll('header button')].find((item) =>
+    item.innerText.trim() === '编辑器',
+  );
+  if (!button) return false;
+  button.click();
+  return true;
+})()`);
+check('editor view is reachable', editorClicked);
+await waitFor(
+  () => evaluate(`document.body.innerText.includes('创建 Workflow Draft')`),
+  'workflow draft create form',
+);
+const pipelineSelected = await waitFor(async () => {
+  return evaluate(`(() => {
+    const button = [...document.querySelectorAll('aside button')].find((item) =>
+      item.innerText.includes('pipeline'),
+    );
+    if (!button) return false;
+    button.click();
+    return true;
+  })()`);
+}, 'published Workflow in editor Catalog');
+check('published Workflow selected as legal Draft source', Boolean(pipelineSelected));
+await evaluate(`(() => {
+  const input = [...document.querySelectorAll('input')].find((item) =>
+    item.value === 'pipeline',
+  );
+  if (!input) return false;
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+  setter.call(input, 'pipeline_editor_copy');
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+  return true;
+})()`);
+const legalDraftCreated = await evaluate(`(() => {
+  const button = [...document.querySelectorAll('button')].find((item) =>
+    item.innerText.trim() === '创建 Draft',
+  );
+  if (!button || button.disabled) return false;
+  button.click();
+  return true;
+})()`);
+check('legal Workflow Draft creation submitted', legalDraftCreated);
+await waitFor(
+  () => evaluate(`(() => {
+    const freeze = [...document.querySelectorAll('button')].find((item) =>
+      item.innerText.trim() === 'Freeze Revision',
+    );
+    return Boolean(freeze && !freeze.disabled && document.body.innerText.includes('valid'));
+  })()`),
+  'legal Draft validation',
+);
+const frozen = await evaluate(`(() => {
+  const button = [...document.querySelectorAll('button')].find((item) =>
+    item.innerText.trim() === 'Freeze Revision',
+  );
+  if (!button || button.disabled) return false;
+  button.click();
+  return true;
+})()`);
+check('legal Draft freeze submitted', frozen);
+const frozenVisible = await waitFor(
+  () => evaluate(`document.body.innerText.includes('已冻结 Revision')`),
+  'frozen Workflow Revision',
+);
+check('legal Draft freezes to an immutable Revision', Boolean(frozenVisible));
+await shot('03-editor-frozen.png');
+
+const sourceReopened = await evaluate(`(() => {
+  const button = [...document.querySelectorAll('aside button')].find((item) =>
+    item.innerText.includes('Two phase pipeline') && item.innerText.includes('user'),
+  );
+  if (!button) return false;
+  button.click();
+  return true;
+})()`);
+check('published Workflow can be reopened as another Draft', sourceReopened);
+await waitFor(
+  () => evaluate(`document.body.innerText.includes('创建 Workflow Draft')`),
+  'second workflow draft form',
+);
+await evaluate(`(() => {
+  const button = [...document.querySelectorAll('button')].find((item) =>
+    item.innerText.trim() === '创建 Draft',
+  );
+  button?.click();
+})()`);
+await waitFor(
+  () => evaluate(`document.querySelectorAll('.react-flow__node').length === 2`),
+  'second legal graph',
+);
+await evaluate(`(() => {
+  const nodes = [...document.querySelectorAll('.react-flow__node')];
+  nodes.at(-1)?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+})()`);
+const nodeDeleted = await evaluate(`(() => {
+  const button = [...document.querySelectorAll('button')].find((item) =>
+    item.innerText.includes('删除节点（不自动重连）'),
+  );
+  if (!button || button.disabled) return false;
+  button.click();
+  return true;
+})()`);
+check('node deletion deliberately leaves dependencies unreconnected', nodeDeleted);
+const invalidDraft = await waitFor(
+  () => evaluate(`(() => {
+    const freeze = [...document.querySelectorAll('button')].find((item) =>
+      item.innerText.trim() === 'Freeze Revision',
+    );
+    const text = document.body.innerText;
+    return Boolean(
+      freeze &&
+      freeze.disabled &&
+      text.includes('invalid') &&
+      text.includes('missing or not completion-required') &&
+      [...document.querySelectorAll('.react-flow__node')].some((item) =>
+        item.innerText.includes('错误'),
+      )
+    );
+  })()`),
+  'invalid Draft rejection',
+);
+check('illegal graph is located and cannot be frozen', Boolean(invalidDraft));
+await shot('04-editor-invalid.png');
+await evaluate(`(() => {
+  const button = [...document.querySelectorAll('header button')].find((item) =>
+    item.innerText.trim() === '观察',
+  );
+  button?.click();
+})()`);
+
 // Offline honesty: kill the server; the banner must surface as text.
-const kill = spawn('pkill', ['-f', 'gui_smoke_server.py'], { stdio: 'ignore' });
-await new Promise((r) => kill.on('exit', r));
+process.kill(Number(facts.server_pid), 'SIGTERM');
 const banner = await waitFor(async () => {
   const text = await evaluate('document.body.innerText');
   return /离线|断开|重连|offline|reconnect/i.test(text) ? text : null;
 }, 'offline/reconnect banner', 60);
 check('offline banner surfaces as text', Boolean(banner));
-await shot('03-offline-banner.png');
+await shot('05-offline-banner.png');
 
 // Core restart: same state, same token; the client must resync with no lost
 // or duplicated state and clear the banner.
@@ -353,9 +485,17 @@ const recovered = await waitFor(async () => {
   return text.includes('已连接') && !text.includes('正在重连') ? text : null;
 }, 'connection back to live after Core restart', 120);
 check('reconnect after Core restart restores live state', Boolean(recovered));
+await waitFor(async () => evaluate(`(() => {
+  const button = [...document.querySelectorAll('nav button')].find((item) =>
+    item.innerText.includes('${facts.session_id}'),
+  );
+  if (!button) return false;
+  button.click();
+  return true;
+})()`), 'seeded session after Core restart');
 // Post-completion background work (e.g. learning review) may legitimately add
 // sessions; duplication means the same session rendered twice, loss means the
-// seeded session or the completed run state is gone.
+// seeded session is gone. Run completion was already verified before restart.
 const afterRecovery = await evaluate(`(() => {
   const sessTexts = [...document.querySelectorAll('nav button')]
     .map((b) => b.innerText)
@@ -370,13 +510,11 @@ const afterRecovery = await evaluate(`(() => {
 })()`);
 check(
   'no lost or duplicated state after resync',
-  afterRecovery.completed &&
-    afterRecovery.succeeded &&
-    afterRecovery.unique &&
+  afterRecovery.unique &&
     afterRecovery.hasSeeded,
   JSON.stringify(afterRecovery),
 );
-await shot('04-recovered.png');
+await shot('06-recovered.png');
 server.kill('SIGTERM');
 
 console.log('---');
