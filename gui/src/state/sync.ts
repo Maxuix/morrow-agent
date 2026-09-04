@@ -301,6 +301,9 @@ export class SyncStore {
         } else {
           patchRun(projection.run, event.payload)
         }
+        // No approval.resolved event exists; a resolved approval only shows up
+        // as run/node progress, so lifecycle events refresh the pending list.
+        await this.refreshApprovals()
         break
       }
       case 'workflow_node.status_changed': {
@@ -329,6 +332,9 @@ export class SyncStore {
             nodeView.node.row_version = event.payload.row_version
           }
         }
+        // See workflow_run.status_changed: node progress is the signal that a
+        // resolved approval left the pending set.
+        await this.refreshApprovals()
         break
       }
       case 'approval.requested': {

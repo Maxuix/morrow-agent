@@ -17,6 +17,9 @@ dependencies = [
   "starlette>=1.6,<2",
   "typer>=0.12,<1",
   "uvicorn>=0.52,<1",
+  # uvicorn's WebSocket backend for /v1/events/stream; without it the hint
+  # channel 500s over real sockets (in-process ASGI tests never exercise it).
+  "websockets>=13,<16",
 ]
 
 [build-system]

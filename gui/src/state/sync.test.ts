@@ -31,6 +31,7 @@ class FakeCore {
   constructor() {
     this.on('/v1/sessions', () => ({ body: { sessions: [], next_cursor: null } }))
     this.on('/v1/events', () => ({ body: { events: [], latest_cursor: 0, has_more: false } }))
+    this.on('/v1/approvals', () => ({ body: { approvals: [] } }))
   }
 
   on(path: string, handler: Handler): this {
@@ -497,6 +498,38 @@ describe('SyncStore', () => {
 
     expect(core.urls).toContain('/v1/approvals?pending=true')
     expect(store.getState().pendingApprovals.get('ap_1')?.resolution).toBe('pending')
+  })
+
+  it('clears resolved approvals on run/node lifecycle events (no approval.resolved event exists)', async () => {
+    const core = new FakeCore()
+    core.on('/v1/snapshot', () => ({
+      body: { cursor: 0, workflow_runs: [makeRun()], pending_approvals: [makeApproval()] },
+    }))
+    // The approval was resolved server-side; the next lifecycle event must
+    // refresh the pending list, since no approval.resolved event exists.
+    core.on('/v1/approvals', () => ({ body: { approvals: [] } }))
+    core.on('/v1/events', () => ({
+      body: {
+        events: [
+          makeEvent(1, 'workflow_run.status_changed', 'workflow_run', 'wrun_1', {
+            status: 'running',
+            row_version: 2,
+          }),
+        ],
+        latest_cursor: 1,
+        has_more: false,
+      },
+    }))
+    const store = makeStore(core)
+    await store.start()
+    expect(store.getState().pendingApprovals.size).toBe(1)
+
+    lastSocket().serverSend({ type: 'cursor', latest_cursor: 1 })
+    await flush()
+
+    expect(core.urls).toContain('/v1/approvals?pending=true')
+    expect(store.getState().pendingApprovals.size).toBe(0)
+    expect(store.getState().connection).toBe('live')
   })
 
   it('resyncs from scratch after a forced close: no lost and no duplicated state', async () => {
