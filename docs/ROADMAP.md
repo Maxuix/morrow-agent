@@ -1,7 +1,7 @@
 # Morrow 个人 Agent 工作台开发路线总览
 
 > 状态：阶段 1–7 已完成；Stage 8 已进入实施，运行时内核、Core API、GUI 观察器、
-> Workflow Draft 编辑器、Agent Inspector 与建议式 GraphPlanner 已实现；全局 Replan、
+> Workflow Draft 编辑器、Agent Inspector 与建议式 GraphPlanner 已完成离线工程验收；全局 Replan、
 > 管理 GUI、反馈评估与只读并行仍待后续 Subplan。
 > 基线日期：2026-08-30（Stage 7 计划修订：2026-08-31）
 > 用途：维护 Morrow 的长期产品方向、阶段顺序、稳定边界与详细阶段文档入口。

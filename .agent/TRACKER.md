@@ -8,11 +8,12 @@ Stage 8 Subplans 1–7 complete. Subplan 8 explicitly activated 2026-09-05 from 
 ## Active task
 
 Planner, policy, API/CLI and GUI implementation complete; focused validation and browser flows verified.
-Full offline gate running; failures under investigation.
+Final full offline gate passed: 1653 passed, 2 native-sandbox skipped, 2 Live deselected.
+All focused, GUI, browser and static gates passed; verified work is ready for local integration.
 
 ## Next action
 
-Resolve full-suite failures, finish validation and acceptance evidence, then integrate verified work.
+Commit acceptance evidence, fast-forward local main, verify ancestry and retire the topic branch.
 
 ## Blockers
 

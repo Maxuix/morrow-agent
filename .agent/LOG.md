@@ -5161,3 +5161,13 @@ Live test, Replan implementation or remote push authorized.
   migration and concurrent-backup test. Ruff format/check, compileall and diff checks passed after
   the fixture changes. All failures discovered so far have verified fixes; the full run is finishing
   its remaining Stage 7/8 tests. Application code remains unchanged.
+
+- That complete run finished with 1651 passed, 2 setup-timeout failures, 2 native-sandbox skips
+  and 2 Live deselected (1384.03 seconds). Both failures belong to the now-passing Operational
+  Store matrix. Started a final full confirmation with stop-on-first-failure and JUnit evidence
+  at `/tmp/morrow-stage8-verified-junit.xml`; no further implementation changes are planned.
+
+- Final complete offline confirmation succeeded: **1653 passed, 2 native Seatbelt skips,
+  2 Live deselected in 290.61 seconds**, exit 0. JUnit: `/tmp/morrow-stage8-verified-junit.xml`.
+  All discovered startup failures are resolved. Acceptance is recorded in
+  `docs/acceptance/stage-8-subplan-8-graph-planner-draft.md`; ready for verified local integration.
