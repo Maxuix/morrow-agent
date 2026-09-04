@@ -5052,3 +5052,5 @@
   offline and restart recovery. No Live Provider/MCP/network/credential test or dependency change.
 - Acceptance: `docs/acceptance/stage-8-subplan-6-workflow-editor-agent-inspector.md`. Subplan 7
   remains unactivated. Remote push remains unauthorized.
+- Committed as `ca4baa7`, `f2026bc` and `2fe5b51`, then fast-forwarded local `main`; the clean topic
+  branch was retired after ancestry verification.

@@ -13,5 +13,5 @@ Active subplan: none. Subplan 6 completed on `feat/stage8-editor`; Subplan 7 is 
   resolved node settings/source labels.
 - [x] Add contract and browser-level flows for legal creation/freeze and illegal freeze rejection.
 - [x] Update current docs and acceptance evidence; run focused, offline/static and frontend gates.
-- [>] Commit verified progress, fast-forward into `main`, verify ancestry and retire the topic
+- [x] Commit verified progress, fast-forward into `main`, verify ancestry and retire the topic
   branch. Remote push is not authorized.
