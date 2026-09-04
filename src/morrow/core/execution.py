@@ -136,6 +136,54 @@ class ApprovalResolution(StrEnum):
     EXPIRED = "expired"
 
 
+class ApprovalDecision(StrEnum):
+    """User-facing resolution choice on the run-control approval surface."""
+
+    ALLOW_ONCE = "allow_once"
+    DENY = "deny"
+    ALLOW_SESSION = "allow_session"
+
+
+class ApprovalRiskLevel(StrEnum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
+SESSION_SCOPE_PREFIX = "session:"
+
+
+def approval_risk_level(
+    effect_class: EffectClass, isolation: IsolationLabel | None
+) -> ApprovalRiskLevel:
+    """Deterministic risk tier for the approval surface."""
+
+    if isolation is IsolationLabel.UNCONFINED_HOST or effect_class in (
+        EffectClass.UNCONFINED_EXTERNAL_EFFECT,
+        EffectClass.PROCESS_EFFECT_NON_DURABLE,
+    ):
+        return ApprovalRiskLevel.HIGH
+    if effect_class in (
+        EffectClass.RECONCILEABLE_STRUCTURED_STATE_WRITE,
+        EffectClass.RECONCILEABLE_FILE_WRITE,
+    ):
+        return ApprovalRiskLevel.MEDIUM
+    return ApprovalRiskLevel.LOW
+
+
+def session_scope_allowed(effect_class: EffectClass, isolation: IsolationLabel | None) -> bool:
+    """High-risk operations always require an explicit per-occurrence decision."""
+
+    return approval_risk_level(effect_class, isolation) is not ApprovalRiskLevel.HIGH
+
+
+def session_granted_scope(requested_scope: str) -> str:
+    scope = f"{SESSION_SCOPE_PREFIX}{requested_scope}"
+    if len(scope) > 128:
+        raise ValueError("session granted scope exceeds the bounded length")
+    return scope
+
+
 LEGAL_EXECUTION_TRANSITIONS: frozenset[tuple[ToolExecutionState, ToolExecutionState]] = frozenset(
     {
         (ToolExecutionState.PREPARED, ToolExecutionState.AWAITING_APPROVAL),

@@ -26,6 +26,8 @@ from morrow.core.execution import (
     consume_approval,
     intent_hash,
     resolve_approval,
+    session_granted_scope,
+    session_scope_allowed,
     transition_execution,
 )
 from morrow.core.faults import FaultInjector, FaultPoint
@@ -83,13 +85,14 @@ class DurableToolExecutionCoordinator:
         stamp = now or self.clock()
         self.permissions.assert_execution_permission(execution, now=stamp)
         preview = execution.intent.preview
+        requested_scope = f"{execution.intent.effect_class.value}:{execution.tool_name}"
         approval = DurableApproval(
             approval_id=self.id_source.new_id(APPROVAL_ID_PREFIX),
             tool_execution_id=execution.tool_execution_id,
             intent_hash=intent_hash(execution.intent),
             tool_schema_digest=execution.intent.schema_digest,
             permission_context_digest=execution.intent.permission_context_digest,
-            requested_scope=f"{execution.intent.effect_class.value}:{execution.tool_name}",
+            requested_scope=requested_scope,
             preview=preview,
             preview_digest=approval_preview_digest(preview),
             permission_snapshot_id=execution.permission_snapshot_id,
@@ -98,6 +101,24 @@ class DurableToolExecutionCoordinator:
             created_at=stamp,
             expires_at=stamp + APPROVAL_TTL,
         )
+        # A session-scoped grant recorded by an earlier user decision resolves
+        # the new approval durably at creation; every execution keeps its own
+        # auditable approval row. High-risk operations never carry a session
+        # scope, so they cannot be auto-approved here.
+        if session_scope_allowed(execution.intent.effect_class, execution.isolation):
+            precedent = self.journal.find_session_scope_approval(
+                self.workspace_id,
+                session_id=execution.session_id,
+                granted_scope=session_granted_scope(requested_scope),
+            )
+            if precedent is not None:
+                approval = approval.model_copy(
+                    update={
+                        "resolution": ApprovalResolution.APPROVED,
+                        "granted_scope": precedent.granted_scope,
+                        "resolved_at": stamp,
+                    }
+                )
         stored = self.journal.put_approval(self.workspace_id, approval)
         self.faults.check(FaultPoint.APPROVAL_AFTER_CREATE)
         return stored
@@ -110,6 +131,7 @@ class DurableToolExecutionCoordinator:
         approved: bool,
         now: datetime | None = None,
         command_id: str | None = None,
+        granted_scope: str | None = None,
     ) -> tuple[DurableToolExecution, DurableApproval, bool]:
         stamp = now or self.clock()
         self.permissions.assert_execution_permission(execution, now=stamp)
@@ -119,6 +141,7 @@ class DurableToolExecutionCoordinator:
             expected_row_version=approval.row_version,
             now=stamp,
             command_id=command_id,
+            granted_scope=granted_scope,
         )
         if resolved.resolution is not ApprovalResolution.APPROVED:
             denied = transition_execution(

@@ -463,6 +463,7 @@ class SessionPersistence:
         approved: bool,
         now: datetime | None = None,
         command_id: str | None = None,
+        granted_scope: str | None = None,
     ) -> tuple[DurableToolExecution, DurableApproval, bool]:
         return self.tool_executions.consume_and_mark_executing(
             execution,
@@ -470,6 +471,7 @@ class SessionPersistence:
             approved=approved,
             now=now,
             command_id=command_id,
+            granted_scope=granted_scope,
         )
 
     def mark_executing(

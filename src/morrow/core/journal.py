@@ -454,6 +454,10 @@ class ApprovalJournalPort(Protocol):
         self, workspace_id: str, grant_id: str
     ) -> tuple[DurableApproval, ...]: ...
 
+    def find_session_scope_approval(
+        self, workspace_id: str, *, session_id: str, granted_scope: str
+    ) -> DurableApproval | None: ...
+
 
 class CapabilityGrantJournalPort(AgentRunPort, Protocol):
     def put_capability_grant(

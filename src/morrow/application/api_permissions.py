@@ -340,6 +340,7 @@ class PermissionApplicationService:
         *,
         approved: bool,
         command_id: str | None = None,
+        granted_scope: str | None = None,
         persistence=None,
     ):
         api = self.context
@@ -353,6 +354,7 @@ class PermissionApplicationService:
             "approval_id": approval.approval_id,
             "tool_execution_id": execution.tool_execution_id,
             "approved": approved,
+            "granted_scope": granted_scope,
         }
         command_id, digest, replay = api._prepare(operation, payload, command_id)
         if replay is not None:
@@ -389,14 +391,19 @@ class PermissionApplicationService:
                     existing,
                 )
             saved_execution, saved_approval, did_execute = persistence.consume_and_mark_executing(
-                execution, approval, approved=approved, command_id=command_id
+                execution, approval, approved=approved, command_id=command_id,
+                granted_scope=granted_scope,
             )
             event = api._event(
                 txn,
                 event_type="approval.resolved",
                 aggregate_kind="approval",
                 aggregate_id=saved_approval.approval_id,
-                payload={"resolution": saved_approval.resolution.value, "approved": did_execute},
+                payload={
+                    "resolution": saved_approval.resolution.value,
+                    "approved": did_execute,
+                    "granted_scope": saved_approval.granted_scope,
+                },
             )
             receipt = api._receipt(
                 txn,

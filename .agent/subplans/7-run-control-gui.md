@@ -1,6 +1,6 @@
 # Subplan 7 — Run Control GUI
 
-> Status: pending activation
+> Status: active (activated 2026-09-04)
 > Branch: `feat/stage8-run-control-gui`
 > Activation base: latest verified `main` with Subplan 6 integrated
 > Prerequisite: Subplan 6 verified; Subplans 1–2 runtime semantics already integrated

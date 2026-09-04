@@ -1853,6 +1853,13 @@ class SqliteOperationalJournal:
     ) -> tuple[DurableApproval, ...]:
         return self._tool_journal.list_approvals_for_grant(workspace_id, grant_id)
 
+    def find_session_scope_approval(
+        self, workspace_id: str, *, session_id: str, granted_scope: str
+    ) -> DurableApproval | None:
+        return self._tool_journal.find_session_scope_approval(
+            workspace_id, session_id=session_id, granted_scope=granted_scope
+        )
+
     def revoke_approval_in_txn(
         self,
         workspace_id: str,

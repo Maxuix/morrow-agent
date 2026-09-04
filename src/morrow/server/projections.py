@@ -14,8 +14,13 @@ from typing import Any
 
 from morrow.core.application import ApplicationCommandReceipt, ApplicationEvent
 from morrow.core.artifacts import ArtifactMetadata
-from morrow.core.domain import DurableSession, DurableTaskRun, TaskOutcome
-from morrow.core.execution import DurableApproval, DurableToolExecution
+from morrow.core.domain import DurableAgentRun, DurableSession, DurableTaskRun, TaskOutcome
+from morrow.core.execution import (
+    DurableApproval,
+    DurableToolExecution,
+    approval_risk_level,
+    session_scope_allowed,
+)
 from morrow.core.models import ModelRef
 from morrow.core.workflows.runs import NodeRun, WorkflowArtifactImport, WorkflowRun
 
@@ -357,9 +362,40 @@ def run_view_wire(view) -> dict[str, Any]:
     }
 
 
-def approval_wire(approval: DurableApproval, execution: DurableToolExecution) -> dict[str, Any]:
-    """The approval surface shows bounded previews, never full tool arguments."""
+_AFFECTED_OBJECTS_MAX = 8
+_AFFECTED_VALUE_MAX = 120
 
+
+def _affected_objects(execution: DurableToolExecution) -> list[str]:
+    """Bounded redacted argument summary: the objects the operation touches.
+
+    ``redacted_arguments`` is already the credential-stripped form persisted
+    at preparation time; this projection only truncates and counts.
+    """
+
+    items: list[str] = []
+    for key in sorted(execution.intent.redacted_arguments):
+        value = execution.intent.redacted_arguments[key]
+        text = str(value)
+        if len(text) > _AFFECTED_VALUE_MAX:
+            text = text[: _AFFECTED_VALUE_MAX - 1] + "…"
+        items.append(f"{key}: {text}")
+        if len(items) >= _AFFECTED_OBJECTS_MAX:
+            break
+    return items
+
+
+def approval_wire(
+    approval: DurableApproval,
+    execution: DurableToolExecution,
+    agent_run: DurableAgentRun | None = None,
+) -> dict[str, Any]:
+    """The §8.5 approval surface: requester identity, operation type, affected
+    objects, risk level and bounded redacted previews — never a bare prompt."""
+
+    effect = execution.intent.effect_class
+    workflow_ref = agent_run.workflow_ref if agent_run is not None else None
+    definition_ref = agent_run.snapshot.definition_ref if agent_run is not None else None
     return {
         "approval_id": approval.approval_id,
         "tool_execution_id": approval.tool_execution_id,
@@ -367,7 +403,16 @@ def approval_wire(approval: DurableApproval, execution: DurableToolExecution) ->
         "session_id": execution.session_id,
         "task_run_id": execution.task_run_id,
         "agent_run_id": execution.agent_run_id,
+        "workflow_run_id": workflow_ref.workflow_run_id if workflow_ref else None,
+        "node_run_id": workflow_ref.node_run_id if workflow_ref else None,
+        "node_id": workflow_ref.node_id if workflow_ref else None,
+        "agent_id": definition_ref.definition_id if definition_ref else None,
+        "effect_class": effect.value,
+        "risk_level": approval_risk_level(effect, execution.isolation).value,
+        "session_scope_allowed": session_scope_allowed(effect, execution.isolation),
+        "affected_objects": _affected_objects(execution),
         "requested_scope": approval.requested_scope,
+        "granted_scope": approval.granted_scope,
         "preview": list(approval.preview),
         "resolution": approval.resolution.value,
         "created_at": approval.created_at.isoformat(),

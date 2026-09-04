@@ -359,6 +359,18 @@ class ToolCycleExecutor:
         coordinator = self._coordinator(session)
         if execution.intent.requires_approval:
             approval = coordinator.create_pending_approval(execution, now=now)
+            if approval.resolution is ApprovalResolution.APPROVED:
+                # A session-scoped precedent resolved the approval durably at
+                # creation; skip the interactive request and consume it.
+                execution, _approval, run_handler = coordinator.consume_and_mark_executing(
+                    execution,
+                    approval,
+                    approved=True,
+                    now=self.wall_now(session),
+                )
+                if not run_handler:
+                    raise ApprovalDecisionError("session-scoped approval was not consumed")
+                return execution, None
             registered = self.tool_executor.tool_set.tools.get(call.name)
             request = ToolApprovalRequest(
                 call_id=call.id,

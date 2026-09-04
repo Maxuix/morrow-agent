@@ -16,7 +16,13 @@ from morrow.core.application import (
     ApplicationError,
     ApplicationErrorCode,
 )
-from morrow.core.execution import ApprovalResolution, ToolExecutionState
+from morrow.core.execution import (
+    ApprovalDecision,
+    ApprovalResolution,
+    ToolExecutionState,
+    session_granted_scope,
+    session_scope_allowed,
+)
 from morrow.core.workflows.contracts import TaskContract
 from morrow.core.workflows.runs import WorkflowStatus
 
@@ -671,11 +677,29 @@ class ServerCommands:
             raise ApplicationError(
                 ApplicationErrorCode.NEEDS_RECOVERY, "approval execution is missing"
             )
+        decision = request.decision
+        if decision is None:
+            decision = ApprovalDecision.ALLOW_ONCE if request.approved else ApprovalDecision.DENY
+        elif (decision is ApprovalDecision.DENY) == request.approved:
+            raise ApplicationError(
+                ApplicationErrorCode.INVALID,
+                "decision conflicts with the approved flag",
+            )
+        approved = decision is not ApprovalDecision.DENY
+        granted_scope = None
+        if decision is ApprovalDecision.ALLOW_SESSION:
+            if not session_scope_allowed(execution.intent.effect_class, execution.isolation):
+                raise ApplicationError(
+                    ApplicationErrorCode.INVALID,
+                    "session-scoped approval is not offered for high-risk operations",
+                )
+            granted_scope = session_granted_scope(approval.requested_scope)
         command_id = request.command_id or self.context.api.id_source.new_id("cmd")
         payload = {
             "approval_id": approval_id,
             "tool_execution_id": execution.tool_execution_id,
-            "approved": request.approved,
+            "approved": approved,
+            "granted_scope": granted_scope,
         }
         digest = request_digest("approval_resolve", payload)
         existing = self.journal.get_application_command_receipt(self.workspace_id, command_id)
@@ -692,7 +716,7 @@ class ServerCommands:
                 )
             return CommandOutcome(
                 {
-                    "approval": projections.approval_wire(current, execution),
+                    "approval": self._approval_wire(current, execution),
                     "delivery": "replay",
                 },
                 existing.model_copy(update={"disposition": ApplicationCommandDisposition.REPLAY}),
@@ -708,7 +732,11 @@ class ServerCommands:
             # Resolution, consume/deny, event and receipt commit together before
             # a live ToolCycle is released to enter the handler.
             resolved = self.context.api.resolve_approval(
-                execution, approval, approved=request.approved, command_id=command_id
+                execution,
+                approval,
+                approved=approved,
+                command_id=command_id,
+                granted_scope=granted_scope,
             )
         except BaseException:
             if live:
@@ -716,7 +744,7 @@ class ServerCommands:
             raise
         saved_execution, saved_approval, did_execute = resolved.value
         if live and not self.context.approval_waiters.deliver_claimed(
-            approval_id, approved=request.approved
+            approval_id, approved=approved
         ):
             raise ApplicationError(
                 ApplicationErrorCode.NEEDS_RECOVERY,
@@ -724,7 +752,7 @@ class ServerCommands:
             )
         return CommandOutcome(
             {
-                "approval": projections.approval_wire(saved_approval, saved_execution),
+                "approval": self._approval_wire(saved_approval, saved_execution),
                 "delivery": "live" if live else "durable",
                 "executed": did_execute,
             },
@@ -839,7 +867,7 @@ class ServerCommands:
                     self.workspace_id, execution.tool_execution_id
                 )
                 if approval is not None:
-                    approvals.append(projections.approval_wire(approval, execution))
+                    approvals.append(self._approval_wire(approval, execution))
         return {"approvals": approvals}
 
     def _pending_approvals(self) -> list[dict[str, Any]]:
@@ -854,8 +882,12 @@ class ServerCommands:
                     self.workspace_id, execution.tool_execution_id
                 )
                 if approval is not None and approval.resolution is ApprovalResolution.PENDING:
-                    pending.append(projections.approval_wire(approval, execution))
+                    pending.append(self._approval_wire(approval, execution))
         return pending
+
+    def _approval_wire(self, approval, execution) -> dict[str, Any]:
+        agent_run = self.journal.get_agent_run(self.workspace_id, execution.agent_run_id)
+        return projections.approval_wire(approval, execution, agent_run)
 
     # Catalog queries ------------------------------------------------------------
 

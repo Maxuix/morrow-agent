@@ -413,6 +413,19 @@ class SqliteToolJournal:
         )
         return tuple(_approval_from_row(row) for row in rows)
 
+    def find_session_scope_approval(
+        self, workspace_id: str, *, session_id: str, granted_scope: str
+    ) -> DurableApproval | None:
+        row = self.backend.read_one(
+            f"SELECT {_APPROVAL_SELECT} FROM approvals a "
+            "JOIN tool_executions e ON e.tool_execution_id = a.tool_execution_id "
+            "WHERE e.workspace_id = ? AND e.session_id = ? AND a.granted_scope = ? "
+            "AND a.resolution = 'approved' AND a.revoked_at_unix IS NULL "
+            "ORDER BY a.created_at_unix DESC, a.approval_id DESC LIMIT 1",
+            (workspace_id, session_id, granted_scope),
+        )
+        return _approval_from_row(row) if row is not None else None
+
     def revoke_approval_in_txn(
         self,
         workspace_id: str,

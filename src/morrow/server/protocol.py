@@ -14,6 +14,7 @@ from pydantic import Field, field_validator
 
 from morrow.core.agent_definitions import AgentDefinitionSource
 from morrow.core.domain import COMMAND_ID_PREFIX, validate_prefixed_id
+from morrow.core.execution import ApprovalDecision
 from morrow.core.models import ProtocolModel
 from morrow.core.workflows.definitions import WorkflowDefinitionSource
 from morrow.core.workflows.patches import FutureGraphPatch
@@ -110,6 +111,9 @@ class AgentDefinitionPublishRequest(CommandRequest):
 
 class ApprovalResolveRequest(CommandRequest):
     approved: bool
+    # Optional explicit §8.5 decision; when present it must agree with
+    # ``approved`` and ``allow_session`` records a session-scoped grant.
+    decision: ApprovalDecision | None = None
 
 
 class EventWire(ProtocolModel):

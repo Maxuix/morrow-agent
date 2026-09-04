@@ -985,6 +985,7 @@ class OperationalApplicationService:
         *,
         approved: bool,
         command_id: str | None = None,
+        granted_scope: str | None = None,
         persistence=None,
     ):
         return self._permission_commands.resolve_approval(
@@ -992,6 +993,7 @@ class OperationalApplicationService:
             approval,
             approved=approved,
             command_id=command_id,
+            granted_scope=granted_scope,
             persistence=persistence,
         )
 

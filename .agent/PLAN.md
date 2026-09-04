@@ -1,10 +1,9 @@
 # Stage 8 Adaptive Orchestration and GUI Implementation Plan
 
-> Status: Subplans 1–6 and review remediation completed; Subplan 7 awaits explicit activation
+> Status: Subplans 1–6 and review remediation completed; Subplan 7 active since 2026-09-04
 > Last completed subplan: `6-workflow-editor-agent-inspector` on `feat/stage8-editor`
 > (acceptance `docs/acceptance/stage-8-subplan-6-workflow-editor-agent-inspector.md`)
-> Active subplan: none
-> Next planned subplan: `7-run-control-gui` (not activated)
+> Active subplan: `7-run-control-gui` on `feat/stage8-run-control-gui` (base `aadcfc1`)
 > Roadmap authority: `docs/roadmap/stage-8-adaptive-orchestration-and-gui.md`
 > (revised 2026-09-03: risk-tiered Replan autonomy; runtime-kernel-first ordering)
 > Current evidence: full offline gate 1613 passed / 2 Live deselected; focused Draft/Agent matrix
