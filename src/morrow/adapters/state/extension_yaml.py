@@ -65,6 +65,9 @@ class ExtensionYamlLoad:
 def extension_document_digest(value: ExtensionDocument) -> str:
     payload = value.model_dump(mode="json", by_alias=True)
     payload.pop("updated_at", None)
+    # Preserve digests of pre-planner documents and in-flight Skill/MCP operations.
+    if not payload.get("orchestration"):
+        payload.pop("orchestration", None)
     return hashlib.sha256(canonical_json_bytes(payload)).hexdigest()
 
 

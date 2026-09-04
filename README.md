@@ -74,7 +74,7 @@ scripts/morrow-mimo model current
 事件或模型上下文。环境变量优先于 CredentialStore；环境变量存在时必须先取消它，才能使用
 `--replace-credential` 轮换存储凭据。
 
-## Web GUI（只读观察器）
+## Web GUI 与任务规划
 
 ```bash
 morrow serve          # 仅启动 headless Core API（loopback + 一次性会话 token）
@@ -83,8 +83,44 @@ morrow gui            # 启动同一个 Core 服务器并打开浏览器中的 W
 
 `morrow gui` 与 `morrow serve` 是同一个前台 Core 进程：只监听 loopback，Ctrl+C 优雅退出；
 GUI 静态资源由 Core 服务器直接提供，浏览器地址中的一次性会话 token 位于 URL fragment，
-不会发送到服务器。当前 GUI 是只读观察器：Session/Task/Workflow/节点/Artifact/预算与审批
-展示；审批处理与运行控制仍在 CLI。
+不会作为 HTTP URL 发送到服务器。GUI 提供 Session/Task/Workflow/节点/Artifact/用量观察、
+运行控制与审批、Workflow Draft 编辑器和 Agent Inspector。编辑器中的“根据任务生成 Draft”
+会按任务范围、风险与审查价值组合已发布 Agent；简单任务优先 Direct。生成后可编辑、冻结并手工运行。
+生成过程不发布 Agent、冻结 Revision 或启动 Workflow；尚无 Direct/Multi 对照收益证据时，
+即使保存了自动运行偏好，也仍需手工确认。
+
+CLI 使用相同 Planner 和策略服务：
+
+```bash
+morrow workflow plan planning.json --workspace-id ws_example
+morrow workflow policy show --workspace-id ws_example
+morrow workflow policy set policy.json --expected-revision 0 --workspace-id ws_example
+```
+
+`planning.json` 的最小示例（先发布所需的 AgentDefinition）：
+
+```json
+{
+  "draft_id": "wdraft_example",
+  "workflow_definition_id": "my_task",
+  "name": "My task",
+  "task": {"objective": "Research storage designs", "scope": ["SQLite", "Postgres"]},
+  "use_model": true,
+  "scout": false
+}
+```
+
+`use_model` 使用当前模型做一次无工具的结构化分类，失败时显示诊断并使用本地规则；
+设为 `false` 可完全不调用 Provider。可选 Scout 只做一次有界项目目录检查。
+`requested_roles` / `excluded_roles` 可声明角色；`budget` 可显式设置已有 Workflow 请求上限、
+默认节点请求上限和准入超时，省略时保持无上限。模型与 Skill 参数化通过选取已有精确 Agent 版本完成，
+不自动创建或扩大权限。所有生成图仍串行执行。
+
+`policy.json` 例如 `{"scope":"workspace","multi_agent":false}`。策略保存在现有的全局/工作空间
+`extensions.yaml.orchestration` 中，按任务类型匹配，工作空间的完整策略覆盖全局策略。
+修改使用该 Extension 文档的 revision，保留 Skill/MCP 设置。`auto_run_mode` 默认
+`approval_only`；`allow_promoted` 仅保存用户偏好，当前没有已推广的任务类型。
+`auto_replan_mode` 默认 `approval_only`，自动 Replan 由后续 Subplan 交付。
 
 源码检出中构建 GUI 资源（发布 wheel/sdist 的前置步骤，缺少资源时 `uv build` 会显式失败）：
 
@@ -278,4 +314,5 @@ Linux 原生运行仍在真实 runner 验证前保持 unsupported。每次完成
 `auto-sandboxed` 在 native backend 不可用或无法证明时会 fail closed。持久化聊天历史、Artifact、恢复、
 checkpoint、fork、按 AgentRun 冻结的 CapabilityGrant 与 Full Access Manual 属于 Stage 4；Full Access Auto
 和 raw auto 仍不支持。可审查学习从 Stage 5 开始；Skills/MCP 与 Provider/Model 扩展已在 Stage 6 交付，
-静态串行 Multi-Agent Workflow 已由 Stage 7 提供；自适应图、并发、GUI 和后台任务仍属于后续阶段。
+静态串行 Multi-Agent Workflow 已由 Stage 7 提供；Stage 8 已提供 GUI、运行控制、Draft 编辑和
+建议式任务特化 GraphPlanner。全局自动 Replan、并发与后台任务仍属于后续阶段。

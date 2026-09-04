@@ -1,8 +1,8 @@
 # Subplan 8 — Task-Specialized GraphPlanner Draft
 
-> Status: pending activation
+> Status: active 2026-09-05; explicitly authorized by user
 > Branch: `feat/stage8-graph-planner`
-> Activation base: latest verified `main` with Subplan 7 integrated
+> Activation base: verified local `main` at `e320f51` with Subplan 7 integrated
 > Prerequisite: Subplan 7 verified
 > Roadmap authority: stage-8 §4.1–4.6, §12, §8D, §16.4
 

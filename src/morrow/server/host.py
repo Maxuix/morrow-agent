@@ -224,6 +224,16 @@ class CoreHost:
         self._call_soon(run)
         return await asyncio.wrap_future(result)
 
+    async def execute_preparation(self, handler: Callable[[], Awaitable[Any]]) -> Any:
+        """Await read-only preparation on Core without blocking Pause/approval commands.
+
+        The caller must submit any resulting mutation separately through the bus.
+        No SQLite transaction may span this awaitable preparation.
+        """
+        if self._loop is None or self._closing:
+            raise CoreHostUnavailableError("core host is not running")
+        return await asyncio.wrap_future(asyncio.run_coroutine_threadsafe(handler(), self._loop))
+
     def _submit_to_bus(self, handler: Callable[[], Any]) -> concurrent.futures.Future:
         result: concurrent.futures.Future = concurrent.futures.Future()
 

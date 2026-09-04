@@ -20,7 +20,8 @@ request/terminal observability 与复用同一 SessionOrchestrator/AgentLoop 的
 Stage 7 已完成版本化 AgentDefinition、静态 Workflow 编译、串行调度、Artifact 协作、管理 CLI 与
 恢复闭环；Stage 8 已交付 Pause/Drain、future-only patch/continuation 与 rerun 运行时内核、
 版本化 Core API、Web GUI 观察器，以及持久 Workflow Draft 编辑器和 Agent Inspector。任务特化
-GraphPlanner、全局 Replan、管理 GUI、反馈评估、只读并行和后台自动化尚未交付。本文架构门禁以
+GraphPlanner 已接入相同 Draft/Compiler/发布链；全局 Replan、管理 GUI、反馈评估、只读并行和
+后台自动化尚未交付。本文架构门禁以
 离线证据为主；未获授权的 Live 证据不改变这些当前模块事实。
 
 S56–S61 已冻结并接通 generic Preference 契约、加载前一次性旧 YAML 迁移、当前 workspace Preference、
@@ -98,6 +99,29 @@ toggle、精确 revoke、foreground recovery 与查询没有第二套 SQLite/YAM
 并共享 preview/value-shaped 与高置信 literal 检测规则；持久化 profile discriminator 已落地，普通
 Direct 仍默认 legacy-strict。现有 backup/doctor 增加 definition
 行完整性与精确路径的原始 desired-source inventory：损坏草稿可备份/恢复且只报局部 warning；发布引用/hash 损坏才报 error。
+
+Stage 8 Subplan 8 在 `core/orchestration.py` 定义有界 TaskFeatures、TaskBrief、用户
+OrchestrationPolicy 和 PlannerMetadata。策略复用全局/工作空间 Extension YAML 的唯一写入、
+OCC 与备份机制；`application/workflows/orchestration_policy.py` 按 workspace→global、精确
+任务类型→通配规则解析完整策略。空策略字段不改变旧 Extension digest，保护已有 Skill/MCP 操作。
+`planning_catalog.py` 只投影已启用、未撤销的 Agent head、已有 Artifact 合同和实际工具权限，
+不建立第二 Registry；GraphGrammar 直接暴露 Compiler source schema 和串行声明。
+`planning_features.py` 提取本地/项目约束，最多调用当前 Provider 一次作无工具分类；可选 Scout
+只查询一次受限目录并返回已知项目标记。原始模型回复、隐藏 reasoning 和目录内容均不持久化。
+
+`graph_planner.py` 用结构化特征、模板先验和最小普通图组合规则选取精确 Agent/Model/Skill 引用，
+生成 `TextResult@1/result` Artifacts 绑定；模型偏好只筛选现有已授权 Agent 版本，不发布新的
+Definition 或权限。显式小任务保持 Direct；范围扩大可增加 Planner/Reviewer，独立研究可形成
+多个只读分支汇入 Synthesizer，但 Scheduler 仍串行。显式请求/时间限制只会被继承或收紧，
+不会根据任务大小猜测一个 cap。编译失败最多重新生成一次，再编译 Direct 回退或返回具体补充要求。
+有效结果通过既有 WorkflowDraftService 持久化；生成说明随 Draft 保存，并按 source hash 标明
+编辑后是生成时说明。普通聊天、ConversationLog、Revision 写入与 Scheduler 所有权均不变。
+
+Core API 的只读规划准备在 Core loop 上等待 Provider，但不占用串行 mutation bus；完成后
+重新读取策略/Catalog，再将同步编译与 Draft 写入提交到 bus。`workflow plan`、GUI 和 API
+共享应用服务。`auto_run_mode=allow_promoted` 只是用户偏好；本 Subplan 没有产品推广证据
+writer，故所有生成结果都保持 `auto_run_eligible=false`，不妨碍手工冻结和执行。
+`auto_replan_mode` 在策略中保存，Subplan 9 才消费它。
 
 ## 分层与依赖方向
 

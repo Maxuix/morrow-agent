@@ -13,6 +13,7 @@ import type {
 } from '../api/types'
 import { AgentInspector } from './AgentInspector'
 import { WorkflowEditor } from './WorkflowEditor'
+import { GraphPlanner, PlannerExplanation } from './GraphPlanner'
 import {
   cloneWorkflowSource,
   commandId,
@@ -268,12 +269,13 @@ export function EditorShell({ client }: { client: ApiClient }) {
         {section === 'agent' ? (
           <AgentInspector client={client} definitions={agents} selected={selectedAgent} providers={catalogs.providers} skills={catalogs.skills} tools={catalogs.tools} onRefresh={async (definitionId) => { await refresh(definitionId) }} />
         ) : draft === null || localSource === null ? (
-          <section className="m-auto w-full max-w-lg p-6">
+          <section className="mx-auto w-full max-w-2xl overflow-y-auto p-6">
             <h2 className="font-serif text-2xl font-semibold">创建 Workflow Draft</h2>
             <p className="mt-2 text-sm leading-relaxed text-secondary">从选中的建议复制，或从已发布 Agent 创建单节点图。编辑期间不会产生 Revision。</p>
             <div className="mt-5 grid grid-cols-2 gap-3"><Field label="Definition ID"><input className="editor-input font-mono" value={targetId} onChange={(event) => setTargetId(event.target.value)} /></Field><Field label="名称"><input className="editor-input" value={targetName} onChange={(event) => setTargetName(event.target.value)} /></Field></div>
             <button type="button" className="editor-button mt-4 border-accent text-accent" disabled={saving || targetId === '' || targetName === ''} onClick={() => void createDraft()}>创建 Draft</button>
             {message !== null && <p role="status" className="mt-3 text-xs text-secondary">{message}</p>}
+            <GraphPlanner client={client} definitionId={targetId} name={targetName} onDraft={(value) => { rememberDraft(value); chooseDraft(value) }} />
           </section>
         ) : (
           <>
@@ -285,6 +287,7 @@ export function EditorShell({ client }: { client: ApiClient }) {
               {message !== null && <span role="status" className="truncate text-xs text-secondary">{message}</span>}
               <button type="button" className="editor-button ml-auto border-accent text-accent" disabled={saving || dirty || draft.draft.status !== 'valid' || draftStalenessBlocksFreeze(draft.stale_reasons)} onClick={() => void freeze()}>Freeze Revision</button>
             </header>
+            {draft.draft.planner && <PlannerExplanation metadata={draft.draft.planner} edited={dirty || draft.draft.planner.source_hash !== draft.draft.source_hash} />}
             <WorkflowEditor source={localSource} diagnostics={[...draft.draft.diagnostics, ...freezeDiagnostics]} agents={agents} contracts={catalogs.contracts} disabled={draft.draft.status === 'frozen'} onChange={(source) => { setFreezeDiagnostics([]); setLocalSource(source) }} />
             <details className="border-t border-subtle px-4 py-2 text-xs"><summary className="cursor-pointer text-secondary">Revision Diff · {revisionDiff.length} 项</summary><ul className="mt-2 grid max-h-40 grid-cols-2 gap-2 overflow-y-auto">{revisionDiff.map((line) => <li key={line.path} className="rounded-[8px] border border-subtle p-2 font-mono"><div className="text-secondary">{line.path}</div><div className="text-failed">− {line.before}</div><div className="text-completed">+ {line.after}</div></li>)}</ul></details>
           </>

@@ -52,8 +52,10 @@ agent_app = typer.Typer(help="Agent definition desired state and immutable publi
 workflow_app = typer.Typer(help="Static Workflow definition, execution and recovery management.")
 node_app = typer.Typer(help="Workflow NodeRun inspection.")
 patch_app = typer.Typer(help="Validate, save, and apply exact future-only graph patches.")
+policy_app = typer.Typer(help="Explicit global/workspace orchestration policy.")
 workflow_app.add_typer(node_app, name="node")
 workflow_app.add_typer(patch_app, name="patch")
+workflow_app.add_typer(policy_app, name="policy")
 _CLI_PERMISSION_PROFILE: ContextVar[PermissionProfile | None] = ContextVar(
     "workflow_cli_permission_profile", default=None
 )
@@ -675,6 +677,72 @@ def _session_management(state_root, workspace_id, directory, session_id):
         permission_profile=_permission_profile(),
     )
     return products
+
+
+@workflow_app.command("plan")
+def workflow_plan(
+    request_file: Path = typer.Argument(..., exists=True, dir_okay=False),
+    workspace_id: str | None = typer.Option(None, "--workspace-id"),
+    directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+):
+    """Generate an editable Draft from a GraphPlanningRequest JSON/YAML file; never auto-run."""
+    from morrow.core.orchestration import GraphPlanningRequest
+
+    products = None
+    try:
+        request = _source(request_file, GraphPlanningRequest)
+        products = _session_management(state_root, workspace_id, directory, None)
+        result = asyncio.run(products.graph_planner.generate(request))
+        _dump(result)
+    except Exception:
+        _fail(
+            ValueError("Workflow planning failed; check request schema, Catalog and policy state")
+        )
+    finally:
+        if products is not None:
+            products.persistence.store_session.close()
+
+
+def _orchestration_service(state_root, workspace_id, directory):
+    from morrow.adapters.state.extension_yaml import ExtensionYamlStore
+    from morrow.application.workflows.orchestration_policy import OrchestrationPolicyService
+
+    application = build_application(state_root=state_root)
+    identity = _identity(application, workspace_id, directory)
+    return OrchestrationPolicyService(
+        ExtensionYamlStore(application.data_root.root), workspace_id=identity.workspace_id
+    )
+
+
+@policy_app.command("show")
+def orchestration_policy_show(
+    workspace_id: str | None = typer.Option(None, "--workspace-id"),
+    directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+):
+    try:
+        _dump(_orchestration_service(state_root, workspace_id, directory).view())
+    except Exception:
+        _fail(ValueError("Orchestration policy could not be read"))
+
+
+@policy_app.command("set")
+def orchestration_policy_set(
+    policy_file: Path = typer.Argument(..., exists=True, dir_okay=False),
+    expected_revision: int = typer.Option(..., "--expected-revision", min=0),
+    workspace_id: str | None = typer.Option(None, "--workspace-id"),
+    directory: Path = typer.Option(Path("."), "--dir", exists=True, file_okay=False),
+    state_root: Path | None = typer.Option(None, "--state-root", hidden=True),
+):
+    from morrow.core.orchestration import OrchestrationPolicy
+
+    try:
+        policy = _source(policy_file, OrchestrationPolicy)
+        service = _orchestration_service(state_root, workspace_id, directory)
+        _dump(service.put(policy, expected_revision=expected_revision))
+    except Exception:
+        _fail(ValueError("Orchestration policy write failed; check schema and current revision"))
 
 
 @workflow_app.command("run")

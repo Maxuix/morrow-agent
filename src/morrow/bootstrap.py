@@ -193,6 +193,8 @@ class SessionApplication:
     workflow_runtime: object | None = None
     workflow_management: WorkflowManagementService | None = None
     workflow_drafts: WorkflowDraftService | None = None
+    graph_planner: object | None = None
+    orchestration_policies: object | None = None
 
 
 @dataclass(frozen=True)
@@ -1245,6 +1247,7 @@ def build_session_application(
             return any(
                 view.enabled
                 and view.availability.value == "available"
+                and view.pinned_version_id in {None, version_id}
                 and any(version.version_id == version_id for version in view.versions)
                 for view in views
             )
@@ -1256,6 +1259,23 @@ def build_session_application(
             id_source=app.id_source,
             model_available=workflow_model_available,
             skill_available=workflow_skill_available,
+        )
+        from morrow.application.workflows.graph_planner import GraphPlannerService
+        from morrow.application.workflows.orchestration_policy import OrchestrationPolicyService
+        from morrow.application.workflows.planning_features import (
+            ModelTaskClassifier,
+            ReadOnlyTaskScout,
+        )
+
+        orchestration_policies = OrchestrationPolicyService(
+            ExtensionYamlStore(app.data_root.root), workspace_id=identity.workspace_id
+        )
+        graph_planner = GraphPlannerService(
+            workflow_drafts,
+            orchestration_policies,
+            classifier=ModelTaskClassifier(app.provider_service.build_active),
+            scout=ReadOnlyTaskScout(files) if "ls" in workflow_catalog.allowed_tools else None,
+            workspace_constraints=tuple(session.profile.constraints) if session.profile else (),
         )
         products = SessionApplication(
             session=session,
@@ -1282,6 +1302,8 @@ def build_session_application(
             workflow_runtime=workflow_runtime,
             workflow_management=workflow_management,
             workflow_drafts=workflow_drafts,
+            graph_planner=graph_planner,
+            orchestration_policies=orchestration_policies,
         )
     except BaseException:
         handle.close()

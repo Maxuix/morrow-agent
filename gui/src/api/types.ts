@@ -447,6 +447,91 @@ export interface WorkflowDraftWire {
   row_version: number
   created_at: string
   updated_at: string
+  planner?: PlannerMetadataWire | null
+}
+
+export type PlanningTaskType = 'implementation' | 'refactor' | 'research' | 'explanation' | 'diagnosis' | 'general'
+export interface TaskFeaturesWire {
+  task_type: PlanningTaskType
+  expected_scope: string[]
+  number_of_areas: number
+  requires_code_write: boolean
+  requires_research: boolean
+  review_value: 'low' | 'medium' | 'high'
+  parallelizable_read_work: boolean
+  ambiguity: 'low' | 'medium' | 'high'
+  risk_level: 'low' | 'medium' | 'high'
+  expected_duration_class: 'short' | 'medium' | 'long'
+  user_requested_roles: string[]
+  user_excluded_roles: string[]
+  workspace_constraints: string[]
+}
+export interface PlannerExplanationWire {
+  mode: 'direct' | 'multi' | 'needs_input'
+  reasons: string[]
+  starting_point: 'direct' | 'grammar' | 'explore_implement_verify'
+  node_count: number
+  writing_nodes: string[]
+  models: ModelRefWire[]
+  budget: WorkflowBudgetWire
+  concurrency: 1
+  auto_run_eligible: false
+  auto_run_reason: 'approval_only' | 'paired_evidence_missing'
+}
+export interface PlannerMetadataWire {
+  request_digest: string
+  source_hash: string
+  features: TaskFeaturesWire
+  brief: { project_markers: string[]; observed_entries: number; truncated: boolean } | null
+  policy_id: string
+  policy_scope: 'global' | 'workspace'
+  policy_revision: number
+  classification: 'local' | 'model' | 'unavailable' | 'invalid'
+  explanation: PlannerExplanationWire
+  diagnostics: string[]
+}
+export interface GraphPlanningRequestWire {
+  draft_id: string
+  workflow_definition_id: string
+  name: string
+  task: TaskContractWire
+  requested_roles: string[]
+  excluded_roles: string[]
+  budget: WorkflowBudgetWire | null
+  use_model: boolean
+  scout: boolean
+}
+export interface TaskGraphDraftWire {
+  workflow_draft: WorkflowDraftViewWire | null
+  metadata: PlannerMetadataWire | null
+  explanation: PlannerExplanationWire
+  diagnostics: string[]
+}
+export interface OrchestrationPolicyWire {
+  policy_id: string
+  scope: 'global' | 'workspace'
+  task_matcher: PlanningTaskType | '*'
+  preferred_template: 'direct' | 'explore_implement_verify' | null
+  excluded_templates: Array<'direct' | 'explore_implement_verify'>
+  required_roles: string[]
+  excluded_roles: string[]
+  model_preferences_by_role: Record<string, ModelRefWire>
+  budget_limits: WorkflowBudgetWire | null
+  review_requirement: 'adaptive' | 'required' | 'skip'
+  multi_agent: boolean
+  parallelism_limit: 1
+  auto_run_mode: 'approval_only' | 'allow_promoted'
+  auto_replan_mode: 'approval_only' | 'allow_low_risk'
+  source: 'user' | 'builtin'
+  evidence: string[]
+  status: 'active' | 'disabled'
+  revision: number
+}
+export interface OrchestrationPoliciesWire {
+  global: { revision: number; policies: OrchestrationPolicyWire[] }
+  workspace: { revision: number; policies: OrchestrationPolicyWire[] }
+  auto_run_eligible: false
+  auto_run_reason: 'paired_evidence_missing'
 }
 
 export interface WorkflowDraftViewWire {

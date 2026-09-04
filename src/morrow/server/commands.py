@@ -85,6 +85,64 @@ class ServerCommands:
 
     # Internal helpers ---------------------------------------------------------
 
+    def graph_plan(self, request, prepared):
+        self.graph_plan_check(request)
+        planned = self.context.products.graph_planner.save_prepared(prepared)
+        if planned.workflow_draft is None:
+            # A supplement request changes no state and has no dangling Draft receipt.
+            return CommandOutcome(planned.model_dump(mode="json"), None)
+        result, receipt = self._idempotent(
+            "graph_plan",
+            request.command_id,
+            request.planning.model_dump(mode="json"),
+            lambda: (
+                planned,
+                request.planning.draft_id,
+            ),
+            lambda _: self.context.products.graph_planner.save_prepared(prepared),
+            result_kind="workflow_draft",
+        )
+        return CommandOutcome(result.model_dump(mode="json"), receipt)
+
+    def graph_plan_check(self, request):
+        if request.command_id is None:
+            return
+        existing = self.journal.get_application_command_receipt(
+            self.workspace_id, request.command_id
+        )
+        digest = request_digest("graph_plan", request.planning.model_dump(mode="json"))
+        if existing is not None and (
+            existing.operation != "graph_plan" or existing.request_digest != digest
+        ):
+            raise ApplicationError(
+                ApplicationErrorCode.CONFLICT, "command ID was reused with a different request"
+            )
+
+    def planning_catalog(self):
+        return self.context.products.graph_planner.catalogs.wire()
+
+    def orchestration_policies(self):
+        return self.context.products.orchestration_policies.view()
+
+    def orchestration_policy_put(self, request):
+        value, receipt = self._idempotent(
+            "orchestration_policy_put",
+            request.command_id,
+            {
+                "policy": request.policy.model_dump(mode="json"),
+                "expected_revision": request.expected_revision,
+            },
+            lambda: (
+                self.context.products.orchestration_policies.put(
+                    request.policy, expected_revision=request.expected_revision
+                ),
+                request.policy.policy_id,
+            ),
+            lambda _: self.context.products.orchestration_policies.view(),
+            result_kind="orchestration_policy",
+        )
+        return CommandOutcome(value, receipt)
+
     def _idempotent(
         self,
         operation: str,

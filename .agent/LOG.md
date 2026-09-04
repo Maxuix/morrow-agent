@@ -5096,3 +5096,28 @@
 - Evidence: `docs/acceptance/stage-8-subplan-7-run-control-gui.md`; 15 focused run-control tests;
   GUI 81 Vitest tests; browser flows (pause→edit→continue, superseded lineage, full-rerun label,
   denial semantics, restart recovery, deadline guard) all pass.
+
+## 2026-09-05 — Stage 8 Subplan 8 activation
+
+User explicitly requested Stage 8 Subplan 8. Activated `feat/stage8-graph-planner` from verified
+`main` at `e320f51`; worktree clean. Scope follows `8-graph-planner-draft.md`; no new dependency,
+Live test, Replan implementation or remote push authorized.
+
+## 2026-09-05 — Subplan 8 implementation verified
+
+- Added task-feature extraction, one no-tool classification, optional bounded Scout, existing-authority
+  Catalog projections and ordinary task-specific Draft composition through the current Compiler.
+  Explicit caps remain optional; failed compilation regenerates once, then validates Direct or
+  returns concrete supplement diagnostics. No automatic run or later Replan behavior was added.
+- OrchestrationPolicy reuses Extension YAML OCC/backup ownership and preserves pre-planner digests
+  when empty. Enabled/pinned Skill and authorized model checks remain live at compilation.
+- Core preparation awaits outside the mutation bus and rereads policy/Catalog before save. Stable
+  Draft/command identities prevent duplicate durable Drafts. GUI/CLI consume the same services;
+  explanations persist with original source hashes, and policy preferences never fabricate promotion.
+- Final planner matrix: 22 passed. GUI: typecheck, 85 Vitest tests, build/budget passed; JS 468.8 KiB.
+  Ruff format/check, compileall, CLI help and diff whitespace checks passed. Browser flows covered
+  Direct generation, edit/freeze, workspace preference save, four-node refactor and reopen; no
+  browser errors. Scripted manual-run acceptance completed through the existing Scheduler.
+- Full offline validation continues. Four old Stage 4 crash subprocess fixtures reproduced a
+  10-second startup timeout both in/outside the sandbox (exit code still None). Their setup timeout
+  is being made tolerant of contended hosts with failure cleanup; recovery assertions stay exact.

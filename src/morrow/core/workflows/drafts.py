@@ -10,6 +10,7 @@ from pydantic import Field, field_validator, model_validator
 
 from morrow.core.agent_definitions import Digest, WorkspaceId
 from morrow.core.models import ProtocolModel
+from morrow.core.orchestration import PlannerMetadata
 from morrow.core.workflows.definitions import WorkflowDefinitionSource, WorkflowRevisionId
 
 WorkflowDraftId = Annotated[str, Field(pattern=r"^wdraft_[A-Za-z0-9_-]+$")]
@@ -49,6 +50,7 @@ class WorkflowDraft(ProtocolModel):
     row_version: int = Field(ge=1, strict=True)
     created_at: datetime
     updated_at: datetime
+    planner: PlannerMetadata | None = None
 
     @field_validator("created_at", "updated_at")
     @classmethod

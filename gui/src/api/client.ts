@@ -10,6 +10,10 @@
  * Editor mutations use the same authenticated JSON API and Core command bus.
  */
 import type {
+  GraphPlanningRequestWire,
+  TaskGraphDraftWire,
+  OrchestrationPolicyWire,
+  OrchestrationPoliciesWire,
   AgentDefinitionSourceWire,
   ApprovalDecisionWire,
   ApprovalResolveResultWire,
@@ -228,6 +232,24 @@ export class ApiClient {
       '/v1/workflow-drafts?limit=100',
     )
     return envelope.workflow_drafts
+  }
+
+  async planWorkflow(planning: GraphPlanningRequestWire, commandId: string): Promise<TaskGraphDraftWire> {
+    const envelope = await this.post<{ result: TaskGraphDraftWire }>('/v1/workflow-planner', {
+      planning, command_id: commandId,
+    })
+    return envelope.result
+  }
+
+  orchestrationPolicies(): Promise<OrchestrationPoliciesWire> {
+    return this.get('/v1/orchestration-policies')
+  }
+
+  async putOrchestrationPolicy(policy: OrchestrationPolicyWire, expectedRevision: number, commandId: string): Promise<OrchestrationPoliciesWire> {
+    const envelope = await this.put<{ result: OrchestrationPoliciesWire }>('/v1/orchestration-policies', {
+      policy, expected_revision: expectedRevision, command_id: commandId,
+    })
+    return envelope.result
   }
 
   async createWorkflowDraft(

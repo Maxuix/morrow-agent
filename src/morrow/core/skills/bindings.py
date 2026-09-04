@@ -11,6 +11,7 @@ from pydantic import AliasChoices, ConfigDict, Field, field_validator, model_val
 from morrow.core.domain import canonical_json_bytes, validate_prefixed_id
 from morrow.core.mcp import MCP_MAX_SERVER_BYTES, McpServerDefinition
 from morrow.core.models import ProtocolModel, utc_now
+from morrow.core.orchestration import OrchestrationPolicy
 
 from .identity import validate_skill_id, validate_skv_id
 from .trust import SourceKind
@@ -108,6 +109,7 @@ class ExtensionDocument(ProtocolModel):
         serialization_alias="skills",
     )
     mcp: ExtensionMcpSection = Field(default_factory=ExtensionMcpSection)
+    orchestration: tuple[OrchestrationPolicy, ...] = Field(default=(), max_length=32)
 
     @field_validator("scope_id")
     @classmethod
@@ -132,6 +134,15 @@ class ExtensionDocument(ProtocolModel):
 
     @model_validator(mode="after")
     def valid_bindings(self) -> ExtensionDocument:
+        if len({policy.policy_id for policy in self.orchestration}) != len(self.orchestration):
+            raise ValueError("orchestration policy IDs must be unique within one document")
+        active_matchers = [
+            policy.task_matcher for policy in self.orchestration if policy.status == "active"
+        ]
+        if len(set(active_matchers)) != len(active_matchers):
+            raise ValueError("active orchestration matchers must be unique within one document")
+        if any(policy.scope != self.scope for policy in self.orchestration):
+            raise ValueError("orchestration policy scope must match its Extension document")
         if len(self.bindings) > EXTENSION_MAX_BINDINGS:
             raise ValueError("Extension document contains too many Skill bindings")
         seen: set[str] = set()

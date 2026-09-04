@@ -1,10 +1,10 @@
 # Stage 8 Adaptive Orchestration and GUI Implementation Plan
 
-> Status: Subplans 1–7 and review remediation completed; no active subplan
+> Status: Subplans 1–7 and review remediation completed; Subplan 8 in progress
 > Last completed subplan: `7-run-control-gui` on `feat/stage8-run-control-gui`
 > (acceptance `docs/acceptance/stage-8-subplan-7-run-control-gui.md`)
-> Active subplan: none
-> Next planned subplan: `8-graph-planner-draft` (not activated)
+> Active subplan: `8-graph-planner-draft` on `feat/stage8-graph-planner`
+> Next planned subplan: `9-global-replan` (not activated)
 > Roadmap authority: `docs/roadmap/stage-8-adaptive-orchestration-and-gui.md`
 > (revised 2026-09-03: risk-tiered Replan autonomy; runtime-kernel-first ordering)
 > Current evidence: full offline gate 1633 passed / 2 Live deselected; run-control matrix 15

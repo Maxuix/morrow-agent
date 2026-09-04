@@ -2,18 +2,18 @@
 
 ## Current status
 
-Stage 7 and Stage 8 Subplans 1–7 are complete. Subplan 7 (`7-run-control-gui`) was verified and
-fast-forward integrated into local `main` through `8050fdc`; acceptance evidence lives at
-`docs/acceptance/stage-8-subplan-7-run-control-gui.md`.
+Stage 8 Subplans 1–7 complete. Subplan 8 explicitly activated 2026-09-05 from verified local
+`main` at `e320f51`, on `feat/stage8-graph-planner`.
 
 ## Active task
 
-None. Subplan 8 (`8-graph-planner-draft`) awaits explicit activation.
+Planner, policy, API/CLI and GUI implementation complete; focused validation and browser flows verified.
+Full offline gate running; failures under investigation.
 
 ## Next action
 
-Await explicit activation of Subplan 8.
+Resolve full-suite failures, finish validation and acceptance evidence, then integrate verified work.
 
 ## Blockers
 
-None. Local `main` is ahead of its remote; remote Git push remains unauthorized.
+No implementation blocker. Remote Git push remains unauthorized; local main is ahead of origin.

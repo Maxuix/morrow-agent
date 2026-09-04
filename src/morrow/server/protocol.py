@@ -16,6 +16,7 @@ from morrow.core.agent_definitions import AgentDefinitionSource
 from morrow.core.domain import COMMAND_ID_PREFIX, validate_prefixed_id
 from morrow.core.execution import ApprovalDecision
 from morrow.core.models import ProtocolModel
+from morrow.core.orchestration import GraphPlanningRequest, OrchestrationPolicy
 from morrow.core.workflows.definitions import WorkflowDefinitionSource
 from morrow.core.workflows.patches import FutureGraphPatch
 
@@ -97,6 +98,15 @@ class WorkflowDraftUpdateRequest(CommandRequest):
 
 class WorkflowDraftRowRequest(CommandRequest):
     expected_row_version: int = Field(ge=1)
+
+
+class GraphPlanRequest(CommandRequest):
+    planning: GraphPlanningRequest
+
+
+class OrchestrationPolicyRequest(CommandRequest):
+    policy: OrchestrationPolicy
+    expected_revision: int = Field(ge=0, strict=True)
 
 
 class AgentDefinitionWriteRequest(CommandRequest):

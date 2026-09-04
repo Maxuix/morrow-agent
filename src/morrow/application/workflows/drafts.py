@@ -54,6 +54,7 @@ class WorkflowDraftService:
         *,
         expected_source_revision: int,
         draft_id: str | None = None,
+        planner=None,
     ) -> WorkflowDraftView:
         document = self.management.workflow_sources.load(self.workspace_id)
         if document.revision != expected_source_revision:
@@ -98,6 +99,7 @@ class WorkflowDraftService:
             row_version=1,
             created_at=stamp,
             updated_at=stamp,
+            planner=planner,
         )
         return self._view(self.journal.workflows.create_draft(draft))
 
@@ -288,6 +290,10 @@ class WorkflowDraftService:
         if current.status in {WorkflowDraftStatus.REJECTED, WorkflowDraftStatus.FROZEN}:
             raise ValueError("terminal Workflow Draft cannot be edited")
         return current
+
+    def validate(self, source):
+        """Read-only Compiler and live admission diagnostics, shared with GraphPlanner."""
+        return self._validate(source)
 
     def _validate(self, source):
         result = self.management.workflow_publication.validate(

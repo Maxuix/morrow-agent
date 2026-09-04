@@ -35,6 +35,8 @@ from .protocol import (
     AgentDefinitionPublishRequest,
     AgentDefinitionWriteRequest,
     ApprovalResolveRequest,
+    GraphPlanRequest,
+    OrchestrationPolicyRequest,
     PatchCommandRequest,
     SessionCreateRequest,
     TaskCreateRequest,
@@ -444,6 +446,26 @@ def create_asgi_app(
         limit, _after = _page_params(request)
         return await _query(lambda: commands.list_workflow_drafts(limit=limit))
 
+    async def graph_plan(request: Request) -> Response:
+        body = await _parse_body(request, GraphPlanRequest)
+        await host.execute_query(lambda: commands.graph_plan_check(body))
+        prepared = await host.execute_preparation(
+            lambda: host.context.products.graph_planner.prepare(body.planning)
+        )
+        outcome = await host.execute_command(lambda: commands.graph_plan(body, prepared))
+        return JSONResponse(outcome.wire())
+
+    async def planning_catalog(request: Request) -> Response:
+        return await _query(commands.planning_catalog)
+
+    async def orchestration_policies(request: Request) -> Response:
+        return await _query(commands.orchestration_policies)
+
+    async def orchestration_policy_put(request: Request) -> Response:
+        return await _command(
+            request, OrchestrationPolicyRequest, commands.orchestration_policy_put
+        )
+
     async def create_workflow_draft(request: Request) -> Response:
         return await _command(
             request,
@@ -691,6 +713,12 @@ def create_asgi_app(
             Route(f"{API_PREFIX}/workflow-runs/{{run_id}}/rerun", rerun_run, methods=["POST"]),
             Route(f"{API_PREFIX}/workflow-runs/{{run_id}}/abandon", abandon_run, methods=["POST"]),
             Route(f"{API_PREFIX}/workflow-drafts", list_workflow_drafts),
+            Route(f"{API_PREFIX}/workflow-planner", graph_plan, methods=["POST"]),
+            Route(f"{API_PREFIX}/catalog/planning", planning_catalog),
+            Route(f"{API_PREFIX}/orchestration-policies", orchestration_policies),
+            Route(
+                f"{API_PREFIX}/orchestration-policies", orchestration_policy_put, methods=["PUT"]
+            ),
             Route(f"{API_PREFIX}/workflow-drafts", create_workflow_draft, methods=["POST"]),
             Route(f"{API_PREFIX}/workflow-drafts/{{draft_id}}", get_workflow_draft),
             Route(
