@@ -5121,3 +5121,8 @@ Live test, Replan implementation or remote push authorized.
 - Full offline validation continues. Four old Stage 4 crash subprocess fixtures reproduced a
   10-second startup timeout both in/outside the sandbox (exit code still None). Their setup timeout
   is being made tolerant of contended hosts with failure cleanup; recovery assertions stay exact.
+
+- Recovery fixture adjustment verified: all 13 `test_stage4_recovery_crash.py` tests passed,
+  including all four formerly timed-out subprocess cases, in 99.10 seconds. The change affects
+  fixture setup/cleanup only; no production recovery behavior changed. Planner implementation
+  checkpoint: `0f11dbe`.

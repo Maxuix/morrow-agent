@@ -873,8 +873,7 @@ def test_subprocess_crash_after_executing_is_classified(tmp_path: Path):
     context = multiprocessing.get_context("spawn")
     process = context.Process(target=_crash_after_executing, args=(str(root),))
     process.start()
-    process.join(timeout=10)
-    assert process.exitcode == 17
+    _assert_fixture_crashed(process)
     store = OperationalStore(root, retry_policy=_retry(), clock=FixedClock(), maintenance_timeout=0)
     with store.open(StoreOpenMode.READ_WRITE) as handle:
         journal = SqliteOperationalJournal(handle)
@@ -882,6 +881,19 @@ def test_subprocess_crash_after_executing_is_classified(tmp_path: Path):
         report = service.discover("ses_1", ConversationLog())
         assert report is not None
         assert report.items[0].classification is RecoveryClassification.SAFE_TO_RETRY
+
+
+def _assert_fixture_crashed(process) -> None:
+    # Spawn imports the application before exercising the crash boundary. Allow
+    # slow/contended hosts to finish that setup; elapsed time is not the assertion.
+    try:
+        process.join(timeout=60)
+        assert process.exitcode == 17
+    finally:
+        if process.is_alive():
+            process.terminate()
+            process.join(timeout=5)
+        process.close()
 
 
 def _crash_states() -> tuple[tuple[str, str], ...]:
@@ -946,8 +958,7 @@ def test_crash_matrix_classifies_committed_boundaries(tmp_path: Path, state: str
     context = multiprocessing.get_context("spawn")
     process = context.Process(target=_crash_at_state, args=(str(root), state))
     process.start()
-    process.join(timeout=10)
-    assert process.exitcode == 17
+    _assert_fixture_crashed(process)
     store = OperationalStore(root, retry_policy=_retry(), clock=FixedClock(), maintenance_timeout=0)
     with store.open(StoreOpenMode.READ_WRITE) as handle:
         journal = SqliteOperationalJournal(handle)
