@@ -391,7 +391,10 @@ class PermissionApplicationService:
                     existing,
                 )
             saved_execution, saved_approval, did_execute = persistence.consume_and_mark_executing(
-                execution, approval, approved=approved, command_id=command_id,
+                execution,
+                approval,
+                approved=approved,
+                command_id=command_id,
                 granted_scope=granted_scope,
             )
             event = api._event(

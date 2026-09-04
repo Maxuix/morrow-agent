@@ -103,8 +103,10 @@ export function NodeDetail({
           </dd>
         </div>
         <div className="flex gap-2">
-          <dt className="w-24 shrink-0 text-secondary">请求上限</dt>
-          <dd className="font-mono">{node.effective_node_generation_request_cap ?? '—'}</dd>
+          <dt className="w-24 shrink-0 text-secondary">请求使用</dt>
+          <dd className="font-mono">
+            {nodeView.agent_generation_request_count} / {node.effective_node_generation_request_cap ?? '无上限'}
+          </dd>
         </div>
         <div className="flex gap-2">
           <dt className="w-24 shrink-0 text-secondary">开始 / 完成</dt>

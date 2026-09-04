@@ -5,7 +5,13 @@
  * terms (run, node, revision id) stay in English. Color is never the only
  * signal: every status is rendered as dot + text label.
  */
-import type { TaskRunStatus, WorkflowRunWire, WorkflowStatus } from '../../api/types'
+import type {
+  ApprovalDecisionWire,
+  ApprovalWire,
+  TaskRunStatus,
+  WorkflowRunWire,
+  WorkflowStatus,
+} from '../../api/types'
 import type { ConnectionState } from '../../state/sync'
 
 export const WORKFLOW_STATUS_LABELS: Record<WorkflowStatus, string> = {
@@ -58,6 +64,18 @@ export const RUN_RELATION_LABELS: Record<WorkflowRunWire['run_relation'], string
   initial: '初始',
   continuation: '延续',
   rerun: '重跑',
+}
+
+export const RISK_LEVEL_LABELS: Record<ApprovalWire['risk_level'], string> = {
+  low: '低风险',
+  medium: '中风险',
+  high: '高风险',
+}
+
+export const APPROVAL_DECISION_LABELS: Record<ApprovalDecisionWire, string> = {
+  allow_once: '允许一次',
+  deny: '拒绝',
+  allow_session: '本会话同范围免批',
 }
 
 export const CONNECTION_LABELS: Record<ConnectionState, string> = {

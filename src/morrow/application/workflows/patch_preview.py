@@ -86,9 +86,7 @@ def _cap_relaxed(old: int | float | None, new: int | float | None) -> bool:
     return new is None or new > old
 
 
-def diff_compiled(
-    base: CompiledWorkflow, candidate: CompiledWorkflow
-) -> PatchDiffPreview:
+def diff_compiled(base: CompiledWorkflow, candidate: CompiledWorkflow) -> PatchDiffPreview:
     base_nodes = {node.node_id: node for node in base.nodes}
     candidate_nodes = {node.node_id: node for node in candidate.nodes}
     base_edges = {_edge_label(edge) for edge in base.edges}
@@ -110,9 +108,7 @@ def diff_compiled(
     )
 
 
-def classify_patch_risk(
-    base: CompiledWorkflow, candidate: CompiledWorkflow
-) -> PatchRiskPreview:
+def classify_patch_risk(base: CompiledWorkflow, candidate: CompiledWorkflow) -> PatchRiskPreview:
     """C8 risk dimensions; unknown change classes never classify as low."""
 
     reasons: list[str] = []
@@ -133,13 +129,13 @@ def classify_patch_risk(
     candidate_edges = {(edge.from_node_id, edge.to_node_id) for edge in candidate.edges}
     removed_edges = base_edges - candidate_edges
     if removed_edges:
-        candidate_bindings = {
+        base_bindings = {
             (binding.node_output.node_id, node.node_id)
-            for node in candidate.nodes
+            for node in base.nodes
             for binding in node.input_bindings
             if isinstance(binding, NodeOutputBinding)
         }
-        if any(edge not in candidate_bindings for edge in removed_edges):
+        if any(edge not in base_bindings for edge in removed_edges):
             reasons.append("control_edge_removed")
 
     for node_id in sorted(base_nodes.keys() & candidate_nodes.keys()):

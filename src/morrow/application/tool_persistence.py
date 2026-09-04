@@ -14,6 +14,7 @@ from morrow.core.capabilities import ChangeToolFact, ToolRunContext
 from morrow.core.domain import ArtifactReference
 from morrow.core.execution import (
     APPROVAL_ID_PREFIX,
+    ApprovalDecisionError,
     ApprovalResolution,
     DurableApproval,
     DurableToolExecution,
@@ -135,14 +136,24 @@ class DurableToolExecutionCoordinator:
     ) -> tuple[DurableToolExecution, DurableApproval, bool]:
         stamp = now or self.clock()
         self.permissions.assert_execution_permission(execution, now=stamp)
-        resolved = resolve_approval(
-            approval,
-            approved=approved,
-            expected_row_version=approval.row_version,
-            now=stamp,
-            command_id=command_id,
-            granted_scope=granted_scope,
-        )
+        if approval.resolution is ApprovalResolution.PENDING:
+            resolved = resolve_approval(
+                approval,
+                approved=approved,
+                expected_row_version=approval.row_version,
+                now=stamp,
+                command_id=command_id,
+                granted_scope=granted_scope,
+            )
+        else:
+            # Pre-resolved at creation by a session-scope precedent: the durable
+            # decision must agree with the caller; only consumption remains.
+            target = ApprovalResolution.APPROVED if approved else ApprovalResolution.DENIED
+            if approval.resolution is not target:
+                raise ApprovalDecisionError("approval decision conflicts with durable state")
+            if approval.resolution is ApprovalResolution.APPROVED and stamp >= approval.expires_at:
+                raise ApprovalDecisionError("approval expired")
+            resolved = approval
         if resolved.resolution is not ApprovalResolution.APPROVED:
             denied = transition_execution(
                 execution,
@@ -155,9 +166,12 @@ class DurableToolExecutionCoordinator:
             def deny(
                 txn: DurableToolJournalPort,
             ) -> tuple[DurableToolExecution, DurableApproval]:
-                saved_approval = txn.save_approval(
-                    self.workspace_id, resolved, expected_row_version=approval.row_version
-                )
+                if resolved is approval:
+                    saved_approval = approval
+                else:
+                    saved_approval = txn.save_approval(
+                        self.workspace_id, resolved, expected_row_version=approval.row_version
+                    )
                 saved_execution = txn.save_execution(
                     self.workspace_id, denied, expected_row_version=execution.row_version
                 )
@@ -177,9 +191,12 @@ class DurableToolExecutionCoordinator:
         def work(
             txn: DurableToolJournalPort,
         ) -> tuple[DurableToolExecution, DurableApproval]:
-            saved_resolved = txn.save_approval(
-                self.workspace_id, resolved, expected_row_version=approval.row_version
-            )
+            if resolved is approval:
+                saved_resolved = approval
+            else:
+                saved_resolved = txn.save_approval(
+                    self.workspace_id, resolved, expected_row_version=approval.row_version
+                )
             consumed = consume_approval(
                 saved_resolved, expected_row_version=saved_resolved.row_version, now=stamp
             )

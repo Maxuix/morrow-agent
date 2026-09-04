@@ -138,6 +138,7 @@ export function AppShell({
         </div>
         <div className="min-h-0 border-r border-subtle">
           <TaskWorkspace
+            client={client}
             task={selectedTask}
             artifacts={artifacts}
             terminalOutcome={openRunView?.terminal_outcome ?? null}
@@ -161,6 +162,7 @@ export function AppShell({
       )}
 
       {activeView === 'observe' && <ApprovalsBar
+        client={client}
         run={openRunView?.run ?? null}
         budget={openBudget}
         pendingApprovals={pendingApprovals}

@@ -1,14 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ApiClient } from '../api/client'
-import type { RunViewWire } from '../api/types'
+import type { RunViewWire, TaskRunWire, WorkflowRunWire } from '../api/types'
 import { EmptyState } from '../components/EmptyState'
 import { StatusDot } from '../components/StatusDot'
 import type { SyncStore, WorkflowRunProjection } from '../state/sync'
-import { budgetDisplay, type BudgetDisplay } from './lib/budget'
+import { budgetDisplay, preRunSummaryLine, type BudgetDisplay } from './lib/budget'
 import { buildGraphLayout, isDirectRun, parseRevision } from './lib/graph'
 import { RUN_RELATION_LABELS, shortId } from './lib/labels'
 import { DirectNodeCard } from './DirectNodeCard'
 import { NodeDetail } from './NodeDetail'
+import { RunControls } from './RunControls'
 import { RunGraph } from './RunGraph'
 
 /**
@@ -35,15 +36,19 @@ export function WorkflowPanel({
   store,
   runs,
   onRunViewChange,
+  onEditPending,
 }: {
   client: ApiClient
   store: SyncStore
   runs: WorkflowRunProjection[]
   onRunViewChange: (view: RunViewWire | null) => void
+  /** Provided by a later slice; wiring the pause → edit-pending flow. */
+  onEditPending?: (run: WorkflowRunWire, view: RunViewWire) => void
 }) {
   const [chosenRunId, setChosenRunId] = useState<string | null>(null)
   const [runView, setRunView] = useState<RunViewWire | null>(null)
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
+  const [rootTask, setRootTask] = useState<TaskRunWire | null>(null)
   const fetchedSignature = useRef<string>('')
 
   const orderedRuns = useMemo(
@@ -101,6 +106,19 @@ export function WorkflowPanel({
       unsubscribe()
     }
   }, [client, store, selectedRunId, onRunViewChange])
+
+  // The root task row arrives via its own task events (not run events), so
+  // keep it reactive off the store: retry/rerun stay disabled until loaded.
+  const rootTaskRunId = selectedRun?.run.root_task_run_id ?? null
+  useEffect(() => {
+    const sync = () => {
+      setRootTask(
+        rootTaskRunId === null ? null : (store.getState().tasks.get(rootTaskRunId) ?? null),
+      )
+    }
+    sync()
+    return store.subscribe(sync)
+  }, [store, rootTaskRunId])
 
   if (selectedRun === null) {
     return (
@@ -170,6 +188,21 @@ export function WorkflowPanel({
             <span className="font-mono text-xs text-secondary">
               {shortId(selectedRun.run.workflow_revision_id)}
             </span>
+            {selectedRun.run.run_relation !== 'initial' && (
+              <span className="rounded-[8px] border border-subtle px-1.5 py-0.5 text-xs text-secondary">
+                {RUN_RELATION_LABELS[selectedRun.run.run_relation]}
+                {selectedRun.run.parent_run_id !== null &&
+                  ` ← ${shortId(selectedRun.run.parent_run_id)}`}
+              </span>
+            )}
+            {selectedRun.run.status === 'superseded' && (
+              <span className="rounded-[8px] border border-paused px-1.5 py-0.5 text-xs text-secondary">
+                已被补丁取代（由子运行继续）
+                {selectedRun.run.superseded_reason !== null && (
+                  <span className="ml-1 font-mono">{selectedRun.run.superseded_reason}</span>
+                )}
+              </span>
+            )}
             {selectedRun.run.pause_requested && (
               <span className="rounded-[8px] border border-paused px-1.5 py-0.5 text-xs text-paused">
                 已请求暂停
@@ -180,11 +213,27 @@ export function WorkflowPanel({
             模型请求 {budget.current}
             {budget.lineage !== null && ` · ${budget.lineage}`}
           </div>
+          {runView !== null && (
+            <div className="mt-1 font-mono text-xs text-secondary">
+              {preRunSummaryLine(runView.pre_run_summary)}
+            </div>
+          )}
           {selectedRun.run.result_status !== null && (
             <div className="mt-1 text-xs text-secondary">
               结果：{selectedRun.run.result_status === 'succeeded' ? '成功' : '需要修订'}
             </div>
           )}
+          <RunControls
+            run={selectedRun.run}
+            runView={runView}
+            client={client}
+            rootTask={rootTask}
+            onEditPending={
+              onEditPending !== undefined && runView !== null
+                ? () => onEditPending(selectedRun.run, runView)
+                : undefined
+            }
+          />
         </header>
 
         {runView !== null && runView.inherited_artifacts.length > 0 && (

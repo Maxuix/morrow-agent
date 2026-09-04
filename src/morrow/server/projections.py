@@ -393,21 +393,28 @@ _AFFECTED_VALUE_MAX = 120
 
 
 def _affected_objects(execution: DurableToolExecution) -> list[str]:
-    """Bounded redacted argument summary: the objects the operation touches.
+    """Bounded summary of the objects the operation touches.
 
-    ``redacted_arguments`` is already the credential-stripped form persisted
-    at preparation time; this projection only truncates and counts.
+    Sources are the credential-stripped facts persisted at preparation time:
+    redacted arguments, file-mutation evidence paths and the config-mutation
+    document. This projection only truncates and counts.
     """
 
+    intent = execution.intent
     items: list[str] = []
-    for key in sorted(execution.intent.redacted_arguments):
-        value = execution.intent.redacted_arguments[key]
-        text = str(value)
+    for key in sorted(intent.redacted_arguments):
+        text = str(intent.redacted_arguments[key])
         if len(text) > _AFFECTED_VALUE_MAX:
             text = text[: _AFFECTED_VALUE_MAX - 1] + "…"
         items.append(f"{key}: {text}")
         if len(items) >= _AFFECTED_OBJECTS_MAX:
-            break
+            return items
+    for evidence in intent.file_evidence:
+        items.append(f"{evidence.operation} {evidence.relative_path}")
+        if len(items) >= _AFFECTED_OBJECTS_MAX:
+            return items
+    if intent.config_evidence is not None and len(items) < _AFFECTED_OBJECTS_MAX:
+        items.append(f"{intent.config_evidence.operation} {intent.config_evidence.document_kind}")
     return items
 
 

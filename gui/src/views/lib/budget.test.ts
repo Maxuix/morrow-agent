@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { budgetDisplay } from './budget'
+import type { PreRunSummaryWire } from '../../api/types'
+import { budgetDisplay, preRunSummaryLine } from './budget'
 
 describe('budgetDisplay', () => {
   it('formats used / max and computes the remaining allowance', () => {
@@ -28,5 +29,39 @@ describe('budgetDisplay', () => {
       lineage: '谱系累计 42 / 无上限',
       remaining: null,
     })
+  })
+})
+
+function makeSummary(overrides: Partial<PreRunSummaryWire> = {}): PreRunSummaryWire {
+  return {
+    node_count: 4,
+    models: ['a', 'b'],
+    providers: ['p'],
+    max_agent_generation_requests: 150,
+    default_node_max_agent_generation_requests: null,
+    admission_timeout_seconds: null,
+    max_concurrency: 6,
+    writer_node_ids: ['n1', 'n2'],
+    ...overrides,
+  }
+}
+
+describe('preRunSummaryLine', () => {
+  it('formats the §14.1 cost facts with a finite cap and writer nodes', () => {
+    expect(preRunSummaryLine(makeSummary())).toBe(
+      '节点 4 · 模型 a, b · 上限 150 次请求 · 并行度 6 · 写入节点：n1, n2',
+    )
+  })
+
+  it('states an absent cap and no writers explicitly', () => {
+    expect(
+      preRunSummaryLine(
+        makeSummary({ max_agent_generation_requests: null, writer_node_ids: [] }),
+      ),
+    ).toBe('节点 4 · 模型 a, b · 上限 无上限 · 并行度 6 · 写入节点：无')
+  })
+
+  it('does not invent models when the summary has none', () => {
+    expect(preRunSummaryLine(makeSummary({ models: [] }))).toContain('模型 —')
   })
 })
