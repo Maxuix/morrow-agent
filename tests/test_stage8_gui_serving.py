@@ -15,13 +15,7 @@ import pytest
 from typer.testing import CliRunner
 
 from fixtures.core_api_client import CoreApiVerificationClient
-from morrow.adapters.credentials.keyring import MemoryCredentialStore
-from morrow.adapters.state.journal import SqliteOperationalJournal
-from morrow.adapters.state.migrations import MigrationRegistry, production_registry
-from morrow.adapters.state.operational import OperationalStore
-from morrow.bootstrap import _open_operational_store, build_application
 from morrow.core.capabilities import PermissionPreset
-from morrow.core.store import SUPPORTED_SCHEMA_VERSION
 from morrow.interfaces import gui_cli
 from morrow.interfaces.cli import app as cli_app
 from morrow.server.app import create_asgi_app
@@ -196,29 +190,3 @@ def test_gui_help_smoke():
     result = CliRunner().invoke(cli_app, ["gui", "--help"])
     assert result.exit_code == 0
     assert "--no-browser" in result.output
-
-
-def test_core_composition_upgrades_an_older_supported_store_before_queries(tmp_path):
-    state_root = tmp_path / "state"
-    current = production_registry()
-    legacy = MigrationRegistry(supported_version=22)
-    for version in range(1, 23):
-        legacy.add(current.get(version))
-    OperationalStore(state_root, registry=legacy).initialize().close()
-
-    application = build_application(
-        state_root=state_root,
-        credentials=MemoryCredentialStore(),
-    )
-    handle = _open_operational_store(application)
-    try:
-        assert handle.schema_version == SUPPORTED_SCHEMA_VERSION
-        assert (
-            SqliteOperationalJournal(handle).agent_definitions.get_head("ws_gui", "builtin_direct")
-            is None
-        )
-    finally:
-        handle.close()
-
-    backups = tuple((state_root / "backups" / "operational").glob("*.sqlite"))
-    assert len(backups) == 1

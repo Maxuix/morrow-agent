@@ -10,6 +10,10 @@ uv_cache_root="${UV_CACHE_DIR:-/private/tmp/morrow-uv-cache}"
 cd "$repo_root"
 morrow_args=("$@")
 if [[ "${1:-}" != "provider" || "${2:-}" != "presets" ]]; then
+  if [[ -f "$mimo_state_root/store/operational.sqlite" ]]; then
+    env UV_CACHE_DIR="$uv_cache_root" uv run python \
+      "$repo_root/scripts/ensure-current-dev-state.py" "$mimo_state_root"
+  fi
   morrow_args+=("--state-root" "$mimo_state_root")
 fi
 exec env UV_CACHE_DIR="$uv_cache_root" uv run morrow "${morrow_args[@]}"
