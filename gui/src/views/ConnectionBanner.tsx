@@ -33,6 +33,15 @@ export function ConnectionBanner({
           </button>
         </div>
       )}
+      {connection === 'unauthorized' && (
+        <div className="border-b border-failed bg-raised px-4 py-2 text-sm" role="alert">
+          <span className="font-medium text-failed">会话令牌无效或已过期。</span>{' '}
+          <span className="text-secondary">
+            请在终端重新运行 <span className="font-mono text-primary">morrow gui</span>{' '}
+            并使用新打开的页面。
+          </span>
+        </div>
+      )}
     </div>
   )
 }

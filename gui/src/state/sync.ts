@@ -14,7 +14,9 @@
  *   backoff, and a successful reconnect runs a full resync (fresh snapshot +
  *   remainder pull) rather than trusting the old maps; after
  *   `maxReconnectAttempts` failures the store goes `offline` until
- *   `retry()` is called.
+ *   `retry()` is called. A typed `401/unauthorized` is permanent for the
+ *   current page token, so it enters `unauthorized` immediately without
+ *   backoff.
  *
  * The store is framework-agnostic: plain class, `subscribe`/`getState`
  * shaped for a later `useSyncExternalStore` binding. Timers and the WebSocket
@@ -25,7 +27,7 @@
  * `{status, row_version}`, `workflow_run.created` only lineage facts), so the
  * store fetches the detail endpoint for each. Status events patch in place.
  */
-import type { ApiClient } from '../api/client'
+import { ApiError, type ApiClient } from '../api/client'
 import type {
   ApprovalWire,
   EventWire,
@@ -37,7 +39,7 @@ import type {
   WorkflowStatus,
 } from '../api/types'
 
-export type ConnectionState = 'connecting' | 'live' | 'reconnecting' | 'offline'
+export type ConnectionState = 'connecting' | 'live' | 'reconnecting' | 'offline' | 'unauthorized'
 
 export interface WorkflowRunProjection {
   run: WorkflowRunWire
@@ -141,8 +143,8 @@ export class SyncStore {
     try {
       await this.loadSnapshot()
       this.openSocket()
-    } catch {
-      this.handleSyncFailure()
+    } catch (error) {
+      this.handleSyncFailure(error)
     }
   }
 
@@ -257,7 +259,7 @@ export class SyncStore {
           this.patch({ connection: 'live' })
         }
       })
-      .catch(() => this.handleSyncFailure())
+      .catch((error: unknown) => this.handleSyncFailure(error))
   }
 
   private async drainEvents(): Promise<void> {
@@ -363,8 +365,13 @@ export class SyncStore {
 
   // Failure / reconnect ---------------------------------------------------------
 
-  private handleSyncFailure(): void {
+  private handleSyncFailure(error?: unknown): void {
     if (this.stopped || this.recovering) return
+    if (isUnauthorized(error)) {
+      this.closeSocket()
+      this.patch({ connection: 'unauthorized' })
+      return
+    }
     this.recovering = true
     this.closeSocket()
     this.patch({ connection: 'reconnecting' })
@@ -383,7 +390,11 @@ export class SyncStore {
         if (this.stopped) return
         try {
           await this.resync()
-        } catch {
+        } catch (error) {
+          if (isUnauthorized(error)) {
+            this.patch({ connection: 'unauthorized' })
+            return
+          }
           continue
         }
         this.attempts = 0
@@ -395,7 +406,11 @@ export class SyncStore {
     } finally {
       // `recovering` is cleared on success above; on stop/offline the store no
       // longer accepts hint-driven pulls until `retry()` runs.
-      if (this.state.connection === 'live' || this.state.connection === 'offline') {
+      if (
+        this.state.connection === 'live' ||
+        this.state.connection === 'offline' ||
+        this.state.connection === 'unauthorized'
+      ) {
         this.recovering = false
       }
     }
@@ -417,6 +432,10 @@ export class SyncStore {
   private emit(): void {
     for (const listener of this.listeners) listener()
   }
+}
+
+function isUnauthorized(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 401 && error.code === 'unauthorized'
 }
 
 function patchRun(run: WorkflowRunWire, payload: Record<string, unknown>): void {

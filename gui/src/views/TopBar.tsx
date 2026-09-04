@@ -46,7 +46,7 @@ export function TopBar({
             className={`inline-block size-2 rounded-full ${
               connection === 'live'
                 ? 'bg-completed'
-                : connection === 'offline'
+                : connection === 'offline' || connection === 'unauthorized'
                   ? 'bg-failed'
                   : 'bg-blocked'
             }`}

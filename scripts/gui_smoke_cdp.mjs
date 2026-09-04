@@ -132,7 +132,23 @@ await cdp('Emulation.setDeviceMetricsOverride', {
   deviceScaleFactor: 1,
   mobile: false,
 });
-await cdp('Page.navigate', { url: facts.url });
+
+// Invalid/expired tokens are an authentication failure, not a transient
+// disconnect. Force a full document navigation so the fragment bootstrap
+// replaces any token left in this tab's sessionStorage.
+const invalidUrl = new URL(facts.url);
+invalidUrl.searchParams.set('auth-probe', 'invalid');
+invalidUrl.hash = '#token=invalid-session-token';
+await cdp('Page.navigate', { url: invalidUrl.toString() });
+const invalidToken = await waitFor(async () => {
+  const text = await evaluate('document.body && document.body.innerText');
+  return text.includes('会话令牌无效或已过期') ? text : null;
+}, 'invalid token diagnosis');
+check('invalid token is diagnosed without reconnect backoff', Boolean(invalidToken));
+
+const validUrl = new URL(facts.url);
+validUrl.searchParams.set('auth-probe', 'valid');
+await cdp('Page.navigate', { url: validUrl.toString() });
 await waitFor(
   () => evaluate(`document.body && document.body.innerText.includes('Morrow')`),
   'app shell render',
@@ -189,6 +205,7 @@ const panel = await evaluate(`(() => {
 check('workflow graph renders both nodes', panel.hasGraph && panel.nodeLabels.length === 2, panel.nodeLabels.join(' ; '));
 check('pending approval is displayed', panel.approvalShown);
 check('budget line displayed', panel.budgetShown);
+
 await shot('01-running-approval-pending.png');
 
 // Keyboard traversal: Tab through the shell, record the focus chain.
@@ -216,6 +233,49 @@ const focusedVisible = await evaluate(`(() => {
   return outline !== 'none' || ring !== 'none';
 })()`);
 check('focused element shows a visible indicator', focusedVisible);
+
+// Use a real pointer event (not HTMLElement.click()) on a non-first graph
+// node. This guards the React Flow selection path that opens node detail.
+// Keep it after the keyboard assertions so pointer focus does not change the
+// keyboard traversal's deterministic starting point.
+const pointerTarget = await evaluate(`(() => {
+  const nodes = [...document.querySelectorAll('.react-flow__node')];
+  const node = nodes.at(-1);
+  if (!node) return null;
+  const rect = node.getBoundingClientRect();
+  return {
+    id: node.getAttribute('data-id'),
+    x: rect.left + rect.width / 2,
+    y: rect.top + rect.height / 2,
+  };
+})()`);
+if (pointerTarget) {
+  await cdp('Input.dispatchMouseEvent', {
+    type: 'mousePressed',
+    x: pointerTarget.x,
+    y: pointerTarget.y,
+    button: 'left',
+    clickCount: 1,
+  });
+  await cdp('Input.dispatchMouseEvent', {
+    type: 'mouseReleased',
+    x: pointerTarget.x,
+    y: pointerTarget.y,
+    button: 'left',
+    clickCount: 1,
+  });
+}
+const pointerDetail = await waitFor(async () => {
+  if (!pointerTarget?.id) return null;
+  return evaluate(
+    `Boolean(document.querySelector('section[aria-label="节点 ${pointerTarget.id} 详情"]'))`,
+  );
+}, 'non-first node detail after pointer click');
+check(
+  'pointer click opens non-first node detail',
+  Boolean(pointerTarget?.id && pointerDetail),
+  pointerTarget?.id ?? 'missing node',
+);
 
 // Live update: resolve the approval out-of-band; the GUI must update without reload.
 const exec = promisify(execFile);

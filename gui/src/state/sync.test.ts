@@ -633,4 +633,26 @@ describe('SyncStore', () => {
     expect(FakeWebSocket.instances).toHaveLength(1)
     expect(store.getState().cursor).toBe(0)
   })
+
+  it('classifies an invalid session token without retrying or opening a websocket', async () => {
+    const core = new FakeCore()
+    core.on('/v1/snapshot', () => ({
+      status: 401,
+      body: { error: { code: 'unauthorized', message: 'invalid session token' } },
+    }))
+    const sleeps: number[] = []
+    const store = makeStore(core, {
+      sleep: async (ms) => {
+        sleeps.push(ms)
+      },
+    })
+
+    await store.start()
+    await flush()
+
+    expect(store.getState().connection).toBe('unauthorized')
+    expect(core.count('/v1/snapshot')).toBe(1)
+    expect(sleeps).toEqual([])
+    expect(FakeWebSocket.instances).toHaveLength(0)
+  })
 })

@@ -65,6 +65,7 @@ export const CONNECTION_LABELS: Record<ConnectionState, string> = {
   live: '已连接',
   reconnecting: '连接中断，正在重连…',
   offline: '已离线',
+  unauthorized: '会话令牌无效',
 }
 
 /** Compact id for display: keeps the type prefix, truncates the body. */
