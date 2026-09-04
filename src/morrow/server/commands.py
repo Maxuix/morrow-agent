@@ -22,6 +22,8 @@ from morrow.core.workflows.runs import WorkflowStatus
 
 from . import projections
 from .protocol import (
+    AgentDefinitionPublishRequest,
+    AgentDefinitionWriteRequest,
     ApprovalResolveRequest,
     PatchCommandRequest,
     SessionCreateRequest,
@@ -29,6 +31,9 @@ from .protocol import (
     TaskTransitionRequest,
     WorkflowAbandonRequest,
     WorkflowControlRequest,
+    WorkflowDraftCreateRequest,
+    WorkflowDraftRowRequest,
+    WorkflowDraftUpdateRequest,
     WorkflowRerunRequest,
     WorkflowResumeRequest,
     WorkflowStartRequest,
@@ -100,6 +105,12 @@ class ServerCommands:
         if run is None:
             raise ApplicationError(ApplicationErrorCode.NOT_FOUND, "workflow run is missing")
         return run
+
+    def _require_draft(self, draft_id: str):
+        view = self.context.products.workflow_drafts.get(draft_id)
+        if view is None:
+            raise ApplicationError(ApplicationErrorCode.NOT_FOUND, "Workflow Draft is missing")
+        return view
 
     def _run_wire_by_id(self, workflow_run_id: str) -> dict[str, Any]:
         return projections.run_wire(self._require_run(workflow_run_id))
@@ -326,6 +337,227 @@ class ServerCommands:
 
     # Future graph patches -------------------------------------------------------
 
+    # Pre-freeze Workflow Drafts -------------------------------------------------
+
+    def list_workflow_drafts(self, *, limit: int) -> dict[str, Any]:
+        views = self.context.products.workflow_drafts.list(limit=limit)
+        return {"workflow_drafts": [projections.workflow_draft_wire(view) for view in views]}
+
+    def get_workflow_draft(self, draft_id: str) -> dict[str, Any]:
+        return {"workflow_draft": projections.workflow_draft_wire(self._require_draft(draft_id))}
+
+    def workflow_draft_create(self, request: WorkflowDraftCreateRequest) -> CommandOutcome:
+        draft_id = request.draft_id or self.context.api.id_source.new_id("wdraft")
+        value, receipt = self._idempotent(
+            "workflow_draft_create",
+            request.command_id,
+            {
+                "draft_id": draft_id,
+                "source_hash": request.source.content_hash,
+                "expected_source_revision": request.expected_source_revision,
+            },
+            lambda: (
+                self.context.products.workflow_drafts.create(
+                    request.source,
+                    expected_source_revision=request.expected_source_revision,
+                    draft_id=draft_id,
+                ),
+                draft_id,
+            ),
+            lambda existing: self._require_draft(existing.result_id),
+            result_kind="workflow_draft",
+        )
+        return CommandOutcome({"workflow_draft": projections.workflow_draft_wire(value)}, receipt)
+
+    def workflow_draft_update(
+        self, draft_id: str, request: WorkflowDraftUpdateRequest
+    ) -> CommandOutcome:
+        value, receipt = self._idempotent(
+            "workflow_draft_update",
+            request.command_id,
+            {
+                "draft_id": draft_id,
+                "source_hash": request.source.content_hash,
+                "expected_row_version": request.expected_row_version,
+            },
+            lambda: (
+                self.context.products.workflow_drafts.update(
+                    draft_id,
+                    request.source,
+                    expected_row_version=request.expected_row_version,
+                ),
+                draft_id,
+            ),
+            lambda _existing: self._require_draft(draft_id),
+            result_kind="workflow_draft",
+        )
+        return CommandOutcome({"workflow_draft": projections.workflow_draft_wire(value)}, receipt)
+
+    def workflow_draft_revalidate(
+        self, draft_id: str, request: WorkflowDraftRowRequest
+    ) -> CommandOutcome:
+        value, receipt = self._idempotent(
+            "workflow_draft_revalidate",
+            request.command_id,
+            {"draft_id": draft_id, "expected_row_version": request.expected_row_version},
+            lambda: (
+                self.context.products.workflow_drafts.revalidate(
+                    draft_id, expected_row_version=request.expected_row_version
+                ),
+                draft_id,
+            ),
+            lambda _existing: self._require_draft(draft_id),
+            result_kind="workflow_draft",
+        )
+        return CommandOutcome({"workflow_draft": projections.workflow_draft_wire(value)}, receipt)
+
+    def workflow_draft_reject(
+        self, draft_id: str, request: WorkflowDraftRowRequest
+    ) -> CommandOutcome:
+        value, receipt = self._idempotent(
+            "workflow_draft_reject",
+            request.command_id,
+            {"draft_id": draft_id, "expected_row_version": request.expected_row_version},
+            lambda: (
+                self.context.products.workflow_drafts.reject(
+                    draft_id, expected_row_version=request.expected_row_version
+                ),
+                draft_id,
+            ),
+            lambda _existing: self._require_draft(draft_id),
+            result_kind="workflow_draft",
+        )
+        return CommandOutcome({"workflow_draft": projections.workflow_draft_wire(value)}, receipt)
+
+    def workflow_draft_freeze(
+        self, draft_id: str, request: WorkflowDraftRowRequest
+    ) -> CommandOutcome:
+        command_id = request.command_id or self.context.api.id_source.new_id("cmd")
+        value, receipt = self._idempotent(
+            "workflow_draft_freeze",
+            command_id,
+            {"draft_id": draft_id, "expected_row_version": request.expected_row_version},
+            lambda: (
+                self.context.products.workflow_drafts.freeze(
+                    draft_id,
+                    expected_row_version=request.expected_row_version,
+                    command_id=command_id,
+                ),
+                draft_id,
+            ),
+            lambda _existing: self.context.products.workflow_drafts.freeze(
+                draft_id,
+                expected_row_version=request.expected_row_version,
+                command_id=command_id,
+            ),
+            result_kind="workflow_draft",
+        )
+        return CommandOutcome(
+            {
+                "workflow_draft": projections.workflow_draft_wire(
+                    self.context.products.workflow_drafts.get(draft_id)
+                ),
+                "workflow_revision": value.revision.model_dump(mode="json"),
+            },
+            receipt,
+        )
+
+    # Editable Agent definitions -----------------------------------------------
+
+    def agent_definition_create(self, request: AgentDefinitionWriteRequest) -> CommandOutcome:
+        definition_id = request.source.definition_id
+        value, receipt = self._idempotent(
+            "agent_definition_create",
+            request.command_id,
+            {
+                "definition_id": definition_id,
+                "source_hash": request.source.content_hash,
+                "expected_source_revision": request.expected_source_revision,
+            },
+            lambda: (
+                self.context.management.create_agent_source(
+                    request.source,
+                    expected_source_revision=request.expected_source_revision,
+                ),
+                definition_id,
+            ),
+            lambda _existing: self.context.runtime.queries.get_agent_definition(definition_id),
+            result_kind="agent_definition",
+        )
+        view = self.context.runtime.queries.get_agent_definition(definition_id)
+        return CommandOutcome(
+            {
+                "agent_definition": projections.agent_definition_wire(view),
+                "source_revision": value.source_revision,
+            },
+            receipt,
+        )
+
+    def agent_definition_update(
+        self, definition_id: str, request: AgentDefinitionWriteRequest
+    ) -> CommandOutcome:
+        if request.source.definition_id != definition_id:
+            raise ValueError("Agent definition path and body identities differ")
+        value, receipt = self._idempotent(
+            "agent_definition_update",
+            request.command_id,
+            {
+                "definition_id": definition_id,
+                "source_hash": request.source.content_hash,
+                "expected_source_revision": request.expected_source_revision,
+            },
+            lambda: (
+                self.context.management.update_agent_source(
+                    request.source,
+                    expected_source_revision=request.expected_source_revision,
+                ),
+                definition_id,
+            ),
+            lambda _existing: self.context.runtime.queries.get_agent_definition(definition_id),
+            result_kind="agent_definition",
+        )
+        view = self.context.runtime.queries.get_agent_definition(definition_id)
+        return CommandOutcome(
+            {
+                "agent_definition": projections.agent_definition_wire(view),
+                "source_revision": value.source_revision,
+            },
+            receipt,
+        )
+
+    def agent_definition_publish(
+        self, definition_id: str, request: AgentDefinitionPublishRequest
+    ) -> CommandOutcome:
+        command_id = request.command_id or self.context.api.id_source.new_id("cmd")
+        value, receipt = self._idempotent(
+            "agent_definition_publish",
+            command_id,
+            {
+                "definition_id": definition_id,
+                "expected_head_revision": request.expected_head_revision,
+                "enabled": request.enabled,
+            },
+            lambda: (
+                self.context.management.publish_agent(
+                    definition_id,
+                    expected_head_revision=request.expected_head_revision,
+                    command_id=command_id,
+                    enabled=request.enabled,
+                ),
+                definition_id,
+            ),
+            lambda _existing: self.context.runtime.queries.get_agent_definition(definition_id),
+            result_kind="agent_definition",
+        )
+        view = self.context.runtime.queries.get_agent_definition(definition_id)
+        return CommandOutcome(
+            {
+                "agent_definition": projections.agent_definition_wire(view),
+                "version": value.model_dump(mode="json") if hasattr(value, "model_dump") else None,
+            },
+            receipt,
+        )
+
     def patch_validate(self, request: PatchCommandRequest) -> dict[str, Any]:
         validation = self.context.management.validate_patch(request.patch)
         return {
@@ -335,6 +567,8 @@ class ServerCommands:
                     "severity": item.severity.value,
                     "code": item.code,
                     "message": item.message,
+                    "node_id": item.node_id,
+                    "edge_id": item.edge_id,
                 }
                 for item in validation.compilation.diagnostics
             ],
@@ -634,6 +868,12 @@ class ServerCommands:
         if view is None:
             raise ApplicationError(ApplicationErrorCode.NOT_FOUND, "agent definition is missing")
         return {"agent_definition": projections.agent_definition_wire(view)}
+
+    def catalog_agent_version(self, version_id: str) -> dict[str, Any]:
+        view = self.context.runtime.queries.get_agent_version(version_id)
+        if view is None:
+            raise ApplicationError(ApplicationErrorCode.NOT_FOUND, "agent version is missing")
+        return {"agent_version": projections.agent_definition_version_wire(view)}
 
     def catalog_workflow_definitions(self, *, limit: int, after: str | None) -> dict[str, Any]:
         views = self.context.runtime.queries.list_workflow_definitions(limit=limit, after=after)

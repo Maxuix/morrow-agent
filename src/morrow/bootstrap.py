@@ -96,6 +96,7 @@ from morrow.application.turns import SessionPersistence
 from morrow.application.workflows.builtins import visible_builtin_workflows
 from morrow.application.workflows.capture import ChangeArtifactCapture
 from morrow.application.workflows.composition import build_workflow_runtime
+from morrow.application.workflows.drafts import WorkflowDraftService
 from morrow.application.workflows.management import WorkflowManagementService
 from morrow.application.workflows.publication import WorkflowCompilationService
 from morrow.application.workflows.queries import WorkflowQueryService
@@ -191,6 +192,7 @@ class SessionApplication:
     review_worker: ReviewWorker | None = None
     workflow_runtime: object | None = None
     workflow_management: WorkflowManagementService | None = None
+    workflow_drafts: WorkflowDraftService | None = None
 
 
 @dataclass(frozen=True)
@@ -1228,6 +1230,33 @@ def build_session_application(
             agent_builtins=packaged_agents,
             workflow_builtins=packaged_workflows,
         )
+
+        def workflow_model_available(model_ref: ModelRef) -> bool:
+            current = app.provider_service.catalog_snapshot().config.providers.get(
+                model_ref.provider_id
+            )
+            return current is not None and model_ref.model_id in current.models
+
+        def workflow_skill_available(version_id: str) -> bool:
+            views = (
+                *skill_services.queries.list(scope_id=None, limit=256),
+                *skill_services.queries.list(scope_id=identity.workspace_id, limit=256),
+            )
+            return any(
+                view.enabled
+                and view.availability.value == "available"
+                and any(version.version_id == version_id for version in view.versions)
+                for view in views
+            )
+
+        workflow_drafts = WorkflowDraftService(
+            journal,
+            workspace_id=identity.workspace_id,
+            management=workflow_management,
+            id_source=app.id_source,
+            model_available=workflow_model_available,
+            skill_available=workflow_skill_available,
+        )
         products = SessionApplication(
             session=session,
             context_builder=context_builder,
@@ -1252,6 +1281,7 @@ def build_session_application(
             review_worker=api.review_worker,
             workflow_runtime=workflow_runtime,
             workflow_management=workflow_management,
+            workflow_drafts=workflow_drafts,
         )
     except BaseException:
         handle.close()

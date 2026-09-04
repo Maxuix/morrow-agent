@@ -119,8 +119,26 @@ class WorkflowManagementService:
             raise ValueError(
                 "built-in Agent sources are read-only; create a new user definition ID"
             )
+        if source.derived_from_definition_id is not None:
+            parent = self.agent_builtins.get(source.derived_from_definition_id)
+            if parent is None:
+                parent = next(
+                    (
+                        version.source
+                        for version in self.agent_publication.journal.agent_definitions.list_versions(
+                            self.workspace_id
+                        )
+                        if version.source.definition_id == source.derived_from_definition_id
+                        and version.content_hash == source.derived_from_source_hash
+                    ),
+                    None,
+                )
+            if parent is None or parent.content_hash != source.derived_from_source_hash:
+                raise ValueError("derived Agent source provenance does not match its parent")
         current = self.agent_sources.load(self.workspace_id)
         values = {item.definition_id: item for item in current.definitions}
+        if current.revision == expected + 1 and values.get(source.definition_id) == source:
+            return DefinitionSourceResult(source, current.revision)
         self._require_create_state(source.definition_id, values, create=create, kind="Agent")
         values[source.definition_id] = source
         written = self.agent_sources.write(
@@ -137,6 +155,8 @@ class WorkflowManagementService:
             )
         current = self.workflow_sources.load(self.workspace_id)
         values = {item.workflow_definition_id: item for item in current.definitions}
+        if current.revision == expected + 1 and values.get(source.workflow_definition_id) == source:
+            return DefinitionSourceResult(source, current.revision)
         self._require_create_state(
             source.workflow_definition_id, values, create=create, kind="Workflow"
         )

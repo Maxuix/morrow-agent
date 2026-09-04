@@ -12,8 +12,10 @@ from typing import Annotated, Any
 
 from pydantic import Field, field_validator
 
+from morrow.core.agent_definitions import AgentDefinitionSource
 from morrow.core.domain import COMMAND_ID_PREFIX, validate_prefixed_id
 from morrow.core.models import ProtocolModel
+from morrow.core.workflows.definitions import WorkflowDefinitionSource
 from morrow.core.workflows.patches import FutureGraphPatch
 
 PROTOCOL_VERSION = 1
@@ -79,6 +81,31 @@ class WorkflowAbandonRequest(CommandRequest):
 
 class PatchCommandRequest(CommandRequest):
     patch: FutureGraphPatch
+
+
+class WorkflowDraftCreateRequest(CommandRequest):
+    draft_id: str | None = Field(default=None, pattern=r"^wdraft_[A-Za-z0-9_-]+$")
+    source: WorkflowDefinitionSource
+    expected_source_revision: int = Field(ge=0)
+
+
+class WorkflowDraftUpdateRequest(CommandRequest):
+    source: WorkflowDefinitionSource
+    expected_row_version: int = Field(ge=1)
+
+
+class WorkflowDraftRowRequest(CommandRequest):
+    expected_row_version: int = Field(ge=1)
+
+
+class AgentDefinitionWriteRequest(CommandRequest):
+    source: AgentDefinitionSource
+    expected_source_revision: int = Field(ge=0)
+
+
+class AgentDefinitionPublishRequest(CommandRequest):
+    expected_head_revision: int = Field(ge=0)
+    enabled: bool = True
 
 
 class ApprovalResolveRequest(CommandRequest):

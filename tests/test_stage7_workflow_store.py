@@ -712,6 +712,7 @@ def test_previous_current_migration_defaults_and_future_refusal(tmp_path):
         "workflow_revision_artifact_contracts",
         "workflow_node_request_cap",
         "workflow_pause_drain_lineage",
+        "workflow_editor_drafts",
     )
     with store.open(StoreOpenMode.READ_WRITE) as handle:
         assert (
@@ -727,8 +728,8 @@ def test_previous_current_migration_defaults_and_future_refusal(tmp_path):
             journal.get_artifact("ws_one", "art_old").text_safety_profile
             == TextSafetyProfile.LEGACY_STRICT
         )
-        handle.run_write(lambda ex: ex.execute("PRAGMA user_version=27"))
-        handle.run_write(lambda ex: ex.execute("UPDATE store_identity SET schema_version=27"))
+        handle.run_write(lambda ex: ex.execute("PRAGMA user_version=28"))
+        handle.run_write(lambda ex: ex.execute("UPDATE store_identity SET schema_version=28"))
     assert store.classify().health is StoreHealth.FUTURE_SCHEMA
 
 

@@ -31,6 +31,8 @@ from .commands import ServerCommands
 from .host import CommandBackpressureError, CoreHost, CoreHostUnavailableError
 from .protocol import (
     API_PREFIX,
+    AgentDefinitionPublishRequest,
+    AgentDefinitionWriteRequest,
     ApprovalResolveRequest,
     PatchCommandRequest,
     SessionCreateRequest,
@@ -38,6 +40,9 @@ from .protocol import (
     TaskTransitionRequest,
     WorkflowAbandonRequest,
     WorkflowControlRequest,
+    WorkflowDraftCreateRequest,
+    WorkflowDraftRowRequest,
+    WorkflowDraftUpdateRequest,
     WorkflowRerunRequest,
     WorkflowResumeRequest,
     WorkflowStartRequest,
@@ -432,6 +437,79 @@ def create_asgi_app(
 
     # Patches --------------------------------------------------------------------
 
+    # Pre-freeze Workflow Drafts -------------------------------------------------
+
+    async def list_workflow_drafts(request: Request) -> Response:
+        limit, _after = _page_params(request)
+        return await _query(lambda: commands.list_workflow_drafts(limit=limit))
+
+    async def create_workflow_draft(request: Request) -> Response:
+        return await _command(
+            request,
+            WorkflowDraftCreateRequest,
+            lambda body: commands.workflow_draft_create(body),
+        )
+
+    async def get_workflow_draft(request: Request) -> Response:
+        return await _query(lambda: commands.get_workflow_draft(request.path_params["draft_id"]))
+
+    async def update_workflow_draft(request: Request) -> Response:
+        draft_id = request.path_params["draft_id"]
+        return await _command(
+            request,
+            WorkflowDraftUpdateRequest,
+            lambda body: commands.workflow_draft_update(draft_id, body),
+        )
+
+    async def revalidate_workflow_draft(request: Request) -> Response:
+        draft_id = request.path_params["draft_id"]
+        return await _command(
+            request,
+            WorkflowDraftRowRequest,
+            lambda body: commands.workflow_draft_revalidate(draft_id, body),
+        )
+
+    async def reject_workflow_draft(request: Request) -> Response:
+        draft_id = request.path_params["draft_id"]
+        return await _command(
+            request,
+            WorkflowDraftRowRequest,
+            lambda body: commands.workflow_draft_reject(draft_id, body),
+        )
+
+    async def freeze_workflow_draft(request: Request) -> Response:
+        draft_id = request.path_params["draft_id"]
+        return await _command(
+            request,
+            WorkflowDraftRowRequest,
+            lambda body: commands.workflow_draft_freeze(draft_id, body),
+        )
+
+    # Editable Agent definitions -------------------------------------------------
+
+    async def create_agent_definition(request: Request) -> Response:
+        return await _command(
+            request,
+            AgentDefinitionWriteRequest,
+            lambda body: commands.agent_definition_create(body),
+        )
+
+    async def update_agent_definition(request: Request) -> Response:
+        definition_id = request.path_params["definition_id"]
+        return await _command(
+            request,
+            AgentDefinitionWriteRequest,
+            lambda body: commands.agent_definition_update(definition_id, body),
+        )
+
+    async def publish_agent_definition(request: Request) -> Response:
+        definition_id = request.path_params["definition_id"]
+        return await _command(
+            request,
+            AgentDefinitionPublishRequest,
+            lambda body: commands.agent_definition_publish(definition_id, body),
+        )
+
     async def patch_validate(request: Request) -> Response:
         return await _command(
             request, PatchCommandRequest, lambda body: _PatchResult(commands.patch_validate(body))
@@ -485,6 +563,11 @@ def create_asgi_app(
     async def catalog_agent_definition(request: Request) -> Response:
         return await _query(
             lambda: commands.catalog_agent_definition(request.path_params["definition_id"])
+        )
+
+    async def catalog_agent_version(request: Request) -> Response:
+        return await _query(
+            lambda: commands.catalog_agent_version(request.path_params["version_id"])
         )
 
     async def catalog_workflow_definitions(request: Request) -> Response:
@@ -580,6 +663,40 @@ def create_asgi_app(
             Route(f"{API_PREFIX}/workflow-runs/{{run_id}}/cancel", cancel_run, methods=["POST"]),
             Route(f"{API_PREFIX}/workflow-runs/{{run_id}}/rerun", rerun_run, methods=["POST"]),
             Route(f"{API_PREFIX}/workflow-runs/{{run_id}}/abandon", abandon_run, methods=["POST"]),
+            Route(f"{API_PREFIX}/workflow-drafts", list_workflow_drafts),
+            Route(f"{API_PREFIX}/workflow-drafts", create_workflow_draft, methods=["POST"]),
+            Route(f"{API_PREFIX}/workflow-drafts/{{draft_id}}", get_workflow_draft),
+            Route(
+                f"{API_PREFIX}/workflow-drafts/{{draft_id}}",
+                update_workflow_draft,
+                methods=["PUT"],
+            ),
+            Route(
+                f"{API_PREFIX}/workflow-drafts/{{draft_id}}/validate",
+                revalidate_workflow_draft,
+                methods=["POST"],
+            ),
+            Route(
+                f"{API_PREFIX}/workflow-drafts/{{draft_id}}/reject",
+                reject_workflow_draft,
+                methods=["POST"],
+            ),
+            Route(
+                f"{API_PREFIX}/workflow-drafts/{{draft_id}}/freeze",
+                freeze_workflow_draft,
+                methods=["POST"],
+            ),
+            Route(f"{API_PREFIX}/agent-definitions", create_agent_definition, methods=["POST"]),
+            Route(
+                f"{API_PREFIX}/agent-definitions/{{definition_id}}",
+                update_agent_definition,
+                methods=["PUT"],
+            ),
+            Route(
+                f"{API_PREFIX}/agent-definitions/{{definition_id}}/publish",
+                publish_agent_definition,
+                methods=["POST"],
+            ),
             Route(f"{API_PREFIX}/patches/validate", patch_validate, methods=["POST"]),
             Route(f"{API_PREFIX}/patches/save", patch_save, methods=["POST"]),
             Route(f"{API_PREFIX}/patches/apply", patch_apply, methods=["POST"]),
@@ -596,6 +713,10 @@ def create_asgi_app(
             Route(
                 f"{API_PREFIX}/catalog/agent-definitions/{{definition_id}}",
                 catalog_agent_definition,
+            ),
+            Route(
+                f"{API_PREFIX}/catalog/agent-versions/{{version_id}}",
+                catalog_agent_version,
             ),
             Route(f"{API_PREFIX}/catalog/workflow-definitions", catalog_workflow_definitions),
             Route(

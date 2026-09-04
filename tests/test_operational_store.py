@@ -643,6 +643,7 @@ def test_ordered_checksummed_migration_rolls_back_a_failed_step(tmp_path):
         "workflow_revision_artifact_contracts",
         "workflow_node_request_cap",
         "workflow_pause_drain_lineage",
+        "workflow_editor_drafts",
     )
     assert report.backup_name
     assert (store.layout.backups_dir / report.backup_name).is_file()

@@ -42,6 +42,8 @@ class CompileDiagnostic:
     severity: DiagnosticSeverity
     code: str
     message: str
+    node_id: str | None = None
+    edge_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -95,6 +97,7 @@ def compile_workflow(
                     f"node {node.node_id}: exact AgentDefinitionVersion {ref.version_id} is missing"
                     " or does not match its published identity; publish the definition and"
                     " reference the exact version",
+                    node_id=node.node_id,
                 )
             )
             continue
@@ -158,6 +161,7 @@ def _check_graph(source: WorkflowDefinitionSource, diagnostics: list[CompileDiag
                 "invoking_session_shape_invalid",
                 "invoking_session is legal only for an entire graph with exactly one node and "
                 "no edges; use isolated scope for multi-node Workflows",
+                node_id=invoking[0],
             )
         )
     for from_id, to_id in edges:
@@ -167,6 +171,7 @@ def _check_graph(source: WorkflowDefinitionSource, diagnostics: list[CompileDiag
                     DiagnosticSeverity.ERROR,
                     "edge_endpoint_invalid",
                     f"edge {from_id} -> {to_id} references an unknown or identical node",
+                    edge_id=f"{from_id}->{to_id}",
                 )
             )
     # Kahn's topological walk; any remainder is on a cycle.
@@ -193,6 +198,7 @@ def _check_graph(source: WorkflowDefinitionSource, diagnostics: list[CompileDiag
                 "graph_cycle",
                 f"declared edges form a cycle involving {', '.join(cycle)}; remove one edge"
                 " so the graph is a DAG",
+                node_id=cycle[0],
             )
         )
     if len(node_ids) > 1:
@@ -221,8 +227,68 @@ def _check_graph(source: WorkflowDefinitionSource, diagnostics: list[CompileDiag
                     "graph_disconnected",
                     f"nodes {', '.join(unattached)} are disconnected from the main component;"
                     " add an explicit control edge or remove them",
+                    node_id=unattached[0],
                 )
             )
+    outputs = {
+        (node.node_id, slot.slot): slot for node in source.nodes for slot in node.output_contracts
+    }
+    for ref in source.required_outputs:
+        slot = outputs.get((ref.node_id, ref.output_slot))
+        if slot is None or not slot.required_for_node_completion:
+            diagnostics.append(
+                CompileDiagnostic(
+                    DiagnosticSeverity.ERROR,
+                    "structure_invalid",
+                    f"required output {ref.node_id}.{ref.output_slot} no longer names a"
+                    " completion-required Artifact; restore that output or choose another"
+                    " final output",
+                    node_id=ref.node_id,
+                )
+            )
+    edge_set = set(edges)
+    for node in source.nodes:
+        for binding in node.input_bindings:
+            if binding.source != "node_output":
+                continue
+            ref = binding.node_output
+            slot = outputs.get((ref.node_id, ref.output_slot))
+            edge_id = f"{ref.node_id}->{node.node_id}"
+            if slot is None or not slot.required_for_node_completion:
+                diagnostics.append(
+                    CompileDiagnostic(
+                        DiagnosticSeverity.ERROR,
+                        "structure_invalid",
+                        f"node {node.node_id} input {binding.input_name} references output"
+                        f" {ref.node_id}.{ref.output_slot}, which is missing or not"
+                        " completion-required; restore it or edit the binding",
+                        node_id=node.node_id,
+                        edge_id=edge_id,
+                    )
+                )
+            elif (slot.kind, slot.version) != (binding.accepts.kind, binding.accepts.version):
+                diagnostics.append(
+                    CompileDiagnostic(
+                        DiagnosticSeverity.ERROR,
+                        "structure_invalid",
+                        f"node {node.node_id} input {binding.input_name} has a contract mismatch:"
+                        f" it does not accept {slot.kind}@{slot.version}; select a compatible"
+                        " Artifact contract",
+                        node_id=node.node_id,
+                        edge_id=edge_id,
+                    )
+                )
+            if (ref.node_id, node.node_id) not in edge_set:
+                diagnostics.append(
+                    CompileDiagnostic(
+                        DiagnosticSeverity.ERROR,
+                        "structure_invalid",
+                        f"node {node.node_id} input {binding.input_name} requires same-direction"
+                        f" edge {edge_id}; restore the edge or remove the binding",
+                        node_id=node.node_id,
+                        edge_id=edge_id,
+                    )
+                )
     consumed = {(ref.node_id, ref.output_slot) for ref in source.required_outputs}
     for node in source.nodes:
         for binding in node.input_bindings:
@@ -237,6 +303,7 @@ def _check_graph(source: WorkflowDefinitionSource, diagnostics: list[CompileDiag
                     "unconsumed_outputs",
                     f"node {node.node_id} outputs are neither bound downstream nor exported;"
                     " the node still executes and its failure fails the Workflow",
+                    node_id=node.node_id,
                 )
             )
     writers = sorted(node.node_id for node in source.nodes if node.access_mode == "write")
@@ -247,6 +314,7 @@ def _check_graph(source: WorkflowDefinitionSource, diagnostics: list[CompileDiag
                 "independent_writers",
                 f"nodes {', '.join(writers)} all hold write access; the Stage 7 Scheduler"
                 " serializes them, but consider splitting or ordering write work explicitly",
+                node_id=writers[0],
             )
         )
     entry_nodes = tuple(sorted(node_ids - {to_id for _, to_id in edges}))
@@ -270,6 +338,7 @@ def _resolve_model(
                 "model_unavailable",
                 f"node {node_id}: model_selection=invoking_active cannot resolve because no"
                 " active model is configured; configure one before publishing",
+                node_id=node_id,
             )
         )
         return None
@@ -294,6 +363,7 @@ def _merge_tool_requirements(
                     "tool_reserved",
                     f"node {node.node_id}: {name} is an internal mechanism tool and cannot be"
                     " granted by a definition, prompt, Skill or Artifact",
+                    node_id=node.node_id,
                 )
             )
             ok = False
@@ -308,6 +378,7 @@ def _merge_tool_requirements(
                 "complete_patch_requires_write",
                 f"node {node.node_id}: a required ImplementationPatch needs access_mode=write"
                 " so captures can record workspace mutations",
+                node_id=node.node_id,
             )
         )
         ok = False
@@ -319,6 +390,7 @@ def _merge_tool_requirements(
                 f"node {node.node_id}: tool {name} is outside the declared set of Agent"
                 f" definition {version.source.definition_id}; a node may only narrow its"
                 " definition's declared tools",
+                node_id=node.node_id,
             )
         )
         ok = False
@@ -329,6 +401,7 @@ def _merge_tool_requirements(
                 "access_mode_escalation",
                 f"node {node.node_id}: access_mode=write exceeds the read ceiling of Agent"
                 f" definition {version.source.definition_id}",
+                node_id=node.node_id,
             )
         )
         ok = False
@@ -347,6 +420,7 @@ def _merge_tool_requirements(
                     f"node {node.node_id}: tool {name} is both required and forbidden between"
                     " the definition and the node overlay; forbidden always wins, so a"
                     " required-plus-forbidden conflict is rejected",
+                    node_id=node.node_id,
                 )
             )
             ok = False
@@ -387,6 +461,7 @@ def _merge_tool_requirements(
                         if access is not None
                         else "absent from the configured tool catalogs"
                     ),
+                    node_id=node.node_id,
                 )
             )
             ok = False
@@ -397,6 +472,7 @@ def _merge_tool_requirements(
                     "optional_removed",
                     f"node {node.node_id}: optional tool {name} is absent or denied and was"
                     " removed from the frozen evidence",
+                    node_id=node.node_id,
                 )
             )
     if patch_required and ok:
@@ -408,6 +484,7 @@ def _merge_tool_requirements(
                     "uncapturable_host_bash",
                     f"node {node.node_id}: Host-mode bash cannot satisfy a complete"
                     " ImplementationPatch; freeze bash to the native sandbox or omit it",
+                    node_id=node.node_id,
                 )
             )
             ok = False

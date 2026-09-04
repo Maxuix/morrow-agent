@@ -433,6 +433,7 @@ def agent_definition_wire(view) -> dict[str, Any]:
         "definition_id": view.definition_id,
         "origin": view.origin,
         "source_revision": view.source_revision,
+        "source_hash": view.source.content_hash if view.source is not None else None,
         "revoked": view.revoked,
         "desired_ahead_of_published": view.desired_ahead_of_published,
         "source": view.source.model_dump(mode="json") if view.source is not None else None,
@@ -442,6 +443,13 @@ def agent_definition_wire(view) -> dict[str, Any]:
             if view.published_version is not None
             else None
         ),
+    }
+
+
+def agent_definition_version_wire(view) -> dict[str, Any]:
+    return {
+        "version": view.version.model_dump(mode="json"),
+        "revoked": view.revoked,
     }
 
 
@@ -466,4 +474,11 @@ def workflow_revision_wire(view) -> dict[str, Any]:
     return {
         "revision": view.revision.model_dump(mode="json"),
         "revoked": view.revoked,
+    }
+
+
+def workflow_draft_wire(view) -> dict[str, Any]:
+    return {
+        "draft": view.draft.model_dump(mode="json"),
+        "stale_reasons": list(view.stale_reasons),
     }

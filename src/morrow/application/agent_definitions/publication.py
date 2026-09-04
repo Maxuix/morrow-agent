@@ -75,6 +75,18 @@ class AgentDefinitionPublicationService:
         self.id_source = id_source
 
     def validate(self, source):
+        if source.derived_from_version_id is not None:
+            parent = self.journal.agent_definitions.get_version(
+                self.workspace_id, source.derived_from_version_id
+            )
+            if parent is None or (
+                parent.source.definition_id,
+                parent.content_hash,
+            ) != (
+                source.derived_from_definition_id,
+                source.derived_from_source_hash,
+            ):
+                raise ValueError("derived Agent parent version is missing or mismatched")
         return validate_definition(source, self.catalog)
 
     def publish(

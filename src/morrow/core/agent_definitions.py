@@ -38,6 +38,9 @@ class AgentDefinitionSource(ProtocolModel):
         description="Maximum admitted agent model calls, including tool follow-ups and retries.",
     )
     model_selection: ModelRef | Literal["invoking_active"] = "invoking_active"
+    derived_from_version_id: VersionId | None = None
+    derived_from_definition_id: DefinitionId | None = None
+    derived_from_source_hash: Digest | None = None
 
     @field_validator("name", "description", "role_prompt")
     @classmethod
@@ -66,6 +69,14 @@ class AgentDefinitionSource(ProtocolModel):
         )
         return self
 
+    @model_validator(mode="after")
+    def complete_derivation(self):
+        if (self.derived_from_definition_id is None) != (self.derived_from_source_hash is None):
+            raise ValueError("derived Agent source identity and hash must be recorded together")
+        if self.derived_from_version_id is not None and self.derived_from_definition_id is None:
+            raise ValueError("derived Agent version requires its source identity and hash")
+        return self
+
     @field_validator("skill_version_ids")
     @classmethod
     def ordered_skills(cls, value):
@@ -83,7 +94,17 @@ class AgentDefinitionSource(ProtocolModel):
 
     @property
     def content_hash(self) -> str:
-        return sha256_digest(canonical_json_bytes(self.model_dump(mode="json")))
+        payload = self.model_dump(mode="json")
+        # Additive provenance fields must not invalidate every pre-Stage-8
+        # immutable version when they are absent.
+        for field in (
+            "derived_from_version_id",
+            "derived_from_definition_id",
+            "derived_from_source_hash",
+        ):
+            if payload[field] is None:
+                del payload[field]
+        return sha256_digest(canonical_json_bytes(payload))
 
 
 class AgentDefinitionDocument(ProtocolModel):

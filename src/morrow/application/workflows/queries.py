@@ -82,6 +82,12 @@ class WorkflowRevisionView:
     revoked: bool
 
 
+@dataclass(frozen=True)
+class AgentDefinitionVersionView:
+    version: object
+    revoked: bool
+
+
 class WorkflowQueryService:
     """Minimum projection needed to inspect a run, its nodes and its Artifacts."""
 
@@ -183,6 +189,17 @@ class WorkflowQueryService:
             ),
             desired_ahead_of_published=bool(
                 source is not None and (head is None or head.source_hash != source.content_hash)
+            ),
+        )
+
+    def get_agent_version(self, version_id: str) -> AgentDefinitionVersionView | None:
+        version = self.journal.agent_definitions.get_version(self.workspace_id, version_id)
+        if version is None:
+            return None
+        return AgentDefinitionVersionView(
+            version=version,
+            revoked=bool(
+                self.journal.agent_definitions.get_revocation(self.workspace_id, version_id)
             ),
         )
 

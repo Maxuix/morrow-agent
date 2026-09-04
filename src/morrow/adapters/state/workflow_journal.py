@@ -7,6 +7,7 @@ resolves a model, generates an identity or computes a content hash.
 from datetime import UTC, datetime, timedelta
 
 from morrow.core.domain import TaskRunPurpose, TaskRunStatus
+from morrow.core.execution import StaleRowVersionError
 from morrow.core.store import StorageError, StorageErrorCode
 from morrow.core.workflows.contracts import ArtifactBinding
 from morrow.core.workflows.definitions import (
@@ -14,6 +15,7 @@ from morrow.core.workflows.definitions import (
     WorkflowRevision,
     WorkflowRevisionRevocation,
 )
+from morrow.core.workflows.drafts import WorkflowDraft
 from morrow.core.workflows.runs import (
     NodeRun,
     WorkflowArtifactImport,
@@ -55,6 +57,80 @@ class SqliteWorkflowJournal:
         ):
             raise StorageError(StorageErrorCode.NEEDS_REPAIR, "Workflow revision identity mismatch")
         return value
+
+    def get_draft(self, workspace_id, draft_id):
+        value = self._load(
+            WorkflowDraft,
+            "SELECT body_json FROM workflow_drafts WHERE workspace_id=? AND draft_id=?",
+            (workspace_id, draft_id),
+        )
+        if value is not None and (value.workspace_id, value.draft_id) != (
+            workspace_id,
+            draft_id,
+        ):
+            raise StorageError(StorageErrorCode.NEEDS_REPAIR, "Workflow Draft identity mismatch")
+        return value
+
+    def list_drafts(self, workspace_id):
+        rows = self.backend.read_all(
+            "SELECT draft_id FROM workflow_drafts WHERE workspace_id=? "
+            "ORDER BY updated_at_unix DESC, draft_id",
+            (workspace_id,),
+        )
+        return tuple(self.get_draft(workspace_id, str(row[0])) for row in rows)
+
+    def create_draft(self, value: WorkflowDraft):
+        def work():
+            if value.row_version != 1 or self.get_draft(value.workspace_id, value.draft_id):
+                raise ValueError("Workflow Draft already exists")
+            self.backend.executor().execute(
+                "INSERT INTO workflow_drafts VALUES(?,?,?,?,?,?,?,?)",
+                (
+                    value.draft_id,
+                    value.workspace_id,
+                    value.source.workflow_definition_id,
+                    value.status.value,
+                    value.row_version,
+                    value.model_dump_json(),
+                    int(value.created_at.timestamp()),
+                    int(value.updated_at.timestamp()),
+                ),
+            )
+            return value
+
+        return self.backend.transact(work)
+
+    def save_draft(self, value: WorkflowDraft, *, expected_row_version: int):
+        def work():
+            current = self.get_draft(value.workspace_id, value.draft_id)
+            if current is None:
+                raise ValueError("Workflow Draft is missing")
+            if current.row_version != expected_row_version:
+                raise StaleRowVersionError("stale Workflow Draft row version")
+            if value.row_version != expected_row_version + 1:
+                raise ValueError("Workflow Draft row version must advance once")
+            if (
+                value.workspace_id != current.workspace_id
+                or value.draft_id != current.draft_id
+                or value.created_at != current.created_at
+            ):
+                raise ValueError("Workflow Draft identity is immutable")
+            self.backend.executor().execute(
+                "UPDATE workflow_drafts SET workflow_definition_id=?, status=?, row_version=?, "
+                "body_json=?, updated_at_unix=? WHERE workspace_id=? AND draft_id=?",
+                (
+                    value.source.workflow_definition_id,
+                    value.status.value,
+                    value.row_version,
+                    value.model_dump_json(),
+                    int(value.updated_at.timestamp()),
+                    value.workspace_id,
+                    value.draft_id,
+                ),
+            )
+            return value
+
+        return self.backend.transact(work)
 
     def list_revisions(self, workspace_id):
         rows = self.backend.read_all(

@@ -11,6 +11,7 @@ from morrow.core.workflows.definitions import (
     WorkflowRevision,
     WorkflowRevisionRevocation,
 )
+from morrow.core.workflows.drafts import WorkflowDraft, WorkflowDraftStatus
 from morrow.core.workflows.runs import (
     NodeRun,
     WorkflowArtifactImport,
@@ -65,6 +66,33 @@ def verify_workflow_rows(executor):
             )
             if actual != expected:
                 raise ValueError("revision nodes mismatch")
+
+        for (
+            draft_id,
+            workspace_id,
+            definition_id,
+            status,
+            row_version,
+            body,
+            *_timestamps,
+        ) in executor.execute("SELECT * FROM workflow_drafts"):
+            draft = WorkflowDraft.model_validate_json(body)
+            if (
+                draft.draft_id,
+                draft.workspace_id,
+                draft.source.workflow_definition_id,
+                draft.status.value,
+                draft.row_version,
+            ) != (draft_id, workspace_id, definition_id, status, row_version):
+                raise ValueError("Workflow Draft identity mismatch")
+            if draft.status is WorkflowDraftStatus.FROZEN:
+                revision = revisions.get(draft.frozen_workflow_revision_id)
+                if (
+                    revision is None
+                    or revision.workflow_definition_id != draft.source.workflow_definition_id
+                    or revision.source_hash != draft.source_hash
+                ):
+                    raise ValueError("frozen Workflow Draft Revision mismatch")
             for node in value.nodes:
                 row = _first(
                     executor,

@@ -79,6 +79,7 @@ def test_v14_to_v15_creates_draft_validation_and_usage_tables(tmp_path) -> None:
         "workflow_revision_artifact_contracts",
         "workflow_node_request_cap",
         "workflow_pause_drain_lineage",
+        "workflow_editor_drafts",
     )
     with OperationalStore(root, maintenance_timeout=0).open(StoreOpenMode.READ_ONLY) as handle:
         names = handle.run_read(
@@ -113,6 +114,7 @@ def test_v16_to_v17_creates_agent_run_observation_tables(tmp_path) -> None:
         "workflow_revision_artifact_contracts",
         "workflow_node_request_cap",
         "workflow_pause_drain_lineage",
+        "workflow_editor_drafts",
     )
     with OperationalStore(root, maintenance_timeout=0).open(StoreOpenMode.READ_ONLY) as handle:
         objects = handle.run_read(
@@ -146,6 +148,7 @@ def test_v21_and_v22_add_retry_progress_and_runtime_control_tables(tmp_path) -> 
         "workflow_revision_artifact_contracts",
         "workflow_node_request_cap",
         "workflow_pause_drain_lineage",
+        "workflow_editor_drafts",
     )
     with OperationalStore(root, maintenance_timeout=0).open(StoreOpenMode.READ_ONLY) as handle:
         objects = handle.run_read(

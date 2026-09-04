@@ -16,7 +16,8 @@ for older terminal rows. Version 19 adds per-request prompt projection evidence 
 append-only structured completion-intent results. Version 20 adds bounded
 long-horizon token-accounting, compaction, and overflow-recovery observations.
 Version 21 adds mutable, bounded retry progress for safe AgentRun resume. Version 22 adds the
-bounded durable steering and follow-up queue.
+bounded durable steering and follow-up queue. Version 27 adds mutable OCC Workflow Drafts while
+leaving immutable published Revisions under their existing owner.
 """
 
 from __future__ import annotations
@@ -41,6 +42,7 @@ from morrow.adapters.state.migrations_v23_agent_definitions import V23_NAME, V23
 from morrow.adapters.state.migrations_v24_workflows import V24_NAME, V24_STATEMENTS
 from morrow.adapters.state.migrations_v25_workflow_execution import V25_NAME, V25_STATEMENTS
 from morrow.adapters.state.migrations_v26_pause_drain import V26_NAME, V26_STATEMENTS
+from morrow.adapters.state.migrations_v27_workflow_drafts import V27_NAME, V27_STATEMENTS
 from morrow.core.store import (
     APPLICATION_NAME,
     RESERVED_SCHEMA_VERSIONS,
@@ -1459,6 +1461,8 @@ V26 = SchemaMigration(
     requires_rebuild_verification=True,
 )
 
+V27 = SchemaMigration(version=27, name=V27_NAME, statements=V27_STATEMENTS)
+
 
 class MigrationRegistry:
     def __init__(self, *, supported_version: int = SUPPORTED_SCHEMA_VERSION) -> None:
@@ -1539,6 +1543,7 @@ def production_registry() -> MigrationRegistry:
     registry.add(V24)
     registry.add(V25)
     registry.add(V26)
+    registry.add(V27)
     return registry
 
 
