@@ -14,7 +14,7 @@ retired Stage 7 sequence is archived under `.agent/archive/subplans/stage7-workf
 | 5 | `5-generic-workflow-foundation.md` | Stage 7/8 corrective foundation | completed 2026-09-04 |
 | 6 | `6-workflow-editor-agent-inspector.md` | 8B | completed 2026-09-04 |
 | 7 | `7-run-control-gui.md` | 8C (GUI) | completed 2026-09-05 |
-| 8 | `8-graph-planner-draft.md` | 8D | in progress 2026-09-05 |
+| 8 | `8-graph-planner-draft.md` | 8D | completed 2026-09-05 |
 | 9 | `9-global-replan.md` | 8E | pending activation |
 | 10 | `10-context-learning-skill-gui.md` | 8F | pending activation; may be re-sequenced earlier |
 | 11 | `11-feedback-evaluation.md` | 8G | pending activation |

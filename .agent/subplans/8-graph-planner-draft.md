@@ -1,7 +1,7 @@
 # Subplan 8 — Task-Specialized GraphPlanner Draft
 
-> Status: active 2026-09-05; explicitly authorized by user
-> Branch: `feat/stage8-graph-planner`
+> Status: completed 2026-09-05; explicitly authorized by user
+> Branch: `feat/stage8-graph-planner` (fast-forwarded into local main, then retired)
 > Activation base: verified local `main` at `e320f51` with Subplan 7 integrated
 > Prerequisite: Subplan 7 verified
 > Roadmap authority: stage-8 §4.1–4.6, §12, §8D, §16.4
@@ -55,3 +55,15 @@ stay Direct.
 
 ReplanSignal/Coordinator (Subplan 9), feedback-driven policy candidates (Subplan 11), parallelism
 (Subplan 12).
+
+## Completion evidence
+
+- Reused Extension YAML for policy OCC/backup, current Agent/Model/Skill authorities for Catalogs,
+  and existing Compiler/Draft/freeze/runtime owners. No new dependency or implicit runtime cap.
+- Classification awaits outside the mutation bus; save rechecks current policy/Catalogs. Stable
+  Draft identity and source-hash-linked structured explanations survive retries and edits.
+- Final full offline gate: 1653 passed, 2 native Seatbelt environment skips, 2 Live deselected.
+  Planner 23, related integration 100, GUI 85 tests passed; all static/build/browser gates passed.
+- Acceptance: `docs/acceptance/stage-8-subplan-8-graph-planner-draft.md`.
+- Verified work integrated through `d98933b`; topic had zero commits absent from main before
+  deletion. No extra worktree remains. Remote push is unauthorized; Subplan 9 remains inactive.

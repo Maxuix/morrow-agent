@@ -5171,3 +5171,10 @@ Live test, Replan implementation or remote push authorized.
   2 Live deselected in 290.61 seconds**, exit 0. JUnit: `/tmp/morrow-stage8-verified-junit.xml`.
   All discovered startup failures are resolved. Acceptance is recorded in
   `docs/acceptance/stage-8-subplan-8-graph-planner-draft.md`; ready for verified local integration.
+
+## 2026-09-05 — Stage 8 Subplan 8 completed
+
+- Fast-forwarded local `main` from `e320f51` through `d98933b` after the successful complete gate.
+  Confirmed zero topic commits absent from main, then deleted `feat/stage8-graph-planner`.
+- Closed the active execution state. Subplan 9 remains unactivated. Remote push remains
+  unauthorized by the master plan; local main is ahead of origin and no push was attempted.

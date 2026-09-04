@@ -2,18 +2,17 @@
 
 ## Current status
 
-Stage 8 Subplans 1–7 complete. Subplan 8 explicitly activated 2026-09-05 from verified local
-`main` at `e320f51`, on `feat/stage8-graph-planner`.
+Stage 8 Subplans 1–8 complete. Subplan 8 was fast-forwarded from `e320f51` through `d98933b`
+into local `main` on 2026-09-05; topic ancestry verified and branch retired.
 
 ## Active task
 
-Planner, policy, API/CLI and GUI implementation complete; focused validation and browser flows verified.
-Final full offline gate passed: 1653 passed, 2 native-sandbox skipped, 2 Live deselected.
-All focused, GUI, browser and static gates passed; verified work is ready for local integration.
+None. Planner, policy, API/CLI and GUI complete; full offline gate 1653 passed,
+2 native-sandbox skipped, 2 Live deselected. All focused, GUI, browser and static gates passed.
 
 ## Next action
 
-Commit acceptance evidence, fast-forward local main, verify ancestry and retire the topic branch.
+Await explicit activation of Subplan 9; do not start it automatically.
 
 ## Blockers
 

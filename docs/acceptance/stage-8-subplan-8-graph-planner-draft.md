@@ -110,5 +110,7 @@ the passing 33-test module rerun. The successful final full gate above ran after
 
 ## Publication boundary
 
+Verified implementation and acceptance were fast-forwarded into local `main` through `d98933b`.
+The topic had zero commits absent from main and was deleted; the existing workspace is retained.
 Remote push is not authorized by the active master plan. Completion uses verified local `main`;
 remote divergence is recorded explicitly. Subplan 9 is not activated by this delivery.
