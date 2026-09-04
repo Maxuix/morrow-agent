@@ -2,8 +2,8 @@
 
 ## Current status
 
-Stage 7 and Stage 8 Subplans 1–6 are complete. The Subplans 5–6 review remediation is verified on
-`fix/stage8-editor-review`; Subplan 7 remains inactive.
+Stage 7 and Stage 8 Subplans 1–6 are complete. The Subplans 5–6 review remediation was
+fast-forward integrated into local `main` through `d895451`; Subplan 7 remains inactive.
 
 ## Active task
 
@@ -11,7 +11,7 @@ None. All seven review findings were resolved and the required gates pass.
 
 ## Next action
 
-Integrate the verified remediation into local `main`, then await explicit activation of Subplan 7.
+Await explicit activation of Subplan 7 (`7-run-control-gui`).
 
 ## Blockers
 

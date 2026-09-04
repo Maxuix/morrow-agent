@@ -5071,3 +5071,5 @@
 - Validation: focused backend matrix 8 passed; full offline gate 1617 passed / 2 Live deselected in
   193.63 seconds; GUI typecheck, 41 Vitest tests, build/bundle budget, Ruff format/check, compileall,
   CLI help and `git diff --check` passed. No Live/network/credential test ran.
+- The verified remediation was committed as `d895451` and fast-forwarded into local `main`.
+  Remote push remains unauthorized; Subplan 7 remains inactive.
