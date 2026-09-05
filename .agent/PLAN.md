@@ -1,15 +1,15 @@
 # Stage 8 Adaptive Orchestration and GUI Implementation Plan
 
-> Status: Subplans 1–12 completed; review remediation in progress
-> Last completed subplan: `12-read-only-parallelism` (topic branch retired)
-> Acceptance: `docs/acceptance/stage-8-subplan-12-read-only-parallelism.md`
-> Active subplan: `13-review-remediation` (user-authorized fixes for the seven review findings)
+> Status: Subplans 1–13 completed; all seven review findings fixed
+> Last completed subplan: `13-review-remediation` (topic branch retired)
+> Acceptance: `docs/acceptance/stage-8-subplan-13-review-remediation.md`
+> Active subplan: none
 > Next planned subplan: none; no later stage activated
 > Roadmap authority: `docs/roadmap/stage-8-adaptive-orchestration-and-gui.md`
 > Current evidence: Subplan 13 full offline gate 1761 passed / 2 native-sandbox skipped /
 > 2 Live deselected; GUI 100 tests, typecheck and production build/budget passed. Ruff format/check,
 > compileall, CLI help and `git diff --check` passed. Acceptance:
-> `docs/acceptance/stage-8-subplan-13-review-remediation.md`; local integration pending.
+> `docs/acceptance/stage-8-subplan-13-review-remediation.md`; local integration complete.
 > Previous master plan: Stage 7, archived under `.agent/archive/subplans/stage7-workflow-runtime/`
 
 ## 1. Objective

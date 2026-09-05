@@ -2,7 +2,7 @@
 
 Date: 2026-09-05. Base: verified local main `429d812`.
 Branch: `fix/stage8-subplans-8-12-review`.
-Status: implementation committed and validation passed; local integration pending.
+Status: completed; validated and integrated into local main; topic branch retired.
 
 ## Delivered behavior
 
@@ -48,5 +48,7 @@ Events, without timing sleeps. No Live tests, real credentials or browser accept
 
 ## Integration
 
-Local fast-forward integration and topic branch retirement are next; validation is complete.
+Local main fast-forwarded from `429d812` through acceptance commit `98134c6`. Verified zero topic
+commits absent from main, then deleted `fix/stage8-subplans-8-12-review`. No worktree was created
+for this remediation; the independent single-agent harness worktree was preserved.
 Remote push remains unauthorized; no remote fetch/push was performed.

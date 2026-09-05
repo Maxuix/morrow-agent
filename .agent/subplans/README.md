@@ -19,7 +19,7 @@ retired Stage 7 sequence is archived under `.agent/archive/subplans/stage7-workf
 | 10 | `10-context-learning-skill-gui.md` | 8F | completed 2026-09-05 |
 | 11 | `11-feedback-evaluation.md` | 8G | completed 2026-09-05 |
 | 12 | `12-read-only-parallelism.md` | 8H | completed 2026-09-05 |
-| 13 | `13-review-remediation.md` | Review follow-up for 8–12 | in progress, user-authorized 2026-09-05 |
+| 13 | `13-review-remediation.md` | Review follow-up for 8–12 | completed 2026-09-05 |
 
 ## Lifecycle
 

@@ -1,7 +1,8 @@
 # Progress Tracker
 
-Subplan 13 active: user-authorized remediation of the seven Subplans 8–12 review findings.
-Branch `fix/stage8-subplans-8-12-review`, base `429d812`. Existing review report retained.
+Subplan 13 completed: all seven Subplans 8–12 review findings fixed and regression-tested.
+Verified commits through `98134c6` fast-forwarded from `429d812` into local main.
+Zero topic commits absent from main; `fix/stage8-subplans-8-12-review` deleted. Review retained.
 
 Input-dependency approval regression and existing Replan/run-control suites: 43 passed.
 Ruff format/check and whitespace passed.
@@ -16,8 +17,7 @@ resolved policy eligibility. Planner/feedback/context suites: 74 passed. GUI: 10
 typecheck and production build/budget passed. Ruff format/check and whitespace passed.
 Full offline validation passed: 1761 passed, 2 host-level Seatbelt skips, 2 Live deselected,
 266.32s, exit 0. Compileall and CLI help passed. Acceptance and review disposition recorded.
-Current task: verified local integration and branch retirement.
-Next: close Subplan 13; no later stage activated.
+Current task: none. Stage 8 Subplans 1–13 completed; no later stage activated.
 
-No new dependencies, policy defaults or public lifecycle changes are planned.
+No new dependencies, policy defaults or public lifecycle changes were made.
 Remote push and Live tests remain unauthorized.

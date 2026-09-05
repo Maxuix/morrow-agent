@@ -1,8 +1,10 @@
 # Subplan 13 — Subplans 8–12 Review Remediation
 
-Status: in progress; explicitly authorized by the user on 2026-09-05.
-Branch: `fix/stage8-subplans-8-12-review`, based on verified local main `429d812`.
+Status: completed 2026-09-05; explicitly authorized by the user.
+Branch: `fix/stage8-subplans-8-12-review`, based on verified local main `429d812`; retired after
+fast-forward integration through `98134c6` and zero unmerged topic commits.
 Review: `docs/reviews/stage-8-subplans-8-12-code-review.md`.
+Acceptance: `docs/acceptance/stage-8-subplan-13-review-remediation.md`.
 
 Fix all seven findings without changing bundled runtime policy or the public event lifecycle:
 

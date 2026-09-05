@@ -5381,3 +5381,8 @@ unauthorized, so local main publication is the integration target.
   266.32s, exit 0. All seven issues have committed fixes and regression evidence. Acceptance and
   review disposition recorded; architecture now documents current Profile revalidation and the
   shared frozen role convention. Verified work is ready for local fast-forward integration.
+- Local main fast-forwarded from `429d812` to `98134c6`; verified zero topic commits absent from
+  main and deleted `fix/stage8-subplans-8-12-review`. The independent single-agent harness
+  worktree was preserved. Locally recorded upstream comparison before this closure commit:
+  main 53 ahead / 0 behind origin/main. Remote push remains unauthorized. Subplans 1–13 are
+  complete; no active subplan and no later stage opened.
