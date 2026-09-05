@@ -1,6 +1,6 @@
 """Ordered, checksummed Operational Store migrations.
 
-Production currently owns schema v1–v19. Version 10 adds the governed Learning
+Production currently owns schema v1–v30. Version 10 adds the governed Learning
 foundation, version 11 adds immutable decisions plus Project Knowledge, and version
 12 adds immutable MemorySelection records plus rebuildable lexical terms without
 rewriting older evidence or creating a second configuration authority. Version 13
@@ -18,6 +18,7 @@ long-horizon token-accounting, compaction, and overflow-recovery observations.
 Version 21 adds mutable, bounded retry progress for safe AgentRun resume. Version 22 adds the
 bounded durable steering and follow-up queue. Version 27 adds mutable OCC Workflow Drafts while
 leaving immutable published Revisions under their existing owner.
+Version 30 extends the existing model-request ledger for compaction and normalized overflow errors.
 """
 
 from __future__ import annotations
