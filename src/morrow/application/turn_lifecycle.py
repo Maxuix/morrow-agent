@@ -492,6 +492,22 @@ class TurnSubmissionCoordinator:
                 ),
             )
             if self.workflow_leaf is not None:
+                if self.workflow_leaf.parallel_read_digest is not None:
+                    from morrow.application.turn_permissions import build_permission_snapshot
+
+                    permission = build_permission_snapshot(
+                        session,
+                        workspace_id=self.workspace_id,
+                        base_snapshot=snapshot,
+                        permission_snapshot_id=self.id_source.new_id("psnap"),
+                        task_run_id=task_id,
+                        turn_id=turn_id,
+                        agent_run_id=stored_agent_run_id,
+                        created_at=stamp,
+                    )
+                    txn.freeze_agent_run_permission_snapshot(
+                        self.workspace_id, stored_agent_run_id, permission
+                    )
                 self.workflow_leaf.admit_node_in_txn(txn, agent_run_id=stored_agent_run_id)
             if prepared_mcp_run is not None:
                 expected_ids = (

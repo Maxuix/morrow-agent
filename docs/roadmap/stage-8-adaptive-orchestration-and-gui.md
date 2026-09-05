@@ -1,6 +1,6 @@
 # Stage 8：自适应编排与 GUI 控制面
 
-> 状态：进行中（Subplans 1–6 已完成；Subplan 7 待激活，2026-09-04）
+> 状态：进行中（Subplans 1–11 已完成；Subplan 12 全量离线验收中，2026-09-05）
 > 阶段结果：Morrow 能根据任务选择并生成可验证的 Workflow Draft，用户可通过 GUI 观察、编辑和控制 Agent、偏好、Skill 与运行状态
 > 上级文档：[开发路线总览](../ROADMAP.md)
 > 上一阶段：[Stage 7：Agent Definition 与静态 Workflow Runtime](stage-7-workflow-runtime.md)

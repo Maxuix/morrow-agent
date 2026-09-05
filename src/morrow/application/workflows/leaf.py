@@ -79,6 +79,7 @@ class WorkflowLeafHooks:
         transitions,
         id_source,
         clock: Callable[[], datetime],
+        parallel_read_digest: str | None = None,
     ) -> None:
         self.journal = journal
         self.workspace_id = workspace_id
@@ -88,6 +89,8 @@ class WorkflowLeafHooks:
         self.id_source = id_source
         self.clock = clock
         self.outputs = EffectiveOutputResolver(journal, workspace_id=workspace_id)
+        self.parallel_read_digest = parallel_read_digest
+        self.read_contract_drift = False
 
     # Admission --------------------------------------------------------------
 
@@ -268,12 +271,17 @@ class WorkflowLeafHooks:
             leaf_task_run_id=ctx.leaf_task_run_id,
             agent_run_id=agent_run_id,
             effective_node_generation_request_cap=ctx.effective_node_generation_request_cap,
+            parallel_read_digest=self.parallel_read_digest,
         )
         self.transitions.mark_run_running(ctx.workflow_run_id)
 
     def check_request_admission(self) -> None:
         """Deadline gate at the durable purpose=agent request-admission seam."""
 
+        if self.read_contract_drift:
+            from morrow.application.workflows.parallel import read_contract_error
+
+            raise read_contract_error()
         run = self.journal.workflows.get_run(self.workspace_id, self.context.workflow_run_id)
         if (
             run is not None
@@ -296,6 +304,10 @@ class WorkflowLeafHooks:
         existing AgentLoop error path can close the leaf as failed.
         """
 
+        if self.read_contract_drift:
+            from morrow.application.workflows.parallel import read_contract_error
+
+            raise read_contract_error()
         try:
             return self._prepare_required_outputs()
         except ApplicationError:
@@ -666,7 +678,7 @@ class WorkflowLeafHooks:
                     "output_contract_unsatisfied: required outputs are not bound: "
                     + ",".join(sorted(missing)),
                 )
-            for binding in bindings:
+            for binding in () if self.parallel_read_digest is not None else bindings:
                 txn.workflows.bind_artifact(
                     self.workspace_id,
                     ctx.workflow_run_id,

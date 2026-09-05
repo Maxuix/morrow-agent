@@ -85,6 +85,7 @@ class WorkflowTransitionService:
         leaf_task_run_id: str,
         agent_run_id: str,
         effective_node_generation_request_cap: int | None,
+        parallel_read_digest: str | None = None,
     ) -> NodeRun:
         """Bind the pre-created queued NodeRun's leaf references and start it."""
 
@@ -96,6 +97,7 @@ class WorkflowTransitionService:
                 and current.agent_run_id == agent_run_id
                 and current.effective_node_generation_request_cap
                 == effective_node_generation_request_cap
+                and current.parallel_read_digest == parallel_read_digest
             ):
                 return current
             raise ValueError("admitted NodeRun evidence conflicts with the queued row")
@@ -107,6 +109,7 @@ class WorkflowTransitionService:
                 "leaf_task_run_id": leaf_task_run_id,
                 "agent_run_id": agent_run_id,
                 "effective_node_generation_request_cap": effective_node_generation_request_cap,
+                "parallel_read_digest": parallel_read_digest,
                 "row_version": current.row_version + 1,
             }
         )

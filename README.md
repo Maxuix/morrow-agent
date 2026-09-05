@@ -114,7 +114,8 @@ morrow workflow policy set policy.json --expected-revision 0 --workspace-id ws_e
 设为 `false` 可完全不调用 Provider。可选 Scout 只做一次有界项目目录检查。
 `requested_roles` / `excluded_roles` 可声明角色；`budget` 可显式设置已有 Workflow 请求上限、
 默认节点请求上限和准入超时，省略时保持无上限。模型与 Skill 参数化通过选取已有精确 Agent 版本完成，
-不自动创建或扩大权限。所有生成图仍串行执行。
+不自动创建或扩大权限。生成图默认并发度为 1；可在 Draft 编辑器中显式提高并发声明，
+冻结后由 Scheduler 证明可并行的只读 frontier。
 
 `policy.json` 例如 `{"scope":"workspace","multi_agent":false}`。策略保存在现有的全局/工作空间
 `extensions.yaml.orchestration` 中，按任务类型匹配，工作空间的完整策略覆盖全局策略。
@@ -279,7 +280,7 @@ Session，不删除或归档旧会话；仅当对话仍只存在于进程内时�
 
 ## 静态 Workflow
 
-Stage 7 的 Workflow 是显式选择的前台串行运行；普通聊天仍默认走 Direct。`morrow agent` 管理
+Workflow 是显式选择的前台运行，默认串行；普通聊天仍默认走 Direct。`morrow agent` 管理
 Agent desired source、纯只读 validate、显式 publish、Head enable/disable 与精确不可变版本 revoke；
 `morrow workflow` 提供对应的定义管理，以及 `run/status/resume/abandon` 和 `node show`。`validate`
 不会创建 Version/Revision 或推进 Head；plain `run` 必须给出已经发布的精确 `--revision`，而显式
@@ -315,7 +316,12 @@ morrow workflow status WORKFLOW_RUN_ID --dir PATH
 
 总 Agent generation request 上限、节点默认上限和 admission timeout 都是可空的用户 guardrail；
 内置起点不预设这三项，因此不会因系统猜测的请求次数或任务时长自动终止。显式填写正数时仍由
-持久化准入层按原语义执行，`max_concurrency=1` 继续描述当前串行 Scheduler。无论是否设置上限，
+持久化准入层按原语义执行。`max_concurrency` 默认为 1；在用户 Workflow 的 `default_budget`
+中设置大于 1 的正整数（或编辑 GUI 中的并发声明），可让已就绪、独立且可证明只读的节点有界并行。
+只读证明依赖冻结 ToolSet、实际工具契约和工作空间 PermissionSnapshot；角色名称不是授权。
+写入和进程工具保持串行，未知契约或缺少证明时按稳定顺序回退，契约漂移则失败。
+叶子证据即时持久化，Workflow 输出与节点完成按稳定顺序发布；Pause 排空全部活动节点，
+取消保留已经提交的结果，恢复不重新请求已完成叶子的模型结果。无论是否设置上限，
 模型请求与 usage 都照常记录；用户可用前台 `Ctrl+C` 或 `workflow pause/resume` 控制运行。
 重新运行会创建新 Run，不会把旧 Run 的叶子当缓存。
 
@@ -396,4 +402,4 @@ Linux 原生运行仍在真实 runner 验证前保持 unsupported。每次完成
 checkpoint、fork、按 AgentRun 冻结的 CapabilityGrant 与 Full Access Manual 属于 Stage 4；Full Access Auto
 和 raw auto 仍不支持。可审查学习从 Stage 5 开始；Skills/MCP 与 Provider/Model 扩展已在 Stage 6 交付，
 静态串行 Multi-Agent Workflow 已由 Stage 7 提供；Stage 8 已提供 GUI、运行控制、Draft 编辑和
-建议式任务特化 GraphPlanner、按风险分级审批的全局 future-only Replan，以及 Context/Learning/Skill 管理、反馈学习与 Direct/Multi 对照；并发与后台任务仍属于后续计划。
+建议式任务特化 GraphPlanner、按风险分级审批的全局 future-only Replan，以及 Context/Learning/Skill 管理、反馈学习与 Direct/Multi 对照，以及显式有界只读并行；后台任务仍属于后续计划。

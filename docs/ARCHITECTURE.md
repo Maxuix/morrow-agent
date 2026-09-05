@@ -21,7 +21,7 @@ Stage 7 已完成版本化 AgentDefinition、静态 Workflow 编译、串行调�
 恢复闭环；Stage 8 已交付 Pause/Drain、future-only patch/continuation 与 rerun 运行时内核、
 版本化 Core API、Web GUI 观察器，以及持久 Workflow Draft 编辑器和 Agent Inspector。任务特化
 GraphPlanner 与全局 Replan 已接入相同 Draft/Compiler/发布链；Context/Learning/Skill 管理 GUI
-已交付；反馈评估也已接通，只读并行和后台自动化尚未交付。本文架构门禁以
+已交付；反馈评估与显式有界只读并行也已接通，后台自动化尚未交付。本文架构门禁以
 离线证据为主；未获授权的 Live 证据不改变这些当前模块事实。
 
 S56–S61 已冻结并接通 generic Preference 契约、加载前一次性旧 YAML 迁移、当前 workspace Preference、
@@ -46,7 +46,7 @@ lineage。`EffectiveOutputResolver` 是 Scheduler readiness、prompt/input bindi
 继承输出入口；显式设置限制时 continuation 共用 absolute deadline 与 lineage accounting root，
 rerun 建立新 accounting root。请求 cap 和 admission timeout 缺省均为 `None`，不触发系统猜测的
 自动终止；durable request/usage accounting 始终保留。
-普通 Direct 仍是默认路径，Scheduler 仍完全串行。
+普通 Direct 仍是默认路径，Scheduler 默认串行，显式并发声明可启用已证明的只读 frontier。
 `application/backup_service.py` 组合在线 SQLite、Artifact、脱敏 YAML 和被引用 managed Skill 版本，并以新目标
 目录执行原子、隔离 restore。Backup 只有当前完整格式，且不复制凭据。
 
@@ -83,7 +83,7 @@ primary-generation-request cap；计入每次 `purpose=agent` 的调用（含工
 普通 disable 只阻止新 admission，Factory recovery 只检查不可变版本及其撤销记录，不再检查 enabled head。
 普通 Direct 不使用 AgentFactory，默认路径、公开事件和 bundled runtime-policy 未改变。
 
-`application/workflows/scheduler.py` 是所有 Stage 7 图形的唯一串行执行器；它在 `AgentLoop` 之外组合
+`application/workflows/scheduler.py` 是所有 Workflow 图形的唯一执行器；它在 `AgentLoop` 之外组合
 叶子，但仍通过同一 `run_task`、ToolExecutor、权限、durable request admission 与 Session-owned
 ConversationLog。isolated 节点拥有独立 Session/`workflow_node` Task；单节点无边的
 `invoking_session` 节点改为绑定根 Session/user Task，并由 TurnLifecycle 独占根终态写入，Workflow
@@ -99,6 +99,21 @@ toggle、精确 revoke、foreground recovery 与查询没有第二套 SQLite/YAM
 并共享 preview/value-shaped 与高置信 literal 检测规则；持久化 profile discriminator 已落地，普通
 Direct 仍默认 legacy-strict。现有 backup/doctor 增加 definition
 行完整性与精确路径的原始 desired-source inventory：损坏草稿可备份/恢复且只报局部 warning；发布引用/hash 损坏才报 error。
+
+Stage 8 Subplan 12 的 `application/workflows/parallel.py` 协调固定 ready frontier 的准备与准入屏障，
+不调用 Provider、不重试请求，也不持有持久状态。Scheduler 只组合独立 Session 的叶子 `run_task()`。
+AgentFactory 在可选工具过滤前检查 Compiler 冻结的有效工具要求；已知 read-contract drift 直接失败，
+未知或不可证明契约回退串行。冻结的工具契约 digest 存在 NodeRun 的可空 `parallel_read_digest` 中，
+沿用 NodeRun JSON，不新增数据库表或修改旧 Revision hash。逐调用 intent guard 在 handler 前复核契约。
+Turn admission 同事务冻结只读 PermissionSnapshot 并取得 NodeRun slot；journal 拒绝超出
+`max_concurrency` 的 Active 集合，以及 Writer/未证明节点与其他 Active 节点重叠。
+每次 Provider 请求仍使用原有 AgentRun/request ordinal 幂等账本与 lineage cap 检查，
+不预留整节点额度。Adapter 只归一化限流错误/Retry-After，叶子 AgentLoop 独占重试，Scheduler 不重试。
+叶子聊天、请求实际用量、终态与候选 Artifact 即时持久化；并行叶子暂不发布 Workflow output binding。
+Scheduler join 全部活动叶子后，按稳定节点序事务性发布 binding 与 NodeRun completion，再处理整体失败、
+取消、Replan 或下一 frontier。部分成功和崩溃恢复由原叶子事实重建，不重跑已提交结果。
+恢复检查整个 Active 集合与冻结 read/permission 证据。Doctor/Backup 的 Workflow integrity 同时校验
+并发 slot 和 PermissionSnapshot 引用。上述变化不扩展公开事件，不改变普通聊天历史的唯一 writer。
 
 Stage 8 Subplan 9 的 `core/workflows/replan.py` 定义有界 ReplanRequest、节点关闭证据
 ReplanSignal 和精确 ReplanProposal。v28 只新增 signal/proposal 表；节点的提交 marker 仍由
@@ -129,7 +144,7 @@ OCC 与备份机制；`application/workflows/orchestration_policy.py` 按 worksp
 `graph_planner.py` 用结构化特征、模板先验和最小普通图组合规则选取精确 Agent/Model/Skill 引用，
 生成 `TextResult@1/result` Artifacts 绑定；模型偏好只筛选现有已授权 Agent 版本，不发布新的
 Definition 或权限。显式小任务保持 Direct；范围扩大可增加 Planner/Reviewer，独立研究可形成
-多个只读分支汇入 Synthesizer，但 Scheduler 仍串行。显式请求/时间限制只会被继承或收紧，
+多个只读分支汇入 Synthesizer；Planner 默认保留并发度 1，用户可在 Draft 中提高声明。显式请求/时间限制只会被继承或收紧，
 不会根据任务大小猜测一个 cap。编译失败最多重新生成一次，再编译 Direct 回退或返回具体补充要求。
 有效结果通过既有 WorkflowDraftService 持久化；生成说明随 Draft 保存，并按 source hash 标明
 编辑后是生成时说明。普通聊天、ConversationLog、Revision 写入与 Scheduler 所有权均不变。

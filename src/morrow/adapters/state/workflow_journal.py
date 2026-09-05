@@ -28,12 +28,22 @@ from morrow.core.workflows.runs import (
 
 
 class SqliteWorkflowJournal:
-    def __init__(self, backend, *, get_task, get_artifact, get_agent_version, get_agent_run):
+    def __init__(
+        self,
+        backend,
+        *,
+        get_task,
+        get_artifact,
+        get_agent_version,
+        get_agent_run,
+        get_permission_snapshot,
+    ):
         self.backend = backend
         self.get_task = get_task
         self.get_artifact = get_artifact
         self.get_agent_version = get_agent_version
         self.get_agent_run = get_agent_run
+        self.get_permission_snapshot = get_permission_snapshot
 
     def _load(self, model, sql, parameters):
         row = self.backend.read_one(sql, parameters)
@@ -1031,6 +1041,7 @@ class SqliteWorkflowJournal:
                     "leaf_task_run_id",
                     "agent_run_id",
                     "effective_node_generation_request_cap",
+                    "parallel_read_digest",
                 }
             if not node:
                 mutable |= {
@@ -1065,6 +1076,44 @@ class SqliteWorkflowJournal:
                 run = self.get_run(value.workspace_id, value.workflow_run_id)
                 revision = self.get_revision(value.workspace_id, run.workflow_revision_id)
                 definition = next(n for n in revision.nodes if n.node_id == value.node_id)
+                if current.status is WorkflowStatus.QUEUED:
+                    active = tuple(
+                        n
+                        for n in self.list_nodes(value.workspace_id, value.workflow_run_id)
+                        if n.status in {WorkflowStatus.RUNNING, WorkflowStatus.BLOCKED}
+                    )
+                    if len(active) >= run.budget_snapshot.max_concurrency:
+                        raise ValueError("Workflow concurrency slots are exhausted")
+                    if active and (
+                        value.parallel_read_digest is None
+                        or any(n.parallel_read_digest is None for n in active)
+                    ):
+                        raise ValueError(
+                            "Workflow Writers and unproven nodes require serial admission"
+                        )
+                    if value.parallel_read_digest is not None:
+                        from morrow.core.capabilities import AccessScope
+
+                        permission = (
+                            self.get_permission_snapshot(
+                                value.workspace_id, agent.permission_snapshot_id
+                            )
+                            if agent and agent.permission_snapshot_id
+                            else None
+                        )
+                        if (
+                            definition.access_mode != "read"
+                            or definition.conversation_scope != "isolated"
+                            or permission is None
+                            or not permission.workspace_read_only
+                            or permission.access_scope is not AccessScope.WORKSPACE
+                            or permission.grant_id is not None
+                            or permission.agent_run_id != value.agent_run_id
+                            or permission.tool_schema_digest != agent.snapshot.tool_schema_digest
+                        ):
+                            raise ValueError(
+                                "parallel read admission requires frozen permission evidence"
+                            )
                 direct = definition.conversation_scope == "invoking_session"
                 owner = self.backend.read_one(
                     "SELECT session_id, task_run_id FROM workflow_leaf_ownership WHERE node_run_id=?",

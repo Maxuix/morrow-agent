@@ -1,6 +1,6 @@
 # Subplan 12 — Bounded Read-Only Parallelism
 
-> Status: pending activation; gated
+> Status: active — explicitly authorized 2026-09-05; entry evidence under validation
 > Branch: `feat/stage8-readonly-parallel`
 > Activation base: latest verified `main` with Subplan 2 integrated
 > Prerequisite: Subplan 2 verified AND the roadmap §8H/§三 entry conditions verified: stable
@@ -46,3 +46,15 @@ without depending on a role-specific template or building a general-purpose exec
 
 Parallel Writers, Git worktree orchestration, distributed leases, transparent retry after side
 effects, general executor platform.
+
+## Activation decisions
+
+- Base: verified local main `9ada9b0`; no remote publication or Live tests authorized.
+- Reuse the existing transactional request admission/settlement ledger. Adapter error
+  classification and Retry-After normalization feed the existing leaf AgentLoop, which
+  remains the sole Provider retry owner; the Scheduler never retries Provider requests.
+- Parallel work uses isolated Sessions and explicit workspace capabilities; opaque tools,
+  process tools and Writers retain stable serial execution. No process-global cwd/env mutation.
+- Gather orders Workflow output bindings and NodeRun completion. Leaf journals and
+  immutable candidate Artifacts remain durable as they arrive so recovery retains work.
+- No dependency, packaged policy default, or public event lifecycle change is required.

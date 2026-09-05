@@ -37,6 +37,7 @@ class AgentFactory:
         invoking_session_id,
         conversation_scope="isolated",
         resolved_tool_requirements=None,
+        parallel_read_candidate=False,
     ):
         self.preparation = preparation
         self.publication = publication
@@ -46,6 +47,8 @@ class AgentFactory:
         self.invoking_session_id = invoking_session_id
         self.conversation_scope = conversation_scope
         self.resolved_tool_requirements = resolved_tool_requirements
+        self.parallel_read_candidate = parallel_read_candidate
+        self.parallel_read_proven = parallel_read_candidate
         self.diagnostics = ()
 
     def _scope(self, *, fresh):
@@ -114,9 +117,21 @@ class AgentFactory:
             }
             selected &= allowed
         diagnostics = list(validation.diagnostics)
+        evidence_names = selected if self.resolved_tool_requirements is None else allowed
 
         def restrict(executor):
             available = executor.tool_set.tools if executor else {}
+            if self.parallel_read_candidate:
+                from morrow.application.workflows.parallel import read_tool_evidence
+
+                # Inspect before optional-tool filtering: a changed read contract
+                # must not silently disappear and become a parallel-safe ToolSet.
+                for name in sorted(evidence_names):
+                    tool = available.get(name)
+                    if tool is None or read_tool_evidence(tool) is None:
+                        self.parallel_read_proven = False
+                    if name not in selected:
+                        self.parallel_read_proven = False
             chosen = {}
             for name in sorted(selected):
                 if name in MECHANISM_TOOL_NAMES:

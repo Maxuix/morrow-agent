@@ -589,7 +589,7 @@ class AgentLoop:
         prepared: PreparedAgentRunRuntime | None = None,
         startup_error: str | ApplicationError | None = None,
         agent_run_id: str | None = None,
-        cancelled_is_user: bool = True,
+        cancelled_is_user: bool | Callable[[], bool] = True,
     ) -> AsyncIterator[AgentEvent]:
         client_message_id = client_message_id or self._id("cmsg")
         if prepared is not None:
@@ -1409,7 +1409,7 @@ class AgentLoop:
         except asyncio.CancelledError:
             if state.final_committed:
                 return
-            if not cancelled_is_user:
+            if not (cancelled_is_user() if callable(cancelled_is_user) else cancelled_is_user):
                 # A process-local driver disappearing is a recovery boundary,
                 # not a durable user command. Keep the active Turn, TaskRun,
                 # AgentRun, and workflow leaf open so another host can resume

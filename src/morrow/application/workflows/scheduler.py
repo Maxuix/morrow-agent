@@ -1,6 +1,7 @@
-"""The single serial WorkflowScheduler every graph shape reuses.
+"""The single WorkflowScheduler every graph shape reuses.
 
-Stage 7 admits one node at a time in stable Revision order. Each node binds its
+Stable serial admission is the default; explicitly bounded read-only frontiers
+may overlap after their frozen runtime and permission proofs pass. Each node binds its
 pre-created queued NodeRun through AgentFactory and the existing AgentLoop; the
 scheduler owns no chat history, no Tool execution and no second state machine —
 terminal truth is always re-derived from durable leaf facts.
@@ -20,6 +21,12 @@ from morrow.application.turns import SessionPersistence
 from morrow.application.workflows.finalizer import WorkflowOutcomeFinalizer
 from morrow.application.workflows.leaf import WorkflowLeafContext, WorkflowLeafHooks
 from morrow.application.workflows.outputs import EffectiveOutputResolver
+from morrow.application.workflows.parallel import (
+    ReadFrontier,
+    guard_read_executor,
+    prove_read_runtime,
+    read_contract_error,
+)
 from morrow.application.workflows.recovery import WorkflowAbandonService
 from morrow.application.workflows.submit import make_submit_node_result_tool
 from morrow.application.workflows.tasks import WorkflowTaskLifecycle
@@ -29,8 +36,12 @@ from morrow.core.capabilities import ProcessIsolation
 from morrow.core.domain import DurableSession, DurableTaskRun, TaskRunPurpose, TaskRunStatus
 from morrow.core.faults import InjectedFault
 from morrow.core.models import FinishReason, utc_now
+from morrow.core.permissions import workspace_root_digest
 from morrow.core.workflows.contracts import (
     SUBMISSION_OUTPUT_KINDS,
+    ArtifactBinding,
+    ContractRef,
+    node_output_artifact_id,
     parse_workflow_payload,
     workflow_payload_excerpt,
 )
@@ -39,13 +50,14 @@ from morrow.core.workflows.runs import NodeRun, WorkflowRun, WorkflowStatus
 from morrow.runtime.agent import AgentLoop
 from morrow.runtime.durable_log import restore_conversation_log
 from morrow.runtime.session import Session
-from morrow.runtime.tools import ToolExecutor, ToolRegistry
+from morrow.runtime.tools import ToolContractAuditError, ToolExecutor, ToolRegistry
 
 _REASON_PREFIXES = {
     "budget_exhausted",
     "deadline_exceeded",
     "output_contract_unsatisfied",
     "policy_revoked",
+    "read_contract_drift",
 }
 _MAX_RESUME_ATTEMPTS = 4
 
@@ -154,6 +166,7 @@ class WorkflowScheduler:
         self.lifecycle = WorkflowTaskLifecycle(journal, workspace_id=workspace_id)
         self.recovery = RecoveryService(journal, workspace_id=workspace_id, id_source=id_source)
         self._live_node_run_id: str | None = None
+        self._live_node_run_ids: set[str] = set()
 
     # Driving ------------------------------------------------------------------
 
@@ -188,6 +201,18 @@ class WorkflowScheduler:
         execution_order = tuple(
             item for item in stable_execution_order(revision) if item in execution_ids
         )
+        # A crash may interrupt the admission barrier after a later sibling was
+        # admitted but before an earlier one. Drain/recover the admitted cohort
+        # before considering queued nodes, retaining every completed leaf.
+        active_reads = tuple(
+            (node_defs[node.node_id], node)
+            for node in self.journal.workflows.list_nodes(self.workspace_id, workflow_run_id)
+            if node.status is WorkflowStatus.RUNNING and node.parallel_read_digest is not None
+        )
+        if active_reads:
+            await self._drive_frontier(
+                run, revision, active_reads, cancelled_is_user=cancelled_is_user
+            )
         for node_id in execution_order:
             if self.replan is not None:
                 self.replan.process_signals(workflow_run_id)
@@ -203,6 +228,12 @@ class WorkflowScheduler:
             node_def = node_defs[node_id]
             node = self._node_for(run, node_def)
             if node.status is WorkflowStatus.COMPLETED:
+                continue
+            frontier = self._ready_read_frontier(run, revision, execution_order, node_id)
+            if len(frontier) > 1:
+                await self._drive_frontier(
+                    run, revision, frontier, cancelled_is_user=cancelled_is_user
+                )
                 continue
             if node.status in (WorkflowStatus.FAILED, WorkflowStatus.CANCELLED):
                 self.finalizer.finalize_failure(workflow_run_id, reason="node_failed")
@@ -287,6 +318,190 @@ class WorkflowScheduler:
         self._finalize_when_all_completed(workflow_run_id)
         return self._settle_drain(workflow_run_id)
 
+    def _ready_read_frontier(self, run, revision, order, first):
+        if run.status not in {WorkflowStatus.QUEUED, WorkflowStatus.RUNNING}:
+            return ()
+        if run.budget_snapshot.max_concurrency < 2:
+            return ()
+        nodes = self._nodes_by_id(run)
+        if any(
+            n.status in {WorkflowStatus.RUNNING, WorkflowStatus.BLOCKED} for n in nodes.values()
+        ):
+            return ()
+        definitions = {n.node_id: n for n in revision.nodes}
+        frontier = []
+        for node_id in order[order.index(first) :]:
+            node = nodes[node_id]
+            if node.status is WorkflowStatus.COMPLETED:
+                continue
+            definition = definitions[node_id]
+            # Keep the stable serial boundary: never jump past a Writer or a
+            # dependency that has not completed at this fixed frontier.
+            if (
+                node.status is not WorkflowStatus.QUEUED
+                or definition.access_mode != "read"
+                or definition.conversation_scope != "isolated"
+                or any(
+                    edge.to_node_id == node_id
+                    and edge.from_node_id in nodes
+                    and nodes[edge.from_node_id].status is not WorkflowStatus.COMPLETED
+                    for edge in revision.edges
+                )
+            ):
+                break
+            self._require_ready(run, revision, definition, nodes)
+            frontier.append((definition, node))
+            if len(frontier) == run.budget_snapshot.max_concurrency:
+                break
+        return tuple(frontier)
+
+    async def _drive_frontier(self, run, revision, entries, *, cancelled_is_user):
+        frontier = ReadFrontier(tuple(definition.node_id for definition, _ in entries))
+        if all(node.parallel_read_digest is not None for _, node in entries):
+            frontier.proofs = {d.node_id: n.parallel_read_digest for d, n in entries}
+            frontier.ready.set()
+            frontier.admitted.set()
+        outcomes = {}
+
+        async def drive(definition, node):
+            try:
+                if node.status is WorkflowStatus.QUEUED:
+                    self._require_unrevoked(revision, definition)
+                error = await self._drive_node(
+                    run,
+                    revision,
+                    definition,
+                    node,
+                    definition.declared_node_max_agent_generation_requests,
+                    cancelled_is_user=cancelled_is_user,
+                    frontier=frontier,
+                )
+                outcomes[node.node_id] = error
+                current = self.transitions.get_node(node.node_run_id)
+                leaf = self.journal.get_task_run(self.workspace_id, current.leaf_task_run_id)
+                return leaf is not None and leaf.status is TaskRunStatus.READY_FOR_ACCEPTANCE
+            except InjectedFault:
+                frontier.crashed = True
+                raise
+            except ToolContractAuditError:
+                raise read_contract_error() from None
+            except ApplicationError as exc:
+                if exc.code is ApplicationErrorCode.NEEDS_RECOVERY:
+                    frontier.crashed = True
+                raise
+            finally:
+                frontier.finished[definition.node_id].set()
+
+        tasks = [asyncio.create_task(drive(d, n)) for d, n in entries]
+        cancelled = False
+        crash = None
+        pending = set(tasks)
+        try:
+            while pending:
+                done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+                if any(task.cancelled() or task.exception() or not task.result() for task in done):
+                    for task in tasks:
+                        if not task.done():
+                            task.cancel()
+                    break
+        except asyncio.CancelledError:
+            cancelled = True
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+        joined = asyncio.gather(*tasks, return_exceptions=True)
+        while True:
+            try:
+                results = await asyncio.shield(joined)
+                break
+            except asyncio.CancelledError:
+                cancelled = True
+                # Repeated foreground cancellation cannot interrupt leaf cleanup.
+        for (definition, node), result in zip(entries, results, strict=True):
+            if isinstance(result, InjectedFault):
+                crash = result
+            elif isinstance(result, ApplicationError):
+                if result.code is ApplicationErrorCode.NEEDS_RECOVERY:
+                    crash = result
+                outcomes[definition.node_id] = result.message
+                if classify_terminal_reason(result.message) == "read_contract_drift":
+                    self.transitions.fail_node(node.node_run_id)
+        if cancelled and not cancelled_is_user:
+            raise asyncio.CancelledError
+        if crash is not None:
+            raise crash
+        # Preserve every successfully committed leaf, even if a sibling failed
+        # or the user cancelled while this output waited behind the barrier.
+        for definition, node in entries:
+            self._publish_completed_leaf(run, definition, node)
+        current = self._require_run(run.workflow_run_id)
+        if current.status.terminal:
+            return
+        nodes = [self.transitions.get_node(node.node_run_id) for _, node in entries]
+        if any(
+            (report := self._leaf_report(node)) is not None
+            and any(item.blocking for item in report.items)
+            for node in nodes
+            if node.conversation_session_id
+        ):
+            self.finalizer.mark_blocked(run.workflow_run_id, user_cancel=cancelled)
+            return
+        reason = next(
+            (
+                classify_terminal_reason(outcomes.get(d.node_id))
+                for d, _ in entries
+                if classify_terminal_reason(outcomes.get(d.node_id))
+            ),
+            None,
+        )
+        if cancelled or reason == "policy_revoked":
+            self.finalizer.finalize_cancel(run.workflow_run_id, reason=reason or "user_cancelled")
+        elif current.pause_requested and all(
+            n.status in {WorkflowStatus.COMPLETED, WorkflowStatus.QUEUED} for n in nodes
+        ):
+            return
+        elif any(n.status is not WorkflowStatus.COMPLETED for n in nodes):
+            self.finalizer.finalize_failure(run.workflow_run_id, reason=reason or "node_failed")
+
+    def _publish_completed_leaf(self, run, definition, node):
+        node = self.transitions.get_node(node.node_run_id)
+        if node.status is WorkflowStatus.COMPLETED or node.leaf_task_run_id is None:
+            return
+        leaf = self.journal.get_task_run(self.workspace_id, node.leaf_task_run_id)
+        if leaf is None or leaf.status is not TaskRunStatus.READY_FOR_ACCEPTANCE:
+            return
+        if node.parallel_read_digest is None:
+            self.transitions.complete_node(node.node_run_id)
+            return
+
+        def work(txn):
+            if node.parallel_read_digest is not None:
+                for contract in definition.output_contracts:
+                    metadata = self.artifacts.get(
+                        node_output_artifact_id(node.node_run_id, contract.slot)
+                    )
+                    if metadata is None:
+                        if contract.required_for_node_completion:
+                            raise ApplicationError(
+                                ApplicationErrorCode.NEEDS_RECOVERY,
+                                "Workflow candidate output is missing",
+                            )
+                        continue
+                    txn.workflows.bind_artifact(
+                        self.workspace_id,
+                        run.workflow_run_id,
+                        ArtifactBinding(
+                            name=contract.slot,
+                            artifact_id=metadata.artifact_id,
+                            contract=ContractRef(kind=contract.kind, version=contract.version),
+                        ),
+                        node_run_id=node.node_run_id,
+                        direction="output",
+                    )
+            self.transitions.complete_node(node.node_run_id)
+
+        self.journal.transact(work)
+
     def _require_settled(self, run: WorkflowRun, node: NodeRun) -> None:
         """A returned drive must leave its node terminal or the run blocked.
 
@@ -337,28 +552,34 @@ class WorkflowScheduler:
                 "Workflow is paused; resume it before driving again",
             )
         nodes = self.journal.workflows.list_nodes(self.workspace_id, workflow_run_id)
-        active = next(
-            (
-                node
-                for node in nodes
-                if node.status in (WorkflowStatus.RUNNING, WorkflowStatus.BLOCKED)
-            ),
-            None,
+        active = tuple(
+            node
+            for node in nodes
+            if node.status in (WorkflowStatus.RUNNING, WorkflowStatus.BLOCKED)
         )
-        if active is None:
+        if not active:
             return await self.run(workflow_run_id, cancelled_is_user=cancelled_is_user)
-        report = self._leaf_report(active)
-        if report is not None and any(item.blocking for item in report.items):
+        revision = self.journal.workflows.get_revision(self.workspace_id, run.workflow_revision_id)
+        definitions = {n.node_id: n for n in revision.nodes}
+        # A later sibling can own the blocking fact or a committed completion.
+        # Inspect the entire active set before resuming or closing the root.
+        blocking = any(
+            (report := self._leaf_report(node)) is not None
+            and any(item.blocking for item in report.items)
+            for node in active
+        )
+        if blocking or run.pending_terminal_intent == "user_cancel":
+            for node in active:
+                self._publish_completed_leaf(run, definitions[node.node_id], node)
+        if blocking:
             return self.finalizer.mark_blocked(
                 workflow_run_id, user_cancel=run.pending_terminal_intent == "user_cancel"
             )
         if run.pending_terminal_intent == "user_cancel":
-            leaf = self.journal.get_task_run(self.workspace_id, active.leaf_task_run_id)
-            if leaf is not None and leaf.status is TaskRunStatus.READY_FOR_ACCEPTANCE:
-                self.transitions.complete_node(active.node_run_id)
             return self.finalizer.finalize_cancel(workflow_run_id, reason="user_cancelled")
-        if active.status is WorkflowStatus.BLOCKED:
-            self.transitions.resume_blocked_node(active.node_run_id)
+        for node in active:
+            if self.transitions.get_node(node.node_run_id).status is WorkflowStatus.BLOCKED:
+                self.transitions.resume_blocked_node(node.node_run_id)
         if run.status is WorkflowStatus.BLOCKED:
             if run.pause_requested:
                 # Resolve-success under a standing pause returns to draining and
@@ -383,7 +604,7 @@ class WorkflowScheduler:
         ).abandon(
             workflow_run_id,
             expected_row_version=expected_row_version,
-            live_node_run_id=self._live_node_run_id,
+            live_node_run_id=next(iter(self._live_node_run_ids), self._live_node_run_id),
         )
 
     async def _drive_node(
@@ -395,7 +616,8 @@ class WorkflowScheduler:
         cap: int | None,
         *,
         cancelled_is_user: bool = True,
-    ) -> None:
+        frontier: ReadFrontier | None = None,
+    ) -> str | None:
         leaf_session_id, leaf_task_run_id = self._ensure_leaf(run, node_def, node)
         hooks = WorkflowLeafHooks(
             self.journal,
@@ -413,6 +635,7 @@ class WorkflowScheduler:
             transitions=self.transitions,
             id_source=self.id_source,
             clock=self.clock,
+            parallel_read_digest=node.parallel_read_digest,
         )
         session = Session(leaf_session_id)
         persistence = SessionPersistence(
@@ -442,19 +665,22 @@ class WorkflowScheduler:
             invoking_session_id=root.session_id,
             conversation_scope=node_def.conversation_scope,
             resolved_tool_requirements=node_def.resolved_tool_requirements,
+            parallel_read_candidate=frontier is not None or node.parallel_read_digest is not None,
         )
         error_message: str | None = None
         cancelled = False
         attempts = 0
         self._live_node_run_id = node.node_run_id
+        self._live_node_run_ids.add(node.node_run_id)
+        prepared_to_close = None
         try:
+            if self.initialize_context is not None:
+                self.initialize_context(session)
             while True:
                 attempts += 1
                 node = self.transitions.get_node(node.node_run_id)
                 leaf = self.journal.get_task_run(self.workspace_id, leaf_task_run_id)
                 if node.status is WorkflowStatus.QUEUED:
-                    if self.initialize_context is not None:
-                        self.initialize_context(session)
                     persistence.attach(session)
                     if node_def.conversation_scope == "invoking_session":
                         persistence.restore_into(session)
@@ -465,8 +691,23 @@ class WorkflowScheduler:
                         require_enabled=False,
                     )
                     prepared = self._compose_leaf_runtime(prepared, hooks)
+                    prepared_to_close = prepared
+                    if frontier is not None:
+                        prepared = await frontier.prepare(
+                            node_def.node_id,
+                            prepared,
+                            session,
+                            hooks,
+                            source_proven=factory.parallel_read_proven,
+                        )
                     text = self._contract_text(run, node_def)
                     drive_options = {} if cancelled_is_user else {"cancelled_is_user": False}
+                    if frontier is not None:
+                        drive_options.update(frontier=frontier, node_id=node_def.node_id)
+                        drive_options["cancelled_is_user"] = lambda: (
+                            cancelled_is_user and not frontier.crashed
+                        )
+                    prepared_to_close = None
                     drive_error = await self._drive(
                         session,
                         text,
@@ -496,7 +737,26 @@ class WorkflowScheduler:
                             self._rehydrate_leaf_executor(executor, hooks, digest)
                         ),
                     )
+                    prepared_to_close = prepared
                     persistence.restore_into(session)
+                    if node.parallel_read_digest is not None:
+                        proof = prove_read_runtime(
+                            prepared, session, source_proven=factory.parallel_read_proven
+                        )
+                        permission = self.journal.get_permission_snapshot_for_run(
+                            self.workspace_id, node.agent_run_id
+                        )
+                        if (
+                            proof != node.parallel_read_digest
+                            or permission is None
+                            or permission.workspace_root_digest
+                            != workspace_root_digest(session.workspace_capability.root)
+                        ):
+                            raise read_contract_error()
+                        prepared = replace(
+                            prepared,
+                            tool_executor=guard_read_executor(prepared.tool_executor, hooks),
+                        )
                     if self._committed_final_assistant(leaf_session_id):
                         # The final Assistant message is durable; replay only the
                         # terminal commit (committer re-runs from durable facts,
@@ -505,6 +765,11 @@ class WorkflowScheduler:
                         drive_error = None
                     else:
                         drive_options = {} if cancelled_is_user else {"cancelled_is_user": False}
+                        if frontier is not None:
+                            drive_options["cancelled_is_user"] = lambda: (
+                                cancelled_is_user and not frontier.crashed
+                            )
+                        prepared_to_close = None
                         drive_error = await self._drive(
                             session,
                             "",
@@ -517,16 +782,23 @@ class WorkflowScheduler:
                     drive_error = None
                 if drive_error is not None:
                     error_message = drive_error
+                if frontier is not None and frontier.parallel:
+                    return error_message
                 settled = self._settle(run.workflow_run_id, node, error_message, cancelled)
                 if settled != "resume" or attempts >= _MAX_RESUME_ATTEMPTS:
-                    return
+                    return error_message
         except asyncio.CancelledError:
-            if not cancelled_is_user:
+            if not cancelled_is_user or (frontier is not None and frontier.crashed):
                 raise
             cancelled = True
-            self._settle(run.workflow_run_id, node, error_message, cancelled)
+            if frontier is None:
+                self._settle(run.workflow_run_id, node, error_message, cancelled)
+            return error_message
         finally:
+            self._live_node_run_ids.discard(node.node_run_id)
             self._live_node_run_id = None
+            if prepared_to_close is not None:
+                await prepared_to_close.aclose()
 
     async def _drive(
         self,
@@ -536,7 +808,9 @@ class WorkflowScheduler:
         client_message_id: str,
         prepared,
         resume: bool = False,
-        cancelled_is_user: bool = True,
+        cancelled_is_user: bool | Callable[[], bool] = True,
+        frontier: ReadFrontier | None = None,
+        node_id: str | None = None,
     ) -> str | None:
         loop = AgentLoop(
             prepared.provider,
@@ -559,8 +833,22 @@ class WorkflowScheduler:
         )
         try:
             async for event in stream:
+                if event.type == "turn.started" and frontier is not None:
+                    await frontier.wait_started(node_id)
                 if event.type == "error":
                     error_message = event.payload.get("message") or error_message
+        except asyncio.CancelledError:
+            if frontier is not None:
+                # Cancellation at the admission barrier is outside AgentLoop's
+                # own awaits. Deliver it to the suspended stream so driver loss
+                # still follows its crash path instead of GeneratorExit cleanup.
+                try:
+                    await stream.athrow(asyncio.CancelledError())
+                    async for _event in stream:
+                        pass
+                except (StopAsyncIteration, asyncio.CancelledError):
+                    pass
+            raise
         finally:
             await stream.aclose()
         return error_message
@@ -606,7 +894,11 @@ class WorkflowScheduler:
         if leaf is not None and leaf.status is TaskRunStatus.READY_FOR_ACCEPTANCE:
             # A committed leaf stays completed even when a cancellation arrives
             # afterwards; the cancel still stops every not-yet-started node.
-            self.transitions.complete_node(node.node_run_id)
+            revision = self.journal.workflows.get_revision(
+                self.workspace_id, run.workflow_revision_id
+            )
+            definition = next(n for n in revision.nodes if n.node_id == node.node_id)
+            self._publish_completed_leaf(run, definition, node)
             if self.journal.workflows.list_replan_signals(
                 self.workspace_id, workflow_run_id, pending_only=True
             ):

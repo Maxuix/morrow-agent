@@ -229,7 +229,35 @@ def verify_workflow_rows(executor):
                     valid_leaf = leaf == (ws, node.conversation_session_id, "workflow_node")
                 if not valid_leaf:
                     raise ValueError("leaf ownership mismatch")
+                if node.parallel_read_digest is not None:
+                    permission = _first(
+                        executor,
+                        "SELECT p.workspace_read_only, p.access_scope, p.grant_id, "
+                        "p.tool_schema_digest, r.snapshot_json FROM agent_runs r "
+                        "JOIN permission_snapshots p ON p.permission_snapshot_id=r.permission_snapshot_id "
+                        "WHERE r.agent_run_id=? AND p.agent_run_id=r.agent_run_id",
+                        (node.agent_run_id,),
+                    )
+                    if (
+                        declared.access_mode != "read"
+                        or declared.conversation_scope != "isolated"
+                        or permission is None
+                        or permission[:3] != (1, "workspace", None)
+                        or permission[3] != json.loads(permission[4])["tool_schema_digest"]
+                    ):
+                        raise ValueError("parallel read permission evidence mismatch")
             nodes[node_id] = node
+        for run in runs.values():
+            active = tuple(
+                node
+                for node in nodes.values()
+                if node.workflow_run_id == run.workflow_run_id
+                and node.status.value in {"running", "blocked"}
+            )
+            if len(active) > run.budget_snapshot.max_concurrency or (
+                len(active) > 1 and any(node.parallel_read_digest is None for node in active)
+            ):
+                raise ValueError("Workflow concurrency admission mismatch")
         execution_sets = {}
         for run_id, node_id, ordinal, reason in executor.execute(
             "SELECT * FROM workflow_run_execution_nodes"

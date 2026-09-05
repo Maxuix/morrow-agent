@@ -188,6 +188,7 @@ class NodeRun(RunState):
     leaf_task_run_id: Annotated[str, Field(pattern=r"^task_[A-Za-z0-9_-]+$")] | None = None
     agent_run_id: Annotated[str, Field(pattern=r"^arun_[A-Za-z0-9_-]+$")] | None = None
     effective_node_generation_request_cap: int | None = Field(default=None, gt=0, strict=True)
+    parallel_read_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")] | None = None
 
     @field_validator("attempt", mode="before")
     @classmethod
@@ -208,6 +209,7 @@ class NodeRun(RunState):
         if self.status == WorkflowStatus.QUEUED and (
             any(v is not None for v in ownership_refs)
             or self.effective_node_generation_request_cap is not None
+            or self.parallel_read_digest is not None
         ):
             raise ValueError("queued Node cannot have admission references")
         if self.status in {

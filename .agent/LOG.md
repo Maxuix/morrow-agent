@@ -5297,3 +5297,35 @@ publication attempted.
   Only the original checkout remains. Main was 43 ahead / 0 behind locally recorded origin/main
   before this closure record. Subplan 11 is closed; Subplan 12 remains unactivated and gated.
   No remote fetch/push or Live test was attempted.
+
+
+## 2026-09-05 — Subplan 12 activation and bounded read frontiers
+
+User explicitly activated Subplan 12 from verified local main `9ada9b0`. Work is on
+`feat/stage8-readonly-parallel`. Existing per-request idempotent admission, settlement and lineage
+caps were retained as the sole request ledger. Provider retry ownership remains in AgentLoop;
+Scheduler does not add retries or reserve whole-node allowances. No dependency or bundled policy
+change is needed. Read preparation/permission and Active slot gates, deterministic Workflow output
+publication, full-frontier cancellation and partial-result recovery are implemented.
+
+20 new deterministic cases cover simultaneous admission, reverse completion, real tool follow-ups,
+optional-cap rejection, slot and permission denial, opaque fallback, static/dynamic drift, Writer
+exclusivity, Pause, driver loss/crash and a 16-process cwd/env stress test. A synchronous intent
+wrapper preserves the existing durable preflight seam; an initial coroutine-wrapper warning was
+resolved and no warning remains. The serial completion transaction boundary was retained after an
+existing crash-injection test caught an unintended change. Combined focused gate: 69 passed in
+57.52s. Ruff format/check, compileall, CLI help and diff check passed. Full offline gate is running.
+
+Commands use `UV_CACHE_DIR=/tmp/morrow-uv-cache uv run --offline` because the default uv cache is
+outside the writable sandbox; no dependency update or network test occurred. Remote push remains
+unauthorized, so local main publication is the integration target.
+
+
+- First full Subplan 12 offline gate: 1738 passed, 5 failed, 2 native-sandbox skips and
+  2 Live deselected, 484.18s. All failures were the leaf-hook constructor's unnecessary
+  transition dependency; the scheduler now passes the frozen proof explicitly. Related
+  pipeline + 23 parallel cases passed (54 tests). Review also covered cancellation at
+  the admission barrier, partial admission with a later active/earlier queued node, and
+  current catalog filtering of a frozen optional read tool. Focused serial/Pause/
+  continuation + 23 parallel cases passed (72 tests, 51.14s). Final full gate starts
+  after these corrections and the 24th parallel case, with static checks green.

@@ -217,6 +217,7 @@ class SqliteOperationalJournal:
             get_artifact=self.get_artifact,
             get_agent_version=self.agent_definitions.get_version,
             get_agent_run=self.get_agent_run,
+            get_permission_snapshot=self.get_permission_snapshot,
         )
         self._runtime_control_journal = SqliteRuntimeControlJournal(self._backend)
 

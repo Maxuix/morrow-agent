@@ -1,10 +1,10 @@
 # Stage 8 Adaptive Orchestration and GUI Implementation Plan
 
-> Status: Subplans 1–11 completed; no active subplan
+> Status: Subplans 1–11 completed; Subplan 12 active
 > Last completed subplan: `11-feedback-evaluation` (topic branch retired)
 > (acceptance `docs/acceptance/stage-8-subplan-11-feedback-evaluation.md`)
-> Active subplan: none
-> Next planned subplan: `12-read-only-parallelism` (not activated; gated)
+> Active subplan: `12-read-only-parallelism`
+> Next planned subplan: none
 > Roadmap authority: `docs/roadmap/stage-8-adaptive-orchestration-and-gui.md`
 > (revised 2026-09-03: risk-tiered Replan autonomy; runtime-kernel-first ordering)
 > Current evidence: full offline gate 1723 passed / 2 native-sandbox skipped / 2 Live deselected;
