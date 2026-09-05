@@ -1,7 +1,7 @@
 # Stage 8 Subplan 12 — Bounded Read-Only Parallelism
 
 Date: 2026-09-05. Base: verified local `main` at `9ada9b0`.
-Branch: `feat/stage8-readonly-parallel`. Status: final offline regression in progress.
+Branch: `feat/stage8-readonly-parallel`. Status: all implementation checks passed; local integration pending.
 
 ## Delivered behavior
 
@@ -82,14 +82,14 @@ outside the writable sandbox. The installed dependency set is unchanged.
   host workspace/permission profile already used by its ToolExecutor. Copying that immutable
   capability evidence enables production parallel proof. The new API case passed and reconstructs
   a peak of three active nodes from the real durable event stream.
-- Final full offline run after production composition correction: pending
-  (`/tmp/morrow-subplan12-production-final-offline.log`).
+- Final full offline run after production composition correction: **1748 passed, 2 skipped,
+  2 Live deselected**, 311.05s, exit 0 (`/tmp/morrow-subplan12-production-final-offline.log`).
 
 No Live Provider/MCP/network tests or remote Git publication were authorized or performed.
 No GUI source changed; this runtime slice uses the existing concurrency input and status/events.
 
 ## Integration
 
-Pending successful final offline regression, verified commit, local fast-forward integration,
-topic ancestry check and branch retirement. Local `main` already contained 44 unpublished commits
+Implementation `f9f213a` and production composition correction `e9a4ec4` passed all required
+validation. Local fast-forward integration, topic ancestry check and branch retirement are pending. Local `main` already contained 44 unpublished commits
 at activation; remote push remains explicitly unauthorized.
