@@ -5353,3 +5353,31 @@ unauthorized, so local main publication is the integration target.
   that only the original checkout remains. Main was 47 ahead / 0 behind locally recorded
   origin/main before this closure commit. Stage 8 Subplans 1–12 are complete with no active
   child plan; Stage 9 was not opened. No remote fetch/push or Live test was performed.
+
+
+## 2026-09-05 — Subplans 8–12 review remediation
+
+- User first requested review, then explicitly authorized fixes for all seven findings. Retained
+  the review report and opened Subplan 13 on `fix/stage8-subplans-8-12-review` from local main
+  `429d812`. Scope remains Stage 8; no new dependency, public lifecycle or policy-default change.
+- `072fd27`: all removed/retargeted input bindings now raise Replan risk, including TextResult
+  reports; additive inputs remain low risk. Replan/run-control suites: 43 passed.
+- `64cb4d8`: controlled frontier cancellation closes leaves with Server driver semantics while
+  actual driver loss retains recovery facts. Serial fallback signals preserve queued work for
+  Pause and continuation. Parallel/Pause/serial suites: 67 passed. An initial regression assertion
+  referenced a nonexistent DurableTurn timestamp; corrected it to verify exactly-once terminal
+  Task transitions and absence of an open Turn.
+- `1d5a4af`: planner reloads Profile before saving and remerges the existing classifier result;
+  canonical frozen role IDs prevent fallback Agent reuse from corrupting feedback/evaluation.
+  Existing Revision hashes are preserved. Planner/feedback/context suites: 71 passed. One test
+  fixture initially omitted the derived Agent source hash; corrected the required identity/hash
+  pair and reran successfully.
+- `6a27dc2`: aggregate Learning cursors include orchestration-only pages; settings show promotion
+  and resolved saved-policy authorization separately. Final affected service suites: 74 passed;
+  GUI typecheck, 100 tests and production bundle/budget passed. A loop-capture Ruff finding in
+  the new test was corrected before commit. Ruff format/check, compileall, CLI help and whitespace
+  checks passed. Full offline validation is running; no Live tests or remote push authorized.
+- Final full offline gate: 1761 passed, 2 existing host-level Seatbelt skips, 2 Live deselected,
+  266.32s, exit 0. All seven issues have committed fixes and regression evidence. Acceptance and
+  review disposition recorded; architecture now documents current Profile revalidation and the
+  shared frozen role convention. Verified work is ready for local fast-forward integration.

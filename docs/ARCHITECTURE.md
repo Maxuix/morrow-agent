@@ -150,7 +150,8 @@ Definition 或权限。显式小任务保持 Direct；范围扩大可增加 Plan
 编辑后是生成时说明。普通聊天、ConversationLog、Revision 写入与 Scheduler 所有权均不变。
 
 Core API 的只读规划准备在 Core loop 上等待 Provider，但不占用串行 mutation bus；完成后
-重新读取策略/Catalog，再将同步编译与 Draft 写入提交到 bus。`workflow plan`、GUI 和 API
+在同步编译与 Draft 写入的 bus 操作中重新读取策略/Catalog 和当前 Profile 约束；基于当前
+显式约束重算本地特征并重新融合已有分类结果，无需第二次模型请求。`workflow plan`、GUI 和 API
 共享应用服务。`auto_run_mode=allow_promoted` 是用户偏好；Subplan 11 已补齐产品推广证据
 writer，GraphPlanner 记录生成时的 `auto_run_eligible` 与原因，不自行启动任务，手工冻结和执行始终可用。
 `auto_replan_mode` 由 Subplan 9 的 ReplanCoordinator 消费：按不可变根任务分类解析策略，
@@ -162,6 +163,11 @@ Store 事务 backend。Draft update 和用户 exact Patch save 在原编辑事�
 不复制任务文本、聊天记录或工具结果；自动 Replan 提案不冒充用户编辑。不同 Draft 或根任务的
 重复信号触发确定性 Learning review，候选与证据通过同一个 Learning Inbox/评估页面查询。
 同一 Draft、重复点击和 continuation lineage 不重复增加独立证据样本。
+
+`application/workflows/roles.py` 共享规划器既有的 canonical node ID 约定（角色名或
+`角色名_正整数`），作为冻结的任务角色；复用其他 AgentDefinition 不改变这个角色。
+反馈与 Reviewer 评估采用同一解释，非角色 ID 保留 Definition 来源回退；不增加 Revision
+字段或改写既有内容哈希。
 
 `application/workflows/feedback.py` 只提议当前 workspace 的完整策略候选，接受时检查全局和
 workspace Extension 文档修订；先保存 applying intent，再调用原 OrchestrationPolicyService.put，

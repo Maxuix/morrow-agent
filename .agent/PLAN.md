@@ -6,10 +6,10 @@
 > Active subplan: `13-review-remediation` (user-authorized fixes for the seven review findings)
 > Next planned subplan: none; no later stage activated
 > Roadmap authority: `docs/roadmap/stage-8-adaptive-orchestration-and-gui.md`
-> Current evidence: full offline gate 1748 passed / 2 native-sandbox skipped / 2 Live deselected;
-> all 25 parallel cases passed, including real Core Host/API evidence; Ruff format/check,
-> compileall, CLI help and `git diff --check` green. Existing GUI evidence remains in Subplan 11;
-> no GUI source changed and no Live test ran.
+> Current evidence: Subplan 13 full offline gate 1761 passed / 2 native-sandbox skipped /
+> 2 Live deselected; GUI 100 tests, typecheck and production build/budget passed. Ruff format/check,
+> compileall, CLI help and `git diff --check` passed. Acceptance:
+> `docs/acceptance/stage-8-subplan-13-review-remediation.md`; local integration pending.
 > Previous master plan: Stage 7, archived under `.agent/archive/subplans/stage7-workflow-runtime/`
 
 ## 1. Objective
