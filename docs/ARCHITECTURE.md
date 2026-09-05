@@ -241,6 +241,11 @@ workspace baseline 或 completion gate；旧快照不能通过当前严格模型
 Session 持有的进程内 `ConversationLog` 是唯一聊天历史权威，`Session.messages` 是只读投影。
 带 calls 的 Assistant 与其有序 ToolMessage 构成不可拆分的 ToolCycle。ContextBuilder 从不可变
 Snapshot 生成 Chat 或 Structured 投影，按完整 Cycle/turn 控制预算；它不写事实源、不调用摘要模型。
+普通追加只校验新增记录和当前 Turn 状态；只有同一 Log 产生且尚未失效的不可变 append 能增量提交。
+恢复、外部快照及非当前 append 仍完整校验。持久化写入不再逐条重新加载全历史；快照仍复制记录引用，
+没有新增历史缓存或第二写入者。模型文本按完整行脱敏后发送现有 `text.delta`，携带请求序号；
+未完成的末行等响应收口再发送。提前显示的文本是临时预览，重试失败不写入历史，最终内容修订时通过
+现有 `status.changed/response_reset` 提示替换；`turn.completed.text` 是最终回答。
 
 生产组合只在 Adapter 声明 OpenAI function-tool 支持时启用 `read`、`ls`、`find`、`grep`、
 `edit`、`write` 与 `bash` 七个核心编码工具；`run_skill_script`、`update_configuration`、
@@ -592,6 +597,14 @@ summary + recent tail，不能删除或重放已经持久化的对话/工具记�
 失败不可重试；`internal` 只有在 Provider Adapter 显式标记为瞬态 Provider 来源时才可重试。Long-horizon
 默认使用 Pi 的 3 次、2/4/8 秒退避和 60 秒 provider-delay cap，普通 bundled policy 同样为三次重试；工具
 timeout、输出/Artifact 保留上限仍是独立的 per-operation 安全边界。
+
+摘要必须包含有效结构化内容；空对象、仅未知字段、多对象歧义和未正常 STOP 的摘要不推进压缩边界。
+摘要及上次摘要放入明确标记为历史数据的 User-role 消息，不提升为 System 指令。生产摘要 completion
+显式限制输出为 reserve 的 80%，保留 finish/usage/cost；活动运行中的各次摘要请求复用既有 admission
+与请求账本，以 `purpose=compaction` 区分并纳入用量聚合，仍遵守 lineage/deadline admission，
+不消耗普通 agent-generation 次数配额。空闲手动压缩没有新 AgentRun，用量保存在 CompactionEntry。
+v30 仅扩展既有请求表的 purpose/error CHECK，保留旧请求与关系。下一次上下文预算可以复用相同模型、
+工具及完整前缀的最近 usage，加上新增消息估算；任一前缀改变后回退估算，估算不作为计费事实。
 
 `OperationalDoctor` 使用 diagnose/read-only 连接检查 schema、SQLite integrity/FK、Conversation grammar、
 Task/Execution、Review/Evidence/Candidate/Promotion/Knowledge、Memory Selection/AgentRun/derived terms、Skill/MCP

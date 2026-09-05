@@ -1325,8 +1325,7 @@ async def test_revocation_at_recovery_resume_uses_policy_revoked_mapping(fx):
 async def test_non_agent_requests_are_excluded_from_workflow_budget(fx):
     """Only purpose=agent admissions charge the durable Workflow counter.
 
-    The seam has no compaction purpose at all: automatic compaction summaries
-    are never admitted here, so they are excluded rather than miscounted.
+    Summary and historical outcome-intent admissions remain outside this counter.
     """
 
     fx.bank.scripts.append([["counted ", "once"]])

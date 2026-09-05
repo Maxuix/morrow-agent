@@ -780,22 +780,35 @@ async def test_deadline_expiry_after_settled_tool_fails_the_next_request(fx):
 
 
 @pytest.mark.asyncio
-async def test_compaction_and_non_agent_requests_never_charge_the_workflow_budget(fx):
+@pytest.mark.parametrize("purpose", ("compaction", "outcome_intent"))
+async def test_compaction_and_non_agent_requests_never_charge_the_workflow_budget(fx, purpose):
+    from morrow.core.store import StorageError
+
     fx.bank.scripts.extend([[["one"]], [["two"]]])
     _, publication = publish(fx, pair_source)
     run = await fx.runtime.scheduler.run(start(fx, publication.revision).run.workflow_run_id)
     assert fx.journal.count_workflow_agent_requests(WS, run.workflow_run_id) == 2
-    # Automatic compaction summaries never pass through the purpose=agent seam,
-    # so they stay excluded instead of being misreported as counted.
+    # Summary usage is admitted, but it must not consume agent-generation capacity.
     fx.journal.admit_model_request(
         WS,
         agent_run_id=node_by_id(fx, run.workflow_run_id, "gamma").agent_run_id,
         attempt_ordinal=99,
         estimated_request_chars=10,
         request_char_budget=1000,
-        purpose="outcome_intent",
+        purpose=purpose,
     )
     assert fx.journal.count_workflow_agent_requests(WS, run.workflow_run_id) == 2
+    if purpose == "compaction":
+        fx.clock.advance(400)
+        with pytest.raises(StorageError, match="deadline_exceeded"):
+            fx.journal.admit_model_request(
+                WS,
+                agent_run_id=node_by_id(fx, run.workflow_run_id, "gamma").agent_run_id,
+                attempt_ordinal=100,
+                estimated_request_chars=10,
+                request_char_budget=1000,
+                purpose=purpose,
+            )
 
 
 # Failure propagation ---------------------------------------------------------------------

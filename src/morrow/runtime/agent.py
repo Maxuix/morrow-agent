@@ -217,6 +217,17 @@ def _consume_cancellation_request() -> None:
             task.uncancel()
 
 
+def _remaining_text_chunks(
+    projection: TextStreamProjection, chunks: list[str], message: AssistantMessage
+) -> tuple[list[str], bool]:
+    """Preserve accepted chunk boundaries when no line has been displayed early."""
+    had_preview = bool(projection.emitted)
+    remainder, reset = projection.finish(message.content or "")
+    if not had_preview and chunks and "".join(chunks) == remainder:
+        return chunks, reset
+    return ([remainder] if remainder else []), reset
+
+
 @dataclass
 class _AgentRunState:
     """Mutable state for one AgentLoop run."""
@@ -1212,6 +1223,7 @@ class AgentLoop:
                             request_projection.evidence if request_projection is not None else None
                         ),
                     )
+                candidate_chunks: list[str] = []
                 text_projection = TextStreamProjection()
                 stream = runner.attempt(call_messages, tools)
                 try:
@@ -1221,6 +1233,7 @@ class AgentLoop:
                         except StopAsyncIteration:
                             break
                         if model_event.kind == "text_delta" and model_event.text:
+                            candidate_chunks.append(model_event.text)
                             visible_chunk = text_projection.feed(model_event.text)
                             if visible_chunk:
                                 yield event(
@@ -1377,14 +1390,16 @@ class AgentLoop:
                     state.terminal_finish_reason = FinishReason.STOP
                     state.stop_code = None
                     retain_facts(FinishReason.STOP.value)
-                    remainder, reset = text_projection.finish(message.content or "")
+                    chunks, reset = _remaining_text_chunks(
+                        text_projection, candidate_chunks, message
+                    )
                     if reset:
                         yield event(
                             "status.changed",
                             {"status": "response_reset", "attempt_ordinal": state.model_attempts},
                         )
-                    if remainder:
-                        yield event("text.delta", {"text": remainder})
+                    for chunk in chunks:
+                        yield event("text.delta", {"text": chunk})
                     yield event(
                         "turn.completed",
                         completion_payload(FinishReason.STOP, state.visible),
@@ -1441,14 +1456,14 @@ class AgentLoop:
                     return
                 # A response that finished with tool calls is not a final answer. Its
                 # remaining text is rendered after the assistant/tool intent is committed.
-                remainder, reset = text_projection.finish(message.content or "")
+                chunks, reset = _remaining_text_chunks(text_projection, candidate_chunks, message)
                 if reset:
                     yield event(
                         "status.changed",
                         {"status": "response_reset", "attempt_ordinal": state.model_attempts},
                     )
-                if remainder:
-                    yield event("text.delta", {"text": remainder})
+                for chunk in chunks:
+                    yield event("text.delta", {"text": chunk})
                 state.active_calls = calls
                 state.active_running_id = None
                 state.active_result_limit = per_call_result_limit

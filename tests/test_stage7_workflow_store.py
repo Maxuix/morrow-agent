@@ -715,6 +715,7 @@ def test_previous_current_migration_defaults_and_future_refusal(tmp_path):
         "workflow_editor_drafts",
         "workflow_global_replan",
         "workflow_feedback_evaluation",
+        "compaction_request_accounting",
     )
     with store.open(StoreOpenMode.READ_WRITE) as handle:
         assert (

@@ -247,7 +247,10 @@ def test_shared_export_bound_and_optional_execution_limits():
 def test_workflow_safety_benign_calibration(text):
     assert TaskContract(objective=text).objective == text
     result = text_result_from_assistant("rec_final", text)
-    assert result.excerpt == text and result.content_complete
+    assert result.excerpt == text
+    # Placeholders remain legal and visible. An existing redaction marker cannot establish
+    # complete source evidence, even when this layer did not perform the earlier redaction.
+    assert result.content_complete is ("<redacted>" not in text)
     assert TextResult.model_validate_json(result.model_dump_json()) == result
     outcome = workflow_task_outcome(**{**outcome_fields(), "summary": text})
     assert TaskOutcome.model_validate_json(outcome.model_dump_json()) == outcome

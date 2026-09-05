@@ -6,6 +6,7 @@ import asyncio
 import json
 import math
 from collections.abc import AsyncIterator, Mapping
+from urllib.parse import urlsplit
 
 from morrow.core.models import (
     AssistantMessage,
@@ -683,7 +684,14 @@ class OpenAICompatibleProvider:
         ):
             raise ValueError("completion output budget must be positive")
         try:
-            options = {"max_tokens": max_output_tokens} if max_output_tokens is not None else {}
+            # The official endpoint requires the newer field for reasoning models; compatible
+            # endpoints retain their broadly supported max_tokens wire contract.
+            budget_field = (
+                "max_completion_tokens"
+                if urlsplit(self.base_url).hostname == "api.openai.com"
+                else "max_tokens"
+            )
+            options = {budget_field: max_output_tokens} if max_output_tokens is not None else {}
             response = await self._get_client().chat.completions.create(
                 model=self.api_model_ids.get(model.model_id, model.model_id),
                 messages=self._messages(messages),

@@ -178,6 +178,7 @@ def test_migration_v26_backfills_legacy_rows_and_rebuilds_root_exclusivity(tmp_p
         "workflow_editor_drafts",
         "workflow_global_replan",
         "workflow_feedback_evaluation",
+        "compaction_request_accounting",
     )
     with store.open(StoreOpenMode.READ_WRITE) as handle:
         rows = handle.run_read(
@@ -254,6 +255,7 @@ def test_rebuild_migration_verification_rolls_back_and_restores_pragmas(tmp_path
         "workflow_editor_drafts",
         "workflow_global_replan",
         "workflow_feedback_evaluation",
+        "compaction_request_accounting",
     )
 
 

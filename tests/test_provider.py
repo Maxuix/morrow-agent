@@ -1172,7 +1172,16 @@ def test_adapter_classifies_nested_value_errors_as_invalid_response():
 
 
 @pytest.mark.asyncio
-async def test_completion_facts_preserve_usage_and_output_limit_and_do_not_hide_truncation():
+@pytest.mark.parametrize(
+    ("base_url", "budget_field"),
+    [
+        ("https://example.invalid/v1", "max_tokens"),
+        ("https://api.openai.com/v1", "max_completion_tokens"),
+    ],
+)
+async def test_completion_facts_preserve_usage_and_output_limit_and_do_not_hide_truncation(
+    base_url, budget_field
+):
     response = SimpleNamespace(
         choices=[
             SimpleNamespace(
@@ -1182,12 +1191,13 @@ async def test_completion_facts_preserve_usage_and_output_limit_and_do_not_hide_
         usage=SimpleNamespace(prompt_tokens=200, completion_tokens=30, total_tokens=230),
     )
     provider = provider_with_stream(response)
+    provider.base_url = base_url
     model = ModelRef(provider_id="test", model_id="summary")
     messages = [UserMessage(content="Summarize")]
     result = await provider.complete_result(model, messages, max_output_tokens=30)
     assert result.finish_reason is ModelFinishReason.LENGTH
     assert result.usage.total_tokens == 230
-    assert provider._client.chat.completions.kwargs["max_tokens"] == 30
+    assert provider._client.chat.completions.kwargs[budget_field] == 30
     from morrow.core.models import ModelProviderError
 
     with pytest.raises(ModelProviderError):

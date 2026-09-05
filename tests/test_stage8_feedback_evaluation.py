@@ -505,7 +505,7 @@ def test_v28_migration_preserves_records_and_adds_feedback_tables(tmp_path):
     from morrow.adapters.state.journal import SqliteOperationalJournal
     from morrow.adapters.state.migrations import MigrationRegistry, production_registry
     from morrow.adapters.state.operational import OperationalStore
-    from morrow.core.store import StoreOpenMode
+    from morrow.core.store import SUPPORTED_SCHEMA_VERSION, StoreOpenMode
     from test_stage4_journal import _session, _task
 
     registry = MigrationRegistry(supported_version=28)
@@ -520,7 +520,7 @@ def test_v28_migration_preserves_records_and_adds_feedback_tables(tmp_path):
     handle.close()
     store = OperationalStore(tmp_path / "state")
     report = store.migrate()
-    assert report.from_version == 28 and report.to_version == 29
+    assert report.from_version == 28 and report.to_version == SUPPORTED_SCHEMA_VERSION
     with store.open(StoreOpenMode.READ_WRITE) as handle:
         journal = SqliteOperationalJournal(handle)
         assert journal.get_session("ws_a", "ses_1") == session

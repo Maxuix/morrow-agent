@@ -217,7 +217,7 @@ class SqliteObservabilityJournal:
                         StorageErrorCode.BUDGET_EXHAUSTED,
                         "budget_exhausted: Agent generation request limit reached",
                     )
-            if candidate.purpose is ModelRequestPurpose.AGENT:
+            if candidate.purpose in {ModelRequestPurpose.AGENT, ModelRequestPurpose.COMPACTION}:
                 workflow_row = self.backend.read_one(
                     "SELECT wr.body_json FROM workflow_runs wr "
                     "JOIN workflow_node_runs n ON n.workflow_run_id=wr.workflow_run_id "
@@ -236,7 +236,11 @@ class SqliteObservabilityJournal:
                         (workflow.effective_lineage_budget_root_run_id,),
                     )[0]
                     workflow_cap = workflow.budget_snapshot.max_agent_generation_requests
-                    if workflow_cap is not None and lineage_count >= workflow_cap:
+                    if (
+                        candidate.purpose is ModelRequestPurpose.AGENT
+                        and workflow_cap is not None
+                        and lineage_count >= workflow_cap
+                    ):
                         raise StorageError(
                             StorageErrorCode.BUDGET_EXHAUSTED,
                             "budget_exhausted: Workflow lineage request limit reached",

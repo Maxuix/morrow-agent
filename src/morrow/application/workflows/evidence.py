@@ -12,6 +12,9 @@ from morrow.core.workflows.contracts import TextResult
 
 def text_result_from_assistant(record_id: str, text: str) -> TextResult:
     redacted, changed = redact_workflow_text(text)
+    # The runtime may already have removed credentials before committing the Assistant.
+    # A retained redaction marker cannot support a claim that the source is complete.
+    changed |= "<redacted>" in text
     excerpt = redacted[:4096]
     return TextResult(
         final_assistant_record_id=record_id,
@@ -41,7 +44,7 @@ def workflow_task_outcome(**fields) -> TaskOutcome:
         projected = []
         for value in values:
             safe, changed = redact_workflow_text(value)
-            redacted |= changed
+            redacted |= changed or "<redacted>" in value
             # An unsafe path is omitted rather than manufacturing a different file path.
             if name != "changed_paths" or not changed:
                 projected.append(safe)
