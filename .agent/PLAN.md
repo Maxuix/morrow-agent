@@ -1,16 +1,16 @@
 # Stage 8 Adaptive Orchestration and GUI Implementation Plan
 
-> Status: Subplans 1–9 completed; Subplan 10 in progress
-> Last completed subplan: `9-global-replan` (topic branch retired)
-> (acceptance `docs/acceptance/stage-8-subplan-9-global-replan.md`)
-> Active subplan: `10-context-learning-skill-gui`
+> Status: Subplans 1–10 completed; awaiting explicit activation of Subplan 11
+> Last completed subplan: `10-context-learning-skill-gui` (topic branch retired)
+> (acceptance `docs/acceptance/stage-8-subplan-10-context-learning-skill-gui.md`)
+> Active subplan: none
 > Next planned subplan: `11-feedback-evaluation` (not activated)
 > Roadmap authority: `docs/roadmap/stage-8-adaptive-orchestration-and-gui.md`
 > (revised 2026-09-03: risk-tiered Replan autonomy; runtime-kernel-first ordering)
-> Current evidence: full offline gate 1679 passed / 2 native-sandbox skipped / 2 Live deselected;
-> related integration matrix 110 passed; Ruff format/check, compileall, CLI help,
-> GUI typecheck/88 tests/build budget, browser Replan review/approve/reject/auto/stale/reopen,
-> offline sdist/wheel with bundled GUI and `git diff --check` green; no Live test was run
+> Current evidence: full offline gate 1709 passed / 2 native-sandbox skipped / 2 Live deselected;
+> all 30 management tests passed; Ruff format/check, compileall, CLI/manage help,
+> GUI typecheck/93 tests/build budget, browser Context/Learning/Skill review and mutation,
+> offline sdist/wheel with 18 matching GUI assets and `git diff --check` green; no Live test ran
 > Previous master plan: Stage 7, archived under `.agent/archive/subplans/stage7-workflow-runtime/`
 
 ## 1. Objective
@@ -137,8 +137,7 @@ an explicit limit exists, the already-delivered lineage enforcement remains auth
 | 11 | `11-feedback-evaluation.md` | 8G | 9 |
 | 12 | `12-read-only-parallelism.md` | 8H | 2 plus its own roadmap entry conditions; allowed to slip |
 
-Subplan 10 may be re-sequenced earlier by explicit decision; the one-active-subplan rule still
-applies. Subplan 12 starts only when its roadmap entry conditions (stable ToolEffect
+Subplans 1–10 completed in the recorded order; the one-active-subplan rule continues to apply. Subplan 12 starts only when its roadmap entry conditions (stable ToolEffect
 classification, provider rate-limit ownership, atomic per-request accounting/optional cap claim, isolation stress
 evidence, visibility barrier) are verified.
 

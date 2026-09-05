@@ -1,7 +1,7 @@
 # Subplan 10 — Context, Learning and Skill Management GUI
 
-> Status: active 2026-09-05, explicitly requested by the user
-> Branch: `feat/stage8-context-learning-skill-gui`
+> Status: completed 2026-09-05; verified and integrated into local main
+> Branch: `feat/stage8-context-learning-skill-gui` (merged and retired)
 > Activation base: verified `main` at `672ba90` (Subplans 1–9 integrated)
 > Prerequisite: Subplan 4 verified; technically independent of Subplans 5–9
 > Roadmap authority: stage-8 §8.2, §9, §10, §8F
@@ -54,3 +54,13 @@ Workflow editing/run control (Subplans 6–7), OrchestrationPolicy editing beyon
   packages; generated packages require Draft review, publication and a separate Enable action.
 - Management queries are read-only, including expired candidates. Source/decision history is
   retained; candidate, Knowledge and Draft pages are bounded and navigable.
+
+## Completion evidence
+
+- Full offline: 1709 passed, 2 existing host-only skips, 2 Live deselected; all 30 management tests passed.
+- GUI: typecheck, 93 tests, budgeted build and loopback browser acceptance passed.
+- Ruff format/check, compileall, CLI/manage help, whitespace and 18 packaged GUI assets verified.
+- Implementation `5cd8ed3`, final refresh/acceptance `1e7c215`; fast-forwarded to local main.
+  Topic ancestry difference was zero before deletion; no extra worktree was created.
+- Acceptance: `docs/acceptance/stage-8-subplan-10-context-learning-skill-gui.md`.
+- Remote push/Live tests remain unauthorized. Subplan 11 remains pending activation.

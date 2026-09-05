@@ -5253,3 +5253,8 @@ User explicitly requested completion of Subplan 10. Activated from verified main
   deselected in 934.01 seconds, exit 0 (`/tmp/morrow-subplan10-final-gate.log`). All 30 management
   tests passed. Final GUI 93 tests/typecheck/build, Ruff format/check, compileall, CLI help,
   wheel asset verification and whitespace checks passed. Ready for local fast-forward integration.
+
+- Subplan 10 integration: committed final refresh/acceptance as `1e7c215`, fast-forwarded local
+  main, verified zero topic commits absent from main, and deleted the clean topic branch. Only the
+  original checkout remains. Local upstream comparison was 41 ahead / 0 behind before this closure
+  record; remote publication is still unauthorized. Subplan 10 closed; Subplan 11 not activated.
