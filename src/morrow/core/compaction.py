@@ -187,7 +187,10 @@ class CompactionSummary(ProtocolModel):
                     recognized[field_name] = ()
             if recognized.get("goal", ...) is None:
                 recognized["goal"] = ""
-            return cls.model_validate(recognized, strict=True)
+            summary = cls.model_validate(recognized, strict=True)
+            if not any(summary.model_dump().values()):
+                raise ValueError("compaction response contains no summary content")
+            return summary
 
         for variant in (candidate, without_trailing_commas(candidate)):
             try:
@@ -197,18 +200,27 @@ class CompactionSummary(ProtocolModel):
             if isinstance(payload, dict):
                 return validate(payload)
 
-        # Models commonly wrap an otherwise valid object in a code fence or one sentence. Scan a
-        # bounded number of object starts and accept the first complete object; surrounding text
-        # and unknown fields never enter the durable summary.
-        starts = [index for index, char in enumerate(candidate) if char == "{"][:64]
-        for start in starts:
-            for variant in (candidate[start:], without_trailing_commas(candidate[start:])):
+        # Accept a wrapped object, but never guess between an example and the actual summary.
+        # Advance past complete objects so nested dictionaries are not alternative summaries.
+        for variant in (candidate, without_trailing_commas(candidate)):
+            objects = []
+            offset = 0
+            for _ in range(64):
+                start = variant.find("{", offset)
+                if start < 0:
+                    break
                 try:
-                    payload, _ = decoder.raw_decode(variant)
+                    payload, end = decoder.raw_decode(variant, start)
                 except json.JSONDecodeError:
+                    offset = start + 1
                     continue
                 if isinstance(payload, dict):
-                    return validate(payload)
+                    objects.append(payload)
+                offset = end
+            if len(objects) > 1:
+                raise ValueError("compaction response contains multiple JSON objects")
+            if objects:
+                return validate(objects[0])
         raise ValueError("compaction response must contain one valid JSON object")
 
     def render(self) -> str:

@@ -991,7 +991,17 @@ class ToolExecutor:
                 facts=exc.facts,
             )
         except Exception:
-            return self._error(call, ToolErrorCode.EXECUTION_FAILED, "工具执行失败", limit=limit)
+            uncertain = (
+                registered.recovery_declaration.missing_handler_completed
+                is not MissingCompletionPolicy.SAFE_TO_RETRY
+            )
+            return self._error(
+                call,
+                ToolErrorCode.EXECUTION_FAILED,
+                "工具执行结果未知，请先核对实际状态，不要直接重试" if uncertain else "工具执行失败",
+                limit=limit,
+                disposition=ToolExecutionDisposition.UNKNOWN if uncertain else None,
+            )
 
     @staticmethod
     def _validate_runtime_contract(registered: RegisteredTool, intent: OperationIntent) -> None:

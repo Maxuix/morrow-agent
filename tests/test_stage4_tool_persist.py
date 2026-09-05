@@ -28,7 +28,12 @@ from morrow.core.capabilities import (
     WorkspaceCapability,
 )
 from morrow.core.domain import DurableSession
-from morrow.core.execution import EffectClass, ToolExecutionState
+from morrow.core.execution import (
+    EffectClass,
+    MissingCompletionPolicy,
+    ToolExecutionState,
+    ToolRecoveryDeclaration,
+)
 from morrow.core.faults import FaultPoint, InjectedFault, OnceFaultInjector
 from morrow.core.models import (
     AssistantMessage,
@@ -632,3 +637,61 @@ async def test_active_execution_cancellation_request_cancels_the_underlying_hand
     with pytest.raises(ToolCancellationRequested):
         await task
     assert cancelled.is_set()
+
+
+@pytest.mark.parametrize("may_have_effect", (True, False))
+@pytest.mark.asyncio
+async def test_untyped_handler_failure_keeps_effect_uncertainty(tmp_path, may_have_effect):
+    _, handle, journal, session, _ = _open(tmp_path)
+    effects = []
+
+    async def handler(arguments):
+        if may_have_effect:
+            effects.append(arguments.value)
+        raise RuntimeError("synthetic handler failure")
+
+    registry = ToolRegistry()
+    registry.register(
+        make_tool(
+            name="echo",
+            description="test handler",
+            arguments_model=_SpyArguments,
+            handler=handler,
+            recovery_declaration=(
+                None
+                if may_have_effect
+                else ToolRecoveryDeclaration(
+                    tool_name="echo",
+                    effect_class=EffectClass.PURE,
+                    missing_handler_completed=MissingCompletionPolicy.SAFE_TO_RETRY,
+                )
+            ),
+        )
+    )
+    builder = make_context_builder()
+    provider = ScriptedModelProvider(
+        [
+            AssistantMessage(
+                tool_calls=(FunctionToolCall(id="c1", name="echo", arguments='{"value":"effect"}'),)
+            ),
+            AssistantMessage(content="Inspect actual state before continuing"),
+        ]
+    )
+    try:
+        loop = AgentLoop(
+            provider,
+            ModelRef(provider_id="p", model_id="m"),
+            builder,
+            id_source=FixedIdSource(),
+            tool_executor=ToolExecutor(registry.snapshot(), builder.run_policy),
+        )
+        events = [event async for event in loop.run_task(session, "exercise handler")]
+        row = journal._read_one("SELECT agent_run_id FROM agent_runs LIMIT 1", ())
+        execution = journal.list_executions("ws_1", agent_run_id=str(row[0]))[0]
+        assert execution.disposition.value == ("unknown" if may_have_effect else "failed")
+        assert effects == (["effect"] if may_have_effect else [])
+        if may_have_effect:
+            assert "不要直接重试" in provider.stream_calls[1][-1].content
+        assert "synthetic handler failure" not in str(events)
+    finally:
+        handle.close()

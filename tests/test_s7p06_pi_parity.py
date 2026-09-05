@@ -15,7 +15,7 @@ from morrow.application.compaction_persistence import (
     checkpoint_for_compaction,
     entry_from_compaction_checkpoint,
 )
-from morrow.application.context import ContextBuilder
+from morrow.application.context import ContextBudgetError, ContextBuilder
 from morrow.application.local_tools import (
     READ_PROVIDER_SCHEMA,
     ReadArguments,
@@ -521,6 +521,56 @@ def test_compaction_summary_recovers_common_provider_json_wrappers():
         CompactionSummary.model_validate({"goal": "ship", "progress_blocked": None}, strict=True)
 
 
+@pytest.mark.parametrize(
+    "response",
+    ("{}", '{"provider_error":"unavailable"}', 'Example {}\n{"goal":"continue"}'),
+)
+@pytest.mark.asyncio
+async def test_invalid_compaction_preserves_boundary_and_can_be_retried(response):
+    class Provider:
+        text = response
+
+        async def complete(self, model, messages):
+            return self.text
+
+    provider = Provider()
+    session = Session(session_id="s")
+    seed_user_turn(session, "Preserve API compatibility", assistant="Understood")
+    seed_user_turn(session, "Continue implementation", assistant="Working")
+    builder = _v2_context(keep_recent_tokens=1)
+    loop = AgentLoop(provider, MODEL, builder)
+    original = session.log.snapshot()
+
+    with pytest.raises(ContextBudgetError):
+        await loop.compact_idle(session)
+    assert session.log.snapshot() == original
+    assert session.compaction_boundary_sequence == 0
+    assert not session.compaction_in_progress
+    assert "Preserve API compatibility" in str(builder.build(session).messages)
+
+    provider.text = '{"goal":"Continue implementation","constraints_preferences":["Preserve API compatibility"]}'
+    assert await loop.compact_idle(session)
+    assert session.compaction_boundary_sequence > 0
+    assert "Preserve API compatibility" in str(builder.build(session).messages)
+
+
+def test_compaction_memory_and_focus_are_data_not_system_instructions():
+    session = Session(session_id="s")
+    seed_user_turn(session, "first request", assistant="first answer")
+    seed_user_turn(session, "second request", assistant="second answer")
+    session.compaction_summary = CompactionSummary(goal="prior-summary-marker")
+    builder = _v2_context(keep_recent_tokens=1)
+    messages = builder.build(session).messages
+    assert any("prior-summary-marker" in m.content and m.role == "user" for m in messages)
+    assert all("prior-summary-marker" not in m.content for m in messages if m.role == "system")
+    candidate = builder.prepare_compaction(session, instructions="focus-marker")
+    assert candidate is not None
+    assert "prior-summary-marker" in candidate.summary_messages[1].content
+    assert "focus-marker" in candidate.summary_messages[1].content
+    assert "prior-summary-marker" not in candidate.summary_messages[0].content
+    assert "focus-marker" not in candidate.summary_messages[0].content
+
+
 def test_long_horizon_without_exact_window_uses_conservative_character_budget():
     policy = _v2_policy(context_window_tokens=None)
     builder = ContextBuilder(
@@ -593,7 +643,7 @@ def test_split_turn_compaction_keeps_user_anchor_and_tool_pairs_together():
     assert candidate is not None
     instructed = builder.prepare_compaction(session, instructions="保留接口变更")
     assert instructed is not None
-    assert "保留接口变更" in instructed.summary_messages[0].content
+    assert "保留接口变更" in instructed.summary_messages[1].content
     assert candidate.source_messages[0].role == "user"
     assert candidate.source_end_sequence < candidate.first_retained_sequence
     assert candidate.source_messages[-1].role == "tool"
