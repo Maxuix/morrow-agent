@@ -124,6 +124,11 @@ class ReadFrontier:
         self.started: set[str] = set()
         self.admitted = asyncio.Event()
         self.crashed = False
+        self.controlled_cancel = False
+
+    def closes_on_cancel(self, user_cancel):
+        """Sibling failure closes leaves; actual driver loss retains recovery facts."""
+        return not self.crashed and (user_cancel or self.controlled_cancel)
 
     @property
     def parallel(self):

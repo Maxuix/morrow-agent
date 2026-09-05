@@ -400,12 +400,15 @@ class WorkflowScheduler:
             while pending:
                 done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
                 if any(task.cancelled() or task.exception() or not task.result() for task in done):
+                    frontier.controlled_cancel = True
                     for task in tasks:
                         if not task.done():
                             task.cancel()
                     break
         except asyncio.CancelledError:
             cancelled = True
+            if not cancelled_is_user:
+                frontier.crashed = True
             for task in tasks:
                 if not task.done():
                     task.cancel()
@@ -416,6 +419,8 @@ class WorkflowScheduler:
                 break
             except asyncio.CancelledError:
                 cancelled = True
+                if not cancelled_is_user:
+                    frontier.crashed = True
                 # Repeated foreground cancellation cannot interrupt leaf cleanup.
         for (definition, node), result in zip(entries, results, strict=True):
             if isinstance(result, InjectedFault):
@@ -456,9 +461,16 @@ class WorkflowScheduler:
         )
         if cancelled or reason == "policy_revoked":
             self.finalizer.finalize_cancel(run.workflow_run_id, reason=reason or "user_cancelled")
-        elif current.pause_requested and all(
-            n.status in {WorkflowStatus.COMPLETED, WorkflowStatus.QUEUED} for n in nodes
+        elif all(n.status in {WorkflowStatus.COMPLETED, WorkflowStatus.QUEUED} for n in nodes) and (
+            current.pause_requested
+            or self.journal.workflows.list_replan_signals(
+                self.workspace_id, run.workflow_run_id, pending_only=True
+            )
         ):
+            # A fallback leaf may have closed admission with a signal before
+            # the outer Coordinator had a chance to request Pause. Preserve
+            # queued siblings until it consumes the settled closure evidence.
+            self.transitions.request_pause(run.workflow_run_id)
             return
         elif any(n.status is not WorkflowStatus.COMPLETED for n in nodes):
             self.finalizer.finalize_failure(run.workflow_run_id, reason=reason or "node_failed")
@@ -704,8 +716,8 @@ class WorkflowScheduler:
                     drive_options = {} if cancelled_is_user else {"cancelled_is_user": False}
                     if frontier is not None:
                         drive_options.update(frontier=frontier, node_id=node_def.node_id)
-                        drive_options["cancelled_is_user"] = lambda: (
-                            cancelled_is_user and not frontier.crashed
+                        drive_options["cancelled_is_user"] = lambda: frontier.closes_on_cancel(
+                            cancelled_is_user
                         )
                     prepared_to_close = None
                     drive_error = await self._drive(
@@ -766,8 +778,8 @@ class WorkflowScheduler:
                     else:
                         drive_options = {} if cancelled_is_user else {"cancelled_is_user": False}
                         if frontier is not None:
-                            drive_options["cancelled_is_user"] = lambda: (
-                                cancelled_is_user and not frontier.crashed
+                            drive_options["cancelled_is_user"] = lambda: frontier.closes_on_cancel(
+                                cancelled_is_user
                             )
                         prepared_to_close = None
                         drive_error = await self._drive(
