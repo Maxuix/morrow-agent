@@ -13,6 +13,16 @@ export function defaultOrchestrationPolicy(scope: 'global' | 'workspace', matche
   }
 }
 
+export function OrchestrationEligibility({ eligibility }: Pick<OrchestrationPoliciesWire, 'eligibility'>) {
+  const types = (key: 'promoted' | 'auto_run_eligible' | 'auto_replan_eligible') => eligibility.filter(row => row[key]).map(row => row.task_type).join('、') || '无'
+  return <div className="mt-2 space-y-1" role="status">
+    <p>已推广任务类型：{types('promoted')}</p>
+    <p>当前已保存策略允许自动运行：{types('auto_run_eligible')}</p>
+    <p>当前已保存策略允许低风险自动重规划：{types('auto_replan_eligible')}</p>
+    <p>自动运行需要收益证据与显式授权同时满足。类型专属自动重规划也需要收益证据；“所有任务”的显式低风险策略无需类型推广。</p>
+  </div>
+}
+
 export function OrchestrationSettings({ client }: { client: ApiClient }) {
   const [data, setData] = useState<OrchestrationPoliciesWire | null>(null)
   const [scope, setScope] = useState<'global' | 'workspace'>('workspace')
@@ -53,8 +63,8 @@ export function OrchestrationSettings({ client }: { client: ApiClient }) {
       <label className="col-span-2">自动运行偏好<select className="editor-input mt-1" value={policy.auto_run_mode} onChange={(e) => setPolicy({ ...policy, auto_run_mode: e.target.value as OrchestrationPolicyWire['auto_run_mode'] })}><option value="approval_only">每次确认</option><option value="allow_promoted">对应任务类型有收益证据后允许自动运行</option></select></label>
       <label className="col-span-2">重规划策略<select className="editor-input mt-1" value={policy.auto_replan_mode} onChange={(e) => setPolicy({ ...policy, auto_replan_mode: e.target.value as OrchestrationPolicyWire['auto_replan_mode'] })}><option value="approval_only">每个提案均需批准</option><option value="allow_low_risk">允许低风险提案自动应用</option></select></label>
     </div>
-    <p className="mt-2">自动应用仍需完整暂停，且不能扩大权限或放宽显式约束。任务类型专属自动化尚缺配对收益证据；当前仅“所有任务”的显式低风险策略可生效。</p>
-    <p className="mt-2 text-blocked">当前没有已推广的任务类型；开启偏好后仍生成待确认 Draft。</p>
+    <p className="mt-2">自动应用仍需完整暂停，且不能扩大权限或放宽显式约束。</p>
+    {data && <OrchestrationEligibility eligibility={data.eligibility} />}
     <div className="mt-3 flex gap-2"><button type="button" className="editor-button" disabled={busy || !data} onClick={() => void save()}>保存策略</button><button type="button" className="editor-button" disabled={busy} onClick={() => void refresh()}>重新加载策略</button></div>
     {message && <p role="status" className="mt-2">{message}</p>}
   </details>

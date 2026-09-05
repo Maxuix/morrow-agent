@@ -214,6 +214,37 @@ async def test_pair_metrics_estimates_independence_policy_and_regression_gate(tm
             assert gate["promoted"] is (number == 1)
             assert gate["auto_run_eligible"] is (number == 1)
             assert gate["task_class_replan_eligible"] is (number == 1)
+            settings = (await fx.client.get("/v1/orchestration-policies")).json()
+            eligibility = next(
+                row for row in settings["eligibility"] if row["task_type"] == "implementation"
+            )
+            assert eligibility == {
+                "task_type": "implementation",
+                "promoted": number == 1,
+                "auto_run_eligible": number == 1,
+                "auto_replan_eligible": number == 1,
+            }
+            if number == 1:
+                approval = policy.model_copy(
+                    update={"auto_run_mode": "approval_only", "auto_replan_mode": "approval_only"}
+                )
+                revision = settings["workspace"]["revision"]
+                await fx.on_core(
+                    lambda approval=approval, revision=revision: (
+                        fx.host.context.products.orchestration_policies.put(
+                            approval, expected_revision=revision
+                        )
+                    )
+                )
+                saved = (await fx.client.get("/v1/orchestration-policies")).json()
+                row = next(r for r in saved["eligibility"] if r["task_type"] == "implementation")
+                assert row["promoted"] is True
+                assert row["auto_run_eligible"] is row["auto_replan_eligible"] is False
+                await fx.on_core(
+                    lambda revision=revision: fx.host.context.products.orchestration_policies.put(
+                        policy, expected_revision=revision + 1
+                    )
+                )
             assert await fx.on_core(
                 lambda: fx.host.context.runtime.replan._automation_allowed(policy)
             ) is (number == 1)
@@ -323,6 +354,67 @@ async def seed_candidate(fx):
             )
         )
     return (await fx.client.get("/v1/management/workflow-policy-candidates")).json()["items"][0]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("count", [50, 105])
+async def test_learning_pagination_includes_orchestration_only_pages(tmp_path, count):
+    from morrow.core.workflows.feedback import WorkflowPolicyCandidate
+
+    fx = ServerFixture(tmp_path, scripts=[["result"]] * 8)
+    try:
+        await publish_roles(fx)
+        candidate = await seed_candidate(fx)
+
+        def seed_pages():
+            feedback = fx.host.context.products.workflow_drafts.feedback
+            sample = feedback.records.get(
+                WorkflowPolicyCandidate, feedback.workspace_id, candidate["candidate_id"]
+            )
+            # Populate review history from a valid candidate; page reads must not
+            # depend on live Learning execution or on other candidate kinds.
+            for number in range(count - 1):
+                feedback.records.put(
+                    sample.model_copy(
+                        update={
+                            "candidate_id": f"wpc_page_{number}",
+                            "status": "rejected",
+                            "decision_command_id": f"cmd_page_{number}",
+                            "row_version": 2,
+                        }
+                    )
+                )
+
+        await fx.on_core(seed_pages)
+        seen = set()
+        for page in range((count + 49) // 50):
+            result = (await fx.client.get(f"/v1/management/learning?page={page}")).json()
+            assert result["candidates"] == result["proposals"] == []
+            items = result["orchestration"]["items"]
+            assert len(items) == min(50, count - page * 50)
+            assert result["next_cursor"] == (
+                str((page + 1) * 50) if count > (page + 1) * 50 else None
+            )
+            seen.update(c["candidate_id"] for c in items)
+        assert len(seen) == count
+    finally:
+        fx.close()
+
+
+@pytest.mark.asyncio
+async def test_settings_show_wildcard_replan_authorization_without_promotion(tmp_path):
+    fx = ServerFixture(tmp_path)
+    try:
+        policy = OrchestrationPolicy(auto_replan_mode="allow_low_risk")
+        await fx.on_core(
+            lambda: fx.host.context.products.orchestration_policies.put(policy, expected_revision=0)
+        )
+        rows = (await fx.client.get("/v1/orchestration-policies")).json()["eligibility"]
+        assert len(rows) == 6
+        assert all(not row["promoted"] and not row["auto_run_eligible"] for row in rows)
+        assert all(row["auto_replan_eligible"] for row in rows)
+    finally:
+        fx.close()
 
 
 @pytest.mark.asyncio

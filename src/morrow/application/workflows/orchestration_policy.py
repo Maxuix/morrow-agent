@@ -49,9 +49,18 @@ class OrchestrationPolicyService:
 
     def view(self):
         classes = ("implementation", "refactor", "research", "explanation", "diagnosis", "general")
-        eligible = (
-            any(self.auto_run(self.resolve(c), c) for c in classes) if self.evaluation else False
-        )
+        eligibility = []
+        for task_type in classes:
+            policy = self.resolve(task_type)
+            eligibility.append(
+                {
+                    "task_type": task_type,
+                    "promoted": self.promoted(task_type),
+                    "auto_run_eligible": self.auto_run(policy, task_type),
+                    "auto_replan_eligible": self.auto_replan(policy),
+                }
+            )
+        eligible = any(row["auto_run_eligible"] for row in eligibility)
         return {
             scope: {
                 "revision": (doc := self._document(scope)).revision,
@@ -61,6 +70,7 @@ class OrchestrationPolicyService:
         } | {
             "auto_run_eligible": eligible,
             "auto_run_reason": "paired_benefit" if eligible else "paired_evidence_missing",
+            "eligibility": eligibility,
         }
 
     def resolve(self, task_type: str) -> OrchestrationPolicy:

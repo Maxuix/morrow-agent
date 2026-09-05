@@ -532,6 +532,12 @@ export interface OrchestrationPoliciesWire {
   workspace: { revision: number; policies: OrchestrationPolicyWire[] }
   auto_run_eligible: boolean
   auto_run_reason: 'paired_evidence_missing' | 'paired_benefit'
+  eligibility: Array<{
+    task_type: PlanningTaskType
+    promoted: boolean
+    auto_run_eligible: boolean
+    auto_replan_eligible: boolean
+  }>
 }
 
 export interface WorkflowDraftViewWire {

@@ -73,6 +73,10 @@ class ManagementService:
                 if self.workflow_feedback
                 else {"items": [], "next_cursor": None}
             )
+            if result["orchestration"]["next_cursor"]:
+                # Keep the aggregate offset cursor available until every list
+                # is exhausted; all three lists use the same 50-row page.
+                result["next_cursor"] = str((page + 1) * 50)
             return result
         if kind == "workflow-evaluation" and self.workflow_feedback:
             from morrow.application.workflows.evaluation import WorkflowEvaluationService

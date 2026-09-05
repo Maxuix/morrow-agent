@@ -11,8 +11,11 @@ Ruff format/check and whitespace passed.
 Planner reloads current Profile before composition, including changes during model awaits and
 Profile clearing; shared canonical node roles preserve fallback Agent feedback/evaluation.
 Planner/feedback/context suites: 71 passed; Ruff check passed.
-Current task: Learning pagination and promotion state display.
-Next: full offline and GUI validation, acceptance and local integration.
+Learning now merges all candidate cursors; settings show promotion separately from current
+resolved policy eligibility. Planner/feedback/context suites: 74 passed. GUI: 100 tests,
+typecheck and production build/budget passed. Ruff format/check and whitespace passed.
+Current task: full offline validation and acceptance.
+Next: verified local integration and branch retirement.
 
 No new dependencies, policy defaults or public lifecycle changes are planned.
 Remote push and Live tests remain unauthorized.
