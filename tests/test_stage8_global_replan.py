@@ -87,6 +87,56 @@ async def test_stale_proposal_never_replays_on_new_base(tmp_path):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("remove", [True, False])
+async def test_text_result_input_removal_requires_approval_but_addition_remains_low(
+    tmp_path, remove
+):
+    from morrow.core.workflows.contracts import TaskContractRef, WorkflowInputBinding
+
+    fx, base, parent = await _paused_after_first_node(tmp_path)
+    try:
+        coordinator = fx.runtime.replan
+        policy(coordinator, "allow_low_risk")
+        source = revision_source(base)
+        extra = WorkflowInputBinding(
+            source="workflow_input",
+            input_name="task",
+            accepts=TaskContractRef(),
+            workflow_input="task",
+        )
+        source = source.model_copy(
+            update={
+                "nodes": tuple(
+                    n.model_copy(
+                        update={"input_bindings": () if remove else (*n.input_bindings, extra)}
+                    )
+                    if n.node_id == "alpha"
+                    else n
+                    for n in source.nodes
+                )
+            }
+        )
+        proposal = coordinator.propose(parent.workflow_run_id, source)
+        if remove:
+            assert proposal.status == "pending"
+            assert proposal.risk_level == "elevated"
+            assert "input_dependency_removed" in proposal.risk_reasons
+            assert (
+                fx.journal.workflows.get_run(WS, parent.workflow_run_id).status
+                is WorkflowStatus.PAUSED
+            )
+            decided = coordinator.decide(
+                proposal.proposal_id, approved=True, expected_row_version=1
+            )
+            assert decided.status == "applied" and not decided.auto_applied
+        else:
+            assert proposal.status == "applied" and proposal.auto_applied
+            assert proposal.risk_level == "low"
+    finally:
+        fx.close()
+
+
+@pytest.mark.asyncio
 async def test_guardrail_escalation_and_compile_failure(tmp_path):
     fx, base, parent = await _paused_after_first_node(tmp_path)
     try:

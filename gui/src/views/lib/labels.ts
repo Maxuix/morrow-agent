@@ -81,6 +81,7 @@ export const RISK_REASON_LABELS: Record<string, string> = {
   review_or_test_gate_removed: '删除评审/测试门禁',
   output_contract_relaxed: '放宽输出合同',
   report_dependency_removed: '删除测试/报告依赖',
+  input_dependency_removed: '移除或替换节点输入证据',
   control_edge_removed: '删除控制边',
   writer_order_changed: '改变写入节点顺序',
   required_outputs_retargeted: '改变结果输出指向',

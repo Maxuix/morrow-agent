@@ -1,9 +1,9 @@
 # Stage 8 Adaptive Orchestration and GUI Implementation Plan
 
-> Status: Subplans 1–12 completed; no active subplan
+> Status: Subplans 1–12 completed; review remediation in progress
 > Last completed subplan: `12-read-only-parallelism` (topic branch retired)
 > Acceptance: `docs/acceptance/stage-8-subplan-12-read-only-parallelism.md`
-> Active subplan: none
+> Active subplan: `13-review-remediation` (user-authorized fixes for the seven review findings)
 > Next planned subplan: none; no later stage activated
 > Roadmap authority: `docs/roadmap/stage-8-adaptive-orchestration-and-gui.md`
 > Current evidence: full offline gate 1748 passed / 2 native-sandbox skipped / 2 Live deselected;
@@ -135,11 +135,12 @@ an explicit limit exists, the already-delivered lineage enforcement remains auth
 | 10 | `10-context-learning-skill-gui.md` | 8F | 4 (no dependency on 5–9; sequenced to keep one active subplan) |
 | 11 | `11-feedback-evaluation.md` | 8G | 9 |
 | 12 | `12-read-only-parallelism.md` | 8H | 2 plus its own roadmap entry conditions; allowed to slip |
+| 13 | `13-review-remediation.md` | Review follow-up for 8–12 | 12; explicit user fix request |
 
 Subplans 1–12 completed in the recorded order. Subplan 12 verified its entry conditions
 (ToolEffect contracts, Provider retry ownership, atomic request accounting/optional cap claims,
 isolation stress and visibility barrier) and closed with full offline evidence. This master plan
-is complete; no later stage or new master plan has been activated.
+has a user-authorized review follow-up in Subplan 13; no later stage or new master plan is activated.
 
 ## 5. Cross-cutting invariants
 

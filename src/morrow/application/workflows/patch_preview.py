@@ -193,6 +193,12 @@ def classify_patch_risk(base: CompiledWorkflow, candidate: CompiledWorkflow) -> 
             reasons.append("output_contract_relaxed")
         if _report_binding_sources(old) - _report_binding_sources(new):
             reasons.append("report_dependency_removed")
+        # Generic TextResult can carry review/test evidence too. Keeping its
+        # control edge does not preserve the input delivered to the consumer.
+        # Additive bindings retain the old evidence; removal/retargeting needs
+        # approval when no stronger frozen semantic proof exists.
+        if set(old.input_bindings) - set(new.input_bindings):
+            reasons.append("input_dependency_removed")
         if _cap_relaxed(
             old.max_agent_generation_requests, new.max_agent_generation_requests
         ) or _cap_relaxed(

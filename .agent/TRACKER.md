@@ -1,15 +1,12 @@
 # Progress Tracker
 
-Subplan 12 completed on 2026-09-05. Stage 8 Subplans 1–12 are complete; no active subplan.
+Subplan 13 active: user-authorized remediation of the seven Subplans 8–12 review findings.
+Branch `fix/stage8-subplans-8-12-review`, base `429d812`. Existing review report retained.
 
-Final offline gate: 1748 passed, 2 existing Seatbelt skips, 2 Live deselected (311.05s, exit 0).
-All 25 parallel cases passed, including real Core Host/API three-node admission and partial
-admission recovery. Ruff format/check, compileall, CLI help and diff checks passed.
-Implementation `f9f213a`, production composition `e9a4ec4` and acceptance `30fdc95` were
-fast-forwarded into local main from `9ada9b0`. The topic had zero commits absent from main and
-was deleted. Only the original checkout remains. Local main was 47 ahead / 0 behind the locally
-recorded origin/main before this closure commit. Acceptance:
-`docs/acceptance/stage-8-subplan-12-read-only-parallelism.md`.
+Input-dependency approval regression and existing Replan/run-control suites: 43 passed.
+Ruff format/check and whitespace passed.
+Current task: controlled frontier cancellation and serial-fallback signal handling.
+Next: planner Profile refresh and shared task-role interpretation.
 
-Next: await user direction; no Stage 9 implementation or plan was started.
+No new dependencies, policy defaults or public lifecycle changes are planned.
 Remote push and Live tests remain unauthorized.

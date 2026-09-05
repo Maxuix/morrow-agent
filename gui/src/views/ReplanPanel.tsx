@@ -19,6 +19,7 @@ const risks: Record<string, string> = {
   permission_widened: '扩大工具或写入权限', provider_model_boundary_changed: '改变 Provider / Model 数据边界',
   conversation_scope_changed: '改变会话范围', output_contract_relaxed: '改变输出合同',
   report_dependency_removed: '移除测试或报告依赖', writer_order_changed: '改变写入节点顺序',
+  input_dependency_removed: '移除或替换节点输入证据',
   explicit_constraint_removed: '移除显式任务约束', task_scope_changed: '改变任务范围',
   unclassified_change: '无法确定风险的变化',
 }
