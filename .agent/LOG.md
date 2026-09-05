@@ -5386,3 +5386,27 @@ unauthorized, so local main publication is the integration target.
   worktree was preserved. Locally recorded upstream comparison before this closure commit:
   main 53 ahead / 0 behind origin/main. Remote push remains unauthorized. Subplans 1–13 are
   complete; no active subplan and no later stage opened.
+
+## 2026-09-05 — Chat 工作台补全主计划建立
+
+- 用户确认以 Chat 为中心的完整 Web GUI 改造方案，并明确要求生成完整 PLAN。
+  当前范围为文档规划，未开始产品实施，未开启 Stage 9。
+- 从 main dde2ada 创建本地文档分支 docs/stage8-chat-workbench-plan。
+- 原 Stage 8 的 13 个子计划先完整归档到
+  .agent/archive/subplans/stage8-adaptive-orchestration-gui/；
+  保留子计划内容/编号、原主计划和索引快照，再替换当前 master。
+- 新计划按已确认八阶段独立从 1 编号，定义 C01–C16 产品要求、A01–A15 用户旅程、
+  每个子计划的修改归属、顺序任务、合同、验证和退出条件。
+- 首次启动与 Provider 解耦、Chat 单一写入者、提交幂等、多工作区隔离、真实思考参数、
+  附件端到端输入、权限等价、CLI 完整映射与旧数据恢复均列入验收范围。
+- 计划编制后的文档/归档/命令基线验证及本地集成结果在本节追加；不引用旧测试数冒充本次验证。
+
+- 文档验证通过：8 个连续编号子计划、85 项连续任务，16 项要求和 15 条用户旅程；
+  157 项 CLI 与源码 AST 集合一致。391 个本地链接通过，13 个归档子计划 SHA-256
+  与原文一致，原 master/index 与 dde2ada Git 内容一致。
+- 执行 UV_CACHE_DIR=/private/tmp/morrow-chat-plan-uv-cache 下的
+  uv run --offline --no-sync ruff format --check .：649 files already formatted，exit 0；
+  uv run --offline --no-sync ruff check .：All checks passed，exit 0。工作树 diff 空白检查通过。
+- 新计划与路线方向已同步，TODO 无未来任务堆积，TRACKER 明确 0/8 与无激活实施子计划。
+  本轮未修改生产代码，未运行 pytest、GUI 功能门禁或 Live 测试。
+  计划文档以本地 Git 提交交付；远程 push 未授权。

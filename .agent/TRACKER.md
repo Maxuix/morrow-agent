@@ -1,23 +1,24 @@
-# Progress Tracker
+# Progress Tracker — Chat 工作台补全
 
-Subplan 13 completed: all seven Subplans 8–12 review findings fixed and regression-tested.
-Verified commits through `98134c6` fast-forwarded from `429d812` into local main.
-Zero topic commits absent from main; `fix/stage8-subplans-8-12-review` deleted. Review retained.
+主计划：stage8-chat-workbench。
+当前任务：完整计划编制已完成；产品实施尚未开始。
+状态：8 个子计划、85 项任务已建立并通过文档验证；实施子计划 0/8 完成。
+当前激活实施子计划：无。
+下一动作：后续获得实施指令时，从子计划 1「交互合同与能力映射」开始。
 
-Input-dependency approval regression and existing Replan/run-control suites: 43 passed.
-Ruff format/check and whitespace passed.
-Controlled cancellation closes admitted leaves in foreground and Server modes; serial fallback
-signals now pause and continue only queued work. Parallel/pause/serial suites: 67 passed;
-Ruff format/check and whitespace passed.
-Planner reloads current Profile before composition, including changes during model awaits and
-Profile clearing; shared canonical node roles preserve fallback Agent feedback/evaluation.
-Planner/feedback/context suites: 71 passed; Ruff check passed.
-Learning now merges all candidate cursors; settings show promotion separately from current
-resolved policy eligibility. Planner/feedback/context suites: 74 passed. GUI: 100 tests,
-typecheck and production build/budget passed. Ruff format/check and whitespace passed.
-Full offline validation passed: 1761 passed, 2 host-level Seatbelt skips, 2 Live deselected,
-266.32s, exit 0. Compileall and CLI help passed. Acceptance and review disposition recorded.
-Current task: none. Stage 8 Subplans 1–13 completed; no later stage activated.
+用户已确认 Chat 中心方案并要求生成完整 PLAN。本轮未修改产品代码、启用新能力或开始 Stage 9。
+原 Stage 8 的 13 个子计划已保留名称与内容归档，原 master/index 亦有归档快照。
+新主计划以 8 个子计划、C01–C16 要求和 A01–A15 旅程表达完整交付。
 
-No new dependencies, policy defaults or public lifecycle changes were made.
-Remote push and Live tests remain unauthorized.
+当前代码基线：dde2ada。旧 Stage 8 的历史测试结果不作为本次新功能的验证。
+远程 push 与 Live/真实网络测试未授权。第三方包及公共生命周期实际扩展依主计划处理。
+
+本轮验证：
+- 8 个子计划编号连续，85 项任务顺序连续，C01–C16 / A01–A15 覆盖完整。
+- 157 个 CLI 入口与当前源码 AST 注册集合一致，均有负责子计划和验收旅程。
+- 13 个旧子计划 SHA-256 与归档前一致；原 master/index 与 dde2ada Git 版本一致。
+- 17 份规划文档的 391 个本地链接通过；文档空白检查通过。
+- Ruff format：649 files already formatted；Ruff check：All checks passed。
+- 本轮未修改产品代码，未运行 pytest/GUI/Live 功能测试；新功能验收全部保持待执行。
+
+本轮计划文档采用本地 Git 提交交付，具体提交以 Git 历史为准；不进行远程 push。

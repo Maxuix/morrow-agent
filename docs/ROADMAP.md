@@ -229,7 +229,7 @@ Morrow 必须在数据模型中区分以下信息，不允许都塞入一个“m
 | 5. 可审查学习与长期记忆 | 已完成 | 通用原子 Preference、no-tool Reviewer、SQLite 异步队列、Inbox/Writer、下一 AgentRun 冻结注入、Project Knowledge/Memory 与 doctor/backup 已实现；当前离线验收通过 | [阶段 5](roadmap/stage-5-reviewable-learning-and-memory.md) |
 | 6. Skills 与扩展生命周期 | 已完成 | Skill 生命周期、Draft/Usage、受限脚本、Provider/Model 控制面、MCP desired state/runtime、Doctor、当前完整 Backup 与离线综合验收已通过 | [阶段 6](roadmap/stage-6-skills-and-extensions.md) |
 | 7. Agent Definition 与静态 Workflow Runtime | 已完成 | 用户可定义多个 Agent，并运行经编译验证的版本化串行 Workflow | [阶段 7](roadmap/stage-7-workflow-runtime.md) |
-| 8. 自适应编排与 GUI 控制面 | 已完成离线工程验收 | 运行时内核、Core API、GUI、GraphPlanner/Replan 与 Context/Learning/Skill 管理与反馈评估已交付；有界只读并行已交付 | [阶段 8](roadmap/stage-8-adaptive-orchestration-and-gui.md) |
+| 8. 自适应编排与 Chat 工作台 | 原控制面已验收；Chat 补全已规划 | 原运行时内核、Core API、编排/管理/评估与只读并行已交付；新增中心 Chat、工作区/Session、模型/思考/附件/审批及 CLI 完整 GUI 等价，8 个子计划尚未开始 | [阶段 8](roadmap/stage-8-adaptive-orchestration-and-gui.md) |
 | 9. 后台任务与可靠自动化 | 未开始 | Workflow 可作为可恢复、可暂停、可审计的后台或周期任务运行 | [阶段 9](roadmap/stage-9-background-automation.md) |
 | 10. 产品化与 Morrow 1.0 | 未开始 | 形成可安装、升级、诊断、备份并长期日用的个人 Agent 产品 | [阶段 10](roadmap/stage-10-productization-and-1.0.md) |
 
@@ -244,7 +244,7 @@ Morrow 必须在数据模型中区分以下信息，不允许都塞入一个“m
 | Reviewable Learning Preview | Stage 5 | 能提出偏好与项目知识候选，来源可见、可拒绝和撤销 |
 | Extensible Agent | Stage 6 | 支持受治理的 Skills、MCP 与多 Provider 能力 |
 | Workflow Runtime Preview | Stage 7 | 支持手写、版本化、可验证的多 Agent Workflow |
-| Visual Orchestration Beta | Stage 8 | 支持受约束的任务特化 Draft、GUI 拖拽编辑和 future-only Replan 观察/控制 |
+| Chat Workbench & Visual Orchestration Beta | Stage 8 完整交付后 | 中心 Chat、工作区/Session、模型/思考/附件/审批、CLI 产品等价，结合任务特化 Draft 和 future-only Replan |
 | Automation Beta | Stage 9 | 支持持久后台任务、周期执行、恢复与通知 |
 | Morrow 1.0 | Stage 10 | 完整安装、升级、数据管理、桌面入口与发布维护能力 |
 

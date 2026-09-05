@@ -1,7 +1,9 @@
-# Stage 8：自适应编排与 GUI 控制面
+# Stage 8：自适应编排与 Chat 工作台
 
-> 状态：计划内 Subplans 1–12 已完成离线工程验收（2026-09-05）
-> 阶段结果：Morrow 能根据任务选择并生成可验证的 Workflow Draft，用户可通过 GUI 观察、编辑和控制 Agent、偏好、Skill 与运行状态
+> 状态：原 Subplans 1–13 已完成；Chat 工作台补全已建立独立 8 子计划，实施尚未开始（2026-09-05）
+> 已有结果：Workflow Draft、GUI 观察/编辑/控制、Context/Learning/Skill、反馈评估与只读并行
+> 补全目标：Chat 为默认中心，浏览器独立完成工作区/Session、模型/思考/附件/审批及 CLI 全部产品操作
+> 当前执行计划：[Chat 工作台补全 PLAN](../../.agent/PLAN.md)
 > 上级文档：[开发路线总览](../ROADMAP.md)
 > 上一阶段：[Stage 7：Agent Definition 与静态 Workflow Runtime](stage-7-workflow-runtime.md)
 > 下一阶段：[Stage 9：后台任务与可靠自动化](stage-9-background-automation.md)
@@ -14,6 +16,11 @@
 ## 一、阶段目标
 
 Stage 8 把 Stage 5–7 的能力组合成用户可直接掌控的个人 Agent 工作台。
+
+2026-09-05 用户已确认 Chat 中心改造，并要求建立完整 PLAN。原控制面验收作为历史证据保留，
+不等于新扩展产品范围已经完成。本轮新增范围以当前 PLAN 的 C01–C16 与 A01–A15 为准；
+Stage 9 未开启。普通聊天继续沿用 AgentLoop，以下编排流程适用于用户选择编排或已有策略
+允许的任务，不要求每次对话先进入 GraphPlanner。
 
 完整交互：
 
@@ -464,18 +471,17 @@ Node Agent / Orchestrator                              │  → pure WorkflowCom
 
 ### 8.1 主界面
 
-建议布局：
+Chat 是默认首页和中心主工作区，以 Session 为导航单位，无需先选择 TaskRun。
 
-```text
-┌────────────────────────────────────────────────────────────┐
-│ Active Context Bar：语言 · 详细度 · Workspace · 待确认学习 │
-├───────────────┬──────────────────────────┬─────────────────┤
-│ Session/Task  │ Chat / Task / Artifacts  │ Workflow Panel  │
-│ Navigation    │ Main Workspace           │ Node Inspector  │
-├───────────────┴──────────────────────────┴─────────────────┤
-│ Tool / Approval / Run Status / Budget                      │
-└────────────────────────────────────────────────────────────┘
-```
+| 区域 | 默认布局与职责 |
+|---|---|
+| 左侧 | 约 256px，工作区创建/切换、Session、新对话、搜索与设置 |
+| 中间 | 主要空间，连续消息、工具活动、审批、任务结果；正文宽度约 860px |
+| 中间底部 | 固定输入区：附件、@ 文件、/ 命令、模型、思考、审批、发送/停止 |
+| 右侧 | 默认收起，按需打开文件/Diff、Artifacts、Workflow 和 Context |
+
+沿用 Warm Paper 双主题。窄屏将侧栏变为抽屉；面板切换保留 Chat、草稿和阅读位置。
+工作区/Session 完整生命周期与 CLI 全部管理入口纳入本轮补全，精确执行与验收见当前 PLAN。
 
 ### 8.2 Active Context Bar
 
@@ -496,7 +502,7 @@ Node Agent / Orchestrator                              │  → pure WorkflowCom
 
 ### 8.3 Workflow Panel
 
-右侧显示：
+右侧面板由用户按需打开后显示：
 
 - 当前 Workflow 名称/Revision。
 - 节点图和运行状态。
@@ -510,13 +516,14 @@ Node Agent / Orchestrator                              │  → pure WorkflowCom
 
 ### 8.4 Main Workspace
 
-中心支持：
+中心以 Chat 交互为主，支持：
 
-- Chat/Task 交互。
+- 流式多轮对话、运行中补充指令、排队追问、停止/恢复与 Chat 内任务分段。
+- 新 Session、模型/思考/审批选择、文本/图片/PDF 附件和 @ 工作区文件。
 - Plan、Evidence、Patch、Diff、Test、Review Artifact 查看。
 - 文件变更列表。
 - Reviewer findings。
-- 最终 TaskOutcome。
+- 最终 TaskOutcome；普通回复和任务验收状态分别表达。
 
 ### 8.5 Approval Surface
 
@@ -924,7 +931,9 @@ frontier，不依赖 Parallel Research 等专用模板，也不引入新的角�
 ## 十七、阶段交付物
 
 - Local Core API 与安全通信。
-- Web GUI 运行观察器。
+- Web GUI 中心 Chat 工作台；保留已交付运行观察器作为任务详情。
+- 工作区/Session 完整管理、Provider/Model/思考设置、文件附件与自动审批。
+- CLI/REPL/manage 全部产品操作的 GUI 等价与覆盖证据。
 - Active Context、Learning 与 Skill 管理界面。
 - Agent Definition 编辑器。
 - Workflow 节点编辑器与 Compiler 错误展示。
@@ -962,6 +971,11 @@ frontier，不依赖 Parallel Research 等专用模板，也不引入新的角�
     明确批准。task class 级默认自动化只对已有明确对照收益且用户允许的类别推广；证据不足时
     保持建议/批准模式，不阻止 Stage 8 工程完成。
 15. GUI 安全测试确认 loopback、XSS、Credential 和权限边界可靠。
+16. 无 Provider/工作区时 GUI 仍能启动并完成首次配置；用户无需 CLI 即可创建工作区和 Session。
+17. 中心 Chat 完成持续对话、工具活动、审批、运行中纠正、附件输入、结果和历史恢复。
+18. 模型/思考/权限的实际请求及运行快照与用户选择一致，附件确实进入模型上下文。
+19. 多工作区/Session、CLI 接入、幂等提交、重连和旧数据迁移经实测，不产生第二聊天 writer。
+20. 当前 PLAN 的逐操作覆盖与 A01–A15 全部验收；原观察/控制面通过不代替 Chat 补全完成。
 
 ## 十九、明确不包含
 
