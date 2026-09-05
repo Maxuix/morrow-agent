@@ -40,11 +40,12 @@ Doctor/Backup Workflow integrity checks include the new proof references and slo
 
 ## Deterministic acceptance evidence
 
-`tests/test_stage8_readonly_parallel.py` has 24 cases, using Events/Barriers and scripted Providers.
+`tests/test_stage8_readonly_parallel.py` has 25 cases, using Events/Barriers and scripted Providers.
 No test asserts elapsed timing or uses a wall-clock sleep to coordinate concurrency.
 
 | Contract | Evidence |
 |---|---|
+| Real production Core Host and API events show three simultaneous read nodes | `test_production_core_api_composition_enables_proven_read_parallelism` |
 | Simultaneous read admission; isolated sessions and frozen read permissions | `test_frontier_admits_together_and_publishes_in_stable_order` |
 | Reverse completion stays invisible to downstream until stable publication | Same test releases reader 2 and reader 1 before reader 0 |
 | User cancellation joins every active leaf and preserves a completed sibling | `test_cancel_preserves_completed_leaf_and_joins_every_active_node` |
@@ -76,7 +77,13 @@ outside the writable sandbox. The installed dependency set is unchanged.
   All five failures came from an unnecessary constructor-time transition read in leaf hooks.
   The Scheduler now supplies the frozen proof explicitly, preserving independent hook composition;
   the affected pipeline suite passed after correction.
-- Final full offline run: pending (`/tmp/morrow-subplan12-final-offline.log`).
+- Second full offline run: **1747 passed, 2 skipped, 2 Live deselected**, 331.01s.
+- Production Core Host/API acceptance additionally found that leaf initialization lacked the
+  host workspace/permission profile already used by its ToolExecutor. Copying that immutable
+  capability evidence enables production parallel proof. The new API case passed and reconstructs
+  a peak of three active nodes from the real durable event stream.
+- Final full offline run after production composition correction: pending
+  (`/tmp/morrow-subplan12-production-final-offline.log`).
 
 No Live Provider/MCP/network tests or remote Git publication were authorized or performed.
 No GUI source changed; this runtime slice uses the existing concurrency input and status/events.

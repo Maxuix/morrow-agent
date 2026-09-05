@@ -5329,3 +5329,12 @@ unauthorized, so local main publication is the integration target.
   current catalog filtering of a frozen optional read tool. Focused serial/Pause/
   continuation + 23 parallel cases passed (72 tests, 51.14s). Final full gate starts
   after these corrections and the 24th parallel case, with static checks green.
+
+
+- Second full offline gate passed: 1747 passed, 2 existing Seatbelt skips, 2 Live deselected,
+  331.01s. A final production composition audit found missing workspace/permission context
+  on leaf Sessions; this would leave production read frontiers on serial fallback despite
+  the focused runtime proof. Bootstrap now supplies the immutable host workspace capability
+  and permission profile already used by the ToolExecutor. Added a real Core Host/API case,
+  which passed and verifies a peak of three Active nodes through persisted API events.
+  The complete post-correction offline gate is running with 25 parallel acceptance cases.

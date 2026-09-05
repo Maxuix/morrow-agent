@@ -800,3 +800,54 @@ async def test_catalog_filter_cannot_hide_frozen_optional_read_contract_drift(tm
         assert fx.journal.count_workflow_agent_requests(WS, run.workflow_run_id) == 0
     finally:
         fx.close()
+
+
+@pytest.mark.asyncio
+async def test_production_core_api_composition_enables_proven_read_parallelism(tmp_path):
+    from test_stage8_core_api import (
+        ServerFixture,
+        create_session_and_task,
+        publish_pipeline,
+        start_run,
+        wait_for_run,
+    )
+
+    fx = ServerFixture(tmp_path)
+    try:
+        revision = await publish_pipeline(fx, make_source=fanout)
+        session, task, version = await create_session_and_task(fx.client)
+        reply = await start_run(fx.client, revision.workflow_revision_id, session, task, version)
+        assert reply.status == 200, reply.body
+        run_id = reply.json()["result"]["run"]["workflow_run_id"]
+        await wait_for_run(fx.client, run_id, "completed")
+
+        def evidence():
+            journal = fx.host.context.journal
+            stored = journal.workflows.list_nodes(fx.workspace_id, run_id)
+            return stored, tuple(
+                journal.get_permission_snapshot_for_run(fx.workspace_id, node.agent_run_id)
+                for node in stored[:3]
+            )
+
+        stored, permissions = await fx.on_core(evidence)
+        assert all(node.parallel_read_digest for node in stored[:3])
+        assert all(permission.workspace_read_only for permission in permissions)
+        assert len({permission.workspace_root_digest for permission in permissions}) == 1
+        response = await fx.client.get("/v1/events?after=0&limit=100")
+        assert response.status == 200, response.body
+        active = set()
+        peak = 0
+        for event in response.json()["events"]:
+            if event["event_type"] != "workflow_node.status_changed":
+                continue
+            payload = event["payload"]
+            if payload["workflow_run_id"] != run_id:
+                continue
+            if payload["status"] == "running":
+                active.add(payload["node_id"])
+                peak = max(peak, len(active))
+            else:
+                active.discard(payload["node_id"])
+        assert peak == 3
+    finally:
+        fx.close()

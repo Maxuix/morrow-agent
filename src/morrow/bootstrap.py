@@ -1176,6 +1176,10 @@ def build_session_application(
         def initialize_leaf_context(leaf_session):
             # Reuse current YAML Profile authority before a new leaf is admitted.
             # Persistence restores immutable snapshots on recovery as before.
+            # The leaf ToolExecutor already uses this host capability policy;
+            # freeze the same workspace/profile into its permission evidence.
+            leaf_session.workspace_capability = workspace_capability
+            leaf_session.permission_profile = permission_profile
             loaded = app.project_store.load_profile(identity.workspace_id)
             if loaded.status.value != "ok":
                 raise ValueError("Profile is unavailable for Workflow context")
