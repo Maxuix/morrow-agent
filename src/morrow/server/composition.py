@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+from morrow.application.management import ManagementService
 from morrow.bootstrap import build_session_application, build_skill_services
 from morrow.core.capabilities import PermissionProfile
 
@@ -73,6 +74,9 @@ def build_server_context(
         skill_queries=skills.queries,
         tool_catalog=tool_catalog,
         products=products,
+        context_management=ManagementService(
+            products.api, products.preference_service, products.commands.config_service, skills
+        ),
         close=products.persistence.store_session.close,
     )
 

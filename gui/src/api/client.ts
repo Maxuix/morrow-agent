@@ -1,3 +1,4 @@
+import type { ManagementCommand, ManagementQueries } from './management'
 /**
  * Typed client for the Morrow Core API (`/v1`).
  *
@@ -133,6 +134,17 @@ export class ApiClient {
     this.baseUrl = baseUrl.replace(/\/+$/, '')
     this.token = token
     this.fetchImpl = fetchImpl ?? ((...args) => fetch(...args))
+  }
+
+  managementQuery<K extends keyof ManagementQueries>(kind: K, params: { scope?: string; task_run_id?: string; agent_run_id?: string; page?: number } = {}): Promise<ManagementQueries[K]> {
+    return this.get(`/v1/management/${kind}${query(params)}`)
+  }
+
+  async managementCommand(kind: ManagementCommand, body: Record<string, unknown>, target?: string): Promise<unknown> {
+    const envelope = await this.post<{ result: unknown }>(
+      `/v1/management/${kind}${target ? `/${encodeURIComponent(target)}` : ''}`, body,
+    )
+    return envelope.result
   }
 
   meta(): Promise<MetaWire> {

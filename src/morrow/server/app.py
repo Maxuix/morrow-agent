@@ -24,6 +24,7 @@ from starlette.responses import JSONResponse, Response
 from starlette.routing import Route, WebSocketRoute
 from starlette.websockets import WebSocket
 
+from morrow.application.management import COMMAND_MODELS
 from morrow.application.workflows.compiler import WorkflowCompilationError
 from morrow.core.application import ApplicationError, ApplicationErrorCode
 from morrow.core.execution import StaleRowVersionError
@@ -275,6 +276,36 @@ def create_asgi_app(
                 ApplicationErrorCode.INVALID, "event cursor and limit must be integers"
             ) from None
         return after, limit
+
+    async def management_query(request: Request) -> Response:
+        try:
+            page = int(request.query_params.get("page", "0"))
+        except ValueError:
+            raise ApplicationError(
+                ApplicationErrorCode.INVALID, "management page is invalid"
+            ) from None
+        return await _query(
+            lambda: host.context.context_management.query(
+                request.path_params["kind"],
+                scope=request.query_params.get("scope", "workspace"),
+                task_run_id=request.query_params.get("task_run_id"),
+                agent_run_id=request.query_params.get("agent_run_id"),
+                page=page,
+            )
+        )
+
+    async def management_command(request: Request) -> Response:
+        kind = request.path_params["kind"]
+        if kind not in COMMAND_MODELS:
+            raise ApplicationError(ApplicationErrorCode.NOT_FOUND, "unknown management command")
+        body = await _parse_body(request, COMMAND_MODELS[kind])
+        result = await host.execute_command(
+            lambda: host.context.context_management.execute(
+                kind, body, target=request.path_params.get("target")
+            )
+        )
+        await host.execute_query(lambda: host.context.hub.publish(commands.meta()["latest_cursor"]))
+        return JSONResponse({"result": result})
 
     # Meta / event stream ------------------------------------------------------
 
@@ -708,6 +739,11 @@ def create_asgi_app(
 
     app = Starlette(
         routes=[
+            Route(f"{API_PREFIX}/management/{{kind}}", management_query),
+            Route(f"{API_PREFIX}/management/{{kind}}", management_command, methods=["POST"]),
+            Route(
+                f"{API_PREFIX}/management/{{kind}}/{{target}}", management_command, methods=["POST"]
+            ),
             Route(f"{API_PREFIX}/meta", meta),
             Route(f"{API_PREFIX}/snapshot", snapshot),
             Route(f"{API_PREFIX}/events", events),

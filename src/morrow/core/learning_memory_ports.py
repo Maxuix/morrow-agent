@@ -52,6 +52,7 @@ class LearningMemoryJournalPort(TransactionalJournalPort, Protocol):
         category: ProjectKnowledgeCategory | None = None,
         include_deleted: bool = False,
         limit: int = 100,
+        offset: int = 0,
     ) -> tuple[ProjectKnowledgeHead, ...]: ...
 
     def put_project_knowledge_head(

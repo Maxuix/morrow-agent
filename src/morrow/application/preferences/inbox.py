@@ -104,10 +104,11 @@ class PreferenceInbox:
             self.workspace_id,
             status=selected_status,
             job_id=job_id,
-            limit=min(500, offset + limit),
+            limit=limit,
+            offset=offset,
         )
-        page = tuple(self._view(item) for item in proposals[offset : offset + limit])
-        next_cursor = str(offset + len(page)) if offset + len(page) < len(proposals) else None
+        page = tuple(self._view(item) for item in proposals)
+        next_cursor = str(offset + len(page)) if len(page) == limit else None
         return QueryPage(page, next_cursor)
 
     list_proposals = list

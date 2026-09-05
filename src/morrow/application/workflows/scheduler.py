@@ -124,6 +124,8 @@ class WorkflowScheduler:
         preparation,
         clock: Callable[[], datetime] = utc_now,
         skill_selection=None,
+        preference_loader=None,
+        initialize_context=None,
         retry_sleep=None,
         faults=None,
         mutation=None,
@@ -141,6 +143,8 @@ class WorkflowScheduler:
         self.preparation = preparation
         self.clock = clock
         self.skill_selection = skill_selection
+        self.preference_loader = preference_loader
+        self.initialize_context = initialize_context
         self.retry_sleep = retry_sleep
         self.faults = faults
         self.mutation = mutation
@@ -422,6 +426,7 @@ class WorkflowScheduler:
             artifacts=self.artifacts,
             clock=_ClockAdapter(self.clock),
             skill_selection=self.skill_selection,
+            preference_loader=self.preference_loader,
             workflow_leaf=hooks,
             faults=self.faults,
             mutation=self.mutation,
@@ -448,6 +453,8 @@ class WorkflowScheduler:
                 node = self.transitions.get_node(node.node_run_id)
                 leaf = self.journal.get_task_run(self.workspace_id, leaf_task_run_id)
                 if node.status is WorkflowStatus.QUEUED:
+                    if self.initialize_context is not None:
+                        self.initialize_context(session)
                     persistence.attach(session)
                     if node_def.conversation_scope == "invoking_session":
                         persistence.restore_into(session)

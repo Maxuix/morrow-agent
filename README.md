@@ -140,6 +140,41 @@ CLI 批准后返回 child ID，可用既有 `workflow resume` 驱动；GUI 由�
 通用 TextResult 节点可只提交此信号，随后正常结束自身工作，不等待全局重规划。
 信号不携带可执行图、权限授予或原始工具执行内容。
 
+顶部 Active Context 可打开上下文与学习抽屉：查看所选任务/AgentRun 实际冻结的偏好、Profile、
+Knowledge 及来源修订；偏好和 Profile 的编辑只影响之后的解析。泛化偏好没有独立的语言/详细度
+字段，摘要会提示查看已解析规则。偏好支持 Workspace/Global、编辑、启停、删除和修订历史。
+Learning 提供 Proposed/History 与编辑后接受、拒绝、不再建议；Knowledge 的新增/替换通过
+带来源的候选确认完成，并支持启停、争议与删除。Skills 提供已启用/未启用、版本 Pin、
+更新至已安装版本和回滚；自动生成内容先进入 Draft，查看 SKILL.md、差异与校验后才能发布，
+发布后仍需单独启用。出现修订冲突时刷新并检查；断线期间禁用写入。
+
+脚本化管理与 GUI 复用同一个命令服务（`query` 只读，不调用模型）：
+
+```bash
+morrow manage query context --task-run-id task_example
+morrow manage query preferences --scope workspace
+morrow manage query learning --page 0
+morrow manage command preferences preference-command.json
+morrow manage command knowledge knowledge-command.json --target knw_example
+```
+
+`preference-command.json` 示例，先查询当前文档修订；同一操作重试时保留 `command_id`：
+
+```json
+{
+  "command_id": "cmd_preference_example",
+  "arguments": {
+    "scope": "workspace",
+    "expected_revision": 0,
+    "operations": [{"operation": "add", "statement": "使用中文并说明验证结果。"}]
+  }
+}
+```
+
+`knowledge-command.json` 例如 `{"command_id":"cmd_disable_example","action":"disable", "expected_row_version":1}`。
+所有管理查询/命令都可显式指定 `--workspace-id`；学习、Knowledge 和 Draft 列表每页最多 50 项。
+`morrow skill install` 继续负责导入本地包；GUI 的更新选择已有不可变版本。
+
 源码检出中构建 GUI 资源（发布 wheel/sdist 的前置步骤，缺少资源时 `uv build` 会显式失败）：
 
 ```bash

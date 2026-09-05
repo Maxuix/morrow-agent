@@ -188,11 +188,28 @@ class SkillDraftService:
 
         return self._get(draft_id)
 
-    def list(self, *, status: SkillDraftStatus | str | None = None, limit: int = 100):
+    def read_skill_md(self, draft_id: str) -> str:
+        """Read a bounded, digest-verified document for explicit human Draft review."""
+        draft = self._get(draft_id)
+        prepared = self._prepared(draft)
+        if prepared.tree.tree_digest != draft.tree_digest:
+            raise SkillDraftServiceError("needs_recovery", "Draft package tree drifted")
+        raw = prepared.contents.get("SKILL.md", b"")
+        if len(raw) > 65536:
+            raise SkillDraftServiceError("unavailable", "Draft document exceeds review budget")
+        try:
+            return raw.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise SkillDraftServiceError("unavailable", "Draft document is not UTF-8") from exc
+
+    def list(
+        self, *, status: SkillDraftStatus | str | None = None, limit: int = 100, offset: int = 0
+    ):
         return self.journal.list_skill_drafts(
             self.workspace_id,
             status=status.value if isinstance(status, SkillDraftStatus) else status,
             limit=limit,
+            offset=offset,
         )
 
     def diff(self, draft_id: str) -> SkillDraftDiff | None:

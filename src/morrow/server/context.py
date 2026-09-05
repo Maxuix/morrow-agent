@@ -24,4 +24,5 @@ class ServerContext:
     skill_queries: Any = None
     tool_catalog: tuple[dict, ...] = ()
     products: Any = None
+    context_management: Any = None
     close: Callable[[], None] = lambda: None

@@ -16,7 +16,7 @@ retired Stage 7 sequence is archived under `.agent/archive/subplans/stage7-workf
 | 7 | `7-run-control-gui.md` | 8C (GUI) | completed 2026-09-05 |
 | 8 | `8-graph-planner-draft.md` | 8D | completed 2026-09-05 |
 | 9 | `9-global-replan.md` | 8E | completed 2026-09-05 |
-| 10 | `10-context-learning-skill-gui.md` | 8F | pending activation; may be re-sequenced earlier |
+| 10 | `10-context-learning-skill-gui.md` | 8F | active 2026-09-05 |
 | 11 | `11-feedback-evaluation.md` | 8G | pending activation |
 | 12 | `12-read-only-parallelism.md` | 8H | pending activation; gated on its own entry conditions |
 

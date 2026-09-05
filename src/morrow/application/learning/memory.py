@@ -52,7 +52,8 @@ class MemoryApplicationService:
                 status=selected_status,
                 category=selected_category,
                 include_deleted=include_deleted,
-                limit=min(500, offset + limit),
+                limit=limit,
+                offset=offset,
             )
         )
         page = tuple(
@@ -60,9 +61,9 @@ class MemoryApplicationService:
                 head=head,
                 current_revision=self._current_revision(head.current_revision_id),
             )
-            for head in heads[offset : offset + limit]
+            for head in heads
         )
-        next_cursor = str(offset + len(page)) if offset + len(page) < len(heads) else None
+        next_cursor = str(offset + len(page)) if len(page) == limit else None
         return QueryPage(page, next_cursor)
 
     def get_knowledge(

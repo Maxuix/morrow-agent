@@ -5221,3 +5221,22 @@ rejection retains Pause and automatic history; no external Provider/MCP request 
 - Deleted `feat/stage8-global-replan`; the original checkout is the only worktree and is retained.
 - Closed the execution state. Subplan 10 remains unactivated. No remote push was attempted;
   local main was 38 ahead / 0 behind locally recorded origin/main before this closure commit.
+
+## 2026-09-05 — Subplan 10 activation
+
+User explicitly requested completion of Subplan 10. Activated from verified main `672ba90` on the declared topic branch. Reuse existing domain mutation services; no dependency or event lifecycle change is planned.
+
+- Subplan 10: implemented shared management facade, strict commands/OCC/receipts, selected frozen
+  Context, Preference/Profile/Knowledge/Learning and Skill lifecycle/Draft GUI. Workflow leaf
+  admission now uses the existing Preference loader and current Profile; recovery remains frozen.
+- Focused Core API/Skill Draft/management matrix passed 51 tests. Final management additions passed
+  29 tests; the remaining pagination fixture initially violated candidate fingerprint uniqueness,
+  was corrected to distinct proposals, and its targeted test then passed. Read-only expired
+  candidates, immutable selected Knowledge and digest-verified Draft text/diff are covered.
+- GUI typecheck, 93 tests and budgeted production build passed; latest JS 500.9 KiB, CSS 44.2 KiB.
+  Browser loopback acceptance verified preference/Profile revision changes, candidate promotion,
+  Skill activation, Draft edit/diff/publication remaining disabled, narrow layout and Escape.
+  Both fixture servers and the created browser tab were stopped/closed.
+- Ruff format/check, compileall, CLI/manage help and diff whitespace checks passed. The first full
+  regression was interrupted after the new fixture issue was found; final full gate is running
+  against corrected final code. No external Provider/Live test or remote publication was attempted.

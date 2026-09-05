@@ -1,8 +1,8 @@
 # Subplan 10 — Context, Learning and Skill Management GUI
 
-> Status: pending activation
+> Status: active 2026-09-05, explicitly requested by the user
 > Branch: `feat/stage8-context-learning-skill-gui`
-> Activation base: latest verified `main` with Subplan 4 integrated (re-sequenced per plan §4)
+> Activation base: verified `main` at `672ba90` (Subplans 1–9 integrated)
 > Prerequisite: Subplan 4 verified; technically independent of Subplans 5–9
 > Roadmap authority: stage-8 §8.2, §9, §10, §8F
 
@@ -43,3 +43,14 @@ resolution.
 
 Workflow editing/run control (Subplans 6–7), OrchestrationPolicy editing beyond Preferences
 (Subplan 11 surfaces candidates).
+
+## Implementation calibration
+
+- The current generic Preference model has no dedicated language/verbosity slots. The bar links to
+  the actual frozen rules instead of inferring values from free text.
+- Knowledge creation/replacement keeps the existing candidate/evidence promotion authority; GUI
+  exposes candidate edit-and-accept plus conflict resolution, with no unsupported direct writer.
+- Skill Update selects an already installed immutable version. Existing `skill install` imports
+  packages; generated packages require Draft review, publication and a separate Enable action.
+- Management queries are read-only, including expired candidates. Source/decision history is
+  retained; candidate, Knowledge and Draft pages are bounded and navigable.

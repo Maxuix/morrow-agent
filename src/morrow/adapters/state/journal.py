@@ -413,10 +413,10 @@ class SqliteOperationalJournal:
         return self._preference_journal.get_preference_proposal(workspace_id, proposal_id)
 
     def list_preference_proposals(
-        self, workspace_id: str, *, status=None, job_id=None, limit: int = 100
+        self, workspace_id: str, *, status=None, job_id=None, limit: int = 100, offset: int = 0
     ):
         return self._preference_journal.list_preference_proposals(
-            workspace_id, status=status, job_id=job_id, limit=limit
+            workspace_id, status=status, job_id=job_id, limit=limit, offset=offset
         )
 
     def has_preference_proposal_fingerprint(
@@ -585,6 +585,7 @@ class SqliteOperationalJournal:
         semantic_key: str | None = None,
         expires_before: datetime | None = None,
         limit: int = 100,
+        offset: int = 0,
     ) -> tuple[LearningCandidate, ...]:
         return self._learning_journal.list_learning_candidates(
             workspace_id,
@@ -595,6 +596,7 @@ class SqliteOperationalJournal:
             semantic_key=semantic_key,
             expires_before=expires_before,
             limit=limit,
+            offset=offset,
         )
 
     def count_learning_candidates(
@@ -604,12 +606,14 @@ class SqliteOperationalJournal:
         status: LearningCandidateStatus | None = None,
         candidate_type: LearningCandidateType | None = None,
         origin_review_id: str | None = None,
+        expires_after: datetime | None = None,
     ) -> int:
         return self._learning_journal.count_learning_candidates(
             workspace_id,
             status=status,
             candidate_type=candidate_type,
             origin_review_id=origin_review_id,
+            expires_after=expires_after,
         )
 
     def save_learning_candidate(
@@ -726,6 +730,7 @@ class SqliteOperationalJournal:
         category: ProjectKnowledgeCategory | None = None,
         include_deleted: bool = False,
         limit: int = 100,
+        offset: int = 0,
     ) -> tuple[ProjectKnowledgeHead, ...]:
         return self._learning_memory_journal.list_project_knowledge_heads(
             workspace_id,
@@ -733,6 +738,7 @@ class SqliteOperationalJournal:
             category=category,
             include_deleted=include_deleted,
             limit=limit,
+            offset=offset,
         )
 
     def put_project_knowledge_head(
@@ -870,9 +876,11 @@ class SqliteOperationalJournal:
     def get_skill_draft_by_candidate(self, workspace_id, candidate_id, *, latest=True):
         return self._skill_journal.get_draft_by_candidate(workspace_id, candidate_id, latest=latest)
 
-    def list_skill_drafts(self, workspace_id, *, candidate_id=None, status=None, limit=100):
+    def list_skill_drafts(
+        self, workspace_id, *, candidate_id=None, status=None, limit=100, offset=0
+    ):
         return self._skill_journal.list_drafts(
-            workspace_id, candidate_id=candidate_id, status=status, limit=limit
+            workspace_id, candidate_id=candidate_id, status=status, limit=limit, offset=offset
         )
 
     def save_skill_draft(self, workspace_id, draft, *, expected_row_version):

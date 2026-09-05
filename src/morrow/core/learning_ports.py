@@ -199,6 +199,7 @@ class LearningJournalPort(TransactionalJournalPort, Protocol):
         semantic_key: str | None = None,
         expires_before: datetime | None = None,
         limit: int = 100,
+        offset: int = 0,
     ) -> tuple[LearningCandidate, ...]: ...
 
     def count_learning_candidates(
@@ -208,6 +209,7 @@ class LearningJournalPort(TransactionalJournalPort, Protocol):
         status: LearningCandidateStatus | None = None,
         candidate_type: LearningCandidateType | None = None,
         origin_review_id: str | None = None,
+        expires_after: datetime | None = None,
     ) -> int: ...
 
     def save_learning_candidate(

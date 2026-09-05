@@ -74,9 +74,12 @@ class SqliteLearningCandidateMixin:
         semantic_key: str | None = None,
         expires_before: datetime | None = None,
         limit: int = 100,
+        offset: int = 0,
     ) -> tuple[LearningCandidate, ...]:
         if not 1 <= limit <= 500:
             raise StorageError(StorageErrorCode.UNAVAILABLE, "learning candidate page is invalid")
+        if isinstance(offset, bool) or not isinstance(offset, int) or offset < 0:
+            raise StorageError(StorageErrorCode.UNAVAILABLE, "page offset is invalid")
         sql = f"SELECT {_CANDIDATE_COLUMNS} FROM learning_candidates WHERE workspace_id = ?"
         parameters: list[object] = [workspace_id]
         if status is not None:
@@ -100,8 +103,8 @@ class SqliteLearningCandidateMixin:
                 cutoff = cutoff.replace(tzinfo=UTC)
             sql += " AND expires_at_unix <= ?"
             parameters.append(int(cutoff.timestamp()))
-        sql += " ORDER BY created_at_unix ASC, candidate_id ASC LIMIT ?"
-        parameters.append(limit)
+        sql += " ORDER BY created_at_unix ASC, candidate_id ASC LIMIT ? OFFSET ?"
+        parameters.extend((limit, offset))
         return tuple(
             _candidate_from_row(row) for row in self.backend.read_all(sql, tuple(parameters))
         )
@@ -113,6 +116,7 @@ class SqliteLearningCandidateMixin:
         status: LearningCandidateStatus | None = None,
         candidate_type: LearningCandidateType | None = None,
         origin_review_id: str | None = None,
+        expires_after: datetime | None = None,
     ) -> int:
         sql = "SELECT COUNT(*) FROM learning_candidates WHERE workspace_id = ?"
         parameters: list[object] = [workspace_id]
@@ -125,6 +129,9 @@ class SqliteLearningCandidateMixin:
         if origin_review_id is not None:
             sql += " AND origin_review_id = ?"
             parameters.append(origin_review_id)
+        if expires_after is not None:
+            sql += " AND expires_at_unix > ?"
+            parameters.append(int(expires_after.timestamp()))
         row = self.backend.read_one(sql, tuple(parameters))
         if row is None:
             raise StorageError(

@@ -540,9 +540,12 @@ class SqliteSkillJournal:
         candidate_id: str | None = None,
         status: str | None = None,
         limit: int = 100,
+        offset: int = 0,
     ) -> tuple[SkillDraft, ...]:
         if not 1 <= limit <= 500:
             raise StorageError(StorageErrorCode.UNAVAILABLE, "Skill Draft page is invalid")
+        if isinstance(offset, bool) or not isinstance(offset, int) or offset < 0:
+            raise StorageError(StorageErrorCode.UNAVAILABLE, "page offset is invalid")
         sql = f"SELECT {_DRAFT_COLUMNS} FROM skill_drafts WHERE workspace_id = ?"
         params: list[object] = [workspace_id]
         if candidate_id is not None:
@@ -551,8 +554,8 @@ class SqliteSkillJournal:
         if status is not None:
             sql += " AND status = ?"
             params.append(status)
-        sql += " ORDER BY updated_at_unix DESC, revision DESC, draft_id ASC LIMIT ?"
-        params.append(limit)
+        sql += " ORDER BY updated_at_unix DESC, revision DESC, draft_id ASC LIMIT ? OFFSET ?"
+        params.extend((limit, offset))
         return tuple(self._draft_from_row(row) for row in self.backend.read_all(sql, tuple(params)))
 
     def save_draft(self, draft: SkillDraft, *, expected_row_version: int) -> SkillDraft:

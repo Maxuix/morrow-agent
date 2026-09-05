@@ -273,8 +273,11 @@ class SqliteLearningMemoryJournal:
         category: ProjectKnowledgeCategory | None = None,
         include_deleted: bool = False,
         limit: int = 100,
+        offset: int = 0,
     ) -> tuple[ProjectKnowledgeHead, ...]:
         _check_limit(limit, "knowledge head")
+        if isinstance(offset, bool) or not isinstance(offset, int) or offset < 0:
+            raise StorageError(StorageErrorCode.UNAVAILABLE, "page offset is invalid")
         sql = f"SELECT {_HEAD_COLUMNS} FROM project_knowledge_heads WHERE workspace_id = ?"
         parameters: list[object] = [workspace_id]
         if status is not None:
@@ -286,8 +289,8 @@ class SqliteLearningMemoryJournal:
         if category is not None:
             sql += " AND category = ?"
             parameters.append(category.value)
-        sql += " ORDER BY semantic_key ASC, knowledge_id ASC LIMIT ?"
-        parameters.append(limit)
+        sql += " ORDER BY semantic_key ASC, knowledge_id ASC LIMIT ? OFFSET ?"
+        parameters.extend((limit, offset))
         return tuple(_head_from_row(row) for row in self.backend.read_all(sql, tuple(parameters)))
 
     def put_project_knowledge_head(

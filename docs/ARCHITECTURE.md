@@ -1,7 +1,7 @@
 # Morrow 架构基线
 
 > 状态：阶段 2–7 已完成；Stage 8 的运行时内核、Core API、Web GUI 观察器、Workflow Draft
-> 编辑器与 Agent Inspector 已通过离线工程验收（macOS；Linux 原生运行仍 unsupported）。
+> 编辑器、Agent Inspector 和 Context/Learning/Skill 管理已通过离线工程验收（macOS；Linux 原生运行仍 unsupported）。
 
 本文锁定当前依赖方向、数据所有权和安全边界。阶段 3 的能力策略、配置工具、工作空间读搜、冲突安全文件变更、直接 Host 命令、只读 Git 和当前 macOS 原生沙箱
 已经交付；Linux 原生运行尚未声明支持。Stage 4 已落地数据根 SQLite Operational Store 的
@@ -20,8 +20,8 @@ request/terminal observability 与复用同一 SessionOrchestrator/AgentLoop 的
 Stage 7 已完成版本化 AgentDefinition、静态 Workflow 编译、串行调度、Artifact 协作、管理 CLI 与
 恢复闭环；Stage 8 已交付 Pause/Drain、future-only patch/continuation 与 rerun 运行时内核、
 版本化 Core API、Web GUI 观察器，以及持久 Workflow Draft 编辑器和 Agent Inspector。任务特化
-GraphPlanner 与全局 Replan 已接入相同 Draft/Compiler/发布链；管理 GUI、反馈评估、只读并行和
-后台自动化尚未交付。本文架构门禁以
+GraphPlanner 与全局 Replan 已接入相同 Draft/Compiler/发布链；Context/Learning/Skill 管理 GUI
+已交付，反馈评估、只读并行和后台自动化尚未交付。本文架构门禁以
 离线证据为主；未获授权的 Live 证据不改变这些当前模块事实。
 
 S56–S61 已冻结并接通 generic Preference 契约、加载前一次性旧 YAML 迁移、当前 workspace Preference、
@@ -361,6 +361,28 @@ bounded partial failure，不回滚或覆盖用户数据；
 `PreferenceManagementService` 调用同一原子 Writer。旧的 `lookup_record` 与 `calculate` 仅保留在显式测试 fixture 中。
 未来 Git、网络等有状态或有副作用工具必须沿用同一注册与 ToolCycle 协议，并把实际能力委托给相应 Service/Port。模型请求中的 ToolDefinition 保持标准化；
 本地风险与审批元数据不得泄露为 Provider 私有协议。
+
+### Context、Learning 与 Skill 管理（Stage 8 Subplan 10）
+
+`application/management.py` 是 GUI `/v1/management/*` 与 `morrow manage` 的共享入口；
+`management_requests.py` 校验严格命令、幂等 ID 和 OCC 标记。它委托 PreferenceWriter/Inbox、
+Learning promotion/Memory lifecycle、ConfigPatchService 和 Skill lifecycle/Draft 服务，
+不增加 YAML、SQLite、ConversationLog 或包内容的第二写入者。文件发布沿用原有 saga；
+额外 UI 回执不把文件发布包进外层 SQLite 事务，中断后的冲突交给原有恢复链处理。
+
+`context_management.py` 以所选 Task 的直接和 Workflow 叶子 AgentRun 为边界读取不可变
+snapshot；Knowledge 使用 MemorySelection 内的精确 revision ID，而非当前 Head。
+PreferenceDocument 历史只从 typed Writer images 中投影规则。泛化偏好没有语言/详细度专用
+字段，不根据自由文本猜测。管理 GET 不触发旧 Inbox 的 lazy expiry；过期候选只显示状态提示，
+不能接受。候选、Knowledge、Draft 通过有界查询翻页，无 schema 变更。
+
+`skill_management.py` 只投影 Catalog/Binding/Usage 和校验过的 Draft 文档；Draft 的内容摘要、
+文本差异和编辑文本经过脱敏。发生包漂移时不返回可发布校验结果，遮盖后的文档不能覆盖原文。
+自动生成 Draft 与已启用 Skill 始终分开；Draft accept 仍只发布版本。
+
+Workflow Scheduler 新 leaf admission 通过组合根加载当前 Profile 和 Preference；恢复已有
+leaf 仍从冻结快照重建。GUI 的本地更新、焦点刷新和 Context 摘要轮询补齐没有 ApplicationEvent
+的配置更改，不新增公开事件类型或更改默认运行策略。
 
 ### Core API Server（Stage 8）
 

@@ -134,7 +134,12 @@ class PreferencePersistencePort(Protocol):
         status: PreferenceProposalStatus | None = None,
         job_id: str | None = None,
         limit: int = 100,
+        offset: int = 0,
     ) -> tuple[PreferenceProposal, ...]: ...
+
+    def count_preference_proposals(
+        self, workspace_id: str, *, status: PreferenceProposalStatus | None = None
+    ) -> int: ...
 
     def has_preference_proposal_fingerprint(
         self,

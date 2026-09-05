@@ -1,10 +1,10 @@
 # Stage 8 Adaptive Orchestration and GUI Implementation Plan
 
-> Status: Subplans 1–9 and review remediation completed
+> Status: Subplans 1–9 completed; Subplan 10 in progress
 > Last completed subplan: `9-global-replan` (topic branch retired)
 > (acceptance `docs/acceptance/stage-8-subplan-9-global-replan.md`)
-> Active subplan: none
-> Next planned subplan: `10-context-learning-skill-gui` (not activated)
+> Active subplan: `10-context-learning-skill-gui`
+> Next planned subplan: `11-feedback-evaluation` (not activated)
 > Roadmap authority: `docs/roadmap/stage-8-adaptive-orchestration-and-gui.md`
 > (revised 2026-09-03: risk-tiered Replan autonomy; runtime-kernel-first ordering)
 > Current evidence: full offline gate 1679 passed / 2 native-sandbox skipped / 2 Live deselected;

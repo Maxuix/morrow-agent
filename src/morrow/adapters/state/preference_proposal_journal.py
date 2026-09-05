@@ -124,9 +124,12 @@ class PreferenceProposalJournalMixin:
         status: PreferenceProposalStatus | None = None,
         job_id: str | None = None,
         limit: int = 100,
+        offset: int = 0,
     ) -> tuple[PreferenceProposal, ...]:
         if not 1 <= limit <= 500:
             raise StorageError(StorageErrorCode.UNAVAILABLE, "Preference proposal page is invalid")
+        if isinstance(offset, bool) or not isinstance(offset, int) or offset < 0:
+            raise StorageError(StorageErrorCode.UNAVAILABLE, "page offset is invalid")
         sql = f"SELECT {_PROPOSAL_COLUMNS} FROM preference_proposals WHERE workspace_id = ?"
         parameters: list[object] = [workspace_id]
         if status is not None:
@@ -135,11 +138,19 @@ class PreferenceProposalJournalMixin:
         if job_id is not None:
             sql += " AND job_id = ?"
             parameters.append(job_id)
-        sql += " ORDER BY created_at_unix ASC, proposal_id ASC LIMIT ?"
-        parameters.append(limit)
+        sql += " ORDER BY created_at_unix ASC, proposal_id ASC LIMIT ? OFFSET ?"
+        parameters.extend((limit, offset))
         return tuple(
             _proposal_from_row(row) for row in self.backend.read_all(sql, tuple(parameters))
         )
+
+    def count_preference_proposals(self, workspace_id: str, *, status=None) -> int:
+        sql = "SELECT COUNT(*) FROM preference_proposals WHERE workspace_id = ?"
+        params: list[object] = [workspace_id]
+        if status is not None:
+            sql += " AND status = ?"
+            params.append(status.value)
+        return int(self.backend.read_one(sql, tuple(params))[0])
 
     def has_preference_proposal_fingerprint(
         self,

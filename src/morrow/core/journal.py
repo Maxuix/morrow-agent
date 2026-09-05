@@ -254,6 +254,7 @@ class SkillDraftUsageJournalPort(Protocol):
         candidate_id: str | None = None,
         status: str | None = None,
         limit: int = 100,
+        offset: int = 0,
     ) -> tuple[SkillDraft, ...]: ...
 
     def save_skill_draft(

@@ -1172,6 +1172,17 @@ def build_session_application(
             catalog=workflow_catalog,
             id_source=app.id_source,
         )
+
+        def initialize_leaf_context(leaf_session):
+            # Reuse current YAML Profile authority before a new leaf is admitted.
+            # Persistence restores immutable snapshots on recovery as before.
+            loaded = app.project_store.load_profile(identity.workspace_id)
+            if loaded.status.value != "ok":
+                raise ValueError("Profile is unavailable for Workflow context")
+            leaf_session.profile = loaded.value.profile if loaded.value else None
+            leaf_session.profile_revision = loaded.revision or 0
+            leaf_session.profile_presence = loaded.presence or StatePresence.MISSING
+
         workflow_runtime = build_workflow_runtime(
             journal,
             handle,
@@ -1183,6 +1194,8 @@ def build_session_application(
             runtime_instance_id=f"inst-{os.getpid()}",
             clock=journal.now,
             skill_selection=skill_services.selection,
+            preference_loader=load_run_preferences,
+            initialize_context=initialize_leaf_context,
             mutation=mutation,
             change_capture=ChangeArtifactCapture(operational.artifacts, mutation),
         )

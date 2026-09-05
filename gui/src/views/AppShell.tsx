@@ -10,6 +10,7 @@ import type {
 import type { SyncStore } from '../state/sync'
 import { budgetDisplay } from './lib/budget'
 import { ApprovalsBar } from './ApprovalsBar'
+import { ContextBar } from './ContextBar'
 import { ConnectionBanner } from './ConnectionBanner'
 import { EditorShell } from './EditorShell'
 import { PatchEditor } from './PatchEditor'
@@ -135,6 +136,8 @@ export function AppShell({
         onViewChange={setActiveView}
       />
       <ConnectionBanner connection={state.connection} onRetry={() => store.retry()} />
+      <ContextBar client={client} taskId={selectedTask?.task_run_id ?? null}
+        cursor={state.cursor} connected={state.connection === 'live'} />
 
       {activeView === 'edit' ? (
         <EditorShell client={client} />

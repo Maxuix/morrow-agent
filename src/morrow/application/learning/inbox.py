@@ -158,8 +158,11 @@ class LearningApplicationService:
         next_cursor = str(offset + len(page)) if offset + len(page) < len(reviews) else None
         return QueryPage(page, next_cursor)
 
-    def get_candidate(self, candidate_id: str) -> LearningCandidateView | None:
-        self._expire_due_candidates()
+    def get_candidate(
+        self, candidate_id: str, *, expire_due: bool = True
+    ) -> LearningCandidateView | None:
+        if expire_due:
+            self._expire_due_candidates()
         candidate = self.context._query(
             lambda: self.journal.get_learning_candidate(self.workspace_id, candidate_id)
         )
@@ -174,11 +177,13 @@ class LearningApplicationService:
         semantic_key: str | None = None,
         cursor: str | None = None,
         limit: int = 50,
+        expire_due: bool = True,
     ) -> QueryPage[LearningCandidateSummary]:
         selected_status = self._candidate_status(status)
         selected_type = self._candidate_type(candidate_type)
         offset = _offset(cursor, limit)
-        self._expire_due_candidates()
+        if expire_due:
+            self._expire_due_candidates()
         candidates = self.context._query(
             lambda: self.journal.list_learning_candidates(
                 self.workspace_id,
@@ -186,14 +191,12 @@ class LearningApplicationService:
                 candidate_type=selected_type,
                 fingerprint=fingerprint,
                 semantic_key=semantic_key,
-                limit=min(500, offset + limit),
+                limit=limit,
+                offset=offset,
             )
         )
-        page = tuple(
-            LearningCandidateSummary.from_candidate(candidate)
-            for candidate in candidates[offset : offset + limit]
-        )
-        next_cursor = str(offset + len(page)) if offset + len(page) < len(candidates) else None
+        page = tuple(LearningCandidateSummary.from_candidate(candidate) for candidate in candidates)
+        next_cursor = str(offset + len(page)) if len(page) == limit else None
         return QueryPage(page, next_cursor)
 
     def preview_candidate_decision(
