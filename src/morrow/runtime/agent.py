@@ -29,6 +29,7 @@ from morrow.core.models import (
     FinishReason,
     FunctionToolCall,
     Message,
+    ModelCompletion,
     ModelCost,
     ModelErrorCode,
     ModelEvent,
@@ -49,6 +50,7 @@ from morrow.runtime.conversation import ConversationLogError
 from morrow.runtime.durable_log import durable_call_id
 from morrow.runtime.ids import RandomIdSource
 from morrow.runtime.session import Session
+from morrow.runtime.text_stream import TextStreamProjection, project_text
 from morrow.runtime.tool_cycle import ToolCycleExecutor
 from morrow.runtime.tools import (
     MIN_ERROR_ENVELOPE_CHARS,
@@ -213,15 +215,6 @@ def _consume_cancellation_request() -> None:
     if task is not None:
         while task.cancelling():
             task.uncancel()
-
-
-def _accepted_text_chunks(chunks: list[str], message: AssistantMessage) -> list[str]:
-    """Return text already streamed for a model response once its outcome is known."""
-
-    content = message.content or ""
-    if chunks and "".join(chunks) == content:
-        return chunks
-    return [content] if content else []
 
 
 @dataclass
@@ -481,6 +474,8 @@ class AgentLoop:
         instructions: str = "",
         tools=(),
         retry_observer: Callable[[float], None] | None = None,
+        request_admitter=None,
+        request_settler=None,
     ) -> bool:
         """Generate and install one immutable summary projection."""
 
@@ -493,17 +488,20 @@ class AgentLoop:
             return False
         session.compaction_in_progress = True
         try:
-            complete = getattr(provider, "complete", None)
-            if not callable(complete):
+            if not callable(getattr(provider, "complete", None)) and not callable(
+                getattr(provider, "complete_result", None)
+            ):
                 raise ContextBudgetError("当前 Provider 不支持上下文压缩")
-            summary_text = await self._complete_compaction_summary(
-                complete,
+            completion = await self._complete_compaction_summary(
+                provider,
                 model,
                 list(candidate.summary_messages),
                 context_builder.run_policy,
                 retry_observer=retry_observer,
+                request_admitter=request_admitter,
+                request_settler=request_settler,
             )
-            summary = CompactionSummary.from_provider_text(summary_text)
+            summary = CompactionSummary.from_provider_text(completion.content)
             durable_runtime = session.durable_runtime
             context_builder.apply_compaction(
                 session,
@@ -517,11 +515,15 @@ class AgentLoop:
                 agent_run_id=(
                     durable_runtime.current_agent_run_id if durable_runtime is not None else None
                 ),
+                usage=completion.usage,
+                cost=completion.cost,
             )
             return True
         except asyncio.CancelledError:
             raise
         except ContextBudgetError:
+            raise
+        except ApplicationError:
             raise
         except Exception as exc:
             raise ContextBudgetError("上下文压缩失败，请稍后重试") from exc
@@ -530,39 +532,100 @@ class AgentLoop:
 
     async def _complete_compaction_summary(
         self,
-        complete: Callable,
+        provider,
         model,
         messages: list[Message],
         policy,
         *,
         retry_observer: Callable[[float], None] | None = None,
-    ) -> str:
+        request_admitter=None,
+        request_settler=None,
+    ) -> ModelCompletion:
         """Use the same bounded transient-retry policy for LLM summaries as agent requests."""
 
         retry_count = 0
         while True:
+            admission = request_admitter(messages) if request_admitter is not None else None
+            completion = None
+            failure = None
+            cancelled = False
             try:
-                return await complete(model, messages)
-            except asyncio.CancelledError:
-                raise
-            except ModelProviderError as exc:
-                if exc.code is ModelErrorCode.CONTEXT_OVERFLOW:
-                    raise ContextBudgetError("上下文压缩请求超过模型上下文限制") from None
+                complete_result = getattr(provider, "complete_result", None)
+                if callable(complete_result):
+                    result = await complete_result(
+                        model, messages, max_output_tokens=max(1, policy.reserve_tokens * 4 // 5)
+                    )
+                    if not isinstance(result, ModelCompletion):
+                        raise TypeError("completion result must contain normalized facts")
+                    completion = result
+                else:
+                    # String-only injected providers retain their existing contract. Unknown
+                    # usage stays explicitly unavailable rather than being counted as zero.
+                    completion = ModelCompletion(
+                        content=await provider.complete(model, messages),
+                        finish_reason=ModelFinishReason.STOP,
+                    )
                 if (
-                    not policy.retry_enabled
-                    or not exc.failure.retryable
-                    or retry_count >= policy.max_retries
+                    completion.finish_reason is not ModelFinishReason.STOP
+                    or not completion.content.strip()
                 ):
-                    raise
-                retry_count += 1
-                exponential = policy.retry_base_delay_seconds * (2 ** (retry_count - 1))
-                delay = min(
-                    max(exponential, _bounded_retry_after(exc.retry_after_seconds) or 0.0),
-                    policy.max_provider_retry_delay_seconds,
+                    raise ModelProviderError(
+                        ModelFailure(
+                            code=ModelErrorCode.INVALID_RESPONSE,
+                            origin=ModelFailureOrigin.PROVIDER,
+                            message="上下文压缩响应未正常结束",
+                        )
+                    )
+            except asyncio.CancelledError:
+                cancelled = True
+                raise
+            except Exception as exc:
+                failure = (
+                    exc
+                    if isinstance(exc, ModelProviderError)
+                    else ModelProviderError(
+                        ModelFailure(
+                            code=ModelErrorCode.INTERNAL,
+                            origin=ModelFailureOrigin.ADAPTER,
+                            message="上下文压缩请求失败",
+                        )
+                    )
                 )
-                if retry_observer is not None:
-                    retry_observer(delay)
-                await self.retry_sleep(delay)
+            finally:
+                if admission is not None and request_settler is not None:
+                    request_settler(
+                        admission,
+                        state_name="cancelled"
+                        if cancelled
+                        else "failed"
+                        if failure
+                        else "completed",
+                        finish_reason=completion.finish_reason
+                        if completion and not cancelled
+                        else None,
+                        error_code=failure.code if failure else None,
+                        usage=completion.usage if completion else ModelUsage.unavailable(),
+                        cost=completion.cost if completion else ModelCost.unavailable(),
+                    )
+            if failure is None:
+                return completion
+            if failure.code is ModelErrorCode.CONTEXT_OVERFLOW:
+                raise ContextBudgetError("上下文压缩请求超过模型上下文限制") from None
+            if (
+                not policy.retry_enabled
+                or not failure.failure.retryable
+                or retry_count >= policy.max_retries
+            ):
+                raise failure
+            retry_count += 1
+            exponential = policy.retry_base_delay_seconds * (2 ** (retry_count - 1))
+            delay = min(
+                max(exponential, _bounded_retry_after(failure.retry_after_seconds) or 0.0),
+                policy.max_provider_retry_delay_seconds,
+            )
+            if retry_observer is not None:
+                retry_observer(delay)
+            await self.retry_sleep(delay)
 
     async def compact_idle(self, session: Session, *, instructions: str = "") -> bool:
         """Run the manual Pi-style compaction command only while the Session is idle."""
@@ -604,6 +667,10 @@ class AgentLoop:
             context_builder = self.context_builder
             tool_executor = self.tool_executor
             policy = self.run_policy
+        if session.latest_model_usage_model not in (None, model):
+            session.latest_model_usage = ModelUsage.unavailable()
+            session.latest_model_usage_context_digest = None
+            session.latest_model_usage_message_count = None
         if not resume_current_turn:
             session.pending_prompt_projection = None
         prompt_projection = None
@@ -786,6 +853,30 @@ class AgentLoop:
             state.total_retry_count += 1
             state.summary_retry_count += 1
             persist_retry_progress()
+
+        def admit_compaction_request(messages: list[Message]):
+            state.model_attempts += 1
+            if observation_runtime is None or state.agent_run_id is None:
+                return None
+            estimated_chars = context_builder.estimate_request_chars(tuple(messages), ())
+            return observation_runtime.admit_model_request(
+                agent_run_id=state.agent_run_id,
+                attempt_ordinal=state.model_attempts,
+                estimated_request_chars=estimated_chars,
+                request_char_budget=context_builder.request_char_limit,
+                tool_rounds=state.tool_rounds,
+                tool_calls=state.tool_calls,
+                purpose="compaction",
+                policy_schema_version=policy.policy_schema_version,
+                estimated_context_tokens=context_builder.estimate_request_tokens(
+                    tuple(messages), ()
+                ),
+                context_window_tokens=policy.context_window_tokens,
+                reserve_tokens=policy.reserve_tokens,
+                keep_recent_tokens=policy.keep_recent_tokens,
+                accounting_basis=TokenAccountingBasis.PI_ESTIMATOR,
+                compaction_required=True,
+            )
 
         def finalize_observation() -> None:
             if (
@@ -1056,6 +1147,8 @@ class AgentLoop:
                             context_builder,
                             tools=tools,
                             retry_observer=observe_compaction_retry,
+                            request_admitter=admit_compaction_request,
+                            request_settler=settle_model_request,
                         ):
                             raise ContextBudgetError("当前上下文没有可安全压缩的完整边界")
                         if session.compaction_boundary_sequence <= previous_boundary:
@@ -1119,7 +1212,7 @@ class AgentLoop:
                             request_projection.evidence if request_projection is not None else None
                         ),
                     )
-                candidate_chunks: list[str] = []
+                text_projection = TextStreamProjection()
                 stream = runner.attempt(call_messages, tools)
                 try:
                     while True:
@@ -1128,7 +1221,15 @@ class AgentLoop:
                         except StopAsyncIteration:
                             break
                         if model_event.kind == "text_delta" and model_event.text:
-                            candidate_chunks.append(model_event.text)
+                            visible_chunk = text_projection.feed(model_event.text)
+                            if visible_chunk:
+                                yield event(
+                                    "text.delta",
+                                    {
+                                        "text": visible_chunk,
+                                        "attempt_ordinal": state.model_attempts,
+                                    },
+                                )
                 finally:
                     try:
                         close = getattr(stream, "aclose", None)
@@ -1163,13 +1264,17 @@ class AgentLoop:
                     _consume_cancellation_request()
                     raise asyncio.CancelledError
                 outcome = runner.outcome
-                session.latest_model_usage = outcome.usage
-                context_digest = getattr(context_builder, "context_digest", None)
-                session.latest_model_usage_context_digest = (
-                    context_digest(tuple(call_messages), tuple(tools))
-                    if callable(context_digest)
-                    else None
-                )
+                if outcome.failure is None and outcome.message is not None:
+                    session.latest_model_usage = outcome.usage
+                    context_digest = getattr(context_builder, "context_digest", None)
+                    usage_messages = (*call_messages, outcome.message)
+                    session.latest_model_usage_context_digest = (
+                        context_digest(usage_messages, tuple(tools))
+                        if callable(context_digest)
+                        else None
+                    )
+                    session.latest_model_usage_message_count = len(usage_messages)
+                    session.latest_model_usage_model = model
                 if outcome.failure is not None:
                     failure = outcome.failure
                     if failure.code is ModelErrorCode.CONTEXT_OVERFLOW:
@@ -1184,6 +1289,8 @@ class AgentLoop:
                                     context_builder,
                                     tools=tools,
                                     retry_observer=observe_compaction_retry,
+                                    request_admitter=admit_compaction_request,
+                                    request_settler=settle_model_request,
                                 )
                             except ContextBudgetError as exc:
                                 for item in terminal_error(str(exc), AgentStopCode.CONTEXT_BUDGET):
@@ -1229,13 +1336,15 @@ class AgentLoop:
                 state.retry_count = 0
                 persist_retry_progress()
                 message = outcome.message
+                if message is not None and message.content:
+                    message = message.model_copy(update={"content": project_text(message.content)})
                 is_final_text = (
                     outcome.finish_reason == ModelFinishReason.STOP
                     and message is not None
                     and not message.tool_calls
                 )
                 if is_final_text:
-                    candidate_text = message.content or "".join(candidate_chunks)
+                    candidate_text = message.content or ""
                     if await self._steering_pending(session):
                         session.finish_turn(FinishReason.STEERED)
                         state.settled = True
@@ -1268,8 +1377,14 @@ class AgentLoop:
                     state.terminal_finish_reason = FinishReason.STOP
                     state.stop_code = None
                     retain_facts(FinishReason.STOP.value)
-                    for chunk in _accepted_text_chunks(candidate_chunks, message):
-                        yield event("text.delta", {"text": chunk})
+                    remainder, reset = text_projection.finish(message.content or "")
+                    if reset:
+                        yield event(
+                            "status.changed",
+                            {"status": "response_reset", "attempt_ordinal": state.model_attempts},
+                        )
+                    if remainder:
+                        yield event("text.delta", {"text": remainder})
                     yield event(
                         "turn.completed",
                         completion_payload(FinishReason.STOP, state.visible),
@@ -1325,9 +1440,15 @@ class AgentLoop:
                         yield item
                     return
                 # A response that finished with tool calls is not a final answer. Its
-                # bounded text is rendered only after the assistant/tool intent is committed.
-                for chunk in _accepted_text_chunks(candidate_chunks, message):
-                    yield event("text.delta", {"text": chunk})
+                # remaining text is rendered after the assistant/tool intent is committed.
+                remainder, reset = text_projection.finish(message.content or "")
+                if reset:
+                    yield event(
+                        "status.changed",
+                        {"status": "response_reset", "attempt_ordinal": state.model_attempts},
+                    )
+                if remainder:
+                    yield event("text.delta", {"text": remainder})
                 state.active_calls = calls
                 state.active_running_id = None
                 state.active_result_limit = per_call_result_limit

@@ -115,7 +115,7 @@ def restore_conversation_log(
 
 
 class DurableConversationWriter:
-    """Persist a planned append, then replace the live projection from committed rows."""
+    """Persist planned records; the Session applies the validated live append after commit."""
 
     def __init__(
         self,
@@ -144,10 +144,9 @@ class DurableConversationWriter:
             for record in planned.added
         )
         self.journal.append_records(self.workspace_id, durables)
-        snapshot = restore_conversation_log(
-            self.journal, self.workspace_id, self.session_id
-        ).snapshot()
-        return durables, snapshot
+        # Live history retains full tool context; durable recovery intentionally restores a
+        # redacted projection. Do not reload that entire projection on each normal append.
+        return durables, planned.snapshot
 
     def persist(self, planned: ConversationAppend) -> ConversationSnapshot:
         _durables, snapshot = self.persist_with_records(planned)

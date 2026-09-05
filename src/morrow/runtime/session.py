@@ -27,6 +27,7 @@ from morrow.core.models import (
     AgentStopCode,
     AssistantMessage,
     FinishReason,
+    ModelRef,
     ModelUsage,
     Profile,
     StatePresence,
@@ -243,6 +244,8 @@ class Session:
     compaction_in_progress: bool = False
     latest_model_usage: ModelUsage = field(default_factory=ModelUsage.unavailable)
     latest_model_usage_context_digest: str | None = None
+    latest_model_usage_message_count: int | None = None
+    latest_model_usage_model: ModelRef | None = None
 
     def __post_init__(self) -> None:
         # Hand-built Sessions in tests and local integrations may only provide values.  Infer
@@ -288,6 +291,11 @@ class Session:
                 reason,
                 interrupted_call_ids=interrupted_call_ids,
                 stop_code=stop_code,
+                turn_id=(
+                    self.durable_runtime.current_turn_id
+                    if self.durable_runtime is not None
+                    else None
+                ),
             )
         )
         if self.persisted:
@@ -338,7 +346,7 @@ class Session:
         self.compaction_entries = (*self.compaction_entries, entry)
         self.compaction_boundary_sequence = entry.first_retained_sequence
         self.compaction_summary = entry.summary
-        self.dirty = self.dirty or self.has_active_turn
+        self.dirty = self.dirty or self.log.has_active_turn
 
     def reset(self, session_id: str) -> None:
         self.session_id = session_id
@@ -360,6 +368,8 @@ class Session:
         self.compaction_in_progress = False
         self.latest_model_usage = ModelUsage.unavailable()
         self.latest_model_usage_context_digest = None
+        self.latest_model_usage_message_count = None
+        self.latest_model_usage_model = None
         self.pending_full_access_grant = False
 
     def retain_run_facts(

@@ -11,6 +11,7 @@ from morrow.core.models import (
     AssistantMessage,
     FunctionToolCall,
     Message,
+    ModelCompletion,
     ModelCost,
     ModelErrorCode,
     ModelEvent,
@@ -658,21 +659,55 @@ class OpenAICompatibleProvider:
                 await _close_response(response)
 
     async def complete(self, model: ModelRef, messages: list[Message]) -> str:
+        """Keep the string API used by reviewers, with the same terminal validation."""
+        result = await self.complete_result(model, messages)
+        if result.finish_reason is not ModelFinishReason.STOP or not result.content.strip():
+            raise ModelProviderError(
+                ModelFailure(
+                    code=ModelErrorCode.INVALID_RESPONSE,
+                    origin=ModelFailureOrigin.PROVIDER,
+                    message="模型响应未正常结束",
+                )
+            )
+        return result.content
+
+    async def complete_result(
+        self,
+        model: ModelRef,
+        messages: list[Message],
+        *,
+        max_output_tokens: int | None = None,
+    ) -> ModelCompletion:
+        if max_output_tokens is not None and (
+            isinstance(max_output_tokens, bool) or max_output_tokens <= 0
+        ):
+            raise ValueError("completion output budget must be positive")
         try:
+            options = {"max_tokens": max_output_tokens} if max_output_tokens is not None else {}
             response = await self._get_client().chat.completions.create(
                 model=self.api_model_ids.get(model.model_id, model.model_id),
                 messages=self._messages(messages),
                 stream=False,
                 timeout=self.completion_timeout,
+                **options,
             )
             choices = getattr(response, "choices", None) or []
-            if not choices:
-                raise ValueError("empty model response")
+            if len(choices) != 1:
+                raise ValueError("model response must contain one choice")
             message = getattr(choices[0], "message", None)
             content = getattr(message, "content", None) if message else None
-            if not isinstance(content, str) or not content.strip():
-                raise ValueError("model response has no visible content")
-            return content
+            finish_reason = _FINISH_REASONS.get(getattr(choices[0], "finish_reason", None))
+            if finish_reason is None or (content is not None and not isinstance(content, str)):
+                raise ValueError("model completion is malformed")
+            try:
+                usage = _normalize_usage(getattr(response, "usage", None))
+            except (TypeError, ValueError):
+                usage = ModelUsage.unavailable()
+            return ModelCompletion(
+                content=content or "",
+                finish_reason=finish_reason,
+                usage=usage,
+            )
         except asyncio.CancelledError:
             raise
         except Exception as exc:

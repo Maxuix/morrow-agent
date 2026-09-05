@@ -265,6 +265,7 @@ class ConversationLog:
         self._pending_call_ids: list[str] = []
         self._turn_call_ids: set[str] = set()
         self._has_final_assistant = False
+        self._pending_append: ConversationAppend | None = None
 
     @classmethod
     def from_snapshot(cls, snapshot: ConversationSnapshot) -> ConversationLog:
@@ -281,14 +282,17 @@ class ConversationLog:
         return tuple(self._pending_call_ids)
 
     def plan_begin_turn(self, user: UserMessage) -> ConversationAppend:
+        if not isinstance(user, UserMessage):
+            raise ConversationLogError("a turn must begin with a User")
         if self._active:
             raise ConversationLogError("a turn is already active")
         return self._plan(
             MessageRecord(sequence=self._sequence + 1, message=user),
-            require_closed=False,
         )
 
     def plan_append_assistant(self, message: AssistantMessage) -> ConversationAppend:
+        if not isinstance(message, AssistantMessage):
+            raise ConversationLogError("expected an Assistant message")
         if not self._active:
             raise ConversationLogError("no active turn")
         if self._pending_call_ids:
@@ -300,7 +304,6 @@ class ConversationLog:
             raise ConversationLogError("tool call IDs must be unique within one ToolCycle")
         return self._plan(
             MessageRecord(sequence=self._sequence + 1, message=message),
-            require_closed=False,
         )
 
     def plan_append_tool_result(self, tool_call_id: str, content: str) -> ConversationAppend:
@@ -315,7 +318,6 @@ class ConversationLog:
                 sequence=self._sequence + 1,
                 message=ToolMessage(tool_call_id=tool_call_id, content=content),
             ),
-            require_closed=False,
         )
 
     def plan_recovery_close(
@@ -357,6 +359,7 @@ class ConversationLog:
         *,
         interrupted_call_ids: tuple[str, ...] = (),
         stop_code: AgentStopCode | None = None,
+        turn_id: str | None = None,
     ) -> ConversationAppend:
         if not self._active:
             raise ConversationLogError("no active turn")
@@ -366,8 +369,10 @@ class ConversationLog:
             raise ConversationLogError("completed turn requires a final no-tools Assistant")
         if reason == FinishReason.STEERED and self._has_final_assistant:
             raise ConversationLogError("steered turn cannot contain a final Assistant")
-        if reason == FinishReason.STOP and interrupted_call_ids:
-            raise ConversationLogError("completed turn cannot contain interrupted call IDs")
+        if reason in {FinishReason.STOP, FinishReason.STEERED} and interrupted_call_ids:
+            raise ConversationLogError(
+                "completed or steered turn cannot contain interrupted call IDs"
+            )
         if len(interrupted_call_ids) != len(set(interrupted_call_ids)):
             raise ConversationLogError("interrupted call IDs must be unique")
         if any(call_id not in self._turn_call_ids for call_id in interrupted_call_ids):
@@ -378,11 +383,32 @@ class ConversationLog:
                 finish_reason=reason,
                 interrupted_call_ids=interrupted_call_ids,
                 stop_code=stop_code,
+                turn_id=turn_id,
             ),
-            require_closed=True,
         )
 
     def apply_committed(self, planned: ConversationAppend) -> None:
+        if planned is self._pending_append:
+            # Only the exact immutable append checked against this live state may skip replay.
+            self._pending_append = None
+            record = planned.added[0]
+            self._records.append(record)
+            self._sequence = record.sequence
+            if isinstance(record, TurnTerminalRecord):
+                self._active = False
+                self._pending_call_ids = []
+                self._turn_call_ids.clear()
+                self._has_final_assistant = False
+            elif isinstance(record.message, UserMessage):
+                self._active = True
+            elif isinstance(record.message, AssistantMessage):
+                ids = [call.id for call in record.message.tool_calls]
+                self._pending_call_ids = ids
+                self._turn_call_ids.update(ids)
+                self._has_final_assistant = not ids
+            else:
+                self._pending_call_ids.pop(0)
+            return
         current = tuple(self._records)
         if planned.snapshot.records[: len(current)] != current:
             raise ConversationLogError("committed snapshot does not extend the live projection")
@@ -392,6 +418,7 @@ class ConversationLog:
 
     def install_snapshot(self, snapshot: ConversationSnapshot) -> None:
         turns = snapshot.public_turns(require_closed=False)
+        self._pending_append = None
         self._records = list(snapshot.records)
         self._sequence = snapshot.records[-1].sequence if snapshot.records else 0
         if turns and not turns[-1].is_closed:
@@ -435,9 +462,8 @@ class ConversationLog:
         )
 
     def snapshot(self) -> ConversationSnapshot:
-        snapshot = ConversationSnapshot(records=tuple(self._records))
-        snapshot.public_turns(require_closed=not self._active)
-        return snapshot
+        # Records are immutable and validated on append or installation.
+        return ConversationSnapshot.model_construct(records=tuple(self._records))
 
     def messages_view(self) -> tuple[Message, ...]:
         return self.snapshot().messages()
@@ -445,7 +471,8 @@ class ConversationLog:
     def reset(self) -> None:
         self.install_snapshot(ConversationSnapshot(records=()))
 
-    def _plan(self, record: ConversationRecord, *, require_closed: bool) -> ConversationAppend:
-        snapshot = ConversationSnapshot(records=(*self._records, record))
-        snapshot.public_turns(require_closed=require_closed)
-        return ConversationAppend(added=(record,), snapshot=snapshot)
+    def _plan(self, record: ConversationRecord) -> ConversationAppend:
+        snapshot = ConversationSnapshot.model_construct(records=(*self._records, record))
+        planned = ConversationAppend(added=(record,), snapshot=snapshot)
+        self._pending_append = planned
+        return planned

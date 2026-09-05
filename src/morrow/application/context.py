@@ -269,6 +269,7 @@ class ContextBuilder:
     ) -> TokenAccounting:
         usage = getattr(session, "latest_model_usage", ModelUsage.unavailable())
         usage_digest = getattr(session, "latest_model_usage_context_digest", None)
+        anchor_count = session.latest_model_usage_message_count
         current_digest = self.context_digest(messages, tools)
         if (
             usage.availability is UsageAvailability.AVAILABLE
@@ -276,6 +277,30 @@ class ContextBuilder:
             and (usage_digest is None or usage_digest == current_digest)
         ):
             context_tokens = usage.input_tokens
+            basis = TokenAccountingBasis.PROVIDER_USAGE
+            if anchor_count is not None:
+                context_tokens += (
+                    usage.output_tokens
+                    if usage.output_tokens is not None
+                    else self.estimate_request_tokens(messages[anchor_count - 1 : anchor_count], ())
+                )
+        elif (
+            usage.availability is UsageAvailability.AVAILABLE
+            and usage.input_tokens is not None
+            and anchor_count is not None
+            and 0 < anchor_count <= len(messages)
+            and usage_digest == self.context_digest(messages[:anchor_count], tools)
+        ):
+            # The immutable prefix includes the assistant that produced this usage. Only its
+            # trailing tool results/new messages are estimated; changes to any prefix invalidate it.
+            output_tokens = (
+                usage.output_tokens
+                if usage.output_tokens is not None
+                else self.estimate_request_tokens(messages[anchor_count - 1 : anchor_count], ())
+            )
+            context_tokens = usage.input_tokens + output_tokens
+            if anchor_count < len(messages):
+                context_tokens += self.estimate_request_tokens(messages[anchor_count:], ())
             basis = TokenAccountingBasis.PROVIDER_USAGE
         else:
             context_tokens = self.estimate_request_tokens(messages, tools)
@@ -575,6 +600,7 @@ class ContextBuilder:
         session.append_compaction_entry(entry)
         session.latest_model_usage = ModelUsage.unavailable()
         session.latest_model_usage_context_digest = None
+        session.latest_model_usage_message_count = None
         return entry
 
     def _chat(self, request: ContextRequest, session: Session) -> ContextPack:

@@ -888,3 +888,53 @@ async def test_v2_truncation_artifact_is_model_visible_and_bounded_readable(tmp_
         assert denied.error_code is ToolErrorCode.NOT_FOUND
     finally:
         handle.close()
+
+
+@pytest.mark.asyncio
+async def test_context_usage_anchor_survives_tools_and_invalidates_changed_prefix():
+    from morrow.core.models import ModelUsage
+
+    class Provider:
+        calls = 0
+
+        async def stream(self, model, messages, tools=()):
+            self.calls += 1
+            if self.calls == 1:
+                yield ModelEvent(
+                    kind="completed",
+                    finish_reason="tool_calls",
+                    message=AssistantMessage(tool_calls=(_tool_call("c1"),)),
+                    usage=ModelUsage(
+                        availability="available",
+                        input_tokens=1200,
+                        output_tokens=30,
+                        total_tokens=1230,
+                    ),
+                )
+            else:
+                self.observed = builder.build(session, tools=tools)
+                yield ModelEvent(
+                    kind="completed", finish_reason="stop", message=AssistantMessage(content="done")
+                )
+
+    builder = _v2_context()
+    session = Session(session_id="s")
+    provider = Provider()
+    loop = AgentLoop(provider, MODEL, builder, tool_executor=_echo_executor(builder.run_policy))
+    [event async for event in loop.run_task(session, "work")]
+    assert provider.observed.accounting_basis is TokenAccountingBasis.PROVIDER_USAGE
+    assert provider.observed.estimated_context_tokens > 1230
+
+    session.latest_model_usage = ModelUsage(
+        availability="available", input_tokens=1200, output_tokens=30, total_tokens=1230
+    )
+    assert (
+        builder.build(session, tools=loop.tool_executor.definitions).accounting_basis
+        is TokenAccountingBasis.PROVIDER_USAGE
+    )
+    assert builder.build(session, tools=()).accounting_basis is TokenAccountingBasis.PI_ESTIMATOR
+    session.compaction_summary = CompactionSummary(goal="changed prefix")
+    assert (
+        builder.build(session, tools=loop.tool_executor.definitions).accounting_basis
+        is TokenAccountingBasis.PI_ESTIMATOR
+    )

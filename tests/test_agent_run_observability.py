@@ -13,6 +13,7 @@ import pytest
 from pydantic import BaseModel, ConfigDict
 
 from morrow.adapters.state.journal import SqliteOperationalJournal
+from morrow.adapters.state.migrations import MigrationRegistry, production_registry
 from morrow.adapters.state.operational import BusyRetryPolicy, OperationalStore
 from morrow.application.backup import OperationalBackupService
 from morrow.application.doctor import OperationalDoctor
@@ -28,6 +29,7 @@ from morrow.core.models import (
     AssistantMessage,
     FinishReason,
     FunctionToolCall,
+    ModelCompletion,
     ModelCost,
     ModelErrorCode,
     ModelEvent,
@@ -56,13 +58,14 @@ def _retry() -> BusyRetryPolicy:
     return BusyRetryPolicy(busy_timeout_ms=0, sleep=lambda _delay: None, rng=random.Random(0))
 
 
-def _open(tmp_path: Path, *, skill_usage=None):
+def _open(tmp_path: Path, *, skill_usage=None, registry=None):
     clock = FixedClock()
     store = OperationalStore(
         tmp_path / "state",
         retry_policy=_retry(),
         clock=clock,
         maintenance_timeout=0,
+        registry=registry,
     )
     handle = store.initialize()
     journal = SqliteOperationalJournal(handle)
@@ -125,6 +128,72 @@ def test_fresh_v17_schema_contains_observation_tables(tmp_path):
             ("table", "agent_run_model_requests"),
             ("table", "agent_run_terminal_metrics"),
         )
+    finally:
+        handle.close()
+
+
+def test_v30_migration_preserves_existing_request_rows_and_relations(tmp_path):
+    registry = MigrationRegistry(supported_version=29)
+    for version in range(1, 30):
+        registry.add(production_registry().get(version))
+    handle, _, session, persistence = _open(tmp_path, registry=registry)
+    try:
+        persistence.submit_user(session, "hello", "cmsg_1", turn_id="turn_1", agent_run_id="arun_1")
+        admitted = persistence.admit_model_request(
+            agent_run_id="arun_1",
+            attempt_ordinal=1,
+            estimated_request_chars=30,
+            request_char_budget=1000,
+        )
+        persistence.settle_model_request(
+            admitted.model_request_id,
+            state="completed",
+            finish_reason=ModelFinishReason.STOP,
+            usage=ModelUsage(
+                availability="available", input_tokens=7, output_tokens=5, total_tokens=12
+            ),
+        )
+        before = handle.run_read(
+            lambda db: tuple(db.execute("SELECT * FROM agent_run_model_requests")[0])
+        )
+    finally:
+        handle.close()
+    store = OperationalStore(
+        tmp_path / "state", retry_policy=_retry(), clock=FixedClock(), maintenance_timeout=0
+    )
+    report = store.migrate()
+    assert report.from_version == 29 and report.to_version == 30
+    handle = store.open(StoreOpenMode.READ_WRITE)
+    try:
+        after = handle.run_read(
+            lambda db: tuple(db.execute("SELECT * FROM agent_run_model_requests")[0])
+        )
+        assert before == after
+        assert handle.run_read(lambda db: db.execute("PRAGMA foreign_key_check")) == ()
+        objects = handle.run_read(
+            lambda db: db.execute(
+                "SELECT name FROM sqlite_master WHERE tbl_name = 'agent_run_model_requests'"
+            )
+        )
+        names = {row[0] for row in objects}
+        assert "agent_run_model_requests_v29" not in names
+        assert len([name for name in names if "guard" in name]) == 2
+    finally:
+        handle.close()
+
+
+def test_durable_normal_appends_do_not_reload_conversation(tmp_path, monkeypatch):
+    handle, journal, session, persistence = _open(tmp_path)
+    try:
+
+        def unexpected_reload(*args, **kwargs):
+            pytest.fail("normal append must not reload the whole durable conversation")
+
+        monkeypatch.setattr(journal, "load_effective_records", unexpected_reload)
+        persistence.submit_user(session, "hello", "cmsg_1", turn_id="turn_1", agent_run_id="arun_1")
+        session.append_assistant(AssistantMessage(content="done"))
+        session.finish_turn(FinishReason.STOP)
+        assert len(session.log.snapshot().public_turns(require_closed=True)) == 1
     finally:
         handle.close()
 
@@ -1323,5 +1392,82 @@ async def test_agent_loop_closes_multiple_durable_tool_executions_before_finaliz
         assert observation.terminal_metrics.tool_terminal_counts.succeeded == 2
         assert observation.terminal_metrics.tool_terminal_counts.cancelled == 0
         assert observation.terminal_metrics.tool_terminal_counts.terminal_total == 2
+    finally:
+        handle.close()
+
+
+@pytest.mark.parametrize("summary_finish", (ModelFinishReason.STOP, ModelFinishReason.LENGTH))
+@pytest.mark.asyncio
+async def test_compaction_shares_request_accounting_and_preserves_usage(tmp_path, summary_finish):
+    class Provider:
+        calls = 0
+        output_limit = None
+
+        async def stream(self, model, messages, tools=()):
+            self.calls += 1
+            usage = ModelUsage(
+                availability="available", input_tokens=100, output_tokens=10, total_tokens=110
+            )
+            if self.calls == 1:
+                yield ModelEvent(
+                    kind="error",
+                    failure=ModelFailure(
+                        code=ModelErrorCode.CONTEXT_OVERFLOW,
+                        origin=ModelFailureOrigin.PROVIDER,
+                        message="context window exceeded",
+                    ),
+                    usage=usage,
+                )
+            else:
+                yield ModelEvent(
+                    kind="completed",
+                    message=AssistantMessage(content="continued"),
+                    finish_reason="stop",
+                    usage=usage,
+                )
+
+        async def complete_result(self, model, messages, *, max_output_tokens):
+            self.output_limit = max_output_tokens
+            return ModelCompletion(
+                content='{"goal":"Continue with API compatibility"}',
+                finish_reason=summary_finish,
+                usage=ModelUsage(
+                    availability="available", input_tokens=400, output_tokens=50, total_tokens=450
+                ),
+            )
+
+    handle, _, session, persistence = _open(tmp_path)
+    builder = make_context_builder(keep_recent_tokens=1)
+    ids = FixedIdSource()
+    model = ModelRef(provider_id="p", model_id="m")
+    try:
+        seed_loop = AgentLoop(
+            ScriptedModelProvider(["acknowledged"]), model, builder, id_source=ids
+        )
+        for text in ("Preserve API compatibility", "Continue implementation"):
+            [event async for event in seed_loop.run_task(session, text)]
+        provider = Provider()
+        loop = AgentLoop(provider, model, builder, id_source=ids)
+        events = [event async for event in loop.run_task(session, "continue")]
+        observation = persistence.get_agent_run_observation()
+        assert observation is not None and observation.terminal_metrics is not None
+        requests = observation.requests
+        assert [r.attempt_ordinal for r in requests] == list(range(1, len(requests) + 1))
+        assert requests[0].error_code is ModelErrorCode.CONTEXT_OVERFLOW
+        assert requests[0].state.value == "failed"
+        assert requests[1].purpose.value == "compaction"
+        assert requests[1].usage.total_tokens == 450
+        assert provider.output_limit == builder.run_policy.reserve_tokens * 4 // 5
+        if summary_finish is ModelFinishReason.STOP:
+            assert [r.purpose.value for r in requests] == ["agent", "compaction", "agent"]
+            assert session.compaction_entries[-1].usage.total_tokens == 450
+            assert observation.terminal_metrics.usage.total_tokens == 670
+            assert events[-1].payload["finish_reason"] == "stop"
+        else:
+            assert requests[1].state.value == "failed"
+            assert requests[1].finish_reason is ModelFinishReason.LENGTH
+            assert not session.compaction_entries
+            assert observation.terminal_metrics.usage.total_tokens == 560
+            assert events[-1].payload["finish_reason"] == "error"
     finally:
         handle.close()

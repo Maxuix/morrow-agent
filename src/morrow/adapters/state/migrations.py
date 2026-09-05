@@ -45,6 +45,7 @@ from morrow.adapters.state.migrations_v26_pause_drain import V26_NAME, V26_STATE
 from morrow.adapters.state.migrations_v27_workflow_drafts import V27_NAME, V27_STATEMENTS
 from morrow.adapters.state.migrations_v28_replan import V28_NAME, V28_STATEMENTS
 from morrow.adapters.state.migrations_v29_feedback import V29_NAME, V29_STATEMENTS
+from morrow.adapters.state.migrations_v30_compaction_requests import V30_NAME, V30_STATEMENTS
 from morrow.core.store import (
     APPLICATION_NAME,
     RESERVED_SCHEMA_VERSIONS,
@@ -1519,6 +1520,14 @@ class MigrationRegistry:
 
 V28 = SchemaMigration(version=28, name=V28_NAME, statements=V28_STATEMENTS)
 V29 = SchemaMigration(version=29, name=V29_NAME, statements=V29_STATEMENTS)
+V30 = SchemaMigration(
+    version=30,
+    name=V30_NAME,
+    statements=V30_STATEMENTS,
+    requires_foreign_keys_off=True,
+    requires_legacy_alter_table=True,
+    requires_rebuild_verification=True,
+)
 
 
 def production_registry() -> MigrationRegistry:
@@ -1552,6 +1561,7 @@ def production_registry() -> MigrationRegistry:
     registry.add(V27)
     registry.add(V28)
     registry.add(V29)
+    registry.add(V30)
     return registry
 
 

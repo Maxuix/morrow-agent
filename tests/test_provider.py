@@ -85,7 +85,9 @@ def provider_with_stream(response):
 @pytest.mark.asyncio
 async def test_non_streaming_completion_uses_the_full_review_transport_budget():
     response = SimpleNamespace(
-        choices=[SimpleNamespace(message=SimpleNamespace(content='{"drafts":[]}'))]
+        choices=[
+            SimpleNamespace(finish_reason="stop", message=SimpleNamespace(content='{"drafts":[]}'))
+        ]
     )
     provider = provider_with_stream(response)
 
@@ -1167,3 +1169,26 @@ def test_adapter_classifies_nested_value_errors_as_invalid_response():
             },
         },
     }
+
+
+@pytest.mark.asyncio
+async def test_completion_facts_preserve_usage_and_output_limit_and_do_not_hide_truncation():
+    response = SimpleNamespace(
+        choices=[
+            SimpleNamespace(
+                finish_reason="length", message=SimpleNamespace(content='{"goal":"partial"}')
+            )
+        ],
+        usage=SimpleNamespace(prompt_tokens=200, completion_tokens=30, total_tokens=230),
+    )
+    provider = provider_with_stream(response)
+    model = ModelRef(provider_id="test", model_id="summary")
+    messages = [UserMessage(content="Summarize")]
+    result = await provider.complete_result(model, messages, max_output_tokens=30)
+    assert result.finish_reason is ModelFinishReason.LENGTH
+    assert result.usage.total_tokens == 230
+    assert provider._client.chat.completions.kwargs["max_tokens"] == 30
+    from morrow.core.models import ModelProviderError
+
+    with pytest.raises(ModelProviderError):
+        await provider.complete(model, messages)

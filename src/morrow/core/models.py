@@ -451,6 +451,15 @@ class ModelFinishReason(StrEnum):
     CONTENT_FILTER = "content_filter"
 
 
+class ModelCompletion(ProtocolModel):
+    """Non-streaming response facts, without provider SDK objects."""
+
+    content: str
+    finish_reason: ModelFinishReason
+    usage: ModelUsage = Field(default_factory=ModelUsage.unavailable)
+    cost: ModelCost = Field(default_factory=ModelCost.unavailable)
+
+
 class FinishReason(StrEnum):
     STOP = "stop"
     STEERED = "steered"

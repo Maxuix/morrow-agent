@@ -49,6 +49,7 @@ class ModelRequestState(StrEnum):
 class ModelRequestPurpose(StrEnum):
     AGENT = "agent"
     OUTCOME_INTENT = "outcome_intent"
+    COMPACTION = "compaction"
 
 
 def _aware(value: datetime) -> datetime:

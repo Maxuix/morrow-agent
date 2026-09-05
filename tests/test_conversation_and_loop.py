@@ -19,6 +19,7 @@ from morrow.core.models import (
 )
 from morrow.runtime.agent import AgentLoop, AgentRuntime
 from morrow.runtime.conversation import (
+    ConversationAppend,
     ConversationLog,
     ConversationLogError,
     ConversationSnapshot,
@@ -46,6 +47,56 @@ def test_log_enforces_single_active_turn_and_single_opening_user():
         log.append_tool_result("call_1", "{}")
     with pytest.raises(ConversationLogError):
         log.finish_turn(FinishReason.STOP)
+
+
+def test_normal_appends_do_not_rescan_closed_history_and_restore_still_validates(monkeypatch):
+    import morrow.runtime.conversation as module
+
+    original = module._derive_public_turns
+    visited = 0
+
+    def counted(records, *, require_closed):
+        nonlocal visited
+        visited += len(records)
+        return original(records, require_closed=require_closed)
+
+    monkeypatch.setattr(module, "_derive_public_turns", counted)
+    log = ConversationLog()
+    for _ in range(100):
+        log.begin_turn(UserMessage(content="go"))
+        log.append_assistant(AssistantMessage(tool_calls=(_tool_call(),)))
+        log.append_tool_result("call_1", "{}")
+        log.append_assistant(AssistantMessage(content="done"))
+        log.finish_turn(FinishReason.STOP)
+        log.snapshot()
+    assert visited == 0
+    restored = ConversationLog.from_snapshot(log.snapshot())
+    assert visited == 500
+    assert restored.snapshot() == log.snapshot()
+
+
+def test_stale_or_external_append_cannot_use_incremental_trust():
+    log = ConversationLog()
+    stale = log.plan_begin_turn(UserMessage(content="stale"))
+    log.begin_turn(UserMessage(content="current"))
+    with pytest.raises(ConversationLogError):
+        log.apply_committed(stale)
+    invalid = MessageRecord(sequence=2, message=UserMessage(content="crossing turn"))
+    forged = ConversationAppend(
+        added=(invalid,), snapshot=ConversationSnapshot(records=(*log.snapshot().records, invalid))
+    )
+    with pytest.raises(ConversationLogError):
+        log.apply_committed(forged)
+    assert log.snapshot().messages() == (UserMessage(content="current"),)
+
+
+def test_steered_terminal_cannot_name_interrupted_calls_even_after_cycle_closes():
+    log = ConversationLog()
+    log.begin_turn(UserMessage(content="go"))
+    log.append_assistant(AssistantMessage(tool_calls=(_tool_call(),)))
+    log.append_tool_result("call_1", "{}")
+    with pytest.raises(ConversationLogError):
+        log.plan_finish_turn(FinishReason.STEERED, interrupted_call_ids=("call_1",))
 
 
 def test_log_enforces_ordered_results_and_no_terminal_while_cycle_open():

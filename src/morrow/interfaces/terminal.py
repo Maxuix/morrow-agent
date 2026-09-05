@@ -73,8 +73,13 @@ class Terminal:
                 self.console.print()
             self.console.print(_STEERED_MESSAGE)
             self._text_open = False
+        elif event.type == "status.changed" and event.payload.get("status") == "response_reset":
+            if self._text_open:
+                self.console.print()
+            self.console.print("模型已修订响应，以接下来的内容为准。")
+            self._text_open = False
         elif event.type == "text.delta":
-            self.console.print(event.payload.get("text", ""), end="")
+            self.console.print(event.payload.get("text", ""), end="", markup=False)
             self._text_open = True
         elif event.type == "tool.status" and event.payload.get("status") == "running":
             if self._text_open:
