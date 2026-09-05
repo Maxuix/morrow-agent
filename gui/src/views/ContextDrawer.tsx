@@ -29,7 +29,8 @@ export function useManagement<K extends keyof ManagementQueries>(client: ApiClie
     }
     load()
     window.addEventListener('focus', load)
-    return () => { active = false; window.removeEventListener('focus', load) }
+    const timer = window.setInterval(load, 10000)
+    return () => { active = false; window.clearInterval(timer); window.removeEventListener('focus', load) }
   }, [client, kind, scope, refresh, page])
   return { data, error }
 }

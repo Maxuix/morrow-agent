@@ -368,4 +368,4 @@ Linux 原生运行仍在真实 runner 验证前保持 unsupported。每次完成
 checkpoint、fork、按 AgentRun 冻结的 CapabilityGrant 与 Full Access Manual 属于 Stage 4；Full Access Auto
 和 raw auto 仍不支持。可审查学习从 Stage 5 开始；Skills/MCP 与 Provider/Model 扩展已在 Stage 6 交付，
 静态串行 Multi-Agent Workflow 已由 Stage 7 提供；Stage 8 已提供 GUI、运行控制、Draft 编辑和
-建议式任务特化 GraphPlanner 和按风险分级审批的全局 future-only Replan；并发与后台任务仍属于后续阶段。
+建议式任务特化 GraphPlanner、按风险分级审批的全局 future-only Replan，以及 Context/Learning/Skill 管理；反馈评估、并发与后台任务仍属于后续计划。

@@ -51,7 +51,7 @@ Implementation follows these rules:
 - no public `ApplicationEvent` lifecycle extension is implemented before the explicit authorization
   recorded as a precondition of Subplan 3; Query/polling delivery must remain a complete path;
 - no Live Provider/MCP/network test runs without separate authorization and compatible
-  credentials; the local loopback server is exercised by scripted in-process clients only;
+  credentials; loopback browser/API acceptance uses isolated scripted or provider-free fixtures;
 - planning alone does not authorize production implementation; each child is activated explicitly.
 
 ## 3. Design decisions recorded from the 2026-09 activation discussion

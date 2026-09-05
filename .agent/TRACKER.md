@@ -7,7 +7,7 @@ Branch: `feat/stage8-context-learning-skill-gui`; existing checkout, no extra wo
 
 ## Active task / next action
 
-Management and GUI are implemented; finish the final full offline regression and acceptance record, then commit/fast-forward/retire the topic. Focused API/CLI and browser evidence is recorded in LOG.md.
+All implementation and acceptance gates passed: 1709 offline tests, 93 GUI tests, static checks, browser acceptance and packaged assets. Commit final evidence, fast-forward local main and retire the verified topic branch.
 
 ## Publication boundary
 

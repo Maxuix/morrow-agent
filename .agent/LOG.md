@@ -5240,3 +5240,16 @@ User explicitly requested completion of Subplan 10. Activated from verified main
 - Ruff format/check, compileall, CLI/manage help and diff whitespace checks passed. The first full
   regression was interrupted after the new fixture issue was found; final full gate is running
   against corrected final code. No external Provider/Live test or remote publication was attempted.
+
+- Subplan 10 package gate: temporary offline cache lacked Hatchling; retried with the existing
+  system uv cache. `uv build --offline` succeeded, and all 18 packaged GUI assets match the final
+  build byte-for-byte. No dependencies or versions were added. Implementation checkpoint `5cd8ed3`.
+
+- Final review: open management tabs now refresh with the same bounded 10-second Query fallback
+  as the Context summary, preserving form OCC bases. Changes from another client therefore become
+  visible without relying on a new public event. GUI typecheck, 93 tests and budget build passed again; the final offline package contains 18 matching GUI assets.
+
+- Final Subplan 10 full offline gate passed: 1709 passed, 2 host-level Seatbelt skipped, 2 Live
+  deselected in 934.01 seconds, exit 0 (`/tmp/morrow-subplan10-final-gate.log`). All 30 management
+  tests passed. Final GUI 93 tests/typecheck/build, Ruff format/check, compileall, CLI help,
+  wheel asset verification and whitespace checks passed. Ready for local fast-forward integration.

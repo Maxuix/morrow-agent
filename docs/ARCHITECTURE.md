@@ -381,7 +381,7 @@ PreferenceDocument 历史只从 typed Writer images 中投影规则。泛化偏�
 自动生成 Draft 与已启用 Skill 始终分开；Draft accept 仍只发布版本。
 
 Workflow Scheduler 新 leaf admission 通过组合根加载当前 Profile 和 Preference；恢复已有
-leaf 仍从冻结快照重建。GUI 的本地更新、焦点刷新和 Context 摘要轮询补齐没有 ApplicationEvent
+leaf 仍从冻结快照重建。GUI 的本地更新、焦点刷新和有界管理查询轮询补齐没有 ApplicationEvent
 的配置更改，不新增公开事件类型或更改默认运行策略。
 
 ### Core API Server（Stage 8）
