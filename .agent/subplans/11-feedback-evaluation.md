@@ -1,7 +1,7 @@
 # Subplan 11 — Workflow Feedback and Orchestration Evaluation
 
-> Status: active (2026-09-05 user activation)
-> Branch: `feat/stage8-feedback-evaluation`
+> Status: completed 2026-09-05; verified and integrated into local main
+> Branch: `feat/stage8-feedback-evaluation` (merged and retired)
 > Activation base: verified local `main` at `acf3923` (Subplans 1–10 integrated)
 > Prerequisite: Subplan 9 verified
 > Roadmap authority: stage-8 §5.3, §14, §8G
@@ -60,3 +60,15 @@ Automatic policy mutation, cross-workspace aggregation, background evaluation wo
 - Metric definitions: output-ancestor-excluded completed read nodes; edited roots / all roots; latest
   per-root Reviewer useful / rated roots. Missing values remain unavailable rather than zero.
 - No dependencies, bundled policy defaults, public event lifecycle, ordinary chat path, or parallelism changed.
+
+## Completion evidence
+
+- Final full offline: 1723 passed, 2 existing host-level Seatbelt skips, 2 Live deselected; all 14 new
+  feedback/evaluation cases passed.
+- GUI: typecheck, 98 tests, budgeted build and isolated loopback browser acceptance passed.
+- Ruff format/check, compileall, CLI/manage help, whitespace and offline sdist/wheel checks passed;
+  18 GUI assets and six new modules match the package byte-for-byte.
+- Implementation and acceptance `cf3bd09` fast-forwarded to local main; topic ancestry difference
+  was zero before deletion. The original checkout remains; no additional worktree was created.
+- Acceptance: `docs/acceptance/stage-8-subplan-11-feedback-evaluation.md`.
+- Remote push and Live tests remain unauthorized. Subplan 12 remains pending activation.

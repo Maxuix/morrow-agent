@@ -102,5 +102,8 @@ Command: `UV_CACHE_DIR=/tmp/morrow-uv-cache UV_OFFLINE=1 uv run pytest -m 'not l
 Wheel inspection verified all **18 GUI assets** and **six new feedback/evaluation modules** byte-for-byte
 against the final source/build. No dependency or version was added.
 
-Local integration and topic retirement: ready after the verified final offline gate.
+Implementation and acceptance were committed as `cf3bd09` and fast-forwarded into local main from
+`acf3923`. The topic had zero commits absent from main before deletion, and the original checkout
+is the only remaining worktree. Main was 43 ahead / 0 behind locally recorded origin/main before
+the documentation closure commit. No fetch or push was attempted.
 Remote fetch/push and Live tests remain unauthorized. Subplan 12 remains pending activation.

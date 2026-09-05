@@ -1,9 +1,9 @@
 # Stage 8 Adaptive Orchestration and GUI Implementation Plan
 
-> Status: Subplans 1–10 completed; Subplan 11 active
-> Last completed subplan: `10-context-learning-skill-gui` (topic branch retired)
-> (acceptance `docs/acceptance/stage-8-subplan-10-context-learning-skill-gui.md`)
-> Active subplan: `11-feedback-evaluation`
+> Status: Subplans 1–11 completed; no active subplan
+> Last completed subplan: `11-feedback-evaluation` (topic branch retired)
+> (acceptance `docs/acceptance/stage-8-subplan-11-feedback-evaluation.md`)
+> Active subplan: none
 > Next planned subplan: `12-read-only-parallelism` (not activated; gated)
 > Roadmap authority: `docs/roadmap/stage-8-adaptive-orchestration-and-gui.md`
 > (revised 2026-09-03: risk-tiered Replan autonomy; runtime-kernel-first ordering)
@@ -138,7 +138,7 @@ an explicit limit exists, the already-delivered lineage enforcement remains auth
 | 11 | `11-feedback-evaluation.md` | 8G | 9 |
 | 12 | `12-read-only-parallelism.md` | 8H | 2 plus its own roadmap entry conditions; allowed to slip |
 
-Subplans 1–10 completed in the recorded order; the one-active-subplan rule continues to apply. Subplan 12 starts only when its roadmap entry conditions (stable ToolEffect
+Subplans 1–11 completed in the recorded order; the one-active-subplan rule continues to apply. Subplan 12 starts only when its roadmap entry conditions (stable ToolEffect
 classification, provider rate-limit ownership, atomic per-request accounting/optional cap claim, isolation stress
 evidence, visibility barrier) are verified.
 

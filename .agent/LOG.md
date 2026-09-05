@@ -5291,3 +5291,9 @@ publication attempted.
   2 Live deselected in 1296.13 seconds, exit 0 (`/tmp/morrow-subplan11-final-offline.log`). All 14
   feedback/evaluation cases passed. Earlier fixture failures are resolved. The final GUI, static,
   browser and package gates are green. Ready for verified local integration.
+
+- Subplan 11 integration: committed implementation/acceptance as `cf3bd09`, fast-forwarded local
+  main from `acf3923`, verified zero topic commits absent from main, and deleted the topic branch.
+  Only the original checkout remains. Main was 43 ahead / 0 behind locally recorded origin/main
+  before this closure record. Subplan 11 is closed; Subplan 12 remains unactivated and gated.
+  No remote fetch/push or Live test was attempted.
