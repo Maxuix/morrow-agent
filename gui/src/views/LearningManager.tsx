@@ -1,3 +1,4 @@
+import { WorkflowPolicyReview } from "./WorkflowPolicyReview"
 import { useState } from 'react'
 import type { ApiClient } from '../api/client'
 import type { LearningPage, Preference, ResolvedContext, Scope } from '../api/management'
@@ -130,8 +131,9 @@ export function LearningManager({ client, scope, refresh, mutate }: ManagerProps
   const show = (status: string, expired = false) => filter === 'Proposed' ? status === 'proposed' && !expired : status !== 'proposed' || expired
   return <div className="space-y-4"><Pager page={page} next={data.next_cursor} onChange={setPage} /><ViewFilter value={filter} onChange={setFilter} proposed />
     <p className="text-sm text-secondary">候选经确认后才会改变偏好或 Knowledge。Skill 候选确认后仍需单独审阅 Draft 和启用。</p>
+    {data.orchestration?.items.filter(c => show(c.status)).map(c => <WorkflowPolicyReview key={`${c.candidate_id}:${c.row_version}`} candidate={c} mutate={mutate} />)}
     {data.proposals.filter(p => show(p.status)).map(p => <ProposalCard key={`${p.proposal_id}:${p.row_version}`} p={p} mutate={mutate} />)}
     {data.candidates.filter(c => show(c.candidate.status, c.expired)).map(c => <CandidateCard key={`${c.candidate.candidate_id}:${c.candidate.row_version}`} item={c} mutate={mutate} />)}
-    {!data.proposals.some(p => show(p.status)) && !data.candidates.some(c => show(c.candidate.status, c.expired)) && <p className="text-sm text-secondary">此视图没有候选。</p>}
+    {!data.proposals.some(p => show(p.status)) && !data.candidates.some(c => show(c.candidate.status, c.expired)) && !data.orchestration?.items.some(c => show(c.status)) && <p className="text-sm text-secondary">此视图没有候选。</p>}
   </div>
 }

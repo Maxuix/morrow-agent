@@ -273,7 +273,10 @@ class GraphPlannerService:
                 }.values()
             ),
             budget=budget,
-            auto_run_reason="paired_evidence_missing"
+            auto_run_eligible=self.policies.auto_run(policy, features.task_type),
+            auto_run_reason="paired_benefit"
+            if self.policies.auto_run(policy, features.task_type)
+            else "paired_evidence_missing"
             if policy.auto_run_mode == "allow_promoted"
             else "approval_only",
         )

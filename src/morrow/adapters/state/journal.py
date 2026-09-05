@@ -27,6 +27,7 @@ from morrow.adapters.state.skill_journal import SqliteSkillJournal
 from morrow.adapters.state.task_journal import SqliteTaskJournal
 from morrow.adapters.state.tool_journal import SqliteToolJournal
 from morrow.adapters.state.transaction import SqliteJournalBackend
+from morrow.adapters.state.workflow_feedback_journal import SqliteWorkflowFeedbackJournal
 from morrow.adapters.state.workflow_journal import SqliteWorkflowJournal
 from morrow.adapters.state.workflow_ownership import require_user_task
 from morrow.core.application import (
@@ -209,6 +210,7 @@ class SqliteOperationalJournal:
         self._skill_journal = SqliteSkillJournal(self._backend)
         self._mcp_journal = SqliteMcpJournal(self._backend)
         self.agent_definitions = SqliteAgentDefinitionJournal(self._backend)
+        self.workflow_feedback = SqliteWorkflowFeedbackJournal(self._backend)
         self.workflows = SqliteWorkflowJournal(
             self._backend,
             get_task=self.get_task_run,

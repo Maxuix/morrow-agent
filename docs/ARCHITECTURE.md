@@ -21,7 +21,7 @@ Stage 7 已完成版本化 AgentDefinition、静态 Workflow 编译、串行调�
 恢复闭环；Stage 8 已交付 Pause/Drain、future-only patch/continuation 与 rerun 运行时内核、
 版本化 Core API、Web GUI 观察器，以及持久 Workflow Draft 编辑器和 Agent Inspector。任务特化
 GraphPlanner 与全局 Replan 已接入相同 Draft/Compiler/发布链；Context/Learning/Skill 管理 GUI
-已交付，反馈评估、只读并行和后台自动化尚未交付。本文架构门禁以
+已交付；反馈评估也已接通，只读并行和后台自动化尚未交付。本文架构门禁以
 离线证据为主；未获授权的 Live 证据不改变这些当前模块事实。
 
 S56–S61 已冻结并接通 generic Preference 契约、加载前一次性旧 YAML 迁移、当前 workspace Preference、
@@ -136,10 +136,32 @@ Definition 或权限。显式小任务保持 Direct；范围扩大可增加 Plan
 
 Core API 的只读规划准备在 Core loop 上等待 Provider，但不占用串行 mutation bus；完成后
 重新读取策略/Catalog，再将同步编译与 Draft 写入提交到 bus。`workflow plan`、GUI 和 API
-共享应用服务。`auto_run_mode=allow_promoted` 只是用户偏好；本 Subplan 没有产品推广证据
-writer，故所有生成结果都保持 `auto_run_eligible=false`，不妨碍手工冻结和执行。
+共享应用服务。`auto_run_mode=allow_promoted` 是用户偏好；Subplan 11 已补齐产品推广证据
+writer，GraphPlanner 记录生成时的 `auto_run_eligible` 与原因，不自行启动任务，手工冻结和执行始终可用。
 `auto_replan_mode` 由 Subplan 9 的 ReplanCoordinator 消费：按不可变根任务分类解析策略，
 显式用户通配策略可允许低风险自动应用，任务类型级自动化仍受配对收益证据门槛约束。
+
+Stage 8 Subplan 11 的 `core/workflows/feedback.py` 与 v29 持有有界 WorkflowFeedback、
+WorkflowPolicyCandidate 和 WorkflowEvaluation；`workflow_feedback_journal.py` 使用原 Operational
+Store 事务 backend。Draft update 和用户 exact Patch save 在原编辑事务内记录变更摘要与哈希，
+不复制任务文本、聊天记录或工具结果；自动 Replan 提案不冒充用户编辑。不同 Draft 或根任务的
+重复信号触发确定性 Learning review，候选与证据通过同一个 Learning Inbox/评估页面查询。
+同一 Draft、重复点击和 continuation lineage 不重复增加独立证据样本。
+
+`application/workflows/feedback.py` 只提议当前 workspace 的完整策略候选，接受时检查全局和
+workspace Extension 文档修订；先保存 applying intent，再调用原 OrchestrationPolicyService.put，
+最后记录 accepted。中断后相同命令恢复，后续 YAML 修改触发冲突，拒绝保留历史。没有自动
+policy mutation、额外 Review Provider、跨 workspace 聚合或后台 worker。
+
+`evaluation.py` 复用 Run/Artifact/TaskOutcome/request-ledger 查询，结果绑定具体 WorkflowRun；
+死节点指标定义为“不在 required output 依赖祖先中、实际完成的只读节点”，不推断写入节点价值。
+编辑频率按根任务去重，Reviewer 价值使用每个根任务最新一次用户评价；未知 usage 和未评价
+明确保留不可用。实际配对需要相同 TaskContract 的独立初始 Direct/Multi 完成运行，每个 Run
+只参与一组；质量分为用户声明，request 数来自 durable ledger，Direct 估算不计入推广。
+当前规则为至少两组配对且全部有收益；无收益记录关闭资格。GraphPlanner 的生成资格、CLI
+policy show 与 Replan 的应用前门槛共享这一纯收益计算；显式用户通配低风险 Replan 策略保留
+既有语义，任何高风险 Patch 仍需明确批准。GUI/CLI/API 通过 ManagementService 共享反馈、
+审核与评估服务。v29 引用校验进入现有 Doctor/Backup 路径；public ApplicationEvent 不变。
 
 ## 分层与依赖方向
 

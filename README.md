@@ -173,6 +173,34 @@ morrow manage command knowledge knowledge-command.json --target knw_example
 
 `knowledge-command.json` 例如 `{"command_id":"cmd_disable_example","action":"disable", "expected_row_version":1}`。
 所有管理查询/命令都可显式指定 `--workspace-id`；学习、Knowledge 和 Draft 列表每页最多 50 项。
+
+GUI 顶部的“反馈与评估”显示实际 Workflow 请求数、TaskOutcome、验证结果、Reviewer 结论和用户
+编辑记录。运行结束后可提交“太复杂”“缺少探索”“Reviewer 有/无价值”“模型太贵”和模板偏好。
+Draft 和 future-only Patch 的编辑也会自动形成反馈。不同 Draft/根任务的重复信号形成编排策略
+候选，在 Learning 的 Proposed / History 中审核；接受才通过正常 OrchestrationPolicy 写入路径
+生效。一次编辑、一次评价和重复点击都不会自动永久改变路由。
+
+```bash
+morrow manage query workflow-evaluation
+morrow manage query workflow-policy-candidates
+morrow manage command workflow-feedback feedback.json
+morrow manage command workflow-policy-decision decision.json --target wpc_CANDIDATE_ID
+```
+
+`feedback.json` 使用实际的运行 ID，例如
+`{"command_id":"cmd_feedback_1","workflow_run_id":"wrun_RUN_ID","kind":"too_complex"}`。
+`decision.json` 为 `{"command_id":"cmd_decision_1","action":"accept","expected_row_version":1}`；
+拒绝用 `action: "reject"`。请使用查询返回的候选行版本；全局或工作空间策略变化后旧候选不可接受。
+接受中断时用原 command ID 和原请求重试，不会覆盖之后的策略修改。
+
+对照可在 GUI 中记录，或使用 `manage command workflow-evaluation evaluation.json`。
+实际配对要求同一 TaskContract 的独立、已完成 Direct（单节点）/Multi（多节点）Workflow；
+每次运行只能进入一组配对，质量由用户按 0–4 分评价。Direct 请求估算始终单独标记，不进入推广。
+当前推广记录要求至少两组独立配对且全部有收益（质量提高，或质量相同且请求减少），还需用户
+显式启用对应策略；新记录出现无收益时资格关闭。真实模型收益需要自行采集，脚本化验收不构成
+产品收益声明。自动运行资格随生成时的策略和证据保存，当前编辑器仍由用户发起冻结与运行；
+类型级低风险 Replan 在应用前重新检查证据、当前策略和 Patch 风险。
+
 `morrow skill install` 继续负责导入本地包；GUI 的更新选择已有不可变版本。
 
 源码检出中构建 GUI 资源（发布 wheel/sdist 的前置步骤，缺少资源时 `uv build` 会显式失败）：
@@ -368,4 +396,4 @@ Linux 原生运行仍在真实 runner 验证前保持 unsupported。每次完成
 checkpoint、fork、按 AgentRun 冻结的 CapabilityGrant 与 Full Access Manual 属于 Stage 4；Full Access Auto
 和 raw auto 仍不支持。可审查学习从 Stage 5 开始；Skills/MCP 与 Provider/Model 扩展已在 Stage 6 交付，
 静态串行 Multi-Agent Workflow 已由 Stage 7 提供；Stage 8 已提供 GUI、运行控制、Draft 编辑和
-建议式任务特化 GraphPlanner、按风险分级审批的全局 future-only Replan，以及 Context/Learning/Skill 管理；反馈评估、并发与后台任务仍属于后续计划。
+建议式任务特化 GraphPlanner、按风险分级审批的全局 future-only Replan，以及 Context/Learning/Skill 管理、反馈学习与 Direct/Multi 对照；并发与后台任务仍属于后续计划。

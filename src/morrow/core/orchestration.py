@@ -122,8 +122,10 @@ class PlannerExplanation(PlanningFacts):
     models: tuple[ModelRef, ...] = Field(default=(), max_length=16)
     budget: WorkflowBudget
     concurrency: Literal[1] = 1
-    auto_run_eligible: Literal[False] = False
-    auto_run_reason: Literal["approval_only", "paired_evidence_missing"] = "approval_only"
+    auto_run_eligible: bool = False
+    auto_run_reason: Literal["approval_only", "paired_evidence_missing", "paired_benefit"] = (
+        "approval_only"
+    )
 
 
 class PlannerMetadata(PlanningFacts):

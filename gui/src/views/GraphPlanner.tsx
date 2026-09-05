@@ -15,7 +15,8 @@ export function optionalRequestCap(value: string): number | null {
   return cap
 }
 
-export function plannerApprovalText(reason: 'approval_only' | 'paired_evidence_missing'): string {
+export function plannerApprovalText(reason: 'approval_only' | 'paired_evidence_missing' | 'paired_benefit'): string {
+  if (reason === 'paired_benefit') return '生成时已满足配对收益与用户策略要求；可在编辑器中冻结和运行，策略变更后需重新评估。'
   return reason === 'paired_evidence_missing'
     ? '尚无此任务类型的 Direct/Multi 对照收益证据，本次仍需手工确认。可以编辑、冻结并手工运行。'
     : '请检查并编辑 Draft，确认后冻结、手工运行。'

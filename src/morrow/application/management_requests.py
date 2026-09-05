@@ -78,3 +78,30 @@ class SkillDraftRequest(CommandRequest):
 
 class SkillDraftCreateRequest(CommandRequest):
     candidate_id: str = Field(pattern=r"^lcn_[A-Za-z0-9_-]+$")
+
+
+class WorkflowFeedbackRequest(CommandRequest):
+    workflow_run_id: str = Field(pattern=r"^wrun_[A-Za-z0-9_-]+$")
+    kind: Literal[
+        "too_complex",
+        "missing_exploration",
+        "reviewer_useful",
+        "reviewer_not_useful",
+        "model_expensive",
+        "prefer_template",
+        "avoid_template",
+    ]
+    template: Literal["direct", "explore_implement_verify"] | None = None
+
+
+class WorkflowPolicyDecisionRequest(CommandRequest):
+    action: Literal["accept", "reject"]
+    expected_row_version: int = Field(ge=1)
+
+
+class WorkflowEvaluationRequest(CommandRequest):
+    multi_run_id: str = Field(pattern=r"^wrun_[A-Za-z0-9_-]+$")
+    direct_run_id: str | None = Field(default=None, pattern=r"^wrun_[A-Za-z0-9_-]+$")
+    direct_estimated_requests: int | None = Field(default=None, ge=0, le=1000000)
+    direct_quality: int | None = Field(default=None, ge=0, le=4)
+    multi_quality: int | None = Field(default=None, ge=0, le=4)

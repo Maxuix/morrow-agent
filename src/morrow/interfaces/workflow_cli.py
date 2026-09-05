@@ -714,9 +714,26 @@ def _orchestration_service(state_root, workspace_id, directory):
 
     application = build_application(state_root=state_root)
     identity = _identity(application, workspace_id, directory)
-    return OrchestrationPolicyService(
+    service = OrchestrationPolicyService(
         ExtensionYamlStore(application.data_root.root), workspace_id=identity.workspace_id
     )
+
+    from types import SimpleNamespace
+
+    from morrow.application.workflows.evaluation import promotion_state
+    from morrow.core.workflows.feedback import WorkflowEvaluation
+
+    store = OperationalStore(application.data_root.root)
+    evidence = ()
+    if store.classify().present:
+        with store.open(StoreOpenMode.READ_ONLY) as handle:
+            evidence = SqliteOperationalJournal(handle).workflow_feedback.list(
+                WorkflowEvaluation, identity.workspace_id
+            )
+    service.evaluation = SimpleNamespace(
+        promotion=lambda task_class: promotion_state(evidence, task_class)
+    )
+    return service
 
 
 @policy_app.command("show")

@@ -41,6 +41,9 @@ class WorkflowDraftService:
         self.workspace_id = workspace_id
         self.management = management
         self.id_source = id_source
+        from morrow.application.workflows.feedback import WorkflowFeedbackService
+
+        self.feedback = WorkflowFeedbackService(journal, workspace_id=workspace_id)
         self.model_available = model_available or (
             lambda model: model in management.agent_publication.catalog.models
         )
@@ -141,9 +144,25 @@ class WorkflowDraftService:
                 "updated_at": self.journal.now(),
             }
         )
-        return self._view(
-            self.journal.workflows.save_draft(updated, expected_row_version=expected_row_version)
-        )
+
+        def work(txn):
+            saved = txn.workflows.save_draft(updated, expected_row_version=expected_row_version)
+            from morrow.application.workflows.feedback import task_type
+
+            self.feedback.capture_edit(
+                current.source,
+                source,
+                subject_kind="draft",
+                subject_id=draft_id,
+                sample_id=draft_id,
+                task_class=current.planner.features.task_type
+                if current.planner
+                else task_type(current.source.nodes[0].task_contract),
+                edit_id=f"{draft_id}:{updated.row_version}",
+            )
+            return saved
+
+        return self._view(self.journal.transact(work))
 
     def revalidate(self, draft_id: str, *, expected_row_version: int) -> WorkflowDraftView:
         current = self.journal.workflows.get_draft(self.workspace_id, draft_id)

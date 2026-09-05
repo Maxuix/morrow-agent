@@ -14,6 +14,24 @@ class OrchestrationPolicyService:
     def __init__(self, store, *, workspace_id: str):
         self.store = store
         self.workspace_id = workspace_id
+        self.evaluation = None
+
+    def promoted(self, task_type):
+        return bool(self.evaluation and self.evaluation.promotion(task_type)["promoted"])
+
+    def auto_run(self, policy, task_type):
+        return (
+            policy.source == "user"
+            and policy.auto_run_mode == "allow_promoted"
+            and self.promoted(task_type)
+        )
+
+    def auto_replan(self, policy):
+        return (
+            policy.source == "user"
+            and policy.auto_replan_mode == "allow_low_risk"
+            and (policy.task_matcher == "*" or self.promoted(policy.task_matcher))
+        )
 
     def _document(self, scope):
         if scope not in {"global", "workspace"}:
@@ -30,13 +48,20 @@ class OrchestrationPolicyService:
         return loaded.value
 
     def view(self):
+        classes = ("implementation", "refactor", "research", "explanation", "diagnosis", "general")
+        eligible = (
+            any(self.auto_run(self.resolve(c), c) for c in classes) if self.evaluation else False
+        )
         return {
             scope: {
                 "revision": (doc := self._document(scope)).revision,
                 "policies": [policy.model_dump(mode="json") for policy in doc.orchestration],
             }
             for scope in ("global", "workspace")
-        } | {"auto_run_eligible": False, "auto_run_reason": "paired_evidence_missing"}
+        } | {
+            "auto_run_eligible": eligible,
+            "auto_run_reason": "paired_benefit" if eligible else "paired_evidence_missing",
+        }
 
     def resolve(self, task_type: str) -> OrchestrationPolicy:
         # A workspace policy is a complete explicit override, not a mutable merge.

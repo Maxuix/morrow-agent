@@ -75,7 +75,11 @@ def build_server_context(
         tool_catalog=tool_catalog,
         products=products,
         context_management=ManagementService(
-            products.api, products.preference_service, products.commands.config_service, skills
+            products.api,
+            products.preference_service,
+            products.commands.config_service,
+            skills,
+            workflow_feedback=products.workflow_drafts.feedback,
         ),
         close=products.persistence.store_session.close,
     )

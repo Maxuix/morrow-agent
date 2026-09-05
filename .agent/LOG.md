@@ -5258,3 +5258,36 @@ User explicitly requested completion of Subplan 10. Activated from verified main
   main, verified zero topic commits absent from main, and deleted the clean topic branch. Only the
   original checkout remains. Local upstream comparison was 41 ahead / 0 behind before this closure
   record; remote publication is still unauthorized. Subplan 10 closed; Subplan 11 not activated.
+
+
+## 2026-09-05 — Subplan 11 activation and implementation
+
+User requested completion of Subplan 11; activated `feat/stage8-feedback-evaluation` from verified
+`acf3923`. Implemented v29 bounded feedback, deterministic policy review through Learning,
+intent/OCC acceptance, paired evaluation/promotion and GUI/CLI/API projection. Source/default policy
+and request ledger owners remain unchanged. Two independent samples are required for candidates;
+two independent all-beneficial actual pairs plus explicit policy are required for task-class promotion.
+Estimates and scripted engineering acceptance never claim real Provider benefit.
+
+Focused feedback tests cover edits, post-run review, replay, stale workspace/global policy, interrupted
+YAML acceptance, migration and CLI parity. GUI typecheck / 98 tests / build budget passed. Browser
+acceptance on isolated loopback 8811 verified candidate acceptance and Learning History, Reviewer
+value refresh, and a clearly marked estimate excluded from paired promotion.
+
+First full gate: 1700 passed, 12 failed, 2 native sandbox skips, 2 Live deselected (410.03s). Failures
+were ten stale migration-list expectations and two test fixture client-message IDs; both were corrected.
+Migration-focused follow-up: 93 passed. Additional acceptance exposed an existing only-Draft Doctor
+bug caused by checking Revision references inside the Draft loop; moved that check under Revisions
+and added feedback ownership verification. Final full regression is running. No Live tests or remote
+publication attempted.
+
+- Subplan 11 package gate: `uv build --offline` succeeded with the existing system cache; 18 GUI
+  assets and six new modules match the wheel byte-for-byte. Final static checks passed. The browser
+  tab was closed and the loopback server exited after interrupt (130). A later focused run found a
+  missing test-only import (62 passed, 1 failed); the corrected target passed and is included in the
+  running final full gate. Acceptance is recorded with the final regression/integration still pending.
+
+- Final Subplan 11 full offline gate passed: 1723 passed, 2 existing host-level Seatbelt skips,
+  2 Live deselected in 1296.13 seconds, exit 0 (`/tmp/morrow-subplan11-final-offline.log`). All 14
+  feedback/evaluation cases passed. Earlier fixture failures are resolved. The final GUI, static,
+  browser and package gates are green. Ready for verified local integration.

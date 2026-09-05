@@ -1,19 +1,12 @@
 # Progress Tracker
 
-## Current status
+Subplan 11 active by user request on 2026-09-05. Branch: `feat/stage8-feedback-evaluation`; base: verified `acf3923`.
 
-Stage 8 Subplans 1–10 are complete. Subplan 10 was integrated into local main at `1e7c215`
-after all validation passed. Its topic branch was verified fully merged and deleted; the existing
-checkout is clean and no additional worktree was created.
+Current task: local integration. Final offline regression passed: 1723 passed, 2 existing host-level
+Seatbelt skips, 2 Live deselected (1296.13s, exit 0); all 14 new feedback/evaluation cases passed.
+GUI typecheck, 98 tests, budgeted build and loopback browser acceptance passed. Ruff, compileall,
+CLI help and package verification passed; 18 GUI assets and six new modules match the wheel.
+Browser/server resources are closed. Next: commit verified implementation and acceptance,
+fast-forward local main, verify ancestry and retire the branch.
 
-## Active task / next action
-
-No active subplan. Next planned: `11-feedback-evaluation`, awaiting explicit user activation.
-Evidence: `docs/acceptance/stage-8-subplan-10-context-learning-skill-gui.md`.
-Final gates: 1709 offline tests, 2 host-only skips, 2 Live deselected; 93 GUI tests; all static,
-browser and package checks passed.
-
-## Publication boundary
-
-Remote push and Live tests remain unauthorized. No fetch/push was attempted. Main was 41 commits
-ahead and 0 behind locally recorded origin/main before the documentation closure commit.
+Remote push and Live tests remain unauthorized.

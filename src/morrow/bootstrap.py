@@ -1283,6 +1283,19 @@ def build_session_application(
         orchestration_policies = OrchestrationPolicyService(
             ExtensionYamlStore(app.data_root.root), workspace_id=identity.workspace_id
         )
+        from morrow.application.workflows.evaluation import WorkflowEvaluationService
+        from morrow.application.workflows.feedback import WorkflowFeedbackService
+
+        feedback = WorkflowFeedbackService(
+            journal,
+            workspace_id=identity.workspace_id,
+            policies=orchestration_policies,
+            artifacts=operational.artifacts,
+            active_model=model,
+        )
+        workflow_drafts.feedback = feedback
+        workflow_runtime.patches.feedback = feedback
+        orchestration_policies.evaluation = WorkflowEvaluationService(feedback)
         workflow_runtime.replan.policies = orchestration_policies
         workflow_runtime.replan.active_model = model
         graph_planner = GraphPlannerService(

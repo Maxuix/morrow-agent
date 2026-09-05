@@ -34,8 +34,8 @@ export function TopBar({
   pendingApprovals: number
   theme: Theme
   onThemeChange: (theme: Theme) => void
-  activeView: 'observe' | 'edit'
-  onViewChange: (view: 'observe' | 'edit') => void
+  activeView: 'observe' | 'edit' | 'evaluate'
+  onViewChange: (view: 'observe' | 'edit' | 'evaluate') => void
 }) {
   return (
     <header className="flex items-center gap-4 border-b border-subtle bg-raised px-4 py-2.5">
@@ -46,6 +46,7 @@ export function TopBar({
       <nav className="flex rounded-[8px] border border-subtle bg-base p-0.5" aria-label="工作区视图">
         <button type="button" className={`rounded-[6px] px-2.5 py-1 text-xs ${activeView === 'observe' ? 'bg-raised text-accent' : 'text-secondary'}`} onClick={() => onViewChange('observe')}>观察</button>
         <button type="button" className={`rounded-[6px] px-2.5 py-1 text-xs ${activeView === 'edit' ? 'bg-raised text-accent' : 'text-secondary'}`} onClick={() => onViewChange('edit')}>编辑器</button>
+        <button type="button" className={`rounded-[6px] px-2.5 py-1 text-xs ${activeView === 'evaluate' ? 'bg-raised text-accent' : 'text-secondary'}`} onClick={() => onViewChange('evaluate')}>反馈与评估</button>
       </nav>
       <span className="ml-auto flex items-center gap-4 text-sm">
         <span className="inline-flex items-center gap-1.5 text-xs text-secondary">

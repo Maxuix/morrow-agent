@@ -92,7 +92,7 @@ export function ContextDrawer({ client, taskId, context, connected, onChanged, o
     if (busy || !connected) return false
     setBusy(true); setMessage('')
     const key = JSON.stringify([kind, target, body])
-    const commandId = retry.current?.key === key ? retry.current.commandId : `cmd_${crypto.randomUUID().replaceAll('-', '')}`
+    const commandId = typeof body.command_id === "string" ? body.command_id : retry.current?.key === key ? retry.current.commandId : `cmd_${crypto.randomUUID().replaceAll('-', '')}`
     retry.current = { key, commandId }
     try {
       await client.managementCommand(kind, { ...body, command_id: commandId }, target)

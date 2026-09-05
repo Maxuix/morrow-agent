@@ -68,6 +68,20 @@ def verify_workflow_rows(executor):
             if actual != expected:
                 raise ValueError("revision nodes mismatch")
 
+            for node in value.nodes:
+                row = _first(
+                    executor,
+                    "SELECT body_json FROM agent_definition_versions WHERE version_id=?",
+                    (node.agent_definition_ref.version_id,),
+                )
+                agent = AgentDefinitionVersion.model_validate_json(row[0])
+                if (agent.workspace_id, agent.source.definition_id, agent.content_hash) != (
+                    value.workspace_id,
+                    node.agent_definition_ref.definition_id,
+                    node.agent_definition_ref.content_hash,
+                ):
+                    raise ValueError("Agent reference mismatch")
+
         for (
             draft_id,
             workspace_id,
@@ -94,19 +108,6 @@ def verify_workflow_rows(executor):
                     or revision.source_hash != draft.source_hash
                 ):
                     raise ValueError("frozen Workflow Draft Revision mismatch")
-            for node in value.nodes:
-                row = _first(
-                    executor,
-                    "SELECT body_json FROM agent_definition_versions WHERE version_id=?",
-                    (node.agent_definition_ref.version_id,),
-                )
-                agent = AgentDefinitionVersion.model_validate_json(row[0])
-                if (agent.workspace_id, agent.source.definition_id, agent.content_hash) != (
-                    value.workspace_id,
-                    node.agent_definition_ref.definition_id,
-                    node.agent_definition_ref.content_hash,
-                ):
-                    raise ValueError("Agent reference mismatch")
         for ws, did, rid, body in executor.execute("SELECT * FROM workflow_definition_heads"):
             value = WorkflowDefinitionHead.model_validate_json(body)
             revision = revisions[rid]
@@ -478,6 +479,9 @@ def verify_workflow_rows(executor):
                     consumed_signals.get(sid) != proposal.proposal_id for sid in proposal.signal_ids
                 ):
                     raise ValueError("Replan proposal signal evidence is missing")
+        from morrow.application.workflows.feedback_integrity import verify_feedback_rows
+
+        verify_feedback_rows(executor, runs, revisions)
         return True, ()
     except (ValueError, TypeError, KeyError, IndexError, AttributeError):
         return False, ("workflow_integrity",)

@@ -475,8 +475,8 @@ export interface PlannerExplanationWire {
   models: ModelRefWire[]
   budget: WorkflowBudgetWire
   concurrency: 1
-  auto_run_eligible: false
-  auto_run_reason: 'approval_only' | 'paired_evidence_missing'
+  auto_run_eligible: boolean
+  auto_run_reason: 'approval_only' | 'paired_evidence_missing' | 'paired_benefit'
 }
 export interface PlannerMetadataWire {
   request_digest: string
@@ -530,8 +530,8 @@ export interface OrchestrationPolicyWire {
 export interface OrchestrationPoliciesWire {
   global: { revision: number; policies: OrchestrationPolicyWire[] }
   workspace: { revision: number; policies: OrchestrationPolicyWire[] }
-  auto_run_eligible: false
-  auto_run_reason: 'paired_evidence_missing'
+  auto_run_eligible: boolean
+  auto_run_reason: 'paired_evidence_missing' | 'paired_benefit'
 }
 
 export interface WorkflowDraftViewWire {

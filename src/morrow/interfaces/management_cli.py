@@ -38,11 +38,24 @@ def _run(
             directory=directory,
             write=request_file is not None,
         )
+        from morrow.adapters.state.extension_yaml import ExtensionYamlStore
+        from morrow.application.workflows.feedback import WorkflowFeedbackService
+        from morrow.application.workflows.orchestration_policy import OrchestrationPolicyService
+
+        feedback = WorkflowFeedbackService(
+            api.journal,
+            workspace_id=api.workspace_id,
+            artifacts=api.artifacts,
+            policies=OrchestrationPolicyService(
+                ExtensionYamlStore(app.data_root.root), workspace_id=api.workspace_id
+            ),
+        )
         service = ManagementService(
             api,
             PreferenceManagementService(api.preference_inbox.writer, api.preference_queries),
             ConfigPatchService(app.project_store, app.global_store, api.workspace_id),
             build_skill_services(app, workspace_id=api.workspace_id, journal=api.journal),
+            workflow_feedback=feedback,
         )
         if request_file is None:
             result = service.query(

@@ -1,3 +1,4 @@
+import { EvaluationPanel } from "./EvaluationPanel"
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import type { ApiClient } from '../api/client'
 import type {
@@ -47,7 +48,7 @@ export function AppShell({
   const [selectedTask, setSelectedTask] = useState<TaskRunWire | null>(null)
   const [artifacts, setArtifacts] = useState<ArtifactWire[] | null>(null)
   const [openRunView, setOpenRunView] = useState<RunViewWire | null>(null)
-  const [activeView, setActiveView] = useState<'observe' | 'edit'>('observe')
+  const [activeView, setActiveView] = useState<'observe' | 'edit' | 'evaluate'>('observe')
   // The edit-pending flow replaces the observer columns: pause → edit Future
   // nodes → preview diff + risk → confirm → continuation child.
   const [patchContext, setPatchContext] = useState<{
@@ -139,7 +140,7 @@ export function AppShell({
       <ContextBar client={client} taskId={selectedTask?.task_run_id ?? null}
         cursor={state.cursor} connected={state.connection === 'live'} />
 
-      {activeView === 'edit' ? (
+      {activeView === 'evaluate' ? <EvaluationPanel client={client} connected={state.connection === 'live'} /> : activeView === 'edit' ? (
         <EditorShell client={client} />
       ) : patchContext !== null && workspaceId !== null ? (
         <PatchEditor

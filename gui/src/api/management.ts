@@ -1,3 +1,4 @@
+import type { EvaluationPage, WorkflowPolicyCandidate } from "./evaluation"
 /** User-facing projections; no backing store or package paths. */
 export type Scope = 'global' | 'workspace'
 export type ManagedStatus = 'active' | 'disabled' | 'deleted' | 'disputed'
@@ -34,6 +35,7 @@ export interface Knowledge {
   evidence: { evidence_id: string; source_kind: string; excerpt_redacted: string | null }[]
 }
 export interface LearningPage {
+  orchestration?: { items: WorkflowPolicyCandidate[]; next_cursor: string | null }
   candidates: { expired?: boolean; candidate: { candidate_id: string; candidate_type: string; status: string
     row_version: number; semantic_key: string; proposed_scope: string; proposed_payload: Record<string, unknown> }
     evidence: { evidence_id: string; source_kind: string; excerpt_redacted: string | null }[]
@@ -62,6 +64,8 @@ export interface SkillDraft {
   diff: { added: string[]; removed: string[]; changed: string[] } | null
 }
 export interface ManagementQueries {
+  "workflow-evaluation": EvaluationPage
+  "workflow-policy-candidates": { items: WorkflowPolicyCandidate[]; next_cursor: string | null }
   context: ResolvedContext
   preferences: PreferencePage
   profile: { profile: Profile | null; revision: number; scope: 'workspace' }
@@ -72,3 +76,4 @@ export interface ManagementQueries {
 }
 export type ManagementCommand = 'preferences' | 'profile' | 'preference-decision' | 'learning-decision'
   | 'knowledge' | 'skill-binding' | 'skill-draft' | 'skill-draft-create'
+  | 'workflow-feedback' | 'workflow-policy-decision' | 'workflow-evaluation'

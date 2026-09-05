@@ -1,16 +1,17 @@
 # Stage 8 Adaptive Orchestration and GUI Implementation Plan
 
-> Status: Subplans 1–10 completed; awaiting explicit activation of Subplan 11
+> Status: Subplans 1–10 completed; Subplan 11 active
 > Last completed subplan: `10-context-learning-skill-gui` (topic branch retired)
 > (acceptance `docs/acceptance/stage-8-subplan-10-context-learning-skill-gui.md`)
-> Active subplan: none
-> Next planned subplan: `11-feedback-evaluation` (not activated)
+> Active subplan: `11-feedback-evaluation`
+> Next planned subplan: `12-read-only-parallelism` (not activated; gated)
 > Roadmap authority: `docs/roadmap/stage-8-adaptive-orchestration-and-gui.md`
 > (revised 2026-09-03: risk-tiered Replan autonomy; runtime-kernel-first ordering)
-> Current evidence: full offline gate 1709 passed / 2 native-sandbox skipped / 2 Live deselected;
-> all 30 management tests passed; Ruff format/check, compileall, CLI/manage help,
-> GUI typecheck/93 tests/build budget, browser Context/Learning/Skill review and mutation,
-> offline sdist/wheel with 18 matching GUI assets and `git diff --check` green; no Live test ran
+> Current evidence: full offline gate 1723 passed / 2 native-sandbox skipped / 2 Live deselected;
+> all 14 feedback/evaluation cases passed; Ruff format/check, compileall, CLI/manage help,
+> GUI typecheck/98 tests/build budget, browser feedback/evaluation and Learning review,
+> offline sdist/wheel with 18 matching GUI assets and six new modules; `git diff --check` green;
+> no Live test ran
 > Previous master plan: Stage 7, archived under `.agent/archive/subplans/stage7-workflow-runtime/`
 
 ## 1. Objective

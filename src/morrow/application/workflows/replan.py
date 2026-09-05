@@ -69,6 +69,16 @@ class ReplanCoordinator:
         )
         return self.policies.resolve(features.task_type)
 
+    def _automation_allowed(self, policy):
+        if self.policies and hasattr(self.policies, "auto_replan"):
+            return self.policies.auto_replan(policy)
+        # Scripted clients can supply only resolve(); absent benefit state stays closed.
+        return (
+            policy.source == "user"
+            and policy.auto_replan_mode == "allow_low_risk"
+            and policy.task_matcher == "*"
+        )
+
     def process_signals(self, run_id):
         """Consume settled closure evidence only; admission remains closed until pause commits."""
         signals = self.journal.workflows.list_replan_signals(
@@ -129,13 +139,8 @@ class ReplanCoordinator:
             base = self.journal.workflows.get_revision(self.workspace_id, run.workflow_revision_id)
             self.active_model = base.nodes[0].resolved_model_ref
         policy = self._policy(run_id)
-        # Task-specific promotion is closed without paired benefit evidence. Only an
-        # explicit wildcard user policy can opt an individual low-risk patch in.
-        mode = (
-            policy.auto_replan_mode
-            if policy.source == "user" and policy.task_matcher == "*"
-            else "approval_only"
-        )
+        # Explicit policy and task-class benefit are separate from patch risk.
+        mode = policy.auto_replan_mode if self._automation_allowed(policy) else "approval_only"
         proposal_id = self.patches.id_source.new_id("rprop")
         patch = FutureGraphPatch(
             workflow_patch_id="wpatch_" + proposal_id.removeprefix("rprop_"),
@@ -218,7 +223,7 @@ class ReplanCoordinator:
                     not approved
                     or proposal.risk_level != "low"
                     or policy.source != "user"
-                    or policy.task_matcher != "*"
+                    or not self._automation_allowed(policy)
                     or policy.auto_replan_mode != "allow_low_risk"
                 ):
                     raise ApplicationError(

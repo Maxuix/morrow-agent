@@ -27,11 +27,15 @@ COMMAND_MODELS = {
     "skill-binding": requests.SkillBindingRequest,
     "skill-draft": requests.SkillDraftRequest,
     "skill-draft-create": requests.SkillDraftCreateRequest,
+    "workflow-feedback": requests.WorkflowFeedbackRequest,
+    "workflow-policy-decision": requests.WorkflowPolicyDecisionRequest,
+    "workflow-evaluation": requests.WorkflowEvaluationRequest,
 }
 
 
 class ManagementService:
-    def __init__(self, api, preferences, profile, skills) -> None:
+    def __init__(self, api, preferences, profile, skills, *, workflow_feedback=None) -> None:
+        self.workflow_feedback = workflow_feedback
         self.api = api
         self.preferences = preferences
         self.profile = profile
@@ -47,13 +51,35 @@ class ManagementService:
         if scope not in {"workspace", "global"}:
             raise ApplicationError(ApplicationErrorCode.INVALID, "management scope is invalid")
         if kind == "context":
-            return self.queries.resolved(task_run_id=task_run_id, agent_run_id=agent_run_id)
+            result = self.queries.resolved(task_run_id=task_run_id, agent_run_id=agent_run_id)
+            if self.workflow_feedback:
+                from morrow.core.workflows.feedback import WorkflowPolicyCandidate
+
+                result["pending_learning_count"] += sum(
+                    c.status in {"proposed", "applying"}
+                    for c in self.workflow_feedback.records.list(
+                        WorkflowPolicyCandidate, self.workspace_id
+                    )
+                )
+            return result
         if kind == "preferences":
             return self.queries.preferences(scope)
         if kind == "profile":
             return self.queries.profile()
         if kind == "learning":
-            return self.queries.learning(page)
+            result = self.queries.learning(page)
+            result["orchestration"] = (
+                self.workflow_feedback.review_view(page)
+                if self.workflow_feedback
+                else {"items": [], "next_cursor": None}
+            )
+            return result
+        if kind == "workflow-evaluation" and self.workflow_feedback:
+            from morrow.application.workflows.evaluation import WorkflowEvaluationService
+
+            return WorkflowEvaluationService(self.workflow_feedback).dashboard(page)
+        if kind == "workflow-policy-candidates" and self.workflow_feedback:
+            return self.workflow_feedback.review_view(page)
         if kind == "knowledge":
             return self.queries.knowledge(page)
         if kind == "skills":
@@ -117,7 +143,7 @@ class ManagementService:
         # Profile and Draft acceptance own file/YAML publication, so never nest
         # their saga in an outer SQLite transaction. OCC prevents a blind retry
         # after an interrupted publication; the normal domain recovery remains authoritative.
-        if kind in {"profile", "skill-binding"} or (
+        if kind in {"profile", "skill-binding", "workflow-policy-decision"} or (
             kind in {"skill-draft", "preference-decision"} and request.action == "accept"
         ):
             value = self._adapter_command(kind, request, target)
@@ -149,6 +175,14 @@ class ManagementService:
         return value
 
     def _adapter_command(self, kind, request, target):
+        if kind == "workflow-feedback" and self.workflow_feedback:
+            return self.workflow_feedback.submit(request)
+        if kind == "workflow-policy-decision" and self.workflow_feedback:
+            return self.workflow_feedback.decide(target, request)
+        if kind == "workflow-evaluation" and self.workflow_feedback:
+            from morrow.application.workflows.evaluation import WorkflowEvaluationService
+
+            return WorkflowEvaluationService(self.workflow_feedback).record(request)
         if kind == "skill-binding":
             owner_request = request.model_copy(
                 update={"command_id": "cmd_" + sha256_digest(request.command_id)[:48]}
