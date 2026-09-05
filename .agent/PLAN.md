@@ -1,17 +1,15 @@
 # Stage 8 Adaptive Orchestration and GUI Implementation Plan
 
-> Status: Subplans 1–11 completed; Subplan 12 active
-> Last completed subplan: `11-feedback-evaluation` (topic branch retired)
-> (acceptance `docs/acceptance/stage-8-subplan-11-feedback-evaluation.md`)
-> Active subplan: `12-read-only-parallelism`
-> Next planned subplan: none
+> Status: Subplans 1–12 completed; no active subplan
+> Last completed subplan: `12-read-only-parallelism` (topic branch retired)
+> Acceptance: `docs/acceptance/stage-8-subplan-12-read-only-parallelism.md`
+> Active subplan: none
+> Next planned subplan: none; no later stage activated
 > Roadmap authority: `docs/roadmap/stage-8-adaptive-orchestration-and-gui.md`
-> (revised 2026-09-03: risk-tiered Replan autonomy; runtime-kernel-first ordering)
-> Current evidence: full offline gate 1723 passed / 2 native-sandbox skipped / 2 Live deselected;
-> all 14 feedback/evaluation cases passed; Ruff format/check, compileall, CLI/manage help,
-> GUI typecheck/98 tests/build budget, browser feedback/evaluation and Learning review,
-> offline sdist/wheel with 18 matching GUI assets and six new modules; `git diff --check` green;
-> no Live test ran
+> Current evidence: full offline gate 1748 passed / 2 native-sandbox skipped / 2 Live deselected;
+> all 25 parallel cases passed, including real Core Host/API evidence; Ruff format/check,
+> compileall, CLI help and `git diff --check` green. Existing GUI evidence remains in Subplan 11;
+> no GUI source changed and no Live test ran.
 > Previous master plan: Stage 7, archived under `.agent/archive/subplans/stage7-workflow-runtime/`
 
 ## 1. Objective
@@ -138,9 +136,10 @@ an explicit limit exists, the already-delivered lineage enforcement remains auth
 | 11 | `11-feedback-evaluation.md` | 8G | 9 |
 | 12 | `12-read-only-parallelism.md` | 8H | 2 plus its own roadmap entry conditions; allowed to slip |
 
-Subplans 1–11 completed in the recorded order; the one-active-subplan rule continues to apply. Subplan 12 starts only when its roadmap entry conditions (stable ToolEffect
-classification, provider rate-limit ownership, atomic per-request accounting/optional cap claim, isolation stress
-evidence, visibility barrier) are verified.
+Subplans 1–12 completed in the recorded order. Subplan 12 verified its entry conditions
+(ToolEffect contracts, Provider retry ownership, atomic request accounting/optional cap claims,
+isolation stress and visibility barrier) and closed with full offline evidence. This master plan
+is complete; no later stage or new master plan has been activated.
 
 ## 5. Cross-cutting invariants
 

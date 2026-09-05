@@ -1,7 +1,7 @@
 # Subplan 12 — Bounded Read-Only Parallelism
 
-> Status: active — explicitly authorized 2026-09-05; entry evidence under validation
-> Branch: `feat/stage8-readonly-parallel`
+> Status: completed 2026-09-05 — entry conditions and full offline gate verified
+> Branch: `feat/stage8-readonly-parallel` (fast-forward merged and deleted)
 > Activation base: latest verified `main` with Subplan 2 integrated
 > Prerequisite: Subplan 2 verified AND the roadmap §8H/§三 entry conditions verified: stable
 > ToolEffect classification, provider rate-limit ownership settled, per-request atomic accounting/optional-cap claim
@@ -58,3 +58,12 @@ effects, general executor platform.
 - Gather orders Workflow output bindings and NodeRun completion. Leaf journals and
   immutable candidate Artifacts remain durable as they arrive so recovery retains work.
 - No dependency, packaged policy default, or public event lifecycle change is required.
+
+## Closure
+
+Acceptance: `docs/acceptance/stage-8-subplan-12-read-only-parallelism.md`.
+25 parallel cases and the final full offline gate passed: 1748 passed, 2 existing native-sandbox
+skips, 2 Live deselected (311.05s). Ruff format/check, compileall, CLI help and diff checks passed.
+Commits `f9f213a`, `e9a4ec4` and `30fdc95` were fast-forwarded into local main; topic ancestry
+was verified (zero absent commits) before branch deletion. No extra worktree exists.
+Remote publication and Live tests remain unauthorized; no later stage was activated.

@@ -1,7 +1,7 @@
 # Stage 8 Subplan 12 — Bounded Read-Only Parallelism
 
 Date: 2026-09-05. Base: verified local `main` at `9ada9b0`.
-Branch: `feat/stage8-readonly-parallel`. Status: all implementation checks passed; local integration pending.
+Branch: `feat/stage8-readonly-parallel`. Status: completed; verified and integrated into local main.
 
 ## Delivered behavior
 
@@ -90,6 +90,7 @@ No GUI source changed; this runtime slice uses the existing concurrency input an
 
 ## Integration
 
-Implementation `f9f213a` and production composition correction `e9a4ec4` passed all required
-validation. Local fast-forward integration, topic ancestry check and branch retirement are pending. Local `main` already contained 44 unpublished commits
+Implementation `f9f213a`, production composition correction `e9a4ec4` and acceptance `30fdc95`
+were fast-forwarded into local main from `9ada9b0`. Zero topic commits were absent from main;
+the topic branch was deleted and only the original clean checkout remains. Local `main` already contained 44 unpublished commits
 at activation; remote push remains explicitly unauthorized.

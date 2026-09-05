@@ -5345,3 +5345,11 @@ unauthorized, so local main publication is the integration target.
   including real Core Host/API evidence of three simultaneously Active nodes. Final code has
   passed Ruff format/check (633 files), compileall, CLI help and diff checks. Implementations
   `f9f213a` and `e9a4ec4` are ready for local integration. No Live/network test or remote push ran.
+
+
+- Subplan 12 local integration completed: implementation `f9f213a`, production composition
+  `e9a4ec4` and acceptance `30fdc95` were fast-forwarded into main from `9ada9b0`. Verified
+  zero topic commits absent from main, deleted `feat/stage8-readonly-parallel`, and confirmed
+  that only the original checkout remains. Main was 47 ahead / 0 behind locally recorded
+  origin/main before this closure commit. Stage 8 Subplans 1–12 are complete with no active
+  child plan; Stage 9 was not opened. No remote fetch/push or Live test was performed.
