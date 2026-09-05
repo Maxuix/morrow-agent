@@ -8,9 +8,16 @@ from pydantic import Field, ValidationError
 
 from morrow.application.workflows.planning_catalog import PlanningCatalogService
 from morrow.application.workflows.planning_features import local_features, merge_classification
+from morrow.application.workflows.roles import PLANNED_ROLES, planned_node_id
 from morrow.core.domain import canonical_json_bytes, sha256_digest
 from morrow.core.models import ProtocolModel
-from morrow.core.orchestration import GraphPlanningRequest, PlannerExplanation, PlannerMetadata
+from morrow.core.orchestration import (
+    GraphPlanningRequest,
+    PlannerExplanation,
+    PlannerMetadata,
+    TaskClassification,
+    TaskFeatures,
+)
 from morrow.core.workflows.contracts import (
     ContractRef,
     NodeOutputBinding,
@@ -61,20 +68,38 @@ def effective_budget(policy, request):
 class PreparedGraphPlan:
     request: GraphPlanningRequest
     digest: str
-    features: object
+    features: TaskFeatures
     brief: object
     classification: str
     diagnostics: tuple[str, ...]
+    classified: TaskClassification | None = None
 
 
 class GraphPlannerService:
-    def __init__(self, drafts, policies, *, classifier=None, scout=None, workspace_constraints=()):
+    def __init__(
+        self,
+        drafts,
+        policies,
+        *,
+        classifier=None,
+        scout=None,
+        workspace_constraints=(),
+        load_workspace_constraints=None,
+    ):
         self.drafts = drafts
         self.policies = policies
         self.catalogs = PlanningCatalogService(drafts)
         self.classifier = classifier
         self.scout = scout
         self.workspace_constraints = workspace_constraints
+        self.load_workspace_constraints = load_workspace_constraints
+
+    def _constraints(self):
+        return (
+            tuple(self.load_workspace_constraints())
+            if self.load_workspace_constraints
+            else self.workspace_constraints
+        )
 
     async def generate(self, request: GraphPlanningRequest) -> TaskGraphDraft:
         return self.save_prepared(await self.prepare(request))
@@ -99,7 +124,7 @@ class GraphPlannerService:
         existing = self._existing(request, digest)
         if existing is not None:
             return existing
-        features = local_features(request, workspace_constraints=self.workspace_constraints)
+        features = local_features(request, workspace_constraints=self._constraints())
         diagnostics = []
         brief = None
         if request.scout:
@@ -111,6 +136,7 @@ class GraphPlannerService:
                 except Exception:
                     diagnostics.append("scout_unavailable: project metadata could not be inspected")
         classification = "local"
+        classified = None
         if request.use_model:
             if self.classifier is None:
                 classification = "unavailable"
@@ -118,6 +144,7 @@ class GraphPlannerService:
                 try:
                     result = await self.classifier.classify(request.task, features, brief)
                     features = merge_classification(features, result, request)
+                    classified = result
                     classification = "model"
                 except ValueError:
                     classification = "invalid"
@@ -126,7 +153,7 @@ class GraphPlannerService:
             if classification != "model":
                 diagnostics.append(f"classification_{classification}: local task features used")
         return PreparedGraphPlan(
-            request, digest, features, brief, classification, tuple(diagnostics)
+            request, digest, features, brief, classification, tuple(diagnostics), classified
         )
 
     def save_prepared(self, prepared) -> TaskGraphDraft:
@@ -137,7 +164,13 @@ class GraphPlannerService:
         existing = self._existing(request, digest)
         if existing is not None:
             return existing
-        features, brief = prepared.features, prepared.brief
+        # Profile may change while classification awaits. Recompute authoritative
+        # local facts, then merge the original classification with current rules;
+        # do not reuse a previously merged read/write decision or send a second request.
+        features = local_features(request, workspace_constraints=self._constraints())
+        if prepared.classified is not None:
+            features = merge_classification(features, prepared.classified, request)
+        brief = prepared.brief
         classification, diagnostics = prepared.classification, list(prepared.diagnostics)
         # Read policy/catalogs after the Provider await; no model classification can change them.
         policy = self.policies.resolve(features.task_type)
@@ -354,7 +387,7 @@ class GraphPlannerService:
         tool_access = self.drafts.management.agent_publication.catalog.tool_access
         for role, focus in roles:
             counts[role] = counts.get(role, 0) + 1
-            node_id = f"{role}_{counts[role]}" if sum(r == role for r, _ in roles) > 1 else role
+            node_id = planned_node_id(role, counts[role], sum(r == role for r, _ in roles))
             access = (
                 "write" if features.requires_code_write and role in {"coder", "direct"} else "read"
             )
@@ -382,7 +415,7 @@ class GraphPlannerService:
                 if e.version.source.definition_id in {role, f"builtin_{role}"}
                 or e.version.source.name.casefold() == role
             ]
-            if role not in {"direct", "explorer", "planner", "coder", "reviewer", "synthesizer"}:
+            if role not in PLANNED_ROLES:
                 candidates = exact
             else:
                 candidates = sorted(

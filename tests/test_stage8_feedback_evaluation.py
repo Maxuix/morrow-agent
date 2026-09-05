@@ -537,6 +537,114 @@ async def test_model_swaps_capture_exact_preference_without_routing_write(tmp_pa
 
 
 @pytest.mark.asyncio
+async def test_fallback_agent_definitions_preserve_planned_roles_for_feedback_and_evaluation(
+    tmp_path,
+):
+    from morrow.core.workflows.definitions import WorkflowDefinitionSource
+
+    fx = ServerFixture(tmp_path, scripts=[["role result"]] * 12)
+    try:
+
+        def minimal_catalog():
+            for role in ("direct", "explorer"):
+                fx.host.context.management.publish_agent(
+                    f"builtin_{role}", expected_head_revision=0, command_id=f"cmd_publish_{role}"
+                )
+
+        await fx.on_core(minimal_catalog)
+        generated = await generate(fx, planning("Refactor a large system"))
+        source = WorkflowDefinitionSource.model_validate(
+            generated["workflow_draft"]["draft"]["source"]
+        )
+        feedback = fx.host.context.products.workflow_drafts.feedback
+        roles = await fx.on_core(lambda: {n.node_id: feedback.role(n) for n in source.nodes})
+        assert roles == {
+            "coder": "coder",
+            "explorer": "explorer",
+            "planner": "planner",
+            "reviewer": "reviewer",
+        }
+        # Remove the Planner and reconnect the ordinary chain. Feedback must
+        # track the task role even though its reusable Definition is Explorer.
+        planner = next(n for n in source.nodes if n.node_id == "planner")
+        predecessor = next(e.from_node_id for e in source.edges if e.to_node_id == "planner")
+        changed = source.model_copy(
+            update={
+                "nodes": tuple(
+                    n.model_copy(
+                        update={
+                            "input_bindings": tuple(
+                                b.model_copy(
+                                    update={
+                                        "node_output": b.node_output.model_copy(
+                                            update={"node_id": predecessor}
+                                        )
+                                    }
+                                )
+                                if b.source == "node_output" and b.node_output.node_id == "planner"
+                                else b
+                                for b in n.input_bindings
+                            )
+                        }
+                    )
+                    for n in source.nodes
+                    if n != planner
+                ),
+                "edges": tuple(
+                    e.model_copy(update={"from_node_id": predecessor})
+                    if e.from_node_id == "planner"
+                    else e
+                    for e in source.edges
+                    if e.to_node_id != "planner"
+                ),
+            }
+        )
+        response = await fx.client.request(
+            "PUT",
+            "/v1/workflow-drafts/wdraft_plan",
+            body={"source": changed.model_dump(mode="json"), "expected_row_version": 1},
+        )
+        assert response.status == 200, response.body
+        recorded = await fx.on_core(
+            lambda: feedback.records.list(WorkflowFeedback, feedback.workspace_id)
+        )
+        assert any(f.kind == "removed_planner" for f in recorded)
+        run, _ = await completed(fx, "fallback", multi=True)
+        response = await fx.client.post(
+            "/v1/management/workflow-feedback",
+            {
+                "command_id": "cmd_fallback_review",
+                "workflow_run_id": run,
+                "kind": "reviewer_useful",
+            },
+        )
+        assert response.status == 200, response.body
+        dashboard = (await fx.client.get("/v1/management/workflow-evaluation")).json()
+        summary = next(r for r in dashboard["runs"] if r["workflow_run_id"] == run)
+        assert [r["node_id"] for r in summary["reviewer_findings"]] == ["reviewer"]
+        assert dashboard["metrics"]["reviewer_useful_tasks"] == 1
+    finally:
+        fx.close()
+
+
+def test_task_role_keeps_numbered_roles_and_non_role_definition_fallback():
+    from morrow.application.workflows.roles import task_role
+    from morrow.core.agent_definitions import AgentDefinitionSource
+
+    definition = AgentDefinitionSource(
+        definition_id="custom_review",
+        name="Review",
+        role_prompt="Review",
+        derived_from_definition_id="builtin_reviewer",
+        derived_from_source_hash="a" * 64,
+    )
+    assert task_role("reviewer_2") == "reviewer"
+    assert task_role("explorer_1", definition) == "explorer"
+    assert task_role("independent_check", definition) == "reviewer"
+    assert task_role("custom_task") == "custom_task"
+
+
+@pytest.mark.asyncio
 async def test_user_run_patch_records_once_and_preserves_root_sample(tmp_path):
     from test_stage7_serial_scheduler import MODEL, WS
     from test_stage8_global_replan import corrected

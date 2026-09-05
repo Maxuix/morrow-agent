@@ -1302,12 +1302,20 @@ def build_session_application(
         orchestration_policies.evaluation = WorkflowEvaluationService(feedback)
         workflow_runtime.replan.policies = orchestration_policies
         workflow_runtime.replan.active_model = model
+
+        def load_planner_constraints():
+            loaded = app.project_store.load_profile(identity.workspace_id)
+            if loaded.status.value != "ok":
+                raise ValueError("Profile is unavailable for Workflow planning")
+            profile = loaded.value.profile if loaded.value else None
+            return tuple(profile.constraints) if profile else ()
+
         graph_planner = GraphPlannerService(
             workflow_drafts,
             orchestration_policies,
             classifier=ModelTaskClassifier(app.provider_service.build_active),
             scout=ReadOnlyTaskScout(files) if "ls" in workflow_catalog.allowed_tools else None,
-            workspace_constraints=tuple(session.profile.constraints) if session.profile else (),
+            load_workspace_constraints=load_planner_constraints,
         )
         products = SessionApplication(
             session=session,

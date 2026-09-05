@@ -8,8 +8,11 @@ Ruff format/check and whitespace passed.
 Controlled cancellation closes admitted leaves in foreground and Server modes; serial fallback
 signals now pause and continue only queued work. Parallel/pause/serial suites: 67 passed;
 Ruff format/check and whitespace passed.
-Current task: planner Profile refresh and shared task-role interpretation.
-Next: Learning pagination and promotion state display.
+Planner reloads current Profile before composition, including changes during model awaits and
+Profile clearing; shared canonical node roles preserve fallback Agent feedback/evaluation.
+Planner/feedback/context suites: 71 passed; Ruff check passed.
+Current task: Learning pagination and promotion state display.
+Next: full offline and GUI validation, acceptance and local integration.
 
 No new dependencies, policy defaults or public lifecycle changes are planned.
 Remote push and Live tests remain unauthorized.

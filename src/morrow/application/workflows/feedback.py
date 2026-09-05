@@ -6,6 +6,7 @@ from morrow.core.orchestration import GraphPlanningRequest, OrchestrationPolicy
 from morrow.core.workflows.feedback import WorkflowFeedback, WorkflowPolicyCandidate
 
 from .planning_features import local_features
+from .roles import task_role
 
 
 def identity(prefix, *parts):
@@ -36,13 +37,7 @@ class WorkflowFeedbackService:
         version = self.journal.agent_definitions.get_version(
             self.workspace_id, node.agent_definition_ref.version_id
         )
-        if version is None:
-            return node.node_id
-        source = version.source
-        origin = source.derived_from_definition_id or source.definition_id
-        if origin.startswith("builtin_"):
-            return origin.removeprefix("builtin_")
-        return node.node_id
+        return task_role(node.node_id, version.source if version else None)
 
     def model(self, node):
         if hasattr(node, "resolved_model_ref"):

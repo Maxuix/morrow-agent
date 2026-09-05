@@ -502,6 +502,96 @@ async def test_pending_classification_does_not_block_core_commands_and_policy_is
         fx.close()
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("during_classification", [False, True])
+async def test_planner_uses_current_profile_constraints_before_save(
+    tmp_path, during_classification
+):
+    fx = ServerFixture(tmp_path)
+    outer = asyncio.get_running_loop()
+    entered = asyncio.Event()
+    release = None
+    pending = None
+    try:
+        await publish_roles(fx)
+        constraint = "Do not modify files; read only"
+        revision = (await fx.client.get("/v1/management/profile")).json()["revision"]
+
+        async def change(operation, expected):
+            response = await fx.client.post(
+                "/v1/management/profile",
+                {
+                    "command_id": f"cmd_constraint_{operation}",
+                    "expected_revision": expected,
+                    "command": {
+                        "scope": "workspace",
+                        "target": "profile",
+                        "operation": operation,
+                        "path": "constraints",
+                        "value": constraint,
+                    },
+                },
+            )
+            assert response.status == 200, response.body
+
+        if during_classification:
+
+            def install():
+                nonlocal release
+                release = asyncio.Event()
+
+                class Classifier:
+                    async def classify(self, *_):
+                        outer.call_soon_threadsafe(entered.set)
+                        await release.wait()
+                        return TaskClassification(requires_code_write=True)
+
+                fx.host.context.products.graph_planner.classifier = Classifier()
+
+            await fx.on_core(install)
+            pending = asyncio.create_task(
+                generate(fx, planning("Implement a large change", use_model=True))
+            )
+            await asyncio.wait_for(entered.wait(), 5)
+        await change("append", revision)
+        if pending:
+            await fx.on_core(release.set)
+            result = await pending
+        else:
+            result = await generate(fx, planning("Implement a large change"))
+        assert result["metadata"]["features"]["workspace_constraints"] == [constraint]
+        assert result["explanation"]["writing_nodes"] == []
+        assert all(
+            constraint in n["task_contract"]["constraints"]
+            for n in result["workflow_draft"]["draft"]["source"]["nodes"]
+        )
+        await change("remove", revision + 1)
+        fresh = await generate(
+            fx, planning("Implement a large change", draft_id="wdraft_unrestricted")
+        )
+        assert fresh["metadata"]["features"]["workspace_constraints"] == []
+        assert fresh["explanation"]["writing_nodes"] == ["coder"]
+        reset = await fx.client.post(
+            "/v1/management/profile",
+            {
+                "command_id": "cmd_profile_clear",
+                "expected_revision": revision + 2,
+                "command": {"scope": "workspace", "target": "profile", "operation": "reset"},
+            },
+        )
+        assert reset.status == 200
+        cleared = await generate(
+            fx, planning("Implement a large change", draft_id="wdraft_cleared")
+        )
+        assert cleared["explanation"]["writing_nodes"] == ["coder"]
+    finally:
+        if release is not None:
+            await fx.on_core(release.set)
+        if pending is not None:
+            await asyncio.gather(pending, return_exceptions=True)
+        fx.close()
+
+
 def test_policy_document_retains_legacy_digest_and_other_extension_fields(tmp_path):
     from morrow.adapters.state.extension_yaml import ExtensionYamlStore, extension_document_digest
     from morrow.application.workflows.orchestration_policy import OrchestrationPolicyService
